@@ -228,6 +228,20 @@ executes one complete body iteration, and proves all invariants again. Either
 proof may be omitted; bounded automation owned by the `loop` keyword supplies
 an omitted phase. Expanding that keyword writes all omitted phases explicitly.
 
+An omitted `preserve` walks the body once. At a C `if` with more of the body
+after it, whose arms both fall through, it runs both arms and joins them
+where they meet, as a written `branch` does, so the rest of the body is not
+walked once per arm (`mdtests/an_automatically_closed_loop_joins_its_c_branches.md`).
+Arms that end in different states are joined keeping only what both agree
+on. A loop whose invariant needs what each arm established is therefore not
+closed automatically; the failure says so, and the body is written with
+`branch ensuring { ... }`, which states it
+(`mdtests/an_automatically_closed_loop_keeps_only_what_its_branches_agree_on.md`,
+`mdtests/a_written_branch_interface_carries_what_an_invariant_needs.md`).
+Two kinds of `if` keep their arms as separate paths: one with an arm that
+leaves another way (a `break`, a `continue`, a `return`), and the body's last
+statement, which has nothing after it to walk twice.
+
 An invariant's side conditions are invariant content. These are what its
 terms need to denote a value: that `i + 1` does not overflow in
 `to_integer(i + 1)`, that an integer converted back to `int32` fits, or the

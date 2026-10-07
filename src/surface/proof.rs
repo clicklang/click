@@ -2777,3 +2777,32 @@ pub(super) fn prove_claim_by_script(
     )?;
     Ok(theorems.theorems)
 }
+
+thread_local! {
+    /// Set while a loop body the automatic closer planned is being checked,
+    /// when that body joined a C `if` whose arms ended apart.
+    static AUTOMATIC_BODY_JOINED_APART: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Restores the previous note when the check of a planned body ends.
+struct AutomaticBodyJoinedApart(bool);
+
+impl Drop for AutomaticBodyJoinedApart {
+    fn drop(&mut self) {
+        AUTOMATIC_BODY_JOINED_APART.with(|flag| flag.set(self.0));
+    }
+}
+
+/// Notes, for as long as the returned guard lives, whether the planned loop
+/// body under check joined a C `if` whose arms ended apart. A failure to
+/// close an invariant then says so, since what failed to close may be
+/// something only one arm established.
+fn note_automatic_body_joined_apart(joined_apart: bool) -> AutomaticBodyJoinedApart {
+    AutomaticBodyJoinedApart(AUTOMATIC_BODY_JOINED_APART.with(|flag| flag.replace(joined_apart)))
+}
+
+/// Whether the planned loop body under check joined a C `if` whose arms
+/// ended apart.
+fn automatic_body_joined_apart() -> bool {
+    AUTOMATIC_BODY_JOINED_APART.with(std::cell::Cell::get)
+}

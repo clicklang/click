@@ -239,11 +239,12 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     let mut pure_facts = context.pure_facts.clone();
                     pure_facts.extend(preservation.pure_facts().iter().cloned());
                     if let Some(clause) = loop_clause {
+                        let mut joined_apart = false;
                         let (preservation_tactics, first_generated_tactic_index) =
                             if let Some(tactics) = explicit_tactics {
                                 (tactics.to_vec(), tactics.len())
                             } else {
-                                let body_certificate = plan_automatic_loop_preservation_body(
+                                let planned = plan_automatic_loop_preservation_body(
                                     loop_index,
                                     &preservation,
                                     &pure_facts,
@@ -257,6 +258,8 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                         LoopPhasePlace::PlannedPreservation,
                                     )
                                 })?;
+                                joined_apart = planned.joined_apart;
+                                let body_certificate = planned.certificate;
                                 let mut tactics = clause
                                     .preserve_proof()
                                     .and_then(SourceProof::tactics)
@@ -272,6 +275,11 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                 tactics.push(ProofTactic::Simp);
                                 (tactics, first_generated_tactic_index)
                             };
+                        // While the planned body is checked, a failure to
+                        // close an invariant says that the closer joined a
+                        // C `if` whose arms ended apart, when it did.
+                        let _joined_apart =
+                            crate::surface::proof::note_automatic_body_joined_apart(joined_apart);
                         let result = verify_one_loop_preservation_proof(
                             expansion_capture.as_deref_mut(),
                             loop_index,

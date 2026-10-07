@@ -664,6 +664,136 @@ impl CheckedLoopInitialization {
     }
 }
 
+/// The body the automatic closer planned for a loop with no written
+/// `preserve` proof.
+pub(in crate::surface::proof) struct AutomaticLoopBody {
+    pub(in crate::surface::proof) certificate: ProofCertificate,
+    /// Whether the arms of some C `if` ended in different states and were
+    /// joined keeping only what both agree on, so a later failure to close
+    /// an invariant may be for want of what one arm established.
+    pub(in crate::surface::proof) joined_apart: bool,
+}
+
+/// The automatic walk of one loop body: its step budget, and the C `if`s
+/// it has found to have an arm that does not fall through.
+struct AutomaticBodySearch<'c> {
+    claim_label: &'c str,
+    steps: usize,
+    /// Statement indexes of the `if`s whose arms could not be joined, so an
+    /// `if` is tried at most once however it is reached again.
+    diverging: BTreeSet<usize>,
+    /// Whether some `if`'s arms ended apart and were joined keeping only
+    /// what both agree on.
+    joined_apart: bool,
+}
+
+impl AutomaticBodySearch<'_> {
+    fn charge_step(&mut self) -> Result<(), ClickError> {
+        if self.steps == BOUNDED_EXECUTE_STEP_LIMIT {
+            return Err(ClickError::new(format!(
+                "`{}` automatic preservation exhausted its {BOUNDED_EXECUTE_STEP_LIMIT}-step budget",
+                self.claim_label
+            )));
+        }
+        self.steps += 1;
+        Ok(())
+    }
+
+    fn at_source_branch(&self, proof: &Proof<'_>) -> Result<bool, ClickError> {
+        let view = proof.execution_view()?;
+        Ok(view
+            .context
+            .constants
+            .source_layout
+            .statement(view.frontier.next_statement_index)
+            .is_some_and(|region| matches!(region.kind, SourceStatementKind::If { .. })))
+    }
+
+    /// Runs both arms of the C `if` at the frontier to the end of the `if`
+    /// and joins them there, as a written `branch` does. `None` when an arm
+    /// leaves another way, in which case the arms are separate paths.
+    ///
+    /// Arms that end in one state join as they are. Arms that end apart are
+    /// joined through an interface that states nothing: the one path that
+    /// continues keeps what both arms agree on and nothing either arm alone
+    /// established. A loop whose invariants need more than that is not
+    /// closed here; its body is written out with `branch ensuring { ... }`.
+    fn join_source_branch<'a>(
+        &mut self,
+        proof: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let statement = proof.execution_view()?.frontier.next_statement_index;
+        if self.diverging.contains(&statement) {
+            return Ok(None);
+        }
+        let (split, record) = proof.split_focused_execution_branch()?;
+        let steps_before = self.steps;
+        let mut advanced = split;
+        for take_then in [true, false] {
+            if record.arm_id(take_then).is_none() {
+                continue;
+            }
+            let arm = advanced.focus_split_arm(&record, take_then)?;
+            let Some(arm) = self.run_arm(arm)? else {
+                self.diverging.insert(statement);
+                return Ok(None);
+            };
+            advanced = arm;
+        }
+        let falls_through = [true, false].into_iter().all(|take_then| {
+            record.arm_id(take_then).is_none()
+                || (advanced.arm_loop_control(&record, take_then) == LoopControlExit::BodyEnd
+                    && !advanced.arm_at_function_exit(&record, take_then))
+        });
+        if !falls_through {
+            self.diverging.insert(statement);
+            return Ok(None);
+        }
+        let empty = self.steps == steps_before;
+        if let Ok(joined) = advanced.join_focused_execution_split(&record, empty, None) {
+            return Ok(Some(joined));
+        }
+        let agreed = vec![ProofAssertion::Fact(ClickProposition::Comparison {
+            left: ContractExpression::IntegerLiteral("1".to_string()),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::IntegerLiteral("1".to_string()),
+        })];
+        // Arms the join refuses have no one state to continue from, so they
+        // stay separate paths, like arms that leave different ways.
+        match advanced.join_focused_execution_split(&record, empty, Some(agreed)) {
+            Ok(joined) => {
+                self.joined_apart = true;
+                Ok(Some(joined))
+            }
+            Err(_) => {
+                self.diverging.insert(statement);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Walks one arm to the end of its `if`. `None` when an `if` nested in
+    /// it has an arm that leaves another way, so the arm is not one path.
+    fn run_arm<'a>(&mut self, mut proof: Proof<'a>) -> Result<Option<Proof<'a>>, ClickError> {
+        loop {
+            if proof.is_at_region_boundary()
+                || proof.execution_view()?.frontier.is_at_function_exit()
+            {
+                return Ok(Some(proof));
+            }
+            self.charge_step()?;
+            if self.at_source_branch(&proof)? {
+                let Some(joined) = self.join_source_branch(&proof)? else {
+                    return Ok(None);
+                };
+                proof = joined;
+            } else {
+                proof = preservation_smart_step(proof)?;
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     loop_index: usize,
@@ -671,7 +801,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     pure_facts: &PureFactList,
     body: &CStatement,
     environment: &ExecutionProofEnvironment<'_>,
-) -> Result<ProofCertificate, ClickError> {
+) -> Result<AutomaticLoopBody, ClickError> {
     let claim_label = environment.frontier_loop_source.map_or_else(
         || {
             format!(
@@ -754,45 +884,54 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     .with_surface_local_scope(&phase_proof_scope(environment));
     let mut pending = vec![root];
     let mut completed = Vec::new();
-    let mut steps = 0;
+    let mut search = AutomaticBodySearch {
+        claim_label: &claim_label,
+        steps: 0,
+        diverging: BTreeSet::new(),
+        joined_apart: false,
+    };
     while let Some(proof) = pending.pop() {
         if proof.is_at_region_boundary() || proof.execution_view()?.frontier.is_at_function_exit() {
             completed.push(proof);
             continue;
         }
-        if steps == BOUNDED_EXECUTE_STEP_LIMIT {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` automatic preservation exhausted its {BOUNDED_EXECUTE_STEP_LIMIT}-step budget"
-            )));
-        }
-        steps += 1;
-        let view = proof.execution_view()?;
-        let is_branch = view
-            .context
-            .constants
-            .source_layout
-            .statement(view.frontier.next_statement_index)
-            .is_some_and(|region| matches!(region.kind, SourceStatementKind::If { .. }));
-        if is_branch {
-            let FrontierPosition::StatementEntry { remaining } = &view.frontier.position else {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` automatic preservation branch is not at a statement entry"
-                )));
-            };
-            let (source_statement, _) =
-                split_next_source_operation(remaining).map_err(ClickError::new)?;
-            let CStatement::If { condition, .. } = source_statement else {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` source branch does not match the lowered statement"
-                )));
-            };
-            let condition = surface_c_condition(&condition);
-            let (split, ids) = proof.split_preservation_case(&condition, 0)?;
-            for id in ids.into_iter().flatten() {
-                pending.push(preservation_smart_step(split.focus_branch(id)?)?);
-            }
-        } else {
+        search.charge_step()?;
+        if !search.at_source_branch(&proof)? {
             pending.push(preservation_smart_step(proof)?);
+            continue;
+        }
+        let view = proof.execution_view()?;
+        let FrontierPosition::StatementEntry { remaining } = &view.frontier.position else {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` automatic preservation branch is not at a statement entry"
+            )));
+        };
+        let (source_statement, rest) =
+            split_next_source_operation(remaining).map_err(ClickError::new)?;
+        let CStatement::If { condition, .. } = source_statement else {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` source branch does not match the lowered statement"
+            )));
+        };
+        // A C `if` with more of the body after it, whose arms both fall
+        // through, is one path: the arms are run and joined where they
+        // meet, and the rest of the body is walked once. Walking it once
+        // per arm instead would double the work at every such `if`.
+        //
+        // Two kinds of `if` keep their arms as separate paths. One with an
+        // arm that leaves another way (a `break`, a `continue`, a
+        // `return`) has two places to go. And the body's last statement has
+        // nothing after it to walk twice, so its arms each close the
+        // invariants with everything they know.
+        let body_continues = rest.is_some() || !view.frontier.continuations.is_empty();
+        if body_continues && let Some(joined) = search.join_source_branch(&proof)? {
+            pending.push(joined);
+            continue;
+        }
+        let condition = surface_c_condition(&condition);
+        let (split, ids) = proof.split_preservation_case(&condition, 0)?;
+        for id in ids.into_iter().flatten() {
+            pending.push(preservation_smart_step(split.focus_branch(id)?)?);
         }
     }
     let mut paths = Vec::new();
@@ -824,7 +963,10 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
             certificate,
         });
     }
-    merge_phase_path_aligned_certificates(&claim_label, paths)
+    Ok(AutomaticLoopBody {
+        certificate: merge_phase_path_aligned_certificates(&claim_label, paths)?,
+        joined_apart: search.joined_apart,
+    })
 }
 
 pub(in crate::surface::proof) struct LoopPreservationProofResult {
