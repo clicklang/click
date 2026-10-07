@@ -5114,8 +5114,12 @@ fn check_sidecar_tactic(
     )
     .unwrap();
     let rewritten = parsed.with_entry_source(expanded.clone());
-    verify_program_prepared_project(&rewritten, import)
-        .expect("expanded arithmetic certificate reverifies");
+    verify_program_prepared_project(&rewritten, import).unwrap_or_else(|error| {
+        panic!(
+            "expanded arithmetic certificate: {}\n{expanded}",
+            error.message()
+        )
+    });
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, import).unwrap();
     let sites = program_prepared_project_smart_tactic_source_sites(&rewritten, import).unwrap();
@@ -9209,6 +9213,107 @@ fn assumed_library_assertions_reject_unpinned_and_effectful_boundaries() {
 }
 
 #[test]
+fn evaluated_library_assertions_read_fields_with_normal_authority() {
+    let cpp = "#include \"gate.h\"\nstruct Box { int size; }; int guarded(const Box& box, int n) noexcept { Gate(box.size > 0 && n >= 0); return n; }";
+    let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "library.cpp";
+int32 guarded(const struct Box* box, int32 n) {
+ views box->size;
+ requires box->size > 0;
+ requires n >= 0;
+ ensures result == n;
+ ensures box->size == old(box->size);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    for bad in [
+        proof.replace("views box->size;", ""),
+        proof.replace("requires box->size > 0;", ""),
+        proof.replace("requires n >= 0;", ""),
+        proof.replace("ensures result == n;", "ensures result != n;"),
+    ] {
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn library_field_conditions_keep_builtin_and_effect_boundaries() {
+    for cpp in [
+        "#include \"gate.h\"\nstruct Box { int size; }; int guarded(const Box& box) noexcept { __builtin_assume(box.size > 0); return 0; }",
+        "#include \"gate.h\"\nstruct Box { int size; }; int guarded(const Box& box) noexcept { Gate(box.size + 1 > 0); return 0; }",
+        "#include \"gate.h\"\nstruct Box { int size; }; int guarded(Box& box) noexcept { Gate(++box.size > 0); return 0; }",
+        "#include \"gate.h\"\nstruct Box { volatile int size; }; int guarded(const Box& box) noexcept { Gate(box.size > 0); return 0; }",
+        "#include \"gate.h\"\nint guarded(const int* value) noexcept { Gate(*value > 0); return 0; }",
+    ] {
+        let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, cpp);
+        refresh_import(&project.config())
+            .expect_err("field admission must preserve effect/totality restrictions");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn evaluated_field_assertions_scale_with_selected_statements() {
+    let mut samples = Vec::new();
+    for size in [4usize, 16, 64, 256] {
+        let body = "Gate(box.size > 0);\n".repeat(size);
+        let cpp = format!(
+            "#include \"gate.h\"\nstruct Box {{ int size; }}; int guarded(const Box& box) noexcept {{ {body} return 0; }}"
+        );
+        let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, &cpp);
+        refresh_import(&project.config()).unwrap();
+        let (loaded, validation_work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = loaded.unwrap();
+        let (lowered, lowering_work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        samples.push((validation_work, lowering_work));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].0 <= pair[0].0 * 6 && pair[1].1 <= pair[0].1 * 6,
+            "{samples:?}"
+        );
+    }
+}
+
+#[test]
+fn branch_likelihood_attributes_preserve_both_outcomes() {
+    let cpp = "int choose(bool positive) noexcept { if (positive) [[likely]] { return 7; } else [[unlikely]] { return -3; } }";
+    let project = Project::with_fixture("weights.cpp", "choose", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "weights.cpp";
+int32 choose(bool positive) {
+ ensures positive != 0 implies result == 7;
+ ensures positive == 0 implies result == -3;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    let bad = proof.replace("result == 7", "result == 8");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &bad).unwrap();
+    let parsed = read_click_project(&path, &bad).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    let project = Project::with_fixture(
+        "weights.cpp",
+        "caller",
+        "int callee(int n) noexcept { return n; } int caller(int n) noexcept { [[clang::musttail]] return callee(n); }",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("only likely/unlikely"), "{error}");
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
+}
+
+#[test]
 fn assumed_library_assertion_inventory_and_pins_are_checked_before_export() {
     let cpp =
         "#include \"gate.h\"\nint guarded(int n) noexcept { library::check(n > 0); return n; }";
@@ -10278,4 +10383,38 @@ fn fee_rounding_pattern_rejects_false_rounding_and_missing_guards() {
 #[test]
 fn fee_rounding_pattern_caller_rejects_false_rounding_and_missing_guards() {
     check_fee_rounding_pattern("caller", true);
+}
+
+#[test]
+fn symbolic_wide_field_branch_paths_keep_their_selector_width() {
+    let cpp = include_str!("fixtures/cpp-verification/branch-paths/wide-field.cpp");
+    let project = Project::with_fixture("wide-field.cpp", "choose", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "wide-field.cpp";
+int32 choose(const struct Box* box) {
+ views box->fee;
+ ensures result == 1 or result == 2;
+ ensures box->fee == old(box->fee);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+    for (fee, result) in [("-1i64", 2), ("1i64", 1), ("8589934592i64", 2)] {
+        let precise = source
+            .replace(
+                "views box->fee;",
+                &format!("views box->fee;\n requires box->fee == {fee};"),
+            )
+            .replace("result == 1 or result == 2", &format!("result == {result}"));
+        check_arithmetic_sidecar(&project, &import, &precise);
+    }
+    for bad in [
+        source.replace("views box->fee;", ""),
+        source.replace("result == 1 or result == 2", "result == 1"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
 }

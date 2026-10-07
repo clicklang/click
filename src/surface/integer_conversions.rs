@@ -700,6 +700,271 @@ mod tests {
         }
     }
     #[test]
+    fn legacy_integer_cast_identity_preserves_field_views_and_snapshot_observations() {
+        for (field, destination, lower, upper) in [
+            ("fee", "uint64", "0", "8589934591"),
+            ("size", "uint32", "1", "2147483647"),
+        ] {
+            let c = format!(
+                "struct FeeFrac {{ int64 fee; int32 size; }}; {destination} cast(const struct FeeFrac* self) {{ return ({destination})self->{field}; }}"
+            );
+            let source = format!(
+                r#"verifying "cast.c";
+{destination} cast(const struct FeeFrac* self) {{
+    views self->{field};
+    requires {lower} <= to_integer(self->{field});
+    requires to_integer(self->{field}) <= {upper};
+    ensures to_integer(result) == to_integer(old(self->{field}));
+    ensures self->{field} == old(self->{field});
+}} by {{
+    execute();
+    have to_integer(result) == to_integer(self->{field}) by {{ arithmetic_certificate special {{
+        premise 0: {lower} <= to_integer(self->{field}) => {lower} <= to_integer(self->{field});
+        premise 1: to_integer(self->{field}) <= {upper} => to_integer(self->{field}) <= {upper};
+        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(self->{field}); conclusion 0;
+    }} }}
+    simp();
+}}
+"#
+            );
+            verify_c0_sources(&source, &[("cast.c", &c)])
+                .unwrap_or_else(|e| panic!("{field}: {}", e.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[("cast.c", &c)], "cast.ensures_0")
+                    .unwrap();
+            verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
+            assert!(
+                verify_c0_sources(
+                    &source.replace(&format!("views self->{field};"), ""),
+                    &[("cast.c", &c)]
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_integer_cast_identity_verifies_c_callers_and_rechecks_bounds_and_expansion() {
+        for (source_ty, destination, lower, upper, native_guard) in [
+            ("int64", "uint64", "0", "9223372036854775807", ""),
+            ("int32", "uint64", "0", "2147483647", ""),
+            ("int32", "uint32", "0", "2147483647", ""),
+            ("uint32", "uint64", "0", "4294967295", ""),
+            (
+                "uint64",
+                "int64",
+                "0",
+                "9223372036854775807",
+                "requires value <= 9223372036854775807u64;",
+            ),
+            ("uint64", "uint32", "0", "4294967295", ""),
+        ] {
+            let c = format!(
+                "{destination} cast({source_ty} value) {{ return ({destination})value; }} {destination} caller({source_ty} value) {{ return cast(value); }}"
+            );
+            let contract = format!(
+                "{native_guard} requires {lower} <= to_integer(value); requires to_integer(value) <= {upper}; ensures to_integer(result) == to_integer(value);"
+            );
+            let source = format!(
+                r#"verifying "cast.c";
+{destination} cast({source_ty} value) {{ {contract} }} by {{
+    execute();
+    arithmetic_certificate special {{
+        premise 0: {lower} <= to_integer(value) => {lower} <= to_integer(value);
+        premise 1: to_integer(value) <= {upper} => to_integer(value) <= {upper};
+        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(value); conclusion 0;
+    }}
+}}
+{destination} caller({source_ty} value) {{ {contract} }} by {{ execute(); simp(); }}
+"#
+            );
+            verify_c0_sources(&source, &[("cast.c", &c)])
+                .unwrap_or_else(|e| panic!("{source_ty}/{destination}: {}", e.message()));
+            if source_ty == "uint64" && destination == "int64" {
+                let implicit_return = c.replace("return (int64)value;", "return value;");
+                verify_c0_sources(&source, &[("cast.c", &implicit_return)]).unwrap();
+                let expanded = expand_c0_claim_source_by_label(
+                    &source,
+                    &[("cast.c", &implicit_return)],
+                    "cast.ensures_0",
+                )
+                .unwrap();
+                verify_c0_sources(&expanded, &[("cast.c", &implicit_return)]).unwrap();
+            }
+            if !native_guard.is_empty() {
+                assert!(
+                    verify_c0_sources(&source.replace(native_guard, ""), &[("cast.c", &c)])
+                        .is_err()
+                );
+            }
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[("cast.c", &c)], "caller.ensures_0")
+                    .unwrap();
+            verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {lower} <= to_integer(value);"), ""),
+                source.replace(&format!("requires to_integer(value) <= {upper};"), ""),
+                source.replace(
+                    "integer_cast_identity bounds [0, 1]",
+                    "integer_cast_identity bounds [1, 0]",
+                ),
+                source.replace(
+                    "integer_cast_identity bounds [0, 1]",
+                    "integer_cast_identity bounds [0, 0]",
+                ),
+                source.replace(
+                    "to_integer(result) == to_integer(value)",
+                    "to_integer(result) == to_integer(value) + 1",
+                ),
+            ] {
+                assert!(
+                    verify_c0_sources(&invalid, &[("cast.c", &c)]).is_err(),
+                    "{source_ty}/{destination}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn uint64_integer_bridges_recheck_guards_full_width_and_expansion() {
+        for (name, guard, goal) in [
+            (
+                "uint64_add_to_integer",
+                "to_integer(left) + to_integer(right) <= 18446744073709551615",
+                "to_integer(left + right) == to_integer(left) + to_integer(right)",
+            ),
+            (
+                "uint64_multiply_to_integer",
+                "to_integer(left) * to_integer(right) <= 18446744073709551615",
+                "to_integer(left * right) == to_integer(left) * to_integer(right)",
+            ),
+            (
+                "uint64_subtract_to_integer",
+                "to_integer(right) <= to_integer(left)",
+                "to_integer(left - right) == to_integer(left) - to_integer(right)",
+            ),
+            (
+                "uint64_divide_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right))",
+            ),
+            (
+                "uint64_remainder_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
+            ),
+            (
+                "uint64_less_equal_to_integer",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "uint64_less_equal_of_to_integer",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+        ] {
+            let source = format!(
+                "theorem bridge(left: uint64, right: uint64) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{name}: {}", e.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {guard};"), ""),
+                source.replace(
+                    &format!("requires {guard};"),
+                    "requires defined(left + right);",
+                ),
+                source.replace("left: uint64", "left: int64"),
+                source.replace("right: uint64", "right: uint32"),
+                source.replace(&format!("ensures {goal}"), "ensures left > right"),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
+
+    #[test]
+    fn uint64_division_bridges_require_both_evaluation_domains() {
+        for (name, op, mathematical) in [
+            ("uint64_divide_to_integer", "/", "truncating_quotient"),
+            ("uint64_remainder_to_integer", "%", "truncating_remainder"),
+        ] {
+            let source = format!(
+                "theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            for missing in [
+                "requires right != 0u64;",
+                "requires to_integer(right) != 0;",
+            ] {
+                assert!(verify_c0_sources(&source.replace(missing, ""), &[]).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn uint64_integer_bridges_verify_actual_c_operations_and_modular_calls() {
+        for (name, guard, goal, op) in [
+            (
+                "uint64_add_to_integer",
+                "to_integer(left) + to_integer(right) <= 18446744073709551615",
+                "to_integer(left + right) == to_integer(left) + to_integer(right)",
+                "+",
+            ),
+            (
+                "uint64_multiply_to_integer",
+                "to_integer(left) * to_integer(right) <= 18446744073709551615",
+                "to_integer(left * right) == to_integer(left) * to_integer(right)",
+                "*",
+            ),
+            (
+                "uint64_subtract_to_integer",
+                "to_integer(right) <= to_integer(left)",
+                "to_integer(left - right) == to_integer(left) - to_integer(right)",
+                "-",
+            ),
+            (
+                "uint64_divide_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right))",
+                "/",
+            ),
+            (
+                "uint64_remainder_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
+                "%",
+            ),
+        ] {
+            let c = format!(
+                "uint64 op(uint64 left, uint64 right) {{ return left {op} right; }} uint64 caller(uint64 left, uint64 right) {{ return op(left, right); }}"
+            );
+            let result_goal = goal.replace(
+                &format!("to_integer(left {op} right)"),
+                "to_integer(result)",
+            );
+            let source = format!(
+                "verifying \"op.c\"; uint64 op(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ apply({name}(left, right)); execute(); simp(); }} uint64 caller(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ execute(); simp(); }}"
+            );
+            verify_c0_sources(&source, &[("op.c", &c)])
+                .unwrap_or_else(|e| panic!("{name}: {}", e.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[("op.c", &c)]).unwrap();
+            assert!(
+                verify_c0_sources(
+                    &source.replace(&format!("requires {guard};"), ""),
+                    &[("op.c", &c)]
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn signed_integer_order_bridges_recheck_source_guards_and_expansion() {
         for (name, ty, guard, goal) in [
             (
@@ -744,8 +1009,8 @@ mod tests {
     }
 
     #[test]
-    fn signed_integer_order_bridge_applications_scale_with_steps_and_unused_bounds() {
-        for ty in ["int32", "int64"] {
+    fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds() {
+        for ty in ["int32", "int64", "uint64"] {
             let mut samples = Vec::new();
             for size in [4usize, 16, 64, 256] {
                 let mut source = format!(
@@ -1010,6 +1275,79 @@ mod tests {
                 verify_c0_sources(&source, &[])
             });
             result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn multiply_order_and_fee_bounds_expand_and_reject_missing_evidence() {
+        let fixture = include_str!("../../mdtests/integer_multiply_order.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        verify_c0_sources(source, &[]).unwrap();
+        for label in [
+            "checked_integer_multiply_order_nonnegative.ensures_0",
+            "checked_integer_multiply_order_nonpositive.ensures_0",
+            "checked_integer_scaled_product_bounds.ensures_0",
+            "checked_integer_scaled_product_bounds.ensures_1",
+            "fee_caller_division_bounds.ensures_0",
+            "fee_caller_division_bounds.ensures_1",
+            "fee_caller_division_bounds.ensures_2",
+            "fee_caller_division_bounds.ensures_3",
+        ] {
+            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+        let guarded = "theorem use_order(a: Integer, b: Integer, c: Integer) { requires a <= b; requires 0 <= c; ensures a * c <= b * c by { apply(integer_multiply_order_nonnegative(a,b,c)); } }";
+        verify_c0_sources(guarded, &[]).unwrap();
+        for bad in [
+            guarded.replace("requires a <= b;", ""),
+            guarded.replace("requires 0 <= c;", ""),
+            guarded.replace("requires 0 <= c;", "requires c <= 0;"),
+            guarded.replace("ensures a * c <= b * c", "ensures b * c <= a * c"),
+        ] {
+            assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+        }
+        for requirement in [
+            "requires -9223372036854775808 <= fee;",
+            "requires fee <= 9223372036854775807;",
+            "requires 0 <= at_size;",
+            "requires at_size <= size;",
+        ] {
+            assert!(
+                verify_c0_sources(&source.replace(requirement, ""), &[]).is_err(),
+                "{requirement}"
+            );
+        }
+    }
+
+    #[test]
+    fn multiply_order_applications_scale_with_explicit_inputs() {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source = String::from(
+                "theorem order(a: Integer,b: Integer,c: Integer,z: Integer) { requires a <= b; requires 0 <= c; ",
+            );
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str("ensures a * c <= b * c by { ");
+            for _ in 0..size {
+                source.push_str("have a * c <= b * c by { apply(integer_multiply_order_nonnegative(a,b,c)) using { a <= b; 0 <= c; } } ");
+            }
+            source.push_str("assumption(); } }");
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap();
             samples.push(work);
         }
         for pair in samples.windows(2) {

@@ -8625,6 +8625,111 @@ pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term)
     prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, false)
 }
 
+/// Exact unsigned 64-bit observations. Addition and multiplication require
+/// explicit no-wrap bounds; subtraction requires no underflow. Division and
+/// remainder exclude zero in both evaluation domains, but impose no bound on
+/// the dividend. These laws
+/// describe unsigned machine arithmetic, not signed overflow definedness.
+pub fn prove_uint64_integer_bridge(
+    name: &str,
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Option<Theorem> {
+    if matches!(
+        name,
+        "uint64_less_equal_to_integer" | "uint64_less_equal_of_to_integer"
+    ) {
+        return Some(prove_machine_integer_order_bridge(
+            MachineIntegerType::UInt64,
+            left,
+            right,
+            name == "uint64_less_equal_of_to_integer",
+        ));
+    }
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt64, value)
+            .expect("every uint64 bit pattern has an unsigned Integer interpretation")
+    };
+    let a = observe(left.clone());
+    let b = observe(right.clone());
+    let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
+    let (machine, exact, guard) = match name {
+        "uint64_add_to_integer" => {
+            let exact = IntegerTerm::Add(a.into(), b.into());
+            let guard = Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(exact.clone().into(), maximum.into()),
+                true,
+            );
+            (
+                Bitvector32Term::UInt64Add(left.into(), right.into()),
+                exact,
+                guard,
+            )
+        }
+        "uint64_multiply_to_integer" => {
+            let exact = IntegerTerm::Multiply(a.into(), b.into());
+            let guard = Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(exact.clone().into(), maximum.into()),
+                true,
+            );
+            (
+                Bitvector32Term::UInt64Multiply(left.into(), right.into()),
+                exact,
+                guard,
+            )
+        }
+        "uint64_subtract_to_integer" => {
+            let guard = Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(b.clone().into(), a.clone().into()),
+                true,
+            );
+            (
+                Bitvector32Term::UInt64Subtract(left.into(), right.into()),
+                IntegerTerm::Subtract(a.into(), b.into()),
+                guard,
+            )
+        }
+        "uint64_divide_to_integer" | "uint64_remainder_to_integer" => {
+            let native_nonzero = Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(right.clone(), Bitvector32Term::UInt64Constant(0)),
+                false,
+            );
+            let integer_nonzero = Proposition::ConditionIs(
+                ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
+                true,
+            );
+            let (machine, exact) = if name == "uint64_divide_to_integer" {
+                (
+                    Bitvector32Term::UInt64Divide(left.into(), right.into()),
+                    IntegerTerm::TruncatingQuotient(a.into(), b.into()),
+                )
+            } else {
+                (
+                    Bitvector32Term::UInt64Remainder(left.into(), right.into()),
+                    IntegerTerm::TruncatingRemainder(a.into(), b.into()),
+                )
+            };
+            let conclusion = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+                true,
+            );
+            return Some(Theorem::new(Proposition::Implies(
+                native_nonzero.into(),
+                Proposition::Implies(integer_nonzero.into(), conclusion.into()).into(),
+            )));
+        }
+        _ => return None,
+    };
+    Some(Theorem::new(Proposition::Implies(
+        guard.into(),
+        Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+            true,
+        )
+        .into(),
+    )))
+}
+
 /// Signed int32 order is preserved by its exact mathematical observation.
 /// Every int32 bit pattern has an Integer interpretation, so this law needs
 /// only the corresponding C order premise and no definedness side condition.
@@ -8671,7 +8776,8 @@ fn prove_machine_integer_order_bridge(
         MachineIntegerType::Int64 => {
             ConditionTerm::int64_signed_less_equal(left.clone(), right.clone())
         }
-        _ => unreachable!("order bridges admit only uint32/int32/int64"),
+        MachineIntegerType::UInt64 => ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
+        _ => unreachable!("order bridges admit only uint32/uint64/int32/int64"),
     };
     let native = Proposition::ConditionIs(native, true);
     let integer = Proposition::ConditionIs(

@@ -489,7 +489,7 @@ impl MachineIntegerType {
         Some(self.value_from_term(self.constant_term(value)?))
     }
 
-    fn value_from_term(self, term: Bitvector32Term) -> CValue {
+    pub(in crate::kernel) fn value_from_term(self, term: Bitvector32Term) -> CValue {
         match self {
             Self::Int8 => CValue::Int8(term),
             Self::UInt8 => CValue::UInt8(term),

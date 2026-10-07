@@ -217,6 +217,12 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                     result: goal.clone(),
                 }
             }
+            KernelNode::IntegerMultiplyOrder { bounds, .. } => {
+                SpecialArithmeticNode::IntegerMultiplyOrder {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::IntegerQuotientBound { bounds, .. } => {
                 SpecialArithmeticNode::IntegerQuotientBound {
                     bounds: bounds.clone(),

@@ -3,9 +3,10 @@
 The stepped form of `nested` in
 `mdtests/a_case_split_inside_a_c_if_arm_continues_past_the_arm.md`, as
 `click expand` writes it. Under the case `0 <= x`, the inner proof `if`
-spells the C condition `0 <= x && x < 4`, so it is that C branch and its
-`else` arm is the C condition's false path. Its `then` arm holds another
-proof `if`, on the nested C condition `y != 0`.
+selects the remaining operand `x < 4` of the C condition `0 <= x && x < 4`.
+The outer case supplies `0 <= x`, and each inner arm supplies its explicit
+right-operand fact, so a simple step selects the corresponding C path.
+Its `then` arm holds another proof `if`, on the nested C condition `y != 0`.
 
 An expanded C branch used to be recognized only when both arms were straight
 lines of steps. With the nested `if` in the arm the outer one was read as a
@@ -37,7 +38,7 @@ int32 nested(int32 x, int32 y) {
     step();
     step();
     if 0 <= x {
-        if at(statement(2).entry, 0) <= at(statement(2).entry, x) and at(statement(2).entry, x) < at(statement(2).entry, 4) {
+        if at(statement(2).entry, x) < at(statement(2).entry, 4) {
             step();
             if at(statement(3).entry, y) != at(statement(3).entry, 0) {
                 step();

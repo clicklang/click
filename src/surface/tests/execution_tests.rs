@@ -2127,3 +2127,26 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
         .join()
         .unwrap();
 }
+
+#[test]
+fn execute_short_circuit_complements_expand_with_exact_operand_selectors() {
+    for condition in ["!(a > 0 && b > 0)", "a > 0 || b > 0"] {
+        let c_source = format!(
+            "int32 choose(int32 a, int32 b) {{ if ({condition}) {{ return 1; }} return 2; }}"
+        );
+        let click_source = r#"verifying "choose.c";
+int32 choose(int32 a, int32 b) {
+    ensures result == 1 or result == 2;
+} by { execute(); simp(); }
+"#;
+        let sources = [("choose.c", c_source.as_str())];
+        verify_c0_sources(click_source, &sources).unwrap();
+        let position =
+            expansion::position_at_offset(click_source, click_source.find("execute()").unwrap());
+        let expanded =
+            expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+                .unwrap();
+        verify_c0_sources(&expanded, &sources)
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    }
+}

@@ -686,10 +686,109 @@ A reproduced Integer arithmetic rendering failure for equality from normalized
 opposite bounds is fixed, with ordinary verification and expanded certificate
 regressions. No C++ arithmetic axiom or source edit is introduced.
 
-Next derive the joint bounds through `EvaluateFeeDown/Up`, including their
-fast paths, and cover the broader mode-specific result-fit precondition. The
-full 96/32 fee-division contract remains open; the current joint range ensures
-both rounding modes fit. The selected source narrows `n / d` to int64 and
+Shared explicit `integer_multiply_order` certificates now preserve or reverse
+Integer product order using an exact ordered pair and multiplier-sign premise.
+Proof-backed nonnegative/nonpositive multiplication lemmas and
+`integer_scaled_product_bounds` derive the joint Div input envelope from the
+full int64 fee bounds and `0 <= at_size <= size`. A checked caller-bound fixture
+also derives the int64 truncating-quotient bounds, with hostile missing-premise,
+expansion/reverification, signed endpoint oracle and local-work scaling checks.
+This is a shared arithmetic prerequisite; it does not yet prove the upstream
+`EvaluateFeeDown/Up` implementations or their unsigned fast paths.
+
+Both unchanged `EvaluateFeeDown/Up` entry points now export their complete
+reachable graph: the resolved Boolean template instance, Mul and Div. Evaluated,
+explicitly pinned library assertions admit supported nonvolatile field reads
+with normal authority/initialization checks, while the unevaluated builtin
+continues to reject memory reads. Optimization-only `likely`/`unlikely`
+statement attributes preserve their underlying branches; other attributes are
+refused. Concrete fast-path caller proofs establish `7 * 2 / 3` as 4 downward
+and 5 upward and preserve the receiver fields, with ordinary verification,
+expansion/reverification, hostile field/size/amount/result claims and bounded
+work-scaling regressions. This is source admission and concrete fast-path
+coverage, not a symbolic caller proof.
+
+Symbolic traversal exposed and fixed a shared execution-tooling defect:
+64-bit field selectors retain their native width, automatic selectors must
+lower back to the exact kernel condition, and short-circuit operand selectors
+remain explicit even when each truth value has only one remaining path.
+A reduced unchanged field/conjunction fixture checks ordinary verification,
+expansion/reverification, retained audit, missing authority and false results;
+signed/unsigned wide loads also round-trip at nonzero offsets. Shared plain C
+regressions check negated conjunctions and disjunctions through expansion.
+This removes a
+stack-overflow retry loop and an unverifiable short-circuit expansion, without
+changing the Bitcoin source or increasing execution budgets.
+
+The unchanged `EvaluateFeeDown/Up` callers now have symbolic wide-path
+contracts for negative fees and positive fees at least `2^33`. Under the explicit
+full int64 fee observer bounds,
+positive int32 size and `0 <= at_size <= size`, both preserve the fields and
+return within int64 observer bounds. Down proves the floor product inequalities;
+Up proves the ceiling inequalities. The proof names the captured denominator,
+Mul result and Div result using existing `let ... = step(...)` bindings, then
+transports exact Integer equalities with explicit rewrites. Both helper bodies
+are verified from the existing sidecars in the same prepared project. Caller
+and template-instance expansion/reverification, retained verification, missing
+field/domain premises, forged product equalities and false rounding bounds are
+covered. No new arithmetic axiom, search heuristic or Bitcoin source edit is
+needed.
+
+The two fee domains share one caller template, with separate native branch
+guards and ordinary, expansion, retained-verification and hostile regressions
+for each mode.
+
+The shared machine model now has exact uint64 addition, multiplication,
+subtraction, division/remainder and non-strict order bridges. Addition and
+multiplication require explicit UINT64_MAX bounds; subtraction requires no
+underflow; division/remainder explicitly exclude zero in both the native and
+Integer evaluation domains. Checked declarations and typed
+parameters keep these laws separate from signed definedness and uint32
+arithmetic. Boundary models, hostile guards/types, ordinary C modular callers,
+expansion/reverification and deterministic order-application scaling cover this
+prerequisite for Bitcoin's unchanged unsigned fast paths.
+
+Fast-path composition exposed two shared conversion gaps, now repaired.
+`integer_cast_identity` recognizes the existing ordinary 32/64-bit conversion
+terms through the shared typed modulo policy, retaining both explicit
+source-range bounds. Ordinary symbolic uint64-to-int64 casts and returns require
+the native unsigned INT64_MAX bound, rather than working only when constants
+fold. The signed/unsigned 32/64-bit conversion matrix, ordinary C modular
+callers, hostile bounds/certificates, endpoint checks and expansion cover these
+prerequisites; no Bitcoin source edit or new arithmetic axiom is needed.
+
+The unchanged unsigned `EvaluateFeeDown` caller now has a symbolic contract
+for `0 <= fee < 2^33`, positive int32 size and `0 <= at_size <= size`,
+with explicit native branch guards, fee observer bounds and field views.
+`FeeFracEvaluateFastDown.click.in` composes the existing verified helper sidecars
+in the same project and proves both caller levels. Exact cast certificates,
+no-wrap uint64 multiplication and nonzero division transport the source product
+to Integer arithmetic; quotient bounds justify the checked signed return.
+The result is nonnegative and at most `2^33 - 1`, equals the truncating quotient,
+and satisfies `R * D <= F * A < (R + 1) * D`. The fields are preserved.
+Wrapper and instance expansion/reverification, retained verification and hostile
+missing authority/domain/fee bounds and false quotient/rounding claims are covered.
+No assumed result range, new arithmetic axiom or Bitcoin source edit is needed.
+
+The unsigned `EvaluateFeeUp` fast path is also delivered on the same symbolic
+input profile. `FeeFracEvaluateFastUp.click.in` preserves the source's mixed
+casts and exact `fee * amount + size - 1` numerator. Separate checked uint64
+addition and subtraction bridges establish no wrap and no underflow for the
+intermediate operations. The shifted quotient is nonnegative, its loose upper
+bound justifies the signed return, and reconstruction plus multiplication order
+sharpen it to `2^33 - 1`. The result equals that quotient and satisfies
+`(R - 1) * D < F * A <= R * D`, preserving both fields. Wrapper/instance
+expansion and retained verification agree; missing domain/fee bounds, missing
+numerator bridges, forged shifted identities and false rounding are refused.
+Zero fee/amount, exact division and maximal fast-path operands remain in scope.
+The unchanged implementations now have separate proofs for both rounding modes
+in all three native fee domains, under `0 <= at_size <= size` and positive size.
+
+Next combine the fee-domain proofs into one caller contract under the current
+joint bounds, then broaden mode-specific result-fit and fee division.
+The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
+current joint range ensures both rounding modes fit.
+The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful

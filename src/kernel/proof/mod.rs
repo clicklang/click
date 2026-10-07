@@ -22,6 +22,7 @@ mod integer_arithmetic_soundness_tests;
 mod integer_bound_exclusion;
 mod integer_cast_identity;
 mod integer_division_bounds;
+mod integer_multiply_order;
 mod integer_polynomial_identity;
 mod integer_product_bounds;
 mod integer_quotient_bound;

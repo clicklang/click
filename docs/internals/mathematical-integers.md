@@ -337,6 +337,27 @@ the source type fits the destination. Narrowing and signedness changes that
 can change the numeric value stay machine observations of the converted
 value; they are not equated with the source's mathematical Integer.
 
+The `integer_cast_identity` certificate also recognizes the legacy 32/64-bit
+conversion terms used by ordinary C and the shared modulo boundary. It compares
+the converted observation with the existing typed conversion policy, retaining
+the canonical typed-cast check and the two explicit source bounds. Signedness
+reinterpretations, signed or unsigned widening, and narrowing still preserve
+the numeric value only inside the destination range. This recognition adds no
+arithmetic axiom or implicit range fact.
+
+Ordinary C now admits symbolic `uint64` to `int64` conversions once the native
+unsigned upper bound `value <= 9223372036854775807u64` is established. The result
+retains the same bits with signed interpretation. Unknown or out-of-range
+ordinary conversions remain unproved; the explicit modulo boundary retains its
+separate wrapping semantics. Both explicit casts and implicit returns use the
+same conversion check.
+
+The complete signed/unsigned 32/64-bit modulo matrix, ordinary C modular
+callers, missing bounds, forged endpoint references, false observations and
+full-width boundary checks cover this profile. The checked
+[cast fixture](https://github.com/clicklang/click/blob/master/mdtests/legacy_integer_cast_identity.md)
+includes the unchanged Bitcoin fast-path operand conversion expressions.
+
 ## Wide runtime scalars
 
 The shared kernel has `CType::Int128` / `UInt128` and corresponding `CValue`
@@ -682,6 +703,40 @@ See the checked
 [operation fixture](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
 
 
+## Exact unsigned 64-bit observations
+
+The shared `uint64` observation bridges preserve unsigned semantics, including
+values above `INT64_MAX`. Their premise is explicit; `defined(a + b)` alone
+cannot exclude unsigned wrapping.
+
+| Standard theorem | Required premise | Exact observation |
+| --- | --- | --- |
+| `uint64_add_to_integer` | `A + B <= UINT64_MAX` | `to_integer(a + b) == A + B` |
+| `uint64_multiply_to_integer` | `A * B <= UINT64_MAX` | `to_integer(a * b) == A * B` |
+| `uint64_subtract_to_integer` | `B <= A` | `to_integer(a - b) == A - B` |
+| `uint64_divide_to_integer` | `b != 0u64 and B != 0` | `to_integer(a / b) == truncating_quotient(A, B)` |
+| `uint64_remainder_to_integer` | `b != 0u64 and B != 0` | `to_integer(a % b) == truncating_remainder(A, B)` |
+| `uint64_less_equal_to_integer` | `a <= b` | `A <= B` |
+| `uint64_less_equal_of_to_integer` | `A <= B` | `a <= b` |
+
+Here `A = to_integer(a)`, `B = to_integer(b)` and
+`UINT64_MAX = 18446744073709551615`. Each is a kernel standard theorem with
+checked parameter types, declaration shape, exact premise and conclusion.
+These laws use the same observation model and theorem application path as the
+existing uint32 and signed bridges, without changing source-language arithmetic. Division states both the native
+and observed nonzero facts so the machine operation and mathematical
+truncation each have an explicit evaluation domain. The bridge does not
+infer either domain from the other.
+They apply to the shared machine model used by C, C++ and Rust.
+
+Boundary models cover zero, the sign bit, UINT64_MAX, wrapping and the Bitcoin
+fast-path operand limits. Regressions reject forged declarations, omitted or
+weakened guards, wrong widths and signed carriers. Ordinary C functions and
+modular callers verify all five operation laws; expansion reverifies, and
+explicit order-bridge applications retain deterministic scaling. See the checked
+[unsigned fixture](https://github.com/clicklang/click/blob/master/mdtests/unsigned_integer_bridges.md).
+
+
 ## Restoring signed native facts
 
 Signed `int32` and `int64` observations preserve and reflect non-strict order.
@@ -987,3 +1042,25 @@ magnitude is accepted only directly after unary minus: the positive suffixed
 literal remains out of range. Negating the minimum is a separate native
 operation and still requires definedness. See the
 [minimum-literal fixture](https://github.com/clicklang/click/blob/master/mdtests/signed_int64_minimum_literal.md).
+
+
+### Explicit multiplication ordering
+
+`integer_multiply_order bounds [i, j] => a * factor <= b * factor;`
+reads exactly `a <= b` and `0 <= factor`. With `factor <= 0` as the
+second premise it instead checks `b * factor <= a * factor`. Each product
+may put its factor on either side. Root-local constant, zero and one folding
+is matched without traversing opaque operands; constant multiplication work
+is charged before computing it. Negated/strict premises, mismatched operands,
+missing signs and reversed conclusions are rejected. The checker reads two
+selected premises and performs no ambient search or native range inference.
+
+The proof-backed `integer_multiply_order_nonnegative` and
+`integer_multiply_order_nonpositive` lemmas expose those cases.
+`integer_scaled_product_bounds` composes them: if `lower <= value <= upper`,
+`lower <= 0 <= upper`, and `0 <= amount <= size`, then
+`lower * size <= value * amount <= upper * size`.
+This establishes the fee caller's joint numerator/divisor profile for a full
+int64 fee, but native multiplication observations, conversions, safety and
+the caller's fast paths remain separate obligations. See the
+[checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_multiply_order.md).

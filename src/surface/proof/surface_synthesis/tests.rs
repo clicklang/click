@@ -2322,3 +2322,63 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         );
     }
 }
+
+#[test]
+fn wide_memory_selectors_preserve_width_and_signedness() {
+    for (spelling, value_type, pointer_type, constant) in [
+        (
+            "int64",
+            CType::Int64,
+            CType::Int64Pointer,
+            CValue::Int64(Bitvector32Term::Int64Constant(8589934592)),
+        ),
+        (
+            "uint64",
+            CType::UInt64,
+            CType::UInt64Pointer,
+            CValue::UInt64(Bitvector32Term::UInt64Constant(8589934592)),
+        ),
+    ] {
+        let function = syntax::parse_function(&format!("void read({spelling} *p) {{ }}")).unwrap();
+        let base = Pointer {
+            block: PointerBlock::Concrete("wide".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let argument = CValue::typed_pointer(base.clone(), pointer_type);
+        let state = CState::new()
+            .with_memory(CMemory::new().with_block("wide", 32))
+            .with_local("p", argument.clone());
+        for offset in [0, 8, 24] {
+            let address = CExpression::Value(CValue::typed_pointer(
+                base.offset_by_bytes(offset),
+                pointer_type,
+            ));
+            let written = ClickProposition::Comparison {
+                left: ContractExpression::CFragment(CExpression::TypedLoad {
+                    pointer: Box::new(address),
+                    value_type,
+                    volatile: false,
+                    pointee_constant: false,
+                    source: Default::default(),
+                }),
+                operator: ComparisonOperator::LessThan,
+                right: ContractExpression::CFragment(CExpression::Value(constant.clone())),
+            };
+            let fact = relower_written_proposition(&written, &state).unwrap();
+            let Proposition::ConditionIs(condition, _) = fact else {
+                panic!("native order")
+            };
+            for truth in [true, false] {
+                let fact = Proposition::ConditionIs(condition.clone(), truth);
+                let surface = synthesize_surface_proposition(
+                    &fact,
+                    function.parameters(),
+                    &[CExpression::Value(argument.clone())],
+                    &state,
+                )
+                .expect("a typed wide selector is spellable");
+                assert_eq!(relower_written_proposition(&surface, &state), Ok(fact));
+            }
+        }
+    }
+}

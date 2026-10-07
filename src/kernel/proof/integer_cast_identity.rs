@@ -48,6 +48,27 @@ pub(super) fn check(
         if machine.value() == &converted {
             return Some(machine.ty().format());
         }
+        // Ordinary C and the 32/64-bit modulo boundary retain legacy cast
+        // terms. Compare against that same typed conversion policy, rather
+        // than treating their numeric observation as a typed wide cast. The
+        // explicit source bounds below remain mandatory for either spelling.
+        let legacy_type = |ty| {
+            matches!(
+                ty,
+                crate::kernel::MachineIntegerType::Int32
+                    | crate::kernel::MachineIntegerType::UInt32
+                    | crate::kernel::MachineIntegerType::Int64
+                    | crate::kernel::MachineIntegerType::UInt64
+            )
+        };
+        if legacy_type(operand.ty()) && legacy_type(machine.ty()) {
+            let legacy = machine
+                .ty()
+                .convert_modulo_value(operand.ty().value_from_term(operand.value().clone()));
+            if legacy == Some(machine.ty().value_from_term(machine.value().clone())) {
+                return Some(machine.ty().format());
+            }
+        }
         // Typed byte stores/readback represent unsigned sub-word values by
         // retaining their low bits. This is the same modulo conversion from a
         // u32 word, with the source bounds still required below.
@@ -192,6 +213,77 @@ mod tests {
                         .check(&reversed, &premises)
                         .is_ok()
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn integer_cast_identity_checks_legacy_conversions_and_rejects_wrong_carriers() {
+        use crate::kernel::CValue;
+        let types = [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64];
+        let value = Bitvector32Term::Variable(Variable(168_001));
+        for source in types {
+            for destination in types {
+                let original = IntegerTerm::from_machine(source, value.clone()).unwrap();
+                let converted = destination
+                    .convert_modulo_value(source.value_from_term(value.clone()))
+                    .unwrap();
+                let converted = match converted {
+                    CValue::Int8(v)
+                    | CValue::UInt8(v)
+                    | CValue::Int16(v)
+                    | CValue::UInt16(v)
+                    | CValue::Int32(v)
+                    | CValue::UInt32(v)
+                    | CValue::Int64(v)
+                    | CValue::UInt64(v) => v,
+                    _ => panic!("wrong carrier"),
+                };
+                let observed = IntegerTerm::from_machine(destination, converted.clone()).unwrap();
+                let goal = Proposition::ConditionIs(
+                    ConditionTerm::integer_equal(observed, original.clone()),
+                    true,
+                );
+                let (lo, hi) = destination.format().bounds();
+                let premises = vec![
+                    le(IntegerTerm::constant(lo.clone()), original.clone()),
+                    le(original.clone(), IntegerTerm::constant(hi.clone())),
+                ];
+                certificate(goal.clone(), vec![0, 1])
+                    .check(&goal, &premises)
+                    .unwrap_or_else(|e| panic!("{source:?}/{destination:?}: {e:?}"));
+                for wrong in [
+                    vec![
+                        le(IntegerTerm::constant(lo - 1), original.clone()),
+                        premises[1].clone(),
+                    ],
+                    vec![
+                        premises[0].clone(),
+                        le(original.clone(), IntegerTerm::constant(hi + 1)),
+                    ],
+                    vec![premises[1].clone(), premises[0].clone()],
+                ] {
+                    assert!(
+                        certificate(goal.clone(), vec![0, 1])
+                            .check(&goal, &wrong)
+                            .is_err()
+                    );
+                }
+                if source != destination {
+                    let unrelated = Bitvector32Term::Variable(Variable(168_002));
+                    let wrong = Proposition::ConditionIs(
+                        ConditionTerm::integer_equal(
+                            IntegerTerm::from_machine(destination, unrelated).unwrap(),
+                            original.clone(),
+                        ),
+                        true,
+                    );
+                    assert!(
+                        certificate(wrong.clone(), vec![0, 1])
+                            .check(&wrong, &premises)
+                            .is_err()
+                    );
+                }
             }
         }
     }
@@ -482,6 +574,59 @@ mod tests {
                 .check(&false_goal, &premises)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn legacy_integer_cast_identity_work_depends_on_nodes_and_explicit_bounds() {
+        let value = Bitvector32Term::Variable(Variable(168_001));
+        let original = IntegerTerm::from_machine(Ty::Int64, value.clone()).unwrap();
+        let observed =
+            IntegerTerm::from_machine(Ty::UInt64, Bitvector32Term::UInt64FromInt64(value.into()))
+                .unwrap();
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(observed, original.clone()),
+            true,
+        );
+        let mut premises = vec![
+            le(IntegerTerm::constant_i64(0), original.clone()),
+            le(original, IntegerTerm::constant_i64(i64::MAX)),
+        ];
+        let mut samples = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            premises.resize_with(size, || {
+                Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_003)), true)
+            });
+            let cert = certificate(goal.clone(), vec![0, 1]);
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
+            result.unwrap();
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().max().unwrap() - samples.iter().min().unwrap() <= 32,
+            "{samples:?}"
+        );
+        let mut previous = None;
+        for size in [2usize, 8, 32, 128] {
+            let cert = SpecialArithmeticCertificate {
+                nodes: vec![
+                    SpecialArithmeticNode::IntegerCastIdentity {
+                        bounds: vec![0, 1],
+                        result: goal.clone()
+                    };
+                    size
+                ],
+                conclusion: size - 1,
+            };
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
+            result.unwrap();
+            assert!(work <= 4096 * size, "{size}: {work}");
+            if let Some(before) = previous {
+                assert!(work <= 4 * before + 64);
+            }
+            previous = Some(work);
+        }
     }
 
     #[test]

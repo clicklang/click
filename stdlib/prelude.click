@@ -954,6 +954,43 @@ theorem uint32_add_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);
 }
 
+theorem uint64_add_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) + to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+}
+
+theorem uint64_multiply_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) * to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right);
+}
+
+theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
+    requires to_integer(right) <= to_integer(left);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+
+theorem uint64_divide_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right));
+}
+
+theorem uint64_remainder_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+
+theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right);
+}
+
+theorem uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+
 theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right);
@@ -1294,5 +1331,63 @@ theorem integer_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: In
             have not (0 < r) by { arithmetic() using { n <= upper * d; n == upper * d + r; } }
             contradiction(0 < r);
         }
+    }
+}
+theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
+    requires a <= b;
+    requires 0 <= factor;
+    ensures a * factor <= b * factor by {
+        arithmetic_certificate special {
+            premise 0: a <= b => a <= b;
+            premise 1: 0 <= factor => 0 <= factor;
+            integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
+            conclusion 0;
+        }
+    }
+}
+
+theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
+    requires a <= b;
+    requires factor <= 0;
+    ensures b * factor <= a * factor by {
+        arithmetic_certificate special {
+            premise 0: a <= b => a <= b;
+            premise 1: factor <= 0 => factor <= 0;
+            integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
+            conclusion 0;
+        }
+    }
+}
+
+theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
+    requires lower <= value;
+    requires value <= upper;
+    requires lower <= 0;
+    requires 0 <= upper;
+    requires 0 <= amount;
+    requires amount <= size;
+    ensures lower * size <= value * amount by {
+        apply(integer_multiply_order_nonnegative(lower, value, amount));
+        have lower * size <= lower * amount by {
+            arithmetic_certificate special {
+                premise 0: amount <= size => amount <= size;
+                premise 1: lower <= 0 => lower <= 0;
+                integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
+                conclusion 0;
+            }
+        }
+        arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; }
+    }
+    ensures value * amount <= upper * size by {
+        apply(integer_multiply_order_nonnegative(value, upper, amount));
+        have upper * amount <= upper * size by {
+            arithmetic_certificate special {
+                premise 0: amount <= size => amount <= size;
+                premise 1: 0 <= upper => 0 <= upper;
+                integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;
+                conclusion 0;
+            }
+        }
+        arithmetic() using { value * amount <= upper * amount; upper * amount <= upper * size; }
     }
 }

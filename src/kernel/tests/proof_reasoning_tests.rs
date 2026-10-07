@@ -9476,3 +9476,127 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
         }
     }
 }
+
+#[test]
+fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
+    use num_bigint::BigInt;
+    fn integer(term: &IntegerTerm) -> BigInt {
+        match term {
+            IntegerTerm::Constant(value) => value.clone(),
+            IntegerTerm::Machine(value) => {
+                assert_eq!(value.ty(), MachineIntegerType::UInt64);
+                BigInt::from(
+                    value
+                        .value()
+                        .uint64_as_const()
+                        .expect("constant unsigned operation"),
+                )
+            }
+            IntegerTerm::Add(a, b) => integer(a) + integer(b),
+            IntegerTerm::Subtract(a, b) => integer(a) - integer(b),
+            IntegerTerm::Multiply(a, b) => integer(a) * integer(b),
+            IntegerTerm::TruncatingQuotient(a, b) => integer(a) / integer(b),
+            IntegerTerm::TruncatingRemainder(a, b) => integer(a) % integer(b),
+            _ => panic!("unexpected observation term"),
+        }
+    }
+    fn truth(proposition: &Proposition) -> bool {
+        if let Proposition::And(a, b) = proposition {
+            return truth(a) && truth(b);
+        }
+        let Proposition::ConditionIs(condition, expected) = proposition else {
+            panic!("expected atomic relation");
+        };
+        let actual = match condition {
+            ConditionTerm::Constant(value) => *value,
+            ConditionTerm::IntegerNotEqual(a, b) => integer(a) != integer(b),
+            ConditionTerm::IntegerLessEqual(a, b) => integer(a) <= integer(b),
+            ConditionTerm::IntegerEqual(a, b) => integer(a) == integer(b),
+            ConditionTerm::Bitvector64Equal(a, b) => a.uint64_as_const() == b.uint64_as_const(),
+            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => {
+                a.uint64_as_const() <= b.uint64_as_const()
+            }
+            _ => panic!("unexpected guard or equality"),
+        };
+        actual == *expected
+    }
+    for name in [
+        "uint64_add_to_integer",
+        "uint64_subtract_to_integer",
+        "uint64_multiply_to_integer",
+        "uint64_divide_to_integer",
+        "uint64_remainder_to_integer",
+        "uint64_less_equal_to_integer",
+        "uint64_less_equal_of_to_integer",
+    ] {
+        for a in [
+            0,
+            1,
+            2,
+            (1 << 31) - 1,
+            (1 << 33) - 1,
+            1 << 63,
+            u64::MAX - 1,
+            u64::MAX,
+        ] {
+            for b in [
+                0,
+                1,
+                2,
+                (1 << 31) - 1,
+                (1 << 33) - 1,
+                1 << 63,
+                u64::MAX - 1,
+                u64::MAX,
+            ] {
+                let theorem = prove_uint64_integer_bridge(
+                    name,
+                    Bitvector32Term::UInt64Constant(a),
+                    Bitvector32Term::UInt64Constant(b),
+                )
+                .unwrap();
+                let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
+                    panic!("missing guard");
+                };
+                let allowed = match name {
+                    "uint64_add_to_integer" => a.checked_add(b).is_some(),
+                    "uint64_subtract_to_integer" => a.checked_sub(b).is_some(),
+                    "uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
+                    "uint64_divide_to_integer" | "uint64_remainder_to_integer" => b != 0,
+                    _ => a <= b,
+                };
+                assert_eq!(truth(guard), allowed, "{name}/{a}/{b}");
+                let conclusion =
+                    if let Proposition::Implies(integer_guard, body) = conclusion.as_ref() {
+                        assert_eq!(
+                            truth(integer_guard),
+                            allowed,
+                            "{name}/{a}/{b} Integer domain"
+                        );
+                        body
+                    } else {
+                        conclusion
+                    };
+                if allowed {
+                    assert!(truth(conclusion), "{name}/{a}/{b}");
+                } else if !matches!(
+                    name,
+                    "uint64_divide_to_integer" | "uint64_remainder_to_integer"
+                ) {
+                    assert!(
+                        !truth(conclusion),
+                        "{name} must not erase wrapping or reverse order"
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        prove_uint64_integer_bridge(
+            "uint64_unknown",
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::UInt64Constant(0)
+        )
+        .is_none()
+    );
+}

@@ -3539,8 +3539,22 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
             panic!("expected signed bits");
         };
         assert_eq!(value.int64_as_const(), Some(bits as i64));
-        // The explicit language rule does not enable the same ordinary C cast.
-        assert_type_mismatch(c_cast(c_uint64_literal(bits), CType::Int64));
+        // Bit reinterpretation accepts every bit pattern. Ordinary conversion
+        // preserves the value only within the signed destination's range.
+        let ordinary = c_cast(c_uint64_literal(bits), CType::Int64);
+        if bits <= i64::MAX as u64 {
+            let theorem = prove_c_expression_evaluation(CState::new(), ordinary).unwrap();
+            let Proposition::CExpressionEvaluates {
+                outcome: CExpressionOutcome::Value(CValue::Int64(value)),
+                ..
+            } = theorem.proposition()
+            else {
+                panic!("representable ordinary cast must preserve its value");
+            };
+            assert_eq!(value.int64_as_const(), Some(bits as i64));
+        } else {
+            assert_type_mismatch(ordinary);
+        }
     }
     assert_type_mismatch(c_uint64_bits_to_int64(c_int32_literal(1)));
     let mut malformed = c_uint64_bits_to_int64(c_uint64_literal(1));

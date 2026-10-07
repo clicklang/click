@@ -304,9 +304,9 @@ terms opaque. The modular caller exports the same four inequalities and frames
 untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
-Next derive the bounds through `EvaluateFeeDown/Up` and address the broader
-mode-specific result-fit contract. Those callers and the full 96/32 contract
-remain open.
+The wide-fallback `EvaluateFeeDown/Up` composition and both unsigned fast paths
+are verified below. A unified caller contract, broader mode-specific result-fit
+domain and full 96/32 contract remain open.
 
 ## CompactSize encoded length
 
@@ -332,3 +332,91 @@ This is part of the compiler trust boundary, not a standard-library proof.
 The gate checks ordinary verification, expansion/reverification, retained audit,
 and false length claims for each range. It does not prove serialization bytes,
 parsing, or round trips.
+
+
+The hermetic gate now also selects the unchanged `FeeFrac::EvaluateFeeDown`
+and `EvaluateFeeUp` entry points. Export retains each compiler-resolved Boolean
+template instance and both wide helpers, rather than removing the fallback.
+Bitcoin's evaluated `Assume(size > 0)` reads its receiver field under ordinary
+memory authority; its header and literal constructor remain explicitly pinned.
+`[[likely]]` preserves both branch outcomes. The gate combines the existing
+verified Mul/Div sidecars with concrete caller contracts: fee 7, size 3 and
+at_size 2 return 4 downward and 5 upward, preserving both receiver fields.
+It checks ordinary verification, caller expansion/reverification, and rejection
+of false results, missing field authority and missing size/amount premises.
+These concrete fast-path claims remain source admission regressions.
+
+[`FeeFracEvaluateWide.click.in`](FeeFracEvaluateWide.click.in) now supplies
+symbolic caller contracts for negative fees and positive fees at least `2^33`
+on the unchanged wide fallback.
+The hermetic tests instantiate its native branch guard, Down/Up mode and
+product inequalities, then compose it with the existing verified Mul and Div sidecars in one prepared
+project. It is a caller template, rather than a standalone sidecar with assumed
+helpers; the same run proves the actual helper bodies and both caller levels.
+
+The contract explicitly requires field `views`, a native fee below zero or at
+least `2^33`, its full int64 observer bounds, positive int32 size and `0 <= at_size <= size`.
+Both modes preserve fee and size and prove full int64 result observer bounds.
+Writing `F`, `A`, `D` and `R` for the Integer observations of fee, amount, size
+and result, Down proves `R * D <= F * A < (R + 1) * D`; Up proves
+`(R - 1) * D < F * A <= R * D`. These include zero amount and signed endpoints.
+Existing proof bindings name the captured denominator and the Mul/Div results;
+explicit Integer equality rewrites connect their bounds to the caller claim.
+The template does not mention generated C++ temporary names.
+
+The gate verifies the unchanged compiler-selected graph, expands both the
+wrapper and template-instance proof, reverifies the rewrites, checks retained
+verification, and rejects missing authority/domain bounds, forged Mul product
+equalities and false rounding inequalities. The evaluated `Assume` contract
+and compiler/library pins remain the profile described above.
+
+The shared uint64 Integer bridges now provide exact no-wrap addition and
+multiplication, no-underflow subtraction, nonzero division/remainder and
+non-strict order transport. Their checked contracts and ordinary C regressions
+are described in [the Integer model](../../docs/internals/mathematical-integers.md#exact-unsigned-64-bit-observations).
+The cast certificate now also recognizes the legacy 32/64-bit terms of the
+fast-path operand conversions, using the same typed modulo policy and explicit
+source bounds. The symbolic uint64 return-to-int64 conversion is admitted only
+with a proved native INT64_MAX upper bound. Ordinary C modular regressions and
+the checked [cast fixture](../../mdtests/legacy_integer_cast_identity.md) cover
+these shared prerequisites.
+
+[`FeeFracEvaluateFastDown.click.in`](FeeFracEvaluateFastDown.click.in) verifies
+the unchanged unsigned Down fast path for symbolic fees from zero through
+`2^33 - 1`, positive int32 size and `0 <= at_size <= size`. Both the wrapper and
+Boolean template instance preserve the fields, prove `0 <= R <= 2^33 - 1`,
+establish `R == truncating_quotient(F * A, D)`, and prove the floor inequalities
+`R * D <= F * A < (R + 1) * D`. Native branch guards and fee observer bounds
+are explicit prerequisites; result representability is derived.
+
+The proof checks each mixed-width cast, uses the scaled-product bound to
+exclude uint64 multiplication wrap, excludes zero in both divisor domains,
+and transports exact division into Integer arithmetic. Quotient bounds prove
+the native INT64_MAX guard for the source's signed return. Integer reconstruction
+and nonnegative remainder bounds establish floor rounding. It uses the same
+pinned compiler graph, evaluated Assume profile and verified helper sidecars;
+the Bitcoin implementation is unchanged.
+The gate expands and reverifies both caller levels, checks retained verification,
+and rejects missing field/domain/fee bounds and false quotient or strict rounding
+claims. Zero fee, zero amount, exact division and maximal fast-path fee/size
+are included in the symbolic domain.
+
+[`FeeFracEvaluateFastUp.click.in`](FeeFracEvaluateFastUp.click.in) proves the
+unsigned Up fast path on the same symbolic domain, including both caller levels.
+It establishes `R == truncating_quotient(F * A + D - 1, D)`,
+`0 <= R <= 2^33 - 1`, and the ceiling inequalities
+`(R - 1) * D < F * A <= R * D`, preserving the fields.
+
+The mixed-width casts remain explicit. The proof separately checks that the
+source's uint64 product-plus-size cannot wrap and that subtracting one cannot
+underflow, then transports the exact shifted numerator to Integer arithmetic.
+A loose quotient bound first justifies the checked signed return; reconstruction,
+remainder bounds and multiplication order sharpen the result bound and prove
+ceiling rounding. The same helper bodies and pinned compiler/library profile
+are verified in the prepared project. The gate checks wrapper/instance expansion,
+reverification and retained verification, and refuses missing domain/fee bounds,
+missing numerator bridges, forged shifted identities and false quotient/rounding.
+
+Separate contracts now cover both modes in the negative, unsigned-fast and
+positive-wide fee domains under the joint amount/size bounds. Next combine them
+into one caller contract, then broaden mode-specific result-fit and fee division.

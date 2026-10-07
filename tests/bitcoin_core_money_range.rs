@@ -48,6 +48,8 @@ enum RoundingPhase {
     Tools,
     FullExpansion,
     Rejections,
+    TransportRejections,
+    NumeratorRejections,
 }
 
 fn check_upstream_cpp_rounding_phase(
@@ -103,10 +105,13 @@ fn check_upstream_cpp_rounding_phase(
         "dependencies": [integer_header, "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
-    if matches!(
-        name,
-        "FeeFracDivConstevalRefused" | "FeeFracDivImported" | "FeeFracDivBounded"
-    ) {
+    let evaluation_caller = name.starts_with("FeeFracEvaluate");
+    if evaluation_caller
+        || matches!(
+            name,
+            "FeeFracDivConstevalRefused" | "FeeFracDivImported" | "FeeFracDivBounded"
+        )
+    {
         const CHECK_HASH: &str = "82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7";
         let header = "bitcoin-src/src/util/check.h";
         assert_eq!(sha256(&fs::read(root.join(header)).unwrap()), CHECK_HASH);
@@ -120,7 +125,7 @@ fn check_upstream_cpp_rounding_phase(
             "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
         }]);
     }
-    if matches!(name, "FeeFracDivImported" | "FeeFracDivBounded") {
+    if evaluation_caller || matches!(name, "FeeFracDivImported" | "FeeFracDivBounded") {
         const STRING_VIEW_HASH: &str =
             "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c";
         let header = "sysroot/usr/include/c++/12/string_view";
@@ -164,7 +169,24 @@ fn check_upstream_cpp_rounding_phase(
     refreshed.unwrap_or_else(|error| panic!("{selected}: {error}"));
     let import = load_import(&config_path).unwrap();
     assert_eq!(import.export().preprocessor_files.len(), 320);
-    assert!(import.export().reachable_functions.is_empty());
+    if evaluation_caller {
+        let instance = if selected.ends_with("Down") {
+            "FeeFrac_EvaluateFee__bool_true"
+        } else {
+            "FeeFrac_EvaluateFee__bool_false"
+        };
+        assert_eq!(
+            import
+                .export()
+                .reachable_functions
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            vec![instance, "FeeFrac_Mul", "FeeFrac_Div"]
+        );
+    } else {
+        assert!(import.export().reachable_functions.is_empty());
+    }
     if selected == "FeeFrac::Div" && name != "FeeFracDivBounded" {
         use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding, CppStatement};
         let CppStatement::LibraryAssert { metadata, .. } = &import.export().function.body[0] else {
@@ -303,6 +325,157 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         );
     }
 
+    if evaluation_caller && phase == Some(RoundingPhase::Tools) {
+        let label = format!("{}.ensures_0", selected.replace("::", "_"));
+        let expanded =
+            expand_program_prepared_project_claim_source_by_label(&project, &import, &label)
+                .unwrap();
+        verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+    }
+    if evaluation_caller
+        && (name.ends_with("Negative")
+            || name.ends_with("PositiveWide")
+            || name.ends_with("SymbolicFast"))
+        && phase == Some(RoundingPhase::FullExpansion)
+    {
+        let instance = if selected.ends_with("Down") {
+            "true"
+        } else {
+            "false"
+        };
+        let expanded = expand_program_prepared_project_claim_source_by_label(
+            &project,
+            &import,
+            &format!("FeeFrac_EvaluateFee__bool_{instance}.ensures_0"),
+        )
+        .unwrap();
+        let rewritten = project.with_entry_source(expanded.clone());
+        verify_program_prepared_project(&rewritten, &import).unwrap();
+        let (session, _) =
+            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+        let position = program_prepared_project_tactic_source_position(
+            &rewritten,
+            &import,
+            &format!("FeeFrac_EvaluateFee__bool_{instance}.contract"),
+            0,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    if evaluation_caller
+        && matches!(
+            phase,
+            Some(
+                RoundingPhase::Rejections
+                    | RoundingPhase::TransportRejections
+                    | RoundingPhase::NumeratorRejections
+            )
+        )
+    {
+        let hostile = if name.ends_with("SymbolicFast") {
+            if phase == Some(RoundingPhase::NumeratorRejections) {
+                assert!(selected.ends_with("Up"));
+                vec![
+                    source.replace(
+                        "apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));",
+                        "",
+                    ),
+                    source.replace(
+                        "apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));",
+                        "",
+                    ),
+                    source.replace(
+                        "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1",
+                        "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 2",
+                    ),
+                ]
+            } else if phase == Some(RoundingPhase::Rejections) {
+                vec![
+                    source.replace("views self->size;", ""),
+                    source.replace("requires self->size > 0;", ""),
+                    source.replace("requires 0 <= at_size;", ""),
+                    source.replace("requires at_size <= self->size;", ""),
+                ]
+            } else {
+                vec![
+                    source.replace("requires self->fee < 8589934592i64;", ""),
+                    source.replace("requires to_integer(self->fee) <= 8589934591;", ""),
+                    source.replace("requires 0 <= to_integer(self->fee);", ""),
+                    source.replace(
+                        "ensures to_integer(result) == truncating_quotient(",
+                        "ensures to_integer(result) != truncating_quotient(",
+                    ),
+                    source.replace(
+                        if selected.ends_with("Down") {
+                            "(to_integer(result) + 1) * to_integer(self->size)"
+                        } else {
+                            "(to_integer(result) + -1) * to_integer(self->size)"
+                        },
+                        "to_integer(result) * to_integer(self->size)",
+                    ),
+                ]
+            }
+        } else if name.ends_with("Negative") || name.ends_with("PositiveWide") {
+            if phase == Some(RoundingPhase::Rejections) {
+                vec![
+                    source.replace("views self->size;", ""),
+                    source.replace("requires self->size > 0;", ""),
+                    source.replace("requires 0 <= at_size;", ""),
+                    source.replace("requires at_size <= self->size;", ""),
+                ]
+            } else {
+                vec![
+                    source.replace(
+                        if name.ends_with("Negative") {
+                            "requires not (self->fee >= 0i64);"
+                        } else {
+                            "requires self->fee >= 0i64 and not (self->fee < 8589934592i64);"
+                        },
+                        "",
+                    ),
+                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
+                    source
+                        .replace("* to_integer(self->size) <=", "* to_integer(self->size) <")
+                        .replace(
+                            "<= to_integer(result) * to_integer(self->size)",
+                            "< to_integer(result) * to_integer(self->size)",
+                        ),
+                    source.replace(
+                        "to_integer(product) == to_integer(self->fee) * to_integer(at_size)",
+                        "to_integer(product) == to_integer(self->fee) * to_integer(at_size) + 1",
+                    ),
+                    source.replace(
+                        if selected.ends_with("Down") {
+                            "(to_integer(result) + 1) * to_integer(self->size)"
+                        } else {
+                            "(to_integer(result) + -1) * to_integer(self->size)"
+                        },
+                        "to_integer(result) * to_integer(self->size)",
+                    ),
+                ]
+            }
+        } else {
+            vec![
+                source.replace("views self->size;", ""),
+                source.replace("requires self->size == 3;", ""),
+                source.replace("requires at_size == 2;", ""),
+                source.replace("ensures result ==", "ensures result !="),
+            ]
+        };
+        for (index, hostile) in hostile.into_iter().enumerate() {
+            assert_ne!(
+                hostile, source,
+                "a rejection must change the claim or premises"
+            );
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("{name} accepted hostile case {index}");
+            };
+            assert!(error.message().len() < 8000);
+        }
+    }
     if name == "FeeFracDivBounded" && phase == Some(RoundingPhase::FullExpansion) {
         let expanded = expand_program_prepared_project_claim_source_by_label(
             &project,
@@ -896,4 +1069,263 @@ fn check_bounded_upstream_rounding(phase: RoundingPhase) {
         "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
         Some(phase),
     );
+}
+
+fn check_upstream_fee_evaluation_fast(mode: &str, expected: i64, phase: RoundingPhase) {
+    let instance = if mode == "Down" { "true" } else { "false" };
+    let contract = format!(
+        "views self->fee; views self->size; requires self->fee == 7i64; requires self->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures self->fee == old(self->fee); ensures self->size == old(self->size);"
+    );
+    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
+        .split_once(';')
+        .unwrap()
+        .1;
+    let source = format!(
+        r#"{}
+{div}
+int64 FeeFrac_EvaluateFee__bool_{instance}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
+int64 FeeFrac_EvaluateFee{mode}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
+"#,
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
+    );
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}Fast"),
+        &source,
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_fee_evaluation_down_exports_full_graph_and_verifies_fast_case() {
+    check_upstream_fee_evaluation_fast("Down", 4, RoundingPhase::Tools);
+}
+#[test]
+fn upstream_fee_evaluation_up_exports_full_graph_and_verifies_fast_case() {
+    check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_fee_evaluation_down_rejects_missing_authority_bounds_and_false_results() {
+    check_upstream_fee_evaluation_fast("Down", 4, RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results() {
+    check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
+}
+
+fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
+        .split_once(';')
+        .unwrap()
+        .1;
+    let caller = if mode == "Down" {
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in")
+    } else {
+        assert_eq!(mode, "Up");
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
+    };
+    let source = format!(
+        "{}\n{div}\n{caller}",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
+    );
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}SymbolicFast"),
+        &source,
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_down_has_exact_floor_bounds() {
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Tools);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_down_expands_and_reverifies() {
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_authority_and_amount_bounds() {
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_fee_bounds_and_false_rounding() {
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_has_exact_ceiling_bounds() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Tools);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_expands_and_reverifies() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_authority_and_amount_bounds() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_fee_bounds_and_false_rounding() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::TransportRejections);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_bridges_and_forged_numerator() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
+}
+
+fn wide_fee_evaluation_source(mode: &str, positive: bool) -> String {
+    let down = mode == "Down";
+    let bounds = |result: &str, size: &str, product: &str| {
+        if down {
+            [
+                format!("{result} * {size} <= {product}"),
+                format!("{product} < ({result} + 1) * {size}"),
+            ]
+        } else {
+            [
+                format!("{product} <= {result} * {size}"),
+                format!("({result} + -1) * {size} < {product}"),
+            ]
+        }
+    };
+    let caller = bounds(
+        "to_integer(result)",
+        "to_integer(self->size)",
+        "to_integer(self->fee) * to_integer(at_size)",
+    );
+    let helper = bounds(
+        "to_integer(rounded)",
+        "to_integer(denominator)",
+        "to_integer(product)",
+    );
+    let fragment =
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateWide.click.in")
+            .replace(
+                "@WIDE_GUARD@",
+                if positive {
+                    "self->fee >= 0i64 and not (self->fee < 8589934592i64)"
+                } else {
+                    "not (self->fee >= 0i64)"
+                },
+            )
+            .replace("@MODE@", mode)
+            .replace("@INSTANCE@", if down { "true" } else { "false" })
+            .replace("@ROUND@", if down { "1" } else { "0" })
+            .replace("@CALLER_BOUND_1@", &caller[0])
+            .replace("@CALLER_BOUND_2@", &caller[1])
+            .replace("@DIV_BOUND_1@", &helper[0])
+            .replace("@DIV_BOUND_2@", &helper[1]);
+    assert!(!fragment.contains('@'));
+    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
+        .split_once(';')
+        .unwrap()
+        .1;
+    format!(
+        "{}\n{div}\n{fragment}",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
+    )
+}
+
+fn check_upstream_negative_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}Negative"),
+        &wide_fee_evaluation_source(mode, false),
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_down_has_symbolic_floor_bounds() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_up_has_symbolic_ceiling_bounds() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_down_instance_expands_and_reverifies() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_negative_fee_evaluation_up_instance_expands_and_reverifies() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_negative_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_negative_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+#[test]
+fn upstream_negative_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::TransportRejections);
+}
+
+fn check_upstream_positive_wide_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}PositiveWide"),
+        &wide_fee_evaluation_source(mode, true),
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_has_symbolic_bounds() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_instance_expands_and_reverifies() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_has_symbolic_bounds() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_instance_expands_and_reverifies() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }

@@ -1157,6 +1157,99 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint64_add_to_integer`
+
+```click
+theorem uint64_add_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) + to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+}
+```
+
+Unsigned addition agrees with Integer addition when the sum fits uint64. Native unsigned definedness alone permits wrapping.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_multiply_to_integer`
+
+```click
+theorem uint64_multiply_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) * to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right);
+}
+```
+
+Unsigned multiplication agrees with the Integer product when it fits uint64. The explicit product bound excludes wrap.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_subtract_to_integer`
+
+```click
+theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
+    requires to_integer(right) <= to_integer(left);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+```
+
+Unsigned subtraction agrees with Integer subtraction when the subtrahend is at most the minuend, excluding underflow.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_divide_to_integer`
+
+```click
+theorem uint64_divide_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right));
+}
+```
+
+Unsigned division agrees with the truncating Integer quotient. Both native and observed nonzero divisor premises are required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_remainder_to_integer`
+
+```click
+theorem uint64_remainder_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+```
+
+Unsigned remainder agrees with the truncating Integer remainder. Both native and observed nonzero divisor premises are required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_less_equal_to_integer`
+
+```click
+theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right);
+}
+```
+
+Native uint64 non-strict order implies exact Integer observation order, including values above the sign bit.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_less_equal_of_to_integer`
+
+```click
+theorem uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+```
+
+Exact Integer observation order implies native uint64 non-strict order. The mathematical order premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_less_equal_to_integer`
 
 ```click
@@ -2753,6 +2846,77 @@ theorem integer_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: In
             have not (0 < r) by { arithmetic() using { n <= upper * d; n == upper * d + r; } }
             contradiction(0 < r);
         }
+    }
+}
+```
+
+### `integer_multiply_order_nonnegative`
+
+```click
+theorem integer_multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
+    requires a <= b;
+    requires 0 <= factor;
+    ensures a * factor <= b * factor by {
+        arithmetic_certificate special {
+            premise 0: a <= b => a <= b;
+            premise 1: 0 <= factor => 0 <= factor;
+            integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
+            conclusion 0;
+        }
+    }
+}
+```
+
+### `integer_multiply_order_nonpositive`
+
+```click
+theorem integer_multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
+    requires a <= b;
+    requires factor <= 0;
+    ensures b * factor <= a * factor by {
+        arithmetic_certificate special {
+            premise 0: a <= b => a <= b;
+            premise 1: factor <= 0 => factor <= 0;
+            integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
+            conclusion 0;
+        }
+    }
+}
+```
+
+### `integer_scaled_product_bounds`
+
+```click
+theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
+    requires lower <= value;
+    requires value <= upper;
+    requires lower <= 0;
+    requires 0 <= upper;
+    requires 0 <= amount;
+    requires amount <= size;
+    ensures lower * size <= value * amount by {
+        apply(integer_multiply_order_nonnegative(lower, value, amount));
+        have lower * size <= lower * amount by {
+            arithmetic_certificate special {
+                premise 0: amount <= size => amount <= size;
+                premise 1: lower <= 0 => lower <= 0;
+                integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
+                conclusion 0;
+            }
+        }
+        arithmetic() using { lower * size <= lower * amount; lower * amount <= value * amount; }
+    }
+    ensures value * amount <= upper * size by {
+        apply(integer_multiply_order_nonnegative(value, upper, amount));
+        have upper * amount <= upper * size by {
+            arithmetic_certificate special {
+                premise 0: amount <= size => amount <= size;
+                premise 1: 0 <= upper => 0 <= upper;
+                integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;
+                conclusion 0;
+            }
+        }
+        arithmetic() using { value * amount <= upper * amount; upper * amount <= upper * size; }
     }
 }
 ```

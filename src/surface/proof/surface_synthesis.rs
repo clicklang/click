@@ -2734,6 +2734,57 @@ fn synthesize_surface_bitvector(
             if old.is_some() {
                 return old;
             }
+            // A 64-bit read must not fall back to the legacy int32 `load`.
+            // Prefer the actual field type; otherwise retain a typed read at
+            // the spelled address. The case-split caller checks the spelling
+            // against the selected kernel condition before using it.
+            if *kind == crate::kernel::LoadKind::Bits64 {
+                for value_type in [CType::Int64, CType::UInt64] {
+                    if let Some(field) =
+                        synthesize_owned_field_at_address(kernel_pointer, value_type, state)
+                            .or_else(|| {
+                                synthesize_struct_field_load(
+                                    kernel_pointer,
+                                    value_type,
+                                    parameters,
+                                    arguments,
+                                    state,
+                                )
+                            })
+                    {
+                        return Some(field);
+                    }
+                }
+                let value_type = parameters
+                    .iter()
+                    .zip(arguments)
+                    .find_map(|(parameter, argument)| {
+                        let CExpression::Value(CValue::Pointer(base)) = argument else {
+                            return None;
+                        };
+                        let element_type = parameter.c_type().pointee_type()?.to_kernel_type();
+                        if !matches!(element_type, CType::Int64 | CType::UInt64) {
+                            return None;
+                        }
+                        kernel_pointer.element_index_from_base_with_width(base, 8)?;
+                        Some(element_type)
+                    })
+                    .unwrap_or(CType::Int64);
+                let pointer = synthesize_surface_pointer(
+                    kernel_pointer,
+                    parameters,
+                    arguments,
+                    state,
+                    bound_variables,
+                )?;
+                return Some(ContractExpression::CFragment(CExpression::TypedLoad {
+                    pointer: Box::new(pointer),
+                    value_type,
+                    volatile: false,
+                    pointee_constant: false,
+                    source: Default::default(),
+                }));
+            }
             if let PointerBlock::Concrete(block) = &kernel_pointer.block
                 && let Some(name) = block.strip_prefix("local:")
                 && kernel_pointer.offset == PointerOffsetTerm::Constant(0)

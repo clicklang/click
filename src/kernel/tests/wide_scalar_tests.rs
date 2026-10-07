@@ -562,3 +562,74 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
             .unwrap()
     );
 }
+
+#[test]
+fn uint64_to_int64_ordinary_cast_requires_exact_representable_range() {
+    let bits = Bitvector32Term::Variable(Variable(149_100));
+    let bound = Proposition::ConditionIs(
+        ConditionTerm::uint64_less_equal(
+            bits.clone(),
+            Bitvector32Term::UInt64Constant(i64::MAX as u64),
+        ),
+        true,
+    );
+    let mut obligations = Vec::new();
+    let result = coerce_c_value_to_type(
+        CValue::UInt64(bits.clone()),
+        CType::Int64,
+        &mut obligations,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    assert_eq!(result, CValue::Int64(bits.clone()));
+    assert_eq!(obligations.len(), 1);
+    assert_eq!(obligations[0].proposition(), &bound);
+    assert_eq!(
+        obligations[0].context(),
+        Some("int64 narrowing upper bound")
+    );
+    let assumptions = PureFactContext::new().assume_proposition(bound);
+    let mut remaining = Vec::new();
+    assert_eq!(
+        coerce_c_value_to_type(
+            CValue::UInt64(bits.clone()),
+            CType::Int64,
+            &mut remaining,
+            &assumptions
+        ),
+        Some(result)
+    );
+    assert!(remaining.is_empty());
+    let weaker = Proposition::ConditionIs(
+        ConditionTerm::uint64_less_equal(
+            bits.clone(),
+            Bitvector32Term::UInt64Constant((i64::MAX as u64) + 1),
+        ),
+        true,
+    );
+    let mut remaining = Vec::new();
+    coerce_c_value_to_type(
+        CValue::UInt64(bits),
+        CType::Int64,
+        &mut remaining,
+        &PureFactContext::new().assume_proposition(weaker),
+    )
+    .unwrap();
+    assert_eq!(remaining.len(), 1);
+    for value in [0, 1, i64::MAX as u64] {
+        assert_eq!(
+            evaluated(c_cast(c_uint64_literal(value), CType::Int64)),
+            evaluated(c_int64_literal(value as i64))
+        );
+    }
+    for value in [(i64::MAX as u64) + 1, u64::MAX] {
+        assert!(matches!(
+            evaluated(c_cast(c_uint64_literal(value), CType::Int64)),
+            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        ));
+        assert_eq!(
+            evaluated(c_integer_cast_modulo(c_uint64_literal(value), CType::Int64)),
+            evaluated(c_int64_literal(value as i64))
+        );
+    }
+}

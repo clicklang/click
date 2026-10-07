@@ -1,0 +1,218 @@
+int64 FeeFrac_EvaluateFee__bool_false(const struct FeeFrac* self, int32 at_size) {
+    views self->fee;
+    views self->size;
+    requires self->fee >= 0i64;
+    requires self->fee < 8589934592i64;
+    requires 0 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 8589934591;
+    requires 0 <= at_size;
+    requires at_size <= self->size;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures 0 <= to_integer(result);
+    ensures to_integer(result) <= 8589934591;
+    ensures to_integer(self->fee) * to_integer(at_size) <= to_integer(result) * to_integer(self->size);
+    ensures (to_integer(result) + -1) * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size);
+    ensures to_integer(result) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size));
+} by {
+    have 1 <= self->size by { arithmetic() using { self->size > 0; } }
+    have at_size <= 2147483647 by { arithmetic() using { at_size <= self->size; self->size <= 2147483647; } }
+    apply(int32_less_equal_to_integer(0, at_size));
+    apply(int32_less_equal_to_integer(at_size, self->size));
+    apply(int32_less_equal_to_integer(at_size, 2147483647));
+    apply(int32_less_equal_to_integer(1, self->size));
+    apply(int32_less_equal_to_integer(self->size, 2147483647));
+    have to_integer((uint64)self->fee) == to_integer(self->fee) by { arithmetic_certificate special {
+        premise 0: 0 <= to_integer(self->fee) => 0 <= to_integer(self->fee);
+        premise 1: to_integer(self->fee) <= 8589934591 => to_integer(self->fee) <= 8589934591;
+        integer_cast_identity bounds [0, 1] => to_integer((uint64)self->fee) == to_integer(self->fee); conclusion 0;
+    } }
+    have to_integer((uint64)at_size) == to_integer(at_size) by { arithmetic_certificate special {
+        premise 0: 0 <= to_integer(at_size) => 0 <= to_integer(at_size);
+        premise 1: to_integer(at_size) <= 2147483647 => to_integer(at_size) <= 2147483647;
+        integer_cast_identity bounds [0, 1] => to_integer((uint64)at_size) == to_integer(at_size); conclusion 0;
+    } }
+    have to_integer((uint32)self->size) == to_integer(self->size) by { arithmetic_certificate special {
+        premise 0: 1 <= to_integer(self->size) => 1 <= to_integer(self->size);
+        premise 1: to_integer(self->size) <= 2147483647 => to_integer(self->size) <= 2147483647;
+        integer_cast_identity bounds [0, 1] => to_integer((uint32)self->size) == to_integer(self->size); conclusion 0;
+    } }
+    have 1 <= to_integer((uint32)self->size) by { rewrite(to_integer((uint32)self->size) == to_integer(self->size)); assumption(); }
+    have to_integer((uint32)self->size) <= 2147483647 by { rewrite(to_integer((uint32)self->size) == to_integer(self->size)); assumption(); }
+    have to_integer((uint64)(uint32)self->size) == to_integer((uint32)self->size) by {
+        arithmetic_certificate special {
+            premise 0: 1 <= to_integer((uint32)self->size) => 1 <= to_integer((uint32)self->size);
+            premise 1: to_integer((uint32)self->size) <= 2147483647 => to_integer((uint32)self->size) <= 2147483647;
+            integer_cast_identity bounds [0, 1] => to_integer((uint64)(uint32)self->size) == to_integer((uint32)self->size);
+            conclusion 0;
+        }
+    }
+    have to_integer((uint64)(uint32)self->size) == to_integer(self->size) by {
+        rewrite(to_integer((uint64)(uint32)self->size) == to_integer((uint32)self->size));
+        assumption();
+    }
+    have to_integer(self->size) != 0 by {
+        arithmetic_certificate special {
+            premise 0: 1 <= to_integer(self->size) => 1 <= to_integer(self->size);
+            integer_bound_exclusion bounds [0] => to_integer(self->size) != 0;
+            conclusion 0;
+        }
+    }
+    have to_integer((uint64)(uint32)self->size) != 0 by { rewrite(to_integer((uint64)(uint32)self->size) == to_integer(self->size)); assumption(); }
+    have 1 <= to_integer((uint64)(uint32)self->size) by { rewrite(to_integer((uint64)(uint32)self->size) == to_integer(self->size)); assumption(); }
+    have not (to_integer((uint64)(uint32)self->size) == 0) by { arithmetic_certificate special {
+        premise 0: 1 <= to_integer((uint64)(uint32)self->size) => 1 <= to_integer((uint64)(uint32)self->size);
+        integer_bound_exclusion bounds [0] => not (to_integer((uint64)(uint32)self->size) == 0); conclusion 0;
+    } }
+    have (uint64)(uint32)self->size != 0u64 by { if (uint64)(uint32)self->size == 0u64 {
+        have to_integer((uint64)(uint32)self->size) == 0 by { rewrite((uint64)(uint32)self->size == 0u64); normalize(); }
+        contradiction(to_integer((uint64)(uint32)self->size) == 0);
+    } else { assumption(); } }
+    apply(integer_scaled_product_bounds(to_integer(self->fee), to_integer(at_size), to_integer(self->size), 0, 8589934591));
+    have to_integer(self->fee) * to_integer(at_size) <= 18446744073709551615 by {
+        arithmetic() using { to_integer(self->fee) * to_integer(at_size) <= 8589934591 * to_integer(self->size);
+        to_integer(self->size) <= 2147483647;
+        }
+    }
+    have to_integer((uint64)self->fee) * to_integer((uint64)at_size) <= 18446744073709551615 by {
+        rewrite(to_integer((uint64)self->fee) == to_integer(self->fee));
+        rewrite(to_integer((uint64)at_size) == to_integer(at_size));
+        assumption();
+    }
+    apply(uint64_multiply_to_integer((uint64)self->fee, (uint64)at_size));
+    have to_integer(((uint64)self->fee * (uint64)at_size)) == to_integer(self->fee) * to_integer(at_size) by {
+        rewrite(to_integer(((uint64)self->fee * (uint64)at_size)) == to_integer((uint64)self->fee) * to_integer((uint64)at_size));
+        rewrite(to_integer((uint64)self->fee) == to_integer(self->fee));
+        rewrite(to_integer((uint64)at_size) == to_integer(at_size));
+        normalize();
+    }
+    have to_integer((uint64)self->size) == to_integer(self->size) by {
+        arithmetic_certificate special {
+            premise 0: 1 <= to_integer(self->size) => 1 <= to_integer(self->size);
+            premise 1: to_integer(self->size) <= 2147483647 => to_integer(self->size) <= 2147483647;
+            integer_cast_identity bounds [0, 1] => to_integer((uint64)self->size) == to_integer(self->size);
+            conclusion 0;
+        }
+    }
+    have to_integer(((uint64)self->fee * (uint64)at_size)) + to_integer((uint64)self->size) <= 18446744073709551615 by {
+        rewrite(to_integer(((uint64)self->fee * (uint64)at_size)) == to_integer(self->fee) * to_integer(at_size));
+        rewrite(to_integer((uint64)self->size) == to_integer(self->size));
+        arithmetic() using { to_integer(self->fee) * to_integer(at_size) <= 8589934591 * to_integer(self->size); to_integer(self->size) <= 2147483647; }
+    }
+    apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));
+    have to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size)) == to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) by {
+        rewrite(to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size)) == to_integer(((uint64)self->fee * (uint64)at_size)) + to_integer((uint64)self->size));
+        rewrite(to_integer(((uint64)self->fee * (uint64)at_size)) == to_integer(self->fee) * to_integer(at_size));
+        rewrite(to_integer((uint64)self->size) == to_integer(self->size));
+        normalize();
+    }
+    have to_integer(1u64) <= to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size)) by {
+        rewrite(to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size)) == to_integer(self->fee) * to_integer(at_size) + to_integer(self->size));
+        arithmetic() using { 0 <= to_integer(self->fee) * to_integer(at_size); 1 <= to_integer(self->size); }
+    }
+    apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));
+    have to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64)) == to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1 by {
+        rewrite(to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64)) == to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size)) - to_integer(1u64));
+        rewrite(to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size)) == to_integer(self->fee) * to_integer(at_size) + to_integer(self->size));
+        normalize();
+    }
+    apply(uint64_divide_to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64), (uint64)(uint32)self->size));
+    have to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) by {
+        rewrite(to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) == truncating_quotient(to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64)), to_integer((uint64)(uint32)self->size)));
+        rewrite(to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64)) == to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1);
+        rewrite(to_integer((uint64)(uint32)self->size) == to_integer(self->size));
+        normalize();
+    }
+    have 0 <= to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1 by { arithmetic() using { 0 <= to_integer(self->fee) * to_integer(at_size); 1 <= to_integer(self->size); } }
+    have to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1 <= 8589934592 * to_integer(self->size) by { arithmetic() using { to_integer(self->fee) * to_integer(at_size) <= 8589934591 * to_integer(self->size); } }
+    apply(integer_positive_divisor_quotient_lower(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size), 0));
+    apply(integer_positive_divisor_quotient_upper(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size), 8589934592));
+    have 0 <= to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) by {
+        rewrite(to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+        assumption();
+    }
+    have to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) <= 9223372036854775807 by {
+        rewrite(to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+        arithmetic() using { truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) <= 8589934592;
+        }
+    }
+    apply(uint64_less_equal_of_to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size), 9223372036854775807u64));
+    have 0 < to_integer(self->size) by { arithmetic() using { 1 <= to_integer(self->size); } }
+    apply(integer_truncation_identity(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+    apply(integer_positive_divisor_remainder_upper(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+    apply(integer_nonnegative_dividend_remainder(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+    have truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1 by {
+        arithmetic() using { to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1 == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) + truncating_remainder(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)); 0 <= truncating_remainder(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)); }
+    }
+    have to_integer(self->fee) * to_integer(at_size) <= truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) by {
+        arithmetic() using { to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1 == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) + truncating_remainder(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)); truncating_remainder(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) <= to_integer(self->size) - 1; }
+    }
+    apply(integer_multiply_add(truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)), -1, to_integer(self->size)));
+    have (truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) + -1) * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size) by {
+        rewrite((truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) + -1) * to_integer(self->size) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) + -1 * to_integer(self->size));
+        arithmetic() using { truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1; }
+    }
+    have 0 <= to_integer(self->size) by { arithmetic() using { 1 <= to_integer(self->size); } }
+    have truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) <= 8589934591 by {
+        if truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) <= 8589934591 { assumption(); } else {
+            have 8589934592 <= truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) by { arithmetic() using { not (truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) <= 8589934591); } }
+            apply(integer_multiply_order_nonnegative(8589934592, truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)), to_integer(self->size)));
+            have not (truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1) by {
+                arithmetic() using { 8589934592 * to_integer(self->size) <= truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size); to_integer(self->fee) * to_integer(at_size) <= 8589934591 * to_integer(self->size); }
+            }
+            contradiction(truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1);
+        }
+    }
+    execute();
+    have to_integer(result) == to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) by {
+        arithmetic_certificate special {
+            premise 0: 0 <= to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) => 0 <= to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size));
+            premise 1: to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) <= 9223372036854775807 => to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)) <= 9223372036854775807;
+            integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size));
+            conclusion 0;
+        }
+    }
+    have to_integer(result) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)) by {
+        rewrite(to_integer(result) == to_integer((((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64) / (uint64)(uint32)self->size)));
+        assumption();
+    }
+    have 0 <= to_integer(result) by {
+        rewrite(to_integer(result) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+        assumption();
+    }
+    have to_integer(result) <= 8589934591 by {
+        rewrite(to_integer(result) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+        assumption();
+    }
+    have to_integer(self->fee) * to_integer(at_size) <= to_integer(result) * to_integer(self->size) by {
+        rewrite(to_integer(result) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+        assumption();
+    }
+    have (to_integer(result) + -1) * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size) by {
+        rewrite(to_integer(result) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size)));
+        assumption();
+    }
+    simp();
+}
+
+int64 FeeFrac_EvaluateFeeUp(const struct FeeFrac* self, int32 at_size) {
+    views self->fee;
+    views self->size;
+    requires self->fee >= 0i64;
+    requires self->fee < 8589934592i64;
+    requires 0 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 8589934591;
+    requires 0 <= at_size;
+    requires at_size <= self->size;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures 0 <= to_integer(result);
+    ensures to_integer(result) <= 8589934591;
+    ensures to_integer(self->fee) * to_integer(at_size) <= to_integer(result) * to_integer(self->size);
+    ensures (to_integer(result) + -1) * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size);
+    ensures to_integer(result) == truncating_quotient(to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1, to_integer(self->size));
+} by { execute(); simp(); }
