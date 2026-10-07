@@ -1,4 +1,4 @@
-# Whole-claim expansion fails on a returning `branch` arm beside resource steps, and on `__rb_insert`
+# Whole-claim expansion fails on counted populations, a loop `branch`, `sort3` and `__rb_insert`
 
 ## Violated invariant
 
@@ -13,13 +13,10 @@ expanding each of the claim's smart sites by location
 ## Reproduction
 
 A whole-repository audit found 44 claims whose whole-claim expansion failed.
-Thirty have been fixed. These fourteen remain; each verifies, and each fails
+Thirty-two have been fixed. These twelve remain; each verifies, and each fails
 with "expanded proof did not verify":
 
 ```sh
-click expand --claim chain_has_next.contract mdtests/match_bindings_in_branch_arm.md
-click expand --claim chain_countdown.contract mdtests/loop_preserve_branch_tactic.md
-click expand --claim tree_contains.contract examples/modeled-binary-tree/modeled_binary_tree.click
 click expand --claim increment_twice.contract mdtests/mutex_population_separate_body.md
 click expand --claim run.contract mdtests/modeled_pthread_counted_join.md
 click expand --claim run.contract mdtests/modeled_pthread_counted_reverse_join.md
@@ -29,52 +26,38 @@ click expand --claim run.contract mdtests/modeled_pthread_counted_shared_partial
 click expand --claim run.contract mdtests/modeled_pthread_counted_shared_retained.md
 click expand --claim run.contract mdtests/modeled_pthread_counted_shared_symbolic.md
 click expand --claim run.contract mdtests/modeled_pthread_retire_after_join.md
+click expand --claim chain_countdown.contract mdtests/loop_preserve_branch_tactic.md
 click expand --claim sort3.sorted mdtests/sort3_sorted.md
 click expand --claim __rb_insert.contract examples/rbtree-insert/rbtree_insert.click
 ```
 
-### A returning `branch` arm beside resource steps (twelve claims)
+### Counted populations (nine claims)
 
-The first twelve share a shape: a `branch then { ... } else {}` over a C `if`
-whose then-arm returns, in a proof that also folds or unfolds a resource. The
-expansion writes the `branch` as a proof-level `if` over a snapshot and loses
-the then-arm. In `increment_twice`, whose first `branch` arm is
+The first nine consume members of a counted population
+(`consumes 2 of contribution(counter)`) in proofs over modeled pthread calls.
+The expanded proof is refused at an `unfold` of a population member with
+"population member rewrite has the wrong resource exchange", at a `have` with
+"count(...) requires owning authority for that population", or with "Requires
+owns authority(R(p))".
 
-```
-have count(contribution(counter)) == 2 by { simp(); }
-unfold(contribution(counter));
-unfold(contribution(counter));
-unfold(state);
-step();
-simp();
-```
+In `increment_twice` the tactics in the failing arm read the same as the
+written ones (`have count(contribution(counter)) == 2`, then two
+`unfold(contribution(counter))`), so the difference is likely in what the
+expansion wrote before them. One visible change is that call arguments are
+respelled: `step(pthread_mutex_init(&counter->mutex, 0), { state: state })`
+comes back as `step(pthread_mutex_init(byte_offset(counter, 0), 0), ...)`.
+Whether that respelling, or the placement of the tactics relative to the
+expanded branches, is what breaks the exchange is not yet known.
 
-the expansion has
+### A `branch` in a loop's `preserve` proof
 
-```
-if at(statement(4).entry, __click_call_result0) != at(statement(4).entry, 0) {
-} else {
-    step();
-    step();
-}
-step();
-if at(statement(8).entry, __click_call_result1) != at(statement(8).entry, 0) {
-```
+`chain_countdown` fails with "cannot fold or unfold resource `chain`: matched
+field `model` has no known constructor".
 
-The then-arm is empty, two steps sit in an else-arm the source left empty, and
-the second `if` follows the first instead of nesting in its else-arm. The
-later failures follow from that: a snapshot named before any path steps there
-(`chain_has_next`, `tree_contains`), a population exchange the kernel refuses,
-or a `count(...)` read without its authority.
+### `sort3.sorted`
 
-A returning arm alone does not reproduce it. These verify and expand
-correctly: a function with one or two early returns over scalars; the same
-with a `have` in the arm; the same after a call step. The resource steps, or
-the proof `match` around the `branch` in `chain_has_next`, seem to be what
-routes the proof through the failing reconstruction.
-
-`sort3.sorted` reports "expanded execution then arm does not end in a checked
-C step" and has no `branch`; it may be a separate cause.
+Reports "expanded execution then arm does not end in a checked C step". It has
+no `branch` tactic.
 
 ### `__rb_insert`
 
@@ -109,6 +92,9 @@ Causes found with these reproductions and fixed, with regression tests in
 - after `witness` or `intro` opened a claim following execution, a grouped
   proof's expansion left out the closing tactics;
 - a user tactic's expansion included the ending its check supplies.
+- after a C `if` with one reachable arm, the continuation's first statement
+  was entered without recording its entry point, so the expanded branch that
+  followed could not name it.
 
 ## Effect on the audit
 
@@ -121,8 +107,8 @@ audited that way.
 ## Acceptance
 
 - Every command above succeeds and its output verifies.
-- A regression test covers a returning `branch` arm in a proof that also
-  unfolds a resource.
+- A regression test covers the expansion of a proof that unfolds members of a
+  counted population.
 - `click audit` then treats a claim whose sites pass alone but whose
   whole-claim expansion fails as a failure, and the `NOTE` path and its
   summary count are removed.

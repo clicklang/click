@@ -3720,6 +3720,24 @@ impl<'a> Proof<'a> {
                 }
             },
         }
+        // The continuation's first statement is entered here, as a step
+        // onto it would enter it, so its entry point is recorded the same
+        // way. An expanded branch that follows names that point in its
+        // condition.
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            unreachable!("execution branch retained a non-execution context")
+        };
+        record_current_statement_entry(
+            &execution.core.frontier,
+            &mut execution.presentation.recorded_snapshots,
+            &execution.core.state,
+            context.function_block,
+            context.function,
+            context.arguments,
+            context.claim_label,
+            context.tactic_index,
+            "branch",
+        )?;
         Ok(())
     }
 

@@ -2144,6 +2144,54 @@ fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
     }
 }
 
+/// A C `if` with one reachable arm is expanded as a branch whose other arm is
+/// empty, and the proof continues after it. Entering the continuation there
+/// must record its first statement's entry as a step onto it would, because
+/// the expanded branch that follows names that point in its condition.
+#[test]
+fn whole_claim_expansion_continues_after_a_branch_with_one_reachable_arm() {
+    let c_source = r#"
+int early(int x) {
+    if (x == 0) {
+        return 0;
+    }
+    if (x == 1) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let click = r#"
+verifying "early.c";
+
+int32 early(int32 x) {
+    requires x != 0;
+    ensures result == 0 or result == 1;
+} by {
+    branch then {
+        step();
+        simp();
+    } else {}
+    branch then {
+        step();
+        simp();
+    } else {}
+    step();
+    simp();
+}
+"#;
+    let sources = [("early.c", c_source)];
+    verify_c0_sources(click, &sources).expect("the proof with an unreachable arm verifies");
+    let expanded = expand_c0_claim_source_by_label(click, &sources, "early.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(
+        expanded.contains("if at(statement(3).entry, x) == at(statement(3).entry, 1) {"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 #[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [
