@@ -95,6 +95,11 @@ pub(crate) enum CheckedExecutionEvent {
     /// context from function entry. The context is persistent, so this
     /// shares structure with the proof rather than copying it.
     Context(PureFactContext),
+    /// How many memory effects the statement just recorded added to the
+    /// proof's effect list. The recorder that pushes the statement appends
+    /// those effects itself, so a later join reads a statement's effects off
+    /// the list by count instead of matching memories to find them.
+    StatementEffects(usize),
     Branch(CheckedExecutionBranch),
     ProofCase(CheckedProofCaseArm),
     /// Every live arm of one logical partition, rejoined at one program
@@ -3748,6 +3753,8 @@ struct WalkedCaseArms {
     partition: Arc<CheckedProofCasePartition>,
     arms: Vec<CheckedProofCaseJoinArm>,
     start_state: CState,
+    /// Each arm's memory changes, as its walk met them.
+    memory_steps: Vec<Vec<CheckedMemoryStep>>,
 }
 
 impl CheckedProofCaseJoin {
@@ -3775,6 +3782,7 @@ impl CheckedProofCaseJoin {
         let mut partition: Option<Arc<CheckedProofCasePartition>> = None;
         let mut covered = std::collections::BTreeSet::new();
         let mut checked: Vec<CheckedProofCaseJoinArm> = Vec::with_capacity(arms.len());
+        let mut memory_steps = Vec::with_capacity(arms.len());
         let mut joined: Option<(&ExecutionProofCore, Option<CStatement>)> = None;
         for (arm, facts) in arms {
             let [trace] = arm.execution_evidence.as_slice() else {
@@ -3838,12 +3846,14 @@ impl CheckedProofCaseJoin {
                     }
                 }
             }
+            memory_steps.push(progress.memory_steps);
             checked.push(walked);
         }
         Ok(WalkedCaseArms {
             partition: partition.expect("a join of two arms found their partition"),
             arms: checked,
             start_state,
+            memory_steps,
         })
     }
 
@@ -3860,6 +3870,7 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            ..
         } = Self::walk_arms(parent, arms, function, arguments, true)?;
         // A fact every arm established holds whichever of their cases does.
         // The case facts themselves differ between arms, so none survives.
@@ -3906,6 +3917,7 @@ impl CheckedProofCaseJoin {
             partition,
             arms: checked,
             start_state,
+            memory_steps,
         } = Self::walk_arms(parent, &arms, function, arguments, false)?;
         let exact_root = partition
             .root_facts
@@ -3954,12 +3966,13 @@ impl CheckedProofCaseJoin {
                 "a conditional heap deallocation must be represented by an arm-sensitive owned resource",
             );
         }
-        let effect_facts = checked_interface_effect_facts(
+        let effect_facts = checked_interface_effect_facts_along(
             &start_state,
             joined_state,
             arm_cores,
             arm_facts,
             arm_effect_facts,
+            Some([&memory_steps[0], &memory_steps[1]]),
         )?;
         Ok(Self {
             partition,
@@ -4042,9 +4055,9 @@ impl CheckedProofCaseJoin {
         self.joined_state != self.start_state
             || self.arms.iter().any(|arm| {
                 arm.events.iter().any(|event| match event {
-                    CheckedExecutionEvent::ProofCase(_) | CheckedExecutionEvent::Context(_) => {
-                        false
-                    }
+                    CheckedExecutionEvent::ProofCase(_)
+                    | CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::StatementEffects(_) => false,
                     CheckedExecutionEvent::ProofCaseJoin(inner) => inner.arms_changed_execution(),
                     _ => true,
                 })
@@ -4947,11 +4960,104 @@ fn checked_interface_effect_facts(
     arm_facts: [&ProofFacts; 2],
     arm_effect_facts: [&[ExecutionPureFact]; 2],
 ) -> Result<Vec<ExecutionPureFact>, &'static str> {
+    checked_interface_effect_facts_along(
+        split_state,
+        joined_state,
+        arms,
+        arm_facts,
+        arm_effect_facts,
+        None,
+    )
+}
+
+fn is_memory_effect(proposition: &Proposition) -> bool {
+    matches!(
+        proposition,
+        Proposition::CMemoryMutatesOnly { .. }
+            | Proposition::CMemoryEffectSummary { .. }
+            | Proposition::CHeapAllocationFreed { .. }
+    )
+}
+
+/// Whether an arm's memory effects account for every memory change its walk
+/// passed through that could have written.
+///
+/// The walk has already checked that the arm's events follow one another
+/// from the split to the arm's end, so its steps are the arm's whole memory
+/// history. A step that cannot write needs no effect. A step that can is
+/// covered when the effects starting at its first snapshot lead to its last,
+/// and snapshots are matched by identity first: only a statement that reads
+/// or assigns a local before it stores leaves two that differ, and those
+/// differ in what that one statement cached.
+///
+/// This is why the join does not compare the arm's memories as wholes. A
+/// comparison of two snapshots that differ in the reads an `unfold` cached
+/// has to justify each read against the memory history, and its cost grows
+/// with the proof before the split rather than with the arm.
+fn arm_effects_follow_memory_steps(
+    steps: &[CheckedMemoryStep],
+    effects: &[ExecutionPureFact],
+    assumptions: &PureFactContext,
+) -> bool {
+    use crate::kernel::api::contract_certification::c_memories_definitionally_equal;
+    let mut effects = effects
+        .iter()
+        .filter_map(|fact| match fact.proposition() {
+            Proposition::CMemoryMutatesOnly { before, after, .. }
+            | Proposition::CMemoryEffectSummary { before, after, .. }
+            | Proposition::CHeapAllocationFreed { before, after, .. } => Some((before, after)),
+            _ => None,
+        })
+        .peekable();
+    for step in steps.iter().filter(|step| step.may_write) {
+        if let Some(count) = step.statement_effects {
+            // The recorder that checked this statement appended exactly
+            // these effects, in this order.
+            if effects.by_ref().take(count).count() != count {
+                return false;
+            }
+            continue;
+        }
+        let mut memory = &step.before;
+        while memory != &step.after {
+            if let Some((_, after)) = effects.next_if(|(before, _)| *before == memory) {
+                memory = after;
+            } else if c_memories_definitionally_equal(memory, &step.after, assumptions) {
+                break;
+            } else if let Some((_, after)) = effects
+                .next_if(|(before, _)| c_memories_definitionally_equal(memory, before, assumptions))
+            {
+                memory = after;
+            } else {
+                return false;
+            }
+        }
+    }
+    effects.next().is_none()
+}
+
+fn checked_interface_effect_facts_along(
+    split_state: &CState,
+    joined_state: &CState,
+    arms: [&ExecutionProofCore; 2],
+    arm_facts: [&ProofFacts; 2],
+    arm_effect_facts: [&[ExecutionPureFact]; 2],
+    arm_memory_steps: Option<[&[CheckedMemoryStep]; 2]>,
+) -> Result<Vec<ExecutionPureFact>, &'static str> {
     let mut writes = Vec::new();
     let mut ranges = Vec::new();
     let mut heap_frees = [Vec::new(), Vec::new()];
     for arm_index in 0..2 {
         let assumptions = arm_facts[arm_index].assumptions();
+        // When the arm's walk vouches for the chain, the effects are read
+        // for what they cover and are not chained a second time.
+        let chained = arm_memory_steps.is_some_and(|steps| {
+            arm_effects_follow_memory_steps(
+                steps[arm_index],
+                arm_effect_facts[arm_index],
+                assumptions,
+            )
+        });
         let mut memory = split_state.memory().clone();
         for fact in arm_effect_facts[arm_index] {
             match fact.proposition() {
@@ -4963,7 +5069,7 @@ fn checked_interface_effect_facts(
                     if !fact.is_certified() {
                         return Err("an interface arm contains an uncertified memory effect");
                     }
-                    if !interface_chain_memory_matches(&memory, before, assumptions) {
+                    if !chained && !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
                             "an interface arm effect chain does not start at its current memory",
                         );
@@ -4996,7 +5102,7 @@ fn checked_interface_effect_facts(
                     if !fact.is_certified() {
                         return Err("an interface arm contains an uncertified memory effect");
                     }
-                    if !interface_chain_memory_matches(&memory, before, assumptions) {
+                    if !chained && !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
                             "an interface arm effect summary does not start at its current memory",
                         );
@@ -5026,7 +5132,7 @@ fn checked_interface_effect_facts(
                     allocation_base,
                     bytes,
                 } => {
-                    if !interface_chain_memory_matches(&memory, before, assumptions) {
+                    if !chained && !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
                             "an interface heap-free effect does not start at its current memory",
                         );
@@ -5042,7 +5148,9 @@ fn checked_interface_effect_facts(
                 _ => return Err("an interface arm contains unchecked effect metadata"),
             }
         }
-        if !interface_chain_memory_matches(&memory, arms[arm_index].state.memory(), assumptions) {
+        if !chained
+            && !interface_chain_memory_matches(&memory, arms[arm_index].state.memory(), assumptions)
+        {
             return Err("an interface arm effect chain does not reach its recorded memory");
         }
     }
@@ -6080,6 +6188,7 @@ fn collect_retained_call_events(
             CheckedExecutionEvent::Statement(_)
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ResourceObservation(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
@@ -6537,6 +6646,24 @@ struct CheckedEvidenceProgress {
     state: CState,
     remaining: Option<CStatement>,
     completed: Option<CStatementOutcome>,
+    /// Where the walk saw memory change, in order.
+    memory_steps: Vec<CheckedMemoryStep>,
+}
+
+/// One change of memory a walk of checked events passed through: the
+/// snapshot before an event and the one after it.
+///
+/// `may_write` is false for an event that only rewrites what the proof holds
+/// (a fold, an unfold, an observation, the end of an automatic lifetime).
+/// Such an event changes which values a snapshot caches, never a byte a
+/// pointer can reach, and it leaves no effect fact.
+#[derive(Clone)]
+struct CheckedMemoryStep {
+    before: CMemory,
+    after: CMemory,
+    may_write: bool,
+    /// For a statement, how many memory effects its recorder appended.
+    statement_effects: Option<usize>,
 }
 
 /// Checks a retained event tree by following kernel theorem conclusions
@@ -6565,7 +6692,56 @@ fn check_evidence_events_with_call_events(
 ) -> Option<CheckedEvidenceProgress> {
     let mut completed = None;
     let mut current_facts = facts.clone();
+    let mut memory_steps = Vec::new();
+    let mut step_memory = state.memory().clone();
+    let mut step_may_write = false;
+    // The step of the statement last walked, for its effect count to land on.
+    let mut statement_step: Option<usize> = None;
+    let mut after_statement = false;
     for (position, event) in events.iter().enumerate() {
+        if state.memory() != &step_memory {
+            if after_statement {
+                statement_step = Some(memory_steps.len());
+            }
+            memory_steps.push(CheckedMemoryStep {
+                before: std::mem::replace(&mut step_memory, state.memory().clone()),
+                after: state.memory().clone(),
+                may_write: step_may_write,
+                statement_effects: None,
+            });
+        }
+        match event {
+            CheckedExecutionEvent::Statement(_) => {
+                statement_step = None;
+                after_statement = true;
+            }
+            CheckedExecutionEvent::StatementEffects(count) => {
+                match statement_step.take() {
+                    Some(step) => memory_steps[step].statement_effects = Some(*count),
+                    // The statement left memory as it was. Its effects, if
+                    // any, are still the next ones on the list.
+                    None if *count > 0 => memory_steps.push(CheckedMemoryStep {
+                        before: step_memory.clone(),
+                        after: step_memory.clone(),
+                        may_write: true,
+                        statement_effects: Some(*count),
+                    }),
+                    None => {}
+                }
+                after_statement = false;
+                continue;
+            }
+            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::Call(_) => {}
+            _ => after_statement = false,
+        }
+        step_may_write = matches!(
+            event,
+            CheckedExecutionEvent::Statement(_)
+                | CheckedExecutionEvent::Condition(_)
+                | CheckedExecutionEvent::Call(_)
+                | CheckedExecutionEvent::Branch(_)
+                | CheckedExecutionEvent::ProofCaseJoin(_)
+        );
         // The fact context recorded right after a theorem is the one it was
         // proved under.
         let recorded = match events.get(position + 1) {
@@ -6662,7 +6838,9 @@ fn check_evidence_events_with_call_events(
             }
             // The retained context of the preceding theorem; the arm check
             // above already holds the arm's own facts.
-            CheckedExecutionEvent::Context(_) => continue,
+            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::StatementEffects(_) => {
+                continue;
+            }
             CheckedExecutionEvent::Call(call) => {
                 call_events.insert(call);
                 continue;
@@ -6774,7 +6952,8 @@ fn check_evidence_events_with_call_events(
             }
             CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ProofCaseJoin(_)
-            | CheckedExecutionEvent::Context(_) => {
+            | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::StatementEffects(_) => {
                 unreachable!("handled before source advance")
             }
             CheckedExecutionEvent::Call(_) => unreachable!("handled before source advance"),
@@ -6791,10 +6970,19 @@ fn check_evidence_events_with_call_events(
             }
         }
     }
+    if state.memory() != &step_memory {
+        memory_steps.push(CheckedMemoryStep {
+            before: step_memory,
+            after: state.memory().clone(),
+            may_write: step_may_write,
+            statement_effects: None,
+        });
+    }
     Some(CheckedEvidenceProgress {
         state,
         remaining,
         completed,
+        memory_steps,
     })
 }
 
@@ -7054,7 +7242,9 @@ fn trace_completion(
                     *executed_under = arm.facts.assumptions().clone();
                 }
             }
-            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::Call(_) => {}
+            CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::StatementEffects(_)
+            | CheckedExecutionEvent::Call(_) => {}
         }
     }
     let Some((outcome, executed_under)) =
@@ -7115,6 +7305,7 @@ fn events_use_the_function_definitions(
             | CheckedExecutionEvent::Call(_)
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_) => true,
         })
     }
@@ -7173,7 +7364,9 @@ fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(),
                 }
                 continue;
             }
-            CheckedExecutionEvent::Context(_) => continue,
+            CheckedExecutionEvent::Context(_) | CheckedExecutionEvent::StatementEffects(_) => {
+                continue;
+            }
             CheckedExecutionEvent::Call(call) => {
                 let Some(index) = pending_call_views
                     .iter()
@@ -7319,6 +7512,21 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    /// Appends a checked statement's effects to the proof's effect list and
+    /// returns how many of them are memory effects. A fact the list already
+    /// holds is not appended and not counted.
+    fn append_statement_effects(&mut self, execution_facts: &[ExecutionPureFact]) -> usize {
+        let mut memory_effects = 0;
+        for fact in execution_facts {
+            let memory_effect = is_memory_effect(fact.proposition());
+            if (memory_effect || fact.is_certified()) && !self.effect_facts.contains(fact) {
+                self.effect_facts.push(fact.clone());
+                memory_effects += usize::from(memory_effect);
+            }
+        }
+        memory_effects
+    }
+
     /// Records one statement theorem and the fact context it was proved
     /// under on the single open trace, once the theorem is checked to
     /// advance this frontier (`check_statement_evidence`).
@@ -7370,12 +7578,14 @@ impl ExecutionProofCore {
             .into_iter()
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
+        let memory_effects = self.append_statement_effects(execution_facts);
         for trace in &mut *self.execution_evidence {
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
             trace.push(CheckedExecutionEvent::Context(context.clone()));
             for call in &call_events {
                 trace.push(CheckedExecutionEvent::Call(call.clone()));
             }
+            trace.push(CheckedExecutionEvent::StatementEffects(memory_effects));
         }
         self.evidence_source = matches!(&outcome, CStatementOutcome::Normal(_))
             .then_some(source_after.clone())
@@ -9282,6 +9492,7 @@ impl ExecutionProofCore {
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::StatementEffects(_)
                     | CheckedExecutionEvent::Call(_)
                     | CheckedExecutionEvent::ProofCase(_),
                 ) => {}
@@ -9365,6 +9576,7 @@ impl ExecutionProofCore {
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::StatementEffects(_)
                     | CheckedExecutionEvent::Call(_)
                     | CheckedExecutionEvent::ProofCase(_),
                 ) => {}

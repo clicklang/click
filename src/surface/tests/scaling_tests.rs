@@ -5323,6 +5323,52 @@ fn sequential_proof_ifs_that_step_c_rejoin_instead_of_doubling() {
     assert_near_linear_scaling("sequential proof-level ifs that step C", &samples);
 }
 
+/// A function of `count` stores through `p`, proved with one proof-level
+/// `if ... ensuring` around each. Both arms open the slot, step the store,
+/// and fold the slot again under differently spelled models, so every `if`
+/// rejoins through its interface.
+fn sequential_interface_joins_project(count: usize) -> (String, String) {
+    let mut c_source =
+        String::from("struct cell { int32 value; };\n\nint32 bump(struct cell *p, int32 x) {\n");
+    let mut click_source = String::from(
+        "verifying \"joins.c\";\n\nresource slot(p: struct cell*) {\n    field model: int32;\n    owns p->value;\n    fact p->value == model;\n}\n\nint32 bump(struct cell* p, int32 x) {\n    requires p != 0;\n    owns c: slot(p);\n    ensures result == 0;\n} by {\n",
+    );
+    for index in 0..count {
+        c_source.push_str(&format!("    p->value = {index};\n"));
+        click_source.push_str(&format!(
+            "    if x <= {index} ensuring {{\n        owns c: slot(p);\n    }} then {{\n        unfold(c);\n        step();\n        let c = fold(slot(p), {{ model: {index} }});\n    }} else {{\n        unfold(c);\n        step();\n        let c = fold(slot(p), {{ model: p->value }});\n    }}\n"
+        ));
+    }
+    c_source.push_str("    return 0;\n}\n");
+    click_source.push_str("    step();\n    simp();\n}\n");
+    (c_source, click_source)
+}
+
+/// A run of interface joins costs in proportion to its length: each join
+/// checks its own arms and does not pay again for the joins before it.
+///
+/// This fixture's arms cache one read each, under the spelling the store
+/// uses, so it holds the line on the ordinary case. It did not reproduce the
+/// cost the `__rb_insert` port met, where an arm's statements reach cells
+/// through pointers loaded from memory; `examples/rbtree-insert` is the
+/// evidence for that one.
+#[test]
+fn sequential_interface_joins_scale_with_their_number() {
+    let samples = [5, 10, 20, 40]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = sequential_interface_joins_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("joins.c", c_source.as_str())])
+            });
+            verified
+                .unwrap_or_else(|error| panic!("{size}-join fixture failed: {}", error.message()));
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("sequential interface joins", &samples);
+}
+
 #[test]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
