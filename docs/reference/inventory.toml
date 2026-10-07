@@ -3335,6 +3335,14 @@ id = "stdlib.theorem.integer_positive_divisor_quotient_upper"
 path = "reference/library/index.md#integer_positive_divisor_quotient_upper"
 
 [[item]]
+id = "stdlib.theorem.integer_positive_divisor_quotient_strict_lower"
+path = "reference/library/index.md#integer_positive_divisor_quotient_strict_lower"
+
+[[item]]
+id = "stdlib.theorem.integer_positive_divisor_quotient_strict_upper"
+path = "reference/library/index.md#integer_positive_divisor_quotient_strict_upper"
+
+[[item]]
 id = "stdlib.theorem.integer_lower_correction_bound"
 path = "reference/library/index.md#integer_lower_correction_bound"
 
@@ -3353,3 +3361,11 @@ path = "reference/library/index.md#integer_multiply_order_nonpositive"
 [[item]]
 id = "stdlib.theorem.integer_scaled_product_bounds"
 path = "reference/library/index.md#integer_scaled_product_bounds"
+
+[[item]]
+id = "stdlib.theorem.int64_less_than_to_integer"
+path = "reference/library/index.md#int64_less_than_to_integer"
+
+[[item]]
+id = "stdlib.theorem.int64_greater_equal_to_integer"
+path = "reference/library/index.md#int64_greater_equal_to_integer"

@@ -464,7 +464,9 @@ impl<'a> Proof<'a> {
             source: plan.arm_case_source.clone(),
             arm: index,
         };
-        let tactic_offset = self.certificate().steps().len();
+        // This path's own steps: the proof also retains the steps of the
+        // arms checked before this one, which are not on this arm's path.
+        let tactic_offset = self.path_step_count()?;
         let proof = self.with_kernel_state(state.with_locals(locals));
         let function_values =
             parameter_values(context.parsed_function.parameters(), context.arguments)?;

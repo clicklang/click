@@ -1003,6 +1003,18 @@ mod tests {
                 "to_integer(left) <= to_integer(right)",
             ),
             (
+                "int64_less_than_to_integer",
+                "int64",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
+                "int64_greater_equal_to_integer",
+                "int64",
+                "left >= right",
+                "to_integer(left) >= to_integer(right)",
+            ),
+            (
                 "int64_less_equal_of_to_integer",
                 "int64",
                 "to_integer(left) <= to_integer(right)",
@@ -1408,6 +1420,77 @@ mod tests {
             assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
         }
     }
+    #[test]
+    fn negated_integer_order_arithmetic_expands_and_reverifies() {
+        let fixture = include_str!("../../mdtests/integer_negated_order_arithmetic.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        verify_c0_sources(source, &[]).unwrap();
+        for label in ["negated_lower.ensures_0", "negated_upper.ensures_0"] {
+            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+        for bad in [
+            source.replace("requires not (n <= 0);", "requires n <= 0;"),
+            source.replace("requires not (0 <= n);", "requires 0 <= n;"),
+        ] {
+            assert!(verify_c0_sources(&bad, &[]).is_err());
+        }
+    }
+
+    #[test]
+    fn strict_scaled_quotient_bounds_expand_and_reject_missing_guards() {
+        let fixture = include_str!("../../mdtests/integer_quotient_strict_bound.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        verify_c0_sources(source, &[]).unwrap();
+        for label in [
+            "checked_strict_lower.ensures_0",
+            "checked_strict_upper.ensures_0",
+            "use_strict_lower.ensures_0",
+            "use_strict_upper.ensures_0",
+            "fee_floor_quotient_fit.ensures_0",
+            "fee_floor_quotient_fit.ensures_1",
+            "fee_ceiling_quotient_fit.ensures_0",
+            "fee_ceiling_quotient_fit.ensures_1",
+        ] {
+            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+        let uses = source.split("theorem use_strict_lower").nth(1).unwrap();
+        let uses = format!("theorem use_strict_lower{uses}");
+        for guard in [
+            "requires d != 0;",
+            "requires 1 <= d;",
+            "requires bound < 0;",
+            "requires 0 < bound;",
+            "requires bound * d < n;",
+            "requires n < bound * d;",
+        ] {
+            let bad = uses.replace(guard, "");
+            assert!(verify_c0_sources(&bad, &[]).is_err(), "missing {guard}");
+        }
+        for (from, to) in [
+            ("bound * d < n", "bound * d <= n"),
+            ("n < bound * d", "n <= bound * d"),
+            ("bound < 0", "bound <= 0"),
+            ("0 < bound", "0 <= bound"),
+        ] {
+            let bad = uses.replacen(&format!("requires {from};"), &format!("requires {to};"), 1);
+            assert!(verify_c0_sources(&bad, &[]).is_err(), "weakened {from}");
+        }
+    }
+
     #[test]
     fn scaled_quotient_applications_scale_with_steps_and_unused_bounds() {
         let mut samples = Vec::new();

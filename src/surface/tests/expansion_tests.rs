@@ -1957,6 +1957,84 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+/// Whole-claim expansion rebuilds a proof `match` from the paths through its
+/// arms. Each claim here verifies, and its expansion must too.
+#[test]
+fn whole_claim_expansion_of_proof_matches_rechecks() {
+    for (mdtest, claim) in [
+        ("proof_match_after_c_step", "read_after_step.contract"),
+        ("loop_decreases_strict_descendant", "countdown.contract"),
+        (
+            "loop_preserve_branch_tactic",
+            "chain_countdown_decided.contract",
+        ),
+        (
+            "loop_body_proof_match_ensuring_inside_a_proof_if",
+            "spin.contract",
+        ),
+    ] {
+        let (click, sources) = mdtest_sources(&format!("mdtests/{mdtest}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_claim_source_by_label(&click, &sources, claim)
+            .unwrap_or_else(|error| panic!("expanding `{claim}`: {}", error.message()));
+        verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+            panic!(
+                "expanded `{claim}` must recheck: {}\n{expanded}",
+                error.message()
+            )
+        });
+    }
+}
+
+/// The tactics written after execution inside a match arm read the arm's
+/// bindings, so the expansion keeps them inside that arm.
+#[test]
+fn whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm() {
+    let (click, sources) = mdtest_sources("mdtests/proof_match_after_c_step.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&click, &sources, "read_after_step.contract").unwrap();
+    let proof = &expanded[expanded.rfind("} by {").unwrap()..];
+    let arm = proof.find("Maybe::Some(value) => {").expect("the live arm");
+    let fold = proof
+        .find("let c = fold(cell(node), { model: Maybe::Some(value) });")
+        .expect("the arm's fold");
+    let arm_end = arm + proof[arm..].find("\n        }\n").expect("the arm closes");
+    assert!(arm < fold && fold < arm_end, "{proof}");
+}
+
+/// A nested proof `match` is rebuilt where its own path took it. The arms of
+/// an enclosing match are checked one after another on one proof, so the
+/// position must count the steps of this arm's path, not those of the arms
+/// checked before it; otherwise the tactic that binds the nested scrutinee
+/// lands inside the nested match.
+#[test]
+fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
+    let (click, sources) = mdtest_sources("mdtests/loop_decreases_strict_descendant.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "countdown.contract").unwrap();
+    let proof = &expanded[expanded.rfind("} by {").unwrap()..];
+    let binds = proof
+        .find("let { rest: r } = unfold(c);")
+        .expect("the tactic that binds `r`");
+    let nested = proof.find("match r.model {").expect("the nested match");
+    assert!(binds < nested, "{proof}");
+    assert_eq!(
+        proof.matches("let { rest: r } = unfold(c);").count(),
+        1,
+        "{proof}"
+    );
+}
+
 #[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [
