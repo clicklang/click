@@ -48,6 +48,7 @@ enum RoundingPhase {
     Tools,
     FullExpansion,
     Rejections,
+    TransportRejections,
 }
 
 fn check_upstream_cpp_rounding_phase(
@@ -330,15 +331,92 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 .unwrap();
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
     }
-    if evaluation_caller && phase == Some(RoundingPhase::Rejections) {
-        for hostile in [
-            source.replace("views self->size;", ""),
-            source.replace("requires self->size == 3;", ""),
-            source.replace("requires at_size == 2;", ""),
-            source.replace("ensures result ==", "ensures result !="),
-        ] {
+    if evaluation_caller
+        && name.ends_with("Negative")
+        && phase == Some(RoundingPhase::FullExpansion)
+    {
+        let instance = if selected.ends_with("Down") {
+            "true"
+        } else {
+            "false"
+        };
+        let expanded = expand_program_prepared_project_claim_source_by_label(
+            &project,
+            &import,
+            &format!("FeeFrac_EvaluateFee__bool_{instance}.ensures_0"),
+        )
+        .unwrap();
+        let rewritten = project.with_entry_source(expanded.clone());
+        verify_program_prepared_project(&rewritten, &import).unwrap();
+        let (session, _) =
+            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+        let position = program_prepared_project_tactic_source_position(
+            &rewritten,
+            &import,
+            &format!("FeeFrac_EvaluateFee__bool_{instance}.contract"),
+            0,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap();
+    }
+    if evaluation_caller
+        && matches!(
+            phase,
+            Some(RoundingPhase::Rejections | RoundingPhase::TransportRejections)
+        )
+    {
+        let hostile = if name.ends_with("Negative") {
+            if phase == Some(RoundingPhase::Rejections) {
+                vec![
+                    source.replace("views self->size;", ""),
+                    source.replace("requires self->size > 0;", ""),
+                    source.replace("requires 0 <= at_size;", ""),
+                    source.replace("requires at_size <= self->size;", ""),
+                ]
+            } else {
+                vec![
+                    source.replace("requires not (self->fee >= 0i64);", ""),
+                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
+                    source
+                        .replace("* to_integer(self->size) <=", "* to_integer(self->size) <")
+                        .replace(
+                            "<= to_integer(result) * to_integer(self->size)",
+                            "< to_integer(result) * to_integer(self->size)",
+                        ),
+                    source.replace(
+                        "to_integer(product) == to_integer(self->fee) * to_integer(at_size)",
+                        "to_integer(product) == to_integer(self->fee) * to_integer(at_size) + 1",
+                    ),
+                    source.replace(
+                        if selected.ends_with("Down") {
+                            "(to_integer(result) + 1) * to_integer(self->size)"
+                        } else {
+                            "(to_integer(result) + -1) * to_integer(self->size)"
+                        },
+                        "to_integer(result) * to_integer(self->size)",
+                    ),
+                ]
+            }
+        } else {
+            vec![
+                source.replace("views self->size;", ""),
+                source.replace("requires self->size == 3;", ""),
+                source.replace("requires at_size == 2;", ""),
+                source.replace("ensures result ==", "ensures result !="),
+            ]
+        };
+        for (index, hostile) in hostile.into_iter().enumerate() {
+            assert_ne!(
+                hostile, source,
+                "a rejection must change the claim or premises"
+            );
             let parsed = read_click_project(&sidecar, &hostile).unwrap();
-            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("{name} accepted hostile case {index}");
+            };
+            assert!(error.message().len() < 8000);
         }
     }
     if name == "FeeFracDivBounded" && phase == Some(RoundingPhase::FullExpansion) {
@@ -979,4 +1057,96 @@ fn upstream_fee_evaluation_down_rejects_missing_authority_bounds_and_false_resul
 #[test]
 fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results() {
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
+}
+
+fn negative_fee_evaluation_source(mode: &str) -> String {
+    let down = mode == "Down";
+    let bounds = |result: &str, size: &str, product: &str| {
+        if down {
+            [
+                format!("{result} * {size} <= {product}"),
+                format!("{product} < ({result} + 1) * {size}"),
+            ]
+        } else {
+            [
+                format!("{product} <= {result} * {size}"),
+                format!("({result} + -1) * {size} < {product}"),
+            ]
+        }
+    };
+    let caller = bounds(
+        "to_integer(result)",
+        "to_integer(self->size)",
+        "to_integer(self->fee) * to_integer(at_size)",
+    );
+    let helper = bounds(
+        "to_integer(rounded)",
+        "to_integer(denominator)",
+        "to_integer(product)",
+    );
+    let fragment =
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateNegative.click.in")
+            .replace("@MODE@", mode)
+            .replace("@INSTANCE@", if down { "true" } else { "false" })
+            .replace("@ROUND@", if down { "1" } else { "0" })
+            .replace("@CALLER_BOUND_1@", &caller[0])
+            .replace("@CALLER_BOUND_2@", &caller[1])
+            .replace("@DIV_BOUND_1@", &helper[0])
+            .replace("@DIV_BOUND_2@", &helper[1]);
+    assert!(!fragment.contains('@'));
+    let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
+        .split_once(';')
+        .unwrap()
+        .1;
+    format!(
+        "{}\n{div}\n{fragment}",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
+    )
+}
+
+fn check_upstream_negative_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}Negative"),
+        &negative_fee_evaluation_source(mode),
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_down_has_symbolic_floor_bounds() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_up_has_symbolic_ceiling_bounds() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_down_instance_expands_and_reverifies() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_negative_fee_evaluation_up_instance_expands_and_reverifies() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_negative_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_negative_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_negative_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
+    check_upstream_negative_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+#[test]
+fn upstream_negative_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
+    check_upstream_negative_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }

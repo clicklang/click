@@ -720,14 +720,24 @@ This removes a
 stack-overflow retry loop and an unverifiable short-circuit expansion, without
 changing the Bitcoin source or increasing execution budgets.
 
-Next transport the joint product bounds through the unchanged wide fallback
-into the actual Mul result and captured Div arguments. A negative-fee caller
-now traverses the branch without crashing and reaches a bounded refusal of
-Div's scaled Integer precondition; it is not yet a verified caller contract.
-Then prove the unsigned fast paths for symbolic inputs and cover the broader
-mode-specific result-fit precondition. The full 96/32 fee-division contract
-remains open; the current joint range ensures
-both rounding modes fit. The selected source narrows `n / d` to int64 and
+The unchanged negative-fee `EvaluateFeeDown/Up` callers now have symbolic
+wide-path contracts. Under the explicit full int64 fee observer bounds,
+positive int32 size and `0 <= at_size <= size`, both preserve the fields and
+return within int64 observer bounds. Down proves the floor product inequalities;
+Up proves the ceiling inequalities. The proof names the captured denominator,
+Mul result and Div result using existing `let ... = step(...)` bindings, then
+transports exact Integer equalities with explicit rewrites. Both helper bodies
+are verified from the existing sidecars in the same prepared project. Caller
+and template-instance expansion/reverification, retained verification, missing
+field/domain premises, forged product equalities and false rounding bounds are
+covered. No new arithmetic axiom, search heuristic or Bitcoin source edit is
+needed.
+
+Next extend the symbolic caller contracts to positive fees that take the wide
+fallback, then prove the unsigned fast paths. The broader mode-specific
+result-fit precondition and full 96/32 fee-division contract remain open; the
+current joint range ensures both rounding modes fit.
+The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful

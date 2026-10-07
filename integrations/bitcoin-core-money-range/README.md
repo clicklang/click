@@ -304,8 +304,8 @@ terms opaque. The modular caller exports the same four inequalities and frames
 untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
-Next derive the bounds through `EvaluateFeeDown/Up` and address the broader
-mode-specific result-fit contract. Those callers and the full 96/32 contract
+The negative-fee `EvaluateFeeDown/Up` composition is verified below. Positive
+fees, the broader mode-specific result-fit domain and the full 96/32 contract
 remain open.
 
 ## CompactSize encoded length
@@ -344,6 +344,31 @@ verified Mul/Div sidecars with concrete caller contracts: fee 7, size 3 and
 at_size 2 return 4 downward and 5 upward, preserving both receiver fields.
 It checks ordinary verification, caller expansion/reverification, and rejection
 of false results, missing field authority and missing size/amount premises.
-These concrete fast-path claims are admission regressions, not a symbolic
-`EvaluateFeeDown/Up` contract. Applying the scaled bounds through the wide
-fallback and proving the unsigned fast paths for symbolic inputs remain open.
+These concrete fast-path claims remain source admission regressions.
+
+[`FeeFracEvaluateNegative.click.in`](FeeFracEvaluateNegative.click.in) now supplies
+symbolic caller contracts for negative fees on the unchanged wide fallback.
+The hermetic tests instantiate its Down/Up mode and product inequalities, then
+compose it with the existing verified Mul and Div sidecars in one prepared
+project. It is a caller template, rather than a standalone sidecar with assumed
+helpers; the same run proves the actual helper bodies and both caller levels.
+
+The contract explicitly requires field `views`, a negative native fee, its
+full int64 observer bounds, positive int32 size and `0 <= at_size <= size`.
+Both modes preserve fee and size and prove full int64 result observer bounds.
+Writing `F`, `A`, `D` and `R` for the Integer observations of fee, amount, size
+and result, Down proves `R * D <= F * A < (R + 1) * D`; Up proves
+`(R - 1) * D < F * A <= R * D`. These include zero amount and signed endpoints.
+Existing proof bindings name the captured denominator and the Mul/Div results;
+explicit Integer equality rewrites connect their bounds to the caller claim.
+The template does not mention generated C++ temporary names.
+
+The gate verifies the unchanged compiler-selected graph, expands both the
+wrapper and template-instance proof, reverifies the rewrites, checks retained
+verification, and rejects missing authority/domain bounds, forged Mul product
+equalities and false rounding inequalities. The evaluated `Assume` contract
+and compiler/library pins remain the profile described above.
+
+Next extend these symbolic contracts to positive fees on the wide fallback,
+then prove the unsigned fast paths and the broader mode-specific result-fit
+domain. This does not yet verify `EvaluateFeeDown/Up` for all fees.
