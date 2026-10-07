@@ -831,8 +831,8 @@ preserve by {
 }
 ```
 
-The arms of such a `match` do not rejoin. A preservation path never joins
-across the back edge, so each arm executes one complete iteration, restores
+With nothing written after it, the arms of such a `match` do not rejoin.
+Each arm executes one complete iteration, restores
 the loop binder, closes the invariants, and satisfies the structural descent
 on its own path, with the resource state that arm produced. An arm that
 unfolds the binder and never folds it again fails at the back edge by name
@@ -859,13 +859,26 @@ leaves the arm open and is refused by the proposition as written
 constructors survive: the region splits, each arm certifies its own path, and
 the preservation certificate is reassembled as the `match` that produced them.
 
-Write what the arms share once, after the `match`. An arm needs only the
-steps that depend on its constructor; the tactics after the `match` are the
-rest of every live arm's iteration and run on each arm's path, with that
-arm's facts and resources and with any name every arm bound
-(`mdtests/loop_body_proof_match_shared_continuation.md`). Repeating that
-tail inside each arm proves the same thing and multiplies the proof's length
-by the number of arms at every nested `match`.
+What follows a split is checked once. Tactics written after a `match` or a
+proof `if` in the body are never run once per arm, because every further
+split would double that again. So when two arms are both still live at the
+same program point, they have to become one path before those tactics run:
+
+- Arms that only reason, or that run the same statements and end holding the
+  same resources, rejoin on their own, as they do in a function body
+  (`mdtests/loop_preservation_case_after_step.md`).
+- Arms that end holding different things rejoin through an interface:
+  `match value ensuring { owns c: cell(node); } { ... }` names what the one
+  path that leaves the `match` holds
+  (`mdtests/loop_body_proof_match_ensuring_rejoins.md`).
+- Arms that do neither are refused, by the tactic they would both reach
+  (`mdtests/loop_body_proof_match_shared_continuation.md`). Give the `match`
+  an interface, or write the rest of the iteration inside each arm.
+
+Arms that reach those tactics at different program points are different paths
+of the C, one having stepped to a `break` and another to the body's end, say.
+Each is finished its own way and nothing is repeated. An arm closed by
+`contradiction` reaches nothing.
 
 The invariants and the loop condition are the head's premises, so they also
 refute arms. A premise that contradicts an arm's own binding-free fact says

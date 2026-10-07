@@ -51,13 +51,15 @@ void repeat_node_loop(struct node* node) {
                 step();
                 step();
                 simp();
+                step();
+                close_invariants();
             } else {
                 step();
                 step();
                 simp();
+                step();
+                close_invariants();
             }
-            step();
-            close_invariants();
         }
     }
     step();

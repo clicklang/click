@@ -1069,19 +1069,21 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let mut leaves = Vec::new();
     let mut refuted_match_paths = Vec::new();
     let mut unfinished = Vec::new();
-    advance_preservation_region(
-        root,
-        &program,
-        &[],
-        expansion_capture.as_deref_mut(),
-        proof_site_for_driver.as_ref(),
-        owning_source_index,
-        &claim_label,
-        &mut leaves,
-        &mut refuted_match_paths,
-        &mut unfinished,
-        None,
-    )?;
+    with_preservation_continuation_record(|| {
+        advance_preservation_region(
+            root,
+            &program,
+            &[],
+            expansion_capture.as_deref_mut(),
+            proof_site_for_driver.as_ref(),
+            owning_source_index,
+            &claim_label,
+            &mut leaves,
+            &mut refuted_match_paths,
+            &mut unfinished,
+            None,
+        )
+    })?;
     let invariant_surfaces = loop_invariant_surfaces(environment, loop_index, &claim_label)?;
     let invariant_premise_surfaces = invariant_surfaces
         .iter()
