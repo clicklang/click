@@ -911,10 +911,12 @@ has consistent parent links; and the local in-order sequence is
 `rb_minimum` records `Found(identity, original_color, right_child)` without a
 parent payload, so reparenting the right subtree preserves the descriptor.
 `rb_min_context(tree, up)` follows the C successor descent: an immediate
-successor returns `up`; each deeper step pushes a `Left` frame. Reparent the
-right root onto the successor before descent, and start with
+successor returns `up`; each deeper step pushes a `Left` frame. The final
+hole context is computed from `rb_reparent(right, successor)` starting with
 `Right(successor, parent, erased_color, rb_reparent(left, successor), up)`.
-The immediate branch's fixup parent is therefore the successor; the deeper
+This describes the model after the parent write; the unchanged C still finds
+the successor before writing that parent. The immediate branch's fixup parent
+is therefore the successor; the deeper
 branch's is the innermost left frame's node. `rb_remove_min_reparent` accounts
 for that root-parent write, and `rb_min_context_cut_leaf` identifies the hole
 with `rb_remove_min` without assuming the removed leaf was black.

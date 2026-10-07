@@ -292,7 +292,9 @@ its new parent without losing the minimum's identity or the removal equation.
 `Right(successor, parent, color, rb_reparent(left, successor), up)` and descends
 `rb_reparent(right, successor)` through `rb_min_context`. An immediate
 successor adds no frame; a deeper successor adds one `Left` frame per descent.
-This locates the hole and the fixup parent exactly as the C unlink does.
+This locates the hole and the fixup parent after the C unlink's writes; it
+does not change their execution order. The C finds the successor before
+reparenting the right root.
 
 `rb_erase_black_successor_splice` assumes the original subtree is red-black,
 its outer context is valid, its parent links are consistent, and the right
