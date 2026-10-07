@@ -40,14 +40,26 @@ The expanded proof is refused at an `unfold` of a population member with
 "count(...) requires owning authority for that population", or with "Requires
 owns authority(R(p))".
 
-In `increment_twice` the tactics in the failing arm read the same as the
-written ones (`have count(contribution(counter)) == 2`, then two
-`unfold(contribution(counter))`), so the difference is likely in what the
-expansion wrote before them. One visible change is that call arguments are
-respelled: `step(pthread_mutex_init(&counter->mutex, 0), { state: state })`
-comes back as `step(pthread_mutex_init(byte_offset(counter, 0), 0), ...)`.
-Whether that respelling, or the placement of the tactics relative to the
-expanded branches, is what breaks the exchange is not yet known.
+The smallest is `run` in `modeled_pthread_counted_join.md`. Its C is
+
+```c
+if (pthread_create(&handle, NULL, worker, p) != 0) return 0;
+```
+
+and its proof steps over the call and then writes
+`branch then { have count(ticket(p)) == 1 by { simp(); } unfold(ticket(p)); step(); simp(); } else {}`.
+In the then-arm the call failed, so the caller still owns the ticket and its
+authority.
+
+The expansion writes the same steps and then
+`if at(statement(2).entry, __click_call_result0) != at(statement(2).entry, 0) { step(); have count(ticket(p)) == 1 ...`.
+Checking that, the trace shows the step over `pthread_create` losing
+`owns authority(ticket(p))` and `owns ticket(p)` before the branch, and the
+then-arm starting from that state, so `count(ticket(p))` has no authority to
+read. The written `branch` gives the failed-call arm the state in which the
+call transferred nothing; the expanded branch gives both arms the state after
+a successful call. The call has two outcomes with different resources, and
+the expanded form does not hand each arm its own outcome.
 
 ### A `branch` in a loop's `preserve` proof
 
