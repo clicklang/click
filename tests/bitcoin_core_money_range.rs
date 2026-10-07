@@ -110,9 +110,11 @@ fn check_upstream_cpp_rounding_phase(
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
     let evaluation_caller = name.starts_with("FeeFracEvaluate");
+    let fee_rate_boundary = name == "CFeeRateGetFeeBoundary";
     let result_fit_div = name.starts_with("FeeFracDivResultFit");
     let bounded_div = name == "FeeFracDivBounded" || result_fit_div;
     if evaluation_caller
+        || fee_rate_boundary
         || bounded_div
         || matches!(
             name,
@@ -132,7 +134,7 @@ fn check_upstream_cpp_rounding_phase(
             "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
         }]);
     }
-    if evaluation_caller || bounded_div || name == "FeeFracDivImported" {
+    if evaluation_caller || fee_rate_boundary || bounded_div || name == "FeeFracDivImported" {
         const STRING_VIEW_HASH: &str =
             "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c";
         let header = "sysroot/usr/include/c++/12/string_view";
@@ -159,6 +161,18 @@ fn check_upstream_cpp_rounding_phase(
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
     let refreshed = refresh_import(&config_path);
+    if fee_rate_boundary {
+        let error = refreshed.expect_err("GetFee must retain the unsupported record boundary");
+        assert!(
+            error.contains("record fields must be named mutable int"),
+            "{error}"
+        );
+        assert!(error.contains("feerate.h"), "{error}");
+        assert!(error.len() < 8000);
+        assert!(!root.join(format!("{name}.click-cpp.json")).exists());
+        fs::remove_dir_all(root).unwrap();
+        return;
+    }
     if selected == "FeeFrac::Div" && !bounded_div && name != "FeeFracDivImported" {
         let error = refreshed.expect_err("the library Assume boundary must remain explicit");
         assert!(error.contains("export C++ source"), "{error}");
@@ -2106,4 +2120,16 @@ fn upstream_positive_wide_fee_evaluation_up_rejects_false_bounds_and_missing_gua
 #[test]
 fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn pinned_upstream_fee_rate_getfee_retains_record_composition_boundary() {
+    check_upstream_cpp_rounding_phase(
+        "CFeeRate::GetFee",
+        "CFeeRateGetFeeBoundary",
+        "",
+        "bitcoin-src/src/policy/feerate.cpp",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        None,
+    );
 }

@@ -852,15 +852,43 @@ operand/fit bounds, weakened strict endpoints, source-comparison transport,
 false rounding and missing/forged arithmetic evidence. The original joint
 profile remains a regression; alternative helper interfaces remain explicit.
 
-Next select the unchanged `CFeeRate::GetFee` wrapper in this same pinned
-closure. Preserve its actual inherited `FeePerVSize` access and `Assume`
-annotation; establish the base-subobject/field authority needed to compose
-`IsEmpty` and the unified Up contract. State empty-rate behavior separately
-from the positive-size result-fit profile. Its negative-fee, nonzero-amount
-case changes a zero rounded result to `-1`, so specify that minimum correction
-explicitly rather than claiming unconditional ceiling. Keep object construction
-and the other `CFeeRate` methods separate until their own source contracts are
-selected. Continue bounded ordinary/expanded/retained and hostile authority,
+Preparation for the unchanged `CFeeRate::GetFee` wrapper now admits named
+standard-layout class records with the existing signed scalar/pointer field
+profile, including private, protected and default-private fields. Clang still
+checks access legality at source uses; resolved declarations and exact field
+layouts lower to the same C memory model as structs. Sidecar views/ownership
+remain necessary, with no runtime access-control assumption or kernel change.
+Synthetic const readers and mutable methods cover ordinary, expanded and
+retained verification, false frames/values, missing authority and read-only
+writes. Illegal source access, unions, mixed-access non-standard layouts,
+inheritance and bit-fields remain refused. Exporter refusal diagnostics now
+use the actual source/header path instead of attributing a header line to the
+selected translation unit.
+
+Reachable record declarations now retain spans in explicitly locked project
+headers. The exporter shares declaration-source handling with scalar aliases;
+the artifact checker accepts record/field spans only in the selected source
+or its configured dependencies, and requires a field declaration to share its
+record's source. Function bodies and member-use spans still belong to the
+selected source. Exact layout and declaration identities use the existing
+memory model. Offline const readers and mutable methods verify, expand and
+reverify with retained checks. Missing dependency authority, stale header
+bytes, forged record/field sources and executable spans remain refused;
+unrelated header records do not enter the proof graph. Existing deterministic
+inventory checks now cover both selected-source and header record origins.
+
+The pinned unchanged `CFeeRate::GetFee` regression now reaches its nested
+`FeePerVSize` field at `policy/feerate.h`, with a bounded diagnostic and no
+partial artifact. The wrapper is not verified yet. Next introduce nested
+record places and a precise base-subobject representation for the actual
+inherited `FeePerVSize` field: preserve declaration identity, layout and field
+authority instead of flattening inheritance into matching field names.
+Compose `IsEmpty` and the unified Up contract only after those prerequisites.
+State empty-rate behavior separately from the positive-size result-fit profile.
+Its negative-fee, nonzero-amount case changes a zero rounded result to `-1`, so
+specify that minimum correction explicitly. Keep object construction and the
+other `CFeeRate` methods separate until their own contracts are selected.
+Continue bounded ordinary/expanded/retained and hostile provenance, authority,
 fit, empty-branch and correction checks without editing Bitcoin.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
