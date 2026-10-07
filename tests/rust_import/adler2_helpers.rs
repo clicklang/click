@@ -23,7 +23,15 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
-    format!("{}\n{lemmas}\n{contract}\n{getters}", helper_library())
+    let iterator_lemmas = if contract.contains("adler_lane_iterator_") {
+        flat_iterator_bounds()
+    } else {
+        String::new()
+    };
+    format!(
+        "{}\n{lemmas}\n{iterator_lemmas}\n{contract}\n{getters}",
+        helper_library()
+    )
 }
 
 fn compute_project(contract: &str) -> Project {
@@ -750,9 +758,19 @@ fn flat_iterator_bounds() -> String {
 fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
     use click::surface::verify_click_theorems;
     let source = flat_iterator_bounds();
-    assert_eq!(verify_click_theorems(&source).unwrap().len(), 60);
+    assert_eq!(verify_click_theorems(&source).unwrap().len(), 64);
     for (before, after) in [
         ("requires total <= 22208;", "requires total <= 22212;"),
+        ("requires to_integer(a) <= 65520;", ""),
+        ("requires to_integer(b) <= 65520;", ""),
+        (
+            "ensures to_integer(a) + to_integer(byte) <= 4294967295",
+            "ensures to_integer(a) + to_integer(byte) <= 1481279",
+        ),
+        (
+            "ensures to_integer(b) + to_integer(a + byte) <= 4294967295",
+            "ensures to_integer(b) + to_integer(a + byte) <= 4294690199",
+        ),
         ("requires remaining <= total;", ""),
         ("requires 0 <= remaining;", ""),
         ("requires 4 <= remaining;", ""),
@@ -844,7 +862,7 @@ fn expand_iterator_bounds_claims(claims: &[(&str, usize)]) {
         click::surface::verify_click_theorems(&source)
             .unwrap()
             .len(),
-        60
+        64
     );
 }
 
@@ -873,6 +891,8 @@ fn charon_adler2_iterator_bounds_tools_expand_native_certificates() {
         ("adler_lane_iterator_successor_ceilings", 2),
         ("adler_lane_iterator_native_preservation", 2),
         ("adler_lane_iterator_boundaries", 7),
+        ("adler_lane_iterator_reduced_initial", 2),
+        ("adler_lane_iterator_add_contracts", 2),
     ]);
 }
 
@@ -1116,6 +1136,20 @@ fn charon_adler2_two_byte_compute_tools_recheck_original_contract() {
 #[ignore = "nightly: original three-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
     recheck_compute_tools(THREE_BYTE_COMPUTE, 3);
+}
+
+#[test]
+fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "have __rust_mir_62_remaining == 4 by",
+        "have __rust_mir_62_remaining == 8 by",
+    );
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "have adler_lane_vectors_consumed(4, __rust_mir_62_remaining) == 0 by",
+        "have adler_lane_vectors_consumed(4, __rust_mir_62_remaining) == 1 by",
+    );
 }
 
 #[test]
