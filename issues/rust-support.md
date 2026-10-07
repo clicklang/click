@@ -1081,3 +1081,29 @@ verifier repair, not an empty-input or nested-loop proof. Next decompose the
 original computation's scalar/modulo checkpoint into explicit checked steps,
 then establish the existing lane ceilings over the stored nested iterators.
 Original Rust sources, extraction locks, and the import profile are unchanged.
+
+
+### Original computation empty-input boundary
+
+The locked adler2 sidecar now verifies the unchanged `Adler32::compute` body
+on empty input from the constructor state `a = 1`, `b = 0`, proving both final
+fields and all executed access/panic prerequisites. Its scalar zero survives
+the original addition and modulo. Checked operand snapshots cover lane
+recombination, both ordered four-lane summation loops, final modulo values,
+and u16 stores; no source counter or assumed invariant is added. The helper
+and constant getter bodies are checked with the boundary contract. A few
+native adapter capture names remain explicit proof anchors for the frozen
+import; adapter changes must recheck them.
+
+Ordinary regressions reject missing empty-input, initial scalar B, and state
+ownership prerequisites. The full boundary proof, false output/initial A
+rejections, and verify/profile/audit/expansion agreement are nightly checks.
+Contract parsing also recognizes the existing narrow scalar casts, using the
+existing C conversion rules; boundary, false-value, and missing-definedness
+regressions cover them. Original source files, extraction locks, and the
+import profile are unchanged.
+
+Next establish the existing lane ceilings over the original stored nested
+iterators for nonempty chunks and tails. General initial-state preservation,
+nonempty byte accounting, whole-loop panic freedom, and full checksum
+correctness remain unproved.

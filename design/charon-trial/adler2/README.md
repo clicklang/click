@@ -1,8 +1,9 @@
 # Unchanged adler2 crate adapter trial
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
-proves the four-lane helper bodies. **The Adler-32 checksum postcondition
-remains unproved.**
+proves the four-lane helper bodies and the original computation on empty input
+from `a = 1`, `b = 0`. **The general Adler-32 checksum postcondition remains
+unproved.**
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 `89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the
@@ -128,6 +129,30 @@ entry snapshots. This repairs the proof interface used to connect the derived
 index to iterator transitions; it adds no new loop invariant or checksum claim.
 
 
+## Original empty-input computation
+
+The same [locked sidecar](helpers.click) now checks the unchanged
+`Adler32::compute` body with an empty input and initial state `a = 1`, `b = 0`.
+It requires ownership of both state fields and a shared empty input view,
+and proves both output fields: `a = 1`, `b = 0`. All four helper contracts and
+both constant getter bodies are verified in the same file.
+
+The proof checks the original scalar addition and modulo, lane recombination,
+ordered shared array iterations, final modulo results, and narrowing stores.
+For this input the recombined B lanes are `0`, `65521`, `131042`, `196563`;
+their sum is `393126 = 6 * MOD`, which reduces to zero. Snapshot equations and
+explicit rewrites retain the actual operand values. The proof names a few
+adapter capture locals to cite original call results directly; it introduces
+no source variables, processed counter, assumed loop invariant, or proof hole.
+These low-level names are tied to the frozen import and must recheck after
+adapter changes.
+
+The complete boundary proof and false-output rejections take longer than a
+few seconds and run in the nightly suite. Missing empty-input, scalar B, and
+ownership prerequisites are ordinary regressions. Nonempty chunk/tail
+preservation, arbitrary initial-state preservation, and the general checksum
+contract remain later work.
+
 ## Reproduce
 
 Build Click and pinned Charon with the normal repository setup. The frozen
@@ -156,7 +181,7 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Establish and preserve the lane invariants over the original chunks/remainder
+With the empty-input boundary checked, establish and preserve the lane invariants over the original chunks/remainder
 iterator states using the derived index, checked A/B recurrences, and native
 u32 observation bridges. Then use the helper contracts and byte accounting
 to connect the original computation to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).

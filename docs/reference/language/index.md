@@ -2365,12 +2365,17 @@ ensures forall (k: int32) { 0 <= k and k < n implies p[k] == old(p[k]) } by auto
 
 Inside `old(...)`, `result` is unavailable.
 
-Contract expressions accept native scalar casts to `int32`, `uint32`, `int64`,
+Contract expressions accept native scalar casts to `int8`, `uint8`, `int16`,
+`uint16`, `int32`, `uint32`, `int64`,
 `uint64`, `int128`, and `uint128`, including a cast on the left of a comparison.
 A cast retains the native conversion semantics; it does not infer representable
 ranges or identify a narrowed observation with its source. Wide casts let
 sidecars name the explicit conversions in imported C++ expressions, such as
-`n / (int128)d`. Checked examples are in
+`n / (int128)d`. Narrow casts use the existing conversion rules;
+`defined((uint16)x)` still needs the modeled range guards. Checked narrow
+boundaries and historical casts are in
+[`contract_narrow_scalar_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/contract_narrow_scalar_casts.md).
+Wide examples are in
 [`wide_contract_scalar_casts.md`](https://github.com/clicklang/click/blob/master/mdtests/wide_contract_scalar_casts.md).
 
 Contract expressions accept the unsigned narrowing cast `(uint32)x`, including
