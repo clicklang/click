@@ -54,9 +54,14 @@ fn adler2_helpers_project() -> Project {
     p
 }
 
+fn helper_library() -> &'static str {
+    HELPERS.split_once("# Empty-input boundary").unwrap().0
+}
+
 fn helper_proof(index: usize) -> String {
-    let blocks: Vec<_> = HELPERS.split("\n\n").collect();
+    let blocks: Vec<_> = helper_library().trim_end().split("\n\n").collect();
     assert_eq!(blocks.len(), 5);
+    assert!(index < 4);
     format!("{}\n\n{}", blocks[0], blocks[index + 1])
 }
 
@@ -86,7 +91,7 @@ fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
             .iter()
             .any(|f| f.name.ends_with("_I7_compute") && f.mir.is_some())
     );
-    C0VerificationSession::new_program_prepared(HELPERS, &prepared).unwrap();
+    C0VerificationSession::new_program_prepared(helper_library(), &prepared).unwrap();
     // Module identity is checked even when all the proved helpers are unchanged.
     fs::write(p.root.join("src/lib.rs"), "// changed crate root\n").unwrap();
     assert!(
@@ -364,8 +369,11 @@ fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
     config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
     fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
     refresh_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(HELPERS, &load_import(&p.config()).unwrap())
-        .unwrap();
+    C0VerificationSession::new_program_prepared(
+        helper_library(),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
 }
 
 const BOUNDS: &str = include_str!("../../design/charon-trial/adler2/bounds.click");
@@ -431,8 +439,11 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
 fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
-    C0VerificationSession::new_program_prepared(&format!("{HELPERS}\n{BOUNDS}"), &prepared)
-        .unwrap();
+    C0VerificationSession::new_program_prepared(
+        &format!("{}\n{BOUNDS}", helper_library()),
+        &prepared,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -574,7 +585,7 @@ fn iterator_bounds_project() -> Project {
 fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
     let p = iterator_bounds_project();
     let prepared = load_import(&p.config()).unwrap();
-    let source = format!("{HELPERS}\nimport \"iterator-bounds.click\";\n");
+    let source = format!("{}\nimport \"iterator-bounds.click\";\n", helper_library());
     let project = click::cli::read_click_project(&p.root.join("borrow.click"), &source).unwrap();
     C0VerificationSession::new_program_prepared_project(&project, &prepared).unwrap();
 }
@@ -659,4 +670,84 @@ fn charon_adler2_iterator_bounds_tools_expand_native_certificates() {
         ("adler_lane_iterator_native_preservation", 2),
         ("adler_lane_iterator_boundaries", 7),
     ]);
+}
+
+fn reject_empty_compute(before: &str, after: &str) {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let (library, computation) = HELPERS.split_once("# Empty-input boundary").unwrap();
+    let changed = computation.replacen(before, after, 1);
+    assert_ne!(computation, changed, "missing mutation: {before}");
+    let invalid = format!("{library}# Empty-input boundary{changed}");
+    // Reject this claim without reproving unrelated helper bodies for every
+    // mutation; the complete fixture is checked separately below.
+    let offset = invalid.find("execute_until(assignment(b, 0))").unwrap();
+    let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let error = click::surface::verify_program_prepared_sources_at(&invalid, &prepared, line, 2)
+        .expect_err("invalid original computation contract was accepted");
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "rejection must be a proof error: {}",
+        error.message()
+    );
+}
+
+#[test]
+fn charon_adler2_empty_compute_rejects_missing_input_lock() {
+    reject_empty_compute("requires bytes_len == 0u64;", "");
+}
+
+#[test]
+fn charon_adler2_empty_compute_rejects_missing_scalar_b_premise() {
+    reject_empty_compute("requires self->b == 0;", "");
+}
+
+#[test]
+fn charon_adler2_empty_compute_rejects_missing_ownership() {
+    reject_empty_compute("owns self->a;", "");
+    reject_empty_compute("owns self->b;", "");
+}
+
+#[test]
+#[ignore = "nightly: complete original computation boundary proof"]
+fn charon_adler2_empty_compute_proves_original_body_and_rejects_false_outputs() {
+    let p = adler2_helpers_project();
+    C0VerificationSession::new_program_prepared(HELPERS, &load_import(&p.config()).unwrap())
+        .unwrap();
+    reject_empty_compute("ensures self->a == 1;", "ensures self->a == 2;");
+    reject_empty_compute("ensures self->b == 0;", "ensures self->b == 1;");
+    reject_empty_compute("requires self->a == 1;", "requires self->a == 2;");
+}
+
+#[test]
+#[ignore = "nightly: original computation proof-tool agreement and expansion"]
+fn charon_adler2_empty_compute_tools_recheck_original_contract() {
+    let p = adler2_helpers_project();
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    let offset = source.find("execute_until(assignment(b, 4))").unwrap();
+    let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
+    let audit = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+        .arg(p.root.join("borrow.click"))
+        .output()
+        .unwrap();
+    assert!(
+        audit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit.stderr)
+    );
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
 }
