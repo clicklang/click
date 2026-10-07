@@ -865,11 +865,21 @@ inheritance and bit-fields remain refused. Exporter refusal diagnostics now
 use the actual source/header path instead of attributing a header line to the
 selected translation unit.
 
-The pinned unchanged `CFeeRate::GetFee` regression now reaches the explicit
-header-declared-record boundary at `policy/feerate.h`, with a bounded diagnostic
-and no partial artifact. The wrapper is not verified yet. Next admit reachable
-record declarations from explicitly locked project headers, retaining their
-source provenance and excluding unrelated declarations. Then introduce nested
+Reachable record declarations now retain spans in explicitly locked project
+headers. The exporter shares declaration-source handling with scalar aliases;
+the artifact checker accepts record/field spans only in the selected source
+or its configured dependencies, and requires a field declaration to share its
+record's source. Function bodies and member-use spans still belong to the
+selected source. Exact layout and declaration identities use the existing
+memory model. Offline const readers and mutable methods verify, expand and
+reverify with retained checks. Missing dependency authority, stale header
+bytes, forged record/field sources and executable spans remain refused;
+unrelated header records do not enter the proof graph. Existing deterministic
+inventory checks now cover both selected-source and header record origins.
+
+The pinned unchanged `CFeeRate::GetFee` regression now reaches its nested
+`FeePerVSize` field at `policy/feerate.h`, with a bounded diagnostic and no
+partial artifact. The wrapper is not verified yet. Next introduce nested
 record places and a precise base-subobject representation for the actual
 inherited `FeePerVSize` field: preserve declaration identity, layout and field
 authority instead of flattening inheritance into matching field names.

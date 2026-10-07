@@ -675,7 +675,7 @@ private:
       llvm::json::Object source_alias;
       source_alias["declaration_id"] = declaration_id(alias_declaration);
       source_alias["name"] = alias_declaration->getNameAsString();
-      source_alias["span"] = alias_span(alias_declaration->getSourceRange());
+      source_alias["span"] = declaration_span(alias_declaration->getSourceRange());
       if (!state_.error.empty()) {
         return std::nullopt;
       }
@@ -2631,9 +2631,10 @@ private:
            "the supported C++ record must be a named struct or class");
       return false;
     }
-    if (!is_in_logical_source(record->getLocation())) {
+    if (!is_in_logical_source(record->getLocation()) &&
+        !dependency_source(record->getLocation())) {
       fail(record->getLocation(),
-           "the supported C++ record must be declared in the selected file");
+           "the supported C++ record must be declared within the import root");
       return false;
     }
     if (!record->isStandardLayout() || record->getNumBases() != 0) {
@@ -2813,7 +2814,7 @@ private:
       lowered["value_type"] = std::move(*value_type);
       lowered["offset_bytes"] = static_cast<std::int64_t>(bit_offset / 8);
       lowered["size_bytes"] = static_cast<std::int64_t>(field_size);
-      lowered["span"] = span(field->getSourceRange());
+      lowered["span"] = declaration_span(field->getSourceRange());
       fields.push_back(std::move(lowered));
     }
     llvm::json::Object result;
@@ -2839,7 +2840,7 @@ private:
     } else {
       result["destructor"] = nullptr;
     }
-    result["span"] = span(record->getSourceRange());
+    result["span"] = declaration_span(record->getSourceRange());
     if (!state_.error.empty()) {
       return std::nullopt;
     }
@@ -3131,7 +3132,7 @@ private:
     return Json(std::move(result));
   }
 
-  Json alias_span(clang::SourceRange range) {
+  Json declaration_span(clang::SourceRange range) {
     clang::SourceLocation begin =
         source_manager_.getSpellingLoc(range.getBegin());
     clang::SourceLocation end = source_manager_.getSpellingLoc(range.getEnd());
@@ -3142,7 +3143,7 @@ private:
     auto end_dependency = dependency_source(end);
     if (!dependency || !end_dependency || *dependency != *end_dependency) {
       fail(begin,
-           "reachable C++ alias declarations must stay within one declared dependency source");
+           "reachable C++ declarations must stay within one declared dependency source");
       return Json(nullptr);
     }
     clang::SourceLocation after = clang::Lexer::getLocForEndOfToken(

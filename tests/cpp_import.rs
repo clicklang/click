@@ -10572,3 +10572,125 @@ fn record_refusal_diagnostics_keep_macro_expansion_source_and_line_together() {
     assert!(!error.contains("layout.h:2:"), "{error}");
     assert!(!project.artifact().exists());
 }
+
+fn header_record_project(selected: &str) -> Project {
+    let mut project = Project::with_fixture(
+        "header_record.cpp",
+        selected,
+        include_str!("fixtures/cpp-verification/header-record/header_record.cpp"),
+    );
+    fs::write(
+        project.directory.join("state.h"),
+        include_str!("fixtures/cpp-verification/header-record/state.h"),
+    )
+    .unwrap();
+    project.dependencies.push("state.h".into());
+    project.write_config(selected);
+    project
+}
+
+#[test]
+fn locked_header_records_preserve_declaration_sources_and_verify_offline() {
+    for (selected, sidecar) in [
+        (
+            "FeeRateState::IsEmpty",
+            include_str!("fixtures/cpp-verification/class-record/is_empty.click"),
+        ),
+        (
+            "FeeRateState::ReadFee",
+            include_str!("fixtures/cpp-verification/class-record/read_fee.click"),
+        ),
+        (
+            "FeeRateState::SetFee",
+            include_str!("fixtures/cpp-verification/class-record/set_fee.click"),
+        ),
+    ] {
+        let project = header_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [record] = import.export().records.as_slice() else {
+            panic!("only the reachable record")
+        };
+        assert_eq!(record.name, "FeeRateState");
+        assert_eq!(record.span.file, "state.h");
+        assert_eq!(record.size_bytes, 16);
+        assert_eq!(record.alignment_bytes, 8);
+        for field in &record.fields {
+            assert_eq!(field.span.file, "state.h");
+        }
+        assert_eq!(import.export().dependencies, ["state.h"]);
+        assert_eq!(import.export().function.span.file, "header_record.cpp");
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        check_return_call_sidecar(
+            &project,
+            &import,
+            &sidecar.replace("class_record.cpp", "header_record.cpp"),
+        );
+    }
+}
+
+#[test]
+fn header_records_require_explicit_dependencies_and_reject_stale_header_bytes() {
+    let mut project = header_record_project("FeeRateState::ReadFee");
+    project.dependencies.clear();
+    project.write_config("FeeRateState::ReadFee");
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("differ from configured dependencies"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+    project.dependencies.push("state.h".into());
+    project.write_config("FeeRateState::ReadFee");
+    refresh_import(&project.config()).unwrap();
+    let original = load_import(&project.config())
+        .unwrap()
+        .identity()
+        .to_owned();
+    let header = project.directory.join("state.h");
+    let changed = format!(
+        "{}\n// changed locked input\n",
+        fs::read_to_string(&header).unwrap()
+    );
+    fs::write(&header, changed).unwrap();
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("dependency") || error.contains("preprocessor"),
+        "{error}"
+    );
+    refresh_import(&project.config()).unwrap();
+    assert_ne!(load_import(&project.config()).unwrap().identity(), original);
+}
+
+#[test]
+fn header_record_artifacts_reject_forged_declaration_and_executable_sources() {
+    use sha2::{Digest, Sha256};
+    for change in ["record", "field", "field_owner", "function"] {
+        let project = header_record_project("FeeRateState::ReadFee");
+        refresh_import(&project.config()).unwrap();
+        let mut artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let mut lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        match change {
+            "record" => artifact["records"][0]["span"]["file"] = "unlisted.h".into(),
+            "field" => artifact["records"][0]["fields"][0]["span"]["file"] = "unlisted.h".into(),
+            "field_owner" => {
+                artifact["records"][0]["fields"][0]["span"]["file"] = "header_record.cpp".into()
+            }
+            "function" => artifact["function"]["span"]["file"] = "state.h".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("source span") || error.contains("different source"),
+            "{error}"
+        );
+    }
+}

@@ -164,7 +164,7 @@ fn check_upstream_cpp_rounding_phase(
     if fee_rate_boundary {
         let error = refreshed.expect_err("GetFee must retain the unsupported record boundary");
         assert!(
-            error.contains("must be declared in the selected file"),
+            error.contains("record fields must be named mutable int"),
             "{error}"
         );
         assert!(error.contains("feerate.h"), "{error}");

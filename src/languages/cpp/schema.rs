@@ -761,7 +761,7 @@ impl CppExport {
             }
             previous_file = Some(&file.accessed_path);
         }
-        let mut alias_sources = BTreeSet::from([logical_source.to_string()]);
+        let mut declaration_sources = BTreeSet::from([logical_source.to_string()]);
         let mut previous_dependency: Option<&str> = None;
         for dependency in &self.dependencies {
             if !valid_relative_source_path(dependency)
@@ -770,7 +770,7 @@ impl CppExport {
                 return Err("C++ export dependencies must be unique sorted relative paths".into());
             }
             previous_dependency = Some(dependency);
-            alias_sources.insert(dependency.clone());
+            declaration_sources.insert(dependency.clone());
         }
         let expected_name = match &self.function.function_kind {
             CppFunctionKind::Method { record_name, .. }
@@ -820,19 +820,20 @@ impl CppExport {
                     .into(),
             );
         }
-        let records = validate_record_inventory(&self.records, logical_source, &alias_sources)?;
+        let records =
+            validate_record_inventory(&self.records, logical_source, &declaration_sources)?;
 
         let CheckedConstants {
             declarations: constants,
             dependencies: constant_dependencies,
-        } = validate_constant_inventory(&self.constants, logical_source, &alias_sources)?;
+        } = validate_constant_inventory(&self.constants, logical_source, &declaration_sources)?;
 
         let mut functions = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
         for source in std::iter::once(&self.function).chain(&self.reachable_functions) {
             source.validate(
                 logical_source,
-                &alias_sources,
+                &declaration_sources,
                 &records,
                 self.profile.exceptions,
                 self.exception_behavior,
@@ -921,7 +922,7 @@ impl CppExport {
 fn validate_record_inventory<'a>(
     inventory: &'a [CppRecord],
     logical_source: &str,
-    alias_sources: &BTreeSet<String>,
+    declaration_sources: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, &'a CppRecord>, String> {
     let mut records = BTreeMap::new();
     let mut record_names = BTreeSet::new();
@@ -931,7 +932,7 @@ fn validate_record_inventory<'a>(
         if !record_names.insert(record.name.as_str()) {
             return Err("C++ record profile does not support same-named record layouts".into());
         }
-        record.validate(logical_source)?;
+        record.validate(logical_source, declaration_sources)?;
         for field in &record.fields {
             crate::instrumentation::record_deterministic_work(1);
             if !field_identities.insert(field.declaration_id.as_str()) {
@@ -940,7 +941,7 @@ fn validate_record_inventory<'a>(
                     field.declaration_id
                 ));
             }
-            field.value_type.validate_aliases_in(alias_sources)?;
+            field.value_type.validate_aliases_in(declaration_sources)?;
         }
         if records
             .insert(record.declaration_id.clone(), record)
@@ -1030,11 +1031,11 @@ fn validate_reachable_records(
 }
 
 impl CppRecord {
-    fn validate(&self, logical_source: &str) -> Result<(), String> {
+    fn validate(&self, logical_source: &str, sources: &BTreeSet<String>) -> Result<(), String> {
         if self.declaration_id.is_empty() || self.name.is_empty() {
             return Err("C++ record is missing declaration identity".into());
         }
-        self.span.validate(logical_source)?;
+        self.span.validate_in(sources)?;
         if let Some(destructor) = &self.destructor {
             if destructor.declaration_id.is_empty() || destructor.name.is_empty() {
                 return Err(format!(
@@ -1056,7 +1057,13 @@ impl CppRecord {
         let mut names = std::collections::BTreeSet::new();
         let mut previous_end = 0u32;
         for field in &self.fields {
-            field.span.validate(logical_source)?;
+            field.span.validate_in(sources)?;
+            if field.span.file != self.span.file {
+                return Err(format!(
+                    "C++ record `{}` field declaration has a different source",
+                    self.name
+                ));
+            }
             if field.declaration_id.is_empty() || field.name.is_empty() {
                 return Err(format!(
                     "C++ record `{}` has an unidentified field",
@@ -5484,25 +5491,29 @@ mod tests {
                 span: cleanup_span(),
             }],
         };
-        let sources = BTreeSet::from(["fixture.cpp".into()]);
-        for size in [8, 32, 128, 256] {
-            let inventory = (0..size)
-                .map(|index| {
-                    let mut copy = record.clone();
-                    copy.declaration_id = format!("record_{index}");
-                    copy.name = format!("R{index}");
-                    copy.fields[0].declaration_id = format!("field_{index}");
-                    copy
-                })
-                .collect::<Vec<_>>();
-            let (indexed, work) = crate::instrumentation::measure_deterministic_work(|| {
-                validate_record_inventory(&inventory, "fixture.cpp", &sources)
-            });
-            assert_eq!(indexed.unwrap().len(), size);
-            assert!(
-                work >= size && work <= 4 * size,
-                "{size} layouts: {work} work"
-            );
+        let sources = BTreeSet::from(["fixture.cpp".into(), "record.h".into()]);
+        for source in ["fixture.cpp", "record.h"] {
+            for size in [8, 32, 128, 256] {
+                let inventory = (0..size)
+                    .map(|index| {
+                        let mut copy = record.clone();
+                        copy.span.file = source.into();
+                        copy.fields[0].span.file = source.into();
+                        copy.declaration_id = format!("record_{index}");
+                        copy.name = format!("R{index}");
+                        copy.fields[0].declaration_id = format!("field_{index}");
+                        copy
+                    })
+                    .collect::<Vec<_>>();
+                let (indexed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    validate_record_inventory(&inventory, "fixture.cpp", &sources)
+                });
+                assert_eq!(indexed.unwrap().len(), size);
+                assert!(
+                    work >= size && work <= 4 * size,
+                    "{size} layouts: {work} work"
+                );
+            }
         }
         let mut duplicate_field = record.clone();
         duplicate_field.declaration_id = "second".into();
@@ -5523,7 +5534,7 @@ mod tests {
                 .unwrap_err()
                 .contains("same-named record layouts")
         );
-        record.validate("fixture.cpp").unwrap();
+        record.validate("fixture.cpp", &sources).unwrap();
         let records = BTreeMap::from([("record".into(), &record)]);
         assert!(
             validate_reachable_records(&BTreeMap::new(), &records)
