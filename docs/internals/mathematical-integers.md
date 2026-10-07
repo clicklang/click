@@ -65,6 +65,12 @@ Integer literals, unary negation, addition, subtraction, multiplication,
 equality, disequality, and order comparisons are supported. Exact Integer
 arithmetic does not overflow. Bitwise operations remain machine operations.
 
+Checked Integer equality rewriting preserves lowering's multiplication by zero
+and one identities. These folds only remove expression nodes; other products
+retain their shared symbolic structure. Rewritten native observations therefore
+keep a checked source spelling for arithmetic certificates, including unsigned
+values above the sign bit. See the [identity rewrite regression](https://github.com/clicklang/click/blob/master/mdtests/integer_observed_product_identity_rewrite.md).
+
 Division and remainder are deliberately deferred from the current supported
 surface, but their semantics are settled for a future implementation. They use
 Euclidean division: for nonzero `d`,

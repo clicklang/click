@@ -1211,13 +1211,19 @@ goal's source comparison instead of wrapping machine sums; the unchanged checker
 requires that comparison to encode the exact child sum. Regressions verify and
 independently recheck expanded upper and lower bounds on both sides of the sign
 bit, and reject insufficient bounds, unlisted premises, and forged certificates.
-The same investigation independently reduced
-`bugs/arithmetic-cannot-render-observed-product-after-zero-rewrite.md`: after a
-checked Integer observation rewrite to zero, arithmetic proves the product goal
-internally but cannot print its certificate. This remaining bug is the next
-tooling fix. The checked multiplication ceiling
-example now proves its native quotient guard with arithmetic; the original
-computation proof remains stopped at this tooling checkpoint.
+The observed-product identity rewrite bug from that investigation is also fixed.
+Checked Integer substitution now folds multiplication by zero and one just as
+lowering does, retaining the goal's independently checked source presentation.
+It preserves shared symbolic products instead of multiplying arbitrary-size
+literals. Regressions cover both operand orders, full-width unsigned
+observations, pure proofs, execution `have` scopes, and function outcomes;
+expanded certificates reject missing evidence and false or altered products.
+Deterministic rewrite visit counts remain linear across shared product depths.
+The checked symbolic zero-factor theorem now proves the product equals zero after
+the native multiplication bridge and Integer observation rewrites. The checked
+multiplication ceiling example uses arithmetic for its native quotient guard.
+Both arithmetic tooling bugs are resolved; the complete original four-byte
+computation remains unproved.
 
 Next prove the first nonempty four-byte vector path and establish/preserve the
 derived lane ceilings over the original stored nested iterators. General
