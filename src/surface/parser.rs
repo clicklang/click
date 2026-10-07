@@ -6077,7 +6077,7 @@ impl Parser {
                         _ => {}
                     }
                 }
-                let mut tactic = if quantified
+                let tactic = if quantified
                     || self.peek_ident() == Some("authority")
                     || self
                         .peek_ident()
@@ -6107,14 +6107,9 @@ impl Parser {
                     ));
                 }
                 if self.peek_ident() == Some("as") {
-                    self.position += 1;
-                    let ProofTactic::UnfoldResource(ResourceClause::Named { binding, resource }) =
-                        &mut tactic
-                    else {
-                        return Err(self.error("`as` requires a named resource unfold"));
-                    };
-                    binding.child_bindings =
-                        Some(self.parse_resource_child_bindings(resource, true)?.into());
+                    return Err(self.error(
+                        "`unfold` takes no `as` map; name the opened pieces on the left: `let { slot: name } = unfold(resource);`",
+                    ));
                 }
                 tactic
             }
