@@ -5459,6 +5459,47 @@ fn sequential_proof_ifs_in_a_loop_body_rejoin_instead_of_doubling() {
     assert_near_linear_scaling("sequential proof-level ifs in a loop body", &samples);
 }
 
+/// A scanning loop whose body is `count` C `if`s in a row, each storing to
+/// a local when its guard holds, with no written `preserve` proof.
+fn loop_body_c_ifs_project(count: usize) -> (String, String) {
+    let ifs = (0..count)
+        .map(|index| {
+            format!(
+                "        if (a[{index}] == 7) {{\n            found = {};\n        }}\n",
+                index + 1
+            )
+        })
+        .collect::<String>();
+    let c_source = format!(
+        "int32 scan(int32* a, int32 n) {{\n    int32 i;\n    int32 found;\n    i = 0;\n    found = 0;\n    while (i < n) {{\n{ifs}        i = i + 1;\n    }}\n    return 0;\n}}\n"
+    );
+    let click_source = format!(
+        "verifying \"scan.c\";\n\nint32 scan(int32* a, int32 n) {{\n    views a[0..{count}];\n    requires 0 <= n;\n    requires n <= {count};\n    ensures result == 0;\n}} by {{\n    step();\n    step();\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n    }}\n    step();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+/// The automatic loop closer joins the arms of a C `if` that both fall
+/// through, so the rest of the body is walked once. It used to walk the
+/// rest once per arm: `n` such `if`s in a row cost `2^n` paths, and their
+/// expansion wrote all of them out.
+#[test]
+fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = loop_body_c_ifs_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("scan.c", c_source.as_str())])
+            });
+            verified
+                .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("C ifs in an automatically closed loop body", &samples);
+}
+
 #[test]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{

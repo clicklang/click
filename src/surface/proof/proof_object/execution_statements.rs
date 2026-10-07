@@ -1434,8 +1434,13 @@ impl<'a> Proof<'a> {
             let open_member = take_unclosed_bundle_member()
                 .map(|member| format!(": `{member}` remained open"))
                 .unwrap_or_default();
+            let joined_apart = if crate::surface::proof::automatic_body_joined_apart() {
+                ". The automatic loop closer joined the arms of a C `if` in this body and kept only what both arms agree on; if this invariant needs what each arm established, write the body in `preserve by { ... }` and join that `if` with `branch ensuring { fact ...; } then { ... } else { ... }`"
+            } else {
+                ""
+            };
             let error = root.step_error(format!(
-                "closure body did not prove every invariant obligation{open_member}{}",
+                "closure body did not prove every invariant obligation{open_member}{}{joined_apart}",
                 ranking_member_diagnostic(&bundle.ranking_measures)
             ));
             return Err(error.with_search_failures(search.finish()));
