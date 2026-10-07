@@ -5985,9 +5985,8 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
 
 /// The early-return fan-out proved with simple tactics only verifies in work
 /// near linear in its returns. This is the form the simple-verification
-/// contract governs; the nested proof `if`s reach the checked drivers'
-/// region nesting bound soon after 16 returns, so it is measured to there:
-/// 6261, 10723, and 20159 units at 4, 8, and 16 returns on 2026-10-05.
+/// contract governs. Completed early-return cases are processed iteratively,
+/// so the measurement extends through 64 returns despite the written nesting.
 ///
 /// The grouped `execute(); simp();` proof of the same function is not yet
 /// linear: on path `k`, simp's dependency selection reads all `k` conditions
@@ -6000,7 +5999,7 @@ fn explicit_early_return_proof_is_near_linear_in_its_returns() {
         .spawn(|| {
             let _ = roundtrip_sample(1, 0);
             let mut samples = Vec::new();
-            for returns in [2, 4, 8, 16] {
+            for returns in [8, 16, 32, 64] {
                 let c = early_return_fan_out(returns);
                 let click = early_return_fan_out_explicit_proof(returns);
                 let (verified, sample) = scaling_sample(returns, || {
@@ -6019,6 +6018,74 @@ fn explicit_early_return_proof_is_near_linear_in_its_returns() {
         .expect("spawn the fan-out thread")
         .join()
         .expect("fan-out thread");
+}
+
+fn check_early_return_execution_expansion(returns: usize) {
+    std::thread::Builder::new()
+        .name("fan-out-expansion".into())
+        // Match the existing fan-out tests and unoptimized fixture workers.
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
+            let c = early_return_fan_out(returns);
+            let sources = [("fan_out.c", c.as_str())];
+            let expanded = expand_c0_tactic_source_at(click, &sources, 6, 5)
+                .unwrap_or_else(|error| panic!("{returns} returns expand: {}", error.message()));
+            assert!(!expanded.contains("execute()"));
+            verify_c0_sources(&expanded, &sources)
+                .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));
+            let false_c = c.replace("    return -1;\n}", "    return -2;\n}");
+            assert_ne!(false_c, c);
+            let false_sources = [("fan_out.c", false_c.as_str())];
+            verify_c0_sources(&expanded, &false_sources)
+                .expect_err("the last path still owes its postcondition");
+            verify_c0_sources(&early_return_fan_out_explicit_proof(returns), &false_sources)
+                .expect_err("an explicit proof cannot accept a false final path");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn early_return_execution_expansion_reverifies_16_returns() {
+    check_early_return_execution_expansion(16);
+}
+
+#[test]
+fn early_return_execution_expansion_reverifies_32_returns() {
+    check_early_return_execution_expansion(32);
+}
+
+#[test]
+#[ignore = "nightly: 12.2s for 64-return expansion and false-final-path checks"]
+fn early_return_execution_expansion_reverifies_64_returns() {
+    check_early_return_execution_expansion(64);
+}
+
+#[test]
+fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
+    std::thread::Builder::new()
+        .name("proof-else-parser".into())
+        .stack_size(2 << 20)
+        .spawn(|| {
+            let mut body = "normalize();".to_string();
+            for index in 0..64 {
+                body = format!("if 0 == 0 {{ normalize(); }} else {{ obtain (v{index}: Integer) {{ v{index} == v{index} }} {body} }} obtain (v{index}: int32) {{ v{index} == v{index} }}");
+            }
+            parser::parse_file_items(&format!("theorem spine() {{ ensures 0 == 0 by {{ {body} }} }}"))
+                .expect("else scopes restore their existential bindings before later tactics");
+            let mut body = "normalize();".to_string();
+            for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
+                body = format!("if 0 == 0 {{ {body} }} else {{ normalize(); }}");
+            }
+            let error = parser::parse_file_items(&format!("theorem deep() {{ ensures 0 == 0 by {{ {body} }} }}"))
+                .expect_err("recursive then arms remain bounded");
+            assert!(error.message().contains("proof nesting exceeds Click's supported depth"));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }
 
 /// simp spells only the premises its derivation's recorded path names, not

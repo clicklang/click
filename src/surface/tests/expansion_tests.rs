@@ -940,34 +940,24 @@ fn entry_alignment_premise_expands_in_source_spelling() {
     assert!(!expanded.contains("(uint64)arena"), "{expanded}");
 }
 
-/// Eleven nested null checks expand to eleven nested proof `if`s, the checked
-/// drivers' bound, and re-verify. Twelve would nest one past it: expansion
-/// refuses before emitting the rewrite, with the verifier's diagnostic.
+/// Written else nesting is not recursive driver depth: a failed allocation
+/// returns, so twelve null checks can expand and re-verify just like eleven.
 #[test]
-fn expansion_refuses_a_rewrite_past_the_nesting_bound() {
-    let (click_source, c_sources) =
-        mdtest_sources("mdtests/expand_refuses_rewrite_past_nesting_bound.md");
+fn expansion_reverifies_terminal_cases_past_the_old_nesting_bound() {
+    let (click_source, c_sources) = mdtest_sources("mdtests/expand_sequential_null_checks.md");
     let c_sources = c_sources
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c0_sources(&click_source, &c_sources).expect("both smart proofs verify");
-    let expanded =
-        expand_c0_claim_source(&click_source, &c_sources, "eleven", CProofClaim::Grouped)
-            .unwrap_or_else(|error| panic!("eleven checks should expand: {}", error.message()));
-    assert_eq!(expanded.matches(" if at(").count(), 11, "{expanded}");
-    if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
-        panic!(
-            "the eleven-region rewrite should re-verify: {}\n{expanded}",
-            error.message()
-        );
+    for (name, count) in [("eleven", 11), ("twelve", 12)] {
+        let expanded =
+            expand_c0_claim_source(&click_source, &c_sources, name, CProofClaim::Grouped)
+                .unwrap_or_else(|error| panic!("{name} should expand: {}", error.message()));
+        assert_eq!(expanded.matches(" if at(").count(), count, "{expanded}");
+        verify_c0_sources(&expanded, &c_sources)
+            .unwrap_or_else(|error| panic!("{name} rewrite should verify: {}", error.message()));
     }
-    let error = expand_c0_claim_source(&click_source, &c_sources, "twelve", CProofClaim::Grouped)
-        .expect_err("twelve nested regions exceed the checked drivers' bound");
-    assert_eq!(
-        error.message(),
-        "`twelve.contract`: this proof nests 12 execution regions; the checked proof drivers support at most 11. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
-    );
 }
 
 #[test]
