@@ -9,9 +9,10 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use click::cli::{
-    CInput, LoadedTarget, RunLimits, containing_directory, load_sidecar_inputs, load_target_inputs,
-    lone_sidecar_project_root, looks_like_mdtest, looks_like_source_location, parse_duration,
-    parse_source_location, parse_work_limit, select_sidecars, source_refs, with_run_limits,
+    CInput, LoadedTarget, RunLimits, SelectedProject, containing_directory, load_sidecar_inputs,
+    load_target_inputs, lone_sidecar_project_root, looks_like_mdtest, looks_like_source_location,
+    parse_duration, parse_source_location, parse_work_limit, select_sidecars, source_refs,
+    with_run_limits,
 };
 use click::instrumentation::VerificationPhase;
 use click::languages::c::source as c_source;
@@ -327,6 +328,9 @@ fn verify_directory(path: &Path, limits: RunLimits) -> Result<(), String> {
     let sidecars = selection.sidecars().collect::<Vec<_>>();
     let projects = &selection.projects;
     let project_root = selection.project_root.as_path();
+    for project in projects {
+        reconcile_project_externs(project, project_root, path, limits)?;
+    }
     for sidecar in &sidecars {
         verify_file(sidecar, limits, Some(project_root), None, None)?;
         println!("verified {}", display_path(sidecar, path));
@@ -338,6 +342,62 @@ fn verify_directory(path: &Path, limits: RunLimits) -> Result<(), String> {
         projects.len(),
         plural(projects.len())
     );
+    Ok(())
+}
+
+/// Refuses a project in which one sidecar assumes, through an `extern`
+/// declaration, a function that a sibling sidecar's `verifying` source
+/// defines.
+///
+/// Each sidecar is verified on its own, so nothing else compares the assumed
+/// contract with the one the sibling verifies, and termination certification
+/// ranks only calls whose callee has a body in the same sidecar: two sidecars
+/// assuming each other's contracts would certify a pair of functions that
+/// never return. Within one sidecar the same declaration is refused when the
+/// sources are resolved ("external function `g` is also defined by a
+/// `verifying` source"); this is that rule across the project's sidecars.
+/// The remedy is the one the single-sidecar rule leaves: verify the defining
+/// source in the declaring sidecar too, or put both in one sidecar. Only the
+/// sources are read here; no proof runs before the project is known to be
+/// reconcilable.
+fn reconcile_project_externs(
+    project: &SelectedProject,
+    project_root: &Path,
+    target: &Path,
+    limits: RunLimits,
+) -> Result<(), String> {
+    if project.sidecars.len() < 2 {
+        return Ok(());
+    }
+    let mut summaries = Vec::with_capacity(project.sidecars.len());
+    for sidecar in &project.sidecars {
+        let summary = with_run_limits("click verify", limits, || {
+            let (_, project, inputs) = {
+                let _phase = VerificationPhase::new("project loading");
+                load_sidecar_inputs(sidecar, Some(project_root))?
+            };
+            sidecar_summary(sidecar, &project, &inputs, 0)
+        })?;
+        summaries.push((sidecar.as_path(), summary));
+    }
+    for (sidecar, summary) in &summaries {
+        for external in &summary.external_declarations {
+            let Some((defining, source)) = summaries.iter().find_map(|(other, other_summary)| {
+                (other != sidecar)
+                    .then(|| other_summary.defined_functions.get(external))
+                    .flatten()
+                    .map(|source| (*other, source))
+            }) else {
+                continue;
+            };
+            return Err(format!(
+                "`{}` declares `extern {external}`, but `{}` defines `{external}` in its verifying source `{source}`: a sidecar cannot assume a contract for a function this project verifies, because nothing reconciles the assumed contract with the verified one and a call into a sibling sidecar is not ranked for termination; verify `{source}` in `{}` as well, or move both into one sidecar",
+                display_path(sidecar, target),
+                display_path(defining, target),
+                display_path(sidecar, target),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -355,6 +415,9 @@ fn verify_changed(
     }
     let selection = select_sidecars(path)?;
     let project_root = selection.project_root.as_path();
+    for project in &selection.projects {
+        reconcile_project_externs(project, project_root, path, limits)?;
+    }
     let mut sidecars = selection
         .sidecars()
         .map(Path::to_path_buf)
@@ -1361,6 +1424,25 @@ fn verify_file(
     })
 }
 
+/// The external-dependency summary of one loaded sidecar, from one resolution
+/// of its sources.
+fn sidecar_summary(
+    click_path: &Path,
+    project: &ClickProject,
+    inputs: &CInput,
+    line_offset: usize,
+) -> Result<click::surface::CProjectSummary, String> {
+    let _phase = VerificationPhase::new("external dependency summary");
+    match inputs {
+        CInput::Bundle(sources) => c0_project_summary(project, &source_refs(sources))
+            .map_err(|error| located_click_message(error, click_path, project, line_offset)),
+        CInput::Prepared(imports) => c0_prepared_project_summary(project, imports)
+            .map_err(|error| located_click_message(error, click_path, project, line_offset)),
+        CInput::PreparedProgram(import) => program_prepared_project_summary(project, import)
+            .map_err(|error| located_click_message(error, click_path, project, line_offset)),
+    }
+}
+
 fn verify_file_within_limits(
     click_path: &Path,
     project_root: Option<&Path>,
@@ -1392,19 +1474,7 @@ fn verify_file_within_limits(
     let trace_target = trace_to
         .map(|target| resolve_trace_target(&click_source, line_offset, target))
         .transpose()?;
-    let summary = {
-        let _phase = VerificationPhase::new("external dependency summary");
-        match &inputs {
-            CInput::Bundle(sources) => c0_project_summary(&project, &source_refs(sources))
-                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
-            CInput::Prepared(imports) => c0_prepared_project_summary(&project, imports)
-                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
-            CInput::PreparedProgram(import) => program_prepared_project_summary(&project, import)
-                .map_err(|error| {
-                located_click_message(error, click_path, &project, line_offset)
-            })?,
-        }
-    };
+    let summary = sidecar_summary(click_path, &project, &inputs, line_offset)?;
     let (verified, successful_trace) = {
         let run_selected = || match (&inputs, &trace_unit) {
             (CInput::Bundle(sources), Some(TraceUnit::Function(function))) => {
@@ -1658,6 +1728,10 @@ fn print_external_dependencies(
 #[cfg(test)]
 #[path = "click-verify/incremental_tests.rs"]
 mod incremental_tests;
+
+#[cfg(test)]
+#[path = "click-verify/directory_tests.rs"]
+mod directory_tests;
 
 #[cfg(test)]
 mod tests {

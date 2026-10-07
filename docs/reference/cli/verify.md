@@ -112,6 +112,19 @@ Successful file or location verification prints one `external assumptions:`
 line for each verified function whose transitive C call closure uses an
 external contract, for example `external assumptions: probe -> strlen`.
 Directory verification also prints these lines alongside its progress.
+
+An external assumption is one about a function the project does not verify.
+Before a project directory's sidecars are verified, the command reads every
+sidecar's sources and refuses the directory, naming the declaration and both
+sidecars, when one sidecar declares `extern` a function that a sibling
+sidecar's `verifying` source defines. Each sidecar is verified on its own, so
+nothing would compare the assumed contract with the verified one, and a call
+into a sibling sidecar is not ranked for termination: two sidecars assuming
+each other's contracts would otherwise certify two functions that never
+return. This is the directory form of the single-sidecar rule that refuses an
+`extern` declaration of a function one of its own `verifying` sources defines.
+Verify the defining source in the declaring sidecar as well (`verifying
+"callee.c" as callee;`), or put both in one sidecar.
 Incremental explanation prints selected and reused functions with the reason
 for any full rebuild; an incremental verification prints the same assumption
 lines for the claims it actually verifies.
