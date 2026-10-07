@@ -71,6 +71,12 @@ tactics are `assumption()`, `normalize()`, `rewrite(...)`, `intro()`, and
 are facts and a disjunction with one side a fact. A successful
 expansion contains only those explicit rules and named theorem applications.
 
+Bare `apply` retains explicitly proved premises in its generated `using`
+list when the simple theorem checker needs them. For example, prove a
+constructor inequality with `have ... by { normalize(); }` before applying
+a theorem that requires it. Recognizing the fact during planning does not
+replace that evidence (`mdtests/theorem_apply_retains_constructor_inequality.md`).
+
 ## Pure, fixed-state, and execution proofs
 
 A pure proof reasons without a symbolic C state. A fixed-state proof reasons
