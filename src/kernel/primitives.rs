@@ -9859,6 +9859,16 @@ impl CCheckedFunctionExecution {
         &self.arguments
     }
 
+    /// A complete proof checked its returned resource units jointly on every path.
+    pub(crate) fn has_checked_resource_transitions(&self) -> bool {
+        !self.execution.paths.is_empty()
+            && self.checked_resource_transitions.len() == self.execution.paths.len()
+            && self
+                .checked_resource_transitions
+                .iter()
+                .all(|checked| *checked)
+    }
+
     /// The exact caller state used to enter this checked execution, when the
     /// proof recorded a checked function-entry boundary.  Surface
     /// certification reuses this identity instead of reconstructing a second

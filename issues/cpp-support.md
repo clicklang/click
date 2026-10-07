@@ -925,10 +925,13 @@ normalization preserves borrowed clause boundaries. Authority wrapper folds
 consume and compose only their checked exchange, retaining unrelated memory
 and population units. Positive mixed-width frame and negative hidden-unit
 regressions cover this boundary alongside the full Markdown proof corpus.
-A pre-existing return-certification failure when unfolding a wrapper beside
-borrowed struct fields is recorded in
-[the wrapper memory-frame bug](../bugs/authority-wrapper-unfold-borrowed-memory-frame.md).
-Repair that proof-tooling blocker before extending template instance support.
+Post-return authority wrapper folds and unfolds now retain their checked
+resource exchange through contract certification. Certification prefers the
+entry paired with a jointly checked return context, preserving borrowed field
+identities across separate clause proofs. The unchanged mixed-width frame
+reproduction verifies, expands and rechecks in a retained session; hostile
+proofs and deterministic checks reject missing/duplicate child authority and
+removal of unrelated memory. The wrapper-unfold tooling blocker is resolved.
 Recomputed-digest artifacts reject forged targets and use
 spans, missing/reordered paths and const roots passed to mutable callees. Source
 checks retain C++ access, constness, temporary and pointer-root restrictions;

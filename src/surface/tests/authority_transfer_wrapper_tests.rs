@@ -178,7 +178,14 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
 
 #[test]
 fn authority_transfer_wrapper_preserves_adjacent_mixed_width_memory_frame() {
-    let source = r#"
+    verify_c0_project(
+        &project(MEMORY_FRAME_SOURCE),
+        &[("wrapper.c", MEMORY_FRAME_C)],
+    )
+    .expect("folding and unfolding preserve the exact unrelated memory frame");
+}
+
+const MEMORY_FRAME_SOURCE: &str = r#"
         authorized abstract resource member(object: int32);
         authorized resource held(object: int32) { contains member(object); }
         verifying "wrapper.c";
@@ -192,8 +199,53 @@ fn authority_transfer_wrapper_preserves_adjacent_mixed_width_memory_frame() {
                 fold(held(object));
             }
         }
+        int32 unpack(int32 object, struct Frame* frame) {
+            consumes held(object);
+            owns frame->wide;
+            owns frame->narrow;
+            produces member(object) by {
+                execute();
+                unfold(held(object));
+            }
+        }
     "#;
-    let c = "struct Frame { int64 wide; int32 narrow; }; int32 package(int32 object, struct Frame* frame) { return object; }";
-    verify_c0_project(&project(source), &[("wrapper.c", c)])
-        .expect("wrapping a member preserves the exact unrelated memory frame");
+const MEMORY_FRAME_C: &str = "struct Frame { int64 wide; int32 narrow; }; int32 package(int32 object, struct Frame* frame) { return object; } int32 unpack(int32 object, struct Frame* frame) { return object; }";
+
+#[test]
+fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof() {
+    let sources = [("wrapper.c", MEMORY_FRAME_C)];
+    for label in ["package.ensures_2", "unpack.ensures_2"] {
+        let expanded =
+            expand_c0_project_claim_source_by_label(&project(MEMORY_FRAME_SOURCE), &sources, label)
+                .expect("the checked wrapper exchange expands");
+        verify_c0_project(&project(&expanded), &sources)
+            .expect("the expanded exchange preserves both borrowed fields");
+    }
+    let (session, _) = C0VerificationSession::new_project(&project(MEMORY_FRAME_SOURCE), &sources)
+        .expect("retain the unchanged wrapper proof");
+    let position = crate::surface::expansion::position_at_offset(
+        MEMORY_FRAME_SOURCE,
+        MEMORY_FRAME_SOURCE.rfind("unfold(held(object));").unwrap(),
+    );
+    session
+        .verify_at_project(MEMORY_FRAME_SOURCE, position.line, position.column)
+        .expect("the retained exchange still checks");
+}
+
+#[test]
+fn authority_transfer_wrapper_memory_frame_cannot_supply_missing_or_duplicate_children() {
+    for source in [
+        MEMORY_FRAME_SOURCE.replace("consumes held(object);", ""),
+        MEMORY_FRAME_SOURCE.replace(
+            "produces member(object) by {",
+            "produces member(object); produces member(object) by {",
+        ),
+        MEMORY_FRAME_SOURCE.replace(
+            "unfold(held(object));",
+            "unfold(held(object)); unfold(held(object));",
+        ),
+    ] {
+        verify_c0_project(&project(&source), &[("wrapper.c", MEMORY_FRAME_C)])
+            .expect_err("borrowed fields cannot manufacture wrapper or child authority");
+    }
 }
