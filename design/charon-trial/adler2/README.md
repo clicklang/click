@@ -111,6 +111,26 @@ and reject a larger batch, missing bounds, false endpoints, altered product
 or quotient certificates, altered recurrence coefficients, reversed quotient-shift
 guards, and false A- or B-invariant steps.
 
+## Recombination arithmetic
+
+The [recombination library](recombination.click) proves exact Integer values
+and overflow guards for the original expressions `b + (MOD - a)`,
+`b + (MOD - a) * 2`, and `b + (MOD - a) * 3`. Given a reduced A lane below
+65521 and a B lane already multiplied by four with observation at most 262080,
+the respective ceilings are 327601, 393122, and 458643.
+
+The checked `uint32_subtract_to_integer` rule requires the native unsigned
+no-underflow guard. It relates `MOD - a` to `65521 - to_integer(a)` across the
+full unsigned domain. Defined unsigned subtraction alone permits wrapping.
+Regressions check the bridge's actual machine guard and observation against an
+independent boundary model, executed C subtraction, expanded certificates,
+missing bounds, and false lane weights or ceilings.
+
+These are conditional arithmetic proofs checked alongside the original helper
+contracts. They do not establish the premises at each original recombination
+site or prove the complete four-byte checksum. That caller proof, general
+initial states, and preservation over nonempty vector batches remain open.
+
 ## Index derived from iterator state
 
 The [iterator bounds library](iterator-bounds.click) observes the existing

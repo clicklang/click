@@ -74,6 +74,13 @@ theorem use_uint32_add_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint32_add_to_integer(left, right)); }
 }
 
+theorem use_uint32_subtract_to_integer(left: uint32, right: uint32) {
+    requires right <= left;
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
+        apply(uint32_subtract_to_integer(left, right));
+    }
+}
+
 theorem use_uint32_mul_to_integer(left: uint32, right: uint32) {
     requires right == 0u32 or left <= 4294967295u32 / right;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right) by {

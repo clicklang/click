@@ -8746,6 +8746,27 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
     ))
 }
 
+/// Exact mathematical observation of unsigned subtraction without underflow.
+/// Native definedness alone permits wrapping, including 0u32 - 1u32.
+pub fn prove_uint32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    let difference = observe(Bitvector32Term::subtract(left.clone(), right.clone()));
+    let exact = IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into());
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(right, left),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(difference.into(), exact.into()),
+            true,
+        )),
+    ))
+}
+
 /// Unsigned multiplication has its exact mathematical value under the native
 /// checked-multiplication guard. The zero factor branch does not divide by zero.
 /// Definedness of a wrapping u32 product alone is insufficient.

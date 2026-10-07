@@ -2421,6 +2421,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_increment_strictly_increases"
                 | "uint32_widened_add_guard_by_integer_bound"
                 | "uint32_add_to_integer"
+                | "uint32_subtract_to_integer"
                 | "uint32_mul_to_integer"
                 | "uint32_remainder_less_than_divisor"
                 | "uint32_remainder_of_lt"
@@ -2512,6 +2513,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "int32_ge_transitive" => (3, 2),
         "uint32_widened_add_guard_by_integer_bound"
         | "uint32_add_to_integer"
+        | "uint32_subtract_to_integer"
         | "uint32_mul_to_integer"
         | "uint32_less_equal_to_integer"
         | "uint32_less_equal_of_to_integer"
@@ -2659,6 +2661,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "uint32_add_to_integer" => {
                 crate::kernel::prove_uint32_add_to_integer(value, uint32_parameter(1)?)
+            }
+            "uint32_subtract_to_integer" => {
+                crate::kernel::prove_uint32_subtract_to_integer(value, uint32_parameter(1)?)
             }
             "uint32_mul_to_integer" => {
                 crate::kernel::prove_uint32_mul_to_integer(value, uint32_parameter(1)?)
@@ -3922,6 +3927,23 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
             ] {
                 assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
             }
+        }
+    }
+
+    #[test]
+    fn uint32_subtract_bridge_checks_exact_declaration() {
+        let source = "theorem uint32_subtract_to_integer(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right); }";
+        verify_standard_declaration(source).unwrap();
+        for invalid in [
+            source.replace("requires right <= left;", ""),
+            source.replace("right <= left", "defined(left - right)"),
+            source.replace("right <= left", "left <= right"),
+            source.replace("left - right", "right - left"),
+            source.replace("left: uint32", "left: int32"),
+            source.replace("right: uint32", "right: uint64"),
+            source.replace("to_integer(left) - to_integer(right);", "0;"),
+        ] {
+            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
         }
     }
 
