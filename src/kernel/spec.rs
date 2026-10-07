@@ -6434,32 +6434,14 @@ fn evaluate_resource_count_paths(
                 });
             }
             let mut total: Option<Bitvector32Term> = None;
-            let indexed =
-                state.indexed_counted_population_matches(name, &arguments, &path_assumptions);
-            let fallback_limit = if indexed.is_some() { 0 } else { usize::MAX };
-            let matching = indexed
-                .iter()
-                .flat_map(|matches| matches.iter().copied())
-                .chain(
-                    state
-                        .counted_populations()
-                        .take(fallback_limit)
-                        .filter(|population| {
-                            population.name == name
-                                && population.arguments.len() == arguments.len()
-                                && population.arguments.iter().zip(&arguments).all(
-                                    |(actual, pattern)| {
-                                        pattern.as_ref().is_none_or(|expected| {
-                                            crate::kernel::resource_arguments_proven_equal(
-                                                actual,
-                                                expected,
-                                                &path_assumptions,
-                                            )
-                                        })
-                                    },
-                                )
-                        }),
-                );
+            // A total is a count only when every other entry of the family
+            // is proven different from the pattern: `R(q)` may be `R(p)`.
+            // Refuse the observation otherwise, as for a pending worker.
+            let Ok(matching) =
+                state.counted_population_pattern_matches(name, &arguments, &path_assumptions)
+            else {
+                return Err(ExecutionLimit::ResourceCountPossiblyAliased);
+            };
             for population in matching {
                 if state
                     .population_effects

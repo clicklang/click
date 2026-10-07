@@ -835,7 +835,12 @@ does not interpret a symbolic coefficient by expanding it into repeated facts.
 
 `count(object_ref(object))` observes the exact quantity. A resource body may
 relate that count to C state and belongs to the population as a whole, not to
-each unit. `open(object_ref(object)) { ... }` exposes that shared body for a
+each unit. Two keys of one family name one population whenever their arguments
+are equal, so a count or a transfer of `object_ref(p)` beside a tracked
+`object_ref(q)` needs `p == q` or `p != q` established; with neither, the
+count has no value the facts determine and `click verify` refuses the
+observation or the transfer rather than totalling the entries it happens to
+have proved equal. `open(object_ref(object)) { ... }` exposes that shared body for a
 scoped proof and requires it to be restored. Declaring a resource does not by
 itself justify minting a unit; retain and release contracts must preserve the
 body invariant while changing both the C state and logical quantity.

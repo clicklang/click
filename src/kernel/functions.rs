@@ -22366,6 +22366,30 @@ mod counted_population_alias_tests {
 /// It names both sides where they are numbers, because the quantity a reader
 /// has to change is one of them, and says what discharges a symbolic pair:
 /// the same no-overflow condition C's own `+` owes.
+/// Names the transferred key and the tracked entry it may alias, and the
+/// argument positions whose relation is open, so the reader knows which
+/// arguments to relate.
+fn population_transfer_may_alias_message(
+    name: &str,
+    transferred: &[AlgebraicValue],
+    tracked: &[AlgebraicValue],
+    assumptions: &PureFactContext,
+) -> String {
+    let open_positions = transferred
+        .iter()
+        .zip(tracked)
+        .enumerate()
+        .filter(|(_, (left, right))| {
+            !crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
+        })
+        .map(|(index, _)| (index + 1).to_string())
+        .collect::<Vec<_>>();
+    format!(
+        "population transfer of `{name}(...)` may alias the tracked population `{name}(...)`: argument {} of the two keys is neither proven equal nor proven different; state `==` or `!=` for them in a requirement or `have`",
+        open_positions.join(" and "),
+    )
+}
+
 fn population_total_overflow_message(
     name: &str,
     total: &Bitvector32Term,
@@ -22615,6 +22639,24 @@ fn apply_counted_population_transitions_with_interface(
                 .zip(ensured_quantity.as_const())
                 .is_some_and(|(required, ensured)| ensured <= required)
             && contract_is_state_independent;
+        // `R(q)` is `R(p)` whenever `q == p`. Applying this transfer to the
+        // key alone would leave the other entry's count stale and let
+        // `count(R(p))` certify a number that is false in the aliased case
+        // (`mdtests/population_transfer_may_alias_tracked_population_rejected.md`).
+        // Only the family's own entries are visited.
+        let exact_pattern = arguments.iter().cloned().map(Some).collect::<Vec<_>>();
+        if let Err(other) =
+            post_state.counted_population_pattern_matches(&name, &exact_pattern, assumptions)
+        {
+            return Ok(Err(CRuntimeError::FunctionContract(
+                population_transfer_may_alias_message(
+                    &name,
+                    &arguments,
+                    &other.arguments,
+                    assumptions,
+                ),
+            )));
+        }
         let pending = caller_state
             .population_effects
             .pending_counts

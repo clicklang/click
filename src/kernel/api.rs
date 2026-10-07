@@ -2568,6 +2568,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::ResourceCountPendingWorker => {
             "count(...) requires joining its outstanding worker".to_string()
         }
+        ExecutionLimit::ResourceCountPossiblyAliased => {
+            "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
+        }
         ExecutionLimit::AuthorityCountNeedsExactPointer => {
             "authority-mode count(...) needs one exact base pointer".to_string()
         }

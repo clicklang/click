@@ -4205,6 +4205,9 @@ pub enum ExecutionLimit {
     /// A worker may still change this total. No current observation is
     /// available until the checked completion right is joined.
     ResourceCountPendingWorker,
+    /// Another tracked population of the family is neither proven equal to
+    /// nor proven different from the counted one, so no total is a count.
+    ResourceCountPossiblyAliased,
     /// Authority-mode count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
     AuthorityCountNeedsResolvedMember,
@@ -4248,6 +4251,9 @@ impl ExecutionLimit {
             }
             Self::ResourceCountPendingWorker => {
                 "count(...) requires joining its outstanding worker".to_string()
+            }
+            Self::ResourceCountPossiblyAliased => {
+                "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
             }
             Self::AuthorityCountNeedsExactPointer => {
                 "authority-mode count(...) needs one exact base pointer".to_string()
