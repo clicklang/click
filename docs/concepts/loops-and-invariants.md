@@ -429,9 +429,11 @@ cycle with one terminal return path and one continuing forward goto path
 can expand a disjunctive postcondition into a post-execution `if` when the
 checker establishes opposite sides of its condition on the two outcomes.
 Each arm retains its own checked closer and cold reverifies
-(`mdtests/natural_goto_forward_exit_and_return.md`). Naming the joined facts
-when exit edges assign different local values remains a tracked gap
-(`bugs/natural-goto-exit-join-facts-cannot-be-spelled.md`).
+(`mdtests/natural_goto_forward_exit_and_return.md`). When exit edges assign
+different local values, the join also exports a disjunction of equations for
+the successor values. This lets the proof name the possible values without
+naming forgotten loop-iteration guards
+(`mdtests/natural_goto_forward_exit_differing_states.md`).
 
 ### `do ... while`
 
