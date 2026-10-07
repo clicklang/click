@@ -80,6 +80,7 @@ pub(super) struct DeferredTacticCapture {
     pub(super) source_index: usize,
     pub(super) post_execution_index: usize,
     pub(super) branch_skeleton: Vec<ProofTactic>,
+    pub(super) can_expand_execution_prefix: bool,
 }
 
 impl DeferredTacticCapture {
@@ -1141,6 +1142,43 @@ pub(super) fn surface_branch_skeleton(steps: &[ProofStep]) -> Vec<ProofStep> {
     }]
 }
 
+/// Repeated guards need their original execution points: their snapshots
+/// can denote different iterations by the time execution has returned.
+pub(super) fn surface_has_repeated_branch_conditions(steps: &[ProofStep]) -> bool {
+    let mut pending = vec![steps];
+    let mut conditions = std::collections::HashSet::new();
+    while let Some(steps) = pending.pop() {
+        for step in steps {
+            match step {
+                ProofStep::If {
+                    condition,
+                    then_proof,
+                    else_proof,
+                    ..
+                } => {
+                    if !conditions.insert(condition) {
+                        return true;
+                    }
+                    pending.push(then_proof.steps());
+                    pending.push(else_proof.steps());
+                }
+                ProofStep::CallOutcomes {
+                    returned_proof,
+                    threw_proof,
+                } => {
+                    pending.push(returned_proof.steps());
+                    pending.push(threw_proof.steps());
+                }
+                ProofStep::Match { arms, .. } => {
+                    pending.extend(arms.iter().map(|arm| arm.proof.steps()));
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 pub(super) fn synthesize_surface_alternatives(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {
@@ -1291,6 +1329,9 @@ pub(super) enum PostExecutionTactic {
     /// selected arm's checked operations to that same descendant.
     If {
         condition: ClickProposition,
+        /// A terminal join routes its deferred operations through this exact
+        /// checked decision. Written post-execution cases have no such route.
+        execution_route: Option<usize>,
         then_tactics: Vec<DeferredPostExecutionTactic>,
         else_tactics: Vec<DeferredPostExecutionTactic>,
     },

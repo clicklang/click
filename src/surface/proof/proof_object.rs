@@ -699,11 +699,25 @@ struct ExecutionBranchDecision {
     value: bool,
 }
 
+/// Private identities distinguish terminal joins even when loop iterations
+/// share identical source guards and program-point spellings.
+fn new_terminal_execution_route() -> Result<usize, ClickError> {
+    static NEXT_ROUTE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    NEXT_ROUTE
+        .fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |next| next.checked_add(1),
+        )
+        .map_err(|_| ClickError::new("terminal execution route identities exhausted"))
+}
+
 /// Keeps source order for certificate stitching and an exact-condition index
 /// for case selection. Looking up one condition never walks path history.
 #[derive(Clone, Default)]
 struct ExecutionBranchDecisions {
     ordered: PersistentSequence<ExecutionBranchDecision>,
+    by_route: PersistentMap<usize, Arc<ExecutionBranchDecision>>,
     by_condition: PersistentMap<u64, Vec<Arc<ExecutionBranchDecision>>>,
 }
 
@@ -769,12 +783,33 @@ impl ExecutionBranchDecisions {
         Ok(result)
     }
 
+    fn iter(&self) -> impl Iterator<Item = &ExecutionBranchDecision> {
+        self.ordered.iter()
+    }
+
     fn suffix_since(&self, ancestor: &Self) -> Option<Vec<ExecutionBranchDecision>> {
         self.ordered.suffix_since(&ancestor.ordered)
     }
 
-    fn iter(&self) -> impl Iterator<Item = &ExecutionBranchDecision> {
-        self.ordered.iter()
+    fn record_route(&mut self, route: usize, decision: Arc<ExecutionBranchDecision>) {
+        self.by_route = self.by_route.with_inserted(route, decision);
+    }
+
+    fn value_for_route(
+        &self,
+        route: usize,
+        condition: &ClickProposition,
+    ) -> Result<bool, ClickError> {
+        let decision = self
+            .by_route
+            .get(&route)
+            .ok_or_else(|| ClickError::new("terminal cursor lost its checked execution route"))?;
+        if &decision.condition != condition {
+            return Err(ClickError::new(
+                "terminal cursor names a different checked execution condition",
+            ));
+        }
+        Ok(decision.value)
     }
 
     #[cfg(test)]

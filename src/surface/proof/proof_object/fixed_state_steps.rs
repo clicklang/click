@@ -161,6 +161,7 @@ mod projection_path_tests {
 struct OutcomeCase<'a> {
     fingerprint: u64,
     condition: &'a ClickProposition,
+    execution_route: Option<usize>,
     arms: [Option<usize>; 2],
 }
 
@@ -172,6 +173,7 @@ fn outcome_case_region<'a>(
     for tactic in tactics.iter().rev() {
         if let PostExecutionTactic::If {
             condition,
+            execution_route,
             then_tactics,
             else_tactics,
         } = &tactic.tactic
@@ -183,6 +185,7 @@ fn outcome_case_region<'a>(
             nodes.push(OutcomeCase {
                 fingerprint: ExecutionBranchDecisions::key(condition),
                 condition,
+                execution_route: *execution_route,
                 arms,
             });
             next = Some(nodes.len() - 1);
@@ -251,10 +254,16 @@ fn partition_outcome_cases(
     // Consult them at every nested node, not only at the root: re-lowering
     // a short-circuit condition can otherwise lose its checked truth value
     // and fork an inconsistent descendant.
-    if let Some(value) = provenance
-        .branch_decisions
-        .value_for_key(node.condition, node.fingerprint)?
-    {
+    if let Some(value) = match node.execution_route {
+        Some(position) => Some(
+            provenance
+                .branch_decisions
+                .value_for_route(position, node.condition)?,
+        ),
+        None => provenance
+            .branch_decisions
+            .value_for_key(node.condition, node.fingerprint)?,
+    } {
         return partition_outcome_cases(
             nodes,
             node.arms[usize::from(!value)],
@@ -2859,6 +2868,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn checked_outcome_if_value(
         &self,
         condition: &ClickProposition,
+        execution_route: Option<usize>,
     ) -> Result<bool, ClickError> {
         if !matches!(
             self.focused_obligation(),
@@ -2869,6 +2879,9 @@ impl<'a> Proof<'a> {
         let data = self
             .focused_outcome_data()
             .expect("a focused outcome judgment resolves its proof data");
+        if let Some(position) = execution_route {
+            return data.branch_decisions.value_for_route(position, condition);
+        }
         let mut recorded_value = None;
         for decision in data.branch_decisions.iter() {
             if &decision.condition != condition {
@@ -2952,6 +2965,7 @@ impl<'a> Proof<'a> {
         nodes.push(OutcomeCase {
             fingerprint: ExecutionBranchDecisions::key(condition),
             condition,
+            execution_route: None,
             arms,
         });
         let root = nodes.len() - 1;
@@ -3776,6 +3790,51 @@ mod outcome_case_tests {
     use super::*;
 
     #[test]
+    fn repeated_execution_decisions_keep_exact_routes_with_logarithmic_lookup() {
+        let condition = ClickProposition::PredicateCall {
+            name: "repeated_guard".to_string(),
+            arguments: Vec::new(),
+        };
+        let wrong = ClickProposition::PredicateCall {
+            name: "other_guard".to_string(),
+            arguments: Vec::new(),
+        };
+        for size in [8usize, 32, 128, 512] {
+            let mut decisions = ExecutionBranchDecisions::default();
+            for position in 0..size {
+                decisions.push(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
+                    condition: condition.clone(),
+                    value: position % 2 == 0,
+                });
+                decisions.record_route(
+                    position,
+                    Arc::new(ExecutionBranchDecision {
+                        fingerprint: std::sync::OnceLock::new(),
+                        condition: condition.clone(),
+                        value: position % 2 == 0,
+                    }),
+                );
+            }
+            let mut comparisons = 0;
+            for position in 0..size {
+                assert_eq!(
+                    decisions.value_for_route(position, &condition).unwrap(),
+                    position % 2 == 0
+                );
+                comparisons += decisions.by_route.lookup_comparisons(&position);
+            }
+            assert!(comparisons <= size * (2 * size.ilog2() as usize + 1));
+            assert!(decisions.value_for_route(size, &condition).is_err());
+            assert!(decisions.value_for_route(0, &wrong).is_err());
+            assert!(
+                decisions.value(&condition).is_err(),
+                "an unspecified occurrence stays ambiguous"
+            );
+        }
+    }
+
+    #[test]
     fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
         for size in [4, 8, 16, 32] {
             let conditions = (0..size)
@@ -3790,6 +3849,7 @@ mod outcome_case_tests {
                 .map(|(index, condition)| OutcomeCase {
                     fingerprint: ExecutionBranchDecisions::key(condition),
                     condition,
+                    execution_route: None,
                     arms: [None, (index + 1 < size).then_some(index + 1)],
                 })
                 .collect::<Vec<_>>();
@@ -3935,6 +3995,7 @@ mod outcome_case_tests {
                 .map(|(index, condition)| OutcomeCase {
                     fingerprint: ExecutionBranchDecisions::key(condition),
                     condition,
+                    execution_route: None,
                     arms: [
                         if index + 1 < size {
                             Some(index + 1)
