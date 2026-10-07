@@ -7402,7 +7402,16 @@ pub(in crate::surface) fn ordinary_abstract_families(
     resource_environment
         .definitions
         .values()
-        .filter(|definition| definition.composite_body().is_none() && !definition.is_authorized())
+        .filter(|definition| {
+            definition.composite_body().is_none()
+                && !definition.is_authorized()
+                // The built-in resources have their own kernel forms.
+                && !matches!(
+                    definition.name(),
+                    "authority" | "mutex_guard" | "mutex_live" | "mutex_use"
+                )
+                && definition.name() != crate::kernel::CResourceFact::ALLOCATION_RESOURCE_NAME
+        })
         .map(|definition| definition.name().to_string())
         .collect()
 }

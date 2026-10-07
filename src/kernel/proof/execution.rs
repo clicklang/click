@@ -14876,7 +14876,8 @@ mod population_authority_rewrite_tests {
                 false,
                 vec![],
                 vec![],
-            );
+            )
+            .with_authorized(true);
             let (mut state, _) = state
                 .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
                 .unwrap();
