@@ -1,5 +1,70 @@
 use super::*;
 
+const COPY_AFTER_CALL: &str = include_str!("../../design/charon-trial/copy-after-call/copy.click");
+
+fn copy_after_call_project() -> Project {
+    let p = Project::new("");
+    for (name, bytes) in [
+        (
+            "copy.rs",
+            include_bytes!("../../design/charon-trial/copy-after-call/copy.rs").as_slice(),
+        ),
+        ("borrow.click", COPY_AFTER_CALL.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/copy-after-call/copy.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "copy.ullbc",
+            include_bytes!("../../design/charon-trial/copy-after-call/copy.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../../design/charon-trial/copy-after-call/copy.click.import.json.lock")
+                .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+#[test]
+fn charon_array_copy_after_checked_call_preserves_an_independent_snapshot() {
+    let p = copy_after_call_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(COPY_AFTER_CALL, &prepared).unwrap();
+    for (before, after) in [
+        ("ensures result == 5u32;", "ensures result == 1u32;"),
+        ("ensures result == 5u32;", "ensures result == 9u32;"),
+        ("owns words[0..4];", "owns words[0..3];"),
+        ("owns words[0..4];", "views words[0..4];"),
+    ] {
+        let invalid = COPY_AFTER_CALL.replace(before, after);
+        assert_ne!(invalid, COPY_AFTER_CALL);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("false value or insufficient authority must fail");
+        assert!(!format!("{error:?}").contains("budget exhausted"));
+    }
+}
+
+#[test]
+fn charon_array_copy_after_checked_call_tools_recheck_expanded_certificates() {
+    let p = copy_after_call_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "__rust_q_I15_copy_after_call_I13_replace_first.contract",
+        "__rust_q_I15_copy_after_call_I15_copy_after_call.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
 const SOURCE: &str = include_str!("../../design/charon-trial/array-values/bounds.rs");
 const SIDECAR: &str = include_str!("../../design/charon-trial/array-values/bounds.click");
 fn project() -> Project {
