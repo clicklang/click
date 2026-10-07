@@ -3877,13 +3877,13 @@ fn source_expander_locates_frontier_local_have_proofs() {
             int32 preserve_value(int32 x) {
                 ensures result == x;
             } by {
-                have x == x by auto;
+                have x == x by simp;
                 execute();
                 simp();
             }
         "#;
     let have_offset = click_source
-        .find("have x == x by auto")
+        .find("have x == x by simp")
         .expect("frontier-local proof should exist");
     let line = click_source[..have_offset]
         .bytes()
@@ -10437,7 +10437,7 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
                 requires value >= 0;
                 ensures result >= 0;
             } by {
-                have value >= 0 by auto;
+                have value >= 0 by simp;
                 step();
                 assumption();
             }

@@ -5196,7 +5196,23 @@ impl Parser {
             return Ok(proof);
         }
 
-        Ok(SourceProof::Tactic(self.parse_tactic()?))
+        // `by auto;` and `by simp;` are whole proofs with their own spelling;
+        // any other single tactic is the one-step script `by { T(...); }`.
+        if matches!(self.peek(), Some(Token::Ident(name)) if is_tactic_name(name))
+            && self.peek_next() == Some(&Token::Semicolon)
+        {
+            return Ok(SourceProof::Tactic(self.parse_tactic()?));
+        }
+        match self.peek() {
+            Some(Token::Ident(_)) if self.peek_next() == Some(&Token::LParen) => {
+                Ok(SourceProof::Script(vec![self.parse_proof_tactic()?]))
+            }
+            Some(Token::Ident(name)) => Err(self.error(format!(
+                "expected a proof after `by`, got `{name}`: write one tactic call such as `{name}();`, or a block `{{ ... }}`"
+            ))),
+            Some(token) => Err(self.error(format!("expected a proof after `by`, got {token}"))),
+            None => Err(self.error("expected a proof after `by`, got end of input")),
+        }
     }
 
     fn parse_proof_clause_or_default(&mut self) -> Result<SourceProof, ClickError> {
@@ -5650,7 +5666,23 @@ impl Parser {
                 )));
             }
             let proposition = self.parse_proposition()?;
+            // A `have` states a fact at the current point, so an omitted
+            // proof is `simp` here; it never executes C to reach the fact.
+            if self.peek() == Some(&Token::Semicolon) {
+                self.position += 1;
+                return Ok(ProofTactic::Have(ProofHave {
+                    proposition,
+                    proof: SourceProof::Tactic(SmartTactic::Simp),
+                }));
+            }
+            let auto_position = self.position;
             let proof = self.parse_by_clause()?;
+            if proof == SourceProof::Tactic(SmartTactic::Auto) {
+                self.position = auto_position;
+                return Err(self.error(
+                    "`auto` executes C to function exit, so it cannot prove a `have`; write `have P;` or `have P by simp;` to prove the fact where it is stated",
+                ));
+            }
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::Have(ProofHave { proposition, proof }));
         }

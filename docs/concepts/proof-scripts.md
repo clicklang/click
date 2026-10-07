@@ -11,11 +11,18 @@ Prefer smart tactics while authoring unless profiling identifies a hotspot.
 Exact `using` blocks are ordinary Click and may be committed after expansion,
 but manually listing every premise is not the normal starting workflow.
 
-Click also has one single-purpose proof sugar:
+An omitted proof means `simp` at the point where the statement holds:
 
-- `by simp;` simplifies the goal at the current proof state.
+- `ensures P;` on a C function holds at function exit, so Click executes to
+  it first. That is `by auto;`, the script `execute(); simp();`.
+- `have P;` holds where it is written. It is `have P by simp;` and never
+  executes C. `auto` is refused inside a `have` for the same reason.
 
-It does not execute C. For a whole-function proof, use `by auto;` or make the
+A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
+any tactic, as in `have 0 <= x by assumption();`. `by simp;` and `by auto;`
+are written without parentheses.
+
+`by simp;` does not execute C. For a whole-function proof, use `by auto;` or make the
 sequence explicit:
 
 <!-- verified-example: mdtests/pure_theorem.md -->
