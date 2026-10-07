@@ -1315,12 +1315,14 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
                             close_invariants();
                         }
                     }
+                    step();
+                    simp();
                 } else {
                     step();
                     step();
+                    step();
+                    simp();
                 }
-                step();
-                simp();
             }
         "#;
 

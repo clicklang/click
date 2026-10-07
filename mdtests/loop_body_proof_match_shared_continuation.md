@@ -1,11 +1,14 @@
-# A loop-body proof `match` followed by a shared continuation
+# A loop-body proof `match` whose arms end apart may not share a continuation
 
-Both arms of the `match` are live. Each arm does only what depends on its
-constructor: it opens its instance, runs the body, and refolds. The tactics
-written after the `match` are the rest of every arm's iteration, written once.
-A preservation path does not join across the back edge, so the continuation
-runs once on each live arm's path, with that arm's own facts and resources;
-it may use a name both arms bound, here the refolded `c`.
+Both arms of the `match` are live. Each opens its instance, runs the body,
+and refolds with its own constructor, so the arms end at one program point
+holding cells with different models. The tactics written after the `match`
+would then be the rest of both arms' iterations, checked once per arm, and
+every further split of this kind would double that again. That is refused.
+
+The arms rejoin through an interface in
+[`loop_body_proof_match_ensuring_rejoins.md`](loop_body_proof_match_ensuring_rejoins.md),
+which is this proof with `ensuring { owns c: cell(node); }` on the `match`.
 
 ```c filename=loop_body_proof_match_shared_continuation.c
 struct cell { int32 value; };
@@ -133,5 +136,5 @@ void spin(struct cell* node, int32 n) {
 ```
 
 ```expect
-pass
+fail: are reached by more than one of its arms at the same program point
 ```

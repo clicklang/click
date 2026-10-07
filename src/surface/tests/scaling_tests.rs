@@ -5417,6 +5417,48 @@ fn stepping_a_store_does_not_rewrite_the_memory_its_fact_carries() {
     }
 }
 
+/// A counting loop whose `preserve` proof makes `count` proof-level case
+/// splits in a row before closing the invariants. Both arms of each only
+/// reason.
+fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
+    let c_source = String::from(
+        "int32 spin(int32 n, int32 x) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i = i + 1;\n    }\n    return 0;\n}\n",
+    );
+    let mut click_source = String::from(
+        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by simp;\n        preserve by {\n            step();\n",
+    );
+    for index in 0..count {
+        click_source.push_str(&format!(
+            "            if x <= {index} {{\n                have x <= {index} or x > {index} by {{ simp(); }}\n            }} else {{\n                have x <= {index} or x > {index} by {{ simp(); }}\n            }}\n"
+        ));
+    }
+    click_source.push_str(
+        "            close_invariants();\n        }\n    }\n    step();\n    simp();\n}\n",
+    );
+    (c_source, click_source)
+}
+
+/// Proof-level splits in a loop body rejoin as they do in a function body,
+/// so the rest of the iteration is checked once. Each case used to run the
+/// rest of the body itself, to the back edge, and `n` splits in a row cost
+/// `2^n` runs of it; twenty would not finish.
+#[test]
+fn sequential_proof_ifs_in_a_loop_body_rejoin_instead_of_doubling() {
+    let samples = [5, 10, 20, 40]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = loop_body_reasoning_ifs_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("ifs.c", c_source.as_str())])
+            });
+            verified
+                .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("sequential proof-level ifs in a loop body", &samples);
+}
+
 #[test]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{

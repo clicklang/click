@@ -45,7 +45,7 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
 }
 
 #[test]
-fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
+fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_decreases_recursive_in_loop.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
@@ -60,11 +60,18 @@ fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
     let position =
         expansion::position_at_offset(source, source.find("close_invariants();").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
-        .expect("the shared closer expands with each branch's checked body");
-    assert!(!expanded.contains("close_invariants();"), "{expanded}");
+        .expect("the first arm's closer expands with that arm's checked body");
+    // Each arm of the proof `if` closes the invariants itself: the arms end
+    // in different states, so nothing after the `if` is shared. Expanding
+    // the first arm's closer leaves the other arm's as written.
+    assert_eq!(
+        expanded.matches("close_invariants();").count(),
+        1,
+        "{expanded}"
+    );
     assert_eq!(
         expanded.matches("close_invariants by").count(),
-        2,
+        1,
         "{expanded}"
     );
     assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
