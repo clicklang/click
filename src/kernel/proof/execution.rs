@@ -3035,7 +3035,18 @@ impl CheckedResourceObservation {
         derivations: &PersistentOrderedSet<Theorem>,
         call_events: &CheckedCallEvents,
     ) -> Result<Self, &'static str> {
-        if before_state.uses_population_authority_semantics() {
+        // Only an authorized family has a population count to observe; any
+        // other observation is an ordinary resource observation.
+        let counted = match observed.resource() {
+            crate::kernel::CResource::Composite { name, .. } => function
+                .composite_resource_definition(name)
+                .is_none_or(|definition| definition.is_authorized()),
+            crate::kernel::CResource::Token { name, .. } => !function
+                .contract_interface()
+                .is_ordinary_abstract_family(name),
+            _ => true,
+        };
+        if before_state.uses_population_authority_semantics() && counted {
             let unchanged = before_state.memory.diagnostic_identity()
                 == after_state.memory.diagnostic_identity()
                 && before_state.shares_non_memory_storage_with(after_state)

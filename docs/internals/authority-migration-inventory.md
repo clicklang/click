@@ -1359,3 +1359,8 @@ The kernel's authority-mode body checks (population authority wrappers,
 transfer wrappers and member body access) now apply only to a composite that
 reaches a population; any other composite folds and unfolds by its
 definition. Regression: `authority_mode_ordinary_composite_of_tokens_folds.md`.
+
+`observe` records a count witness, and keeps member bodies folded, only for
+an authorized family; observing any other resource under authority semantics
+exposes its body views as it does without them. Regression:
+`authority_mode_ordinary_observe.md`.

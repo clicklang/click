@@ -1542,69 +1542,81 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             )));
         }
     };
+    // Under authority semantics only an authorized family has a
+    // population count; any other observation records no count witness.
+    let counts_population = !state.uses_population_authority_semantics()
+        || matches!(
+            &counted_resource,
+            ResourceClause::Declared { name, .. }
+                if resource_environment
+                    .get(name)
+                    .is_some_and(|definition| definition.is_authorized())
+        );
     if abstract_resource.owned_quantity_term().is_some() {
-        let count_witness = ClickProposition::Comparison {
-            left: observed_quantity.clone(),
-            operator: ComparisonOperator::LessEqual,
-            right: ContractExpression::ResourceCount(Box::new(counted_resource.clone())),
-        };
-        let count_kernel = lower_outcome_proposition_with_assumptions(
-            parameters,
-            arguments,
-            &state,
-            &state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
-            available_pure_facts.assumptions(),
-            &count_witness,
-            predicate_environment,
-            click_function_environment,
-        )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: could not lower `observe({})` count witness: {message}",
-                describe_resource_clause(resource)
-            ))
-        })?;
         let count_authority = abstract_resource.clone();
-        if state.uses_population_authority_semantics() {
-            let checked = crate::kernel::checked_owned_resource_count_lower_bound(
+        if counts_population {
+            let count_witness = ClickProposition::Comparison {
+                left: observed_quantity.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::ResourceCount(Box::new(counted_resource.clone())),
+            };
+            let count_kernel = lower_outcome_proposition_with_assumptions(
+                parameters,
+                arguments,
                 &state,
-                &count_authority,
-                &assumptions,
-            )
-            .ok_or_else(|| {
-                ClickError::new("count observation cannot certify the owned quantity bound")
-            })?;
-            if checked != count_kernel {
-                return Err(ClickError::new(
-                    "count observation does not match its checked ledger bound",
-                ));
-            }
-            surface_propositions.record_lowering(&count_witness, &count_kernel)?;
-            available_pure_facts.insert(count_kernel);
-        } else if assumptions.proves(&count_kernel) {
-            let derivation = prove_owned_resource_count_lower_bound(
                 &state,
-                &count_authority,
-                &count_kernel,
-                &assumptions,
+                &CValue::Int32(Bitvector32Term::Constant(0)),
+                available_pure_facts.assumptions(),
+                &count_witness,
+                predicate_environment,
+                click_function_environment,
             )
-            .ok_or_else(|| {
+            .map_err(|message| {
                 ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: kernel rejected the resource-count witness for `observe({})`",
+                    "`{claim_label}` tactic {tactic_index}: could not lower `observe({})` count witness: {message}",
                     describe_resource_clause(resource)
                 ))
             })?;
-            if !count_derivations.contains(&derivation) {
-                count_derivations.insert(derivation);
+            if state.uses_population_authority_semantics() {
+                let checked = crate::kernel::checked_owned_resource_count_lower_bound(
+                    &state,
+                    &count_authority,
+                    &assumptions,
+                )
+                .ok_or_else(|| {
+                    ClickError::new("count observation cannot certify the owned quantity bound")
+                })?;
+                if checked != count_kernel {
+                    return Err(ClickError::new(
+                        "count observation does not match its checked ledger bound",
+                    ));
+                }
+                surface_propositions.record_lowering(&count_witness, &count_kernel)?;
+                available_pure_facts.insert(count_kernel);
+            } else if assumptions.proves(&count_kernel) {
+                let derivation = prove_owned_resource_count_lower_bound(
+                    &state,
+                    &count_authority,
+                    &count_kernel,
+                    &assumptions,
+                )
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "`{claim_label}` tactic {tactic_index}: kernel rejected the resource-count witness for `observe({})`",
+                        describe_resource_clause(resource)
+                    ))
+                })?;
+                if !count_derivations.contains(&derivation) {
+                    count_derivations.insert(derivation);
+                }
+                surface_propositions.record_lowering(&count_witness, &count_kernel)?;
+                available_pure_facts.insert(count_kernel);
+            } else if explicit_quantity {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: `observe({})` could not certify its resource-count lower bound",
+                    describe_resource_clause(resource)
+                )));
             }
-            surface_propositions.record_lowering(&count_witness, &count_kernel)?;
-            available_pure_facts.insert(count_kernel);
-        } else if explicit_quantity {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `observe({})` could not certify its resource-count lower bound",
-                describe_resource_clause(resource)
-            )));
         }
         let nonnegative_witness = ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Value(int32(0))),
@@ -1668,7 +1680,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 .record_lowering(&count_nonnegative_witness, &count_nonnegative_kernel)?;
         }
     }
-    if state.uses_population_authority_semantics() {
+    if state.uses_population_authority_semantics() && counts_population {
         // Authority-mode observation names checked count/quantity facts only.
         // Member bodies remain folded, with their custody and memory unchanged.
         return Ok((state, abstract_resource));
