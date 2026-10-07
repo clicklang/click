@@ -4337,16 +4337,26 @@ fn check_interface_abstraction(
     let successor_access =
         InterfaceReadPremises::new(successor_interface_resource_facts.iter().cloned());
     let mut interface_lowerings = Vec::with_capacity(interface_specs.len());
-    for spec in interface_specs {
+    let _ = take_unestablished_interface_goal();
+    for (spec_index, spec) in interface_specs.iter().enumerate() {
         let concrete = |index: usize| {
-            CheckedInterfaceLowering::check(
+            let checked = CheckedInterfaceLowering::check(
                 spec,
                 arms[index].reached_state(),
                 reference_state,
                 arm_facts[index],
                 &concrete_access[index],
-            )
-            .ok_or("an interface fact is not established by both concrete arms")
+            );
+            if checked.is_none() {
+                // Say which fact, in which arm, for the refusal's report.
+                UNESTABLISHED_INTERFACE_GOAL.with(|unestablished| {
+                    if let Some(unestablished) = unestablished.borrow_mut().as_mut() {
+                        unestablished.fact = spec_index;
+                        unestablished.arm = index;
+                    }
+                });
+            }
+            checked.ok_or("an interface fact is not established by both concrete arms")
         };
         let then_lowering = concrete(0)?;
         let else_lowering = concrete(1)?;
@@ -5364,6 +5374,28 @@ struct CheckedInterfaceLowering {
     proofs: Arc<Vec<super::CheckedProposition>>,
 }
 
+/// What an arm was found not to hold when an interface fact was refused:
+/// which interface fact, in which arm, and the goal that was not there, the
+/// fact itself or a condition its terms need to denote a value.
+#[derive(Clone)]
+pub(crate) struct UnestablishedInterfaceGoal {
+    pub(crate) fact: usize,
+    pub(crate) arm: usize,
+    pub(crate) goal: Proposition,
+    pub(crate) side_condition: bool,
+}
+
+thread_local! {
+    static UNESTABLISHED_INTERFACE_GOAL: std::cell::RefCell<Option<UnestablishedInterfaceGoal>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The goal the last refused interface fact was missing, for a diagnostic.
+/// It carries no authority: the refusal stands whatever this says.
+pub(crate) fn take_unestablished_interface_goal() -> Option<UnestablishedInterfaceGoal> {
+    UNESTABLISHED_INTERFACE_GOAL.with(|unestablished| unestablished.borrow_mut().take())
+}
+
 impl CheckedInterfaceLowering {
     fn has_complete_proof(&self) -> bool {
         let expected = std::iter::once(&self.path.proposition)
@@ -5419,13 +5451,37 @@ impl CheckedInterfaceLowering {
                     let closed = root.apply_interface_leaf(definition, read_premise)?;
                     closed.completed_proposition()
                 };
-            let mut proofs = vec![prove(&path.proposition, None)?];
+            // A goal the arm does not hold is noted for the refusal's
+            // report: the fact itself, or something its terms need.
+            let missing = |goal: &Proposition, side_condition: bool| {
+                UNESTABLISHED_INTERFACE_GOAL.with(|unestablished| {
+                    *unestablished.borrow_mut() = Some(UnestablishedInterfaceGoal {
+                        fact: 0,
+                        arm: 0,
+                        goal: goal.clone(),
+                        side_condition,
+                    });
+                });
+            };
+            let Some(proved) = prove(&path.proposition, None) else {
+                missing(&path.proposition, false);
+                return None;
+            };
+            let mut proofs = vec![proved];
             for fact in &path.facts {
                 let definition = CheckedInterfaceLoadDefinition::check(fact.proposition());
-                proofs.push(prove(fact.proposition(), definition.as_ref())?);
+                let Some(proved) = prove(fact.proposition(), definition.as_ref()) else {
+                    missing(fact.proposition(), true);
+                    return None;
+                };
+                proofs.push(proved);
             }
             for obligation in &path.obligations {
-                proofs.push(prove(obligation.proposition(), None)?);
+                let Some(proved) = prove(obligation.proposition(), None) else {
+                    missing(obligation.proposition(), true);
+                    return None;
+                };
+                proofs.push(proved);
             }
             Some(Self {
                 spec: Arc::new(spec.clone()),

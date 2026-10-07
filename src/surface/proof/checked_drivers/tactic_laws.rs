@@ -191,7 +191,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     loop_pure_facts.retain(|fact| {
         !matches!(fact, Proposition::Predicate { name, .. } if unfolded_predicates.contains(name))
     });
-    let _exit_contexts = verify_execution_proofs_forward(
+    let exit_contexts = verify_execution_proofs_forward(
         expansion_capture,
         &current_loop,
         vec![PlanningExecutionContext {
@@ -286,6 +286,25 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         StatementFactTransportPolicy::Automatic,
         LoopStepPolicy::ApplyVerifiedRule,
     )?;
+    // The rule was verified on its own copy of this proof's state, counting
+    // identities from this proof's mark, and applying it leaves the ones it
+    // invented in the state here: the head's havoc of every local the body
+    // writes is what those locals hold after the loop. The counter has to
+    // move past them, or the next thing this proof invents (a join's fresh
+    // local, a heap block) is given one of them and two values become one.
+    let rule_mark = exit_contexts
+        .iter()
+        .map(|context| context.next_kernel_variable)
+        .max()
+        .unwrap_or(0);
+    if rule_mark > execution.core.kernel_variable_mark() {
+        execution
+            .core
+            .advance_kernel_variable_mark(rule_mark)
+            .map_err(|message| {
+                ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {message}"))
+            })?;
+    }
     let state: &mut CState = &mut execution.core.state;
     if let Some(exit_condition) = loop_exit_condition.filter(|_| {
         execution

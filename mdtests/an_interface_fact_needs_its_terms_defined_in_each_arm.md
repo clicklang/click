@@ -81,5 +81,5 @@ int32 bubble_pass3(int32 p[3]) {
 ```
 
 ```expect
-fail: prove `defined(j + 1)` in each arm
+fail: the then arm holds the interface fact `p[j] <= p[(j + 1)]` but not what its terms need to denote a value
 ```

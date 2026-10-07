@@ -519,7 +519,7 @@ pub(super) fn describe_available_facts(
 /// automatic formation refused it. Here nothing was refused: the fact was
 /// never established, so name the two routes that establish it instead of
 /// blaming the implementation.
-fn describe_required_pure_fact(
+pub(super) fn describe_required_pure_fact(
     required: &Proposition,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
