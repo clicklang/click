@@ -115,7 +115,19 @@ pub(in crate::surface::proof) fn written_invariant_binder_names(
         .collect::<Vec<_>>();
     while let Some(proposition) = pending.pop() {
         match proposition {
-            SpecProposition::ForAllInt32 {
+            SpecProposition::ForAllMachineInteger {
+                name,
+                variable,
+                body,
+                ..
+            }
+            | SpecProposition::ExistsMachineInteger {
+                name,
+                variable,
+                body,
+                ..
+            }
+            | SpecProposition::ForAllInt32 {
                 name,
                 variable,
                 body,

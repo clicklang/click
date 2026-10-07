@@ -310,6 +310,22 @@ pub enum MachineIntegerType {
 }
 
 impl MachineIntegerType {
+    pub fn symbolic_value(self, variable: Variable) -> CValue {
+        let term = Bitvector32Term::Variable(variable);
+        match self {
+            Self::Int8 => CValue::Int8(term),
+            Self::Int16 => CValue::Int16(term),
+            Self::Int32 => CValue::Int32(term),
+            Self::UInt8 => CValue::UInt8(term),
+            Self::UInt16 => CValue::UInt16(term),
+            Self::UInt32 => CValue::UInt32(term),
+            Self::Int64 => CValue::Int64(term),
+            Self::UInt64 => CValue::UInt64(term),
+            Self::Int128 => CValue::Int128(term),
+            Self::UInt128 => CValue::UInt128(term),
+        }
+    }
+
     pub fn from_c_type(c_type: CType) -> Option<Self> {
         Some(match c_type {
             CType::Int8 => Self::Int8,

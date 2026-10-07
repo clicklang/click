@@ -955,9 +955,10 @@ fn synthesize_surface_quantified_proposition(
         | Proposition::Exists {
             var, sort, body, ..
         } => {
-            if *sort != Sort::CInt32 {
-                return None;
-            }
+            let integer_type = sort.machine_integer_type()?;
+            let click_type = ClickType::C(crate::surface::generics::c0_type_from_kernel(
+                integer_type.c_type(),
+            ));
             let conflicts = |candidate: &str| {
                 parameters
                     .iter()
@@ -997,13 +998,13 @@ fn synthesize_surface_quantified_proposition(
             )?);
             Some(match proposition {
                 Proposition::ForAll { .. } => ClickProposition::ForAll {
-                    click_type: ClickType::C(C0Type::Int32),
+                    click_type: click_type.clone(),
                     name,
                     written_name: None,
                     body,
                 },
                 Proposition::Exists { .. } => ClickProposition::Exists {
-                    click_type: ClickType::C(C0Type::Int32),
+                    click_type: click_type.clone(),
                     name,
                     written_name: None,
                     body,

@@ -2489,7 +2489,10 @@ impl<'a> Proof<'a> {
                             (true, Some(c_type)) => {
                                 CValue::typed_pointer(Pointer::symbolic(variable), c_type)
                             }
-                            _ => CValue::Int32(Bitvector32Term::Variable(variable)),
+                            _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
+                                Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
+                                _ => CValue::Int32(Bitvector32Term::Variable(variable)),
+                            },
                         };
                         if algebraic.is_some() {
                             surface_bindings = surface_bindings.with_inserted(
@@ -2531,7 +2534,10 @@ impl<'a> Proof<'a> {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
                                 ContractExpression::CFragment(CExpression::Value(
-                                    CValue::Int32(Bitvector32Term::Variable(variable)),
+                                    match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
+                                        Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
+                                        _ => CValue::Int32(Bitvector32Term::Variable(variable)),
+                                    },
                                 )),
                             );
                         }

@@ -12974,10 +12974,12 @@ fn spec_proposition_is_state_independent(proposition: &SpecProposition) -> bool 
                 && spec_proposition_is_state_independent(right)
         }
         SpecProposition::Not(body)
+        | SpecProposition::ForAllMachineInteger { body, .. }
         | SpecProposition::ForAllInt32 { body, .. }
         | SpecProposition::ForAllInteger { body, .. }
         | SpecProposition::ForAllAlgebraic { body, .. }
         | SpecProposition::ForAllPointer { body, .. }
+        | SpecProposition::ExistsMachineInteger { body, .. }
         | SpecProposition::ExistsInt32 { body, .. }
         | SpecProposition::ExistsInteger { body, .. }
         | SpecProposition::ExistsAlgebraic { body, .. }
@@ -13030,10 +13032,12 @@ fn spec_proposition_supports_stateful_memory_refinement(proposition: &SpecPropos
                 && spec_proposition_supports_stateful_memory_refinement(right)
         }
         SpecProposition::Not(body)
+        | SpecProposition::ForAllMachineInteger { body, .. }
         | SpecProposition::ForAllInt32 { body, .. }
         | SpecProposition::ForAllInteger { body, .. }
         | SpecProposition::ForAllAlgebraic { body, .. }
         | SpecProposition::ForAllPointer { body, .. }
+        | SpecProposition::ExistsMachineInteger { body, .. }
         | SpecProposition::ExistsInt32 { body, .. }
         | SpecProposition::ExistsInteger { body, .. }
         | SpecProposition::ExistsAlgebraic { body, .. }
@@ -13641,10 +13645,12 @@ fn spec_proposition_reads_current_parameter(
                 || spec_proposition_reads_current_parameter(right, parameter_name)
         }
         SpecProposition::Not(body)
+        | SpecProposition::ForAllMachineInteger { body, .. }
         | SpecProposition::ForAllInt32 { body, .. }
         | SpecProposition::ForAllInteger { body, .. }
         | SpecProposition::ForAllAlgebraic { body, .. }
         | SpecProposition::ForAllPointer { body, .. }
+        | SpecProposition::ExistsMachineInteger { body, .. }
         | SpecProposition::ExistsInt32 { body, .. }
         | SpecProposition::ExistsInteger { body, .. }
         | SpecProposition::ExistsAlgebraic { body, .. }
@@ -14369,10 +14375,12 @@ fn spec_proposition_current_parameter_accesses(
             spec_proposition_current_parameter_accesses(right, parameter_name, reads, unknown_read);
         }
         SpecProposition::Not(body)
+        | SpecProposition::ForAllMachineInteger { body, .. }
         | SpecProposition::ForAllInt32 { body, .. }
         | SpecProposition::ForAllInteger { body, .. }
         | SpecProposition::ForAllAlgebraic { body, .. }
         | SpecProposition::ForAllPointer { body, .. }
+        | SpecProposition::ExistsMachineInteger { body, .. }
         | SpecProposition::ExistsInt32 { body, .. }
         | SpecProposition::ExistsInteger { body, .. }
         | SpecProposition::ExistsAlgebraic { body, .. }

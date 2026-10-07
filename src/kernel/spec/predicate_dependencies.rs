@@ -46,10 +46,12 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                     pending.extend([Node::Proposition(left), Node::Proposition(right)]);
                 }
                 SpecProposition::Not(body)
+                | SpecProposition::ForAllMachineInteger { body, .. }
                 | SpecProposition::ForAllInt32 { body, .. }
                 | SpecProposition::ForAllInteger { body, .. }
                 | SpecProposition::ForAllAlgebraic { body, .. }
                 | SpecProposition::ForAllPointer { body, .. }
+                | SpecProposition::ExistsMachineInteger { body, .. }
                 | SpecProposition::ExistsInt32 { body, .. }
                 | SpecProposition::ExistsInteger { body, .. }
                 | SpecProposition::ExistsAlgebraic { body, .. }

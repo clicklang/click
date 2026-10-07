@@ -3103,7 +3103,11 @@ impl AnnotationLowerer<'_> {
                     .ok_or("only C quantifier binders are currently supported")?
                     .to_kernel_type();
                 let value = match c_type {
-                    CType::Int32 => CValue::Int32(Bitvector32Term::Variable(variable)),
+                    c_type if crate::kernel::MachineIntegerType::from_c_type(c_type).is_some() => {
+                        crate::kernel::MachineIntegerType::from_c_type(c_type)
+                            .expect("machine integer")
+                            .symbolic_value(variable)
+                    }
                     c_type if c_type.is_pointer() => {
                         if matches!(c_type, CType::FunctionPointer(_)) {
                             CValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
@@ -3111,7 +3115,11 @@ impl AnnotationLowerer<'_> {
                             CValue::typed_pointer(Pointer::symbolic(variable), c_type)
                         }
                     }
-                    _ => return Err("only int32 and pointer binders are supported".to_string()),
+                    _ => {
+                        return Err(
+                            "only machine-integer and pointer binders are supported".to_string()
+                        );
+                    }
                 };
                 body_environment
                     .values
@@ -3130,6 +3138,15 @@ impl AnnotationLowerer<'_> {
                     Ok(SpecProposition::ForAllInt32 {
                         name: display_name.clone(),
                         variable,
+                        body: Box::new(body),
+                    })
+                } else if let Some(integer_type) =
+                    crate::kernel::MachineIntegerType::from_c_type(c_type)
+                {
+                    Ok(SpecProposition::ForAllMachineInteger {
+                        name: display_name.clone(),
+                        variable,
+                        integer_type,
                         body: Box::new(body),
                     })
                 } else {
@@ -3203,7 +3220,11 @@ impl AnnotationLowerer<'_> {
                     .ok_or("only C quantifier binders are currently supported")?
                     .to_kernel_type();
                 let value = match c_type {
-                    CType::Int32 => CValue::Int32(Bitvector32Term::Variable(variable)),
+                    c_type if crate::kernel::MachineIntegerType::from_c_type(c_type).is_some() => {
+                        crate::kernel::MachineIntegerType::from_c_type(c_type)
+                            .expect("machine integer")
+                            .symbolic_value(variable)
+                    }
                     c_type if c_type.is_pointer() => {
                         if matches!(c_type, CType::FunctionPointer(_)) {
                             CValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
@@ -3211,7 +3232,11 @@ impl AnnotationLowerer<'_> {
                             CValue::typed_pointer(Pointer::symbolic(variable), c_type)
                         }
                     }
-                    _ => return Err("only int32 and pointer binders are supported".to_string()),
+                    _ => {
+                        return Err(
+                            "only machine-integer and pointer binders are supported".to_string()
+                        );
+                    }
                 };
                 body_environment
                     .values
@@ -3230,6 +3255,15 @@ impl AnnotationLowerer<'_> {
                     Ok(SpecProposition::ExistsInt32 {
                         name: display_name.clone(),
                         variable,
+                        body: Box::new(body),
+                    })
+                } else if let Some(integer_type) =
+                    crate::kernel::MachineIntegerType::from_c_type(c_type)
+                {
+                    Ok(SpecProposition::ExistsMachineInteger {
+                        name: display_name.clone(),
+                        variable,
+                        integer_type,
                         body: Box::new(body),
                     })
                 } else {

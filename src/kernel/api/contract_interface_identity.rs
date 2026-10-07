@@ -515,7 +515,9 @@ impl Names {
                 self.proposition(b);
             }
             Not(p) => self.proposition(p),
-            ForAllInt32 { name, body, .. }
+            ForAllMachineInteger { name, body, .. }
+            | ExistsMachineInteger { name, body, .. }
+            | ForAllInt32 { name, body, .. }
             | ForAllInteger { name, body, .. }
             | ForAllAlgebraic { name, body, .. }
             | ExistsInt32 { name, body, .. }

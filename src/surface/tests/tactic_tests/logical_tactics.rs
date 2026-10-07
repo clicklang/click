@@ -3013,17 +3013,47 @@ fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
 }
 
 #[test]
-fn pure_machine_witness_does_not_narrow_unsupported_binder_widths() {
-    for scalar_type in ["int64", "uint8"] {
+fn pure_machine_witness_preserves_binder_widths() {
+    for scalar_type in [
+        "int8", "int16", "int32", "uint8", "uint16", "uint32", "int64", "uint64",
+    ] {
         let source = format!(
             "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness {{ x: n }}; simp(); }} }}"
         );
-        let error = verify_c0_sources(&source, &[])
-            .expect_err("these binder widths still need typed quantifier lowering");
+        verify_c0_sources(&source, &[])
+            .unwrap_or_else(|error| panic!("{scalar_type}: {}", error.message()));
+        let range_intros = match scalar_type {
+            "int8" | "int16" => "intro(); intro();",
+            "uint8" | "uint16" => "intro(); intro(); intro();",
+            _ => "",
+        };
+        let source = format!(
+            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); {range_intros} witness {{ y: x }}; simp(); }} }}"
+        );
+        verify_c0_sources(&source, &[])
+            .unwrap_or_else(|error| panic!("{scalar_type} universal: {}", error.message()));
+        let position = expansion::position_at_offset(&source, source.find("simp();").unwrap());
+        let expanded = expand_c0_tactic_source_at(&source, &[], position.line, position.column)
+            .expect("typed witness proof expands");
+        verify_c0_sources(&expanded, &[]).expect("expanded typed witness proof re-verifies");
+    }
+}
+
+#[test]
+fn pure_machine_witness_rejects_different_widths_and_signedness() {
+    for (binder, witness) in [
+        ("int64", "int32"),
+        ("uint8", "int8"),
+        ("uint8", "uint16"),
+        ("int64", "uint64"),
+    ] {
+        let source = format!(
+            "theorem bad(n: {witness}) {{ ensures exists (x: {binder}) {{ x == x }} by {{ witness {{ x: n }}; simp(); }} }}"
+        );
+        let error =
+            verify_c0_sources(&source, &[]).expect_err("witness must have the exact binder type");
         assert!(
-            error
-                .message()
-                .contains("only int32 and pointer binders are supported"),
+            error.message().contains("wrong type"),
             "{}",
             error.message()
         );
@@ -3032,7 +3062,18 @@ fn pure_machine_witness_does_not_narrow_unsupported_binder_widths() {
 
 #[test]
 fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
-    for (ty, annotation) in [("int32*", ""), ("int32", ""), ("Integer", ": Integer")] {
+    for (ty, annotation) in [
+        ("int32*", ""),
+        ("int32", ""),
+        ("int64", ""),
+        ("uint8", ""),
+        ("Integer", ": Integer"),
+    ] {
+        let range_intros = if ty == "uint8" {
+            "intro(); intro(); intro();"
+        } else {
+            ""
+        };
         let source = format!(
             r#"
             theorem retain(p: {ty}) {{
@@ -3047,6 +3088,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
+                    {range_intros}
                     witness {{ q: saved }};
                     simp();
                 }}
@@ -3055,6 +3097,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (saved: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
+                    {range_intros}
                     witness {{ q: saved }};
                     simp();
                 }}
@@ -3063,6 +3106,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (saved: {ty}) {{ saved == p }} }} by {{
                     intro();
+                    {range_intros}
                     witness {{ saved: p }};
                     simp();
                 }}

@@ -78,7 +78,9 @@ fn collect_spec_proposition_carriers(
         SpecProposition::Not(body) => {
             collect_spec_proposition_carriers(body, variables, integer_seen);
         }
-        SpecProposition::ForAllInt32 { variable, body, .. }
+        SpecProposition::ForAllMachineInteger { variable, body, .. }
+        | SpecProposition::ForAllInt32 { variable, body, .. }
+        | SpecProposition::ExistsMachineInteger { variable, body, .. }
         | SpecProposition::ExistsInt32 { variable, body, .. }
         | SpecProposition::ForAllPointer { variable, body, .. }
         | SpecProposition::ExistsPointer { variable, body, .. } => {
@@ -825,6 +827,23 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.rewrite_spec_proposition(left)?),
                 Box::new(self.rewrite_spec_proposition(right)?),
             ),
+            SpecProposition::ForAllMachineInteger {
+                name,
+                variable,
+                integer_type,
+                body,
+            } => {
+                let (variable, body) =
+                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                        rewrite.rewrite_spec_proposition(body)
+                    })?;
+                SpecProposition::ForAllMachineInteger {
+                    name: name.clone(),
+                    variable,
+                    integer_type: *integer_type,
+                    body: Box::new(body),
+                }
+            }
             SpecProposition::ForAllInt32 {
                 name,
                 variable,
@@ -886,6 +905,23 @@ impl<'a> TermRewrite<'a> {
                     name: name.clone(),
                     variable,
                     c_type: *c_type,
+                    body: Box::new(body),
+                }
+            }
+            SpecProposition::ExistsMachineInteger {
+                name,
+                variable,
+                integer_type,
+                body,
+            } => {
+                let (variable, body) =
+                    self.with_spec_scope(BindingCarrier::C, *variable, |rewrite| {
+                        rewrite.rewrite_spec_proposition(body)
+                    })?;
+                SpecProposition::ExistsMachineInteger {
+                    name: name.clone(),
+                    variable,
+                    integer_type: *integer_type,
                     body: Box::new(body),
                 }
             }
