@@ -1968,6 +1968,7 @@ fn whole_claim_expansion_of_proof_matches_rechecks() {
             "loop_preserve_branch_tactic",
             "chain_countdown_decided.contract",
         ),
+        ("loop_preserve_branch_tactic", "chain_countdown.contract"),
         (
             "loop_body_proof_match_ensuring_inside_a_proof_if",
             "spin.contract",
@@ -1986,6 +1987,26 @@ fn whole_claim_expansion_of_proof_matches_rechecks() {
                 error.message()
             )
         });
+        if claim == "chain_countdown.contract" {
+            let position = expansion::position_at_offset(
+                &expanded,
+                expanded
+                    .find("ensures 1 == 1;")
+                    .expect("the selected contract"),
+            );
+            let (checked, planning) =
+                crate::surface::proof::count_planning_statement_transitions(|| {
+                    verify_c0_sources_at(&expanded, &sources, position.line, position.column)
+                });
+            checked.expect("the scoped preservation certificate must cold recheck");
+            assert_eq!(
+                planning, 0,
+                "expanded preservation must not invoke planning"
+            );
+            let forged = expanded.replacen("ensures 1 == 1;", "ensures 1 == 2;", 1);
+            verify_c0_sources(&forged, &sources)
+                .expect_err("retaining proof cases cannot certify a false contract");
+        }
     }
 }
 

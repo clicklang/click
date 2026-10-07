@@ -903,6 +903,12 @@ leaves the arm open and is refused by the proposition as written
 constructors survive: the region splits, each arm certifies its own path, and
 the preservation certificate is reassembled as the `match` that produced them.
 
+A C `branch` inside a match arm rejoins its own C paths while retaining the
+surrounding constructor case. Whole-claim expansion therefore keeps that
+match around the arm's resource operations, including when the C branch
+itself has no `ensuring` interface
+(`mdtests/loop_preserve_branch_tactic.md`, `chain_countdown`).
+
 What follows a split is checked once. Tactics written after a `match` or a
 proof `if` in the body are never run once per arm, because every further
 split would double that again. So when two arms are both still live at the
