@@ -177,6 +177,31 @@ duplicate helper interfaces. The full positive proof, false checksum and
 byte-preservation claims, and verify/profile/audit/expansion rechecks are
 nightly tests; missing length/view and empty-input rejections are ordinary tests.
 
+## Original two- and three-byte serial tails
+
+[two-byte-compute.click](two-byte-compute.click) and
+[three-byte-compute.click](three-byte-compute.click) extend the constructor-state
+proof to arbitrary inputs of length two and three. Every original serial read
+is identified with its input position. After read `j`, the stored cursor is
+`old(bytes) + j` and its remaining count is `length - j`; no processed-count
+local or assumed loop invariant is introduced.
+
+Each iteration proves the native recurrence `A_j = A_(j-1) + byte_(j-1)` and
+`B_j = B_(j-1) + A_j`, starting from `A_0 = 1`, `B_0 = 6 * MOD` after the
+unchanged lane recombination. The checked upper bounds for A are 256, 511,
+and 766, and for B are 393382, 393893, and 394659. These discharge both
+original overflow checks on each pass. The final field observations equal
+the native `A_length % MOD` and `B_length % MOD` expressions through the
+original `u16` stores, and every input byte is preserved.
+
+The same fixture assembly checks the canonical helper/getter bodies alongside
+each computation fragment. Nightly regressions reject false A/B results,
+changes to each preserved byte, swapped byte weights in B, and repeated reads
+of a preceding byte. Verify/profile/audit/expansion recheck both contracts.
+Missing length/view, wrong extent, and wrong constructor-state premises have
+ordinary rejection checks. Rust source, extraction artifacts, locks, and the
+import profile remain unchanged.
+
 ## Reproduce
 
 Build Click and pinned Charon with the normal repository setup. The frozen
@@ -196,6 +221,13 @@ cargo nextest run --test rust_import --run-ignored all \
   -E 'test(charon_adler2_single_byte_compute)'
 ```
 
+Check both new serial-tail fragments and their negative/tool regressions:
+
+```sh
+cargo nextest run --test rust_import --run-ignored all \
+  -E 'test(charon_adler2_short_tail_compute) | test(charon_adler2_two_byte_compute) | test(charon_adler2_three_byte_compute)'
+```
+
 Refresh the entire selected crate through the production adapter:
 
 ```sh
@@ -213,9 +245,9 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-With the empty and single-byte boundaries checked, next extend serial-tail
-preservation to two and three bytes over the stored cursor/remaining state.
-Then establish and preserve the lane invariants over the original chunks/remainder
+With constructor-state inputs of lengths zero through three checked, next prove
+the first nonempty four-byte vector path and establish and preserve the lane
+invariants over the original chunks/remainder
 iterator states using the derived index, checked A/B recurrences, and native
 u32 observation bridges. Then use the helper contracts and byte accounting
 to connect the original computation to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).
