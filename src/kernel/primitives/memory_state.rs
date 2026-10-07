@@ -5387,9 +5387,18 @@ impl CMemory {
         bytes: u32,
     ) -> Self {
         if !self.heap.initialized.covers(pointer, bytes) {
+            let base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
                 .record(pointer, bytes);
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::ObjectInitializationRecorded {
+                    base,
+                    pointer: pointer.clone(),
+                    bytes,
+                },
+            );
         }
         self
     }

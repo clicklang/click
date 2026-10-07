@@ -374,6 +374,8 @@ pub(crate) enum Change {
     /// Cached cell values were dropped; the state is the same, the form is
     /// not.
     CellsForgotten,
+    /// An object's initialized-byte metadata was extended.
+    ObjectInitializationRecorded,
     /// Nothing: the recorded history starts here.
     BeginningOfHistory,
     /// One instance's model was replaced: its identity survived and its field
@@ -444,6 +446,9 @@ impl Change {
             CMemoryDerivation::LocalLifetimeEnded { block, .. } => Self::LifetimeEnd {
                 block: block.clone(),
             },
+            CMemoryDerivation::ObjectInitializationRecorded { .. } => {
+                Self::ObjectInitializationRecorded
+            }
             CMemoryDerivation::CellsForgotten { .. } => Self::CellsForgotten,
         }
     }

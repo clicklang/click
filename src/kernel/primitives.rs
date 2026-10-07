@@ -5259,6 +5259,14 @@ pub enum CMemoryDerivation {
         allocation_base: Pointer,
         bytes: Bitvector32Term,
     },
+    /// `base` with only the initialized-byte record extended. The writes
+    /// establishing those bytes have their own earlier edges; recording this
+    /// metadata changes no stored value and must not disconnect that history.
+    ObjectInitializationRecorded {
+        base: SharedCMemory,
+        pointer: Pointer,
+        bytes: u32,
+    },
     /// `base` with some cached cell values forgotten at one program point:
     /// the write path narrows the cell map before storing
     /// (`without_possible_aliasing_cells`), which changes the form but
@@ -5347,6 +5355,7 @@ impl CMemoryDerivation {
             Self::ContractAllocationClaimsChanged { .. } => "ContractAllocationClaimsChanged",
             Self::ContractAllocationRetired { .. } => "ContractAllocationRetired",
             Self::HeapFreed { .. } => "HeapFreed",
+            Self::ObjectInitializationRecorded { .. } => "ObjectInitializationRecorded",
             Self::CellsForgotten { .. } => "CellsForgotten",
             Self::LocalLifetimeEnded { .. } => "LocalLifetimeEnded",
             Self::LoopHavoc { .. } => "LoopHavoc",
@@ -5365,6 +5374,7 @@ impl CMemoryDerivation {
             | Self::ContractAllocationClaimsChanged { base }
             | Self::ContractAllocationRetired { base, .. }
             | Self::HeapFreed { base, .. }
+            | Self::ObjectInitializationRecorded { base, .. }
             | Self::CellsForgotten { base }
             | Self::LocalLifetimeEnded { base, .. }
             | Self::LoopHavoc { base, .. }

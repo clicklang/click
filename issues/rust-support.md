@@ -1243,6 +1243,21 @@ cross-lane substitution. Rust source and the locked Charon artifact are unchange
 This supplies the exact lane identity needed after reduction on the first
 four-byte path; the complete original four-byte computation remains unproved.
 
+### Symbolic source values across copied-record calls
+
+The four-byte investigation exposed a disconnected memory-history step: compact
+array copies recorded destination initialization without linking that metadata
+update to the preceding writes. A symbolic value established by a checked helper
+could then become unprovable in the source record after a by-value call.
+
+Initialization metadata now has its own checked no-write history edge. A frozen
+Charon fixture proves a helper-assigned source field survives passing a copied
+record to another helper; false outputs and insufficient write authority are
+rejected. A kernel regression checks retained equality evidence and rejects
+source overwrites, with bounded work across four, 1024, and one million elements
+and increasing unrelated storage. The original Adler sources and import locks
+are unchanged; its complete four-byte computation remains unproved.
+
 Next prove the first nonempty four-byte vector path and establish/preserve the
 derived lane ceilings over the original stored nested iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic
