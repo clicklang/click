@@ -3171,6 +3171,7 @@ impl ResourceContext {
                 | CMemoryDerivation::HeapAllocationPending { .. }
                 | CMemoryDerivation::HeapAllocationFailed { .. }
                 | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+                | CMemoryDerivation::ObjectInitializationRecorded { .. }
                 | CMemoryDerivation::CellsForgotten { .. } => {}
             }
             let base = derivation.base().clone();
@@ -3230,6 +3231,7 @@ impl ResourceContext {
             | CMemoryDerivation::HeapAllocated { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. } => false,
         };
         if ambiguous_event {
@@ -3355,6 +3357,7 @@ impl ResourceContext {
             | CMemoryDerivation::HeapAllocationPending { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. } => {}
         }
         entries

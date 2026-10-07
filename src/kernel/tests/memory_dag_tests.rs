@@ -3826,3 +3826,96 @@ fn unrelated_symbolic_kept_bases_do_not_trigger_range_placement() {
         assert_eq!(placements.get(), 0, "unrelated kept bases: {count}");
     }
 }
+
+#[test]
+fn initialized_array_copy_preserves_source_history_with_constant_work() {
+    let mut samples = Vec::new();
+    for (count, unrelated) in [(4u32, 0), (1024, 32), (1_000_000, 1024)] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Pointer {
+            block: "local:copy-source".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let target = Pointer {
+            block: "local:copy-target".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new()
+            .with_block(source.block.clone(), count * 4)
+            .with_block(target.block.clone(), count * 4)
+            .with_initialized_object(&source, count * 4);
+        for index in 0..unrelated {
+            memory = memory.with_block(format!("local:unrelated-{index}"), 4);
+        }
+        let assumptions = PureFactContext::new();
+        // A checked helper leaves initialized storage with unknown values.
+        let written = memory.with_storage_memory_havoc(
+            Variable(978_000),
+            &[CMemoryRange::new_with_element_width(
+                source.clone(),
+                0u32.into(),
+                count.into(),
+                4,
+            )],
+            &assumptions,
+        );
+        let load = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(source.clone()),
+                LoadKind::Bits32,
+            )
+        };
+        crate::kernel::eval::declare_load_access_width(&source, 4);
+        let before = load(&written);
+        let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let copied = written
+                .clone()
+                .write_scalar_array_region(
+                    &target,
+                    CType::UInt32,
+                    count,
+                    CValue::pointer(source.clone()),
+                    true,
+                    false,
+                    &assumptions,
+                )
+                .unwrap();
+            let capture = CheckedLoadEqualityCapture::start();
+            assert!(checked_origin_load_equality(
+                &before,
+                &load(&copied),
+                &assumptions
+            ));
+            let equalities = capture.finish();
+            assert_eq!(equalities.len(), 1);
+            assert!(equalities[0].checks(&assumptions));
+            copied
+        });
+        assert!(matches!(
+            crate::kernel::intern_c_memory_ref(&copied)
+                .derivation()
+                .as_deref(),
+            Some(CMemoryDerivation::ObjectInitializationRecorded { .. })
+        ));
+        // Metadata records cannot hide an actual overwrite of the source.
+        let changed = copied
+            .clone()
+            .store(source.clone(), CValue::UInt32(9u32.into()));
+        assert!(!checked_origin_load_equality(
+            &before,
+            &load(&changed),
+            &assumptions
+        ));
+        let repeated = copied.clone().with_initialized_object(&target, count * 4);
+        assert_eq!(
+            crate::kernel::intern_c_memory_ref(&repeated),
+            crate::kernel::intern_c_memory_ref(&copied)
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 128),
+        "{samples:?}"
+    );
+}

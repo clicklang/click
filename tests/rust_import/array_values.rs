@@ -65,6 +65,83 @@ fn charon_array_copy_after_checked_call_tools_recheck_expanded_certificates() {
     }
 }
 
+const COPY_SOURCE_AFTER_CALL: &str =
+    include_str!("../../design/charon-trial/copy-source-after-call/copy.click");
+
+fn copy_source_after_call_project() -> Project {
+    let p = Project::new("");
+    for (name, bytes) in [
+        (
+            "copy.rs",
+            include_bytes!("../../design/charon-trial/copy-source-after-call/copy.rs").as_slice(),
+        ),
+        ("borrow.click", COPY_SOURCE_AFTER_CALL.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!(
+                "../../design/charon-trial/copy-source-after-call/copy.click.import.json"
+            )
+            .as_slice(),
+        ),
+        (
+            "copy.ullbc",
+            include_bytes!("../../design/charon-trial/copy-source-after-call/copy.ullbc")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!(
+                "../../design/charon-trial/copy-source-after-call/copy.click.import.json.lock"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+#[test]
+fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
+    let p = copy_source_after_call_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(COPY_SOURCE_AFTER_CALL, &prepared).unwrap();
+    for (before, after) in [
+        (
+            "ensures result == value;",
+            "ensures result == value + 1u32;",
+        ),
+        (
+            "ensures target->_0[0] == old(other._0[0]);",
+            "ensures target->_0[0] == old(other._0[1]);",
+        ),
+        ("owns words->_0[0..4];", "owns words->_0[1..4];"),
+    ] {
+        let invalid = COPY_SOURCE_AFTER_CALL.replace(before, after);
+        assert_ne!(invalid, COPY_SOURCE_AFTER_CALL);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("false values or missing write authority must fail");
+        assert!(!format!("{error:?}").contains("budget exhausted"));
+    }
+}
+
+#[test]
+fn charon_array_copy_symbolic_source_tools_recheck_expanded_certificates() {
+    let p = copy_source_after_call_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "__rust_q_I22_copy_source_after_call_I3_set.contract",
+        "__rust_q_I22_copy_source_after_call_I7_consume.contract",
+        "__rust_q_I22_copy_source_after_call_I6_caller.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
 const SOURCE: &str = include_str!("../../design/charon-trial/array-values/bounds.rs");
 const SIDECAR: &str = include_str!("../../design/charon-trial/array-values/bounds.click");
 fn project() -> Project {

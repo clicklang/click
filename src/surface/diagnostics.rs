@@ -2677,6 +2677,9 @@ fn describe_cell_cause(
         resource_tracker::Change::LifetimeEnd { .. } => {
             "a local's lifetime ended in between.".to_string()
         }
+        resource_tracker::Change::ObjectInitializationRecorded => {
+            "a step in between recorded initialized bytes.".to_string()
+        }
         resource_tracker::Change::CellsForgotten => {
             "a step in between dropped the cell values it had cached.".to_string()
         }
@@ -3025,6 +3028,9 @@ fn describe_step(
         }
         resource_tracker::Change::Declaration { .. } => "a declaration".to_string(),
         resource_tracker::Change::LifetimeEnd { .. } => "a local's lifetime ending".to_string(),
+        resource_tracker::Change::ObjectInitializationRecorded => {
+            "a step recording initialized bytes".to_string()
+        }
         resource_tracker::Change::CellsForgotten => {
             "a step that dropped its cached cell values".to_string()
         }
