@@ -22,3 +22,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A pure function or predicate that reads a C global carries no memory, so its facts survive stores to that global](global-reading-pure-function-survives-store.md)
 - [A quantifier binder shadows a same-named C local in the kernel, capturing an unfolded predicate's argument](quantifier-binder-captures-same-named-c-argument.md)
 - [A finite universal with an empty binder range discharges leaves that do not mention the binder](empty-finite-forall-hull-skips-unquantified-leaves.md)
+- [A contract exit returns a folded composite and its body children as separate resources](contract-exit-returns-composite-and-its-children-twice.md)
