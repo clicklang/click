@@ -1935,6 +1935,28 @@ theorem one_tactic_proofs(x: int32) {
     assert_eq!(sites, inventory(&with));
 }
 
+/// A user tactic's proof is checked with an ending the checker supplies: one
+/// step over the empty procedure's `return` and an `assumption` per claim.
+/// That ending cannot be written in a tactic's proof, so whole-claim
+/// expansion must leave it out; with it, the expanded proof is refused for
+/// using `step`.
+#[test]
+fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
+    let (click, sources) = mdtest_sources("mdtests/user_tactic_reshapes_owned_resources.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "divide.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    let tactic = &expanded[expanded.find("tactic divide(").unwrap()..];
+    let proof = &tactic[..tactic.find("\n}\n").unwrap()];
+    assert!(!proof.contains("step();"), "{proof}");
+    assert!(proof.contains("have y.tag == 7 by {"), "{proof}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 #[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [

@@ -984,7 +984,16 @@ It then walks those unique `file:line:column` locations in path and source
 order. A bounded verifier worker is started lazily when the cursor reaches a
 sidecar or mdtest, so resuming in a later file does not initialize earlier
 files. The resulting certified function environment stays alive while the
-audit handles that file. Each site gets the **expand**, **cold**, and
+audit handles that file.
+
+A claim whose sites are all selected is audited in one pass: the whole claim
+is expanded once (`click expand --claim`), the expanded claim must hold no
+smart tactic, and it gets the **verify** and **cold** checks below. Expanding
+one site runs its whole claim, so this costs a fixed number of runs of the
+claim where the per-site path costs one per site. The per-site path that
+follows is used when the whole-claim expansion fails, which names the site at
+fault, and when `--start-at`, `--max-sites` or `--changed-since` selects a
+claim in part. On that path each site gets the **expand**, **cold**, and
 **reexpand** checks, and each claim gets one **verify** check covering all of
 its sites:
 
