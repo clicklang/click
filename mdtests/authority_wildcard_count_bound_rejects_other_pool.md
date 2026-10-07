@@ -8,7 +8,7 @@ void probe(int32* pool, int32* other, int32 object) {}
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, object: int32) {}
+authorized resource slot(pool: int32*, object: int32) {}
 verifying "wildcard_count_bound_other_pool.c";
 void probe(int32* pool, int32* other, int32 object) {
     requires pool != other;

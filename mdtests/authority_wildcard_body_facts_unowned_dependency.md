@@ -18,7 +18,7 @@ int32 lifecycle() {
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, p: int32*) {
+authorized resource slot(pool: int32*, p: int32*) {
     owns p[0..1];
     fact 0 <= p[0];
     fact p[1] == 2;

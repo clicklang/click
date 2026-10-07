@@ -20,7 +20,7 @@ int run(void *p) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_worker_relinquishes_member_rejected.c";
-resource ticket(p: void*) {}
+authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     consumes ticket(argument);
 } by { execute(); simp(); }

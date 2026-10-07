@@ -21,7 +21,7 @@ int run(void) {
 
 ```click resource_semantics=authority
 verifying "authority_helper_consume_spends_member.c";
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns obj->refs;
     owns authority(reference(obj));

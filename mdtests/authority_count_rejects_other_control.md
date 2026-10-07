@@ -9,7 +9,7 @@ void wrong_count(struct object* first, struct object* second) {}
 ```
 
 ```click resource_semantics=authority
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {
     owns obj->refs;

@@ -14,8 +14,8 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: struct pool*) {}
-resource item(pool: struct pool*, p: struct payload*) { owns object(p); }
+authorized resource slot(pool: struct pool*) {}
+authorized resource item(pool: struct pool*, p: struct payload*) { owns object(p); }
 resource storage(pool: struct pool*) {
     owns object(pool);
     owns authority(slot(pool));

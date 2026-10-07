@@ -8,7 +8,7 @@ void nested(struct pool* pool) { forward(pool); }
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: struct pool*) {}
+authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
     owns object(pool);
     owns authority(slot(pool));

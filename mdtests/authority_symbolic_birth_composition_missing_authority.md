@@ -9,7 +9,7 @@ void run(int32* o, int32 n, int32 m) { mint_pair(o, n, m); }
 ```
 
 ```click resource_semantics=authority
-resource tok(o: int32*) {}
+authorized resource tok(o: int32*) {}
 verifying "symbolic_birth_composition.c";
 void mint_pair(int32* o, int32 n, int32 m) {
     requires count(tok(o)) == 0;

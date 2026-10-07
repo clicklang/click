@@ -21,7 +21,7 @@ void contribute(struct counter *p) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "local_conservation.c";
-resource remaining(p: struct counter*) {}
+authorized resource remaining(p: struct counter*) {}
 resource control(p: struct counter*) {
     field value: uint32;
     owns p->value;

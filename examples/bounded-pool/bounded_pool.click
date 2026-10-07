@@ -1,5 +1,5 @@
-resource pool_slot(pool: struct pool*) {}
-resource pool_object(pool: struct pool*, object: struct object*) { owns object(object); }
+authorized resource pool_slot(pool: struct pool*) {}
+authorized resource pool_object(pool: struct pool*, object: struct object*) { owns object(object); }
 resource pool_storage(pool: struct pool*) {
     owns object(pool);
     owns authority(pool_slot(pool));

@@ -19,7 +19,7 @@ int run(void) {
 
 ```click resource_semantics=authority
 verifying "authority_mutex_control_sequential.c";
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {
     field refs: int32;

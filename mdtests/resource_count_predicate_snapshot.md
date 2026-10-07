@@ -16,7 +16,7 @@ struct object* object_retain(struct object* obj) {
 ```
 
 ```click resource_semantics=authority
-resource object_ref(obj: struct object*) {}
+authorized resource object_ref(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns obj->refs;
     owns authority(object_ref(obj));

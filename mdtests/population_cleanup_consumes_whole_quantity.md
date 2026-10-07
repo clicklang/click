@@ -12,7 +12,7 @@ unsigned int cleanup(struct counter* p) { p->value = 0u; return p->value; }
 
 ```click resource_semantics=authority
 verifying "partial_cleanup.c";
-resource remaining(p: struct counter*) {}
+authorized resource remaining(p: struct counter*) {}
 resource control(p: struct counter*) {
     owns authority(remaining(p));
     owns p->value;

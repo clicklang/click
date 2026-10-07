@@ -35,7 +35,7 @@ spec enum ParentLink {
     Linked(struct child*),
 }
 
-resource child_ref(obj: struct child*) {}
+authorized resource child_ref(obj: struct child*) {}
 
 resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));

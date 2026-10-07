@@ -26,7 +26,7 @@ fn authority_mode_establishes_and_retires_empty_stack_population() {
         }
     "#;
     let click_source = r#"
-        abstract resource reference(p: int32*);
+        authorized abstract resource reference(p: int32*);
         verifying "authority_stack.c";
 
         int32 value() {
@@ -57,7 +57,7 @@ fn authority_mode_conserves_one_local_member() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 value() {
@@ -91,7 +91,7 @@ fn authority_mode_cannot_reestablish_after_retirement() {
         }
     "#;
     let click_source = r#"
-        abstract resource reference(p: int32*);
+        authorized abstract resource reference(p: int32*);
         verifying "authority_stack.c";
 
         int32 value() {
@@ -122,7 +122,7 @@ fn authority_mode_rejects_automatic_storage_end_with_live_authority() {
         }
     "#;
     let click_source = r#"
-        abstract resource reference(p: int32*);
+        authorized abstract resource reference(p: int32*);
         verifying "authority_stack.c";
 
         int32 value() {
@@ -150,7 +150,7 @@ fn authority_mode_imported_pointer_without_live_storage_cannot_establish_populat
         }
     "#;
     let click_source = r#"
-        abstract resource reference(p: int32*);
+        authorized abstract resource reference(p: int32*);
         verifying "authority_stack.c";
 
         int32 value(int32* p) {
@@ -182,7 +182,7 @@ fn authority_mode_cannot_create_untracked_member_before_establishment() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 value() {
@@ -212,7 +212,7 @@ fn authority_mode_cannot_create_untracked_member_before_establishment() {
 fn authority_mode_rejects_double_member_consumption() {
     let c_source = "int32 value(void) { int32 x = 7; return x; }";
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 value() {
@@ -243,7 +243,7 @@ fn authority_mode_rejects_double_member_consumption() {
 fn authority_mode_cannot_retire_with_live_member() {
     let c_source = "int32 value(void) { int32 x = 7; return x; }";
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 value() {
@@ -269,7 +269,7 @@ fn authority_mode_cannot_retire_with_live_member() {
 fn authority_mode_count_requires_owned_authority() {
     let c_source = "int32 value(int32* p) { return 7; }";
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 value(int32* p) {
@@ -293,7 +293,7 @@ fn authority_mode_count_requires_owned_authority() {
 fn authority_mode_refuses_legacy_count_observation() {
     let c_source = "int32 value(int32* p) { return 7; }";
     let click_source = r#"
-        abstract resource reference(p: int32*);
+        authorized abstract resource reference(p: int32*);
         verifying "authority_stack.c";
 
         int32 value(int32* p) {
@@ -382,7 +382,7 @@ fn authority_mode_helper_returns_the_same_authority_and_member() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 helper(int32* p) {
@@ -427,7 +427,7 @@ fn authority_mode_helper_consumes_one_member_and_returns_authority() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 drop_reference(int32* p) {
@@ -473,7 +473,7 @@ fn authority_mode_helper_produces_one_member_and_returns_authority() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 add_reference(int32* p) {
@@ -512,7 +512,7 @@ fn authority_mode_helper_produces_one_member_and_returns_authority() {
 fn authority_mode_helper_cannot_claim_creation_without_folding_member() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
         int32 add_reference(int32* p) {
             owns authority(reference(p));
@@ -538,7 +538,7 @@ fn authority_mode_helper_cannot_claim_creation_without_folding_member() {
 fn authority_mode_helper_cannot_birth_imported_member_twice() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
         int32 add_reference(int32* p) {
             owns authority(reference(p));
@@ -569,7 +569,7 @@ fn authority_mode_creating_helper_requires_caller_authority() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
         int32 add_reference(int32* p) {
             owns authority(reference(p));
@@ -599,7 +599,7 @@ fn authority_mode_creating_helper_requires_caller_authority() {
 fn authority_mode_helper_cannot_create_private_memory_from_opaque_authority() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
-        resource reference(p: int32*) { owns p[0..1]; }
+        authorized resource reference(p: int32*) { owns p[0..1]; }
         verifying "authority_stack.c";
         int32 add_reference(int32* p) {
             owns authority(reference(p));
@@ -626,7 +626,7 @@ fn authority_mode_helper_cannot_create_private_memory_from_opaque_authority() {
 fn authority_mode_helper_cannot_claim_consumption_without_spending_member() {
     let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
         int32 drop_reference(int32* p) {
             owns authority(reference(p));
@@ -649,7 +649,7 @@ fn authority_mode_helper_cannot_claim_consumption_without_spending_member() {
 fn authority_mode_helper_cannot_spend_imported_member_twice() {
     let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
         int32 drop_reference(int32* p) {
             owns authority(reference(p));
@@ -680,7 +680,7 @@ fn authority_mode_consuming_helper_requires_caller_member() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         verifying "authority_stack.c";
         int32 drop_reference(int32* p) {
             owns authority(reference(p));

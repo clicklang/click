@@ -6,7 +6,7 @@ void total(int32* o) { mint_n(o, 2147483647); mint_n(o, 1); }
 ```
 
 ```click resource_semantics=authority
-resource tok(o: int32*) {}
+authorized resource tok(o: int32*) {}
 verifying "population_total.c";
 void mint_n(int32* o, int32 n) {
     owns authority(tok(o));

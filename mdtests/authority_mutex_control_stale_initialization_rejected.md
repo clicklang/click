@@ -24,7 +24,7 @@ int run(void) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "authority_mutex_control_stale_initialization_rejected.c";
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {
     field refs: int32;

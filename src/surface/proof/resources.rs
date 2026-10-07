@@ -719,6 +719,7 @@ fn unmatched_instance_body(
             parameters,
             composite_body: Some(scope),
             field_schema: definition.field_schema.clone(),
+            authorized: definition.authorized,
         },
         bindings: instance.fields().to_vec(),
     })
@@ -5267,7 +5268,7 @@ mod v11_resource_dependency_tests {
     #[test]
     fn authority_body_read_projection_retires_only_its_owned_observations() {
         let source = r#"
-resource child_ref(obj: struct child*) {}
+authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);

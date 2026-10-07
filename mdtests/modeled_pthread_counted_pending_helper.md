@@ -18,7 +18,7 @@ int run(void *p) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_pending_helper.c";
-resource ticket(p: void*) {}
+authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns authority(ticket(argument));
     consumes ticket(argument);

@@ -10,7 +10,7 @@ int run(void *p) { return 0; }
 
 ```click resource_semantics=authority
 verifying "authority_entry_separate_member_clauses.c";
-resource ticket(p: void*) {}
+authorized resource ticket(p: void*) {}
 int32 run(void* p) {
     owns authority(ticket(p));
     owns ticket(p);

@@ -10,7 +10,7 @@ void inspect(int32* pool, int32 n) {}
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*) {}
+authorized resource slot(pool: int32*) {}
 verifying "symbolic_quantity.c";
 void inspect(int32* pool, int32 n) {
     owns authority(slot(pool));

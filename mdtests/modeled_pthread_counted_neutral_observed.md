@@ -19,7 +19,7 @@ int run(void *p) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_neutral_observed.c";
-resource ticket(p: void*) {}
+authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
 } by { execute(); simp(); }

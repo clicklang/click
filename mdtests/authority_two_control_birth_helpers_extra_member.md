@@ -27,8 +27,8 @@ void initialize_pair(struct pool* source, struct pool* destination) {
 ```
 
 ```click resource_semantics=authority
-resource pool_slot(pool: struct pool*) {}
-resource pool_object(pool: struct pool*, object: int32*) {}
+authorized resource pool_slot(pool: struct pool*) {}
+authorized resource pool_object(pool: struct pool*, object: int32*) {}
 resource pool_storage(pool: struct pool*) {
     owns object(pool);
     owns authority(pool_slot(pool));

@@ -2390,7 +2390,7 @@ fn return_population_count_is_not_an_assumed_invariant() {
     ] {
         let source = format!(
             r#"
-resource reference(obj: struct object*) {{
+authorized resource reference(obj: struct object*) {{
     owns obj->refs;
     fact obj->refs == count(reference(obj));
 }}
@@ -10955,7 +10955,7 @@ fn outcome_simp_with_no_open_claims_is_an_empty_proof_transition() {
         }
     "#;
     let click_source = r#"
-        resource object_ref(obj: struct object*) {
+        authorized resource object_ref(obj: struct object*) {
             owns object(obj);
             fact obj->refs == count(object_ref(obj));
         }
@@ -10997,9 +10997,9 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         }
     "#;
     let click_source = r#"
-        resource pool_object(pool: struct pool*) {}
+        authorized resource pool_object(pool: struct pool*) {}
 
-        resource pool_slot(pool: struct pool*) {
+        authorized resource pool_slot(pool: struct pool*) {
             views object(pool);
         }
 
@@ -11050,7 +11050,7 @@ fn outcome_predicate_unfold_uses_the_checked_frame_population_transition() {
         }
     "#;
     let click_source = r#"
-        resource pool_object(pool: struct pool*, object: struct object*) {
+        authorized resource pool_object(pool: struct pool*, object: struct object*) {
             owns object(object);
         }
 
@@ -13998,7 +13998,7 @@ void object_retain_many(struct object* obj, int32 amount) {
 "#;
 
 const PRODUCED_RESOURCE_CLICK: &str = r#"
-resource object_ref(obj: struct object*) {
+authorized resource object_ref(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
     owns object(obj);
     fact obj->refs == count(object_ref(obj));

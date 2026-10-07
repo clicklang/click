@@ -16,7 +16,7 @@ int32 run() {
 ```
 
 ```click resource_semantics=authority
-resource ticket(pool: int32*, p: int32*) {
+authorized resource ticket(pool: int32*, p: int32*) {
     field model: List<int32>;
     owns p[0..1];
 }

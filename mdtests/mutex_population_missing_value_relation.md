@@ -51,7 +51,7 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_counter.c";
 
-resource contribution(counter: struct mutex_counter*) {}
+authorized resource contribution(counter: struct mutex_counter*) {}
 
 resource counter_state(counter: struct mutex_counter*) {
     field value: uint32;

@@ -5,7 +5,7 @@ void lifecycle() { int32 pool = 0; }
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, key: int32) {}
+authorized resource slot(pool: int32*, key: int32) {}
 verifying "exact_count_multiplicity.c";
 void lifecycle() { ensures 1 == 1; } by {
     step(); step();

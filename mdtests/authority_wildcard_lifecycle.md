@@ -13,7 +13,7 @@ void lifecycle() {
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, member: int32*) {}
+authorized resource slot(pool: int32*, member: int32*) {}
 verifying "wildcard_lifecycle.c";
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step(); step(); step();

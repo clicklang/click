@@ -65,7 +65,7 @@ access to shared accounting state comes from the resource that owns it.
 The implemented surface uses ordinary resources and the built-in `authority`:
 
 ```text
-resource reference(p: struct object*) {
+authorized resource reference(p: struct object*) {
 }
 
 resource control(p: struct object*) {
@@ -360,6 +360,12 @@ scope.
 
 ### Milestone 7: Sole default and legacy removal
 
+0. **Mark counted families.** The approved `authorized resource` keyword
+   marks each family that takes part in population accounting.
+   `authority(...)` and `count(...)` may name only such a family under
+   authority semantics, and only it gets member creation and destruction on
+   fold and unfold. Every other family keeps its ordinary definition law, so
+   switching the default does not turn ordinary resources into populations.
 1. **Audit and switch.** Confirm the inventory's legacy list is empty, then
    audit production paths, runtime specifications, public documentation,
    imports, summaries, caches, and certificates. Make authority the sole

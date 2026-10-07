@@ -27,7 +27,7 @@ void produce_population_pipeline(struct owner* owner, int32 amount) {
 ```
 
 ```click resource_semantics=authority
-resource slot(owner: struct owner*) {
+authorized resource slot(owner: struct owner*) {
 }
 
 predicate valid_capacity(owner: struct owner*) {

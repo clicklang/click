@@ -13,7 +13,7 @@ void remove_member(int32* pool, int32* cell) {
 
 ```click resource_semantics=authority
 verifying "authority_pool_named_member_helper_consumption.c";
-resource slot(pool: int32*, cell: int32*) {
+authorized resource slot(pool: int32*, cell: int32*) {
     field label: int32;
     owns cell[0..1];
 }

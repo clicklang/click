@@ -340,13 +340,20 @@ population authority. Its references and shared control are separate resources:
 
 <!-- verified-example: mdtests/counted_resource_population_body.md -->
 ```click
-resource object_ref(obj: struct object*) {}
+authorized resource object_ref(obj: struct object*) {}
 resource object_control(obj: struct object*) {
     owns obj->refs;
     owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));
 }
 ```
+
+Under authority semantics, population accounting covers only families declared
+`authorized resource`.
+`authority(...)` and `count(...)` may name only such a family; on any other
+family they are refused. An ordinary family such as `object_control` folds,
+unfolds and moves by its definition alone and creates or destroys no counted
+member.
 
 On this path, observing a live population with `count(object_ref(obj))`
 requires the matching authority.
@@ -478,7 +485,7 @@ members sharing a concrete storage anchor:
 
 <!-- verified-example: mdtests/authority_wildcard_lifecycle.md -->
 ```click
-resource slot(pool: int32*, member: int32*) {}
+authorized resource slot(pool: int32*, member: int32*) {}
 ```
 
 `fold(authority(slot(&pool, _)))` establishes the empty population in the
@@ -511,7 +518,7 @@ A member can own a private memory body independently of population authority:
 
 <!-- verified-example: mdtests/authority_wildcard_private_body_helper.md -->
 ```click
-resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 int32 update(int32* pool, int32* p) {
     owns slot(pool, p);
     ensures result == 7;
@@ -556,7 +563,7 @@ the helper:
 
 <!-- verified-example: mdtests/authority_wildcard_create_private_body.md -->
 ```click
-resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 void issue(int32* pool, int32* p) {
     owns authority(slot(pool, _));
     consumes p[0..1];
@@ -601,7 +608,7 @@ contract:
 
 <!-- verified-example: mdtests/authority_wildcard_consume_private_body.md -->
 ```click
-resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 void release(int32* pool, int32* p) {
     owns authority(slot(pool, _));
     consumes slot(pool, p);
@@ -624,7 +631,7 @@ A private member body can also carry ordinary invariant facts:
 
 <!-- verified-example: mdtests/authority_wildcard_body_facts.md -->
 ```click
-resource slot(pool: int32*, p: int32*) {
+authorized resource slot(pool: int32*, p: int32*) {
     owns p[0..1];
     fact 0 <= p[0];
 }
@@ -648,7 +655,7 @@ A population member may instead own another ordinary declared resource:
 <!-- verified-example: mdtests/authority_wildcard_contained_resource.md -->
 ```click
 resource cell(pool: int32*, p: int32*) { owns p[0..1]; }
-resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
+authorized resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
 ```
 
 Folding `slot(pool, p)` transfers the already-owned `cell(pool, p)` into its
@@ -818,7 +825,7 @@ the same arguments:
 
 <!-- verified-example: mdtests/composite_resource_composes_token.md -->
 ```click
-abstract resource object_ref(object: struct object*);
+authorized abstract resource object_ref(object: struct object*);
 ```
 
 Click stores equal owned units as one canonical fact with a quantity. A clause

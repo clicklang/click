@@ -139,8 +139,9 @@ a mutex. Milestone 4 must therefore provide these properties:
 ## Fixture mapping
 
 Each legacy worker fixture keeps its C unchanged. Replacements that spend a
-member declare an ordinary field-free resource, `resource ticket(p: void*) {}`,
-instead of `abstract resource ticket(p: void*);`. Authority mode has no checked
+member declare an ordinary field-free resource,
+`authorized resource ticket(p: void*) {}`, instead of
+`authorized abstract resource ticket(p: void*);`. Authority mode has no checked
 spend for abstract members: it refuses `unfold` of an abstract member because
 its members require an ordinary producing contract. A worker that spends
 carries `owns authority(ticket(argument))` and unfolds its member. A worker

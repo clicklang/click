@@ -11,7 +11,7 @@ void helper(struct object *obj) {}
 
 ```click resource_semantics=authority
 verifying "authority_control_instance_duplicate_authority_rejected.c";
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {
     field refs: int32;
     owns obj->refs;

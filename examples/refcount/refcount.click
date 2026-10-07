@@ -1,4 +1,4 @@
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));

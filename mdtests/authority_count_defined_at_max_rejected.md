@@ -6,7 +6,7 @@ void inspect(struct pool* pool) {}
 ```
 
 ```click resource_semantics=authority
-resource item(pool: struct pool*, id: int32) {}
+authorized resource item(pool: struct pool*, id: int32) {}
 resource control(pool: struct pool*) {
     owns object(pool);
     owns authority(item(pool, _));

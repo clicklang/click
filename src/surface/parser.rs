@@ -130,7 +130,13 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
             Token::Ident(name) if depth == 0 && item_start => {
                 if !matches!(
                     name.as_str(),
-                    "import" | "spec" | "predicate" | "function" | "resource" | "abstract"
+                    "import"
+                        | "spec"
+                        | "predicate"
+                        | "function"
+                        | "resource"
+                        | "abstract"
+                        | "authorized"
                 ) {
                     return false;
                 }
@@ -917,6 +923,14 @@ impl Parser {
                 && matches!(self.peek_next(), Some(Token::Ident(_)))
             {
                 tactic_definitions.push(self.parse_tactic_definition()?);
+            } else if self.peek_ident() == Some("authorized")
+                && matches!(self.peek_next(), Some(Token::Ident(next)) if next == "resource" || next == "abstract")
+            {
+                self.position += 1;
+                let is_abstract = self.peek_ident() == Some("abstract");
+                let mut definition = self.parse_resource_definition(is_abstract)?;
+                definition.authorized = true;
+                resource_definitions.push(definition);
             } else if self.peek_ident() == Some("abstract") {
                 resource_definitions.push(self.parse_resource_definition(true)?);
             } else if self.peek_ident() == Some("resource") {
@@ -1604,6 +1618,7 @@ impl Parser {
             resource_parameters,
             composite_body,
             field_schema: None,
+            authorized: false,
         })
     }
 

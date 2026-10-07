@@ -9,8 +9,8 @@ void move(int32* source, int32* destination, int32* p) {}
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*) {}
-resource item(pool: int32*, p: int32*) { owns p[0..1]; }
+authorized resource slot(pool: int32*) {}
+authorized resource item(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "four_effect_exchange.c";
 void move(int32* source, int32* destination, int32* p) {
     requires source != destination;

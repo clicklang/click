@@ -6,7 +6,7 @@ void issue(int32* pool, int32* p) { }
 
 ```click resource_semantics=authority
 resource cell(pool: int32*, p: int32*) { owns p[0..1]; }
-resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
+authorized resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
 verifying "contained_bad.c";
 void issue(int32* pool, int32* p) {
     owns authority(slot(pool, _));
