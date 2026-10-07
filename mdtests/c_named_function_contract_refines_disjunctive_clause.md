@@ -1,9 +1,9 @@
 # A disjunctive contract clause is refined by naming its arm
 
 `Stable` promises that the cell either keeps its value or grows. `increment`
-always grows it, so the clause is refined through the right arm only. The arm
-is the proof's choice, not the kernel's: `click expand` prints the `right()`
-that selects it, and the certificate records which arm was taken.
+always grows it, so the clause is refined through the right arm only. The
+proof establishes that arm with a `have`, and `assumption()` closes the
+disjunction from it: one side being a fact is all a disjunction needs.
 
 ```c filename=disjunctive_step.c
 void increment(int32* state) {

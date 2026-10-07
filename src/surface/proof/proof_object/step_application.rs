@@ -840,9 +840,6 @@ impl<'a> Proof<'a> {
                 Some(self.apply_arithmetic_certificate(certificate))
             }
             ProofStep::Intro => Some(self.apply_intro()),
-            ProofStep::Split => Some(self.apply_split()),
-            ProofStep::Left => Some(self.apply_left()),
-            ProofStep::Right => Some(self.apply_right()),
             ProofStep::Enumerate => Some(self.apply_enumerate()),
             ProofStep::Contradiction(surface) => Some(self.apply_contradiction(surface)),
             ProofStep::Extract(proposition) => Some(self.apply_extract(proposition)),
@@ -1024,6 +1021,15 @@ impl<'a> Proof<'a> {
                         .unwrap_or_default();
                     self.step_error(format!(
                         "`assumption` requires the current goal as an available semantic fact{detail}"
+                    ))
+                }
+                PropositionCloseError::UnavailableSide(side) => {
+                    let (names, values) = self.diagnostic_naming_tables();
+                    self.step_error(format!(
+                        "`assumption` closes a conjunction when every side is an available fact and a disjunction when one side is; `{}` is not available",
+                        crate::surface::diagnostics::describe_pure_fact_spelled(
+                            &side, &names, &values
+                        )
                     ))
                 }
                 _ => unreachable!("kernel returned an unrelated assumption error"),
@@ -2889,61 +2895,6 @@ impl<'a> Proof<'a> {
             added.clone(),
             added,
         ))
-    }
-
-    // Preserve the rule/dispatcher frame boundary described above.
-    #[inline(never)]
-    pub(super) fn apply_split(&self) -> Result<KernelProofHandle, ClickError> {
-        self.state.apply_split().map_err(|error| match error {
-            PropositionCloseError::NotProposition => {
-                self.step_error("`split` requires a proposition goal")
-            }
-            PropositionCloseError::ExpectedConjunction(goal) => self.step_error(format!(
-                "`split` requires a conjunction goal, got {}",
-                describe_assumption_goal(&goal)
-            )),
-            PropositionCloseError::MissingConjuncts(left, right) => self.step_error(format!(
-                "`split` requires both conjuncts as exact facts: {} and {}",
-                crate::surface::proof_diagnostics::render::render_proposition(&left),
-                crate::surface::proof_diagnostics::render::render_proposition(&right)
-            )),
-            _ => unreachable!("kernel returned an unrelated split error"),
-        })
-    }
-
-    // Preserve the rule/dispatcher frame boundary described above.
-    #[inline(never)]
-    pub(super) fn apply_left(&self) -> Result<KernelProofHandle, ClickError> {
-        self.apply_disjunct(true, "left")
-    }
-
-    // Preserve the rule/dispatcher frame boundary described above.
-    #[inline(never)]
-    pub(super) fn apply_right(&self) -> Result<KernelProofHandle, ClickError> {
-        self.apply_disjunct(false, "right")
-    }
-
-    fn apply_disjunct(
-        &self,
-        take_left: bool,
-        step_name: &str,
-    ) -> Result<KernelProofHandle, ClickError> {
-        self.state
-            .apply_disjunct(take_left)
-            .map_err(|error| match error {
-                PropositionCloseError::NotProposition => {
-                    self.step_error(format!("`{step_name}` requires a proposition goal"))
-                }
-                PropositionCloseError::ExpectedDisjunction(goal) => self.step_error(format!(
-                    "`{step_name}` requires a disjunction goal, got {}",
-                    describe_assumption_goal(&goal)
-                )),
-                PropositionCloseError::MissingDisjunct(selected) => self.step_error(format!(
-                    "`{step_name}` requires its selected disjunct as an exact fact: {}",
-                    crate::surface::proof_diagnostics::render::render_proposition(&selected)
-                )),
-                _ => unreachable!("kernel returned an unrelated disjunction error"),
-            })
     }
 
     // Preserve the rule/dispatcher frame boundary described above; instance

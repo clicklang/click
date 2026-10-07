@@ -678,7 +678,7 @@ mod certificate_tests {
             verified[3].proof_tactics().as_deref(),
             Some([
                 ProofTactic::ApplyTheoremUsing { application, premises },
-                ProofTactic::Split,
+                ProofTactic::Assumption,
             ]) if application.name == "required" && premises.len() == 1
         ));
         assert_eq!(
@@ -687,11 +687,11 @@ mod certificate_tests {
         );
         assert_eq!(
             verified[5].proof_tactics().as_deref(),
-            Some([ProofTactic::Split].as_slice())
+            Some([ProofTactic::Assumption].as_slice())
         );
         assert_eq!(
             verified[6].proof_tactics().as_deref(),
-            Some([ProofTactic::Left].as_slice())
+            Some([ProofTactic::Assumption].as_slice())
         );
         assert!(matches!(
             verified[7].proof_tactics().as_deref(),

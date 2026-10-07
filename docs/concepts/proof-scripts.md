@@ -59,8 +59,9 @@ replaces them with the corresponding sequence of `step();` tactics.
 
 `simp() using { ... }` is still smart: the listed facts restrict its search,
 and expansion replaces it with named simple rules. Common simple proposition
-tactics are `assumption()`, `normalize()`, `rewrite(...)`, `intro()`,
-`split()`, `left()`, `right()`, and `contradiction(...)`. A successful
+tactics are `assumption()`, `normalize()`, `rewrite(...)`, `intro()`, and
+`contradiction(...)`. `assumption()` also closes a conjunction whose sides
+are facts and a disjunction with one side a fact. A successful
 expansion contains only those explicit rules and named theorem applications.
 
 ## Pure, fixed-state, and execution proofs

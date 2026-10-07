@@ -271,7 +271,7 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                         intro();
                         assumption();
                     } and {
-                        split();
+                        assumption();
                     }
                 }
             }

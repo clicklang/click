@@ -2210,35 +2210,35 @@ fn verifies_explicit_structural_logic_tactics() {
         theorem conjunction_rule(x: int32) {
             requires x == x;
             ensures x == x and x == x by {
-                split();
+                assumption();
             }
         }
 
         theorem left_rule(x: int32) {
             requires x == x;
             ensures x == x or x != x by {
-                left();
+                assumption();
             }
         }
 
         theorem right_rule(x: int32) {
             requires x == x;
             ensures x != x or x == x by {
-                right();
+                assumption();
             }
         }
 
         theorem left_condition_polarity_rule(x: int32, y: int32) {
             requires not (x < y);
             ensures x >= y or x == y by {
-                left();
+                assumption();
             }
         }
 
         theorem right_condition_polarity_rule(x: int32, y: int32) {
             requires not (x < y);
             ensures x == y or x >= y by {
-                right();
+                assumption();
             }
         }
 
@@ -2667,7 +2667,7 @@ theorem reflexive_choice() {
 theorem reflexive_choice() {
     ensures 1 == 1 or 2 == 3 by {
         have 1 == 1 by { normalize(); }
-        left();
+        assumption();
     }
 }
 "#;
@@ -2677,7 +2677,7 @@ theorem reflexive_choice() {
 theorem reflexive_choice() {
     ensures 2 == 3 or 1 == 1 by {
         have 1 == 1 by { normalize(); }
-        right();
+        assumption();
     }
 }
 "#;
@@ -2717,7 +2717,7 @@ theorem choose_right() {
         [ProofTactic::Have(ProofHave {
             proof: SourceProof::Script(proof),
             ..
-        }), ProofTactic::Left] if matches!(proof.as_slice(), [ProofTactic::Normalize])
+        }), ProofTactic::Assumption] if matches!(proof.as_slice(), [ProofTactic::Normalize])
     ));
 
     let right = verified[1]
@@ -2728,7 +2728,7 @@ theorem choose_right() {
         [ProofTactic::Have(ProofHave {
             proof: SourceProof::Script(proof),
             ..
-        }), ProofTactic::Right] if matches!(proof.as_slice(), [ProofTactic::Normalize])
+        }), ProofTactic::Assumption] if matches!(proof.as_slice(), [ProofTactic::Normalize])
     ));
 }
 
@@ -2807,7 +2807,7 @@ theorem false_guard(x: int32) {
             .proof_tactics()
             .expect("expected nested disjunction certificate")
             .as_slice(),
-        [ProofTactic::Intro, ProofTactic::Left]
+        [ProofTactic::Intro, ProofTactic::Assumption]
     ));
     assert!(matches!(
         verified[3]

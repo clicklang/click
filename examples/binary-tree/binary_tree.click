@@ -216,7 +216,7 @@ int32 tree_is_leaf(struct node* node) {
         }
         have result == 0 or result == 1 by {
             have result == 0 by { normalize(); }
-            left();
+            assumption();
         }
         assumption();
         assumption();
@@ -245,7 +245,7 @@ int32 tree_is_leaf(struct node* node) {
             }
             have result == 0 or result == 1 by {
                 have result == 0 by { normalize(); }
-                left();
+                assumption();
             }
             assumption();
             assumption();
@@ -278,7 +278,7 @@ int32 tree_is_leaf(struct node* node) {
             }
             have result == 0 or result == 1 by {
                 have result == 1 by { normalize(); }
-                right();
+                assumption();
             }
             assumption();
             assumption();

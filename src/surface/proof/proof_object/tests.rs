@@ -436,7 +436,7 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
         let prefix = attempt::candidate_outcome(candidate.apply_step(ProofStep::Intro))?
             .expect("intro is locally valid on the implication goal");
         // The continuation demands a step the prefix cannot support.
-        attempt::candidate_outcome(prefix.apply_step(ProofStep::Split))
+        attempt::candidate_outcome(prefix.apply_step(ProofStep::Enumerate))
     })
     .expect("a rejected continuation is a miss, not a tooling failure");
     assert!(missed.is_none());
@@ -455,9 +455,9 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
         &prefix,
         &mut budget,
         [
-            ProofStep::Split,
-            ProofStep::Left,
-            ProofStep::Right,
+            ProofStep::Enumerate,
+            ProofStep::Enumerate,
+            ProofStep::Enumerate,
             ProofStep::Assumption,
         ],
         |shared, step| {
@@ -482,7 +482,11 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
     let bounded = attempt::first_success(
         &prefix,
         &mut budget,
-        [ProofStep::Split, ProofStep::Assumption, ProofStep::Left],
+        [
+            ProofStep::Enumerate,
+            ProofStep::Assumption,
+            ProofStep::Enumerate,
+        ],
         |shared, step| {
             attempts += 1;
             attempt::candidate_outcome(shared.apply_step(step))
@@ -494,8 +498,12 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
 
     // An all-or-nothing sequence discards its partial descendant.
     let mut budget = attempt::AttemptBudget::unbounded();
-    let sequence = attempt::try_sequence(&root, &mut budget, &[ProofStep::Intro, ProofStep::Split])
-        .expect("a rejected sequence tail is a miss");
+    let sequence = attempt::try_sequence(
+        &root,
+        &mut budget,
+        &[ProofStep::Intro, ProofStep::Enumerate],
+    )
+    .expect("a rejected sequence tail is a miss");
     assert!(sequence.is_none());
     let mut budget = attempt::AttemptBudget::unbounded();
     let sequence = attempt::try_sequence(
@@ -2777,11 +2785,11 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
 
         let marker = split_proof.checkpoint();
         let joined = split_proof
-            .apply_step(ProofStep::Left)
+            .apply_step(ProofStep::Assumption)
             .expect("the condition closes the then arm")
             .focus_branch(ids[1])
             .expect("the else sibling remains open")
-            .apply_step(ProofStep::Right)
+            .apply_step(ProofStep::Assumption)
             .expect("the exact negation closes the else arm")
             .join_focused_if(&marker, split, ids, condition.clone())
             .expect("both discharged siblings should join");
@@ -2790,8 +2798,8 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
         assert!(matches!(
             joined.certificate().steps(),
             [ProofStep::If { then_proof, else_proof, .. }]
-                if then_proof.steps() == [ProofStep::Left]
-                    && else_proof.steps() == [ProofStep::Right]
+                if then_proof.steps() == [ProofStep::Assumption]
+                    && else_proof.steps() == [ProofStep::Assumption]
         ));
         assert!(root.certificate().steps().is_empty());
     }
@@ -8445,7 +8453,7 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
                         retained_steps.steps(),
                         [
                             ProofStep::Have { proof, .. },
-                            ProofStep::Left,
+                            ProofStep::Assumption,
                         ] if matches!(
                             proof.steps(),
                             [ProofStep::ApplyTheoremUsing { .. }]

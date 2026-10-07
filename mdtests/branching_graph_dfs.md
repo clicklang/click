@@ -378,7 +378,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                     }
                     assumption();
                 }
-                split();
+                assumption();
             } else {
                 if at(before_right, visited[k]) == 0 {
                     instantiate(forall (k: int32) {
@@ -387,7 +387,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                     }, k) using {
                         0 <= k; k < n; at(before_right, visited[k]) == 0; visited[k] != 0;
                     }
-                    split();
+                    assumption();
                 } else {
                     instantiate(forall (k: int32) {
                         0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
@@ -407,7 +407,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                         0 <= old(right[k]); old(right[k]) < n;
                         at(before_right, visited[old(right[k])]) != 0;
                     }
-                    split();
+                    assumption();
                 }
             }
         }

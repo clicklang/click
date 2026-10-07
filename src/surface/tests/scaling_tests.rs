@@ -2006,7 +2006,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
         .collect::<Vec<_>>()
         .join(" and\n            ");
     let facts = (1..=conjuncts)
-        .map(|k| format!("            have i <= n or {k} + i == 0 by {{ left(); }}\n"))
+        .map(|k| format!("            have i <= n or {k} + i == 0 by {{ assumption(); }}\n"))
         .collect::<String>();
     let click_source = format!(
         "verifying \"guarded_bundle.c\";\n\n\
@@ -2027,7 +2027,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
          \x20           step();\n\
          \x20           have 0 <= i by {{ simp(); }}\n\
          \x20           have i <= n by {{ simp(); }}\n\
-         \x20           have 0 <= i and i <= n by {{ split(); }}\n\
+         \x20           have 0 <= i and i <= n by {{ assumption(); }}\n\
          {facts}\
          \x20           have 0 <= n - at(iteration, i) - 1 by {{\n\
          \x20               arithmetic() using {{\n\
@@ -6064,7 +6064,7 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
         let i = indent(index + 1);
         let statement = 7 + 3 * index;
         proof.push_str(&format!(
-            "{i}if {} {{\n{i}    have result == a or result == -1 by {{\n{i}        have result == a by {{\n{i}            rewrite(at(statement({statement}).entry, {index}) == at(statement({statement}).entry, a));\n{i}            normalize();\n{i}        }}\n{i}        left();\n{i}    }}\n{i}    assumption();\n{i}}} else {{\n",
+            "{i}if {} {{\n{i}    have result == a or result == -1 by {{\n{i}        have result == a by {{\n{i}            rewrite(at(statement({statement}).entry, {index}) == at(statement({statement}).entry, a));\n{i}            normalize();\n{i}        }}\n{i}        assumption();\n{i}    }}\n{i}    assumption();\n{i}}} else {{\n",
             condition(index)
         ));
     }

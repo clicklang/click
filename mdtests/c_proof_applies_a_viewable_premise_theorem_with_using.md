@@ -46,7 +46,7 @@ int32 probe(int32 a[], int32 n) {
     step();
     have n >= 0 by { simp(); }
     have viewable(a[0..n]) by { simp(); }
-    have n >= 0 and viewable(a[0..n]) by { split(); }
+    have n >= 0 and viewable(a[0..n]) by { assumption(); }
     apply(viewable_range_is_nonnegative(a, n)) using {
         n >= 0 and viewable(a[0..n]);
     }

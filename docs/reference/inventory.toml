@@ -749,10 +749,6 @@ id = "language.word.invariant"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.left"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.let"
 path = "reference/language/grammar.md#word-index"
 
@@ -854,10 +850,6 @@ id = "language.word.rewrite"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.right"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.same_object"
 path = "reference/language/grammar.md#word-index"
 
@@ -883,10 +875,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.both"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.split"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1313,18 +1301,6 @@ id = "tactic.both"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.split"
-path = "reference/tactics/index.md#proposition-reasoning"
-
-[[item]]
-id = "tactic.left"
-path = "reference/tactics/index.md#proposition-reasoning"
-
-[[item]]
-id = "tactic.right"
-path = "reference/tactics/index.md#proposition-reasoning"
-
-[[item]]
 id = "tactic.enumerate"
 path = "reference/tactics/index.md#proposition-reasoning"
 
@@ -1551,15 +1527,6 @@ id = "tactic-form.intro"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.both"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.split"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.left"
-path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.right"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.enumerate"

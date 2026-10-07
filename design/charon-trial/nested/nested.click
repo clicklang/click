@@ -544,7 +544,7 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
                         intro();
                         intro();
                         intro();
-                        split();
+                        assumption();
                     }
                     have (__rust_mir_17_remaining % 2) == 0 by {
                         intro();
@@ -570,7 +570,7 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
                         intro();
                         intro();
                         intro();
-                        split();
+                        assumption();
                     }
                     have 4 <= (8 - __rust_mir_8_remaining) and (8 - __rust_mir_8_remaining) <= 8 by {
                         intro();
@@ -581,7 +581,7 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
                         intro();
                         intro();
                         intro();
-                        split();
+                        assumption();
                     }
                 }
                 preserve by {

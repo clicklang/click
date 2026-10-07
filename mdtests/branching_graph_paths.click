@@ -165,7 +165,7 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
                 if k == to {
                     have 0 <= to by { simp(); }
                     have to < n by { simp(); }
-                    have 0 <= to and to < n by { split(); }
+                    have 0 <= to and to < n by { assumption(); }
                     extract(after[to] == before[to]);
                     have before[to] == 0 by {
                         instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to) using { 0 <= to; to < n; }
@@ -176,7 +176,7 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
                     contradiction(after[k] != 0);
                 } else { assumption(); }
             }
-            split();
+            assumption();
         }
         intro();
         apply(closed_marks_exclude_target(left, right, after, n, from, to, path));

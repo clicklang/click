@@ -7,9 +7,9 @@ bundle states that member under its definedness guard:
 `else` arm the bundle is a conjunction whose first conjunct is that
 implication.
 
-Every leaf is already a fact: the body states the disjunction with `right()`
+Every leaf is already a fact: the body states the disjunction with `assumption()`
 and both ranking inequalities with `arithmetic()`. The closing proof is
-`both { intro(); assumption(); } and { split(); }`, and `close_invariants()`
+`both { intro(); assumption(); } and { assumption(); }`, and `close_invariants()`
 must find it by splitting the bundle and closing each conjunct with the
 direct logical steps, before the premise-selecting and rewriting strategies
 run over the whole bundle. Before that, this arm fell through to the indexed
@@ -59,7 +59,7 @@ int32 count_run(int32 n) {
                 have 0 <= i and i <= n by { simp(); }
                 have 0 <= run and run <= i by { simp(); }
                 have i <= 2 and run == 0 by { simp(); }
-                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by { left(); }
+                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by { assumption(); }
                 have 0 <= at(iteration, i) by { simp(); }
                 have 0 <= n by { simp(); }
                 have 0 <= n - at(iteration, i) - 1 by {
@@ -110,7 +110,7 @@ int32 count_run(int32 n) {
                 have 0 <= i and i <= n by { simp(); }
                 have 0 <= run and run <= i by { simp(); }
                 have 2 <= i and 2 + run == i by { simp(); }
-                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by { right(); }
+                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by { assumption(); }
                 have 0 <= at(iteration, i) by { simp(); }
                 have 0 <= n by { simp(); }
                 have 0 <= n - at(iteration, i) - 1 by {

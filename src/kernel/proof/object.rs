@@ -24,6 +24,46 @@ pub(crate) struct ProofState<L, O, E> {
     checked_facts: Arc<Vec<Proposition>>,
 }
 
+/// Whether `root` follows from facts through its own `and`/`or` structure:
+/// a side holds when `available` says so, a conjunction when both sides do,
+/// a disjunction when either does. Returns the first side that fails, or
+/// `None` when the goal holds. The walk is iterative because conjunction
+/// spines are long, and it visits each side of the goal at most once.
+fn first_unavailable_connective_side<'a>(
+    root: &'a Proposition,
+    available: &impl Fn(&Proposition) -> bool,
+) -> Option<&'a Proposition> {
+    enum Task<'a> {
+        Visit(&'a Proposition),
+        Join(&'a Proposition),
+    }
+    let mut tasks = vec![Task::Visit(root)];
+    // Each finished side leaves the first unavailable side beneath it.
+    let mut results: Vec<Option<&'a Proposition>> = Vec::new();
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Visit(side) if available(side) => results.push(None),
+            Task::Visit(side @ (Proposition::And(left, right) | Proposition::Or(left, right))) => {
+                tasks.push(Task::Join(side));
+                tasks.push(Task::Visit(right));
+                tasks.push(Task::Visit(left));
+            }
+            Task::Visit(side) => results.push(Some(side)),
+            Task::Join(side) => {
+                let right = results.pop().expect("a joined side has a right result");
+                let left = results.pop().expect("a joined side has a left result");
+                results.push(match side {
+                    Proposition::And(..) => left.or(right),
+                    // A disjunction needs one side; when neither holds, the
+                    // disjunction itself is what is missing.
+                    _ => left.and(right).map(|_| side),
+                });
+            }
+        }
+    }
+    results.pop().expect("the root leaves one result")
+}
+
 impl<L, O, E> ProofState<L, O, E> {
     pub(crate) fn locals(&self) -> &L {
         &self.locals
@@ -163,10 +203,9 @@ pub(crate) enum PropositionCloseError {
     IntegerChoiceSourceUnavailable,
     IntegerChoiceWrongSort,
     IntegerChoiceFresheningExhausted,
-    ExpectedConjunction(Proposition),
-    MissingConjuncts(Proposition, Proposition),
-    ExpectedDisjunction(Proposition),
-    MissingDisjunct(Proposition),
+    /// The goal is a conjunction or disjunction, and this side of it is the
+    /// first one that no fact supplies.
+    UnavailableSide(Proposition),
     ExpectedFiniteUniversal,
     MissingFiniteInstance,
     /// `contradiction(fact)` found no refutation; `fact_held` says whether
@@ -625,30 +664,51 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
         let proposition = goal.proposition();
-        let available = if let Some(outcome) = goal.outcome.as_deref() {
-            facts.pure_assumption_available(proposition)
-                || facts.available_across_effects(proposition, &outcome.core.effect_facts)
-        } else {
-            match context {
-                PropositionAssumptionContext::Exact => {
-                    // Instantiation can expose an inner universal whose retained
-                    // binder differs from the goal's independently lowered binder.
-                    // Alpha-equivalence preserves the exact fact; use the indexed
-                    // quantified lookup without invoking a derivation search.
-                    facts.contains(proposition) || facts.quantified_fact_available(proposition)
-                }
-                PropositionAssumptionContext::Pure => facts.pure_assumption_available(proposition),
-                PropositionAssumptionContext::Materialized => {
-                    // Alpha-equivalent quantified and Integer facts remain
-                    // materialized when their exact snapshot-aware keys match.
-                    // This does not admit cross-effect transport.
-                    facts.pure_assumption_available(proposition)
+        let available = |proposition: &Proposition| {
+            if let Some(outcome) = goal.outcome.as_deref() {
+                facts.pure_assumption_available(proposition)
+                    || facts.available_across_effects(proposition, &outcome.core.effect_facts)
+            } else {
+                match context {
+                    PropositionAssumptionContext::Exact => {
+                        // Instantiation can expose an inner universal whose retained
+                        // binder differs from the goal's independently lowered binder.
+                        // Alpha-equivalence preserves the exact fact; use the indexed
+                        // quantified lookup without invoking a derivation search.
+                        facts.contains(proposition) || facts.quantified_fact_available(proposition)
+                    }
+                    PropositionAssumptionContext::Pure => {
+                        facts.pure_assumption_available(proposition)
+                    }
+                    PropositionAssumptionContext::Materialized => {
+                        // Alpha-equivalent quantified and Integer facts remain
+                        // materialized when their exact snapshot-aware keys match.
+                        // This does not admit cross-effect transport.
+                        facts.pure_assumption_available(proposition)
+                    }
                 }
             }
         };
-        available
-            .then(|| self.closed_focused())
-            .ok_or(PropositionCloseError::Unavailable)
+        if available(proposition) {
+            return Ok(self.closed_focused());
+        }
+        // A conjunction or disjunction that is not itself a fact still
+        // follows directly from facts: every conjunct, or one disjunct.
+        // That is a lookup per side of the goal and no derivation search.
+        if !matches!(proposition, Proposition::And(..) | Proposition::Or(..)) {
+            return Err(PropositionCloseError::Unavailable);
+        }
+        let side_available = |side: &Proposition| {
+            available(side)
+                || facts.contains(side)
+                || super::fact_reasoning::condition_polarity_forms(side)
+                    .iter()
+                    .any(|form| facts.contains(form))
+        };
+        match first_unavailable_connective_side(proposition, &side_available) {
+            None => Ok(self.closed_focused()),
+            Some(missing) => Err(PropositionCloseError::UnavailableSide(missing.clone())),
+        }
     }
 
     /// Dev-only `sorry`: closes the focused proposition goal as admitted,
@@ -1084,48 +1144,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             },
             self.focused_branch,
         ))
-    }
-
-    pub(crate) fn apply_split(&self) -> Result<Self, PropositionCloseError> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        let Proposition::And(left, right) = goal.proposition() else {
-            return Err(PropositionCloseError::ExpectedConjunction(
-                goal.proposition().clone(),
-            ));
-        };
-        if !facts.contains(left) || !facts.contains(right) {
-            return Err(PropositionCloseError::MissingConjuncts(
-                left.as_ref().clone(),
-                right.as_ref().clone(),
-            ));
-        }
-        Ok(self.closed_focused())
-    }
-
-    pub(crate) fn apply_disjunct(&self, take_left: bool) -> Result<Self, PropositionCloseError> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or(PropositionCloseError::NotProposition)?;
-        let Proposition::Or(left, right) = goal.proposition() else {
-            return Err(PropositionCloseError::ExpectedDisjunction(
-                goal.proposition().clone(),
-            ));
-        };
-        let selected = if take_left {
-            left.as_ref()
-        } else {
-            right.as_ref()
-        };
-        if !facts.contains(selected)
-            && !super::fact_reasoning::condition_polarity_forms(selected)
-                .iter()
-                .any(|form| facts.contains(form))
-        {
-            return Err(PropositionCloseError::MissingDisjunct(selected.clone()));
-        }
-        Ok(self.closed_focused())
     }
 
     pub(crate) fn apply_enumerate(&self) -> Result<Self, PropositionCloseError> {

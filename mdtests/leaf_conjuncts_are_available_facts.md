@@ -3,9 +3,10 @@
 Recording a conjunction as a fact also records each of its leaf conjuncts,
 so every tactic may cite a leaf directly: `assumption()` closes `x <= 5`,
 and an arithmetic certificate names `x <= 100` as a premise, with no
-`extract`. A conjunct that is itself a conjunction is not a leaf; `extract`
-adds it first. The negative is
-`mdtests/sub_conjunction_needs_extract.md`.
+`extract`. A conjunct that is itself a conjunction is not a leaf, so it is
+not recorded as a fact; `assumption()` still closes it from its leaves, and
+`extract` adds it when a `using` list must cite it whole. See
+`mdtests/sub_conjunction_closes_by_assumption.md`.
 
 ```c filename=leaf_conjuncts_are_available_facts.c
 int32 inc(int32 x) {

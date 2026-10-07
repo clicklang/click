@@ -11,7 +11,7 @@ spelling that still exists.
 Two lines disappear with the conjunction. The hypothesis premise is now the
 range itself, so `apply(ih(hi - 1))` names it as `viewable(v[lo..hi - 1])` —
 the fact form, which is how a `views` premise is named in a `using` list —
-instead of rebuilding `hi - 1 >= 0 and viewable(v[lo..hi - 1])` with `split()`.
+instead of rebuilding `hi - 1 >= 0 and viewable(v[lo..hi - 1])` with `assumption()`.
 
 Everything else is unchanged, including why the extent facts are there. The
 theorem carries `hi <= 1073741823`, which with `0 <= lo` bounds the range's

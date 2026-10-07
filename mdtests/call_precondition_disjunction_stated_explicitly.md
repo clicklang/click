@@ -25,7 +25,7 @@ extern int32 either_positive(int32 x, int32 y) {
 int32 caller(int32 x, int32 y) {
     requires x > 0;
     ensures result == 0 by {
-        have x > 0 or y > 0 by { left(); assumption(); }
+        have x > 0 or y > 0 by { assumption(); assumption(); }
         step();
         step();
         step();

@@ -652,8 +652,8 @@ fn canonical_tactic_printer_round_trips_cases_certificate() {
         ProofTactic::Have(ProofHave {
             proposition: disjunction.clone(),
             proof: SourceProof::Script(vec![ProofTactic::Cases(ProofCases::new(vec![
-                ProofCaseArm::new(nonnegative.clone(), vec![ProofTactic::Left]),
-                ProofCaseArm::new(negative.clone(), vec![ProofTactic::Right]),
+                ProofCaseArm::new(nonnegative.clone(), vec![ProofTactic::Assumption]),
+                ProofCaseArm::new(negative.clone(), vec![ProofTactic::Assumption]),
             ]))]),
         }),
         ProofTactic::Enumerate,

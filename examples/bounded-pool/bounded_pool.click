@@ -281,7 +281,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
         apply(int32_equal_of_to_integer(capacity + amount, used + (available + amount))) using {
             to_integer(capacity + amount) == to_integer(used + (available + amount));
         }
-        split();
+        assumption();
     }
 }
 predicate valid_pool(pool: struct pool*) {

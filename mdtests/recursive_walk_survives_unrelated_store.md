@@ -150,7 +150,7 @@ void mark(int32 *next, int32 *visited) {
         have at(entry, next[k]) < 1 by {
             arithmetic() using { at(entry, next[k]) == 0; }
         }
-        split();
+        assumption();
     }
     have at(entry, viewable(next[0..1])) by { simp(); }
     have viewable(next[0..1]) by { simp(); }
