@@ -974,6 +974,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
 }
 
 pub(in crate::surface::proof) struct LoopPreservationProofResult {
+    pub(in crate::surface::proof) return_proofs: Vec<Arc<LoopReturnProof>>,
     pub(in crate::surface::proof) certificate: ProofCertificate,
     pub(in crate::surface::proof) final_exit_candidates: Vec<CLoopFinalExitCandidate>,
     /// The body paths that left this loop through `break`, each an exit at
@@ -1251,12 +1252,14 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let mut final_exit_candidates = Vec::new();
     let mut break_exits = Vec::new();
     let mut return_exits = Vec::new();
+    let mut return_proofs = Vec::new();
+    let mut seen_nested_returns = std::collections::HashSet::new();
     // Each exit is recorded once. The lists are compared by a hash of the
     // exit's state and facts first, so a new exit is checked for equality only against
     // exits in its own bucket rather than against every exit recorded so far.
     let mut seen_final_exits = SeenLoopExits::default();
     let mut seen_break_exits = SeenLoopExits::default();
-    let mut seen_return_exits = SeenLoopExits::default();
+
     let mut nested_loop_rules = Vec::new();
     for (execution, path_certificate) in refuted_match_paths {
         let case_path = execution
@@ -1468,6 +1471,44 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })?
         };
         let checked_execution = checked.execution_view()?.execution.clone();
+        // An inner loop may return while this iteration continues. Export
+        // those checked terminal paths through the outer rule as well.
+        for pending in checked_execution.core.pending_loop_returns() {
+            let Some(nested) = pending
+                .loop_index
+                .and_then(|index| {
+                    checked_execution
+                        .presentation
+                        .loop_return_proofs
+                        .get(&index)
+                })
+                .and_then(|proofs| proofs.paths.get(pending.return_index))
+            else {
+                return Err(ClickError::new("nested loop return lost its surface owner"));
+            };
+            if !seen_nested_returns.insert(Arc::as_ptr(nested) as usize) {
+                continue;
+            }
+            let CFunctionOutcome::Return { value, state } = &pending.outcome else {
+                return Err(ClickError::new("nested loop return has no returned value"));
+            };
+            return_exits.push(
+                CLoopReturnExit::new(
+                    value.clone(),
+                    (**state).clone(),
+                    pending.pure_facts.to_vec(),
+                )
+                .with_loan_evidence(pending.loan_evidence.clone()),
+            );
+            let mut nested = (**nested).clone();
+            nested.owners.push((
+                loop_index,
+                environment
+                    .frontier_loop_source
+                    .map_or(usize::MAX, |s| s.loop_source_index),
+            ));
+            return_proofs.push(Arc::new(nested));
+        }
         if is_return_exit {
             // The path left the function here. The loop rule exports it as a
             // `Return` outcome of the loop statement, so the enclosing
@@ -1487,8 +1528,56 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 })?;
             let exit = CLoopReturnExit::new(value, state, checked.facts().to_vec())
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-            if seen_return_exits.is_new(exit.state(), exit.pure_facts(), &return_exits, &exit) {
-                return_exits.push(exit);
+            // Equal semantic exits may carry different written proofs. Keep
+            // each arm so no source proof disappears through deduplication.
+            return_exits.push(exit);
+            if let Some(nested) = context_execution.loop_return_proof(0) {
+                let mut nested = (**nested).clone();
+                nested.owners.push((
+                    loop_index,
+                    environment
+                        .frontier_loop_source
+                        .map_or(usize::MAX, |s| s.loop_source_index),
+                ));
+                return_proofs.push(Arc::new(nested));
+            } else {
+                let mut tactics = context_execution
+                    .presentation
+                    .post_execution_tactics
+                    .clone();
+                if tactics.is_empty() {
+                    tactics.push(DeferredPostExecutionTactic {
+                        lexical_bindings: None,
+                        tactic_index: environment
+                            .frontier_loop_source
+                            .map_or(0, |s| s.loop_tactic_index),
+                        source_index: environment
+                            .frontier_loop_source
+                            .map_or(usize::MAX, |s| s.loop_source_index),
+                        tactic: PostExecutionTactic::Simp,
+                        surface_recorded: false,
+                    });
+                }
+                return_proofs.push(Arc::new(LoopReturnProof {
+                    loop_index,
+                    owners: {
+                        let mut owners = PersistentSequence::default();
+                        owners.push((
+                            loop_index,
+                            environment
+                                .frontier_loop_source
+                                .map_or(usize::MAX, |s| s.loop_source_index),
+                        ));
+                        owners
+                    },
+                    case_path: case_path.clone(),
+                    tactics,
+                    capture: context_execution
+                        .presentation
+                        .expansion
+                        .deferred_tactic_capture
+                        .clone(),
+                }));
             }
         } else if is_natural_exit_jump {
             // A natural cycle's forward `goto` is a terminal loop exit at its
@@ -1648,6 +1737,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         crate::surface::expansion::note_expansion_replaces_from(preserve_source_index);
     }
     Ok(LoopPreservationProofResult {
+        return_proofs,
         certificate,
         final_exit_candidates,
         break_exits,

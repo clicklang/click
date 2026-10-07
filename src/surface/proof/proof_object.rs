@@ -458,6 +458,7 @@ impl Default for ProofLocals {
 /// frontier state, certificate-construction metadata, and persistent branch provenance.
 #[derive(Clone)]
 pub(in crate::surface::proof) struct ExecutionProofPresentation {
+    pub(in crate::surface::proof) loop_return_proofs: PersistentMap<usize, PlannedLoopReturns>,
     /// The immutable states recorded under program points or proof marks,
     /// which `at(selector, ...)` premises resolve against.
     pub(in crate::surface::proof) recorded_snapshots: RecordedSnapshots,
@@ -616,12 +617,58 @@ pub(in crate::surface::proof) type ExecutionProofState =
     KernelProofExecutionState<ExecutionProofPresentation>;
 
 impl ExecutionProofState {
+    pub(in crate::surface::proof) fn loop_return_proof(
+        &self,
+        path_index: usize,
+    ) -> Option<&Arc<LoopReturnProof>> {
+        if let Some(proof) = self
+            .presentation
+            .outcome_provenance
+            .get(path_index)
+            .and_then(|p| p.loop_return.as_ref())
+        {
+            return Some(proof);
+        }
+        let (loop_index, return_index) = self.core.pending_loop_return_origin(path_index)?;
+        self.presentation
+            .loop_return_proofs
+            .get(&loop_index)?
+            .paths
+            .get(return_index)
+    }
+
+    pub(in crate::surface::proof) fn record_terminal_loop_return_proofs(
+        &mut self,
+        returns: &[Arc<LoopReturnProof>],
+    ) -> Result<(), ClickError> {
+        let Some(execution) = self.core.frontier.execution() else {
+            return Ok(());
+        };
+        let direct_paths = (0..execution.paths().len())
+            .filter(|index| self.core.pending_loop_return_origin(*index).is_none())
+            .count();
+        if !returns.is_empty() && direct_paths != returns.len() {
+            return Err(ClickError::new(
+                "terminal loop return outcomes do not align with their preservation proofs",
+            ));
+        }
+        let mut provenance = (0..execution.paths().len())
+            .map(|index| self.provenance_for_outcome(index))
+            .collect::<Vec<_>>();
+        for (path, returned) in provenance.iter_mut().zip(returns) {
+            path.loop_return = Some(returned.clone());
+        }
+        self.presentation.outcome_provenance = Arc::new(provenance);
+        Ok(())
+    }
+
     fn provenance_for_outcome(&self, path_index: usize) -> OutcomeProvenance {
         self.presentation
             .outcome_provenance
             .get(path_index)
             .cloned()
             .unwrap_or_else(|| OutcomeProvenance {
+                loop_return: self.loop_return_proof(path_index).cloned(),
                 call_routes: Vec::new(),
                 branch_decisions: self.presentation.branch_decisions.clone(),
                 surface_propositions: self.presentation.surface_propositions.clone(),
@@ -664,6 +711,7 @@ impl ExecutionProofState {
         Self::new(
             ExecutionProofCore::at_entry(state, frontier),
             ExecutionProofPresentation {
+                loop_return_proofs: PersistentMap::default(),
                 recorded_snapshots,
                 surface_propositions,
                 resource_body_clauses: PersistentSequence::default(),
@@ -969,6 +1017,7 @@ impl ProofExecutionView<'_> {
 
 #[derive(Clone)]
 struct OutcomeProvenance {
+    loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost
     /// `outcomes` first; `true` is `returned`. A surrounding branch can add
     /// paths that never visited a call, so this belongs to each outcome

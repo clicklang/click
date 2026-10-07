@@ -12,3 +12,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
 - [Whole-claim expansion fails on counted populations, a loop `branch`, `sort3` and `__rb_insert`](whole-claim-expansion-fails-on-proof-matches.md)
 - [Differing natural goto exit states leave joined facts without Click spellings](natural-goto-exit-join-facts-cannot-be-spelled.md)
+- [Whole-claim expansion adds outcome tactics to a pruned C branch](pruned-returning-branch-expansion-adds-unbound-result.md)
