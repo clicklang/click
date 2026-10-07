@@ -308,5 +308,5 @@ int f() {
 ```
 
 ```expect
-fail: this proof nests execution regions more deeply than the checked proof drivers support, at most 11
+fail: checked execution-region recursion exceeds the supported depth of 11
 ```

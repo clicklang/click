@@ -4,7 +4,7 @@ The checked proof drivers bound how deeply `match`, `branch`, and proof `if`
 regions nest, so a nested descent cannot reserve an unbounded Rust stack. Past
 that bound the proof used to be declined as an unsupported shape, with no way
 to tell a real limitation from a proof the drivers simply do not accept. It now
-says what the bound is and how deep this proof is.
+names the active recursive-region bound that verification reached.
 
 The bound counts regions, not tactics: a linear run of tactics between two
 regions continues the region it is in, and the frontier split that picks one
@@ -114,5 +114,5 @@ int32 read_one(struct cell* a) {
 ```
 
 ```expect
-fail: this proof nests 12 execution regions; the checked proof drivers support at most 11
+fail: checked execution-region recursion exceeds the supported depth of 11
 ```

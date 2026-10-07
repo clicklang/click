@@ -241,30 +241,18 @@ enum CheckedExecutionRegionEnd {
 // driver enforces it before recursive descent so nested explicit branches do
 // not reserve an unbounded Rust stack either.
 //
-// This counts *nested proof regions*: each `match`, `branch`, or proof `if`
-// inside another one. A linear run of tactics between two of them continues
-// the region it is in and is not a level of its own, and the frontier split
-// that selects one constructor arm out of many is charged separately, to
-// `MAX_CHECKED_EXECUTION_SPLIT_DEPTH`. Charging those to the same counter made
-// the effective nesting limit five, which is what declined a four-scrutinee
-// rbtree proof.
-//
-// Likewise a node's continuation, the rest of the region after it, keeps the
-// region's depth: that is what `proof_region_nesting_depth` counts. The
-// drivers and the structural predicates walk continuations in a loop, so a
-// run of sibling regions reserves no Rust stack. Every remaining recursion
-// descends a level: into an arm, a case, a call outcome, an `open` body, or
-// the rest of the proof run *inside* a continuing arm, which happens when one
-// arm of a `branch` or call outcome returns and the other continues, or a
-// proof `if` case continues past its arm. That last descent is charged at the
-// continuing arm's level, so it can exceed the written nesting; the terminal
-// diagnostic says so when it is what reached the bound.
+// Bound active recursive proof regions, excluding linear runs and sibling
+// continuations, which the drivers walk iteratively. A completed first `if`
+// case also leaves only a retained join record: its remaining else case runs
+// in the same cursor. Written nesting therefore is not a recursion bound.
+// Other arm, case, call-outcome, and open-body descents still charge a level,
+// including a shared continuation run inside a continuing arm. Constructor
+// family splits have their own independent bound below.
 const MAX_CHECKED_EXECUTION_REGION_DEPTH: usize = 12;
 
-/// The deepest nesting of `match`, `branch`, and proof `if` regions the
-/// checked drivers accept: a proof at this depth still runs, one level deeper
-/// is declined. Diagnostics name this number.
-pub(in crate::surface::proof) const MAX_CHECKED_PROOF_REGION_NESTING: usize =
+/// The deepest active recursive region the checked drivers accept. Written
+/// else nesting may be deeper because terminal cases run iteratively.
+pub(in crate::surface::proof) const MAX_CHECKED_PROOF_REGION_RECURSION: usize =
     MAX_CHECKED_EXECUTION_REGION_DEPTH - 1;
 
 /// How deep the binary frontier split that selects one live constructor arm
@@ -2997,6 +2985,26 @@ fn advance_focused_execution_region<'a>(
     )
 }
 
+/// Discharges every retained terminal-case join through its original Proof
+/// lineage. No case can escape without reaching exit and checking its join.
+fn join_terminal_execution_cases<'a>(
+    mut proof: Proof<'a>,
+    cases: &mut Vec<(
+        super::super::proof_object::ExecutionProofCaseSplit<'a>,
+        Proof<'a>,
+    )>,
+) -> Result<Option<Proof<'a>>, ClickError> {
+    while let Some((record, owner)) = cases.pop() {
+        if !proof.is_at_function_exit() {
+            return decline_short_of_exit();
+        }
+        proof = proof
+            .join_focused_execution_if_terminal(&record)?
+            .restore_execution_tactic_attribution(&owner)?;
+    }
+    Ok(Some(proof))
+}
+
 /// A mixed call-outcome join needs the enclosing branch's source continuation
 /// while its normal sibling is still open. The split record already owns the
 /// checked frontier transition; this parameter only identifies the proof
@@ -3008,8 +3016,9 @@ fn advance_focused_execution_region<'a>(
 /// sits in, so it runs at the same depth; this loop walks it iteratively, so
 /// a long run of sibling regions reserves no Rust stack. The only recursion is
 /// into a nested region (charged a level) or into the rest of the proof run
-/// inside a continuing arm (charged at that arm's level), so the depth bound
-/// still bounds the recursion.
+/// inside a continuing arm (charged at that arm's level). Once a first case
+/// has exited, its remaining else case is walked here with a retained join
+/// record, so a sequence of early returns does not grow the Rust stack.
 fn advance_focused_execution_region_with_branch_continuation<'a>(
     mut proof: Proof<'a>,
     enclosing_record: Option<&ExecutionSplit<'a>>,
@@ -3027,7 +3036,11 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
     }
     let mut region = region;
     let mut branch_continuation = branch_continuation;
-    loop {
+    let mut terminal_cases: Vec<(
+        super::super::proof_object::ExecutionProofCaseSplit<'a>,
+        Proof<'a>,
+    )> = Vec::new();
+    'regions: loop {
         match region {
             InternalProofNode::Match {
                 index,
@@ -3062,7 +3075,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 region = continuation;
                 branch_continuation = None;
             }
-            InternalProofNode::Done => return Ok(Some(proof)),
+            InternalProofNode::Done => {
+                return join_terminal_execution_cases(proof, &mut terminal_cases);
+            }
             InternalProofNode::Linear {
                 tactics,
                 continuation,
@@ -3126,7 +3141,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     );
                 }
                 if consumed_continuation {
-                    return Ok(Some(proof));
+                    return join_terminal_execution_cases(proof, &mut terminal_cases);
                 }
                 region = continuation;
                 branch_continuation = None;
@@ -3235,7 +3250,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     let joined = advanced.join_focused_call_outcomes_terminal(&record)?;
                     proof = joined.restore_execution_tactic_attribution(&owner)?;
                     if mixed {
-                        return Ok(Some(proof));
+                        return join_terminal_execution_cases(proof, &mut terminal_cases);
                     }
                     region = continuation;
                     branch_continuation = None;
@@ -3451,6 +3466,41 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     let Some(mut next) = next else {
                         return decline();
                     };
+                    if take_then
+                        && next.is_at_function_exit()
+                        && ensuring.is_none()
+                        && matches!(continuation.as_ref(), InternalProofNode::Done)
+                    {
+                        // A completed first case needs only its checked join
+                        // record. Run the remaining case in this cursor, then
+                        // join all terminal cases in reverse order at Done.
+                        proof = next.focus_execution_if_arm(&record, false)?;
+                        region = else_branch;
+                        if consumed_leading_steps {
+                            let InternalProofNode::Linear {
+                                tactics,
+                                continuation,
+                            } = region
+                            else {
+                                return decline();
+                            };
+                            let Some(advanced) = advance_focused_execution_arm(
+                                proof,
+                                &tactics[1..],
+                                expansion_capture.as_deref_mut(),
+                                proof_site,
+                                owning_source_index,
+                            )?
+                            else {
+                                return decline();
+                            };
+                            proof = advanced;
+                            region = continuation;
+                        }
+                        terminal_cases.push((record, owner));
+                        branch_continuation = None;
+                        continue 'regions;
+                    }
                     // Case split, as at the top level: a case whose arm ends
                     // short of function exit runs the shared continuation to
                     // its own exit. That continuation runs inside the case,
@@ -3482,7 +3532,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     .join_focused_execution_if_terminal(&record)?
                     .restore_execution_tactic_attribution(&owner)?;
                 if consumed_continuation {
-                    return Ok(Some(proof));
+                    return join_terminal_execution_cases(proof, &mut terminal_cases);
                 }
                 region = continuation;
                 branch_continuation = None;
@@ -4446,34 +4496,20 @@ mod tests {
         proof
     }
 
-    /// A proof `if` charges one level for its arms; the rest of an arm,
-    /// including the next proof `if` it ends at, continues that arm's region.
-    /// Counting the arm's continuation as a level of its own charged each
-    /// `if` twice and declined this chain at six allocations, far inside the
-    /// documented bound.
+    /// Completed null-check cases retain join records, not recursive frames.
     #[test]
-    fn nested_proof_ifs_charge_one_level_each() {
-        for count in 1..=MAX_CHECKED_PROOF_REGION_NESTING + 1 {
+    fn terminal_proof_if_cases_do_not_charge_recursive_depth() {
+        for count in [1, 4, 12] {
             let c_source = null_checked_allocation_chain(count);
             let proof = nested_null_check_proof(count);
             DEEPEST_REGION_DEPTH.with(|deepest| deepest.set(0));
-            let result = crate::surface::verify_c0_sources(&proof, &[("chain.c", &c_source)]);
+            crate::surface::verify_c0_sources(&proof, &[("chain.c", &c_source)])
+                .unwrap_or_else(|error| panic!("{count} cases: {}", error.message()));
             let deepest = DEEPEST_REGION_DEPTH.with(std::cell::Cell::get);
-            assert_eq!(deepest, count, "{count} nested proof `if`s\n{proof}");
-            if count <= MAX_CHECKED_PROOF_REGION_NESTING {
-                if let Err(error) = result {
-                    panic!("{count} nested proof `if`s: {}\n{proof}", error.message());
-                }
-            } else {
-                let error = result.expect_err("one past the nesting bound is declined");
-                assert!(
-                    error.message().contains(&format!(
-                        "this proof nests {count} execution regions; the checked proof drivers support at most {MAX_CHECKED_PROOF_REGION_NESTING}"
-                    )),
-                    "{}",
-                    error.message()
-                );
-            }
+            assert!(
+                deepest < MAX_CHECKED_EXECUTION_REGION_DEPTH,
+                "{count}: {deepest}"
+            );
         }
     }
 

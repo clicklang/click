@@ -206,56 +206,6 @@ fn proof_shape_hint(tactics: &[ProofTactic]) -> Option<(usize, &'static str)> {
     })
 }
 
-/// How deeply a tactic sequence nests execution regions: every `match`,
-/// `branch`, or proof `if` written inside another one is one level. This is
-/// the number the checked drivers bound, so a proof past the bound is told
-/// what the bound is instead of being declined without a reason.
-fn proof_region_nesting_depth(tactics: &[ProofTactic]) -> usize {
-    fn arms_depth(arms: &[&[ProofTactic]]) -> usize {
-        1 + arms
-            .iter()
-            .map(|arm| proof_region_nesting_depth(arm))
-            .max()
-            .unwrap_or(0)
-    }
-    tactics
-        .iter()
-        .map(|tactic| match tactic {
-            ProofTactic::Match(proof_match) => arms_depth(
-                &proof_match
-                    .arms
-                    .iter()
-                    .map(|arm| arm.tactics.as_slice())
-                    .collect::<Vec<_>>(),
-            ),
-            ProofTactic::Branch(branch) => {
-                arms_depth(&[&branch.then_tactics, &branch.else_tactics])
-            }
-            ProofTactic::If(proof_if) => {
-                arms_depth(&[&proof_if.then_tactics, &proof_if.else_tactics])
-            }
-            _ => 0,
-        })
-        .max()
-        .unwrap_or(0)
-}
-
-/// The diagnostic for a proof whose written regions nest past the bound the
-/// checked drivers accept, or `None` within the bound. Verification reports
-/// it when the drivers decline such a proof; expansion refuses a rewrite with
-/// the same diagnostic before emitting it.
-pub(in crate::surface) fn proof_region_nesting_bound_error(
-    proof_label: &str,
-    tactics: &[ProofTactic],
-) -> Option<ClickError> {
-    let nesting = proof_region_nesting_depth(tactics);
-    (nesting > MAX_CHECKED_PROOF_REGION_NESTING).then(|| {
-        ClickError::new(format!(
-            "`{proof_label}`: this proof nests {nesting} execution regions; the checked proof drivers support at most {MAX_CHECKED_PROOF_REGION_NESTING}. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
-        ))
-    })
-}
-
 fn diagnostic_claim_label(function_name: &str, claim: &FunctionClaimRef<'_>) -> String {
     let label = function_claim_label(function_name, claim);
     match claim.clause().ensure() {
@@ -290,9 +240,6 @@ fn unsupported_proof_shape(
     let depth_declined = take_region_depth_decline();
     let short_of_exit = take_short_of_exit_decline();
     let declined_operation = take_declined_operation();
-    if let Some(error) = proof_region_nesting_bound_error(proof_label, tactics) {
-        return error;
-    }
     if let Some(reason) = declined_operation {
         // The drivers stopped at a written operation they refused for a
         // stated reason, such as an `apply` whose premise is missing. That
@@ -300,11 +247,8 @@ fn unsupported_proof_shape(
         return ClickError::new(format!("`{proof_label}`: {reason}"));
     }
     if depth_declined {
-        // The written nesting is within the bound, so the depth the driver
-        // reached came from running the rest of the proof inside a
-        // continuing arm. Say so, rather than calling the shape unsupported.
         return ClickError::new(format!(
-            "`{proof_label}`: this proof nests execution regions more deeply than the checked proof drivers support, at most {MAX_CHECKED_PROOF_REGION_NESTING}. When one arm of a `branch` or call outcome returns and the other continues, or a proof `if` case continues past its arm, the proof after that split runs inside the continuing arm, one region deeper. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
+            "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
         ));
     }
     if short_of_exit {

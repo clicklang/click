@@ -5700,27 +5700,7 @@ impl Parser {
             return Ok(ProofTactic::Open(ProofOpen { resource, tactics }));
         }
         if name == "if" {
-            let condition = self.parse_proposition()?;
-            // Arms that end in different states name what the rejoined
-            // proof keeps, as a `branch` does.
-            let ensuring = self.parse_optional_join_interface()?;
-            if ensuring.is_some() {
-                self.expect_ident_spelling("then")?;
-            }
-            // A proof `if` branch may be empty: it contributes only its case
-            // split, and every path goal is still owed at path end. Pure
-            // case-split certificates expand to exactly this shape (owner
-            // decision 2026-07-31).
-            let then_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect_ident_spelling("else")?;
-            let else_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.skip_redundant_semicolon();
-            return Ok(ProofTactic::If(ProofIf {
-                condition,
-                ensuring,
-                then_tactics,
-                else_tactics,
-            }));
+            return self.parse_if_proof_tactic();
         }
         if name == "cases" {
             // One arm per disjunct, each naming the disjunct it assumes:
@@ -6547,6 +6527,68 @@ impl Parser {
         };
         self.current_resource_targets.insert(name, target.clone());
         Ok(target)
+    }
+
+    /// An else spine represents successive cases, including sequential C
+    /// early returns. Keep its block scopes on the heap rather than retaining
+    /// a tactic-dispatch frame per case. Then arms still use the ordinary
+    /// structural recursion bound.
+    fn parse_if_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        let mut frames = Vec::new();
+        let mut scopes = Vec::new();
+        let result = (|| {
+            loop {
+                let condition = self.parse_proposition()?;
+                let ensuring = self.parse_optional_join_interface()?;
+                if ensuring.is_some() {
+                    self.expect_ident_spelling("then")?;
+                }
+                let then_tactics = self.parse_possibly_empty_tactic_block()?;
+                self.expect_ident_spelling("else")?;
+                self.expect(Token::LBrace)?;
+                scopes.push((
+                    self.proof_let_restores.len(),
+                    std::mem::take(&mut self.current_proof_let_names),
+                ));
+                let mut else_tactics = Vec::new();
+                while self.peek() != Some(&Token::RBrace) && self.peek_ident() != Some("if") {
+                    else_tactics.push(self.parse_proof_tactic()?);
+                }
+                frames.push((condition, ensuring, then_tactics, else_tactics));
+                if self.peek_ident() == Some("if") {
+                    self.position += 1;
+                    continue;
+                }
+                break;
+            }
+            let mut nested = None;
+            while let Some((condition, ensuring, then_tactics, mut else_tactics)) = frames.pop() {
+                if let Some(nested) = nested.take() {
+                    else_tactics.push(nested);
+                }
+                while self.peek() != Some(&Token::RBrace) {
+                    else_tactics.push(self.parse_proof_tactic()?);
+                }
+                self.expect(Token::RBrace)?;
+                let (checkpoint, names) = scopes.pop().expect("an else block owns a scope");
+                self.restore_proof_let_bindings(checkpoint);
+                self.current_proof_let_names = names;
+                self.skip_redundant_semicolon();
+                nested = Some(ProofTactic::If(ProofIf {
+                    condition,
+                    ensuring,
+                    then_tactics,
+                    else_tactics,
+                }));
+            }
+            Ok(nested.expect("an if spine has a root"))
+        })();
+        // Error exits restore exactly the same bindings as a recursive block.
+        while let Some((checkpoint, names)) = scopes.pop() {
+            self.restore_proof_let_bindings(checkpoint);
+            self.current_proof_let_names = names;
+        }
+        result
     }
 
     fn parse_possibly_empty_tactic_block(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
@@ -10831,10 +10873,15 @@ fn validate_parenthesis_nesting(
                 pending_quantifier = false;
                 let parent_is_proof = brace_kinds
                     .last()
-                    .is_some_and(|(_, parent_proof)| *parent_proof);
+                    .is_some_and(|(_, parent_proof, _)| *parent_proof);
                 let proof = pending_proof_blocks != 0 || parent_is_proof;
                 pending_proof_blocks = pending_proof_blocks.saturating_sub(1);
-                brace_kinds.push((quantifier, proof));
+                // Proof `if` else blocks are read by the iterative spine
+                // parser. They retain a scope, but no recursive parser frame.
+                let recursive_proof = proof
+                    && !matches!(index.checked_sub(1).and_then(|i| tokens.get(i)),
+                        Some(Token::Ident(name)) if name == "else");
+                brace_kinds.push((quantifier, proof, recursive_proof));
                 if quantifier {
                     if quantifier_depth + 1 >= STRUCTURAL_NESTING_LIMIT {
                         return Err(source_nesting_error(
@@ -10846,7 +10893,7 @@ fn validate_parenthesis_nesting(
                     }
                     quantifier_depth += 1;
                 }
-                if proof {
+                if recursive_proof {
                     if proof_depth + 1 >= STRUCTURAL_NESTING_LIMIT {
                         return Err(source_nesting_error(
                             index,
@@ -10874,11 +10921,11 @@ fn validate_parenthesis_nesting(
             }
             Token::RBrace => {
                 structural_depth = structural_depth.saturating_sub(1);
-                if let Some((quantifier, proof)) = brace_kinds.pop() {
+                if let Some((quantifier, _, recursive_proof)) = brace_kinds.pop() {
                     if quantifier {
                         quantifier_depth = quantifier_depth.saturating_sub(1);
                     }
-                    if proof {
+                    if recursive_proof {
                         proof_depth = proof_depth.saturating_sub(1);
                     }
                 }

@@ -1,17 +1,10 @@
-# Expansion refuses a rewrite past the nesting bound
+# Sequential null checks expand past the former nesting bound
 
 `eleven` and `twelve` allocate eleven and twelve cells. Each failed
 allocation frees the earlier ones and returns `-1`; otherwise every cell is
-freed and the function returns `18`. `execute(); simp();` verifies both.
-
-Expanding a whole claim writes one proof `if` per null check, each nested in
-the previous one's `else` arm, with the closers at the leaves. For `eleven`
-that is eleven nested regions, the checked drivers' bound, and the rewrite
-re-verifies. For `twelve` it is one past the bound. `click expand` used to
-emit that rewrite and only its reverification failed; expansion now refuses
-it before emitting anything, with the verifier's nesting diagnostic and its
-remedies. The expansion regression in `src/surface/tests/expansion_tests.rs`
-pins both outcomes.
+freed and the function returns `18`. Their proofs expand into nested `else`
+blocks. Completed return cases are processed iteratively, so both expanded
+proofs verify. The expansion regression covers both functions.
 
 ```c filename=null_check_chain_nesting.c
 void *malloc(unsigned long size);
