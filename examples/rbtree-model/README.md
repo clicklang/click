@@ -369,6 +369,33 @@ equation and `is_rb_red_node_right_child_is_black` rewrites through it. The new
 color functions avoid the detour by ending every path in 0 or 1; `ctx_rb`'s
 recursive branch below cannot, and pays for it with a `_value` lemma per frame.
 
+## Joining context fragments
+
+`ctx_concat(inner, outer)` replaces the inner context's `Top` with `outer`.
+`plug_ctx_concat` proves the orientation explicitly:
+`plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub))`.
+`ctx_consistent_concat` carries parent consistency from the nested plug to
+that joined context; concatenation does not change any parent payloads.
+
+For erase, the successor descent spine ends inside the right subtree, whose
+root can be red. It cannot use `ctx_rb` as an independent fragment invariant:
+`ctx_rb` requires a black root at `Top`. Instead,
+`ctx_rb_between(inner, bh, focus_color, boundary_bh, boundary_color)` checks
+the same frame conditions and ends at an exact height/color boundary, without
+requiring that boundary to be black. Its `top`, `left_frame`, and `right_frame`
+lemmas construct the descent invariant. `ctx_rb_concat` combines it with
+`ctx_rb(outer, boundary_bh, boundary_color) == 1` to obtain the whole-context
+predicate. In particular, `bh` may be the missing black node's hypothetical
+height, `Nat::Succ(Nat::Zero)`, while the actual hole is empty.
+
+`context_concat_checks.click` checks a red boundary beneath a black parent,
+including a nonempty inner spine, and rejects height/color mismatches and a
+red whole-tree root.
+
+These are composition tools for chunk 10. The successor descent, reparenting,
+and two-child splice still need to establish their premises before the C
+unlink proof can start rebalancing.
+
 ## The context-level red-black predicate
 
 `ctx_rb(ctx, bh, focus_color)` is 1 when the frames around the focus are

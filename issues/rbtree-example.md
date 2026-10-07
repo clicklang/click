@@ -903,10 +903,18 @@ the black deficit lands when a black successor with no right child is
 removed. That is a position inside the right subtree's left spine, so stating
 it as a rebalancing start (`ctx_rb(..., Nat::Succ(Nat::Zero), Color::Black)`
 at the hole) needs a context for that spine joined to the context above the
-erased node, for example a `ctx_concat(inner, outer)` with
-`plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub))` and the
-matching `ctx_rb` lemma. The spelling should follow the descent loop chunk 11
-writes.
+erased node. The context-composition infrastructure is now written:
+`ctx_concat(inner, outer)` and `plug_ctx_concat` prove
+`plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub))`;
+`ctx_consistent_concat` transports the parent-link invariant.
+`ctx_rb_between(inner, bh, focus_color, boundary_bh, boundary_color)` describes
+a valid fragment ending at a subtree boundary, including a red boundary root.
+Its `top`, `left_frame`, and `right_frame` constructors and `ctx_rb_concat`
+join that fragment to `ctx_rb(outer, boundary_bh, boundary_color) == 1`.
+Do not use `ctx_rb(inner, ...)` for the fragment: its `Top` would incorrectly
+require this interior root to be black. Still needed: instantiate the fragment
+along the successor descent, account for the right root's reparenting, and
+prove the complete splice's deficit-start facts in the shape chunk 11 uses.
 
 **Chunk 11. `__rb_erase_augmented`.** The unlink in its no-child, one-child,
 and two-child cases, contracted so the in-order sequence loses exactly the
