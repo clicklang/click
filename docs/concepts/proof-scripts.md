@@ -240,6 +240,10 @@ return expression.
 ## Expansion and diagnosis
 
 `click expand` replaces a selected smart tactic with a checked explicit proof.
+When a post-execution claim closer needs different proofs on different paths,
+expansion may also replace the preceding execution script with its explicit
+certificate. Each proof stays in the branch where it was checked, so a loop's
+earlier guards are not evaluated again at function exit.
 `click profile` identifies slow tactics and distinguishes smart automation from
 simple leaves. `click audit` checks that smart tactics across a project expand
 into source that verifies normally. Use this workflow only after the

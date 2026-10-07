@@ -8,6 +8,7 @@ bug, which includes inaccurate and wall-of-text diagnostics. Each file states
 the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
-- [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
+- [Expansion refuses a shared invariant closer checked across different obligations](expansion-refuses-shared-invariant-closer.md)
+- [A path-dependent post-execution have expands to a proof that does not verify](expansion-fails-for-path-dependent-post-execution-have.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)

@@ -1,5 +1,50 @@
 use super::*;
 
+#[test]
+fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/bubble_sort3_loop_permutation.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source_with_suffix = fixture.click_source.as_deref().unwrap().replace(
+        "        simp();",
+        "        simp();\n        have 0 == 0 by { normalize(); }",
+    );
+    let source = source_with_suffix.as_str();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap();
+    let position = expansion::position_at_offset(source, source.rfind("simp();").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
+    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(
+        expanded.contains("have 0 == 0 by { normalize(); }"),
+        "the unselected suffix stays written"
+    );
+    assert_eq!(
+        expanded.matches("if ").count(),
+        source.matches("if ").count()
+    );
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let claim =
+        expansion::position_at_offset(&expanded, expanded.find("ensures permutation:").unwrap());
+    verify_c0_sources_at(&expanded, &sources, claim.line, claim.column).unwrap();
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    session
+        .verify_at(&expanded, claim.line, claim.column)
+        .unwrap();
+    let false_claim = expanded.replace(
+        "permutation(p, old(p), 0, 3)",
+        "permutation(p, old(p), 0, 2)",
+    );
+    verify_c0_sources(&false_claim, &sources)
+        .expect_err("sorting three cells does not preserve just the first two cells");
+}
+
 fn assert_no_legacy_arithmetic_leaves(certificate: &ProofCertificate) {
     assert!(
         !certificate.contains_arithmetic_using(),

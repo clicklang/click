@@ -1452,6 +1452,15 @@ impl<'a> Proof<'a> {
             unreachable!("terminal execution join retained a non-execution context")
         };
         let proof_case_split = proof_case_condition.is_some();
+        let has_terminal_cursor = arms.iter().any(|arm| {
+            arm.execution.presentation.post_execution_tactics.len()
+                > parent_execution.presentation.post_execution_tactics.len()
+        });
+        let terminal_route = if !call_outcomes && has_terminal_cursor {
+            Some(new_terminal_execution_route()?)
+        } else {
+            None
+        };
         let (surface_condition, empty_source_arms) = if call_outcomes {
             (
                 ClickProposition::Comparison {
@@ -1587,6 +1596,13 @@ impl<'a> Proof<'a> {
                 .call_outcome_edges
                 .as_ref()
                 .filter(|edges| edges.len() == completed.paths().len());
+            let route_decision = terminal_route.map(|_| {
+                Arc::new(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
+                    condition: surface_condition.clone(),
+                    value: arm_index == 0,
+                })
+            });
             for (arm_path_index, path) in completed.paths().iter().enumerate() {
                 let mut provenance = arm.execution.provenance_for_outcome(arm_path_index);
                 if provenance.call_routes.is_empty()
@@ -1655,7 +1671,9 @@ impl<'a> Proof<'a> {
                                     "terminal proof cases lost their branch decision ancestry",
                                 )
                             })?;
+                        let routes = provenance.branch_decisions.by_route.clone();
                         provenance.branch_decisions = prefix.clone();
+                        provenance.branch_decisions.by_route = routes;
                         provenance.branch_decisions.push(ExecutionBranchDecision {
                             fingerprint: std::sync::OnceLock::from(
                                 case_fingerprint.expect("proof case fingerprint"),
@@ -1667,6 +1685,16 @@ impl<'a> Proof<'a> {
                             crate::instrumentation::record_deterministic_work(1);
                             provenance.branch_decisions.push(decision);
                         }
+                    }
+                    if let Some(route) = terminal_route {
+                        provenance.branch_decisions.record_route(
+                            route,
+                            Arc::clone(
+                                route_decision
+                                    .as_ref()
+                                    .expect("terminal route owns its decision"),
+                            ),
+                        );
                     }
                     outcome_provenance.push(provenance);
                 }
@@ -1852,6 +1880,7 @@ impl<'a> Proof<'a> {
                 } else {
                     PostExecutionTactic::If {
                         condition: surface_condition.clone(),
+                        execution_route: terminal_route,
                         then_tactics: then_post_execution,
                         else_tactics: else_post_execution,
                     }

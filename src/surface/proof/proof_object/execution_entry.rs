@@ -212,6 +212,7 @@ impl<'a> Proof<'a> {
                         source_index: nested_source_index,
                         post_execution_index: DeferredTacticCapture::NESTED,
                         branch_skeleton: branch_skeleton()?,
+                        can_expand_execution_prefix: false,
                     })
                 } else {
                     None
@@ -227,6 +228,10 @@ impl<'a> Proof<'a> {
                     source_index,
                     post_execution_index: execution.presentation.post_execution_tactics.len(),
                     branch_skeleton: branch_skeleton()?,
+                    can_expand_execution_prefix: matches!(
+                        &tactic,
+                        PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_)
+                    ),
                 })
             } else {
                 None

@@ -57,6 +57,7 @@ fn select_checked_post_execution_tactics<'a>(
         match &deferred.tactic {
             PostExecutionTactic::If {
                 condition,
+                execution_route,
                 then_tactics,
                 else_tactics,
             } => {
@@ -67,7 +68,7 @@ fn select_checked_post_execution_tactics<'a>(
                 let value = scoped
                     .as_ref()
                     .unwrap_or(proof)
-                    .checked_outcome_if_value(condition)?;
+                    .checked_outcome_if_value(condition, *execution_route)?;
                 choices.push(SurfacePathChoice {
                     occurrence: deferred.source_index,
                     selector: SurfacePathSelector::Proposition(condition.clone()),
@@ -1995,6 +1996,7 @@ pub(super) fn finish_ordered_proof<'a>(
         let mut surface_post_choices_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_path_indices = Vec::with_capacity(execution.paths().len());
         let mut deferred_capture_tactics_by_path = Vec::with_capacity(execution.paths().len());
+        let mut deferred_capture_prefixes_by_path = Vec::with_capacity(execution.paths().len());
         let mut deferred_capture_branches_by_path = Vec::with_capacity(execution.paths().len());
         // Whether the implicit exact closer of a single-claim proof would
         // have discharged every open proposition claim on the path without
@@ -2032,6 +2034,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut path_grouped_surface_closers = Vec::new();
                     let mut path_surface_post_tactics = Vec::new();
                     let mut path_deferred_capture_tactics = Vec::new();
+                    let mut path_deferred_capture_prefix = (0, 0);
                     let path_base_facts = proof.facts().clone();
                     let missing_obligations = crate::instrumentation::measure_operation(
                         function_block.signature().name(),
@@ -2306,6 +2309,21 @@ pub(super) fn finish_ordered_proof<'a>(
                         let tactic_index = &deferred.tactic_index;
                         let source_index = &deferred.source_index;
                         let post_tactic = &deferred.tactic;
+                        if proof_execution
+                            .presentation
+                            .expansion
+                            .deferred_tactic_capture
+                            .as_ref()
+                            .is_some_and(|capture| {
+                                capture.tactic_index == *tactic_index
+                                    && capture.source_index == *source_index
+                            })
+                        {
+                            path_deferred_capture_prefix = (
+                                path_surface_post_tactics.len(),
+                                path_grouped_surface_closers.len(),
+                            );
+                        }
                         outcome_proof =
                             outcome_proof.map(|proof| proof.at_source_tactic(*source_index));
                         let _timing = crate::instrumentation::enabled().then(|| {
@@ -5124,6 +5142,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     || closures[claim_index].is_closed()
                             }));
                     if visits_selected_capture {
+                        deferred_capture_prefixes_by_path.push(path_deferred_capture_prefix);
                         implicit_closure_by_path.push(implicitly_closable);
                         deferred_capture_tactics_by_path.push(path_deferred_capture_tactics);
                         deferred_capture_branches_by_path.push(deferred_capture_branch_path);
@@ -5341,6 +5360,42 @@ pub(super) fn finish_ordered_proof<'a>(
                     Err(error) => capture.block(format!(
                         "deferred expansion produced a non-simple proof: {error:?}"
                     )),
+                }
+            } else if !contributes_no_tactics
+                && deferred.can_expand_execution_prefix
+                && deferred.post_execution_index != DeferredTacticCapture::NESTED
+                && retained_surface.path_choices.is_empty()
+                && deferred_capture_tactics_by_path.len() == surface_post_path_indices.len()
+            {
+                // Reuse the execution prefix at its original branch points.
+                // Repeating only its guards at function exit can reread a
+                // mutable local or a loop statement's overwritten snapshot.
+                // The selected closer therefore expands the checked prefix
+                // too, putting each delta in the leaf where it was checked.
+                capture = retained_surface.clone();
+                // Retain offsets during checking; copy syntax only now,
+                // when it belongs to the requested expansion's output.
+                let path_tactics = deferred_capture_prefixes_by_path
+                    .iter()
+                    .zip(&deferred_capture_tactics_by_path)
+                    .enumerate()
+                    .map(|(index, ((post_end, closer_end), delta))| {
+                        surface_post_tactics_by_path[index][..*post_end]
+                            .iter()
+                            .chain(&surface_grouped_closers_by_path[index][..*closer_end])
+                            .chain(delta)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+                if let Err(message) = append_surface_tactics_by_leaf(
+                    &mut capture.steps,
+                    &path_tactics,
+                    call_edges.map(Vec::as_slice),
+                ) {
+                    capture.block(message);
+                } else {
+                    crate::surface::expansion::note_expansion_replaces_from(0);
                 }
             } else if !contributes_no_tactics {
                 let mut capture_tactics = deferred.branch_skeleton.clone();

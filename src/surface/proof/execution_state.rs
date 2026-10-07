@@ -80,6 +80,7 @@ pub(super) struct DeferredTacticCapture {
     pub(super) source_index: usize,
     pub(super) post_execution_index: usize,
     pub(super) branch_skeleton: Vec<ProofTactic>,
+    pub(super) can_expand_execution_prefix: bool,
 }
 
 impl DeferredTacticCapture {
@@ -1291,6 +1292,9 @@ pub(super) enum PostExecutionTactic {
     /// selected arm's checked operations to that same descendant.
     If {
         condition: ClickProposition,
+        /// A terminal join routes its deferred operations through this exact
+        /// checked decision. Written post-execution cases have no such route.
+        execution_route: Option<usize>,
         then_tactics: Vec<DeferredPostExecutionTactic>,
         else_tactics: Vec<DeferredPostExecutionTactic>,
     },
