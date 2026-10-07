@@ -10874,9 +10874,8 @@ fn nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles() {
 }
 
 #[test]
-fn nested_record_source_projections_and_nontrivial_fields_remain_explicit_boundaries() {
+fn nested_record_qualified_and_pointer_fields_and_nontrivial_destruction_remain_boundaries() {
     for (declaration, body) in [
-        ("FeeState state;", "return state.size;"),
         ("const FeeState state;", "return stamp;"),
         ("mutable FeeState state;", "return stamp;"),
         ("FeeState* state;", "return stamp;"),
@@ -10961,5 +10960,234 @@ fn nested_record_exporter_counts_pending_declarations_in_the_inventory_budget() 
             assert!(error.len() < 8000);
             assert!(!project.artifact().exists());
         }
+    }
+}
+
+#[test]
+fn nested_source_fields_read_write_and_update_with_exact_authority_offline() {
+    for (selected, sidecar) in [
+        (
+            "FeeEnvelope::ReadLeftFee",
+            include_str!("fixtures/cpp-verification/nested-record/read_left_fee.click"),
+        ),
+        (
+            "FeeEnvelope::SetRightFee",
+            include_str!("fixtures/cpp-verification/nested-record/set_right_fee.click"),
+        ),
+        (
+            "FeeEnvelope::AddLeftSize",
+            include_str!("fixtures/cpp-verification/nested-record/add_left_size.click"),
+        ),
+        (
+            "ReadRightFee",
+            include_str!("fixtures/cpp-verification/nested-record/read_right_fee.click"),
+        ),
+    ] {
+        let project = nested_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let body = &import.export().function.body;
+        let object = match &body[0] {
+            CppStatement::MemberStore { object, .. } => object,
+            CppStatement::Return {
+                value: CppExpression::MemberLoad { object, .. },
+                ..
+            } => object,
+            _ => panic!("expected projected access"),
+        };
+        assert_eq!(
+            object
+                .projections
+                .iter()
+                .map(|field| field.name.as_str())
+                .collect::<Vec<_>>(),
+            if selected == "ReadRightFee" {
+                vec!["right"]
+            } else if selected == "FeeEnvelope::SetRightFee" {
+                vec!["state", "right"]
+            } else {
+                vec!["state", "left"]
+            }
+        );
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), sidecar);
+    }
+}
+
+#[test]
+fn nested_source_field_contracts_reject_missing_and_sibling_authority_false_frames_and_views() {
+    for (selected, sidecar, mutants) in [
+        (
+            "FeeEnvelope::ReadLeftFee",
+            include_str!("fixtures/cpp-verification/nested-record/read_left_fee.click"),
+            vec![
+                ("views self->state.left.fee;", ""),
+                (
+                    "views self->state.left.fee;",
+                    "views self->state.right.fee;",
+                ),
+                (
+                    "result == self->state.left.fee",
+                    "result != self->state.left.fee",
+                ),
+            ],
+        ),
+        (
+            "FeeEnvelope::SetRightFee",
+            include_str!("fixtures/cpp-verification/nested-record/set_right_fee.click"),
+            vec![
+                (
+                    "owns self->state.right.fee;",
+                    "views self->state.right.fee;",
+                ),
+                ("owns self->state.right.fee;", "owns self->state.left.fee;"),
+                (
+                    "self->state.left.fee == old(self->state.left.fee)",
+                    "self->state.left.fee == next",
+                ),
+            ],
+        ),
+        (
+            "FeeEnvelope::AddLeftSize",
+            include_str!("fixtures/cpp-verification/nested-record/add_left_size.click"),
+            vec![
+                ("requires self->state.left.size <= 10;", ""),
+                (
+                    "self->state.right.size == old(self->state.right.size)",
+                    "self->state.right.size != old(self->state.right.size)",
+                ),
+            ],
+        ),
+    ] {
+        let project = nested_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        for (before, after) in mutants {
+            let hostile = sidecar.replace(before, after);
+            assert_ne!(hostile, sidecar);
+            let path = project.directory.join("hostile.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("invalid projected field proof accepted: {before}")
+            };
+            assert!(error.message().len() < 8000);
+        }
+    }
+}
+
+#[test]
+fn nested_source_field_artifacts_reject_forged_paths_readonly_roots_and_unimplemented_places() {
+    use sha2::{Digest, Sha256};
+    let project = nested_record_project("FeeEnvelope::SetRightFee");
+    refresh_import(&project.config()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let original_lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for change in [
+        "owner",
+        "field",
+        "name",
+        "source",
+        "order",
+        "missing",
+        "scalar",
+        "depth",
+        "readonly",
+        "plain_load",
+    ] {
+        let mut artifact = original.clone();
+        let object = &mut artifact["function"]["body"][0]["object"];
+        match change {
+            "owner" => object["projections"][0]["record_declaration_id"] = "unknown".into(),
+            "field" => object["projections"][1]["declaration_id"] = "unknown".into(),
+            "name" => object["projections"][1]["name"] = "left".into(),
+            "source" => object["projections"][1]["span"]["file"] = "state.h".into(),
+            "order" => object["projections"].as_array_mut().unwrap().reverse(),
+            "missing" => {
+                object["projections"].as_array_mut().unwrap().pop();
+            }
+            "scalar" => {
+                let leaf = artifact["function"]["body"][0]["field"].clone();
+                artifact["function"]["body"][0]["object"]["projections"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(leaf);
+            }
+            "depth" => {
+                let step = object["projections"][0].clone();
+                object["projections"] = vec![step; 257].into();
+            }
+            "readonly" => {
+                artifact["function"]["function_kind"]["is_const"] = true.into();
+                artifact["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                    true.into();
+            }
+            "plain_load" => {
+                let parameter = artifact["function"]["parameters"][1].clone();
+                let span = artifact["function"]["body"][0]["span"].clone();
+                artifact["function"]["body"][0]["value"] = serde_json::json!({"kind":"load", "place":{"declaration_id":parameter["declaration_id"], "name":parameter["name"], "span":span, "projections":original["function"]["body"][0]["object"]["projections"]}, "value_type":parameter["value_type"], "span":span});
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        let mut lock = original_lock.clone();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{change}: {error}");
+        if change == "readonly" {
+            assert!(error.contains("const record reference"), "{error}");
+        }
+        if change == "plain_load" {
+            assert!(error.contains("only as member-access"), "{error}");
+        }
+    }
+}
+
+#[test]
+fn nested_source_fields_keep_cpp_access_checks_and_projected_receivers_as_boundaries() {
+    for source in [
+        "struct Child { int value; }; struct Outer { Child child; }; void write(const Outer& root) noexcept { root.child.value = 1; }",
+        "struct Child { int value; int Read() const noexcept { return value; } }; struct Outer { Child child; }; int write(const Outer& root) noexcept { return root.child.Read(); }",
+        "struct Child { int value; }; class Outer { Child child; }; int write(const Outer& root) noexcept { return root.child.value; }",
+    ] {
+        let project = Project::with_fixture("nested.cpp", "write", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
+    let source = "struct Child { int* pointer; }; struct Outer { Child child; int stamp; }; int read(const Outer& state, int* value) noexcept { return *state.child.pointer; } void write(const Outer& state, int* value, int next) noexcept { *state.child.pointer = next; }";
+    for (selected, sidecar) in [
+        (
+            "read",
+            "verifying \"pointer_nested.cpp\"; int read(const struct Outer* state, int* value) { views &state->child.pointer; views value[0..1]; requires state->child.pointer == value; ensures result == value[0]; } by { execute(); simp(); }",
+        ),
+        (
+            "write",
+            "verifying \"pointer_nested.cpp\"; void write(const struct Outer* state, int* value, int next) { views &state->child.pointer; owns value[0..1]; requires state->child.pointer == value; ensures value[0] == next; ensures state->child.pointer == old(state->child.pointer); } by { execute(); simp(); }",
+        ),
+    ] {
+        let project = Project::with_fixture("pointer_nested.cpp", selected, source);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        check_return_call_sidecar(&project, &import, sidecar);
+        let hostile = sidecar
+            .replace("views value[0..1];", "")
+            .replace("owns value[0..1];", "views value[0..1];");
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+            panic!("nested pointer access accepted insufficient pointee authority")
+        };
+        assert!(error.message().len() < 8000);
     }
 }

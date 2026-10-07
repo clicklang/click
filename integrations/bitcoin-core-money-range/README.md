@@ -649,8 +649,31 @@ reject forged child identities, names, constness, widths, offsets, alignment,
 missing declarations, cycles, false sibling frames, missing authority,
 read-only writes and excessive shared-layout expansion.
 
-This chunk supplies declaration and contract metadata. Nested C++ source member
-accesses, projected method receivers, inherited base subobjects, automatic
+Declaration and contract metadata now also support nested C++ source field
+reads, writes and signed compound updates. Projected method receivers,
+inherited base subobjects, automatic
 objects with embedded fields and nontrivial embedded destruction remain explicit
 boundaries. `CFeeRate::GetFee` is still a refusal regression at its actual
 `FeePerVSize` template instance; no Bitcoin source is changed.
+
+
+## Nested source field accesses
+
+The nested-record fixture also reads a signed-64 leaf through a const receiver,
+updates a separate child object's signed-64 field through explicit `this`, and
+performs a bounded signed-32 compound update. A const reference-parameter reader
+uses the same representation. Each access retains its root declaration and an
+ordered path of owner/field identities and selected-source use spans. A shared
+indexed resolver validates those identities and lowers the exact accumulated
+byte offset. The root's constness applies to writes through the complete path.
+Reading a pointer field through a const object does not make the pointee const;
+its separate views/ownership still control reads and writes through that pointer.
+
+Offline ordinary, expanded and retained proofs check leaf authority and sibling
+frames. Regressions reject missing or sibling authority, writes through views,
+false frames and unproved signed overflow. Recomputed-digest artifacts cannot
+launder invalid owners, field IDs/names, path order/depth, declaration-source
+spans, read-only roots or projections attached to unsupported plain places.
+Deterministic checks bound work by path length independently of sibling count.
+`CFeeRate::GetFee` still stops at the class template instance; projected method
+receivers and inherited base identity remain next.

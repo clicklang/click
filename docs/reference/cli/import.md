@@ -754,8 +754,15 @@ shows when an outer scalar update preserves fields in two separate child
 objects. Declaration validation follows embedded-field reachability and rejects
 by-value cycles without expanding shared layouts. Physical leaf layouts used
 by contract preparation have a 65,536-leaf budget across the import. Nested
-source member accesses, projected method receivers and automatic objects with
-embedded records remain outside this slice.
+source field reads, writes and signed compound updates retain ordered
+owner/field declaration paths from the root object. Validation and lowering
+share an indexed resolver and exact accumulated byte offsets. Root constness
+applies to the full path; ownership and views apply to the accessed leaf, with
+separate sibling objects retaining separate authority. A const object's pointer
+field may still reference mutable memory; pointee authority is checked separately.
+Projection use spans
+belong to the selected source. Projected method receivers, projected reference
+arguments and automatic objects with embedded records remain outside this slice.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one
@@ -850,7 +857,7 @@ conditional construction remain rejected.
 
 Copies and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
-virtual dispatch, inheritance, bit-fields, nested record execution,
+virtual dispatch, inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported

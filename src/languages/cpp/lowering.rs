@@ -85,15 +85,17 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             .map(|function| (function.declaration_id.as_str(), function.name.as_str())),
     )?;
     // Build immutable inventories once; every function borrows the same indexes.
-    let records = import
-        .export()
-        .records
-        .iter()
-        .map(|record| {
-            crate::instrumentation::record_deterministic_work(1);
-            (record.declaration_id.as_str(), record)
-        })
-        .collect::<BTreeMap<_, _>>();
+    let records = super::schema::RecordIndex::new(
+        import
+            .export()
+            .records
+            .iter()
+            .map(|record| {
+                crate::instrumentation::record_deterministic_work(1);
+                (record.declaration_id.clone(), record)
+            })
+            .collect::<BTreeMap<_, _>>(),
+    );
     let constants = import
         .export()
         .constants
@@ -134,7 +136,7 @@ fn lower_function(
     import: &PreparedCppImport,
     source: &CppFunction,
     names: &ResolvedNames,
-    records: &BTreeMap<&str, &CppRecord>,
+    records: &super::schema::RecordIndex<'_>,
     constants: &BTreeMap<&str, &CppConstant>,
 ) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
@@ -267,7 +269,7 @@ struct LoweringContext<'a> {
     function_name: &'a str,
     names: &'a ResolvedNames,
     places: BTreeMap<&'a str, &'a CppPlace>,
-    records: &'a BTreeMap<&'a str, &'a CppRecord>,
+    records: &'a super::schema::RecordIndex<'a>,
     constants: &'a BTreeMap<&'a str, &'a CppConstant>,
     next_load_occurrence: u32,
     return_capture_name: String,
@@ -1015,61 +1017,13 @@ impl LoweringContext<'_> {
         field: &CppFieldReference,
     ) -> Result<(CExpression, CType), String> {
         let place = self.place(object)?;
-        let record_type = match &place.value_type {
-            CppType::LvalueReference { pointee } => pointee.as_ref(),
-            CppType::Record { .. } => &place.value_type,
-            _ => {
-                return Err(format!(
-                    "C++ member object `{}` is not a supported record object",
-                    object.name
-                ));
-            }
-        };
-        let CppType::Record {
-            declaration_id,
-            name,
-            ..
-        } = record_type
-        else {
-            return Err(format!(
-                "C++ member object `{}` is not a supported record object",
-                object.name
-            ));
-        };
-        if declaration_id != &field.record_declaration_id {
-            return Err(format!(
-                "C++ member `{}` does not belong to record `{name}`",
-                field.name
-            ));
-        }
-        let record = self.records.get(declaration_id.as_str()).ok_or_else(|| {
-            format!("C++ lowering found unknown record declaration `{declaration_id}`")
-        })?;
-        if record.name != *name {
-            return Err(format!(
-                "C++ record declaration `{declaration_id}` is named `{}`, not `{name}`",
-                record.name
-            ));
-        }
-        let member = record
-            .fields
-            .iter()
-            .find(|candidate| candidate.declaration_id == field.declaration_id)
-            .ok_or_else(|| {
-                format!(
-                    "C++ lowering found unknown field declaration `{}`",
-                    field.declaration_id
-                )
-            })?;
-        if member.name != field.name {
-            return Err(format!(
-                "C++ field declaration `{}` is named `{}`, not `{}`",
-                field.declaration_id, member.name, field.name
-            ));
-        }
+        let (value_type, offset) = self.records.resolve_path(
+            &place.value_type,
+            object.projections.iter().chain(std::iter::once(field)),
+        )?;
         Ok((
-            c_pointer_offset_bytes(c_variable(object.name.clone()), member.offset_bytes),
-            cpp_scalar_kernel_type(&member.value_type)?,
+            c_pointer_offset_bytes(c_variable(object.name.clone()), offset),
+            cpp_scalar_kernel_type(value_type)?,
         ))
     }
 

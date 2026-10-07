@@ -17,4 +17,7 @@ class FeeEnvelope {
 public:
     void SetStamp(int next) noexcept;
     int ReadStamp() const noexcept;
+    long long ReadLeftFee() const noexcept;
+    void SetRightFee(long long next) noexcept;
+    void AddLeftSize(int delta) noexcept;
 };

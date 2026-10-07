@@ -890,10 +890,28 @@ updates verify offline, expand/reverify and retain proofs while preserving
 nested field frames. Forged layouts, missing authority, false sibling frames,
 read-only writes, cycles and excessive shared-layout expansion are rejected.
 
+Nested source member reads, writes and signed compound updates now retain a
+root place plus an ordered path of resolved field declarations. The compiler
+exports each field-use span and owner identity. Artifact validation and direct
+lowering share an indexed path resolver that checks each owner/field/name and
+accumulates exact byte offsets, without scanning unrelated sibling fields.
+Root constness controls mutation through the entire path; field views and
+ownership remain necessary at the accessed leaf. Ordinary, expanded and
+retained offline proofs cover private nested fields, const methods, reference
+parameters, parenthesized accesses, explicit `this`, signed 32/64-bit leaves,
+compound-update bounds and sibling frames. Nested pointer-field checks keep
+const-object access separate from ownership of the mutable pointee. Automatic
+object restrictions are checked at declarations, preserving isolated constructor
+argument diagnostics. Hostile paths, header-labeled use
+spans, read-only roots, missing/wrong sibling authority and unsupported projected
+place consumers are refused. Deterministic regressions cover increasing path
+depth and sibling populations.
+
 The pinned unchanged `CFeeRate::GetFee` regression now reaches the unsupported
 `FeePerVSize` class template instance in `util/feefrac.h`, with a bounded
 diagnostic and no partial artifact. The wrapper is not verified yet. Next add
-source-level nested record places and receiver projections, then a precise
+projected method receivers and reference arguments using the same field-path
+representation, then a precise
 base-subobject representation for the actual inherited `FeePerVSize` field.
 Preserve declaration identity, layout and field authority instead of flattening
 inheritance into matching field names. Automatic objects with embedded records,

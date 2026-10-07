@@ -128,6 +128,14 @@ impl Metadata<'_> {
 
     fn reference(&self, place: &CppPlaceReference) -> Result<(), String> {
         identity(&place.declaration_id, &place.name, "place reference")?;
+        super::budget::limit(
+            "record field projections",
+            place.projections.len(),
+            super::budget::MAX_RECORDS,
+        )?;
+        for projection in &place.projections {
+            self.field(projection)?;
+        }
         place.span.validate(self.logical_source)
     }
 

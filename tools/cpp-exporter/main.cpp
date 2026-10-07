@@ -2874,6 +2874,23 @@ private:
       return std::nullopt;
     }
     const clang::Expr *base = member->getBase()->IgnoreParenImpCasts();
+    std::vector<const clang::MemberExpr *> projections;
+    while (const auto *projection = llvm::dyn_cast<clang::MemberExpr>(base)) {
+      if (projections.size() >= kMaxRecordDeclarations) {
+        fail(projection->getMemberLoc(), "C++ artifact budget exhausted: record field projections");
+        return std::nullopt;
+      }
+      const auto *projected_field = llvm::dyn_cast<clang::FieldDecl>(projection->getMemberDecl());
+      if (projected_field == nullptr ||
+          projected_field->getType()->getAsCXXRecordDecl() == nullptr) {
+        fail(projection->getMemberLoc(), "C++ field projections require embedded record fields");
+        return std::nullopt;
+      }
+      projections.push_back(projection);
+      base = projection->getBase()->IgnoreParenImpCasts();
+    }
+    const auto *root_record = projections.empty() ? record :
+        llvm::cast<clang::CXXRecordDecl>(projections.back()->getMemberDecl()->getDeclContext());
     const auto *this_expression = llvm::dyn_cast<clang::CXXThisExpr>(base);
     const auto *object_method = llvm::dyn_cast<clang::CXXMethodDecl>(function);
     const auto *reference = llvm::dyn_cast<clang::DeclRefExpr>(base);
@@ -2902,20 +2919,21 @@ private:
         !reference_type->getPointeeType().isRestrictQualified() &&
         base_record_type != nullptr &&
         base_record_type->getDecl()->getCanonicalDecl() ==
-            record->getCanonicalDecl();
+            root_record->getCanonicalDecl();
     const bool supported_local =
         local != nullptr && parameter == nullptr &&
         local->getDeclContext() == function && local->hasLocalStorage() &&
         !local->isStaticLocal() && !local->getType().hasQualifiers() &&
         local_record_type != nullptr &&
         local_record_type->getDecl()->getCanonicalDecl() ==
-            record->getCanonicalDecl();
+            root_record->getCanonicalDecl();
     const bool supported_this =
         this_expression != nullptr && object_method != nullptr &&
         !object_method->isStatic() &&
         object_method->getParent()->getCanonicalDecl() ==
-            record->getCanonicalDecl();
-    if (member->isArrow() && !supported_this) {
+            root_record->getCanonicalDecl();
+    if ((member->isArrow() && (!supported_this || !projections.empty())) ||
+        (!projections.empty() && projections.back()->isArrow() && !supported_this)) {
       fail(member->getOperatorLoc(),
            "the first C++ object slice supports arrow access only for the "
            "current method, constructor, or destructor object");
@@ -2929,6 +2947,32 @@ private:
     auto object = lower_place_reference(base, function);
     if (!object) {
       return std::nullopt;
+    }
+    if (!projections.empty()) {
+      llvm::json::Array path;
+      for (auto iterator = projections.rbegin(); iterator != projections.rend(); ++iterator) {
+        const auto *projection = *iterator;
+        const auto *projected_field = llvm::cast<clang::FieldDecl>(projection->getMemberDecl());
+        const auto *owner = llvm::cast<clang::CXXRecordDecl>(projected_field->getParent());
+        const auto *base_type = projection->getBase()->getType()->getAsCXXRecordDecl();
+        // The root `this` is a pointer; every subsequent step is a by-value field.
+        if (projection->isArrow()) {
+          if (!supported_this || projection != projections.back()) {
+            fail(projection->getMemberLoc(), "C++ field projections cannot traverse record pointers");
+            return std::nullopt;
+          }
+        } else if (base_type == nullptr || base_type->getCanonicalDecl() != owner->getCanonicalDecl()) {
+          fail(projection->getMemberLoc(), "C++ field projection has a mismatched record owner");
+          return std::nullopt;
+        }
+        llvm::json::Object step;
+        step["record_declaration_id"] = declaration_id(owner);
+        step["declaration_id"] = declaration_id(projected_field);
+        step["name"] = projected_field->getNameAsString();
+        step["span"] = span(projection->getMemberNameInfo().getSourceRange());
+        path.push_back(std::move(step));
+      }
+      (*object->getAsObject())["projections"] = std::move(path);
     }
     llvm::json::Object lowered_field;
     lowered_field["record_declaration_id"] = declaration_id(record);

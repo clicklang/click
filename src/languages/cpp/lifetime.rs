@@ -29,6 +29,7 @@ impl LifetimePlan {
                             if let Some(callee) = &record.destructor {
                                 let cleanup = CppCleanup::Destructor {
                                     object: CppPlaceReference {
+                                        projections: Vec::new(),
                                         declaration_id: local.declaration_id.clone(),
                                         name: local.name.clone(),
                                         span: local.span.clone(),
@@ -248,6 +249,7 @@ mod tests {
     fn cleanup(name: &str) -> CppCleanup {
         CppCleanup::Destructor {
             object: CppPlaceReference {
+                projections: Vec::new(),
                 declaration_id: name.into(),
                 name: name.into(),
                 span: span(),
