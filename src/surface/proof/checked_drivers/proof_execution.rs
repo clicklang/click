@@ -2614,6 +2614,11 @@ fn advance_focused_execution_arm<'a>(
                     source_have_error(&proof, have, indexed.index, goal.as_ref(), None)
                 })?;
             selected.join()?
+        } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
+            let Some(next) = proof.try_execute_until(region)? else {
+                return decline();
+            };
+            next
         } else if let ProofTactic::Loop(clause) = &indexed.tactic {
             // A frontier-local loop inside a case is one checked operation,
             // exactly as in the linear continuation.

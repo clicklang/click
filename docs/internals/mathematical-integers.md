@@ -747,6 +747,15 @@ Regressions check boundary modulo oracles, forged formats and payloads,
 missing or altered bounds, unrelated equality claims, constant checking work
 with growing unused premise populations, and linear work with certificate nodes.
 
+Nested conversions are compared with the canonical modulo cast of the source
+observation, including a narrowing cast that discards an intermediate cast.
+Unsigned byte readback also admits an exact low-bit mask: a `uint32` source
+masked by `255` for a `uint8` observation or `65535` for a `uint16` observation.
+Both forms require the same two range bounds. A different mask, operand, or
+destination is refused; widening after an intervening truncation cannot be
+mistaken for a direct cast of the original value. These forms connect native
+Rust narrowing stores to their full-width modulo results.
+
 This is a shared proof rule, not a change to C++ conversion semantics or an
 automatic range inference rule. Outside the destination range, native modulo
 casts remain defined and may change the mathematical value. Ordinary C signed

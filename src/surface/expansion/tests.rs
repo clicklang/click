@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn execute_until_in_proof_if_arms_expands_and_rechecks() {
+    let c = "int32 identity(int32 x) { int32 y = x; return y; }";
+    let source = r#"
+verifying "identity.c";
+int32 identity(int32 x) { ensures result == x; } by {
+    if x == 0 {
+        execute_until(statement(0));
+        execute_until(assignment(y, 0));
+        step(); execute(); simp();
+    } else {
+        execute_until(statement(0));
+        execute_until(assignment(y, 0));
+        step(); execute(); simp();
+    }
+}
+"#;
+    let sources = [("identity.c", c)];
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "identity.contract").unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    assert!(
+        verify_c0_sources(
+            &expanded.replace("ensures result == x;", "ensures result == x + 1;"),
+            &sources,
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn tactic_expansion_can_name_an_outer_c_parameter_after_intro() {
     let c_source = "int32 shadowed_c(int32 x) { return 0; }";
     let click_source = r#"
