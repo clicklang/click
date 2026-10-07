@@ -15580,6 +15580,80 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
 }
 
 #[test]
+fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
+    let (source, _) = mdtest_sources("mdtests/uint32_arithmetic_bound_weakening.md");
+    verify_c0_sources(&source, &[]).expect("unsigned weakened bounds should verify");
+    for name in [
+        "lane_ceiling",
+        "crossing_sign_bit",
+        "high_unsigned_ceiling",
+        "high_unsigned_floor",
+        "crossing_sign_bit_floor",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+            .expect("unsigned weakening should expand");
+        assert!(expanded.contains("arithmetic_certificate signed_int32"));
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &[])
+            });
+        result.expect("unsigned certificate should independently recheck");
+        assert_eq!(planning, 0, "explicit recheck must not plan");
+        if name == "lane_ceiling" {
+            let forged = expanded.replace("1073741823u32", "65519u32");
+            let error = verify_c0_sources(&forged, &[])
+                .expect_err("a strengthened conclusion must not encode the original child sum");
+            assert!(error.message().contains("does not encode the child sum"));
+        }
+    }
+    for (premise, goal) in [
+        ("lane <= 1073741823u32", "lane <= 65520u32"),
+        ("lane <= 2147483648u32", "lane <= 2147483647u32"),
+        ("2147483647u32 <= lane", "2147483648u32 <= lane"),
+        ("lane <= 65520u32", "1073741823u32 <= lane"),
+    ] {
+        let invalid = format!(
+            "theorem invalid(lane: uint32) {{ requires {premise}; \
+             ensures {goal} by {{ arithmetic() using {{ {premise}; }} }} }}"
+        );
+        verify_c0_sources(&invalid, &[]).expect_err("insufficient unsigned bounds must fail");
+    }
+    let missing = source.replacen(
+        "arithmetic() using { lane <= 65520u32; }",
+        "arithmetic() using {};",
+        1,
+    );
+    verify_c0_sources(&missing, &[]).expect_err("unlisted bounds must not prove the ceiling");
+}
+
+#[test]
+fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
+    let (guarded, _) =
+        mdtest_sources("mdtests/true_disjunction_skips_undefined_right_requirement.md");
+    let (products, _) = mdtest_sources("mdtests/integer_uint32_checked_product_observations.md");
+    let source = format!("{guarded}\n{products}");
+    verify_c0_sources(&source, &[]).expect("zero-factor and checked products should verify");
+    for claim in [
+        "zero_instance.ensures_0",
+        "known_zero_instance.ensures_0",
+        "zero_factor.ensures_0",
+        "known_zero_factor.ensures_0",
+        "reduced_lane_ceiling.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], claim)
+            .expect("checked multiplication/zero-factor proof should expand");
+        verify_c0_sources(&expanded, &[])
+            .expect("expanded multiplication/zero-factor certificate should recheck");
+    }
+    let (invalid, _) =
+        mdtest_sources("mdtests/false_disjunction_requires_defined_right_requirement.md");
+    verify_c0_sources(&invalid, &[])
+        .expect_err("a false left disjunct must not hide division by zero");
+    let forged = guarded.replace("ensures 1 == 1", "ensures 1 == 2");
+    verify_c0_sources(&forged, &[]).expect_err("a true guard must not prove a false conclusion");
+}
+
+#[test]
 fn integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims() {
     let (source, _) = mdtest_sources("mdtests/integer_equality_rewrite.md");
     verify_c0_sources(&source, &[]).expect("Integer compound rewrites should verify");

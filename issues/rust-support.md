@@ -1179,6 +1179,46 @@ verification, profiling, expansion, and nightly audit. The original `adler2`
 sources, artifacts, locks, and import profile remain unchanged; its complete
 four-byte checksum contract is still unproved.
 
+### Exact observations of the original lane multiplication
+
+The unchanged `U32X4::mul_assign` body now proves exact Integer products for all
+four lanes, alongside its native products and unsigned observation bounds. The
+checked `uint32_mul_to_integer` bridge requires the original native quotient
+guard, including the zero multiplier case. It does not infer mathematical
+non-wrapping multiplication from native expression definedness.
+
+This supplies the missing observation interface for carrying derived lane
+ceilings through vector recombination. A checked surface theorem derives the
+262080 ceiling for a reduced lane multiplied by four. Kernel regressions compare
+the emitted guard and product observation with independent unsigned boundary
+models, including zero factors, values above the signed sign bit, and both sides
+of the last safe quotient. Original helper regressions reject false products,
+false lower/upper bounds, and missing overflow guards for each lane. Original
+Rust sources, artifacts, locks, and import profile remain unchanged; the complete
+four-byte computation contract is still unproved.
+
+Concrete zero-factor theorem applications also exposed eager evaluation of an
+unused right disjunct. If that right side cannot lower, the kernel now preserves
+an exactly known true left path with its facts and obligations. When both sides
+lower it retains the written disjunction, including its choice-certificate shape.
+Unknown or false left sides retain the existing lowering. Independent theorem
+regressions reject undefined right sides when needed and false conclusions;
+expansion independently rechecks the resulting certificates.
+
+The unsigned-bound certificate rendering bug found by the four-byte investigation
+is fixed. A final addition over sign-bit-flipped unsigned atoms now uses the
+goal's source comparison instead of wrapping machine sums; the unchanged checker
+requires that comparison to encode the exact child sum. Regressions verify and
+independently recheck expanded upper and lower bounds on both sides of the sign
+bit, and reject insufficient bounds, unlisted premises, and forged certificates.
+The same investigation independently reduced
+`bugs/arithmetic-cannot-render-observed-product-after-zero-rewrite.md`: after a
+checked Integer observation rewrite to zero, arithmetic proves the product goal
+internally but cannot print its certificate. This remaining bug is the next
+tooling fix. The checked multiplication ceiling
+example now proves its native quotient guard with arithmetic; the original
+computation proof remains stopped at this tooling checkpoint.
+
 Next prove the first nonempty four-byte vector path and establish/preserve the
 derived lane ceilings over the original stored nested iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic

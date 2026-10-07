@@ -989,9 +989,24 @@ impl<'a> Proof<'a> {
             if normalizes_context_free(&requirement) {
                 continue;
             }
-            let surface = substitute_click_proposition(source_surface, &substitutions)
+            let mut surface = substitute_click_proposition(source_surface, &substitutions)
                 .map_err(|message| self.step_error(message))?;
-            let lowered = self.lower_surface_proposition(&surface, "selected theorem premise")?;
+            let mut lowered =
+                self.lower_surface_proposition(&surface, "selected theorem premise")?;
+            // Kernel spec lowering can retain only an exactly known true left
+            // disjunct, avoiding an undefined unused right expression. Cite that
+            // same written left fact rather than requiring the whole disjunction
+            // to be an exact ambient fact in a pure proof.
+            if lowered != requirement
+                && let ClickProposition::Or(left, _) = &surface
+            {
+                let left_lowered =
+                    self.lower_surface_proposition(left, "selected left theorem premise")?;
+                if left_lowered == requirement && self.facts().contains(&left_lowered) {
+                    surface = left.as_ref().clone();
+                    lowered = left_lowered;
+                }
+            }
             if lowered.clone() != requirement.clone() || !self.facts().contains(&lowered) {
                 // `Debug` on a kernel proposition dumps the memory snapshots
                 // and algebraic schemas it is indexed by; the reader needs the
