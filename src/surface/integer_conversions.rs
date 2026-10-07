@@ -700,6 +700,132 @@ mod tests {
         }
     }
     #[test]
+    fn legacy_integer_cast_identity_preserves_field_views_and_snapshot_observations() {
+        for (field, destination, lower, upper) in [
+            ("fee", "uint64", "0", "8589934591"),
+            ("size", "uint32", "1", "2147483647"),
+        ] {
+            let c = format!(
+                "struct FeeFrac {{ int64 fee; int32 size; }}; {destination} cast(const struct FeeFrac* self) {{ return ({destination})self->{field}; }}"
+            );
+            let source = format!(
+                r#"verifying "cast.c";
+{destination} cast(const struct FeeFrac* self) {{
+    views self->{field};
+    requires {lower} <= to_integer(self->{field});
+    requires to_integer(self->{field}) <= {upper};
+    ensures to_integer(result) == to_integer(old(self->{field}));
+    ensures self->{field} == old(self->{field});
+}} by {{
+    execute();
+    have to_integer(result) == to_integer(self->{field}) by {{ arithmetic_certificate special {{
+        premise 0: {lower} <= to_integer(self->{field}) => {lower} <= to_integer(self->{field});
+        premise 1: to_integer(self->{field}) <= {upper} => to_integer(self->{field}) <= {upper};
+        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(self->{field}); conclusion 0;
+    }} }}
+    simp();
+}}
+"#
+            );
+            verify_c0_sources(&source, &[("cast.c", &c)])
+                .unwrap_or_else(|e| panic!("{field}: {}", e.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[("cast.c", &c)], "cast.ensures_0")
+                    .unwrap();
+            verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
+            assert!(
+                verify_c0_sources(
+                    &source.replace(&format!("views self->{field};"), ""),
+                    &[("cast.c", &c)]
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_integer_cast_identity_verifies_c_callers_and_rechecks_bounds_and_expansion() {
+        for (source_ty, destination, lower, upper, native_guard) in [
+            ("int64", "uint64", "0", "9223372036854775807", ""),
+            ("int32", "uint64", "0", "2147483647", ""),
+            ("int32", "uint32", "0", "2147483647", ""),
+            ("uint32", "uint64", "0", "4294967295", ""),
+            (
+                "uint64",
+                "int64",
+                "0",
+                "9223372036854775807",
+                "requires value <= 9223372036854775807u64;",
+            ),
+            ("uint64", "uint32", "0", "4294967295", ""),
+        ] {
+            let c = format!(
+                "{destination} cast({source_ty} value) {{ return ({destination})value; }} {destination} caller({source_ty} value) {{ return cast(value); }}"
+            );
+            let contract = format!(
+                "{native_guard} requires {lower} <= to_integer(value); requires to_integer(value) <= {upper}; ensures to_integer(result) == to_integer(value);"
+            );
+            let source = format!(
+                r#"verifying "cast.c";
+{destination} cast({source_ty} value) {{ {contract} }} by {{
+    execute();
+    arithmetic_certificate special {{
+        premise 0: {lower} <= to_integer(value) => {lower} <= to_integer(value);
+        premise 1: to_integer(value) <= {upper} => to_integer(value) <= {upper};
+        integer_cast_identity bounds [0, 1] => to_integer(result) == to_integer(value); conclusion 0;
+    }}
+}}
+{destination} caller({source_ty} value) {{ {contract} }} by {{ execute(); simp(); }}
+"#
+            );
+            verify_c0_sources(&source, &[("cast.c", &c)])
+                .unwrap_or_else(|e| panic!("{source_ty}/{destination}: {}", e.message()));
+            if source_ty == "uint64" && destination == "int64" {
+                let implicit_return = c.replace("return (int64)value;", "return value;");
+                verify_c0_sources(&source, &[("cast.c", &implicit_return)]).unwrap();
+                let expanded = expand_c0_claim_source_by_label(
+                    &source,
+                    &[("cast.c", &implicit_return)],
+                    "cast.ensures_0",
+                )
+                .unwrap();
+                verify_c0_sources(&expanded, &[("cast.c", &implicit_return)]).unwrap();
+            }
+            if !native_guard.is_empty() {
+                assert!(
+                    verify_c0_sources(&source.replace(native_guard, ""), &[("cast.c", &c)])
+                        .is_err()
+                );
+            }
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[("cast.c", &c)], "caller.ensures_0")
+                    .unwrap();
+            verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {lower} <= to_integer(value);"), ""),
+                source.replace(&format!("requires to_integer(value) <= {upper};"), ""),
+                source.replace(
+                    "integer_cast_identity bounds [0, 1]",
+                    "integer_cast_identity bounds [1, 0]",
+                ),
+                source.replace(
+                    "integer_cast_identity bounds [0, 1]",
+                    "integer_cast_identity bounds [0, 0]",
+                ),
+                source.replace(
+                    "to_integer(result) == to_integer(value)",
+                    "to_integer(result) == to_integer(value) + 1",
+                ),
+            ] {
+                assert!(
+                    verify_c0_sources(&invalid, &[("cast.c", &c)]).is_err(),
+                    "{source_ty}/{destination}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn uint64_integer_bridges_recheck_guards_full_width_and_expansion() {
         for (name, guard, goal) in [
             (

@@ -374,6 +374,12 @@ The shared uint64 Integer bridges now provide exact no-wrap addition and
 multiplication, no-underflow subtraction, nonzero division/remainder and
 non-strict order transport. Their checked contracts and ordinary C regressions
 are described in [the Integer model](../../docs/internals/mathematical-integers.md#exact-unsigned-64-bit-observations).
+The cast certificate now also recognizes the legacy 32/64-bit terms of the
+fast-path operand conversions, using the same typed modulo policy and explicit
+source bounds. The symbolic uint64 return-to-int64 conversion is admitted only
+with a proved native INT64_MAX upper bound. Ordinary C modular regressions and
+the checked [cast fixture](../../mdtests/legacy_integer_cast_identity.md) cover
+these shared prerequisites.
 Next compose these into the symbolic unsigned fast paths, preserving the
 source's mixed casts and ceiling numerator, then broaden the mode-specific
 result-fit domain. This does not yet verify `EvaluateFeeDown/Up` for all fees.

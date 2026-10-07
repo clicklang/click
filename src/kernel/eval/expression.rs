@@ -935,6 +935,23 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             add_signed_narrowing_obligations(obligations, assumptions, &value, 0, 255, "uint8")?;
             Some(CValue::UInt8(value))
         }
+        (CType::Int64, CValue::UInt64(value)) => {
+            add_proof_obligation_with_context(
+                obligations,
+                assumptions,
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_equal(
+                        value.clone(),
+                        Bitvector32Term::UInt64Constant(i64::MAX as u64),
+                    ),
+                    true,
+                ),
+                Some("int64 narrowing upper bound"),
+            )?;
+            Some(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(
+                value,
+            )))
+        }
         (CType::Int64, CValue::Int64(value)) => Some(CValue::Int64(value)),
         (
             CType::Int64,

@@ -337,6 +337,27 @@ the source type fits the destination. Narrowing and signedness changes that
 can change the numeric value stay machine observations of the converted
 value; they are not equated with the source's mathematical Integer.
 
+The `integer_cast_identity` certificate also recognizes the legacy 32/64-bit
+conversion terms used by ordinary C and the shared modulo boundary. It compares
+the converted observation with the existing typed conversion policy, retaining
+the canonical typed-cast check and the two explicit source bounds. Signedness
+reinterpretations, signed or unsigned widening, and narrowing still preserve
+the numeric value only inside the destination range. This recognition adds no
+arithmetic axiom or implicit range fact.
+
+Ordinary C now admits symbolic `uint64` to `int64` conversions once the native
+unsigned upper bound `value <= 9223372036854775807u64` is established. The result
+retains the same bits with signed interpretation. Unknown or out-of-range
+ordinary conversions remain unproved; the explicit modulo boundary retains its
+separate wrapping semantics. Both explicit casts and implicit returns use the
+same conversion check.
+
+The complete signed/unsigned 32/64-bit modulo matrix, ordinary C modular
+callers, missing bounds, forged endpoint references, false observations and
+full-width boundary checks cover this profile. The checked
+[cast fixture](https://github.com/clicklang/click/blob/master/mdtests/legacy_integer_cast_identity.md)
+includes the unchanged Bitcoin fast-path operand conversion expressions.
+
 ## Wide runtime scalars
 
 The shared kernel has `CType::Int128` / `UInt128` and corresponding `CValue`

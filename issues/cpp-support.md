@@ -748,6 +748,15 @@ arithmetic. Boundary models, hostile guards/types, ordinary C modular callers,
 expansion/reverification and deterministic order-application scaling cover this
 prerequisite for Bitcoin's unchanged unsigned fast paths.
 
+Fast-path composition exposed two shared conversion gaps, now repaired.
+`integer_cast_identity` recognizes the existing ordinary 32/64-bit conversion
+terms through the shared typed modulo policy, retaining both explicit
+source-range bounds. Ordinary symbolic uint64-to-int64 casts and returns require
+the native unsigned INT64_MAX bound, rather than working only when constants
+fold. The signed/unsigned 32/64-bit conversion matrix, ordinary C modular
+callers, hostile bounds/certificates, endpoint checks and expansion cover these
+prerequisites; no Bitcoin source edit or new arithmetic axiom is needed.
+
 Next compose the symbolic unsigned fast-path callers, including the source's
 mixed signed/unsigned casts and the ceiling numerator `fee * amount + size - 1`.
 The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
