@@ -30,7 +30,10 @@ impl<'a> Proof<'a> {
             )));
         }
         if target == current {
-            return Ok(None);
+            // Reaching the requested frontier is success, including inside
+            // a proof branch or resource scope. `None` means unsupported to
+            // those drivers and incorrectly declines a valid no-op.
+            return Ok(Some((self.clone(), Vec::new())));
         }
         let mut introduced_facts = Vec::new();
         let Some(proof) = self.try_focused_execute_to_exit_within(

@@ -299,7 +299,12 @@ charged to visible semantic output rather than hidden ambient state:
   facts; `bugs/early-return-paths-store-facts-whole.md` lists each measured
   source. The largest, simp offering its goal as a transport from every
   program point the path recorded, is bounded
-  (`simp_snapshot_transport_search_is_linear_in_early_returns`).
+  (`simp_snapshot_transport_search_is_linear_in_early_returns`). Constant-pinned
+  equality goals also select at most two indexed premises instead of every
+  preceding guard about the same variable; the selected premises still undergo
+  the ordinary atomic derivation check
+  (`indexed_simp_premises_reduce_whole_early_return_work`). Path context
+  rebuilding remains quadratic.
 
 ## Execution capacity follows selected syntax
 

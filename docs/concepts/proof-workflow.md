@@ -143,7 +143,8 @@ control flow.
 - `close_invariants()`: discharge a loop's whole invariant bundle at the back
   edge. It is accepted only inside `preserve by { ... }`, and at most once per
   path. Omitting it makes Click append the closer implicitly.
-- `unfold(name);`: unfold matching predicate facts and goals.
+- `unfold(name);`: make the predicate `name` transparent for the rest of the
+  branch, in its facts, the current goal, and later goals.
 - `unfold(resource);`: consume one owned composite resource fact and expose its
   immediate body facts.
 - `fold(resource);`: require every declared pure body fact exactly (or by

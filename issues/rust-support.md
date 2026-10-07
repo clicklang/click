@@ -1107,3 +1107,79 @@ Next establish the existing lane ceilings over the original stored nested
 iterators for nonempty chunks and tails. General initial-state preservation,
 nonempty byte accounting, whole-loop panic freedom, and full checksum
 correctness remain unproved.
+
+### Original computation single-byte boundary
+
+The unchanged `Adler32::compute` body now has a checked contract for one
+arbitrary byte from `a = 1`, `b = 0`. The serial iterator's actual read is tied
+to the original input, both additions have checked overflow bounds, the input
+byte is preserved, and both final field observations equal their native modulo
+expressions: `(1 + byte) % MOD` and `(6 * MOD + 1 + byte) % MOD`. These give
+the single-byte checksum values without wrapping. The proof retains original
+adapter operand snapshots and introduces no source counter or assumed invariant.
+
+The contract fragment shares the canonical helper/getter contracts through the
+fixture harness, which checks all seven bodies; the existing empty-input
+sidecar is retained. Function-contract imports between sidecars remain outside
+the import delivery. Kernel cast-identity certificates now recognize canonical
+nested conversions and exact unsigned byte-readback masks, retaining explicit
+destination bounds. A separate execution-driver repair admits `execute_until`
+inside proof-case arms and succeeds when the requested frontier is already
+current. Minimal C and expansion regressions cover that repair.
+
+Missing length/view and empty-input rejection are ordinary checks. Complete
+single-byte verification, false checksum/input-preservation claims, and proof
+tool agreement run nightly. Original Rust sources, extraction locks, artifact,
+and import profile are unchanged. The serial-tail extension below covers two
+and three bytes; derived lane ceilings over the original stored nested
+iterators remain later work. General initial states, nonempty vector batches, whole-loop
+panic freedom, and the common full checksum specification remain unproved.
+
+
+### Original computation two- and three-byte tails
+
+The unchanged `Adler32::compute` body now has checked constructor-state
+contracts for arbitrary inputs of length two and three. Together with the
+existing empty and single-byte boundaries, this covers each possible serial
+remainder length before the first four-byte vector path. Each original read
+is tied to its input index, and explicit facts check the stored cursor and
+remaining count after every read. There are no new source locals, generated
+processed counts, or assumed loop invariants.
+
+The proofs establish the original A/B recurrences from the lane-recombination
+state `A = 1`, `B = 6 * MOD`, check both overflow guards on each pass, preserve
+every input byte, and prove both final native modulo expressions through the
+original `u16` stores. The A ceilings are 256, 511, and 766; the B ceilings are
+393382, 393893, and 394659. The canonical helper/getter contracts are reused
+and all seven bodies checked for each fragment.
+
+Ordinary regressions reject missing length/view, an incorrect extent, and
+an incorrect constructor state. Nightly tests check the complete positive
+proofs, false A/B outputs, false preservation of every byte, swapped byte
+weights in B, repeated preceding-byte reads, and verify/profile/audit/expansion
+agreement. Original Rust sources, artifacts, locks, and import profile are
+unchanged.
+
+### Copying local scalar arrays after checked calls
+
+The first nonempty vector path exposed a kernel copy defect at the original
+`b_vec += a_vec` call: its by-value operand copies `a_vec` after a checked helper
+has updated it. Initialized local storage was rejected when that call had
+discarded cached lane values. Such copies now capture the current immutable
+memory snapshot for unknown lanes, preserving represented lanes and the existing
+initialization, type, alignment, bounds, and authority checks.
+
+`design/charon-trial/copy-after-call` contains a reduced, frozen Charon crate
+with both bodies checked: mutate a local array through a helper, copy it, mutate
+the source again, and return the independently captured post-call value. False
+pre-call/later values and insufficient or read-only authority are rejected.
+Kernel regressions cover partial havoc, invalid storage, and deterministic
+compact-copy scaling through a million elements. Proof-tool regressions recheck
+verification, profiling, expansion, and nightly audit. The original `adler2`
+sources, artifacts, locks, and import profile remain unchanged; its complete
+four-byte checksum contract is still unproved.
+
+Next prove the first nonempty four-byte vector path and establish/preserve the
+derived lane ceilings over the original stored nested iterators. General
+initial states, nonempty vector batches beyond that boundary, whole-loop panic
+freedom, and the common full checksum specification remain unproved.

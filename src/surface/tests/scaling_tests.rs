@@ -1903,12 +1903,12 @@ fn repeated_tactic_applications(count: usize) -> (String, String) {
     );
     for index in 0..count {
         click_source.push_str(&format!(
-            "    let {{ y: t{} }} = retag(p) {{ x: t{index} }};\n",
+            "    let {{ y: t{} }} = retag(p, {{ x: t{index} }});\n",
             index + 1
         ));
     }
     click_source.push_str(&format!(
-        "    let {{ y: out }} = retag(p) {{ x: t{count} }};\n    step();\n    step();\n    simp();\n}}\n"
+        "    let {{ y: out }} = retag(p, {{ x: t{count} }});\n    step();\n    step();\n    simp();\n}}\n"
     ));
     (c_source, click_source)
 }
@@ -6077,14 +6077,55 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
     proof
 }
 
+/// Indexed constant equalities avoid selecting every earlier guard about `a`.
+/// Pin the selector's work and the complete transaction, so a shortcut cannot
+/// move its quadratic selection work to another phase. Context rebuilding is
+/// still a separate known violation; this does not assert shared path storage.
+#[test]
+fn indexed_simp_premises_reduce_whole_early_return_work() {
+    std::thread::Builder::new()
+        .name("fan-out-indexed-premises".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let _ = roundtrip_sample(1, 0);
+            let mut samples = Vec::new();
+            let mut selection = Vec::new();
+            let click = "verifying \"fan_out.c\";\nint g(int a) { ensures result == a or result == -1; } by { execute(); simp(); }";
+            for returns in [4, 8, 16, 32, 64] {
+                let c = early_return_fan_out(returns);
+                let (verified, sample) = scaling_sample(returns, || {
+                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
+                });
+                verified.unwrap_or_else(|error| {
+                    panic!("fan-out of {returns} returns: {}", error.message())
+                });
+                selection.push(*sample.named_work.get("operation `atomic dependency selection`").unwrap_or(&0));
+                samples.push(sample);
+            }
+            eprintln!("indexed fan-out: {samples:?}; selection: {selection:?}");
+            assert!(selection.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 8),
+                "indexed constant selection must stay linear: {selection:?}");
+            assert!(samples.windows(2).skip(2).all(|pair| pair[1].work * 100 <= pair[0].work * 215),
+                "whole verification must retain the selection saving: {samples:?}; {}", named_growth_diagnostic(&samples));
+            let c = early_return_fan_out(64);
+            let false_click = click.replace("result == -1", "result == -2");
+            let error = verify_c0_sources(&false_click, &[("fan_out.c", c.as_str())])
+                .expect_err("indexed premises cannot prove an incorrect postcondition");
+            assert!(!error.message().contains("budget"), "{}", error.message());
+        })
+        .expect("spawn the indexed fan-out thread")
+        .join()
+        .expect("indexed fan-out thread");
+}
+
 /// The early-return fan-out proved with simple tactics only verifies in work
 /// near linear in its returns. This is the form the simple-verification
 /// contract governs. Completed early-return cases are processed iteratively,
 /// so the measurement extends through 64 returns despite the written nesting.
 ///
 /// The grouped `execute(); simp();` proof of the same function is not yet
-/// linear: on path `k`, simp's dependency selection reads all `k` conditions
-/// about `a` (`bugs/early-return-paths-store-facts-whole.md`).
+/// linear: each checked path retains its facts whole and later rebuilds its
+/// context (`bugs/early-return-paths-store-facts-whole.md`).
 #[test]
 fn explicit_early_return_proof_is_near_linear_in_its_returns() {
     std::thread::Builder::new()
@@ -6191,9 +6232,8 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
 /// spelling sites charged 15.8k units at 64 returns on 2026-10-06); now the
 /// spelling is linear in the returns.
 ///
-/// The selection itself still reads all `k` conditions
-/// (`bugs/early-return-paths-store-facts-whole.md`), so only the spelling is
-/// asserted.
+/// Constant-pinned equality selection is separately covered by
+/// `indexed_simp_premises_reduce_whole_early_return_work`.
 #[test]
 fn simp_premise_spelling_is_linear_in_early_returns() {
     std::thread::Builder::new()

@@ -4092,7 +4092,7 @@ impl CMemory {
         let mut spans = Vec::new();
         let mut cells = Vec::new();
         if copy {
-            let CValue::Pointer(pointer) = value else {
+            let CValue::Pointer(pointer) = &value else {
                 return Err(CRuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
@@ -4204,7 +4204,19 @@ impl CMemory {
                 cells.push((index, value.clone()));
             }
             if covered != IndexIntervals::full(count) {
-                return Err(invalid("incomplete typed coverage"));
+                // A checked call may forget cached values of initialized
+                // automatic storage. Copy the current snapshot's unknown
+                // lanes just as for external initialized storage, retaining
+                // the represented lanes and the checks above.
+                return self.write_scalar_array_snapshot(
+                    base,
+                    element_type,
+                    count,
+                    value,
+                    copy,
+                    fresh,
+                    assumptions,
+                );
             }
         } else {
             if value.c_type() != element_type {

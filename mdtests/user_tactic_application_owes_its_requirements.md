@@ -42,7 +42,7 @@ tactic check_first(p: struct pr*) {
 void user(struct pr* p) {
     owns x: both(p);
 } by {
-    check_first(p) { x: x };
+    check_first(p, { x: x });
     step();
     step();
     simp();

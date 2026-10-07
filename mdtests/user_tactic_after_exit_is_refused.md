@@ -49,7 +49,7 @@ void user(struct pr* p) {
 } by {
     step();
     step();
-    let { y: y, z: z } = divide(p) { x: x };
+    let { y: y, z: z } = divide(p, { x: x });
     simp();
 }
 ```

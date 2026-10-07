@@ -78,6 +78,124 @@ fn compact_scalar_arrays_copy_uniform_values_without_expanding_storage_or_work()
 }
 
 #[test]
+fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() {
+    let mut samples = Vec::new();
+    for count in [8, 1024, 1_000_000] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = pointer("local:array-source", 0);
+        let target = pointer("local:array-target", 0);
+        let written = CMemoryRange::new_with_element_width(
+            source.clone(),
+            0u32.into(),
+            (count * 4).into(),
+            1,
+        );
+        let after_call = seeded(count).with_call_memory_havoc(
+            Variable(912_347),
+            &[written],
+            &PureFactContext::new(),
+            None,
+        );
+        assert!(after_call.has_initialized_bytes_at(&source, count * 4));
+        assert_eq!(after_call.cells.runs_in_block(&source.block).count(), 0);
+        let snapshot = intern_c_memory_ref(&after_call);
+        let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
+            after_call
+                .initialize_scalar_array(
+                    &target,
+                    CType::UInt32,
+                    count,
+                    CValue::pointer(source.clone()),
+                    true,
+                )
+                .unwrap()
+        });
+        let run = copied.cells.runs_in_block(&target.block).next().unwrap();
+        assert_eq!(run.source(), &snapshot);
+        assert!(
+            matches!(run.value_mode(), crate::kernel::primitives::RunValueMode::Copy {
+            source_base
+        } if source_base == &source)
+        );
+        assert_eq!(copied.cells.runs_in_block(&target.block).count(), 1);
+        assert_eq!(copied.cells.concrete().len(), 0);
+        for index in [0, count - 1] {
+            let at = pointer("local:array-target", i64::from(index) * 4);
+            let held = copied.load(&at);
+            assert!(matches!(held, CExpressionOutcome::Value(CValue::UInt32(_))));
+            assert_ne!(
+                held,
+                CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(
+                    912_345
+                )),))
+            );
+            let changed = copied.clone().store(
+                pointer("local:array-source", i64::from(index) * 4),
+                CValue::UInt32(99u32.into()),
+            );
+            assert_eq!(changed.load(&at), held);
+        }
+        samples.push((count, work));
+    }
+    assert!(
+        samples.iter().all(|(_, work)| *work <= samples[0].1 + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn scalar_array_copy_after_partial_call_keeps_known_lanes_and_rejects_bad_storage() {
+    let source = pointer("local:array-source", 0);
+    let target = pointer("local:array-target", 0);
+    let range = CMemoryRange::new_with_element_width(source.clone(), 4u32.into(), 12u32.into(), 1);
+    let after_call = seeded(4).with_call_memory_havoc(
+        Variable(912_348),
+        std::slice::from_ref(&range),
+        &PureFactContext::new(),
+        None,
+    );
+    let copied = after_call
+        .clone()
+        .initialize_scalar_array(
+            &target,
+            CType::UInt32,
+            4,
+            CValue::pointer(source.clone()),
+            true,
+        )
+        .unwrap();
+    assert_eq!(
+        copied.load(&target),
+        CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(912_345)),))
+    );
+    assert_ne!(
+        copied.load(&pointer("local:array-target", 4)),
+        copied.load(&target)
+    );
+    for invalid in [
+        fresh(4)
+            .store(source.clone(), CValue::UInt32(7u32.into()))
+            .with_call_memory_havoc(Variable(912_349), &[range], &PureFactContext::new(), None),
+        after_call
+            .clone()
+            .store(source.clone(), CValue::Int32(7u32.into())),
+        after_call.store(pointer("local:array-source", 1), CValue::UInt8(7u32.into())),
+    ] {
+        assert!(
+            invalid
+                .initialize_scalar_array(
+                    &target,
+                    CType::UInt32,
+                    4,
+                    CValue::pointer(source.clone()),
+                    true,
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn compact_scalar_arrays_reject_uninitialized_and_partial_storage() {
     let source = pointer("local:array-source", 0);
     let target = pointer("local:array-target", 0);

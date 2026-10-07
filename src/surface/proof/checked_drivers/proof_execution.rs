@@ -710,6 +710,7 @@ fn deferred_post_execution_region(
                 source_index: *source_index,
                 tactic: PostExecutionTactic::If {
                     condition: condition.clone(),
+                    execution_route: None,
                     then_tactics: deferred_post_execution_region(then_branch)?,
                     else_tactics: deferred_post_execution_region(else_branch)?,
                 },
@@ -755,6 +756,7 @@ fn deferred_post_execution_if_is_explicit_path_cursor(
                     condition,
                     then_tactics,
                     else_tactics,
+                    ..
                 } => {
                     proof_case_is_stable_program_point_condition(condition)
                         && explicit_tree(then_tactics, depth + 1)
@@ -1425,6 +1427,7 @@ fn try_check_structural_function_proof_inner<'a>(
                         *source_index,
                         PostExecutionTactic::If {
                             condition: condition.clone(),
+                            execution_route: None,
                             then_tactics,
                             else_tactics,
                         },
@@ -2614,6 +2617,11 @@ fn advance_focused_execution_arm<'a>(
                     source_have_error(&proof, have, indexed.index, goal.as_ref(), None)
                 })?;
             selected.join()?
+        } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
+            let Some(next) = proof.try_execute_until(region)? else {
+                return decline();
+            };
+            next
         } else if let ProofTactic::Loop(clause) = &indexed.tactic {
             // A frontier-local loop inside a case is one checked operation,
             // exactly as in the linear continuation.
@@ -3320,6 +3328,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         *source_index,
                         PostExecutionTactic::If {
                             condition: condition.clone(),
+                            execution_route: None,
                             then_tactics,
                             else_tactics,
                         },

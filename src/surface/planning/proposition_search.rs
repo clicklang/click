@@ -434,6 +434,23 @@ impl PropositionSearch for PureFactContext {
                 return Some((exact, premises_id, evidence));
             }
         }
+        // A constant-pinned equality needs at most two indexed premises, even
+        // when the same variable occurs in every preceding branch guard.
+        // Recheck that small selection before trying the connected component.
+        if let Some(premises) = self.indexed_constant_equality_premises(proposition)
+            && (!exclude_exact_goal || !premises.contains(proposition))
+        {
+            let candidate = premises
+                .into_iter()
+                .fold(PureFactContext::new(), |context, premise| {
+                    context.assume_proposition(premise)
+                });
+            let (evidence, premises_id) =
+                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            if let Some(evidence) = evidence {
+                return Some((candidate, premises_id, evidence));
+            }
+        }
         if let Proposition::ConditionIs(condition, _) = proposition
             && let Some(selected) = self.widened_unsigned_sum_bound_premises(condition)
         {
@@ -1405,6 +1422,60 @@ fn connected_condition_premises(
 #[cfg(test)]
 mod condition_premise_tests {
     use super::*;
+
+    #[test]
+    fn indexed_constant_selection_checks_only_its_cited_premises() {
+        let equal = |left, right| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                true,
+            )
+        };
+        let constant = Bitvector32Term::Constant(7);
+        let left = equal(term(1), constant.clone());
+        let right = equal(constant, term(2));
+        let goal = equal(term(1), term(2));
+        let mut context = PureFactContext::new()
+            .assume_proposition(left.clone())
+            .assume_proposition(right.clone());
+        for index in 8..136 {
+            context = context.assume_proposition(Proposition::Not(Box::new(equal(
+                term(1),
+                Bitvector32Term::Constant(index),
+            ))));
+        }
+        reset_condition_selection_visits();
+        let proof = context.derive_atomic_proposition(&goal).unwrap();
+        assert!(proof.check(&context));
+        assert_eq!(condition_selection_visits(), 0);
+        assert_eq!(
+            proof
+                .context_premises()
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([left.clone(), right.clone()])
+        );
+        for premise in [left.clone(), right] {
+            assert!(!proof.check(&context.without_exact_fact(&premise)));
+        }
+        assert!(
+            context
+                .derive_atomic_proposition(&equal(term(1), Bitvector32Term::Constant(8)))
+                .is_none()
+        );
+        let exact_constant_only = PureFactContext::new().assume_proposition(left.clone());
+        assert!(
+            exact_constant_only
+                .derive_simp_proposition_without_exact_goal(&left)
+                .is_none()
+        );
+        let exact_only = PureFactContext::new().assume_proposition(goal.clone());
+        assert!(
+            exact_only
+                .derive_simp_proposition_without_exact_goal(&goal)
+                .is_none()
+        );
+    }
 
     fn term(index: u64) -> Bitvector32Term {
         Bitvector32Term::Variable(Variable(index))

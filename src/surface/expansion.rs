@@ -2073,7 +2073,7 @@ fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, C
 }
 
 /// The `tactic name(...) { ... }` declaration of `name`. Only the declaration
-/// has the `tactic` keyword before the name; an application `name(...) { ... }`
+/// has the `tactic` keyword before the name; an application `name(..., { ... })`
 /// inside a proof is never matched.
 fn find_tactic(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
     for (index, token) in tokens.iter().enumerate() {

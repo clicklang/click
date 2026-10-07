@@ -55,7 +55,7 @@ tactic convert(p: struct node*) {
         },
         Links::Cons(rest_model) => {
             let { rest: r } = unfold(x);
-            let { y: r2 } = convert(p->next) { x: r };
+            let { y: r2 } = convert(p->next, { x: r });
             have r2.model == rest_model by { simp(); }
             let y = fold(list2_at(p), { model: Links::Cons(rest_model) }, { rest: r2 });
             have y.model == old(x.model) by { simp(); }
@@ -67,7 +67,7 @@ void user(struct node* p) {
     consumes a: list_at(p);
     produces b: list2_at(p);
 } by {
-    let { y: b } = convert(p) { x: a };
+    let { y: b } = convert(p, { x: a });
     step();
     step();
     simp();
