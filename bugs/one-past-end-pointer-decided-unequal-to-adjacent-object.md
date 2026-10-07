@@ -2,12 +2,12 @@
 
 ## Violated invariant
 
-This may be a deliberate provenance-model decision:
 `docs/concepts/memory-model.md` says two addresses are equal exactly when
-their pointers are equal, and no page states how a one-past-the-end pointer
-compares with another object. If the decision stands, the fix is to document
-the deviation from C11 6.5.9p6 and the executions it excludes; the claim below
-is stated against the C standard.
+their pointers are equal, which reads distinct blocks as never equal. That is
+not what C promises for the one-past-the-end case, and no page states the
+deviation, so this is a defect in the decision rather than a documented model
+choice: the fix is to leave that one configuration undecided, as the
+acceptance criteria say.
 
 C11 6.5.9p6: two pointers compare equal if both are null, both point at the
 same object, or "one is a pointer to one past the end of one array object and

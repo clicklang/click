@@ -23,3 +23,7 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A quantifier binder shadows a same-named C local in the kernel, capturing an unfolded predicate's argument](quantifier-binder-captures-same-named-c-argument.md)
 - [A finite universal with an empty binder range discharges leaves that do not mention the binder](empty-finite-forall-hull-skips-unquantified-leaves.md)
 - [A contract exit returns a folded composite and its body children as separate resources](contract-exit-returns-composite-and-its-children-twice.md)
+- [`requires x != INT_MIN` does not discharge the overflow of `-x`](negation-not-discharged-by-int-min-disequality.md)
+- [`apply` closes `0 <= e` but not the same claim spelled `e >= 0`](apply-does-not-match-flipped-order-spelling.md)
+- [A parent cannot lock its own mutex after joining a typed `mutex_use` worker](mutex-lock-after-joining-typed-worker-refused.md)
+- [An `obtain`ed int32 witness is unbound in a later `have`, `instantiate`, or `contradiction`](obtained-int32-witness-unbound-in-later-tactics.md)
