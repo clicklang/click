@@ -4068,6 +4068,14 @@ pub(super) fn finish_ordered_proof<'a>(
                                     if capturing_this_tactic {
                                         path_deferred_capture_tactics.extend(added.iter().cloned());
                                     }
+                                    // A grouped proof's expansion is written
+                                    // from the path's closers, so what `simp`
+                                    // added to the opened claim belongs there
+                                    // too; otherwise the expanded proof stops
+                                    // at the tactic that opened the claim.
+                                    if proof_context.constants.grouped_contract {
+                                        path_grouped_surface_closers.extend(added.iter().cloned());
+                                    }
                                     closures[claim_index] = ClaimClosure::by_continued_proposition(
                                         claims[claim_index].key(),
                                         path_index,
@@ -5333,11 +5341,32 @@ pub(super) fn finish_ordered_proof<'a>(
         } else {
             for (claim_index, claim) in claims.iter().enumerate() {
                 let mut expanded = retained_surface.clone();
-                if let Err(message) = append_post_and_closers(
-                    &mut expanded.steps,
-                    &surface_post_tactics_by_path,
-                    &surface_closers_by_claim[claim_index],
-                ) {
+                // A proof case split written after execution is rebuilt from
+                // the outcomes' recorded choices, as for a grouped proof.
+                // Without it the arms' tactics are emitted with no `if`
+                // around them, and lose the case fact each arm relies on.
+                let appended = if surface_post_choices_by_path
+                    .iter()
+                    .any(|choices| !choices.is_empty())
+                {
+                    synthesize_post_execution_paths(
+                        &surface_post_tactics_by_path,
+                        &surface_closers_by_claim[claim_index],
+                        &surface_post_choices_by_path,
+                    )
+                    .map(|suffix| {
+                        for step in suffix {
+                            append_surface_step_to_leaves(&mut expanded.steps, step);
+                        }
+                    })
+                } else {
+                    append_post_and_closers(
+                        &mut expanded.steps,
+                        &surface_post_tactics_by_path,
+                        &surface_closers_by_claim[claim_index],
+                    )
+                };
+                if let Err(message) = appended {
                     expanded.block(message);
                 }
                 let verified_claim = claim.verified_claim();

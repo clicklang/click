@@ -100,7 +100,7 @@ pub(in crate::surface) use pure_theorems::PROVED_THEOREMS;
 pub(super) use pure_theorems::{
     assumed_theorem_certification_authorities, is_kernel_standard_theorem_name,
     pure_theorem_array_refs, pure_theorem_parameter_values, verify_concrete_theorem_definition,
-    verify_theorem_definitions,
+    verify_theorem_definition, verify_theorem_definitions,
 };
 #[cfg(test)]
 use pure_theorems::{lower_pure_theorem_proposition, pure_theorem_context};
