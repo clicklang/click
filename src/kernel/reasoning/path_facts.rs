@@ -1567,6 +1567,17 @@ pub(in crate::kernel) fn decide_with_facts(
 #[cfg(test)]
 thread_local! {
     static CONTEXT_REBUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static CONTRACT_PATH_CONTEXT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn record_contract_path_context_entries(entries: usize) {
+    CONTRACT_PATH_CONTEXT_ENTRIES.with(|count| count.set(count.get() + entries));
+}
+
+#[cfg(test)]
+pub(crate) fn contract_path_context_entries() -> usize {
+    CONTRACT_PATH_CONTEXT_ENTRIES.with(std::cell::Cell::get)
 }
 
 /// Counts, in test builds, the entries a fact context built from a list

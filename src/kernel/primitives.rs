@@ -9943,19 +9943,39 @@ impl CCheckedFunctionExecution {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct SymbolicCExecutionPath {
     /// The body outcome checked against a retained Proof trace before the
     /// same producer applies the contract exit rule. Ordinary symbolic paths
     /// have no separate proof-completion origin.
     pub(super) completion_origin: Option<CFunctionOutcome>,
     pub(super) assumptions: PureFactContext,
+    /// The checked body context, retained by the Proof completion producer.
+    /// It is available only after certification has checked the entry under
+    /// `assumptions`. Legacy execution producers use the flat-fact fallback.
+    pub(super) post_assumptions: Option<PureFactContext>,
     pub(super) facts: Vec<ExecutionPureFact>,
     pub(super) effect_facts: Vec<ExecutionPureFact>,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) theorem: Theorem,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
+
+// Retaining a context changes neither a path's evidence nor its identity.
+// Avoid comparing its complete persistent indexes just to compare paths.
+impl PartialEq for SymbolicCExecutionPath {
+    fn eq(&self, other: &Self) -> bool {
+        self.completion_origin == other.completion_origin
+            && self.assumptions == other.assumptions
+            && self.facts == other.facts
+            && self.effect_facts == other.effect_facts
+            && self.obligations == other.obligations
+            && self.theorem == other.theorem
+            && self.loan_evidence == other.loan_evidence
+    }
+}
+
+impl Eq for SymbolicCExecutionPath {}
 
 /// An untrusted collection of checked function outcomes.
 ///
