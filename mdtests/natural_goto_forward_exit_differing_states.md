@@ -1,4 +1,4 @@
-# `loop` proves a natural `goto` cycle with multiple exits
+# Natural forward exit edges preserve differing states
 
 Multiple conditions may leave the cycle at the same final label. The existing
 `loop` proof still supplies the invariant and termination evidence.
@@ -6,14 +6,18 @@ Multiple conditions may leave the cycle at the same final label. The existing
 ```c filename=natural_goto_multiple_exit_labels.c
 int32 count_down_or_stop(int32 n) {
 again:
-    if (n == 0)
+    if (n == 0) {
+        n = 7;
         goto done;
-    if (n == 1)
+    }
+    if (n == 1) {
+        n = 9;
         goto done;
+    }
     n--;
     goto again;
 done:
-    return 0;
+    return n;
 }
 ```
 
@@ -22,7 +26,7 @@ verifying "natural_goto_multiple_exit_labels.c";
 
 int32 count_down_or_stop(int32 n) {
     requires n >= 0;
-    ensures result == 0;
+    ensures result == 7 or result == 9;
 } by {
     loop {
         invariant n >= 0;
@@ -34,5 +38,5 @@ int32 count_down_or_stop(int32 n) {
 ```
 
 ```expect
-pass
+fail: some premises have no exact Click spelling at this frontier
 ```

@@ -1,4 +1,4 @@
-# `loop` proves a natural `goto` cycle with a named exit
+# A natural goto exit cannot hide division by zero
 
 The existing `loop` keyword also covers a cycle with one checked forward exit
 edge. The back edge re-enters `again`; the forward edge resumes at `done`.
@@ -11,7 +11,7 @@ again:
     n--;
     goto again;
 done:
-    return 0;
+    return 7 / n;
 }
 ```
 
@@ -32,5 +32,5 @@ int32 count_down(int32 n) {
 ```
 
 ```expect
-pass
+fail: division by zero
 ```

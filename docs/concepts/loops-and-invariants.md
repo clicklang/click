@@ -417,7 +417,19 @@ postcondition and the resource obligations are checked on it exactly as on a
 (`mdtests/a_return_inside_a_summarized_loop_body_is_a_function_exit.md`), and
 a natural cycle whose only exit is a `return` is certified on that exit rather
 than vacuously
-(`mdtests/a_natural_goto_cycle_return_exit_is_a_function_exit.md`).
+(`mdtests/a_natural_goto_cycle_return_exit_is_a_function_exit.md`). A checked
+forward `goto` out of a natural cycle similarly exports its target and exit
+state. Execution resumes at the label, where returns, postconditions, and
+undefined behavior are checked. Use `execute()` after `loop` to execute the
+code at that label before closing the contract. Several checked edges to the same label retain
+the disjunction of their exit facts rather than discarding an edge
+(`mdtests/natural_goto_forward_exit_state.md` and
+`mdtests/natural_goto_forward_exit_multiple_edges_state.md`). Two
+proof-tooling gaps remain tracked: naming the joined facts when exit edges
+assign different local values
+(`bugs/natural-goto-exit-join-facts-cannot-be-spelled.md`), and expanding a
+whole claim whose natural cycle has both a return and a forward goto exit
+(`bugs/natural-goto-mixed-return-exit-expansion-loses-path-coverage.md`).
 
 ### `do ... while`
 

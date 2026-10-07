@@ -148,6 +148,54 @@ fn borrowed_sources(sources: &[(String, String)]) -> Vec<(&str, &str)> {
         .collect()
 }
 
+#[test]
+fn natural_goto_exits_retain_checked_paths_and_expand() {
+    for (filename, function) in [
+        ("natural_goto_exit_label", "count_down"),
+        ("natural_goto_multiple_exit_labels", "count_down_or_stop"),
+        ("natural_goto_forward_exit_state", "count_down"),
+        (
+            "natural_goto_forward_exit_multiple_edges_state",
+            "count_down_or_stop",
+        ),
+    ] {
+        let (click, sources) = loop_fixture(filename);
+        let sources = borrowed_sources(&sources);
+        with_proof_trace(function, || {
+            verify_c0_sources(&click, &sources).unwrap();
+            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+                .expect("the natural exit must retain an accepted execution path");
+            assert!(
+                !trace.contains("<no checked simple steps"),
+                "{filename}: {trace}"
+            );
+        });
+        let expanded =
+            expand_c0_claim_source(&click, &sources, function, CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+    }
+}
+
+#[test]
+fn natural_goto_mixed_return_retains_paths_and_reports_expansion_gap() {
+    let (click, sources) = loop_fixture("natural_goto_forward_exit_and_return");
+    let sources = borrowed_sources(&sources);
+    with_proof_trace("count_down_or_stop", || {
+        verify_c0_sources(&click, &sources).unwrap();
+        let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+            .expect("both exits must retain accepted execution paths");
+        assert!(!trace.contains("<no checked simple steps"), "{trace}");
+    });
+    let error =
+        expand_c0_claim_source(&click, &sources, "count_down_or_stop", CProofClaim::Grouped)
+            .expect_err("tracked mixed-exit expansion gap must report its coverage refusal");
+    assert!(
+        error
+            .message()
+            .contains("surface/certificate path coverage diverged")
+    );
+}
+
 /// The lexicographic pivot is an arm choice, not a kernel search. Only the
 /// second component decreases on the `j > 0` path and only the first on the
 /// other, so the expansion proves the arm that holds in a `have`, closes the

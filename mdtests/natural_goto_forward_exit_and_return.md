@@ -1,7 +1,7 @@
-# `loop` proves a natural `goto` cycle with multiple exits
+# A natural cycle retains both returning and forward goto exits
 
-Multiple conditions may leave the cycle at the same final label. The existing
-`loop` proof still supplies the invariant and termination evidence.
+One checked path returns inside the cycle; another resumes at the forward
+label. Both must reach function-exit certification.
 
 ```c filename=natural_goto_multiple_exit_labels.c
 int32 count_down_or_stop(int32 n) {
@@ -9,11 +9,11 @@ again:
     if (n == 0)
         goto done;
     if (n == 1)
-        goto done;
+        return 7;
     n--;
     goto again;
 done:
-    return 0;
+    return n;
 }
 ```
 
@@ -22,7 +22,7 @@ verifying "natural_goto_multiple_exit_labels.c";
 
 int32 count_down_or_stop(int32 n) {
     requires n >= 0;
-    ensures result == 0;
+    ensures result == 0 or result == 7;
 } by {
     loop {
         invariant n >= 0;

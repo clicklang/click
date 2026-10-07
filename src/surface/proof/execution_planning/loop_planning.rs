@@ -1498,6 +1498,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 (*checked_execution.core.state).clone(),
                 checked.facts().to_vec(),
             )
+            .with_jump_target(match context_frontier.loop_control {
+                crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
+                _ => unreachable!("the checked frontier is a natural exit jump"),
+            })
             .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_final_exits.is_new(
                 exit.state(),

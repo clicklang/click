@@ -13,7 +13,7 @@ again:
     n--;
     goto again;
 done:
-    return 0;
+    return n;
 }
 ```
 
@@ -34,5 +34,5 @@ int32 count_down_or_stop(int32 n) {
 ```
 
 ```expect
-pass
+fail: unclosed goal: result == 0
 ```
