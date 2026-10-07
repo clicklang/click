@@ -201,12 +201,9 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             )
             .map_err(|_| {
                 // The clause was read in this arm's own state above, so what
-                // fails here is reading it in the state the arms join in. A
-                // known cause is an argument that reads memory through a
-                // pointer bound from a model rather than through a C
-                // variable (`mdtests/an_interface_resource_argument_must_read_in_the_joined_state.md`).
+                // fails here is reading it in the state the arms join in.
                 ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: the `ensuring` interface names `{}`, which each arm holds, but its arguments cannot be read in the state the arms join in. A known cause is an argument that reads memory through a pointer bound from a model, such as a `match` binder, instead of through a C variable. Name the pointer by the C expression that holds it, or fold the resource that owns it inside each arm and name that owner in `ensuring` instead",
+                    "`{claim_label}` tactic {tactic_index}: the `ensuring` interface names `{}`, which each arm holds, but its arguments cannot be read in the state the arms join in. Fold the resource that owns the memory they read inside each arm and name that owner in `ensuring` instead",
                     crate::surface::validation::describe_resource_clause(resource),
                 ))
             })?;
