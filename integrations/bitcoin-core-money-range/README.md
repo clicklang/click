@@ -598,8 +598,8 @@ views are rejected, as are illegal C++ client access, unions, mixed-access
 non-standard layouts, inheritance and bit-fields.
 
 The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
-its nested `FeePerVSize` field in `policy/feerate.h` remains outside the scalar
-record-field profile. Header-declared records are now supported through the
+its nested `FeePerVSize` field now reaches the unsupported class template
+instance in `util/feefrac.h`. Header-declared records are now supported through the
 explicitly locked dependency mechanism described below. The exporter reports
 the actual header location and writes no partial artifact. Nested record places
 and inherited base-subobject authority are the next prerequisites; `GetFee`
@@ -628,4 +628,52 @@ Regressions reject missing header dependencies, changed locked header bytes,
 forged or mismatched record/field source spans, and executable spans relabeled
 as header declarations. Semantic validation is checked even when artifact
 file digests are recomputed. Deterministic inventory regressions cover both
-selected-source and header origins without expanding work limits.
+selected-source and header origins with work linear in declarations and fields.
+
+
+## Embedded record declarations and contract fields
+
+The [`nested-record` fixture](../../tests/fixtures/cpp-verification/nested-record/nested_record.cpp)
+retains a private embedded record with two fields of the same child record type.
+Exact declaration identities, offsets, widths and alignment remain structural;
+only the physical copy layout uses C's existing qualified leaf representation.
+Nested contract views and ownership use the same C field metadata and memory
+model. Const scalar reads and outer scalar updates verify offline, expand and
+reverify, and preserve nested field frames under retained verification.
+
+The artifact validator resolves all child declarations before checking extents,
+rejects by-value cycles, and checks transitive record reachability. Shared
+layouts are visited once by the declaration walk. Materializing physical leaf
+layouts is separately bounded to 65,536 leaves across the import. Regressions
+reject forged child identities, names, constness, widths, offsets, alignment,
+missing declarations, cycles, false sibling frames, missing authority,
+read-only writes and excessive shared-layout expansion.
+
+Declaration and contract metadata now also support nested C++ source field
+reads, writes and signed compound updates. Projected method receivers,
+inherited base subobjects, automatic
+objects with embedded fields and nontrivial embedded destruction remain explicit
+boundaries. `CFeeRate::GetFee` is still a refusal regression at its actual
+`FeePerVSize` template instance; no Bitcoin source is changed.
+
+
+## Nested source field accesses
+
+The nested-record fixture also reads a signed-64 leaf through a const receiver,
+updates a separate child object's signed-64 field through explicit `this`, and
+performs a bounded signed-32 compound update. A const reference-parameter reader
+uses the same representation. Each access retains its root declaration and an
+ordered path of owner/field identities and selected-source use spans. A shared
+indexed resolver validates those identities and lowers the exact accumulated
+byte offset. The root's constness applies to writes through the complete path.
+Reading a pointer field through a const object does not make the pointee const;
+its separate views/ownership still control reads and writes through that pointer.
+
+Offline ordinary, expanded and retained proofs check leaf authority and sibling
+frames. Regressions reject missing or sibling authority, writes through views,
+false frames and unproved signed overflow. Recomputed-digest artifacts cannot
+launder invalid owners, field IDs/names, path order/depth, declaration-source
+spans, read-only roots or projections attached to unsupported plain places.
+Deterministic checks bound work by path length independently of sibling count.
+`CFeeRate::GetFee` still stops at the class template instance; projected method
+receivers and inherited base identity remain next.

@@ -3740,6 +3740,27 @@ impl C0StructLayout {
         size_bytes: u32,
         alignment_bytes: u32,
     ) -> Result<Self, String> {
+        Self::from_explicit_fields_with_structs(
+            fields
+                .into_iter()
+                .map(|(name, kind, offset, width)| (name, kind, None, offset, width))
+                .collect(),
+            size_bytes,
+            alignment_bytes,
+            &BTreeMap::new(),
+        )
+    }
+
+    /// Imported embedded declarations use the same nominal field metadata and
+    /// physical leaf layout as C structs. Bound materialized leaves before copying
+    /// any nested layout, including a shared declaration used more than once.
+    pub(crate) fn from_explicit_fields_with_structs(
+        fields: Vec<(String, C0Type, Option<String>, u32, u32)>,
+        size_bytes: u32,
+        alignment_bytes: u32,
+        structs: &BTreeMap<String, Self>,
+    ) -> Result<Self, String> {
+        const MAX_EXPLICIT_LAYOUT_LEAVES: usize = 65_536;
         if fields.is_empty()
             || size_bytes == 0
             || alignment_bytes == 0
@@ -3751,8 +3772,25 @@ impl C0StructLayout {
         let mut named_fields = BTreeMap::new();
         let mut aggregate_fields = Vec::with_capacity(fields.len());
         let mut previous_end = 0u32;
-        for (name, c_type, offset_bytes, byte_width) in fields {
-            let (expected_width, expected_alignment) = match c_type {
+        for (name, c_type, struct_name, offset_bytes, byte_width) in fields {
+            let nested = struct_name
+                .as_ref()
+                .map(|name| {
+                    structs
+                        .get(name)
+                        .ok_or_else(|| format!("unknown explicit embedded struct `{name}`"))
+                })
+                .transpose()?;
+            let (expected_width, expected_alignment) =
+                if let Some(layout) = nested {
+                    if c_type != C0Type::Int32 || !layout.aggregate_unions.is_empty() {
+                        return Err(format!(
+                            "explicit embedded struct field `{name}` has unsupported storage"
+                        ));
+                    }
+                    (layout.size_bytes, layout.alignment_bytes)
+                } else {
+                    match c_type {
                 C0Type::Int32Array(length) | C0Type::UInt32Array(length) => (
                     length
                         .checked_mul(4)
@@ -3776,7 +3814,8 @@ impl C0StructLayout {
                         "explicit struct field `{name}` has unsupported type"
                     ));
                 }
-            };
+            }
+                };
             let end = offset_bytes
                 .checked_add(byte_width)
                 .ok_or_else(|| format!("explicit struct field `{name}` layout overflows"))?;
@@ -3796,7 +3835,7 @@ impl C0StructLayout {
                         c_type,
                         long_double: false,
                         pointee_constant: false,
-                        struct_name: None,
+                        struct_name,
                         enum_name: None,
                         union_name: None,
                         function_pointer_signature: None,
@@ -3819,12 +3858,32 @@ impl C0StructLayout {
             {
                 return Err(format!("duplicate explicit struct field `{name}`"));
             }
-            aggregate_fields.push(C0AggregateField {
-                pointee_constant: false,
-                name,
-                offset_bytes,
-                c_type,
-            });
+            let added = nested.map_or(1, |layout| layout.aggregate_fields.len());
+            if aggregate_fields.len().saturating_add(added) > MAX_EXPLICIT_LAYOUT_LEAVES {
+                return Err(
+                    "explicit struct layout exceeds the materialized leaf budget (65536)".into(),
+                );
+            }
+            if let Some(layout) = nested {
+                for field in &layout.aggregate_fields {
+                    crate::instrumentation::record_deterministic_work(1);
+                    aggregate_fields.push(C0AggregateField {
+                        pointee_constant: field.pointee_constant,
+                        name: format!("{name}.{}", field.name),
+                        offset_bytes: offset_bytes
+                            .checked_add(field.offset_bytes)
+                            .ok_or("explicit embedded field offset overflows")?,
+                        c_type: field.c_type,
+                    });
+                }
+            } else {
+                aggregate_fields.push(C0AggregateField {
+                    pointee_constant: false,
+                    name,
+                    offset_bytes,
+                    c_type,
+                });
+            }
             previous_end = previous_end.max(end);
         }
         Ok(Self {
@@ -21076,6 +21135,46 @@ fn is_ident_continue(ch: char) -> bool {
 #[cfg(test)]
 mod scope_metadata_tests {
     use super::*;
+
+    #[test]
+    fn explicit_embedded_layout_work_tracks_materialized_leaves() {
+        for size in [8u32, 32, 128, 256] {
+            let (layouts, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut layouts = BTreeMap::new();
+                for index in 0..size {
+                    let mut fields = vec![("stamp".into(), C0Type::Int32, None, index * 4, 4)];
+                    if index != 0 {
+                        fields.insert(
+                            0,
+                            (
+                                "state".into(),
+                                C0Type::Int32,
+                                Some(format!("R{}", index - 1)),
+                                0,
+                                index * 4,
+                            ),
+                        );
+                    }
+                    let layout = C0StructLayout::from_explicit_fields_with_structs(
+                        fields,
+                        (index + 1) * 4,
+                        4,
+                        &layouts,
+                    )
+                    .unwrap();
+                    assert_eq!(layout.aggregate_fields.len(), index as usize + 1);
+                    assert_eq!(
+                        layout.aggregate_fields.last().unwrap().offset_bytes,
+                        index * 4
+                    );
+                    layouts.insert(format!("R{index}"), layout);
+                }
+                layouts
+            });
+            assert_eq!(layouts.len(), size as usize);
+            assert_eq!(work, (size * (size - 1) / 2) as usize);
+        }
+    }
 
     #[test]
     fn explicit_halfword_fields_check_width_alignment_and_separation() {

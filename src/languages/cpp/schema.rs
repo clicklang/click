@@ -501,6 +501,9 @@ pub enum CppExpression {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CppPlaceReference {
+    /// Embedded fields from the root place to the object of a member access.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projections: Vec<CppFieldReference>,
     pub declaration_id: String,
     pub name: String,
     pub span: CppSpan,
@@ -919,11 +922,96 @@ impl CppExport {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct RecordIndex<'a> {
+    declarations: BTreeMap<String, &'a CppRecord>,
+    fields: BTreeMap<(&'a str, &'a str), &'a CppField>,
+}
+
+impl<'a> RecordIndex<'a> {
+    pub(super) fn new(declarations: BTreeMap<String, &'a CppRecord>) -> Self {
+        let mut fields = BTreeMap::new();
+        for record in declarations.values() {
+            for field in &record.fields {
+                crate::instrumentation::record_deterministic_work(1);
+                fields.insert(
+                    (
+                        record.declaration_id.as_str(),
+                        field.declaration_id.as_str(),
+                    ),
+                    field,
+                );
+            }
+        }
+        Self {
+            declarations,
+            fields,
+        }
+    }
+
+    pub(super) fn resolve_path<'b, 's>(
+        &'s self,
+        root_type: &'s CppType,
+        path: impl IntoIterator<Item = &'b CppFieldReference>,
+    ) -> Result<(&'s CppType, u32), String> {
+        let mut value_type = match root_type {
+            CppType::LvalueReference { pointee } => pointee.as_ref(),
+            value => value,
+        };
+        let mut offset = 0u32;
+        for reference in path {
+            crate::instrumentation::record_deterministic_work(1);
+            let CppType::Record {
+                declaration_id,
+                name,
+                ..
+            } = value_type
+            else {
+                return Err("C++ field projection requires a record object".into());
+            };
+            validate_record_reference(self, declaration_id, name)?;
+            if reference.record_declaration_id != *declaration_id {
+                return Err(format!(
+                    "C++ field `{}` belongs to the wrong record declaration",
+                    reference.name
+                ));
+            }
+            let field = self
+                .fields
+                .get(&(declaration_id.as_str(), reference.declaration_id.as_str()))
+                .ok_or_else(|| {
+                    format!(
+                        "C++ member access refers to unknown field declaration `{}`",
+                        reference.declaration_id
+                    )
+                })?;
+            if field.name != reference.name {
+                return Err(format!(
+                    "C++ field declaration `{}` is named `{}`, not `{}`",
+                    reference.declaration_id, field.name, reference.name
+                ));
+            }
+            offset = offset
+                .checked_add(field.offset_bytes)
+                .ok_or("C++ field projection offset overflows")?;
+            value_type = &field.value_type;
+        }
+        Ok((value_type, offset))
+    }
+}
+
+impl<'a> std::ops::Deref for RecordIndex<'a> {
+    type Target = BTreeMap<String, &'a CppRecord>;
+    fn deref(&self) -> &Self::Target {
+        &self.declarations
+    }
+}
+
 fn validate_record_inventory<'a>(
     inventory: &'a [CppRecord],
     logical_source: &str,
     declaration_sources: &BTreeSet<String>,
-) -> Result<BTreeMap<String, &'a CppRecord>, String> {
+) -> Result<RecordIndex<'a>, String> {
     let mut records = BTreeMap::new();
     let mut record_names = BTreeSet::new();
     let mut field_identities = BTreeSet::new();
@@ -932,7 +1020,6 @@ fn validate_record_inventory<'a>(
         if !record_names.insert(record.name.as_str()) {
             return Err("C++ record profile does not support same-named record layouts".into());
         }
-        record.validate(logical_source, declaration_sources)?;
         for field in &record.fields {
             crate::instrumentation::record_deterministic_work(1);
             if !field_identities.insert(field.declaration_id.as_str()) {
@@ -953,14 +1040,71 @@ fn validate_record_inventory<'a>(
             ));
         }
     }
+    let records = RecordIndex::new(records);
+    for record in inventory {
+        record.validate(logical_source, declaration_sources, &records)?;
+    }
+    record_layout_order(&records)?;
     Ok(records)
+}
+
+// Resolve embedded declarations once, without recursively expanding shared layouts.
+// The returned order places every child before its owners.
+pub(super) fn record_layout_order<'a>(
+    records: &BTreeMap<String, &'a CppRecord>,
+) -> Result<Vec<&'a CppRecord>, String> {
+    let mut remaining = BTreeMap::new();
+    let mut owners: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut ready = Vec::new();
+    for (id, record) in records {
+        crate::instrumentation::record_deterministic_work(1);
+        let mut count = 0;
+        for field in &record.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            if let CppType::Record {
+                declaration_id,
+                name,
+                is_const,
+            } = &field.value_type
+            {
+                let child = validate_record_reference(records, declaration_id, name)?;
+                if *is_const || child.destructor.is_some() {
+                    return Err("embedded C++ record fields require mutable, trivially destructible records".into());
+                }
+                count += 1;
+                owners.entry(declaration_id).or_default().push(id);
+            }
+        }
+        remaining.insert(id.as_str(), count);
+        if count == 0 {
+            ready.push(id.as_str());
+        }
+    }
+    let mut ordered = Vec::with_capacity(records.len());
+    while let Some(id) = ready.pop() {
+        ordered.push(records[id]);
+        if let Some(parents) = owners.get(id) {
+            for parent in parents {
+                crate::instrumentation::record_deterministic_work(1);
+                let count = remaining.get_mut(parent).expect("indexed record owner");
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(parent);
+                }
+            }
+        }
+    }
+    if ordered.len() != records.len() {
+        return Err("C++ embedded record declarations contain a by-value cycle".into());
+    }
+    Ok(ordered)
 }
 
 // Every layout must belong to a typed declaration in the selected graph.
 // This structural check is separate from the supported field-type policy.
 fn validate_reachable_records(
     functions: &BTreeMap<String, &CppFunction>,
-    records: &BTreeMap<String, &CppRecord>,
+    records: &RecordIndex<'_>,
 ) -> Result<(), String> {
     let mut referenced = BTreeSet::new();
     fn reference<'a>(value_type: &'a CppType, referenced: &mut BTreeSet<&'a str>) {
@@ -1024,6 +1168,20 @@ fn validate_reachable_records(
             }
         }
     }
+    let mut pending: Vec<_> = referenced.iter().copied().collect();
+    while let Some(id) = pending.pop() {
+        let record = records
+            .get(id)
+            .ok_or_else(|| format!("unknown C++ record declaration `{id}`"))?;
+        for field in &record.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            if let CppType::Record { declaration_id, .. } = &field.value_type
+                && referenced.insert(declaration_id.as_str())
+            {
+                pending.push(declaration_id.as_str());
+            }
+        }
+    }
     if referenced != records.keys().map(String::as_str).collect() {
         return Err("C++ export contains a record outside the selected function graph".into());
     }
@@ -1031,7 +1189,25 @@ fn validate_reachable_records(
 }
 
 impl CppRecord {
-    fn validate(&self, logical_source: &str, sources: &BTreeSet<String>) -> Result<(), String> {
+    fn require_flat_local_layout(&self) -> Result<(), String> {
+        if self
+            .fields
+            .iter()
+            .any(|field| matches!(field.value_type, CppType::Record { .. }))
+        {
+            return Err(
+                "automatic C++ objects with embedded record fields remain unsupported".into(),
+            );
+        }
+        Ok(())
+    }
+
+    fn validate(
+        &self,
+        logical_source: &str,
+        sources: &BTreeSet<String>,
+        records: &RecordIndex<'_>,
+    ) -> Result<(), String> {
         if self.declaration_id.is_empty() || self.name.is_empty() {
             return Err("C++ record is missing declaration identity".into());
         }
@@ -1087,9 +1263,17 @@ impl CppRecord {
                     require_int32(pointee, false, "record pointer field")?;
                     (8, 8)
                 }
+                CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } => {
+                    let child = validate_record_reference(records, declaration_id, name)?;
+                    (child.size_bytes, child.alignment_bytes)
+                }
                 _ => {
                     return Err(format!(
-                        "C++ record field `{}.{}` is outside the `int`/`int*` slice",
+                        "C++ record field `{}.{}` is outside the scalar/pointer/embedded-record slice",
                         self.name, field.name
                     ));
                 }
@@ -1099,6 +1283,8 @@ impl CppRecord {
                 .checked_add(field.size_bytes)
                 .ok_or_else(|| format!("C++ record `{}` field layout overflows", self.name))?;
             if field.size_bytes != size
+                || alignment == 0
+                || self.alignment_bytes < alignment
                 || field.offset_bytes % alignment != 0
                 || field.offset_bytes < previous_end
                 || end > self.size_bytes
@@ -1119,7 +1305,7 @@ impl CppFunction {
         &self,
         logical_source: &str,
         alias_sources: &BTreeSet<String>,
-        records: &BTreeMap<String, &CppRecord>,
+        records: &RecordIndex<'_>,
         exceptions_enabled: bool,
         exception_behavior: CppExceptionBehavior,
     ) -> Result<(), String> {
@@ -1421,6 +1607,7 @@ impl CppFunction {
                             ));
                         }
                         let record = validate_record_reference(records, declaration_id, name)?;
+                        record.require_flat_local_layout()?;
                         aggregate_locals += 1;
                         if record.destructor.is_some() {
                             if !matches!(initializer, CppInitializer::Constructor { .. }) {
@@ -1808,7 +1995,7 @@ impl CppStatement {
     fn validate(
         &self,
         places: &ValidationPlaces<'_>,
-        records: &BTreeMap<String, &CppRecord>,
+        records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
@@ -1863,7 +2050,7 @@ impl CppStatement {
                 span,
             } => {
                 span.validate(logical_source)?;
-                let object_type = validate_place_reference(object, places, logical_source)?;
+                let object_type = validate_root_reference(object, places, logical_source)?;
                 if matches!(object_type, CppType::Record { is_const: true, .. })
                     || matches!(object_type, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }))
                 {
@@ -1978,7 +2165,7 @@ impl CppCleanup {
     fn validate(
         &self,
         places: &ValidationPlaces<'_>,
-        records: &BTreeMap<String, &CppRecord>,
+        records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
@@ -2023,7 +2210,7 @@ impl CppInitializer {
         &self,
         local_type: &CppType,
         places: &ValidationPlaces<'_>,
-        records: &BTreeMap<String, &CppRecord>,
+        records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
         match (self, local_type) {
@@ -2119,7 +2306,7 @@ fn validate_call(
     arguments: &[CppCallArgument],
     span: &CppSpan,
     places: &ValidationPlaces<'_>,
-    records: &BTreeMap<String, &CppRecord>,
+    records: &RecordIndex<'_>,
     logical_source: &str,
 ) -> Result<(), String> {
     let nested_calls = arguments
@@ -2245,7 +2432,7 @@ impl CppCallArgument {
     fn validate(
         &self,
         places: &ValidationPlaces<'_>,
-        records: &BTreeMap<String, &CppRecord>,
+        records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
@@ -2347,7 +2534,7 @@ impl CppExpression {
     fn validate(
         &self,
         places: &ValidationPlaces<'_>,
-        records: &BTreeMap<String, &CppRecord>,
+        records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
         self.value_type().validate_aliases(logical_source)?;
@@ -2650,7 +2837,7 @@ fn validate_nested_scope(
     cleanups: &[CppCleanup],
     span: &CppSpan,
     outer_places: &ValidationPlaces<'_>,
-    records: &BTreeMap<String, &CppRecord>,
+    records: &RecordIndex<'_>,
     logical_source: &str,
     function_name: &str,
 ) -> Result<(), String> {
@@ -2678,6 +2865,7 @@ fn validate_nested_scope(
                 return Err("the nested-scope slice requires destructible record objects".into());
             };
             let record = validate_record_reference(records, declaration_id, name)?;
+            record.require_flat_local_layout()?;
             if record.destructor.is_none()
                 || !matches!(initializer, CppInitializer::Constructor { .. })
             {
@@ -3620,6 +3808,17 @@ fn validate_place_reference<'a>(
     places: &'a ValidationPlaces<'_>,
     logical_source: &str,
 ) -> Result<&'a CppType, String> {
+    if !reference.projections.is_empty() {
+        return Err("projected C++ places are supported only as member-access objects".into());
+    }
+    validate_root_reference(reference, places, logical_source)
+}
+
+fn validate_root_reference<'a>(
+    reference: &CppPlaceReference,
+    places: &'a ValidationPlaces<'_>,
+    logical_source: &str,
+) -> Result<&'a CppType, String> {
     reference.span.validate(logical_source)?;
     let Some((name, value_type)) = places.get(&reference.declaration_id) else {
         return Err(format!(
@@ -3657,7 +3856,7 @@ fn validate_member_reference<'a>(
     object: &CppPlaceReference,
     field: &CppFieldReference,
     places: &'a ValidationPlaces<'_>,
-    records: &'a BTreeMap<String, &CppRecord>,
+    records: &'a RecordIndex<'a>,
     logical_source: &str,
 ) -> Result<&'a CppType, String> {
     field.span.validate(logical_source)?;
@@ -3667,44 +3866,20 @@ fn validate_member_reference<'a>(
     {
         return Err("C++ member reference is missing declaration identity".into());
     }
-    let object_type = validate_place_reference(object, places, logical_source)?;
-    let record_type = match object_type {
-        CppType::LvalueReference { pointee } => pointee.as_ref(),
-        CppType::Record { .. } => object_type,
-        _ => return Err("C++ member access requires a supported record object".into()),
-    };
-    let CppType::Record {
-        declaration_id,
-        name,
-        ..
-    } = record_type
-    else {
-        return Err("C++ member access requires a supported record object".into());
-    };
-    if declaration_id != &field.record_declaration_id {
-        return Err(format!(
-            "C++ field `{}` belongs to the wrong record declaration",
-            field.name
-        ));
+    let object_type = validate_root_reference(object, places, logical_source)?;
+    super::budget::limit(
+        "record field projections",
+        object.projections.len(),
+        super::budget::MAX_RECORDS,
+    )?;
+    for projection in &object.projections {
+        projection.span.validate(logical_source)?;
     }
-    let record = validate_record_reference(records, declaration_id, name)?;
-    let resolved = record
-        .fields
-        .iter()
-        .find(|candidate| candidate.declaration_id == field.declaration_id)
-        .ok_or_else(|| {
-            format!(
-                "C++ member access refers to unknown field declaration `{}`",
-                field.declaration_id
-            )
-        })?;
-    if resolved.name != field.name {
-        return Err(format!(
-            "C++ field declaration `{}` is named `{}`, not `{}`",
-            field.declaration_id, resolved.name, field.name
-        ));
-    }
-    Ok(&resolved.value_type)
+    let (value_type, _) = records.resolve_path(
+        object_type,
+        object.projections.iter().chain(std::iter::once(field)),
+    )?;
+    Ok(value_type)
 }
 
 fn require_int32(value: &CppType, allow_const: bool, label: &str) -> Result<(), String> {
@@ -3868,6 +4043,7 @@ mod tests {
         };
         let load = |id: &str| CppExpression::Load {
             place: CppPlaceReference {
+                projections: Vec::new(),
                 declaration_id: id.into(),
                 name: id.into(),
                 span: cleanup_span(),
@@ -3888,8 +4064,9 @@ mod tests {
             },
             span: cleanup_span(),
         };
-        let validate =
-            |statement: &CppStatement| statement.validate(&places, &BTreeMap::new(), "fixture.cpp");
+        let validate = |statement: &CppStatement| {
+            statement.validate(&places, &RecordIndex::default(), "fixture.cpp")
+        };
         validate(&assume(load("n"))).unwrap();
         assert!(
             validate(&assume(load("r")))
@@ -3968,7 +4145,7 @@ mod tests {
             function.validate(
                 "fixture.cpp",
                 &sources,
-                &BTreeMap::new(),
+                &RecordIndex::default(),
                 false,
                 CppExceptionBehavior::NormalOnly,
             )
@@ -4050,6 +4227,7 @@ mod tests {
             assert!(!outer.contains_name("local-0"));
             let sibling = outer.child();
             let reference = CppPlaceReference {
+                projections: Vec::new(),
                 declaration_id: "local-0".into(),
                 name: "local-0".into(),
                 span: cleanup_span(),
@@ -4060,6 +4238,7 @@ mod tests {
                     .contains("unknown declaration")
             );
             let forged_name = CppPlaceReference {
+                projections: Vec::new(),
                 declaration_id: "outer-0".into(),
                 name: "forged".into(),
                 span: cleanup_span(),
@@ -4115,7 +4294,7 @@ mod tests {
             function.validate(
                 "fixture.cpp",
                 &BTreeSet::from(["fixture.cpp".into()]),
-                &BTreeMap::new(),
+                &RecordIndex::default(),
                 false,
                 CppExceptionBehavior::NormalOnly,
             )
@@ -4169,6 +4348,7 @@ mod tests {
         ]);
         let load = |id: &str| CppExpression::Load {
             place: CppPlaceReference {
+                projections: Vec::new(),
                 declaration_id: id.into(),
                 name: id.into(),
                 span: cleanup_span(),
@@ -4212,7 +4392,7 @@ mod tests {
             value: load("scalar"),
         });
         assert!(
-            call.validate(&places, &BTreeMap::new(), "fixture.cpp")
+            call.validate(&places, &RecordIndex::default(), "fixture.cpp")
                 .is_ok()
         );
         let CppStatement::ReturnCall { arguments, .. } = &mut call else {
@@ -4222,7 +4402,7 @@ mod tests {
             value: load("borrow"),
         };
         assert!(
-            call.validate(&places, &BTreeMap::new(), "fixture.cpp")
+            call.validate(&places, &RecordIndex::default(), "fixture.cpp")
                 .unwrap_err()
                 .contains("evaluation order")
         );
@@ -4246,7 +4426,7 @@ mod tests {
                 span: cleanup_span(),
             }],
         };
-        let records = BTreeMap::from([("record".into(), &record)]);
+        let records = RecordIndex::new(BTreeMap::from([("record".into(), &record)]));
         let places = validation_places([
             (
                 "box".into(),
@@ -4272,6 +4452,7 @@ mod tests {
             ),
         ]);
         let reference = |id: &str| CppPlaceReference {
+            projections: Vec::new(),
             declaration_id: id.into(),
             name: id.into(),
             span: cleanup_span(),
@@ -4359,8 +4540,12 @@ mod tests {
         };
         arguments.push(nested.clone());
         assert!(
-            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
-                .is_ok()
+            call.validate(
+                &ValidationPlaces::new(),
+                &RecordIndex::default(),
+                "fixture.cpp"
+            )
+            .is_ok()
         );
         let mut invalid = call.clone();
         let CppStatement::ReturnCall { arguments, .. } = &mut invalid else {
@@ -4369,7 +4554,11 @@ mod tests {
         arguments.push(nested.clone());
         assert!(
             invalid
-                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(
+                    &ValidationPlaces::new(),
+                    &RecordIndex::default(),
+                    "fixture.cpp"
+                )
                 .unwrap_err()
                 .contains("evaluation order")
         );
@@ -4380,7 +4569,11 @@ mod tests {
         *value_type = CppType::Void;
         assert!(
             invalid
-                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(
+                    &ValidationPlaces::new(),
+                    &RecordIndex::default(),
+                    "fixture.cpp"
+                )
                 .is_err()
         );
         let function = |name: &str, body, parameters| CppFunction {
@@ -4518,7 +4711,7 @@ mod tests {
                         is_const: false
                     },
                     &ValidationPlaces::new(),
-                    &BTreeMap::new(),
+                    &RecordIndex::default(),
                     "fixture.cpp"
                 )
                 .unwrap_err()
@@ -4530,8 +4723,12 @@ mod tests {
     fn return_call_artifacts_require_scalar_types_and_matching_returns() {
         let mut call = return_call();
         assert!(
-            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
-                .is_ok()
+            call.validate(
+                &ValidationPlaces::new(),
+                &RecordIndex::default(),
+                "fixture.cpp"
+            )
+            .is_ok()
         );
         assert!(call.always_returns());
         assert!(validate_return_types(&[call.clone()], &signed_integer(64, false)).is_err());
@@ -4546,8 +4743,12 @@ mod tests {
         cleanups.clear();
         *value_type = CppType::Void;
         assert!(
-            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
-                .is_err()
+            call.validate(
+                &ValidationPlaces::new(),
+                &RecordIndex::default(),
+                "fixture.cpp"
+            )
+            .is_err()
         );
     }
 
@@ -4659,7 +4860,7 @@ mod tests {
                 span: cleanup_span(),
             }],
         };
-        let records = BTreeMap::from([("record".into(), &record)]);
+        let records = RecordIndex::new(BTreeMap::from([("record".into(), &record)]));
         let mut receiver = CppPlace {
             declaration_id: "self".into(),
             name: "self".into(),
@@ -4679,6 +4880,7 @@ mod tests {
             span: cleanup_span(),
         };
         let object = CppPlaceReference {
+            projections: Vec::new(),
             declaration_id: "self".into(),
             name: "self".into(),
             span: cleanup_span(),
@@ -4755,6 +4957,7 @@ mod tests {
         let actual = function.parameters.clone();
         let arguments = vec![CppCallArgument::Reference {
             place: CppPlaceReference {
+                projections: Vec::new(),
                 declaration_id: "self".into(),
                 name: "self".into(),
                 span: cleanup_span(),
@@ -4808,7 +5011,11 @@ mod tests {
             };
             assert_eq!(
                 constant
-                    .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                    .validate(
+                        &ValidationPlaces::new(),
+                        &RecordIndex::default(),
+                        "fixture.cpp"
+                    )
                     .is_ok(),
                 valid
             );
@@ -4840,7 +5047,7 @@ mod tests {
             function.validate(
                 "fixture.cpp",
                 &sources,
-                &BTreeMap::new(),
+                &RecordIndex::default(),
                 false,
                 CppExceptionBehavior::NormalOnly,
             )
@@ -4910,7 +5117,11 @@ mod tests {
                 };
                 assert_eq!(
                     expression
-                        .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                        .validate(
+                            &ValidationPlaces::new(),
+                            &RecordIndex::default(),
+                            "fixture.cpp"
+                        )
                         .is_ok(),
                     matches!(
                         operator,
@@ -4965,7 +5176,11 @@ mod tests {
                     };
                     assert!(
                         expression
-                            .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                            .validate(
+                                &ValidationPlaces::new(),
+                                &RecordIndex::default(),
+                                "fixture.cpp"
+                            )
                             .unwrap_err()
                             .contains("matching widths and signedness")
                     );
@@ -4984,7 +5199,11 @@ mod tests {
                 };
                 assert!(
                     expression
-                        .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                        .validate(
+                            &ValidationPlaces::new(),
+                            &RecordIndex::default(),
+                            "fixture.cpp"
+                        )
                         .is_err()
                 );
             }
@@ -5025,7 +5244,11 @@ mod tests {
                     };
                     assert!(
                         expression
-                            .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                            .validate(
+                                &ValidationPlaces::new(),
+                                &RecordIndex::default(),
+                                "fixture.cpp"
+                            )
                             .unwrap_err()
                             .contains("matching widths and signedness")
                     );
@@ -5064,7 +5287,11 @@ mod tests {
                 *slot = operator;
             }
             expression
-                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(
+                    &ValidationPlaces::new(),
+                    &RecordIndex::default(),
+                    "fixture.cpp",
+                )
                 .unwrap();
         }
         if let CppExpression::Binary { right, .. } = &mut expression {
@@ -5072,7 +5299,11 @@ mod tests {
         }
         assert!(
             expression
-                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(
+                    &ValidationPlaces::new(),
+                    &RecordIndex::default(),
+                    "fixture.cpp"
+                )
                 .unwrap_err()
                 .contains("matching widths and signedness")
         );
@@ -5089,7 +5320,11 @@ mod tests {
         }
         assert!(
             expression
-                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(
+                    &ValidationPlaces::new(),
+                    &RecordIndex::default(),
+                    "fixture.cpp"
+                )
                 .unwrap_err()
                 .contains("matching widths and signedness")
         );
@@ -5266,6 +5501,7 @@ mod tests {
                     },
                     arguments: vec![CppCallArgument::Reference {
                         place: CppPlaceReference {
+                            projections: Vec::new(),
                             declaration_id: format!("parameter-{}", size - 1),
                             name: format!("parameter-{}", size - 1),
                             span: cleanup_span(),
@@ -5510,7 +5746,7 @@ mod tests {
                 });
                 assert_eq!(indexed.unwrap().len(), size);
                 assert!(
-                    work >= size && work <= 4 * size,
+                    work >= size && work <= 7 * size,
                     "{size} layouts: {work} work"
                 );
             }
@@ -5534,8 +5770,14 @@ mod tests {
                 .unwrap_err()
                 .contains("same-named record layouts")
         );
-        record.validate("fixture.cpp", &sources).unwrap();
-        let records = BTreeMap::from([("record".into(), &record)]);
+        record
+            .validate(
+                "fixture.cpp",
+                &sources,
+                &RecordIndex::new(BTreeMap::from([("record".into(), &record)])),
+            )
+            .unwrap();
+        let records = RecordIndex::new(BTreeMap::from([("record".into(), &record)]));
         assert!(
             validate_reachable_records(&BTreeMap::new(), &records)
                 .unwrap_err()
@@ -5564,6 +5806,126 @@ mod tests {
         };
         validate_reachable_records(&BTreeMap::from([("function".into(), &function)]), &records)
             .unwrap();
+    }
+
+    #[test]
+    fn embedded_record_graph_validation_is_linear_and_rejects_cycles() {
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        for size in [8, 32, 128, 256] {
+            let mut inventory = (0..size)
+                .map(|index| CppRecord {
+                    declaration_id: format!("r{index}"),
+                    name: format!("R{index}"),
+                    size_bytes: 4,
+                    alignment_bytes: 4,
+                    destructor: None,
+                    span: cleanup_span(),
+                    fields: vec![CppField {
+                        declaration_id: format!("f{index}"),
+                        name: "value".into(),
+                        value_type: if index + 1 == size {
+                            signed_integer(32, false)
+                        } else {
+                            CppType::Record {
+                                declaration_id: format!("r{}", index + 1),
+                                name: format!("R{}", index + 1),
+                                is_const: false,
+                            }
+                        },
+                        offset_bytes: 0,
+                        size_bytes: 4,
+                        span: cleanup_span(),
+                    }],
+                })
+                .collect::<Vec<_>>();
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+            });
+            let checked = checked.unwrap();
+            assert!(
+                work >= size && work <= 8 * size,
+                "{size} nested declarations: {work} work"
+            );
+            assert_eq!(
+                record_layout_order(&checked).unwrap().first().unwrap().name,
+                format!("R{}", size - 1)
+            );
+            let root = CppType::Record {
+                declaration_id: "r0".into(),
+                name: "R0".into(),
+                is_const: false,
+            };
+            let path = (0..size)
+                .map(|index| CppFieldReference {
+                    record_declaration_id: format!("r{index}"),
+                    declaration_id: format!("f{index}"),
+                    name: "value".into(),
+                    span: cleanup_span(),
+                })
+                .collect::<Vec<_>>();
+            let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                checked.resolve_path(&root, &path)
+            });
+            assert_eq!(resolved.unwrap(), (&signed_integer(32, false), 0));
+            assert_eq!(work, size);
+            inventory[size - 1].fields[0].value_type = CppType::Record {
+                declaration_id: "r0".into(),
+                name: "R0".into(),
+                is_const: false,
+            };
+            assert!(
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+                    .unwrap_err()
+                    .contains("by-value cycle")
+            );
+        }
+    }
+
+    #[test]
+    fn field_projection_lookup_does_not_scan_sibling_fields() {
+        for size in [8usize, 32, 128, 256] {
+            let record = CppRecord {
+                declaration_id: "r".into(),
+                name: "R".into(),
+                size_bytes: size as u32 * 4,
+                alignment_bytes: 4,
+                destructor: None,
+                span: cleanup_span(),
+                fields: (0..size)
+                    .map(|index| CppField {
+                        declaration_id: format!("f{index}"),
+                        name: format!("value{index}"),
+                        value_type: signed_integer(32, false),
+                        offset_bytes: index as u32 * 4,
+                        size_bytes: 4,
+                        span: cleanup_span(),
+                    })
+                    .collect(),
+            };
+            let (records, work) = crate::instrumentation::measure_deterministic_work(|| {
+                RecordIndex::new(BTreeMap::from([("r".into(), &record)]))
+            });
+            assert_eq!(work, size);
+            let root = CppType::Record {
+                declaration_id: "r".into(),
+                name: "R".into(),
+                is_const: false,
+            };
+            let field = CppFieldReference {
+                record_declaration_id: "r".into(),
+                declaration_id: format!("f{}", size - 1),
+                name: format!("value{}", size - 1),
+                span: cleanup_span(),
+            };
+            let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                records.resolve_path(&root, [&field])
+            });
+            assert_eq!(
+                resolved.unwrap(),
+                (&signed_integer(32, false), (size - 1) as u32 * 4)
+            );
+            assert_eq!(work, 1);
+        }
     }
 
     #[test]
@@ -5633,6 +5995,7 @@ mod tests {
         assert!(!branch(condition("1"), vec![], vec![returned.clone()]).always_returns());
         let unknown = CppExpression::Load {
             place: CppPlaceReference {
+                projections: Vec::new(),
                 declaration_id: "flag".into(),
                 name: "flag".into(),
                 span: cleanup_span(),

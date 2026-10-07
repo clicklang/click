@@ -877,12 +877,46 @@ bytes, forged record/field sources and executable spans remain refused;
 unrelated header records do not enter the proof graph. Existing deterministic
 inventory checks now cover both selected-source and header record origins.
 
-The pinned unchanged `CFeeRate::GetFee` regression now reaches its nested
-`FeePerVSize` field at `policy/feerate.h`, with a bounded diagnostic and no
-partial artifact. The wrapper is not verified yet. Next introduce nested
-record places and a precise base-subobject representation for the actual
-inherited `FeePerVSize` field: preserve declaration identity, layout and field
-authority instead of flattening inheritance into matching field names.
+Embedded record declarations now preserve child declaration IDs, exact extents,
+alignment and offsets, including repeated uses of one child type and nested
+private fields in locked headers. The artifact checker indexes the declaration
+graph before resolving fields, rejects unknown/misnamed/const child types and
+by-value cycles, and follows embedded fields when checking reachability. A
+bounded topological walk validates layouts without recursively expanding shared
+declarations. Contract preparation reuses C's nominal embedded-struct metadata
+and physical leaf layout; a separate 65,536-leaf budget bounds materialized
+layouts across the import. Synthetic const readers and scalar outer-field
+updates verify offline, expand/reverify and retain proofs while preserving
+nested field frames. Forged layouts, missing authority, false sibling frames,
+read-only writes, cycles and excessive shared-layout expansion are rejected.
+
+Nested source member reads, writes and signed compound updates now retain a
+root place plus an ordered path of resolved field declarations. The compiler
+exports each field-use span and owner identity. Artifact validation and direct
+lowering share an indexed path resolver that checks each owner/field/name and
+accumulates exact byte offsets, without scanning unrelated sibling fields.
+Root constness controls mutation through the entire path; field views and
+ownership remain necessary at the accessed leaf. Ordinary, expanded and
+retained offline proofs cover private nested fields, const methods, reference
+parameters, parenthesized accesses, explicit `this`, signed 32/64-bit leaves,
+compound-update bounds and sibling frames. Nested pointer-field checks keep
+const-object access separate from ownership of the mutable pointee. Automatic
+object restrictions are checked at declarations, preserving isolated constructor
+argument diagnostics. Hostile paths, header-labeled use
+spans, read-only roots, missing/wrong sibling authority and unsupported projected
+place consumers are refused. Deterministic regressions cover increasing path
+depth and sibling populations.
+
+The pinned unchanged `CFeeRate::GetFee` regression now reaches the unsupported
+`FeePerVSize` class template instance in `util/feefrac.h`, with a bounded
+diagnostic and no partial artifact. The wrapper is not verified yet. Next add
+projected method receivers and reference arguments using the same field-path
+representation, then a precise
+base-subobject representation for the actual inherited `FeePerVSize` field.
+Preserve declaration identity, layout and field authority instead of flattening
+inheritance into matching field names. Automatic objects with embedded records,
+nontrivial embedded destruction and cross-header executable graphs remain
+separate prerequisites, rather than being inferred from declaration support.
 Compose `IsEmpty` and the unified Up contract only after those prerequisites.
 State empty-rate behavior separately from the positive-size result-fit profile.
 Its negative-fee, nonzero-amount case changes a zero rounded result to `-1`, so

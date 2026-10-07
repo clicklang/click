@@ -741,6 +741,29 @@ and strip chains of zero additions through borrowed operands. Deterministic
 regressions check unrelated fact populations and increasing expression depth;
 the C `int64_returned_zero_identity` fixture covers the common kernel path.
 
+Named standard-layout structs and classes may include private or protected
+fields; Clang checks source access control, while sidecar views and ownership
+provide memory authority. Reachable record and field declarations may originate
+in explicitly locked project headers. Their spans retain that header's identity;
+function bodies and field-use spans must still belong to the selected source.
+
+Embedded mutable records with trivial destruction retain nominal child
+identities and exact ABI extents, offsets and alignment. Contracts can describe
+nested fields using C's existing struct metadata, as the `nested-record` fixture
+shows when an outer scalar update preserves fields in two separate child
+objects. Declaration validation follows embedded-field reachability and rejects
+by-value cycles without expanding shared layouts. Physical leaf layouts used
+by contract preparation have a 65,536-leaf budget across the import. Nested
+source field reads, writes and signed compound updates retain ordered
+owner/field declaration paths from the root object. Validation and lowering
+share an indexed resolver and exact accumulated byte offsets. Root constness
+applies to the full path; ownership and views apply to the accessed leaf, with
+separate sibling objects retaining separate authority. A const object's pointer
+field may still reference mutable memory; pointee authority is checked separately.
+Projection use spans
+belong to the selected source. Projected method receivers, projected reference
+arguments and automatic objects with embedded records remain outside this slice.
+
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one
 initializer for every field in declaration order. The artifact binds those
@@ -834,7 +857,7 @@ conditional construction remain rejected.
 
 Copies and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
-virtual dispatch, inheritance, private fields, bit-fields, nested record values,
+virtual dispatch, inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported
