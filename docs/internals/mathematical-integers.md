@@ -1037,8 +1037,12 @@ premises without `at_size <= size`. Alternative unsigned fast callers also use
 explicit upper product-fit bounds: Down bounds the product quotient, while Up
 first bounds the adjusted numerator `product + size - 1`. Rectangular product
 bounds check the actual uint64 operations independently of size, and the strict
-quotient bound checks the int64 return cast. The original unified callers still
-use the joint amount/size profile; broader unification remains next.
+quotient bound checks the int64 return cast. The alternative unified callers
+now combine these fast and wide proofs under one full-signed-fee contract per
+mode, using the same product-fit bounds and native amount bounds. Checked
+source-comparison bridges derive the fast fee observer range within its
+branch; both caller levels retain exact rounding and field frames. The original
+joint amount/size profile remains a separate regression.
 
 
 ## Remainder signs and correction endpoints

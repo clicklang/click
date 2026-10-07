@@ -308,7 +308,7 @@ conditions, assignments, and constructor arguments remain outside this slice;
 integer local initialization, return calls, and discarded calls share the
 current stable-sibling policy.
 
-## Next bounded milestone: fee arithmetic
+## Fee arithmetic milestone
 
 Select unchanged `FeeFrac::EvaluateFeeDown/Up` and their instantiated helpers
 from this pinned release. State input bounds that make the result representable
@@ -319,7 +319,8 @@ the synthetic fast paths now preserve the signed return and concrete rounding
 cases. The selected upstream source still requires `__int128`
 and support for its library `Assume` annotation on this target. Stable scalar
 and isolated field-reading sibling arguments in `Div(Mul(...), size, RoundDown)`
-are now supported; upstream `EvaluateFee` is not yet supported.
+are now supported. The selected upstream `EvaluateFee` callers are verified
+under the explicit input and result-fit profiles recorded below.
 
 The shared exact multiplication-range prerequisite is delivered. An explicit
 `integer_product_bounds` certificate checks the four corner products of two
@@ -820,8 +821,8 @@ checked multiplication, exact rounding and field frames. Four modular contract
 applications fix size to 1 and amount to 2. Sixteen hermetic phases cover the
 profiles' ordinary, expanded and retained verification, missing authority and
 fit guards, weakened strict endpoints, false rounding and forged product
-transport. The original unsigned fast and unified profiles still use the joint amount/size
-bounds; the alternative wider fast profiles follow.
+transport. The original unsigned fast and unified profiles retain the joint
+amount/size bounds as regressions; the wider alternatives follow.
 
 The unsigned fast Down/Up result-fit profiles now replace `at_size <= size`
 with native amount bounds and a mode-specific upper product-fit premise. The
@@ -836,14 +837,31 @@ Twelve hermetic phases cover ordinary, expanded and retained verification,
 missing/weakened fit and operand guards, false rounding and missing/forged
 numerator transport. Original fast profiles remain separate regressions.
 
-Next combine the wider fast and wide proof fragments into one full-signed-fee
-caller contract per mode. Use explicit mode-specific product-fit and native
-amount bounds, derive fast fee observers from the actual signed comparisons,
-and retain the wide branches' exact product transport and field frames. Keep
-the alternative helper interfaces explicit until a shared guarded contract is
-justified. Add modular examples across all source branches under the combined
-contract, including amounts above the stored size, and preserve bounded
-ordinary/expanded/retained verification and hostile branch/fit/transport checks.
+The alternative `FeeFracEvaluateResultFit.click.in` profiles now combine the
+wider fast and fallback fragments into one full-signed-fee caller contract per
+mode. Both caller levels require field views, positive int32 size, native
+amount bounds and the selected mode's two product-fit premises, with no fee
+branch or amount/size prerequisite. Actual signed source comparisons derive
+the fast observer bounds. The two wide branches keep separate captures and
+exact product transport. All branches preserve fields and export signed
+result bounds and exact floor/ceiling intervals. Four modular examples per
+mode cover all source branches, amounts above size, and a fast product above
+`INT64_MAX` with a fitting quotient. Seventeen bounded phases cover ordinary,
+wrapper/instance expansion and retained verification, missing authority,
+operand/fit bounds, weakened strict endpoints, source-comparison transport,
+false rounding and missing/forged arithmetic evidence. The original joint
+profile remains a regression; alternative helper interfaces remain explicit.
+
+Next select the unchanged `CFeeRate::GetFee` wrapper in this same pinned
+closure. Preserve its actual inherited `FeePerVSize` access and `Assume`
+annotation; establish the base-subobject/field authority needed to compose
+`IsEmpty` and the unified Up contract. State empty-rate behavior separately
+from the positive-size result-fit profile. Its negative-fee, nonzero-amount
+case changes a zero rounded result to `-1`, so specify that minimum correction
+explicitly rather than claiming unconditional ceiling. Keep object construction
+and the other `CFeeRate` methods separate until their own source contracts are
+selected. Continue bounded ordinary/expanded/retained and hostile authority,
+fit, empty-branch and correction checks without editing Bitcoin.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
@@ -853,7 +871,7 @@ an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
-machine observer ranges, general range inference, wider unified fee callers and
+machine observer ranges, general range inference, `CFeeRate` composition and
 the portable `DivFallback` implementation remain open.
 
 Before implementing the upstream proof, freeze a small regression that

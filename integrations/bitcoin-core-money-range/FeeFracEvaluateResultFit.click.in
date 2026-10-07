@@ -1,0 +1,157 @@
+int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_size) {
+    views self->fee;
+    views self->size;
+    requires -9223372036854775808 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 9223372036854775807;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    requires 0 <= at_size;
+    requires at_size <= 2147483647;
+    requires @INPUT_BOUND_1@;
+    requires @INPUT_BOUND_2@;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures @CALLER_BOUND_1@;
+    ensures @CALLER_BOUND_2@;
+} by {
+    if self->fee >= 0i64 {
+        if self->fee < 8589934592i64 {
+            apply(int64_greater_equal_to_integer(self->fee, 0i64));
+            have 0 <= to_integer(self->fee) by { arithmetic() using { to_integer(self->fee) >= 0; } }
+            apply(int64_less_than_to_integer(self->fee, 8589934592i64));
+            have to_integer(self->fee) <= 8589934591 by { arithmetic() using { to_integer(self->fee) < 8589934592; } }
+@FAST_PROOF@
+            have -9223372036854775808 <= to_integer(result) by { arithmetic() using { 0 <= to_integer(result); } }
+            simp();
+        } else {
+@WIDE_POSITIVE_PROOF@
+        }
+    } else {
+@WIDE_NEGATIVE_PROOF@
+    }
+}
+
+int64 FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
+    views self->fee;
+    views self->size;
+    requires -9223372036854775808 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 9223372036854775807;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    requires 0 <= at_size;
+    requires at_size <= 2147483647;
+    requires @INPUT_BOUND_1@;
+    requires @INPUT_BOUND_2@;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures @CALLER_BOUND_1@;
+    ensures @CALLER_BOUND_2@;
+} by { execute(); simp(); }
+
+contract int64 FastOversizeFee(const struct FeeFrac* self, int32 at_size) {
+    requires self->fee == 7i64;
+    requires self->size == 1;
+    requires at_size == 2;
+    views self->fee;
+    views self->size;
+    requires -9223372036854775808 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 9223372036854775807;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    requires 0 <= at_size;
+    requires at_size <= 2147483647;
+    requires @INPUT_BOUND_1@;
+    requires @INPUT_BOUND_2@;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures @CALLER_BOUND_1@;
+    ensures @CALLER_BOUND_2@;
+}
+
+theorem fastoversizefee_evaluation() executes FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
+    ensures FastOversizeFee(&FeeFrac_EvaluateFee@MODE@) by { execute(); simp(); }
+}
+
+contract int64 FastLargeFee(const struct FeeFrac* self, int32 at_size) {
+    requires self->fee == 8589934591i64;
+    requires self->size == 2;
+    requires at_size == 2147483647;
+    views self->fee;
+    views self->size;
+    requires -9223372036854775808 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 9223372036854775807;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    requires 0 <= at_size;
+    requires at_size <= 2147483647;
+    requires @INPUT_BOUND_1@;
+    requires @INPUT_BOUND_2@;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures @CALLER_BOUND_1@;
+    ensures @CALLER_BOUND_2@;
+}
+
+theorem fastlargefee_evaluation() executes FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
+    ensures FastLargeFee(&FeeFrac_EvaluateFee@MODE@) by { execute(); simp(); }
+}
+
+contract int64 PositiveWideOversizeFee(const struct FeeFrac* self, int32 at_size) {
+    requires self->fee == 8589934592i64;
+    requires self->size == 1;
+    requires at_size == 2;
+    views self->fee;
+    views self->size;
+    requires -9223372036854775808 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 9223372036854775807;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    requires 0 <= at_size;
+    requires at_size <= 2147483647;
+    requires @INPUT_BOUND_1@;
+    requires @INPUT_BOUND_2@;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures @CALLER_BOUND_1@;
+    ensures @CALLER_BOUND_2@;
+}
+
+theorem positivewideoversizefee_evaluation() executes FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
+    ensures PositiveWideOversizeFee(&FeeFrac_EvaluateFee@MODE@) by { execute(); simp(); }
+}
+
+contract int64 NegativeOversizeFee(const struct FeeFrac* self, int32 at_size) {
+    requires self->fee == -8589934592i64;
+    requires self->size == 1;
+    requires at_size == 2;
+    views self->fee;
+    views self->size;
+    requires -9223372036854775808 <= to_integer(self->fee);
+    requires to_integer(self->fee) <= 9223372036854775807;
+    requires self->size > 0;
+    requires self->size <= 2147483647;
+    requires 0 <= at_size;
+    requires at_size <= 2147483647;
+    requires @INPUT_BOUND_1@;
+    requires @INPUT_BOUND_2@;
+    ensures self->fee == old(self->fee);
+    ensures self->size == old(self->size);
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures @CALLER_BOUND_1@;
+    ensures @CALLER_BOUND_2@;
+}
+
+theorem negativeoversizefee_evaluation() executes FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
+    ensures NegativeOversizeFee(&FeeFrac_EvaluateFee@MODE@) by { execute(); simp(); }
+}
