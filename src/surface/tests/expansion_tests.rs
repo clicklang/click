@@ -15573,6 +15573,33 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
 }
 
 #[test]
+fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
+    let (guarded, _) =
+        mdtest_sources("mdtests/true_disjunction_skips_undefined_right_requirement.md");
+    let (products, _) = mdtest_sources("mdtests/integer_uint32_checked_product_observations.md");
+    let source = format!("{guarded}\n{products}");
+    verify_c0_sources(&source, &[]).expect("zero-factor and checked products should verify");
+    for claim in [
+        "zero_instance.ensures_0",
+        "known_zero_instance.ensures_0",
+        "zero_factor.ensures_0",
+        "known_zero_factor.ensures_0",
+        "reduced_lane_ceiling.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], claim)
+            .expect("checked multiplication/zero-factor proof should expand");
+        verify_c0_sources(&expanded, &[])
+            .expect("expanded multiplication/zero-factor certificate should recheck");
+    }
+    let (invalid, _) =
+        mdtest_sources("mdtests/false_disjunction_requires_defined_right_requirement.md");
+    verify_c0_sources(&invalid, &[])
+        .expect_err("a false left disjunct must not hide division by zero");
+    let forged = guarded.replace("ensures 1 == 1", "ensures 1 == 2");
+    verify_c0_sources(&forged, &[]).expect_err("a true guard must not prove a false conclusion");
+}
+
+#[test]
 fn integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims() {
     let (source, _) = mdtest_sources("mdtests/integer_equality_rewrite.md");
     verify_c0_sources(&source, &[]).expect("Integer compound rewrites should verify");
