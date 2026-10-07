@@ -876,6 +876,21 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         })
         .unwrap_or_else(|| (legacy_site.description(), 0, legacy_site));
 
+    // A trailing shared closer can have a different checked body on each
+    // execution leaf. Capture the whole phase so those bodies stay where
+    // their premises and memory snapshots were established.
+    let capture_shared_closer = tactics.last().is_some_and(|tactic| {
+        matches!(
+            tactic,
+            ProofTactic::CloseInvariants | ProofTactic::CloseInvariantsBy(_)
+        )
+    }) && expansion_capture.as_deref().is_some_and(|capture| {
+        capture.nested.is_none()
+            && capture.site == preserve_site
+            && capture.source_index
+                == Some(preserve_source_index + source_tactic_count(&tactics[..tactics.len() - 1]))
+    });
+
     let mut program = if environment
         .frontier_loop_source
         .is_some_and(|source| source.preserve_source_index.is_none())
@@ -1448,6 +1463,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         return Err(frontier);
     }
     let certificate = merge_phase_path_aligned_certificates(&claim_label, certificate_paths)?;
+    if capture_shared_closer {
+        let capture = expansion_capture.expect("selected shared closer");
+        capture.active = true;
+        capture.result = Some(Ok(certificate.to_proof_tactics()));
+        crate::surface::expansion::note_expansion_replaces_from(preserve_source_index);
+    }
     Ok(LoopPreservationProofResult {
         certificate,
         final_exit_candidates,

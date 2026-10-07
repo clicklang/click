@@ -5363,6 +5363,7 @@ pub(super) fn finish_ordered_proof<'a>(
                 }
             } else if !contributes_no_tactics
                 && deferred.can_expand_execution_prefix
+                && surface_has_repeated_branch_conditions(&retained_surface.steps)
                 && deferred.post_execution_index != DeferredTacticCapture::NESTED
                 && retained_surface.path_choices.is_empty()
                 && deferred_capture_tactics_by_path.len() == surface_post_path_indices.len()

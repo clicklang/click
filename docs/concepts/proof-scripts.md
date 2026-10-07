@@ -244,6 +244,9 @@ When a post-execution claim closer needs different proofs on different paths,
 expansion may also replace the preceding execution script with its explicit
 certificate. Each proof stays in the branch where it was checked, so a loop's
 earlier guards are not evaluated again at function exit.
+A trailing `close_invariants` shared by several preservation paths can likewise
+expand the preceding preservation script, placing each explicit closer in its
+own branch. The loop's initialization and the script after the loop stay written.
 `click profile` identifies slow tactics and distinguishes smart automation from
 simple leaves. `click audit` checks that smart tactics across a project expand
 into source that verifies normally. Use this workflow only after the

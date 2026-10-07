@@ -1142,6 +1142,43 @@ pub(super) fn surface_branch_skeleton(steps: &[ProofStep]) -> Vec<ProofStep> {
     }]
 }
 
+/// Repeated guards need their original execution points: their snapshots
+/// can denote different iterations by the time execution has returned.
+pub(super) fn surface_has_repeated_branch_conditions(steps: &[ProofStep]) -> bool {
+    let mut pending = vec![steps];
+    let mut conditions = std::collections::HashSet::new();
+    while let Some(steps) = pending.pop() {
+        for step in steps {
+            match step {
+                ProofStep::If {
+                    condition,
+                    then_proof,
+                    else_proof,
+                    ..
+                } => {
+                    if !conditions.insert(condition) {
+                        return true;
+                    }
+                    pending.push(then_proof.steps());
+                    pending.push(else_proof.steps());
+                }
+                ProofStep::CallOutcomes {
+                    returned_proof,
+                    threw_proof,
+                } => {
+                    pending.push(returned_proof.steps());
+                    pending.push(threw_proof.steps());
+                }
+                ProofStep::Match { arms, .. } => {
+                    pending.extend(arms.iter().map(|arm| arm.proof.steps()));
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
 pub(super) fn synthesize_surface_alternatives(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {

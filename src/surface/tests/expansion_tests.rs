@@ -1,6 +1,49 @@
 use super::*;
 
 #[test]
+fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/c_decreases_recursive_in_loop.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap();
+    let position =
+        expansion::position_at_offset(source, source.find("close_invariants();").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
+        .expect("the shared closer expands with each branch's checked body");
+    assert!(!expanded.contains("close_invariants();"), "{expanded}");
+    assert_eq!(
+        expanded.matches("close_invariants by").count(),
+        2,
+        "{expanded}"
+    );
+    assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
+    assert!(expanded.contains("initialize by simp;"), "{expanded}");
+    assert!(
+        expanded.contains("    step();\n    simp();\n}"),
+        "the phase's unselected successor stays written: {expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let claim = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+    verify_c0_sources_at(&expanded, &sources, claim.line, claim.column).unwrap();
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    session
+        .verify_at(&expanded, claim.line, claim.column)
+        .unwrap();
+    verify_c0_sources(
+        &expanded.replace("ensures result == 0", "ensures result == 1"),
+        &sources,
+    )
+    .expect_err("the expansion must still reject a false result claim");
+}
+
+#[test]
 fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/bubble_sort3_loop_permutation.md");
