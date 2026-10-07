@@ -2507,10 +2507,25 @@ impl<'a> TermRewrite<'a> {
                 self.integer_shared(left),
                 self.integer_shared(right),
             ),
-            IntegerTerm::Multiply(left, right) => IntegerTerm::Multiply(
-                self.integer_shared(left).into(),
-                self.integer_shared(right).into(),
-            ),
+            IntegerTerm::Multiply(left, right) => {
+                let left = self.integer_shared(left);
+                let right = self.integer_shared(right);
+                // Match lowering's zero and unit identities without doing
+                // arbitrary-precision multiplication. These folds only
+                // delete nodes; repeated squaring of other literals must
+                // retain the shared symbolic DAG above.
+                if integer_is_zero(&left) || integer_is_zero(&right) {
+                    IntegerTerm::constant_i64(0)
+                } else if matches!(&left, IntegerTerm::Constant(value) if num_traits::One::is_one(value))
+                {
+                    right
+                } else if matches!(&right, IntegerTerm::Constant(value) if num_traits::One::is_one(value))
+                {
+                    left
+                } else {
+                    IntegerTerm::Multiply(left.into(), right.into())
+                }
+            }
             IntegerTerm::RangeFold {
                 index,
                 initial,
@@ -4446,6 +4461,52 @@ mod tests {
             };
             assert_eq!(a.as_ref(), &IntegerTerm::var(accumulator));
             assert_eq!(b.as_ref(), &IntegerTerm::var(renamed));
+        }
+    }
+
+    #[test]
+    fn integer_rewrite_folds_product_identities_and_scales() {
+        let x = IntegerTerm::from_machine(
+            MachineIntegerType::UInt32,
+            Bitvector32Term::Variable(Variable(65006)),
+        )
+        .unwrap();
+        let y = IntegerTerm::var(Variable(65007));
+        let source: SharedIntegerTerm = x.clone().into();
+        for identity in [0, 1] {
+            let replacement = IntegerTerm::constant_i64(identity);
+            let target: SharedIntegerTerm = replacement.clone().into();
+            for (left, right) in [(x.clone(), y.clone()), (y.clone(), x.clone())] {
+                let mut rewrite = TermRewrite::for_integer_exact(&source, &target);
+                let input = Term::Integer(IntegerTerm::Multiply(left.into(), right.into()));
+                let expected = if identity == 0 {
+                    replacement.clone()
+                } else {
+                    y.clone()
+                };
+                assert_eq!(rewrite.term(&input), Term::Integer(expected));
+                assert!(rewrite.changed);
+                assert!(rewrite.refusal().is_none());
+            }
+            for depth in [8usize, 16, 32, 64] {
+                let mut expression = x.clone();
+                for _ in 0..depth {
+                    let child: SharedIntegerTerm = expression.into();
+                    expression = IntegerTerm::Multiply(child.clone(), child);
+                }
+                let mut rewrite = TermRewrite::for_integer_exact(&source, &target);
+                assert_eq!(
+                    rewrite.term(&Term::Integer(expression)),
+                    Term::Integer(replacement.clone())
+                );
+                assert!(rewrite.changed);
+                assert!(rewrite.refusal().is_none());
+                assert!(
+                    rewrite.visits <= depth + 4,
+                    "depth {depth}: {} visits",
+                    rewrite.visits
+                );
+            }
         }
     }
 

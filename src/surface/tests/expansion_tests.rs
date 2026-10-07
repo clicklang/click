@@ -15654,6 +15654,89 @@ fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
 }
 
 #[test]
+fn integer_observed_product_identity_rewrites_expand_and_recheck() {
+    let (source, _) = mdtest_sources("mdtests/integer_observed_product_identity_rewrite.md");
+    verify_c0_sources(&source, &[]).expect("observed product identity rewrites should verify");
+    for name in [
+        "zero_product",
+        "zero_left_product",
+        "unit_product",
+        "unit_left_product",
+        "full_unsigned_zero",
+        "full_unsigned_unit",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+            .expect("observed product identity rewrite should expand");
+        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &[])
+            });
+        result.expect("expanded product identity should independently recheck");
+        assert_eq!(planning, 0, "explicit identity certificate must not plan");
+        if name == "zero_product" {
+            let forged = expanded.replace(
+                "trivial => (to_integer(a) * 0) == 0;",
+                "trivial => (to_integer(a) * 0) == 1;",
+            );
+            assert_ne!(
+                forged, expanded,
+                "the expanded zero claim should be present"
+            );
+            verify_c0_sources(&forged, &[]).expect_err("a false trivial certificate must fail");
+        }
+        let missing = expanded
+            .replace("requires to_integer(b) == 0;", "")
+            .replace("requires to_integer(b) == 1;", "");
+        verify_c0_sources(&missing, &[]).expect_err("missing identity evidence must fail");
+    }
+    for invalid in [
+        source.replacen(
+            "ensures to_integer(a) * to_integer(b) == 0",
+            "ensures to_integer(a) * to_integer(b) == 1",
+            1,
+        ),
+        source.replacen(
+            "rewrite(to_integer(b) == 0)",
+            "rewrite(to_integer(a) == 0)",
+            1,
+        ),
+        source.replacen(
+            "ensures to_integer(a) * to_integer(b) == 0",
+            "ensures to_integer(a) * to_integer(a) == 0",
+            1,
+        ),
+        source.replace("== 4294967295 by", "== -1 by"),
+    ] {
+        verify_c0_sources(&invalid, &[])
+            .expect_err("false products and altered unsigned observations must fail");
+    }
+    let c_source = "uint32 identity(uint32 a, uint32 b) { return a; }";
+    let click_source = r#"
+verifying "identity.c";
+uint32 identity(uint32 a, uint32 b) {
+    requires to_integer(b) == 0;
+    ensures to_integer(result) * to_integer(b) == 0;
+} by {
+    have to_integer(a) * to_integer(b) == 0 by {
+        rewrite(to_integer(b) == 0);
+        arithmetic() using {};
+    }
+    execute();
+    rewrite(to_integer(b) == 0);
+    arithmetic() using {};
+}
+"#;
+    let inputs = [("identity.c", c_source)];
+    verify_c0_sources(click_source, &inputs)
+        .expect("execution and outcome identity rewrites should verify");
+    let expanded =
+        expand_c0_claim_source_by_label(click_source, &inputs, "identity.ensures_0").unwrap();
+    verify_c0_sources(&expanded, &inputs)
+        .expect("expanded outcome identity rewrite should recheck");
+}
+
+#[test]
 fn integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims() {
     let (source, _) = mdtest_sources("mdtests/integer_equality_rewrite.md");
     verify_c0_sources(&source, &[]).expect("Integer compound rewrites should verify");
