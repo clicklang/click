@@ -11,6 +11,8 @@ struct DeclaredResourceInfo {
     resource_parameter_families: Vec<String>,
     kind: ResourceKind,
     has_fields: bool,
+    /// Declared `authorized resource`.
+    authorized: bool,
     /// Each matched-arm child slot of this resource and the resource that
     /// slot declares, or `None` when two arms give one slot name different
     /// resources. A child may name another declared resource, so the slot's
@@ -235,6 +237,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
                         crate::surface::lowering::resolve_resource_field_schema(definition, environment)
                     ).transpose()?,
                     has_fields: !definition.is_countable(),
+                    authorized: definition.is_authorized(),
                     resource_parameter_families: definition.resource_parameters().iter().map(|parameter| {
                         let ResourceClause::Named { resource, .. } = parameter else { unreachable!() };
                         let ResourceClause::Declared { name, .. } = resource.as_ref() else { unreachable!() };
@@ -269,6 +272,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
             fields: Default::default(),
             field_schema: None,
             has_fields: false,
+            authorized: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::Int32Pointer, C0Type::Int32],
             kind: ResourceKind::Token,
@@ -280,6 +284,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
             fields: Default::default(),
             field_schema: None,
             has_fields: false,
+            authorized: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
@@ -292,6 +297,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
             fields: Default::default(),
             field_schema: None,
             has_fields: false,
+            authorized: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
@@ -304,6 +310,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
             fields: Default::default(),
             field_schema: None,
             has_fields: false,
+            authorized: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
@@ -316,6 +323,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
             fields: Default::default(),
             field_schema: None,
             has_fields: false,
+            authorized: false,
             resource_parameter_families: Vec::new(),
             parameter_types: Vec::new(),
             kind: ResourceKind::Token,
@@ -1825,6 +1833,9 @@ fn expand_resource_type_arguments(
             }
             let info =
                 declared_resource_info_with_fields(&name, arguments.len(), definitions, true)?;
+            if is_authority && !info.authorized {
+                return Err(unauthorized_family_error("authority", &name));
+            }
             if is_authority
                 && (arguments.is_empty()
                     || !info.parameter_types[0].is_pointer()
@@ -2372,6 +2383,19 @@ fn expand_declared_resource_expression_node(
         }
         ContractExpression::ResourceCount(resource) => {
             if resource_definitions.authority_mode
+                && let ResourceClause::Declared { name, .. } = resource.as_ref()
+                && resource_definitions
+                    .get(name)
+                    .is_some_and(|info| !info.authorized)
+                && !matches!(
+                    name.as_str(),
+                    "authority" | "mutex_guard" | "mutex_live" | "mutex_use"
+                )
+                && name != CResourceFact::ALLOCATION_RESOURCE_NAME
+            {
+                return Err(unauthorized_family_error("count", name));
+            }
+            if resource_definitions.authority_mode
                 && let ResourceClause::Declared {
                     name,
                     arguments,
@@ -2604,6 +2628,14 @@ fn declared_resource_info(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<DeclaredResourceInfo, ClickError> {
     declared_resource_info_with_fields(name, actual, resource_definitions, false)
+}
+
+/// Population accounting covers only families declared `authorized resource`;
+/// `authority(...)` and `count(...)` name nothing on any other family.
+fn unauthorized_family_error(form: &str, family: &str) -> ClickError {
+    ClickError::new(format!(
+        "`{form}` names `{family}`, which is not an authorized family; declare it `authorized resource {family}(...)`"
+    ))
 }
 
 fn declared_resource_info_with_fields(

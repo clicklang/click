@@ -10,7 +10,7 @@ void lifecycle() {
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, member: int32*) {}
+authorized resource slot(pool: int32*, member: int32*) {}
 verifying "wildcard_consume_use_after_call.c";
 void release(int32* pool, int32* member) {
     owns authority(slot(pool, _));

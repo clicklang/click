@@ -15,7 +15,7 @@ void move_slot() {
 
 ```click resource_semantics=authority
 verifying "authority_pool_member_transfer.c";
-resource slot(pool: int32*, cell: int32*) {
+authorized resource slot(pool: int32*, cell: int32*) {
     field label: int32;
     owns cell[0..1];
 }

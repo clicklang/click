@@ -1288,3 +1288,29 @@ references and the mutex stay alive while users hold them, population updates
 go through checked exchanges under the owning authority, reclamation follows
 both joins and the final release exactly once, every count consumer has a
 replacement, and no rule is specific to refcounts.
+
+### Milestone 7: sole default and legacy removal
+
+#### Chunk 0: `authorized resource`
+
+A trial switch of every legacy fixture to authority semantics changed 782
+outcomes: authority mode treated every family as a counted population, so
+ordinary composites lost free fold, unfold, gather, scatter, construction and
+outcome rewrites. Whether a family is counted cannot be decided from one
+function, because another function may hold its authority, so the marker is
+part of the declaration.
+
+- The parser accepts `authorized resource` and `authorized abstract
+  resource`. The flag reaches the surface definition and the kernel
+  `CCompositeResourceDefinition`.
+- Declaration expansion refuses `authority(R(...))` unless `R` is authorized,
+  and under authority semantics refuses `count(R(...))` likewise.
+  Regressions: `authority_requires_authorized_family.md` and
+  `authority_count_requires_authorized_family.md`.
+- Fold and unfold exchange a population member only for an authorized
+  family; the outcome fold and unfold refusals apply only to authorized
+  families. Regression: `authority_mode_ordinary_family_folds_by_definition.md`.
+- Every family named by `authority(...)`, and by `count(...)` in an
+  authority-mode fixture, is now declared `authorized` across the mdtests,
+  examples, unit-test sources and documentation; no claim, proof step or C
+  source changed.

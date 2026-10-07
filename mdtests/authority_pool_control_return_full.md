@@ -11,8 +11,8 @@ void caller(struct pool* pool, struct payload* p) { forward(pool, p); }
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: struct pool*) {}
-resource item(pool: struct pool*, p: struct payload*) { owns object(p); }
+authorized resource slot(pool: struct pool*) {}
+authorized resource item(pool: struct pool*, p: struct payload*) { owns object(p); }
 resource control(pool: struct pool*) {
     owns object(pool);
     owns authority(slot(pool));

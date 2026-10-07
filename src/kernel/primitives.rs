@@ -3267,6 +3267,9 @@ pub struct CCompositeResourceDefinition {
     pub(super) thread_confined: bool,
     /// Transitive mutex-authority ingredient marker; contract protocol effects are not modeled yet.
     pub(super) contains_mutex_authority: bool,
+    /// Declared `authorized resource`: only these families take part in
+    /// population accounting under authority semantics.
+    pub(super) authorized: bool,
     /// Whether the owned footprint reaches memory no clause instance names:
     /// the definition is on a cycle of families, binds an existential witness
     /// in an instance body, or contains or names a child of such a

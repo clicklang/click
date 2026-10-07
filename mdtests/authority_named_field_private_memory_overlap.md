@@ -14,7 +14,7 @@ int32 run() {
 ```
 
 ```click resource_semantics=authority
-resource ticket(pool: int32*, tag: int32) {
+authorized resource ticket(pool: int32*, tag: int32) {
     field cell: int32*;
     field serial: int32;
     owns cell[0..1];

@@ -15,10 +15,10 @@ void consume_population(struct owner* owner, int32 amount) {
 ```
 
 ```click resource_semantics=authority
-resource slot(owner: struct owner*) {
+authorized resource slot(owner: struct owner*) {
 }
 
-abstract resource item(owner: struct owner*, id: int32);
+authorized abstract resource item(owner: struct owner*, id: int32);
 
 resource accounting(owner: struct owner*) {
     owns owner->used;

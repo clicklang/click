@@ -2,7 +2,7 @@
 void consume(int32* p) {}
 ```
 ```click resource_semantics=authority
-resource token(p: int32*) {}
+authorized resource token(p: int32*) {}
 verifying "consume.c";
 void consume(int32* p) {
     owns authority(token(p));

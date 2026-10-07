@@ -10,8 +10,8 @@ int32 invoke(int32 (*callback)(int32*), int32* pool) { return callback(pool); }
 ```
 
 ```click resource_semantics=authority
-resource A(pool: int32*) {}
-resource B(pool: int32*) {}
+authorized resource A(pool: int32*) {}
+authorized resource B(pool: int32*) {}
 contract int32 Keep(int32* pool) {
     owns authority(A(pool));
     owns authority(B(pool));

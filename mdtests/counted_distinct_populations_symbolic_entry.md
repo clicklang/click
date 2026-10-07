@@ -9,7 +9,7 @@ int identity(void *p, void *q, int n) { return n; }
 
 ```click resource_semantics=authority
 verifying "counted_distinct_populations_symbolic_entry.c";
-abstract resource ticket(p: void*);
+authorized abstract resource ticket(p: void*);
 int32 identity(void* p, void* q, int32 n) {
     owns authority(ticket(p));
     owns authority(ticket(q));

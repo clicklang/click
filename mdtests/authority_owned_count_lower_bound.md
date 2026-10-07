@@ -3,7 +3,7 @@ void inspect(int32* p) {}
 void wrapper(int32* p) { inspect(p); }
 ```
 ```click resource_semantics=authority
-resource token(p: int32*) {}
+authorized resource token(p: int32*) {}
 verifying "bound.c";
 void inspect(int32* p) {
     owns authority(token(p));

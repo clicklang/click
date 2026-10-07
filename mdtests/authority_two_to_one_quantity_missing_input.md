@@ -9,7 +9,7 @@ void lifecycle(int32* counter) { shrink(counter); }
 ```
 
 ```click resource_semantics=authority
-resource member(counter: int32*) {}
+authorized resource member(counter: int32*) {}
 resource control(counter: int32*) {
     owns counter[0..1];
     owns authority(member(counter));

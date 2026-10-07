@@ -21,8 +21,8 @@ int32 lifecycle() {
 ```
 
 ```click resource_semantics=authority
-resource capacity(pool: int32*) {}
-resource item(pool: int32*, p: struct payload*) { owns object(p); }
+authorized resource capacity(pool: int32*) {}
+authorized resource item(pool: int32*, p: struct payload*) { owns object(p); }
 verifying "family_exchange.c";
 void checkout(int32* pool, struct payload* p) {
     owns authority(capacity(pool));

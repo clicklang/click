@@ -121,10 +121,10 @@ theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32
     }
 }
 
-resource slot(owner: struct owner*) {
+authorized resource slot(owner: struct owner*) {
 }
 
-abstract resource item(owner: struct owner*, id: int32);
+authorized abstract resource item(owner: struct owner*, id: int32);
 
 resource accounting(owner: struct owner*) {
     owns owner->used;

@@ -6,7 +6,7 @@ int32 run() { int32 pool = 0; preserve(&pool); return 0; }
 ```
 
 ```click resource_semantics=authority
-resource ticket(pool: int32*) { field serial: int32; }
+authorized resource ticket(pool: int32*) { field serial: int32; }
 resource control(pool: int32*) { owns authority(ticket(pool)); }
 verifying "helper.c";
 extern void preserve(int32* pool) {

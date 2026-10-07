@@ -13,7 +13,7 @@ int32 run() {
 ```
 
 ```click resource_semantics=authority
-resource cell(p: int32*) {
+authorized resource cell(p: int32*) {
     field model: List<int32>;
     owns p[0..1];
 }

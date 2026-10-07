@@ -10,7 +10,7 @@ void lifecycle() {
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, p: int32*, tag: int32) { owns p[0..1]; }
+authorized resource slot(pool: int32*, p: int32*, tag: int32) { owns p[0..1]; }
 verifying "wildcard_private_overlap.c";
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step();

@@ -129,7 +129,7 @@ resource parent(p: struct parent*) {
     }
 }
 
-resource child_ref(obj: struct child*) {}
+authorized resource child_ref(obj: struct child*) {}
 
 resource child_storage(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));

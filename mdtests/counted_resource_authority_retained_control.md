@@ -9,7 +9,7 @@ void keep_control(struct object* first) {}
 ```
 
 ```click resource_semantics=authority
-resource object_ref(obj: struct object*) {}
+authorized resource object_ref(obj: struct object*) {}
 resource object_control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
     owns object(obj);

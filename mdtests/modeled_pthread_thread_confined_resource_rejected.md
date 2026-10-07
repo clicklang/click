@@ -27,7 +27,7 @@ int run(struct cell *cell) {
 ```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
-resource reference(cell: struct cell*) {}
+authorized resource reference(cell: struct cell*) {}
 verifying "modeled_pthread_thread_confined_resource_rejected.c";
 
 void *worker(void *argument) {

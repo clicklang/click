@@ -16,6 +16,7 @@ fn authority_test_scope(
                 resource_parameter_families: Vec::new(),
                 kind,
                 has_fields,
+                authorized: true,
                 child_slots: Default::default(),
             },
         )]),

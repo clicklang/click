@@ -7652,6 +7652,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                     facts,
                 )
             }
+            .with_authorized(definition.is_authorized())
             .with_resource_parameters(
                 definition
                     .resource_parameters()

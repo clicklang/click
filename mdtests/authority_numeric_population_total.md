@@ -20,7 +20,7 @@ void counts_a_total_it_can_state(int32* o) {
 ```
 
 ```click resource_semantics=authority
-resource tok(o: int32*) {
+authorized resource tok(o: int32*) {
 }
 
 verifying "a_population_count_is_not_a_wrapped_total.c";

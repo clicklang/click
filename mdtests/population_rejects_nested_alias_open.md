@@ -14,7 +14,7 @@ int32 object_refcount(struct object* obj, struct object* alias) {
 ```
 
 ```click resource_semantics=authority
-resource object_ref(obj: struct object*) {}
+authorized resource object_ref(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns authority(object_ref(obj));
     owns obj->refs;

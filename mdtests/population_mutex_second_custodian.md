@@ -25,7 +25,7 @@ unsigned int run(struct counter *p) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "population_access.c";
-resource member(p: struct counter*) {}
+authorized resource member(p: struct counter*) {}
 resource control(p: struct counter*) {
     field value: uint32;
     owns p->value;

@@ -6,7 +6,7 @@ void duplicate(int32* pool, int32* p) { issue(pool, p); issue(pool, p); }
 ```
 
 ```click resource_semantics=authority
-resource member(pool: int32*, p: int32*) { owns p[0..1]; }
+authorized resource member(pool: int32*, p: int32*) { owns p[0..1]; }
 resource control(pool: int32*) {
     owns pool[0..1];
     owns authority(member(pool, _));
