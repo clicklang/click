@@ -5369,6 +5369,54 @@ fn sequential_interface_joins_scale_with_their_number() {
     assert_near_linear_scaling("sequential interface joins", &samples);
 }
 
+/// A function that stores to each of `count` fields of one struct.
+fn field_stores_project(count: usize) -> (String, String) {
+    let fields = (0..count)
+        .map(|index| format!("    int32 f{index};\n"))
+        .collect::<String>();
+    let mut c_source = format!("struct big {{\n{fields}}};\n\nint32 run(struct big *q) {{\n");
+    let mut click_source = String::from(
+        "verifying \"stores.c\";\n\nint32 run(struct big* q) {\n    requires q != 0;\n",
+    );
+    for index in 0..count {
+        click_source.push_str(&format!("    owns q->f{index};\n"));
+    }
+    click_source.push_str("    ensures result == 0;\n} by {\n");
+    for index in 0..count {
+        c_source.push_str(&format!("    q->f{index} = {index};\n"));
+        click_source.push_str("    step();\n");
+    }
+    c_source.push_str("    return 0;\n}\n");
+    click_source.push_str("    step();\n    simp();\n}\n");
+    (c_source, click_source)
+}
+
+/// Recording how a stepped store reads in source terms must not rewrite the
+/// memory snapshot the store's fact carries. It used to restore every load
+/// the fact mentioned, the cached values of that snapshot included, one name
+/// at a time and copying the snapshot each time: the square of the known
+/// cells for every `step()`. The restored form is only read for a comparison
+/// that names a qualified object, and these name none.
+#[test]
+fn stepping_a_store_does_not_rewrite_the_memory_its_fact_carries() {
+    for size in [16, 64] {
+        let (c_source, click_source) = field_stores_project(size);
+        let (verified, sample) = scaling_sample(size, || {
+            verify_c0_sources(&click_source, &[("stores.c", c_source.as_str())])
+        });
+        verified.unwrap_or_else(|error| panic!("{size}-store fixture failed: {}", error.message()));
+        let rewrites = sample
+            .named_work
+            .get("operation `substitution: snapshot rewrite`")
+            .copied()
+            .unwrap_or(0);
+        assert_eq!(
+            rewrites, 0,
+            "{size} field stores spent {rewrites} work units rewriting memory snapshots"
+        );
+    }
+}
+
 #[test]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
