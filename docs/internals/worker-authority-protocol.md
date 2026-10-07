@@ -215,7 +215,7 @@ the same ledger transfer, and the call must retain nothing. Join itself makes
 no population transition, and every count observed afterward is read from the
 ledger. A count whose authority is lent reports `count(...) requires owning
 authority for that population, which an outstanding worker holds until its
-pthread_join`. The contract-claims recheck replays both transitions, and
+pthread_join`. The contract-claims recheck executes both transitions again, and
 `click audit` expands and reverifies the migrated fixtures.
 
 A worker contract is admitted by the sequential authority-mode rules, so a
