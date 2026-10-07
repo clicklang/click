@@ -1,4 +1,4 @@
-# Whole-claim expansion fails on proofs with a proof `match`
+# Whole-claim expansion fails on a `branch` inside a proof `match`, and on `__rb_insert`
 
 ## Violated invariant
 
@@ -6,47 +6,69 @@
 stability comes first"), and it must agree with `click audit`.
 
 `click expand --claim <label>` rewrites every smart tactic of a claim in one
-run. For a number of claims whose proof holds a proof `match`, the proof it
-builds does not verify, although expanding each of the claim's smart sites by
-location (`click expand FILE:LINE`) succeeds and verifies.
+run. For the claims below the proof it builds does not verify, although
+expanding each of the claim's smart sites by location
+(`click expand FILE:LINE`) succeeds and verifies.
 
 ## Reproduction
 
 Each of these verifies, and each fails with "expanded proof did not verify":
 
 ```sh
-click expand --claim read_after_step.contract mdtests/proof_match_after_c_step.md
-click expand --claim countdown.contract mdtests/loop_decreases_strict_descendant.md
 click expand --claim chain_has_next.contract mdtests/match_bindings_in_branch_arm.md
 click expand --claim chain_countdown.contract mdtests/loop_preserve_branch_tactic.md
-click expand --claim chain_countdown_decided.contract mdtests/loop_preserve_branch_tactic.md
-click expand --claim spin.contract mdtests/loop_body_proof_match_ensuring_inside_a_proof_if.md
-click expand --claim rb_next.contract mdtests/rb_next.md
-click expand --claim rb_prev.contract mdtests/rb_prev.md
 click expand --claim __rb_insert.contract examples/rbtree-insert/rbtree_insert.click
 ```
 
-The reported errors differ, which suggests more than one cause:
+### A `branch` inside a match arm
 
-| claim | error in the expanded proof |
-| --- | --- |
-| `read_after_step` | `fold field model: algebraic initializer must denote one symbolic value` |
-| `countdown`, `chain_countdown_decided`, `rb_next`, `rb_prev` | `could not lower match scrutinee: expected an algebraic value` |
-| `chain_has_next` | `could not lower proof if condition: no state snapshot was recorded for statement(3...` |
-| `chain_countdown` | `cannot fold or unfold resource chain: matched field model has no known construct...` |
-| `spin` | `fold requires the instance body facts for the proposed fields` |
-| `__rb_insert` | `could not lower match scrutinee: algebraic initializer evaluation stopped at a model field of a resource instance this state does not hold` |
+`chain_has_next` has, inside one arm of a proof `match`, two `branch then { ...
+} else {}` tactics over C `if`s whose then-arms return early. The expansion
+writes each as a proof-level `if` over a snapshot:
 
-For `__rb_insert` the cause is visible in the output: in the `Color::Red` arm
-of the match that starts at `match c.model` (source line 782), the written
-proof has three `have`s, three `step()`s and one more `have` before a nested
-`match cu.model`. The expanded proof's arm starts at `match cu.model`; the
-seven tactics before it are gone, so the nested match runs three statements
-early.
+```
+if at(statement(0).entry, p) == at(statement(0).entry, 0) {
+} else {
+    step();
+    step();
+}
+if at(statement(3).entry, load_int32_pointer(p)) == at(statement(3).entry, 0) {
+```
 
-The list above came from trying whole-claim expansion on 75 passing mdtests
-that hold two or more proof `match`es and a `step()`. It is not a survey of
-the corpus.
+The first `if` has lost its then-arm's steps, and the second names
+`statement(3).entry` before any path has stepped there, which is the reported
+error: "could not lower proof `if` condition: no state snapshot was recorded
+for `statement(3).entry`".
+
+`chain_countdown` is a `branch` in a loop's `preserve` proof and fails with
+"cannot fold or unfold resource `chain`: matched field `model` has no known
+constructor".
+
+### `__rb_insert`
+
+In the `Color::Red` arm of the match that starts at `match c.model` (source
+line 782), the written proof has three `have`s, three `step()`s and one more
+`have` before a nested `match cu.model`. The expanded proof puts those seven
+tactics inside the nested match's arms, so the nested match runs before them
+and its `Context::Top` arm's `contradiction` has no fact to use.
+
+The merge that rebuilds a nested match places the shared tactics before it
+only when every path through it recorded the same position
+(`merge_path_certificates` in `execution_planning/context.rs`). Here the paths
+disagree: tracing shows position lists such as `[83, 83, 113, ...]` and
+`[16, 16, 37, ...]`, where the odd one out equals the position of a later
+match. Why one path's next recorded match is a later one with an equal header
+is not yet known.
+
+## Already fixed
+
+Two causes found with these reproductions are fixed, with regression tests in
+`src/surface/tests/expansion_tests.rs`:
+
+- tactics written after execution inside a match arm were emitted after the
+  match, outside the arm's bindings;
+- a nested match recorded its position as the length of the whole proof,
+  which includes the arms checked before it, instead of its own path's.
 
 ## Effect on the audit
 
@@ -59,8 +81,8 @@ audited that way.
 ## Acceptance
 
 - Every command above succeeds and its output verifies.
-- A regression test expands a claim whose match arm holds tactics before a
-  nested proof `match` and checks that those tactics are in the output.
+- A regression test covers a `branch` with an early-returning arm inside a
+  proof `match` arm.
 - `click audit` then treats a claim whose sites pass alone but whose
   whole-claim expansion fails as a failure, and the `NOTE` path and its
   summary count are removed.

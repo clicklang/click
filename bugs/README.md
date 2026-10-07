@@ -20,4 +20,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A decidably false return narrowing reports an internal error, not the range](false-return-narrowing-reports-internal-error.md)
 - [A parent cannot lock its own mutex after joining a typed `mutex_use` worker](mutex-lock-after-joining-typed-worker-refused.md)
 - [Arithmetic cannot render an observed product after a zero rewrite](arithmetic-cannot-render-observed-product-after-zero-rewrite.md)
-- [Whole-claim expansion fails on proofs with a proof `match`](whole-claim-expansion-fails-on-proof-matches.md)
+- [Whole-claim expansion fails on a `branch` inside a proof `match`, and on `__rb_insert`](whole-claim-expansion-fails-on-proof-matches.md)
