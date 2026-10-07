@@ -24,12 +24,9 @@ The stages protect different invariants:
 
 A claim whose sites are all selected is expanded once, with every site
 together. Expanding one site runs its whole claim, so expanding the sites one
-at a time costs the claim once per site. Only when the whole-claim expansion
-fails does the audit take the sites one at a time, which names the site at
-fault. A claim whose sites all pass alone but which does not expand as a whole
-passes with a `NOTE`, and the summary counts such claims; that difference is
-an open defect in whole-claim expansion
-([bug](https://github.com/clicklang/click/blob/master/bugs/whole-claim-expansion-fails-on-proof-matches.md)).
+at a time costs the claim once per site. A failure of whole-claim expansion
+fails the audit. The per-site path is used only for a partial selection of a
+claim, such as resuming inside it with `--start-at` or using `--max-sites`.
 
 `--keep-going` gathers further independent failures after a site fails. It
 doesn't make the run successful. A whole-session timeout can leave only a
