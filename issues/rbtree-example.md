@@ -17,6 +17,89 @@ correctness property is preservation of node identity and in-order order
 while links and colors change; a contract that consumes one well-formed
 tree and produces another cannot state that without an abstract model.
 
+## State, 2026-10-07: handoff
+
+Insert is finished and the next work is erase, starting at
+[chunk 10](#erase-d3-d4-d10). This section records what changed in the
+verifier since the insert proof was first written, and how to write the erase
+proofs so they do not need the same rework.
+
+**Where insert stands.** `examples/rbtree-insert/rbtree_insert.click` is about
+2,500 proof lines for 136 lines of C (19 times) and verifies in about 5.4
+seconds at 0.43 GB peak. The size and speed targets are in
+[verification efficiency](../docs/internals/verification-efficiency.md#proof-size-and-speed-targets).
+What repetition remains is the left/right mirror, which needs a language
+feature, and the uncontracted `__rb_rotate_set_parents` helper, which would
+need a ghost argument.
+
+**A split must rejoin.** The verifier no longer checks what follows a proof
+`if` or `match` once per arm. Two arms that both continue must join, or the
+proof is refused (`mdtests/proof_if_arms_must_rejoin.md`); the same holds
+inside `preserve`, and the automatic loop closer joins a C `if` that has more
+body after it instead of walking every path. The rule and its exceptions are
+in [proof scripts](../docs/concepts/proof-scripts.md) and
+[loops and invariants](../docs/concepts/loops-and-invariants.md). The insert
+proof was reworked to this after the fact; that rework, with hoisting and the
+removal of unneeded steps, took it from about 35 times its C to 19. Write
+erase this way from the start:
+
+- Use `match ... ensuring { ... }` (or `if ... ensuring`) and state in the
+  interface what the rest of the proof needs: the resources by name and the
+  facts about their models. Anything an arm establishes and the interface
+  does not state is gone after the join.
+- A bare `branch`, or a split with no `ensuring`, joins arms that end apart
+  and keeps only what both arms hold alike
+  (`mdtests/a_bare_branch_joins_arms_that_end_apart.md`).
+- Statements every arm repeats belong before or after the split, not in each
+  arm.
+
+**Idioms the insert port settled.**
+
+- Fold with the matched name as the model, `fold(rb_at(0), { model: xsib })`
+  rather than `{ model: RbTree::Empty }`. The fold then gives
+  `xs.model == xsib` exactly, which is the interface fact, with no extra
+  `have` in each arm.
+- An interface fact holds in an arm only together with what its terms need to
+  denote a value. `fact p[j] <= p[j + 1]` needs `have defined(j + 1)` in each
+  arm (`mdtests/an_interface_fact_needs_its_terms_defined_in_each_arm.md`,
+  `mdtests/bubble_pass3_max_suffix.md`). The refusal names what is missing.
+- An interface may name a resource through a pointer the model binds, as in
+  `owns xs: rb_at(xid->rb_left)`, when the proof holds the equality that says
+  which object `xid` is
+  (`mdtests/an_interface_resource_argument_reads_through_a_model_pointer.md`).
+  The four `match xsib ensuring` joins in the insert proof use it: each arm
+  folds only the sibling, and the context is folded once after the join.
+- About a quarter of the `have` steps in the first insert proof were not
+  needed. Before delivering a chunk, delete each `have` in turn and keep the
+  deletion when the proof still verifies.
+
+**A known cost, not yet measured on erase.** A store through a pointer asks,
+for every remembered cell under any pointer not proven distinct from the
+written one, whether ownership keeps that cell
+(`CMemory::without_possible_aliasing_cells`). Each question is cheap, but
+there is one for each such cell, so a `step()` that stores costs more as more
+nodes are unfolded. It was left alone on insert because its share of the 5.4
+seconds was never measured. Erase holds more nodes unfolded at once. If
+verify time grows faster than the proof does, this is the first suspect: it
+is a tooling blocker under `AGENTS.md`, to be reduced to a scaling test over
+several node counts and fixed in the kernel (ask once for each owned member
+instead of once for each cell), not worked around in the proof or the C.
+
+**Running things.**
+
+- Run heavy jobs one at a time under a memory cap, for example
+  `systemd-run --user --scope -q -p MemoryMax=14G -p MemorySwapMax=0 <cmd>`.
+  An uncapped `click audit` of this example once exhausted a 31 GB machine.
+  `click audit` of `__rb_insert` expands once for each site and was about 33
+  seconds a site when last measured on 2026-10-06, before the proof shrank;
+  measure it again before relying on it. `click verify` is the routine
+  check.
+- Running a test binary by hand needs `RUST_MIN_STACK=8388608`, which
+  `scripts/check.sh` sets; without it some tests overflow the stack.
+- On a machine without the current C++ exporter, eight mdtests (`cpp_*` and
+  `field_borrow_parent_drop*`) and `examples/basic-cpp` fail with
+  "unsupported C++ exporter schema". They are unrelated to this work.
+
 ## State, 2026-10-02
 
 **`__rb_insert` verifies end to end** on the unchanged Linux C
@@ -779,6 +862,8 @@ parameter is declared without `const` for the same reason as chunk 8's.
 
 Larger than insert; expect the same cadence of verifier gaps, and expect this
 split to be revised once chunk 11 is under way.
+Write these proofs with `ensuring` joins from the start; see the
+[2026-10-07 handoff](#state-2026-10-07-handoff).
 
 **Chunk 10. Erase model theorems: rebalancing half written 2026-10-02.** One
 theorem per `____rb_erase_color` case and side, in the D10 shape of
