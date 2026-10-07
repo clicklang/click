@@ -501,6 +501,43 @@ Sixteen hermetic phases cover ordinary, wrapper/instance expansion and retained
 verification, missing field/size/amount/product guards, strict input endpoints
 weakened to inclusive ones, omitted wide-branch or fee bounds, forged product
 transport and false rounding. Original wide, fast and unified joint-bound
-profiles remain separate regressions. Next extend the unsigned fast path to
-these amount/result-fit bounds, then unify all signed fee branches under the
-broader caller contract.
+profiles remain separate regressions. The unsigned fast profiles below now use
+these amount/result-fit bounds; broader unification of all fee branches is next.
+
+
+## Unsigned fast fee callers with explicit result fit
+
+[`FeeFracEvaluateFastResultFitDown.click.in`](FeeFracEvaluateFastResultFitDown.click.in)
+and [`FeeFracEvaluateFastResultFitUp.click.in`](FeeFracEvaluateFastResultFitUp.click.in)
+verify the unchanged unsigned fast path with `0 <= at_size <= INT32_MAX` and
+positive int32 size. They retain the source's native nonnegative fee and
+`fee < 2^33` guards, explicit fee observer bounds `0 <= F <= 2^33 - 1`,
+and field views. Down requires `F * A < (INT64_MAX + 1) * D`; Up requires
+`F * A <= INT64_MAX * D`. The lower signed-fit bound is automatic on this
+nonnegative domain. Neither profile requires `at_size <= size`, and the
+result bound is now `0 <= result <= INT64_MAX`, rather than a fee-sized bound.
+
+Explicit rectangular product certificates give
+`0 <= F * A <= 18446744062972133377` from the fee/amount ranges, independently
+of `D`. This checks the uint64 multiplication. Up also checks the actual
+`product + size` addition and subtraction of one, including the lower bound
+that prevents unsigned underflow. Down applies the shared strict scaled
+quotient upper bound to the product. Up derives
+`F * A + D - 1 < (INT64_MAX + 1) * D` from its fit premise and applies the
+same quotient bound to that adjusted numerator. Both reflect the derived
+quotient limit back to native uint64 order before the ordinary int64 return
+cast, and check the cast's observer identity.
+
+Both caller levels preserve fields, export exact floor/ceiling product
+inequalities, and identify the result with the corresponding truncating
+quotient of the actual native numerator. Four modular examples cover fee 7,
+size 1, amount 2, and the maximum fast fee/native amount with size 2. The latter
+uses a uint64 product above `INT64_MAX`, while the rounded result still fits.
+
+Twelve bounded hermetic phases cover ordinary, wrapper/instance expansion and
+retained verification, omitted authority/amount/result-fit/fee/branch guards,
+relaxed result-fit bounds, false rounding, missing product/division bridges,
+and Up's missing addition/subtraction or forged adjusted numerator. The wider
+fast and wide profiles are now available separately. Next combine their proof
+fragments into full-signed-fee Down/Up contracts under the broader product-fit
+domain, retaining the actual source branch comparisons.

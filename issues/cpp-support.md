@@ -820,16 +820,30 @@ checked multiplication, exact rounding and field frames. Four modular contract
 applications fix size to 1 and amount to 2. Sixteen hermetic phases cover the
 profiles' ordinary, expanded and retained verification, missing authority and
 fit guards, weakened strict endpoints, false rounding and forged product
-transport. The unsigned fast path and original unified profile still use the
-joint amount/size bounds.
+transport. The original unsigned fast and unified profiles still use the joint amount/size
+bounds; the alternative wider fast profiles follow.
 
-Next extend the unsigned fast Down/Up callers to the same product/result-fit
-and native amount bounds. Check the actual uint64 product (and ceiling's
-adjusted numerator) before division, and derive the ordinary int64 result cast
-from explicit result-fit rather than `at_size <= size`. Then combine fast and
-wide proofs under a broader full-signed-fee caller contract, preserving source
-branch guards and field frames. Keep the alternative helper interfaces explicit
-until a shared guarded contract is justified.
+The unsigned fast Down/Up result-fit profiles now replace `at_size <= size`
+with native amount bounds and a mode-specific upper product-fit premise. The
+fast branch's explicit nonnegative fee/amount observers make its lower signed
+bound automatic. Rectangular certificates bound the actual uint64 product;
+Up separately checks its addition/subtraction before division. A strict scaled
+quotient bound derives the full int64 return-cast limit from Down's product or
+Up's adjusted numerator. Both caller levels export exact rounding, quotient
+identity, result bounds and field frames. Four modular examples include
+`at_size > size` and a uint64 product above `INT64_MAX` whose quotient fits.
+Twelve hermetic phases cover ordinary, expanded and retained verification,
+missing/weakened fit and operand guards, false rounding and missing/forged
+numerator transport. Original fast profiles remain separate regressions.
+
+Next combine the wider fast and wide proof fragments into one full-signed-fee
+caller contract per mode. Use explicit mode-specific product-fit and native
+amount bounds, derive fast fee observers from the actual signed comparisons,
+and retain the wide branches' exact product transport and field frames. Keep
+the alternative helper interfaces explicit until a shared guarded contract is
+justified. Add modular examples across all source branches under the combined
+contract, including amounts above the stored size, and preserve bounded
+ordinary/expanded/retained verification and hostile branch/fit/transport checks.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
@@ -839,8 +853,8 @@ an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
-machine observer ranges, general range inference, wider fast/unified fee callers
-and the portable `DivFallback` implementation remain open.
+machine observer ranges, general range inference, wider unified fee callers and
+the portable `DivFallback` implementation remain open.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false
