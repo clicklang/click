@@ -7903,20 +7903,17 @@ impl CState {
             .has_unary_pointer_alias(name, arguments, assumptions)
     }
 
-    pub(crate) fn indexed_counted_population_matches(
+    /// The populations of `name`'s family that a count pattern names, or the
+    /// first one it may or may not name; see
+    /// [`CountedPopulations::pattern_matches`].
+    pub(crate) fn counted_population_pattern_matches(
         &self,
         name: &str,
         arguments: &[Option<AlgebraicValue>],
         assumptions: &PureFactContext,
-    ) -> Option<Vec<&CCountedPopulation>> {
-        let [Some(argument)] = arguments else {
-            return None;
-        };
-        self.counted_populations.indexed_unary_matches(
-            name,
-            std::slice::from_ref(argument),
-            assumptions,
-        )
+    ) -> Result<Vec<&CCountedPopulation>, &CCountedPopulation> {
+        self.counted_populations
+            .pattern_matches(name, arguments, assumptions)
     }
 
     /// Count sees the selected create outcome even before the next C step.
@@ -7952,27 +7949,13 @@ impl CState {
         assumptions: &PureFactContext,
     ) -> Option<Bitvector32Term> {
         let state = self.count_observation_state(assumptions);
-        state
-            .counted_populations
-            .iter()
-            .filter(|population| {
-                !population.family_observation_marker
-                    && population.name == name
-                    && population.arguments.len() == arguments.len()
-                    && population
-                        .arguments
-                        .iter()
-                        .zip(arguments)
-                        .all(|(actual, expected)| {
-                            expected.as_ref().is_none_or(|expected| {
-                                crate::kernel::resource_arguments_proven_equal(
-                                    actual,
-                                    expected,
-                                    assumptions,
-                                )
-                            })
-                        })
-            })
+        // An entry the pattern may or may not name leaves the total
+        // undetermined, exactly as a pending worker does.
+        let matching = state
+            .counted_population_pattern_matches(name, arguments, assumptions)
+            .ok()?;
+        matching
+            .into_iter()
             .try_fold(Bitvector32Term::Constant(0), |total, population| {
                 if state
                     .population_effects

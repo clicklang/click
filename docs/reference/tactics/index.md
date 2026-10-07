@@ -83,7 +83,10 @@ remains migration compatibility and should not be used in new proofs.
 A simple tactic that adds a fact (`extract`, `instantiate ... using`,
 `apply ... using`, `transport ... using`, and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
-`assumption`, `simp`, or `normalize` follows it. When other written steps
+`assumption`, `simp`, or `normalize` follows it. An added order fact closes
+the goal under either spelling of the same claim: `0 <= e` closes the goal
+`e >= 0`, and `a < b` closes `b > a`, for machine and `Integer` operands
+alike. When other written steps
 follow, the goal stays open with the added fact available, so every remaining
 step is still checked.
 
@@ -121,7 +124,7 @@ step is still checked.
 | `cases { A => { ... } B => { ... } }` | control | Eliminate an exact available disjunction, proving the same goal once under each arm's disjunct. There is one arm per disjunct, any number from two, and the disjunction of the arms grouped left to right as `or` parses (`A or B or C` is `(A or B) or C`) must be available. At an execution frontier every arm begins from the same checked C state and continues separately. | An unavailable disjunction or unfinished arm fails; this never substitutes `not A` for `B` or implicitly branches C. Click checks both proof branches, expansion recurses, and profiling reports descendants. | [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs) |
 | `open(resource) { ... }` | control | Temporarily replace a held composite resource with one body layer, check the nested proof, then fold it at scope exit. | Missing ownership, an undecided guard, or failure to restore the body fails. Click checks the exact resource transition; expansion recurses, and profiling reports descendants. | [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md) |
 | `witness { name: value, ... }` | simple | On an existential goal, instantiate each named binder with its value, in the order written, and continue with the instantiated body. One `witness` can supply every binder of `exists (x: T, y: U) { ... }`. | A wrong binder, ill-typed value, or nonexistential goal fails. Click records the exact witness; expansion is unchanged, and profiling charges one instantiation. | [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md) |
-| `obtain (name: Type, ...) { P }` | simple | Open an already established `exists (name: Type, ...) { P }`, introducing the bound values and instantiated body into the proof context. | An unavailable existential, wrong binder type, or name already in scope fails. Prove the existential with `have` first if needed. Expansion retains this exact step. | [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md) |
+| `obtain (name: Type, ...) { P }` | simple | Open an already established `exists (name: Type, ...) { P }`, introducing the bound values and instantiated body into the proof context. Each name is in scope for every later tactic of the same proof block, whatever its type: a `have` goal, an `instantiate` argument or `using` premise, a `contradiction` fact, a theorem argument, or a `witness`. | An unavailable existential, wrong binder type, or name already in scope fails. Prove the existential with `have` first if needed. Expansion retains this exact step. | [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md) |
 
 `both { ... } and { ... }` proves an `A and B` goal by opening the exact `A`
 and `B` child goals. Both arms inherit the parent assumptions; neither inherits

@@ -11,10 +11,10 @@ use crate::kernel::population_authority::c_creation::{
 };
 use crate::kernel::{
     Bitvector32Term, CCompositeResourceDefinition, CConditionOutcome, CExpression, CFunction,
-    CFunctionExecutionCandidates, CMemory, CMemoryRange, CResource, CResourceFact, CResourceSpec,
-    CRuntimeError, CState, CStatement, CStatementOutcome, CValue, CVerifiedLoopRule,
-    ExecutionBudget, ExecutionLimit, ExecutionPureFact, Pointer, Proposition, PureFactContext,
-    ResourceContext, SpecProposition, Theorem, Variable,
+    CFunctionExecutionCandidates, CFunctionOutcome, CMemory, CMemoryRange, CResource,
+    CResourceFact, CResourceSpec, CRuntimeError, CState, CStatement, CStatementOutcome, CValue,
+    CVerifiedLoopRule, ExecutionBudget, ExecutionLimit, ExecutionPureFact, Pointer, Proposition,
+    PureFactContext, ResourceContext, SpecProposition, Theorem, Variable,
 };
 use crate::persistent::PersistentSet;
 use std::collections::{BTreeMap, HashMap};
@@ -3526,6 +3526,17 @@ pub(crate) enum OutcomeEvidenceFork {
     },
 }
 
+/// How many traces one entry of an outcome evidence fork plan produces.
+fn outcome_fork_count(fork: &OutcomeEvidenceFork) -> usize {
+    match fork {
+        OutcomeEvidenceFork::Keep => 1,
+        OutcomeEvidenceFork::Split { arm_facts, .. } => arm_facts.len(),
+        OutcomeEvidenceFork::NestedSplit { arms, .. } => {
+            arms.iter().map(|arm| outcome_fork_count(arm)).sum()
+        }
+    }
+}
+
 /// One arm of a checked logical partition. This event advances no C source;
 /// it changes only the authoritative fact context for later evidence.
 #[derive(Clone)]
@@ -5996,6 +6007,29 @@ pub(crate) struct ExceptionalContinuation {
     pub(crate) cleanup_unwind: bool,
 }
 
+/// A returned path of a summarized loop, already checked while the loop's
+/// continuing successor keeps advancing.
+///
+/// The trace forks from the open trace at the loop statement and completes
+/// with the loop rule's `Return` theorem; it is appended to the completed
+/// trace set only at the function boundary. The outcome and facts are the
+/// candidate the surface publishes for it there, and `pure_facts` is the
+/// proof's fact base on that path: the facts available at the loop plus the
+/// returned path's own, so nothing established after the loop on the
+/// continuing path is cited on it.
+#[derive(Clone)]
+pub(crate) struct PendingLoopReturnPath {
+    trace: PersistentSequence<CheckedExecutionEvent>,
+    /// The source loop whose rule returned this path, for the point its
+    /// premises are read at.
+    pub(crate) loop_index: Option<usize>,
+    pub(crate) outcome: CFunctionOutcome,
+    pub(crate) execution_facts: Vec<ExecutionPureFact>,
+    pub(crate) obligations: Vec<crate::kernel::ProofObligation>,
+    pub(crate) pure_facts: ProofFacts,
+    pub(crate) loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+}
+
 /// Surface-independent execution state owned by a checked proof branch.
 ///
 /// Language lowering and certificate capture wrap this value with their own
@@ -6043,10 +6077,15 @@ pub(crate) struct ExecutionProofCore {
     /// operation with several return outcomes can complete several traces at
     /// once. Forked proofs share every unchanged trace prefix.
     pub(crate) execution_evidence: SharedVec<PersistentSequence<CheckedExecutionEvent>>,
-    /// Terminal call exits already proved while the normal successor keeps
-    /// advancing. They are appended to the completed trace set only at the
-    /// function boundary, so ordinary frontier operations still own exactly
-    /// one active trace and never mutate a terminal sibling.
+    /// Returned paths of summarized loops, already proved while each loop's
+    /// continuing successor keeps advancing. They are appended to the
+    /// completed trace set only at the function boundary, so ordinary
+    /// frontier operations still own exactly one active trace and never
+    /// mutate a terminal sibling. Once appended, `pending_loop_return_start`
+    /// says where they begin among this execution's paths.
+    pending_loop_returns: PersistentSequence<PendingLoopReturnPath>,
+    completed_pending_loop_returns: Option<Arc<Vec<PendingLoopReturnPath>>>,
+    pending_loop_return_start: Option<usize>,
     /// Stable-view call evidence retained along the focused execution path.
     /// This is kept beside the checked event trace so loop planning can pass
     /// the exact path evidence into its exit candidates.
@@ -7551,6 +7590,9 @@ impl ExecutionProofCore {
             frontier,
             effect_facts: Default::default(),
             execution_evidence: vec![PersistentSequence::default()].into(),
+            pending_loop_returns: Default::default(),
+            completed_pending_loop_returns: None,
+            pending_loop_return_start: None,
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
             return_resource_rewrites: Default::default(),
             checked_call_events: CheckedCallEvents::new(),
@@ -7749,7 +7791,7 @@ impl ExecutionProofCore {
                 self.evidence_completed = true;
             }
             CStatementOutcome::Break(state) => {
-                let source_after = self.advance_loop_control(false, None)?;
+                let source_after = self.advance_loop_control(false, source_after)?;
                 self.evidence_source = source_after;
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
@@ -7802,6 +7844,19 @@ impl ExecutionProofCore {
     /// `break`/`continue`. The ordinary statement theorem proves only the
     /// control statement itself; this frontier movement supplies the exact
     /// source that the next condition or statement theorem must consume.
+    ///
+    /// The continuation holds the source the driver's frontier saw when it
+    /// entered the loop: the loop head followed by the rest of the region
+    /// that contains the loop. For a loop nested in another concretely
+    /// executed loop that region is the enclosing body alone; the enclosing
+    /// loop head and everything after it live in the next continuation
+    /// down. The frontier resumes from that body tail, as it does when the
+    /// loop exits at its head. The evidence source is the kernel's own:
+    /// `validated_source_after`, the source left after the control
+    /// statement's theorem, still holds the rest of this body, this loop
+    /// head and whatever follows the head, so the source the next theorem
+    /// must consume is read from it at the head, never from the
+    /// continuation's shorter view.
     fn advance_loop_control(
         &mut self,
         continue_statement: bool,
@@ -7817,33 +7872,35 @@ impl ExecutionProofCore {
                 "loop control has an empty enclosing-loop continuation",
             ));
         };
+        let (loop_head, frontier_tail) = split_shared_source(&loop_source);
         let (next_statement_index, source_after) = if continue_statement {
-            let frontier_source = loop_source.clone();
             // The validated tail still contains the rest of the source body
             // before the loop head. Preserve the exact loop head (and any
             // enclosing-loop suffix after it) rather than treating that body
             // tail as the next frontier statement.
-            let loop_head = split_shared_source(&loop_source).0;
-            let mut source = validated_source_after;
             let source_after =
-                loop_head_source(source.take(), &loop_head).or(Some(loop_source.clone()));
+                loop_head_source(validated_source_after, &loop_head).or(Some(loop_source.clone()));
             self.frontier.position = FrontierPosition::StatementEntry {
-                remaining: frontier_source,
+                remaining: loop_source.clone(),
             };
             (continuation.next_statement_index, source_after)
         } else {
-            let (_, tail) = split_shared_source(&loop_source);
-            (continuation.loop_exit_statement_index, tail)
-        };
-        self.frontier.next_statement_index = next_statement_index;
-        if !continue_statement {
-            self.frontier.position = match &source_after {
+            // A `break` leaves the loop: the source after it is what follows
+            // this loop head in the validated tail. The continuation's own
+            // tail is the fallback when the head is not found there, and is
+            // what the driver's frontier resumes from either way.
+            let source_after = loop_head_source(validated_source_after, &loop_head)
+                .map(|from_head| split_shared_source(&from_head).1)
+                .unwrap_or_else(|| frontier_tail.clone());
+            self.frontier.position = match &frontier_tail {
                 Some(remaining) => FrontierPosition::StatementEntry {
                     remaining: remaining.clone(),
                 },
                 None => FrontierPosition::RegionBoundary,
             };
-        }
+            (continuation.loop_exit_statement_index, source_after)
+        };
+        self.frontier.next_statement_index = next_statement_index;
         Ok(source_after)
     }
 
@@ -7892,6 +7949,155 @@ impl ExecutionProofCore {
         self.evidence_source = None;
         self.evidence_completed = true;
         Ok(())
+    }
+
+    /// Retains one returned path of a summarized loop while this core follows
+    /// the loop's continuing successor.
+    ///
+    /// `parent` is this core as it was before the loop's continuing theorem
+    /// was recorded: the returned path forks from that single open trace.
+    /// The `Return` theorem is checked against the parent exactly as a
+    /// recorded transition would be, so it proves the loop statement the
+    /// frontier was about to run, from the state it was in, under the
+    /// retained premises. The published outcome is checked again at
+    /// completion against the trace, like every other path's.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_pending_loop_return(
+        &mut self,
+        parent: &Self,
+        function: &CFunction,
+        arguments: &[CExpression],
+        theorem: &Theorem,
+        context: &PureFactContext,
+        execution_facts: &[ExecutionPureFact],
+        obligations: &[crate::kernel::ProofObligation],
+        outcome: CFunctionOutcome,
+        completed_execution_facts: Vec<ExecutionPureFact>,
+        completed_obligations: Vec<crate::kernel::ProofObligation>,
+        pure_facts: ProofFacts,
+        loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        loop_index: Option<usize>,
+    ) -> Result<(), EvidenceRefusal> {
+        if parent.execution_evidence.len() != 1
+            || self.execution_evidence.len() != 1
+            || parent.evidence_completed
+            || self.evidence_completed
+            || parent.completed_pending_loop_returns.is_some()
+            || self.execution_evidence[0]
+                .suffix_since(&parent.execution_evidence[0])
+                .is_none()
+        {
+            return Err(
+                "a loop's returned path does not fork from the step's single open trace".into(),
+            );
+        }
+        let mut probe = parent.clone();
+        let (statement_outcome, _) = probe.check_statement_evidence(
+            function,
+            arguments,
+            theorem,
+            context,
+            execution_facts,
+            obligations,
+        )?;
+        if !matches!(statement_outcome, CStatementOutcome::Return { .. }) {
+            return Err("a loop's retained terminal path does not return".into());
+        }
+        if !matches!(
+            outcome,
+            CFunctionOutcome::Return { .. }
+                | CFunctionOutcome::RuntimeError(_)
+                | CFunctionOutcome::UndefinedBehavior(_)
+        ) {
+            return Err("a loop's returned path was published with a non-returning outcome".into());
+        }
+        let mut trace = parent.execution_evidence[0].clone();
+        trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
+        trace.push(CheckedExecutionEvent::Context(context.clone()));
+        for view in statement_call_havoc_views(theorem) {
+            let event = self.checked_call_events.new_event(view);
+            trace.push(CheckedExecutionEvent::Call(event));
+        }
+        self.pending_loop_returns.push(PendingLoopReturnPath {
+            trace,
+            loop_index,
+            outcome,
+            execution_facts: completed_execution_facts,
+            obligations: completed_obligations,
+            pure_facts,
+            loan_evidence,
+        });
+        Ok(())
+    }
+
+    /// Appends each retained returned path once, after the live successor
+    /// has completed. Candidate construction consumes the returned metadata
+    /// in exactly this trace order, so the paths stay zipped with the traces.
+    pub(crate) fn complete_pending_loop_returns(&mut self) -> Vec<PendingLoopReturnPath> {
+        if self.pending_loop_returns.is_empty() || self.completed_pending_loop_returns.is_some() {
+            return Vec::new();
+        }
+        self.pending_loop_return_start = Some(self.execution_evidence.len());
+        let pending = self.pending_loop_returns.to_vec();
+        self.completed_pending_loop_returns = Some(Arc::new(pending.clone()));
+        for path in &pending {
+            self.execution_evidence.push(path.trace.clone());
+        }
+        pending
+    }
+
+    /// The proof's fact base on a completed returned path of a summarized
+    /// loop, by its index among this execution's paths; `None` for every
+    /// other path, whose base is the proof's own facts.
+    pub(crate) fn pending_loop_return_pure_facts(&self, path_index: usize) -> Option<&ProofFacts> {
+        let start = self.pending_loop_return_start?;
+        path_index
+            .checked_sub(start)
+            .and_then(|index| self.completed_pending_loop_returns.as_ref()?.get(index))
+            .map(|path| &path.pure_facts)
+    }
+
+    /// The loop whose rule returned a completed path of a summarized loop, by
+    /// its index among this execution's paths; `None` for every other path.
+    pub(crate) fn pending_loop_return_loop_index(&self, path_index: usize) -> Option<usize> {
+        let start = self.pending_loop_return_start?;
+        path_index
+            .checked_sub(start)
+            .and_then(|index| self.completed_pending_loop_returns.as_ref()?.get(index))
+            .and_then(|path| path.loop_index)
+    }
+
+    /// Forgets retained returned paths: a join that rebuilt this core's paths
+    /// from its arms has already carried each arm's completed paths over.
+    pub(crate) fn clear_pending_loop_returns(&mut self) {
+        self.pending_loop_returns = Default::default();
+        self.completed_pending_loop_returns = None;
+        self.pending_loop_return_start = None;
+    }
+
+    /// The value and state a trace this frontier completed with a `return`
+    /// returned, read from the theorem that completed it and the state the
+    /// evidence reached after it (automatic lifetimes the `return` ended
+    /// included). `None` for an open frontier or one completed otherwise.
+    pub(crate) fn completed_return_outcome(&self) -> Option<(CValue, CState)> {
+        if !self.evidence_completed || self.execution_evidence.len() != 1 {
+            return None;
+        }
+        let state = self.evidence_state.clone()?;
+        let theorem = self.execution_evidence[0]
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                CheckedExecutionEvent::Statement(theorem) => Some(theorem),
+                _ => None,
+            })?;
+        match checked_evidence_conclusion(theorem) {
+            Proposition::CStatementVerifies {
+                outcome: CStatementOutcome::Return { value, .. },
+                ..
+            } => Some((value.clone(), state)),
+            _ => None,
+        }
     }
 
     /// The source the evidence has yet to consume: the kernel-held source
@@ -9091,6 +9297,26 @@ impl ExecutionProofCore {
         }
         for (trace, fork) in self.execution_evidence.iter().zip(plan) {
             append(trace, fork, &mut traces)?;
+        }
+        if let (Some(start), Some(completed)) = (
+            self.pending_loop_return_start,
+            self.completed_pending_loop_returns.as_ref(),
+        ) {
+            // The retained returned paths stay zipped with their traces: the
+            // block now starts after every trace the plan produces for the
+            // paths before it, and a split path repeats its entry per arm.
+            let new_start: usize = plan[..start].iter().map(outcome_fork_count).sum();
+            let mut remapped = Vec::with_capacity(completed.len());
+            for (offset, fork) in plan[start..].iter().enumerate() {
+                let Some(path) = completed.get(offset) else {
+                    break;
+                };
+                for _ in 0..outcome_fork_count(fork) {
+                    remapped.push(path.clone());
+                }
+            }
+            self.pending_loop_return_start = Some(new_start);
+            self.completed_pending_loop_returns = Some(Arc::new(remapped));
         }
         self.execution_evidence = traces.into();
         Ok(())

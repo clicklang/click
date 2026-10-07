@@ -4886,8 +4886,10 @@ impl AnnotationLowerer<'_> {
                         .counted_population_sum(name, &values, &assumptions)
                         .ok_or_else(|| {
                             format!(
-                                "`count({name})` at a recorded state totals populations whose \
-                                 quantities do not add up to a count"
+                                "`count({name})` at a recorded state has no total that is a count: \
+                                 its populations' quantities do not add up, or another tracked \
+                                 population of the family is neither proven equal nor proven \
+                                 different from the counted one"
                             )
                         })?;
                     return Ok(SpecExpression::Value(CValue::Int32(total)));

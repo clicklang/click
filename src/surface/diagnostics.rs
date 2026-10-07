@@ -974,6 +974,54 @@ pub(super) fn describe_missing_proof_obligations(
     )
 }
 
+/// A required condition the available facts decide against. It is refuted,
+/// not merely underived: no smaller step or listed premise supplies it. The
+/// sentence names the condition and the condition facts about its
+/// variables, the ones a reader compares it to: for the `uint8` upper bound
+/// of a returned `int32` known to be `300`, "the facts refute `x <= 255`:
+/// [x == 300]".
+pub(super) fn describe_refuted_condition(
+    required: &Proposition,
+    pure_facts: &[Proposition],
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    let variables = crate::kernel::proposition_variables(required);
+    let about = pure_facts
+        .iter()
+        .filter(|fact| {
+            matches!(fact, Proposition::ConditionIs(_, _))
+                && (variables.is_empty()
+                    || !crate::kernel::proposition_variables(fact).is_disjoint(&variables))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    format!(
+        "the facts refute `{}`: {}",
+        describe_stated_fact(required, parameters, arguments),
+        describe_bounded_list(&about, |fact| describe_stated_fact(
+            fact, parameters, arguments
+        )),
+    )
+}
+
+/// [`describe_refuted_condition`] for an obligation a path owes, under the
+/// obligation's own context when it has one: "uint8 narrowing upper bound:
+/// the facts refute `x <= 255`: [x == 300]".
+pub(super) fn describe_refuted_proof_obligation(
+    obligation: &ProofObligation,
+    pure_facts: &[Proposition],
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    let refutation =
+        describe_refuted_condition(obligation.proposition(), pure_facts, parameters, arguments);
+    match obligation.context() {
+        Some(context) => format!("{context}: {refutation}"),
+        None => refutation,
+    }
+}
+
 pub(super) fn describe_function_outcome(
     outcome: &CFunctionOutcome,
     parameters: &[syntax::C0Parameter],

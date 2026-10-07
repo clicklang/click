@@ -14,6 +14,15 @@ struct Store {
     unary_pointers: SnapshotMap<(String, Pointer), SnapshotSet<u64>>,
     unsupported_pointers: SnapshotMap<String, usize>,
     symbolic_pointers: SnapshotMap<String, usize>,
+    /// Ordinary entries keyed on one pointer into a separable block
+    /// ([`block_is_separable`]), by that block: the only entries a pattern
+    /// naming the block may denote once every entry of the family is such a
+    /// pointer.
+    separable_blocks: SnapshotMap<(String, PointerBlock), SnapshotSet<u64>>,
+    /// Per family, the ordinary entries that are not one pointer into a
+    /// separable block. While it is zero the family's entries are pairwise
+    /// distinct objects whenever their blocks differ.
+    inseparable: SnapshotMap<String, usize>,
     next: u64,
     content_hash: u64,
 }
@@ -89,6 +98,28 @@ fn unary_pointer(arguments: &[AlgebraicValue]) -> Option<Pointer> {
         return None;
     };
     normalized_pointer(pointer.pointer())
+}
+
+/// Blocks whose distinct identities are distinct objects by structure alone
+/// (`PointerBlock::proven_distinct`): a fresh heap or temporary object, or a
+/// named concrete object. A pointer into any other kind of block, a parameter
+/// or a loaded pointer above all, may alias a pointer into any of these.
+fn block_is_separable(block: &PointerBlock) -> bool {
+    matches!(
+        block,
+        PointerBlock::Heap(_) | PointerBlock::Temporary(_) | PointerBlock::Concrete(_)
+    )
+}
+
+/// The block of an ordinary entry's one pointer argument when that block is
+/// separable, which is when the entry joins `separable_blocks` rather than
+/// the family's `inseparable` count.
+fn separable_block(arguments: &[AlgebraicValue]) -> Option<&PointerBlock> {
+    let [AlgebraicValue::C(CValue::Pointer(pointer))] = arguments else {
+        return None;
+    };
+    let block = &pointer.pointer().block;
+    block_is_separable(block).then_some(block)
 }
 
 impl CountedPopulations {
@@ -217,6 +248,26 @@ impl CountedPopulations {
                     .unsupported_pointers
                     .insert(population.name.clone(), count + 1);
             }
+            match separable_block(&population.arguments) {
+                Some(block) => {
+                    let block_key = (population.name.clone(), block.clone());
+                    let mut ids = store
+                        .separable_blocks
+                        .get(&block_key)
+                        .cloned()
+                        .unwrap_or_default();
+                    ids.insert(id);
+                    store.separable_blocks.insert(block_key, ids);
+                }
+                None => {
+                    let count = store
+                        .inseparable
+                        .get(&population.name)
+                        .copied()
+                        .unwrap_or(0);
+                    store.inseparable.insert(population.name.clone(), count + 1);
+                }
+            }
         }
         store.content_hash = store
             .content_hash
@@ -277,6 +328,30 @@ impl CountedPopulations {
                         .insert(name.to_owned(), count - 1);
                 }
             }
+            match separable_block(&old.arguments) {
+                Some(block) => {
+                    let block_key = (old.name.clone(), block.clone());
+                    let mut ids = store
+                        .separable_blocks
+                        .get(&block_key)
+                        .cloned()
+                        .expect("indexed separable block");
+                    ids.remove(id);
+                    if ids.len() == 0 {
+                        store.separable_blocks.remove(&block_key);
+                    } else {
+                        store.separable_blocks.insert(block_key, ids);
+                    }
+                }
+                None => {
+                    let count = *store.inseparable.get(name).expect("inseparable count");
+                    if count == 1 {
+                        store.inseparable.remove(name);
+                    } else {
+                        store.inseparable.insert(name.to_owned(), count - 1);
+                    }
+                }
+            }
         }
         store.exact.remove(&identity);
         if family.len() == 0 {
@@ -318,15 +393,31 @@ impl CountedPopulations {
         arguments: &[AlgebraicValue],
         assumptions: &PureFactContext,
     ) -> Option<Vec<&CCountedPopulation>> {
+        let ids = self.indexed_unary_match_ids(name, arguments, assumptions)?;
+        let store = self.0.as_ref()?;
+        Some(
+            ids.into_iter()
+                .map(|id| store.ordered.get(&id).expect("indexed population"))
+                .collect(),
+        )
+    }
+
+    /// [`Self::indexed_unary_matches`] by entry id.
+    fn indexed_unary_match_ids(
+        &self,
+        name: &str,
+        arguments: &[AlgebraicValue],
+        assumptions: &PureFactContext,
+    ) -> Option<BTreeSet<u64>> {
         let pointer = unary_pointer(arguments)?;
         let Some(store) = &self.0 else {
-            return Some(Vec::new());
+            return Some(BTreeSet::new());
         };
         let Some(family) = store.families.get(name) else {
-            return Some(Vec::new());
+            return Some(BTreeSet::new());
         };
         if family.len() == 1 && self.get(name, &[], true).is_some() {
-            return Some(Vec::new());
+            return Some(BTreeSet::new());
         }
         if store.unsupported_pointers.contains_key(name) {
             return None;
@@ -374,18 +465,110 @@ impl CountedPopulations {
         Some(
             candidates
                 .into_iter()
-                .filter_map(|id| {
+                .filter(|id| {
                     crate::instrumentation::record_deterministic_work(1);
-                    let population = store.ordered.get(&id).expect("indexed population");
+                    let population = store.ordered.get(id).expect("indexed population");
                     crate::kernel::resource_arguments_proven_equal(
                         &population.arguments[0],
                         &arguments[0],
                         assumptions,
                     )
-                    .then_some(population)
                 })
                 .collect(),
         )
+    }
+
+    /// The populations of `name`'s family that `pattern` names, or the first
+    /// one it may or may not name.
+    ///
+    /// Two keys `R(p)` and `R(q)` denote one population whenever `p == q`, so
+    /// a total over the entries proven equal to the pattern is a count only
+    /// when every other same-arity entry is proven different from it. An
+    /// entry that is neither is the error: `count(R(p))` has no value the
+    /// facts determine until `p == q` or `p != q` is established, and a
+    /// transfer keyed on `p` may be spending `R(q)`'s units.
+    ///
+    /// Equality comes from the exact unary-pointer index where it applies, so
+    /// no decision runs per entry on that side. Distinctness is structural
+    /// for most of a family in practice: when every entry is one pointer
+    /// into a separable block and so is the pattern, only the entries in the
+    /// pattern's block are visited, the others being distinct objects. A
+    /// family holding a parameter-keyed entry is scanned, one work unit per
+    /// entry, and the scan ends at the first undecided entry.
+    pub(crate) fn pattern_matches(
+        &self,
+        name: &str,
+        pattern: &[Option<AlgebraicValue>],
+        assumptions: &PureFactContext,
+    ) -> Result<Vec<&CCountedPopulation>, &CCountedPopulation> {
+        use crate::kernel::CountedPopulationArgumentRelation as Relation;
+        let Some(store) = &self.0 else {
+            return Ok(Vec::new());
+        };
+        let Some(family) = store.families.get(name) else {
+            return Ok(Vec::new());
+        };
+        let equal_ids = match pattern {
+            [Some(argument)] => {
+                self.indexed_unary_match_ids(name, std::slice::from_ref(argument), assumptions)
+            }
+            _ => None,
+        };
+        let separable_candidates = match pattern {
+            [Some(AlgebraicValue::C(CValue::Pointer(pointer)))]
+                if block_is_separable(&pointer.pointer().block)
+                    && store.inseparable.get(name).is_none_or(|count| *count == 0) =>
+            {
+                Some(
+                    store
+                        .separable_blocks
+                        .get(&(name.to_owned(), pointer.pointer().block.clone()))
+                        .map(|ids| ids.iter().copied().collect::<Vec<_>>())
+                        .unwrap_or_default(),
+                )
+            }
+            _ => None,
+        };
+        let candidates: Box<dyn Iterator<Item = u64> + '_> = match separable_candidates {
+            Some(ids) => Box::new(ids.into_iter()),
+            None => Box::new(family.iter().copied()),
+        };
+        let mut matching = Vec::new();
+        for id in candidates {
+            crate::instrumentation::record_deterministic_work(1);
+            let population = store.ordered.get(&id).expect("indexed population");
+            if population.family_observation_marker || population.arguments.len() != pattern.len() {
+                continue;
+            }
+            let relation = match &equal_ids {
+                Some(ids) if ids.contains(&id) => Relation::Equal,
+                // The index is complete for proven equality, so an entry it
+                // leaves out is not proven equal; only its distinctness is
+                // open.
+                Some(_) => {
+                    if crate::kernel::resource_arguments_proven_different(
+                        &population.arguments[0],
+                        pattern[0].as_ref().expect("unary pattern"),
+                        assumptions,
+                    ) {
+                        Relation::Different
+                    } else {
+                        Relation::Undecided
+                    }
+                }
+                None => crate::kernel::counted_population_arguments_relation(
+                    &population.arguments,
+                    pattern,
+                    assumptions,
+                ),
+            };
+            match relation {
+                Relation::Equal => matching.push(population),
+                Relation::Different => {}
+                Relation::Undecided => return Err(population),
+            }
+        }
+        Ok(matching)
     }
 
     /// Bounded absence checking for the first local-allocation slice. Both
@@ -912,6 +1095,14 @@ mod tests {
         pointer: Option<&Pointer>,
         assumptions: &PureFactContext,
     ) -> u32 {
+        evaluate_count_outcome(state, pointer, assumptions).expect("count evaluates")
+    }
+
+    fn evaluate_count_outcome(
+        state: &CState,
+        pointer: Option<&Pointer>,
+        assumptions: &PureFactContext,
+    ) -> Result<u32, crate::kernel::ExecutionLimit> {
         let expression = crate::kernel::SpecExpression::CountedResourceCount {
             name: "remaining".into(),
             arguments: vec![pointer.map(|pointer| {
@@ -924,14 +1115,13 @@ mod tests {
             assumptions,
             &BTreeMap::new(),
             &mut crate::kernel::ExecutionBudget::beside_live_state(),
-        )
-        .expect("count evaluates");
+        )?;
         assert_eq!(paths.len(), 1);
         assert!(paths[0].obligations.is_empty());
         let CValue::Int32(value) = &paths[0].value else {
             panic!("count must be int32")
         };
-        value.as_const().expect("constant population sum")
+        Ok(value.as_const().expect("constant population sum"))
     }
 
     #[test]
@@ -1033,23 +1223,41 @@ mod tests {
                 .is_err()
         );
         // The indexed path must preserve precisely the general evaluator's
-        // matching relation, including displacement overflow obligations.
-        let expected: u32 = state
+        // matching relation, including displacement overflow obligations: an
+        // entry proven equal is counted, and an entry neither proven equal
+        // nor proven different refuses the count rather than being left out.
+        let proven_equal: Vec<bool> = state
             .counted_populations()
-            .filter(|population| {
+            .map(|population| {
                 crate::kernel::resource_arguments_proven_equal(
                     &population.arguments[0],
                     &args(&x)[0],
                     &assumptions,
                 )
             })
-            .map(|population| population.count.as_const().unwrap())
-            .sum();
-        assert_eq!(evaluate_count(&state, Some(&x), &assumptions), expected);
+            .collect();
+        if proven_equal.iter().all(|equal| *equal) {
+            let expected: u32 = state
+                .counted_populations()
+                .map(|population| population.count.as_const().unwrap())
+                .sum();
+            assert_eq!(evaluate_count(&state, Some(&x), &assumptions), expected);
+        } else {
+            assert_eq!(
+                evaluate_count_outcome(&state, Some(&x), &assumptions),
+                Err(crate::kernel::ExecutionLimit::ResourceCountPossiblyAliased)
+            );
+        }
     }
 
+    /// Pointers into distinct heap, temporary, or concrete blocks are distinct
+    /// objects by structure, so an exact count over such a family visits only
+    /// the entries in the counted block and never the rest. A family keyed on
+    /// parameters or on symbolic offsets of one block may alias throughout:
+    /// such a count is refused at its first undecided entry, promptly, rather
+    /// than totalling the entries it happens to have proved equal.
     #[test]
-    fn exact_count_evaluation_ignores_unrelated_same_family_populations() {
+    fn exact_count_skips_separable_populations_and_refuses_possible_aliases() {
         for pointer_kind in 0..3 {
             let mut samples = Vec::new();
             for size in [16u64, 64, 256, 1024] {
@@ -1079,14 +1287,23 @@ mod tests {
                 }
                 PureFactContext::reset_bitvector_equality_index_fact_visits();
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    assert_eq!(
-                        evaluate_count(&state, Some(&pointer(size - 1)), &assumptions),
-                        3
-                    );
-                    assert_eq!(
-                        evaluate_count(&state, Some(&pointer(size)), &assumptions),
-                        0
-                    );
+                    let last =
+                        evaluate_count_outcome(&state, Some(&pointer(size - 1)), &assumptions);
+                    let absent = evaluate_count_outcome(&state, Some(&pointer(size)), &assumptions);
+                    if pointer_kind == 2 {
+                        assert_eq!(last, Ok(3));
+                        assert_eq!(absent, Ok(0));
+                    } else {
+                        assert_eq!(
+                            last,
+                            Err(crate::kernel::ExecutionLimit::ResourceCountPossiblyAliased),
+                            "no fact separates the entries, so no total is a count"
+                        );
+                        assert_eq!(
+                            absent,
+                            Err(crate::kernel::ExecutionLimit::ResourceCountPossiblyAliased)
+                        );
+                    }
                 });
                 assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
                 samples.push(work);
@@ -1098,5 +1315,80 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `remaining(p)` beside `remaining(q)`: the total of either is a count
+    /// only once `p != q` is known, and the sum API answers `None` meanwhile.
+    /// With the disequality, each pattern names its own entry and a wildcard
+    /// names both.
+    #[test]
+    fn possibly_aliased_populations_refuse_counts_until_separated() {
+        let p = Pointer::symbolic(Variable(81_000));
+        let q = Pointer::symbolic(Variable(81_001));
+        let state = CState::new()
+            .with_counted_population("remaining", args(&p), Bitvector32Term::Constant(2))
+            .with_counted_population("remaining", args(&q), Bitvector32Term::Constant(3));
+        let open = PureFactContext::new();
+        let pattern = |pointer: &Pointer| vec![Some(args(pointer)[0].clone())];
+        assert_eq!(
+            state
+                .counted_populations
+                .pattern_matches("remaining", &pattern(&p), &open)
+                .map(|matching| matching.len())
+                .map_err(|undecided| undecided.arguments.clone()),
+            Err(args(&q))
+        );
+        assert_eq!(
+            state.counted_population_sum("remaining", &pattern(&p), &open),
+            None
+        );
+        assert_eq!(
+            evaluate_count_outcome(&state, Some(&p), &open),
+            Err(crate::kernel::ExecutionLimit::ResourceCountPossiblyAliased)
+        );
+        // A wildcard names every entry; nothing is undecided.
+        assert_eq!(
+            state.counted_population_sum("remaining", &[None], &open),
+            Some(Bitvector32Term::Constant(5))
+        );
+        let separated = open
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), false);
+        assert_eq!(
+            state.counted_population_sum("remaining", &pattern(&p), &separated),
+            Some(Bitvector32Term::Constant(2))
+        );
+        assert_eq!(evaluate_count(&state, Some(&q), &separated), 3);
+        let aliased = open
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        assert_eq!(
+            state.counted_population_sum("remaining", &pattern(&p), &aliased),
+            Some(Bitvector32Term::Constant(5))
+        );
+        // A heap pointer beside a parameter is not separated by structure:
+        // the parameter may point into the heap block.
+        let heap = Pointer {
+            block: PointerBlock::Heap(81_002),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mixed = CState::new()
+            .with_counted_population("remaining", args(&heap), Bitvector32Term::Constant(1))
+            .with_counted_population("remaining", args(&p), Bitvector32Term::Constant(2));
+        assert_eq!(
+            mixed.counted_population_sum("remaining", &pattern(&heap), &open),
+            None
+        );
+        assert_eq!(
+            mixed.counted_population_sum("remaining", &pattern(&heap), &separated),
+            None,
+            "`p != q` says nothing about `p` and the heap block"
+        );
+        let removed = mixed.without_counted_population("remaining", &args(&p));
+        assert_eq!(
+            removed.counted_population_sum("remaining", &pattern(&heap), &open),
+            Some(Bitvector32Term::Constant(1)),
+            "removing the parameter-keyed entry restores structural separation"
+        );
     }
 }

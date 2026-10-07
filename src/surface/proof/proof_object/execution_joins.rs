@@ -1702,7 +1702,24 @@ impl<'a> Proof<'a> {
                     provenance.call_routes.insert(0, arm_index == 0);
                 }
                 let mut path_facts = path.execution_facts();
-                for proposition in &arm.introduced_facts {
+                // A returned path of a summarized loop carries what the arm
+                // had established when its loop was summarized, not what the
+                // arm went on to establish on the continuing path.
+                let introduced = match arm
+                    .execution
+                    .core
+                    .pending_loop_return_pure_facts(arm_path_index)
+                {
+                    Some(returned_facts) => {
+                        returned_facts.introduced_since(parent_facts).ok_or_else(|| {
+                            self.step_error(
+                                "a loop's returned path does not descend from the branch root's facts",
+                            )
+                        })?
+                    }
+                    None => arm.introduced_facts.clone(),
+                };
+                for proposition in &introduced {
                     let fact = ExecutionPureFact::new(proposition.clone());
                     if !path_facts.contains(&fact) {
                         path_facts.push(fact);
@@ -1815,6 +1832,9 @@ impl<'a> Proof<'a> {
             execution: outcomes,
         };
         execution.core.execution_evidence = execution_evidence.into();
+        // Each arm's completed paths, the returned loop paths it retained
+        // among them, are in the joined set above.
+        execution.core.clear_pending_loop_returns();
         execution.core.loan_evidence = crate::kernel::empty_checked_loan_evidence_sequence();
         execution.core.evidence_completed = true;
         execution.core.evidence_state = None;

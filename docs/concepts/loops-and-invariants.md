@@ -409,7 +409,15 @@ invariant and ranking bundle nor a join with the loop's ordinary successor.
 Write a returning C branch as a proof-level `if`: the returning arm stops at
 function exit, while every continuing arm independently reaches the back edge
 and closes the bundle. Omitted preservation uses the same per-path rule
-(`mdtests/return_inside_ranked_loop_body.md`).
+(`mdtests/return_inside_ranked_loop_body.md`). The returning path is a
+function-exit path of the enclosing proof: the loop rule exports it as a
+`return` outcome with the value and state the body returned in, so the
+postcondition and the resource obligations are checked on it exactly as on a
+`return` after the loop
+(`mdtests/a_return_inside_a_summarized_loop_body_is_a_function_exit.md`), and
+a natural cycle whose only exit is a `return` is certified on that exit rather
+than vacuously
+(`mdtests/a_natural_goto_cycle_return_exit_is_a_function_exit.md`).
 
 ### `do ... while`
 

@@ -1106,6 +1106,17 @@ impl ThreadContext {
         if self.parent.loan_participant() != Some(completion.plan.caller_participant()) {
             return Err("completion right belongs to a different parent");
         }
+        // The worker's preserved `mutex_use` inputs are loans of the parent's
+        // authority, not outputs. The sequential return strips them before
+        // loan recovery restores the lent source, and join does the same;
+        // otherwise the parent would hold the worker's use beside the
+        // `mutex_live` or retained share that recovery returns.
+        let mut outputs = completion.outputs.clone();
+        for fact in completion.plan.mutex_use_requirements.values() {
+            outputs = outputs
+                .without_fact_delaying_normalization(fact, assumptions)
+                .ok_or("worker did not return its mutex use")?;
+        }
         // Compose only this worker's checked output delta into today's frame.
         // No saved parent memory, ledger, bindings or resource frame is restored.
         let resources = self
@@ -1113,7 +1124,7 @@ impl ThreadContext {
             .resources()
             .clone()
             .try_compose_into_valid_context_delaying_normalization(
-                completion.outputs.facts().iter().cloned(),
+                outputs.facts().iter().cloned(),
                 assumptions,
             )
             .map_err(|_| "worker outputs conflict with the current parent frame")?;
@@ -1195,7 +1206,7 @@ impl ThreadContext {
                     .parent
                     .clone()
                     .with_resource_context(recovery.resources.clone()),
-                completion.outputs.facts().iter(),
+                outputs.facts().iter(),
                 &creation.definitions,
                 assumptions,
             )

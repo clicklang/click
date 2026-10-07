@@ -4005,6 +4005,11 @@ pub struct CVerifiedLoopRule {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CUndefinedBehavior {
     SignedOverflow,
+    /// The signed overflow of an `int32` division or remainder, which
+    /// happens at exactly one operand pair, `INT_MIN / -1`. Kept apart from
+    /// [`Self::SignedOverflow`] so the refusal names the pair the facts
+    /// leave open instead of a bare `signed overflow`.
+    SignedDivisionOverflow,
     PointerArithmetic,
     DivisionByZero,
     InvalidShift,
@@ -4017,12 +4022,26 @@ pub enum CUndefinedBehavior {
     FreedPointerUse {
         allocation: String,
     },
+    /// An equality comparison whose answer C11 6.5.9p6 leaves to the
+    /// implementation's object layout: one operand may be one past the end
+    /// of its object and the other the start of a different object, and the
+    /// two are equal exactly when the objects are adjacent. The result is
+    /// unspecified rather than undefined, and refused because the kernel does
+    /// not model object placement. `pointer` names the one-past-the-end
+    /// operand for the diagnostic.
+    OnePastEndComparison {
+        pointer: String,
+    },
 }
 
 impl CUndefinedBehavior {
     pub fn description(&self) -> String {
         match self {
             Self::SignedOverflow => "signed overflow".to_string(),
+            Self::SignedDivisionOverflow => {
+                "signed overflow (INT_MIN / -1 is the one int32 division or remainder that overflows)"
+                    .to_string()
+            }
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
             Self::DivisionByZero => "division by zero".to_string(),
             Self::InvalidShift => "invalid shift".to_string(),
@@ -4031,6 +4050,10 @@ impl CUndefinedBehavior {
             Self::FreedPointerUse { allocation } => format!(
                 "use of a pointer into freed allocation {allocation}: its value is \
                  indeterminate after the free"
+            ),
+            Self::OnePastEndComparison { pointer } => format!(
+                "comparison of the one-past-the-end pointer {pointer} with the start of \
+                 another object: whether the two objects are adjacent is unspecified"
             ),
         }
     }
@@ -4205,6 +4228,9 @@ pub enum ExecutionLimit {
     /// A worker may still change this total. No current observation is
     /// available until the checked completion right is joined.
     ResourceCountPendingWorker,
+    /// Another tracked population of the family is neither proven equal to
+    /// nor proven different from the counted one, so no total is a count.
+    ResourceCountPossiblyAliased,
     /// Authority-mode count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
     AuthorityCountNeedsResolvedMember,
@@ -4250,6 +4276,9 @@ impl ExecutionLimit {
             }
             Self::ResourceCountPendingWorker => {
                 "count(...) requires joining its outstanding worker".to_string()
+            }
+            Self::ResourceCountPossiblyAliased => {
+                "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
             }
             Self::AuthorityCountNeedsExactPointer => {
                 "authority-mode count(...) needs one exact base pointer".to_string()

@@ -2457,6 +2457,7 @@ pub(super) fn execute_c_while_verification_paths(
         Some(environment),
         &[],
         &[],
+        &[],
         execution_semantics,
         false,
         do_while,
@@ -2773,6 +2774,7 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
     preservation_proven: bool,
     final_exit_candidates: &[CLoopFinalExitCandidate],
     break_exits: &[CLoopBreakExit],
+    return_exits: &[CLoopReturnExit],
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
     do_while: bool,
@@ -2794,6 +2796,7 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
         (!preservation_proven).then_some(environment),
         final_exit_candidates,
         break_exits,
+        return_exits,
         execution_semantics,
         initialization_proven,
         do_while,
@@ -4877,6 +4880,7 @@ fn execute_c_while_exit_paths(
     preservation_environment: Option<&CExecutionEnvironment>,
     final_exit_candidates: &[CLoopFinalExitCandidate],
     break_exits: &[CLoopBreakExit],
+    return_exits: &[CLoopReturnExit],
     execution_semantics: CExecutionSemantics,
     initialization_proven: bool,
     do_while: bool,
@@ -4996,6 +5000,29 @@ fn execute_c_while_exit_paths(
     };
     let mut paths = Vec::new();
     paths.append(&mut final_exit_paths);
+    // Every `return` a checked preservation proof reached is one more way
+    // out of the loop, and out of the function: the path's own value and
+    // state, under the loop's checks. It is a successor of its own, never a
+    // state at which the guard is re-read, so a guard the C never falsifies
+    // cannot drop it. Exporting it here is what lets a summarized body's
+    // `return` reach contract certification at all.
+    for exit in return_exits {
+        paths.push(CStatementExecutionPath {
+            loop_invariant_correspondence: Default::default(),
+            outcome: CStatementOutcome::Return {
+                value: exit.value().clone(),
+                state: Box::new(head.restored_exit_state(exit.state())),
+            },
+            facts: exit
+                .pure_facts()
+                .iter()
+                .cloned()
+                .map(ExecutionPureFact::certified)
+                .collect(),
+            obligations: loop_check_obligations.clone(),
+            loan_evidence: exit.loan_evidence().clone(),
+        });
+    }
     let mut candidate_exit_entries = Vec::new();
     if initial_may_continue {
         for candidate in final_exit_candidates {

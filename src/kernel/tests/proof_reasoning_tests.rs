@@ -9735,6 +9735,119 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
 }
 
 #[test]
+fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
+    use crate::kernel::proof::fact_reasoning::{
+        condition_polarity_equivalent, condition_polarity_forms, order_claim_equivalent,
+        order_claim_forms,
+    };
+    let fact = |condition: ConditionTerm, value: bool| Proposition::ConditionIs(condition, value);
+
+    // `0 <= e` and `e >= 0` over `Integer`, as `apply(uint32_to_integer_bounds(x))`
+    // concludes the first and a goal may spell the second.
+    let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+    let observed: SharedIntegerTerm = IntegerTerm::var(Variable(93_000)).into();
+    let lower_bound = fact(
+        ConditionTerm::IntegerLessEqual(zero.clone(), observed.clone()),
+        true,
+    );
+    let mirrored = fact(
+        ConditionTerm::IntegerGreaterEqual(observed.clone(), zero.clone()),
+        true,
+    );
+    assert!(order_claim_equivalent(&lower_bound, &mirrored));
+    assert!(order_claim_equivalent(&mirrored, &lower_bound));
+    assert!(order_claim_forms(&mirrored).contains(&lower_bound));
+    // The availability paths and planners keep the 32-bit signed order only.
+    assert!(!condition_polarity_equivalent(&lower_bound, &mirrored));
+    assert!(!condition_polarity_forms(&mirrored).contains(&lower_bound));
+    // `not (e < 0)` is the same claim again; a strict `0 < e` is not.
+    let not_below = Proposition::Not(Box::new(fact(
+        ConditionTerm::IntegerLessThan(observed.clone(), zero.clone()),
+        true,
+    )));
+    assert!(order_claim_equivalent(&lower_bound, &not_below));
+    let strictly_positive = fact(
+        ConditionTerm::IntegerLessThan(zero.clone(), observed.clone()),
+        true,
+    );
+    assert!(!order_claim_equivalent(&lower_bound, &strictly_positive));
+    assert!(!order_claim_forms(&lower_bound).contains(&strictly_positive));
+    // The strict claim has its own mirrored spelling.
+    let strictly_positive_mirrored = fact(
+        ConditionTerm::IntegerGreaterThan(observed.clone(), zero.clone()),
+        true,
+    );
+    assert!(order_claim_equivalent(
+        &strictly_positive,
+        &strictly_positive_mirrored
+    ));
+    assert!(order_claim_forms(&strictly_positive).contains(&strictly_positive_mirrored));
+    // Different sides are a different claim.
+    let other: SharedIntegerTerm = IntegerTerm::var(Variable(93_001)).into();
+    let other_bound = fact(
+        ConditionTerm::IntegerGreaterEqual(other, zero.clone()),
+        true,
+    );
+    assert!(!order_claim_equivalent(&lower_bound, &other_bound));
+
+    // The 64-bit machine orders normalize the same way, and never across
+    // families: a signed and an unsigned comparison of the same terms differ.
+    let left = Box::new(Bitvector32Term::Variable(Variable(93_002)));
+    let right = Box::new(Bitvector32Term::Variable(Variable(93_003)));
+    let signed_below = fact(
+        ConditionTerm::Bitvector64SignedLessThan(left.clone(), right.clone()),
+        true,
+    );
+    let signed_above_mirrored = fact(
+        ConditionTerm::Bitvector64SignedGreaterThan(right.clone(), left.clone()),
+        true,
+    );
+    let signed_not_at_least = fact(
+        ConditionTerm::Bitvector64SignedGreaterEqual(left.clone(), right.clone()),
+        false,
+    );
+    assert!(order_claim_equivalent(
+        &signed_below,
+        &signed_above_mirrored
+    ));
+    assert!(order_claim_equivalent(&signed_below, &signed_not_at_least));
+    assert!(order_claim_forms(&signed_below).contains(&signed_above_mirrored));
+    assert!(!condition_polarity_equivalent(
+        &signed_below,
+        &signed_above_mirrored
+    ));
+    let unsigned_above_mirrored = fact(
+        ConditionTerm::Bitvector64UnsignedGreaterThan(right.clone(), left.clone()),
+        true,
+    );
+    assert!(!order_claim_equivalent(
+        &signed_below,
+        &unsigned_above_mirrored
+    ));
+    let unsigned_below = fact(
+        ConditionTerm::Bitvector64UnsignedLessThan(left.clone(), right.clone()),
+        true,
+    );
+    assert!(order_claim_equivalent(
+        &unsigned_below,
+        &unsigned_above_mirrored
+    ));
+
+    // Over the 32-bit signed order both judgments agree, as before.
+    let below = fact(
+        ConditionTerm::Bitvector32SignedLessThan(left.clone(), right.clone()),
+        true,
+    );
+    let above_mirrored = fact(
+        ConditionTerm::Bitvector32SignedGreaterThan(right, left),
+        true,
+    );
+    assert!(condition_polarity_equivalent(&below, &above_mirrored));
+    assert!(order_claim_equivalent(&below, &above_mirrored));
+    assert_eq!(condition_polarity_forms(&below), order_claim_forms(&below));
+}
+
+#[test]
 fn signed_64_branch_observation_bridges_match_boundary_models() {
     let left = Bitvector32Term::Variable(Variable(185101));
     let right = Bitvector32Term::Variable(Variable(185102));

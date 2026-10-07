@@ -1620,18 +1620,31 @@ impl MutexContext {
         // The resource occurrence selects the loan; an address or a loan
         // record alone is not authority. The checked acquisition validates
         // possession and initialization identity before installing its hold.
-        if let Some(fact) = self.state.resources.mutex_use_candidate_at(mutex) {
-            let CResource::MutexUse(identity) = fact.resource() else {
-                unreachable!()
-            };
-            let usage = identity
-                .binding
-                .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
-            return self
-                .acquire_using(mutex, usage, assumptions)
-                .map(|(context, _)| context);
+        // A use description without a binding selects no loan either: the
+        // lifecycle authority, when the frame holds it, is the acquisition
+        // route, and only its absence reports the missing use.
+        let unbound_use = match self.state.resources.mutex_use_candidate_at(mutex) {
+            Some(fact) => {
+                let CResource::MutexUse(identity) = fact.resource() else {
+                    unreachable!()
+                };
+                match identity.binding {
+                    Some(usage) => {
+                        return self
+                            .acquire_using(mutex, usage, assumptions)
+                            .map(|(context, _)| context);
+                    }
+                    None => true,
+                }
+            }
+            None => false,
+        };
+        match self.acquire(mutex, assumptions) {
+            Err(MutexTransitionError::MissingLive(_)) if unbound_use => {
+                Err(MutexTransitionError::MissingUse(mutex.clone()))
+            }
+            acquired => acquired.map(|(context, _)| context),
         }
-        self.acquire(mutex, assumptions).map(|(context, _)| context)
     }
 
     pub(super) fn release_current(
@@ -5086,6 +5099,69 @@ mod tests {
                 "use acquisition scans the frame: {samples:?}"
             );
         }
+    }
+
+    #[test]
+    fn acquire_current_uses_the_lifecycle_authority_beside_an_unbound_use_description() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let live = MutexContext::new(CState::new())
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let live_fact = live
+            .state
+            .mutex_ledger
+            .as_ref()
+            .unwrap()
+            .live_resource(&address)
+            .unwrap();
+        // A use description without a loan binding is not authority. Beside
+        // the owned lifecycle it must not shadow the ordinary acquisition.
+        let unbound = CResourceFact::own(CResource::MutexUse(super::super::MutexUseIdentity {
+            protected: None,
+            binding: None,
+            initialization: None,
+            mutex: address.clone(),
+        }));
+        let mut shadowed = live.clone();
+        shadowed.state.resources = shadowed.state.resources.unchecked_with_fact(unbound);
+        assert!(
+            shadowed
+                .state
+                .resources
+                .mutex_use_candidate_at(&address)
+                .is_some()
+        );
+        let acquired = shadowed.acquire_current(&address, &assumptions).unwrap();
+        assert!(acquired.state.resources.mutex_guard_at(&address).is_some());
+        let released = acquired.release_current(&address, &assumptions).unwrap();
+        assert!(released.state.resources.mutex_live_at(&address).is_some());
+        assert!(released.state.resources.mutex_guard_at(&address).is_none());
+        // Without the lifecycle authority the description still reports the
+        // missing use, not a missing initialization.
+        let mut without_live = shadowed.clone();
+        without_live.state.resources = without_live
+            .state
+            .resources
+            .without_fact(&live_fact, &assumptions)
+            .unwrap();
+        assert_eq!(
+            without_live.acquire_current(&address, &assumptions).err(),
+            Some(MutexTransitionError::MissingUse(address.clone()))
+        );
+        // Destroying a mutex whose frame holds only the lifecycle authority
+        // leaves no mutex fact behind.
+        let destroyed = live.destroy(&address, &assumptions).unwrap();
+        assert!(destroyed.state.resources.mutex_live_at(&address).is_none());
+        assert!(
+            destroyed
+                .state
+                .resources
+                .mutex_use_candidate_at(&address)
+                .is_none()
+        );
+        assert!(destroyed.state.resources.mutex_guard_at(&address).is_none());
+        assert!(destroyed.state.mutex_ledger.is_none());
     }
 
     #[test]
