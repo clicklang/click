@@ -318,9 +318,45 @@ pub fn c_state_justifies_loadability_obligation(
                     ),
                 }
                 || assumptions.proves_memory_loadable_for_memory_resolution(memory, base, bytes)
+                || symbolic_base_aliases_a_held_cell(memory, base, assumptions)
         }
         _ => true,
     }
+}
+
+/// A pointer the proof names by a value, such as a model's pointer field,
+/// has a symbolic block of its own, and no cell is filed under it. When a
+/// stated equality names the object it points to, the read is of that
+/// object's cell. Follow the equality one hop to a pointer memory files a
+/// cell under, which may itself be a pointer read from memory. The aliases
+/// are read by key and an alias of an alias is not followed, so the work is
+/// bounded by the equalities stated about this one pointer.
+fn symbolic_base_aliases_a_held_cell(
+    memory: &CMemory,
+    base: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    if !matches!(base.block, PointerBlock::Symbolic(_)) {
+        return false;
+    }
+    let Some(offset) = base
+        .offset
+        .as_const()
+        .and_then(|offset| u32::try_from(offset).ok())
+    else {
+        return false;
+    };
+    let object = Pointer {
+        block: base.block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    assumptions.exact_pointer_aliases(&object).any(|alias| {
+        crate::instrumentation::record_deterministic_work(1);
+        matches!(
+            memory.load(&alias.offset_by_bytes(offset)),
+            CExpressionOutcome::Value(_)
+        )
+    })
 }
 
 pub fn c_loadability_obligation_impossible(obligation: &Proposition) -> bool {
