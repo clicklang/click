@@ -1,12 +1,13 @@
-# An interface resource argument must read in the joined state
+# An interface resource argument reads through a model pointer
 
 Each arm holds `list(id->next)`, where `id` is the pointer the model binds
-and equals `n`. The joined state cannot read `id->next`, so the join is
-refused by naming the clause and the two repairs. Writing `list(n->next)`
-verifies.
+and the resource states `p == id`. No cell is filed under `id`: the cell is
+under `n`. The join reads the argument in the joined state by following the
+stated equality from `id` to `n`. `next` is the second field, so the read is
+at an offset from the object.
 
 ```c filename=nl.c
-struct node { struct node *next; int32 val; };
+struct node { int32 val; struct node *next; };
 
 int32 peek(struct node *n, int32 x) {
     int32 a;
@@ -75,5 +76,5 @@ int32 peek(struct node* n, int32 x) {
 ```
 
 ```expect
-fail: the `ensuring` interface names `t: list(…->next)`, which each arm holds, but its arguments cannot be read in the state the arms join in
+pass
 ```
