@@ -176,6 +176,11 @@ impl AssumedMutexProtocol {
         };
         state.memory = memory;
         state.loan_ledger = Some(next);
+        if let (Some(payload), Some(definition)) = (&payload, definition) {
+            state = state
+                .import_acquired_control_authorities(payload, definition, assumptions)
+                .map_err(MutexTransitionError::OwnedRefusal)?;
+        }
         Ok((
             AssumedMutexTransition { state, evidence },
             AssumedMutexGuard {

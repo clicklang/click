@@ -493,15 +493,34 @@ checked runtime exchange, so the control moves between the mutex and the
 caller without any population change. Each acquisition returns a fresh
 instance whose fields are unknown. The control's facts tie it to the current
 population total, so a count observed before an earlier critical section
-remains historical. A helper's own proof cannot open the control it
-acquires: its population is not recognized there, so the helper can neither
-observe nor change it. The caller that established the population opens the
-returned control. The regressions are `authority_mutex_control_helpers.md`,
+remains historical. The regressions are `authority_mutex_control_helpers.md`,
 `authority_mutex_control_helper_stale_count_rejected.md`,
-`authority_mutex_control_helper_missing_state_rejected.md`,
-`authority_mutex_control_helper_wrong_mutex_rejected.md`, and
-`authority_mutex_control_helper_open_rejected.md`.
+`authority_mutex_control_helper_missing_state_rejected.md`, and
+`authority_mutex_control_helper_wrong_mutex_rejected.md`.
 
-Helpers that open an acquired control themselves, such as a locked retain
-that creates a member before unlocking, and worker transfer are later work
-in `issues/authority-migration.md`.
+A helper's own proof may also open the control it acquires. The typed lock
+enters the control's population into that proof with a fresh total, bounded
+below only by the members the helper already owns and carrying no creator
+right. A proof enters each population at most once, so a second acquisition
+in the same helper is refused rather than allowed to reuse the first total.
+Under that authority the helper may observe the total and fold or unfold
+members. Its contract keeps one preserved typed `mutex_use` and declares at
+most one member effect, a `consumes` or `produces` of one member of the
+acquired population. At return, the checked births and deaths under the
+acquired authority must equal that declaration exactly: an undeclared change,
+a declared death that was not spent, and a member of a population the helper
+never acquired are each refused. Births and deaths are the only events that
+change the recorded total, and both need the authority, so the change stays
+authentic after unlock returns the authority to the mutex. The caller applies
+the declared member effect to the population held by the mutex. The
+regressions are `authority_mutex_control_helper_open.md`,
+`authority_mutex_locked_release.md`,
+`authority_mutex_locked_release_unspent_rejected.md`,
+`authority_mutex_locked_release_other_population_rejected.md`,
+`authority_mutex_locked_release_stale_rejected.md`,
+`authority_mutex_locked_undeclared_birth_rejected.md`, and
+`authority_mutex_locked_reacquire_rejected.md`.
+
+A locked retain that creates a member unconditionally still needs a bound
+that rules out counter overflow under the fresh total; it and worker transfer
+are later work in `issues/authority-migration.md`.

@@ -6432,6 +6432,82 @@ impl CState {
         Ok((children, counts))
     }
 
+    /// A standalone helper's typed lock returns a fresh authority-bearing
+    /// control. Its contained authority enters this proof as an arbitrary
+    /// existing population: a fresh total, bounded below only by the members
+    /// already owned here, with no creator right. Each population may enter
+    /// once per proof, so a later acquisition cannot reuse an earlier total.
+    pub(crate) fn import_acquired_control_authorities(
+        &self,
+        instance: &super::super::ResourceInstance,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, String> {
+        if !self.uses_population_authority_semantics()
+            || !definition.contains().iter().any(|spec| {
+                matches!(
+                    spec.term(),
+                    super::super::CResourceTerm::PopulationAuthority { .. }
+                )
+            })
+        {
+            return Ok(self.clone());
+        }
+        let evaluation =
+            super::super::functions::instance_body_evaluation(self, instance, definition)?;
+        let mut next = self.clone();
+        let mut budget = ExecutionBudget::beside_live_state();
+        for spec in definition.contains() {
+            if !matches!(
+                spec.term(),
+                super::super::CResourceTerm::PopulationAuthority { .. }
+            ) {
+                continue;
+            }
+            let authority = super::super::functions::evaluate_population_authority_candidate(
+                &evaluation,
+                &evaluation,
+                spec,
+                assumptions,
+                &mut budget,
+            )
+            .map_err(|_| "acquired control authority evaluation exceeded its budget")?
+            .map_err(|_| "could not evaluate the acquired control authority")?;
+            let CResource::PopulationAuthority(description) = authority.resource() else {
+                return Err("could not evaluate the acquired control authority".into());
+            };
+            let events = next
+                .population_effects
+                .creation
+                .as_ref()
+                .ok_or("acquired control authority requires authority mode")?;
+            if events.recognizes_population_authority(description) {
+                return Err(format!(
+                    "this proof already holds a total for {}(...); acquire its control at most once",
+                    description.family()
+                ));
+            }
+            let member = CResourceFact::own(CResource::Composite {
+                name: description.family().to_owned(),
+                arguments: description.arguments().to_vec().into(),
+            });
+            let owned = next
+                .resources
+                .exact_resource_facts(member.resource())
+                .into_iter()
+                .filter_map(|fact| {
+                    fact.owned_quantity_term()
+                        .and_then(Bitvector32Term::as_const)
+                })
+                .sum::<u32>();
+            let events = events
+                .import_acquired_control_population(description, owned)
+                .map_err(|refusal| format!("acquired control authority refused: {refusal:?}"))?;
+            Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        }
+        Ok(next)
+    }
+
     /// A standalone helper assumes a folded control from its caller. Only the
     /// checked body of that exact owned wrapper may seed its opaque population
     /// inputs; no direct authority or creator right is manufactured here.

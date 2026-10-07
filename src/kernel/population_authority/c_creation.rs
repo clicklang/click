@@ -220,6 +220,7 @@ enum CEvent {
     Retired(PointerBlock),
     InstanceMember(ResourceReference, bool),
     TransferredAnchor(Holder, Holder, PointerBlock),
+    AcquiredControl(ResourceDescription, u32),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -358,6 +359,22 @@ impl CreationEvents {
             .entry(key)
             .or_insert(next)
             .clone()
+    }
+
+    /// A typed mutex acquisition in a standalone proof enters one population
+    /// with an arbitrary total. Rechecking the same acquisition from the same
+    /// ledger reuses its import, so independent replays agree on its identity.
+    pub(in crate::kernel) fn import_acquired_control_population(
+        &self,
+        description: &ResourceDescription,
+        owned_members: u32,
+    ) -> Result<Self, CreationRefusal> {
+        let key = CEvent::AcquiredControl(description.clone(), owned_members);
+        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+            return Ok(existing.clone());
+        }
+        let next = self.import_observable_contract_population(description, owned_members)?;
+        Ok(self.memoized_c_event(key, || next))
     }
 
     /// Standalone helper entry may assume one already existing population
@@ -1040,6 +1057,45 @@ impl CreationEvents {
             })
             .cloned()
             .collect()
+    }
+
+    /// Populations imported after `entry`, such as one entered by a typed
+    /// mutex acquisition in a standalone helper body. Work is linear in the
+    /// imports this proof holds, which its contract and acquisitions bound.
+    pub(in crate::kernel) fn opaque_imports_since(&self, entry: &Self) -> Vec<ResourceDescription> {
+        self.0
+            .opaque_imports
+            .keys()
+            .filter(|description| !entry.0.opaque_imports.contains_key(description))
+            .cloned()
+            .collect()
+    }
+
+    /// Net checked births and deaths of an exactly imported population,
+    /// whoever holds its authority now. Only a birth or death under the
+    /// authority changes the owned total, so a later deposit of that authority
+    /// into a mutex escrow keeps the recorded change authentic. Symbolic,
+    /// private, or named accounting has no such summary and reports `None`.
+    pub(in crate::kernel) fn acquired_member_delta(
+        &self,
+        description: &ResourceDescription,
+    ) -> Option<(bool, u32)> {
+        let import = self.0.opaque_imports.get(description)?;
+        if import.retired_authority
+            || import.description != *description
+            || import.symbolic_delta.is_some()
+            || import.entry_symbolic_members.is_some()
+            || !import.private_members.is_empty()
+            || !import.named_counts.is_empty()
+            || !import.consumed_named.is_empty()
+            || !import.born_named.is_empty()
+        {
+            return None;
+        }
+        Some((
+            import.owned_members >= import.entry_owned_members,
+            import.owned_members.abs_diff(import.entry_owned_members),
+        ))
     }
 
     /// Exact signed batch delta from a checked control import. The quantity may

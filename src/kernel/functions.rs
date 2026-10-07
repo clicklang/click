@@ -2268,10 +2268,81 @@ fn authority_mode_protected_families(interface: &CFunctionContractInterface) -> 
                     }
                 }
             }
+            // A typed use reaches the authority inside its protected control
+            // only by acquiring it; the helper's body is checked to change the
+            // population exactly as its member clause declares.
+            CResourceTerm::MutexUse {
+                protected: Some(protected),
+                ..
+            } if input.role() == CResourceTransferRole::Borrow => {
+                if let Some(name) = protected.resource.contained_definition_name()
+                    && let Some(definition) = interface.composite_resource_definition(name)
+                {
+                    for child in definition.contains() {
+                        if let CResourceTerm::PopulationAuthority { protected, .. } = child.term()
+                            && let CResourceTerm::Composite { name, .. } = protected.resource.term()
+                        {
+                            protected_families.insert(name.as_str());
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
     protected_families
+}
+
+/// A locked helper preserves one typed use of a mutex whose protected control
+/// owns a population authority, and produces or consumes exactly one member of
+/// that population. No other clause is admitted. Its body is checked to make
+/// exactly that birth or death under the acquired authority, and the caller
+/// applies it to the population whose control the mutex holds.
+fn authority_mode_mutex_member_helper_contract(interface: &CFunctionContractInterface) -> bool {
+    if !interface.resource_constructors().is_empty()
+        || !matches!(
+            super::mutexes::helper_contracts::classify(interface),
+            Ok(None)
+        )
+    {
+        return false;
+    }
+    let Some((_, member)) = authority_mode_member_effect(interface) else {
+        return false;
+    };
+    let uses = interface
+        .resource_requires()
+        .iter()
+        .chain(interface.resource_ensures())
+        .filter(|spec| spec.family() == ResourceFamily::MutexUse)
+        .collect::<Vec<_>>();
+    let [input, output] = uses.as_slice() else {
+        return false;
+    };
+    let typed = |spec: &CResourceSpec| {
+        matches!(
+            spec.term(),
+            CResourceTerm::MutexUse {
+                protected: Some(_),
+                ..
+            }
+        ) && spec.role() == CResourceTransferRole::Borrow
+            && !spec.is_view()
+            && spec.guard().is_none()
+            && spec.mutex_authority_binding().is_some()
+    };
+    typed(input)
+        && typed(output)
+        && input.term() == output.term()
+        && interface
+            .resource_requires()
+            .iter()
+            .chain(interface.resource_ensures())
+            .all(|spec| {
+                std::ptr::eq(spec, member)
+                    || std::ptr::eq(spec, *input)
+                    || std::ptr::eq(spec, *output)
+            })
 }
 
 fn population_member_requirement(member: &CResourceSpec) -> String {
@@ -2311,6 +2382,50 @@ fn checked_consumed_population_member<'a>(
         .iter()
         .find(|checked| checked.section_index == Some(index))
         .map(|checked| &checked.fact)
+}
+
+/// The population whose control a locked helper acquires. Its authority stays
+/// with the caller's invocation while the control is in the mutex, so the
+/// call lends it to the helper in the ledger and takes it back on return;
+/// no resource moves, and only the helper's checked member exchange applies.
+fn locked_helper_population(
+    interface: &CFunctionContractInterface,
+    transfer: &CFunctionResourceTransfer,
+    callee_entry: &CState,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<Option<ResourceDescription>, CRuntimeError>> {
+    if !authority_mode_mutex_member_helper_contract(interface) {
+        return Ok(Ok(None));
+    }
+    let Some((produce, member)) = authority_mode_member_effect(interface) else {
+        return Ok(Ok(None));
+    };
+    let fact = if produce {
+        match evaluate_function_resource_spec(callee_entry, member, assumptions, budget)? {
+            Ok(fact) => fact,
+            Err(error) => return Ok(Err(error)),
+        }
+    } else {
+        match checked_consumed_population_member(interface, transfer) {
+            Some(fact) => fact.clone(),
+            None => {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "locked helper has no checked consumed member".into(),
+                )));
+            }
+        }
+    };
+    let CResource::Composite { name, arguments } = fact.resource() else {
+        return Ok(Err(CRuntimeError::FunctionContract(
+            "locked helper member must be a declared resource".into(),
+        )));
+    };
+    Ok(Ok(Some(ResourceDescription::new(
+        name.clone(),
+        arguments.clone(),
+        ResourceFieldSchema::new(vec![]).expect("empty schema"),
+    ))))
 }
 
 fn checked_consumed_population_control<'a>(
@@ -3118,6 +3233,16 @@ pub(super) fn check_wildcard_consumption_at_return(
         if !governed && !paired {
             continue;
         }
+        // A population entered by a typed lock in this body is checked by
+        // `check_acquired_control_member_effects`, which reads its change
+        // after unlock has returned the authority to the escrow.
+        if let (Some(before), Some(after)) = (
+            entry.population_effects.creation.as_ref(),
+            exit.population_effects.creation.as_ref(),
+        ) && after.opaque_imports_since(before).contains(&description)
+        {
+            continue;
+        }
         let zero = |term: &Bitvector32Term| {
             term.as_const() == Some(0)
                 || crate::kernel::quantity_condition_holds(
@@ -3409,7 +3534,8 @@ fn authority_mode_mutex_helper_contract(interface: &CFunctionContractInterface) 
 
 fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
     if interface.resource_constructors().is_empty()
-        && authority_mode_mutex_helper_contract(interface)
+        && (authority_mode_mutex_helper_contract(interface)
+            || authority_mode_mutex_member_helper_contract(interface))
     {
         return true;
     }
@@ -6890,6 +7016,49 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 }
             };
+            let returned = match locked_helper_population(
+                interface,
+                &transfer,
+                &entry_contract_state,
+                &effective_assumptions,
+                budget,
+            )? {
+                Ok(Some(description)) => {
+                    let mut returned = returned;
+                    let back = returned
+                        .population_effects
+                        .creation
+                        .as_ref()
+                        .zip(entry_state.population_effects.creation.as_ref())
+                        .zip(caller_state.population_effects.creation.as_ref())
+                        .ok_or(crate::kernel::population_authority::c_creation::CreationRefusal::MissingAuthority)
+                        .and_then(|((events, callee), caller)| {
+                            events.transfer_call_fact(callee, caller, &description, true)
+                        });
+                    match back {
+                        Ok(events) => {
+                            Arc::make_mut(&mut returned.population_effects).creation = Some(events);
+                            returned
+                        }
+                        Err(refusal) => {
+                            paths.push(resource_call_failure(&format!(
+                                "locked helper did not return its population authority: {refusal:?}"
+                            )));
+                            continue;
+                        }
+                    }
+                }
+                Ok(None) => returned,
+                Err(error) => {
+                    paths.push(CFunctionPath {
+                        outcome: CFunctionOutcome::RuntimeError(error),
+                        facts,
+                        obligations,
+                        loan_evidence: empty_checked_loan_evidence_sequence(),
+                    });
+                    continue;
+                }
+            };
             let finished = returned
                 .population_effects
                 .creation
@@ -7556,6 +7725,38 @@ fn prepare_verified_function_call<'a>(
         Ok(state) => state,
         Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
     };
+    if caller_state.uses_population_authority_semantics() {
+        let lent = match locked_helper_population(
+            contract_interface,
+            &transfer,
+            &callee_identity_state,
+            &path_assumptions,
+            budget,
+        )? {
+            Ok(lent) => lent,
+            Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
+        };
+        if let Some(description) = lent {
+            let lent = entry_state
+                .population_effects
+                .creation
+                .as_ref()
+                .zip(caller_state.population_effects.creation.as_ref())
+                .zip(callee_identity_state.population_effects.creation.as_ref())
+                .ok_or("locked helper call lost its creation history")
+                .and_then(|((events, caller), callee)| {
+                    events
+                        .transfer_call_fact(caller, callee, &description, true)
+                        .map_err(|_| "locked helper requires the caller's population authority")
+                });
+            match lent {
+                Ok(events) => {
+                    Arc::make_mut(&mut entry_state.population_effects).creation = Some(events)
+                }
+                Err(error) => return Ok(Err(resource_call_failure(error))),
+            }
+        }
+    }
     // The checked loan plan identifies each selected use source and its
     // derived callee share. Move only those names, then rebind unchanged raw
     // authorities to their newly inserted occurrences.
@@ -23233,6 +23434,13 @@ fn lower_selected_resource_body_clauses(
             if required_obligation_is_exactly_discharged(&context, fact.proposition()) {
                 continue;
             }
+            // A certified fact is kernel evidence, such as the lower bound an
+            // imported population total carries. The rewrite exposes it beside
+            // the body facts; the certificate checker reruns this lowering.
+            if fact.is_certified() {
+                retained_conditions.push(fact.proposition().clone());
+                continue;
+            }
             if is_pure_undefined_behavior_condition(fact.proposition()) {
                 retained_conditions.push(fact.proposition().clone());
                 continue;
@@ -26886,6 +27094,15 @@ pub(super) fn function_return_resources_definitionally_established(
         with_contract_argument_views(caller_state, function, &argument_values);
     if !matches!(
         check_wildcard_consumption_at_return(
+            &entry_resource_state,
+            return_state,
+            function.contract_interface(),
+            &assumptions,
+            &mut budget,
+        ),
+        Ok(Ok(()))
+    ) || !matches!(
+        check_acquired_control_member_effects(
             &entry_resource_state,
             return_state,
             function.contract_interface(),
@@ -31905,6 +32122,126 @@ pub(super) fn contract_exit_outcome(
     )
 }
 
+/// A helper body that acquires an authority-bearing control changes that
+/// population only under the acquired authority. Its contract must declare
+/// exactly that change: at most one produced or consumed member of the
+/// population, matched by one checked birth or death. The caller applies the
+/// declared change to the population held by the mutex, so a declared
+/// consumption that was not spent, or an undeclared birth, is refused here.
+pub(crate) fn check_acquired_control_member_effects(
+    entry: &CState,
+    exit: &CState,
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<(), CRuntimeError>> {
+    let (Some(before), Some(after)) = (
+        entry.population_effects.creation.as_ref(),
+        exit.population_effects.creation.as_ref(),
+    ) else {
+        return Ok(Ok(()));
+    };
+    let acquired = after.opaque_imports_since(before);
+    // The caller lends exactly the declared member's population. It must be
+    // one whose control this body acquired, never an unrelated anchor.
+    if authority_mode_mutex_member_helper_contract(interface)
+        && let Some((_, member)) = authority_mode_member_effect(interface)
+    {
+        let fact = match evaluate_function_resource_spec_with_entry(
+            entry,
+            entry,
+            member,
+            assumptions,
+            budget,
+        )? {
+            Ok(fact) => fact,
+            Err(error) => return Ok(Err(error)),
+        };
+        let governed = match fact.resource() {
+            CResource::Composite { name, arguments } => acquired.iter().any(|description| {
+                description.family() == name && description.arguments() == arguments.as_ref()
+            }),
+            _ => false,
+        };
+        if !governed {
+            return Ok(Err(CRuntimeError::FunctionContract(
+                "a locked helper's member must belong to the population whose control it acquires"
+                    .into(),
+            )));
+        }
+    }
+    for description in acquired {
+        let mut declared = None;
+        for (produce, spec) in interface
+            .resource_requires()
+            .iter()
+            .filter(|spec| spec.role() == CResourceTransferRole::Consume)
+            .map(|spec| (false, spec))
+            .chain(
+                interface
+                    .resource_ensures()
+                    .iter()
+                    .filter(|spec| spec.role() == CResourceTransferRole::Produce)
+                    .map(|spec| (true, spec)),
+            )
+        {
+            let CResourceTerm::Composite { name, .. } = spec.term() else {
+                continue;
+            };
+            if name != description.family() {
+                continue;
+            }
+            let fact = match evaluate_function_resource_spec_with_entry(
+                entry,
+                entry,
+                spec,
+                assumptions,
+                budget,
+            )? {
+                Ok(fact) => fact,
+                Err(error) => return Ok(Err(error)),
+            };
+            let CResource::Composite { arguments, .. } = fact.resource() else {
+                continue;
+            };
+            if arguments.as_ref() != description.arguments()
+                || fact
+                    .owned_quantity_term()
+                    .and_then(Bitvector32Term::as_const)
+                    != Some(1)
+                || declared.replace(produce).is_some()
+            {
+                return Ok(Err(CRuntimeError::FunctionContract(format!(
+                    "a helper that acquires the control of {}(...) supports one produced or consumed member",
+                    description.family()
+                ))));
+            }
+        }
+        // An unreadable change is refused, never read as unchanged.
+        let actual = after.acquired_member_delta(&description);
+        let matches = match (declared, actual) {
+            (None, Some((_, 0))) => true,
+            (Some(produce), Some((actual_produce, 1))) => actual_produce == produce,
+            _ => false,
+        };
+        if !matches {
+            let family = description.family();
+            return Ok(Err(CRuntimeError::FunctionContract(match declared {
+                Some(true) => format!(
+                    "Requires produces {family}(...) to be created under the acquired authority"
+                ),
+                Some(false) => format!(
+                    "Requires consumes {family}(...) to be spent under the acquired authority"
+                ),
+                None => format!(
+                    "a change to {family}(...) under the acquired authority must be declared by produces or consumes"
+                ),
+            })));
+        }
+    }
+    Ok(Ok(()))
+}
+
 fn contract_exit_outcome_with_boundary_transfer(
     caller_state: &CState,
     function: &CFunction,
@@ -32203,6 +32540,18 @@ fn contract_exit_outcome_with_boundary_transfer(
                 ))));
             }
         }
+    }
+    if caller_state.uses_population_authority_semantics()
+        && let CStatementOutcome::Return { state, .. } = &outcome
+        && let Err(error) = check_acquired_control_member_effects(
+            &callee_state,
+            state,
+            function.contract_interface(),
+            assumptions,
+            budget,
+        )?
+    {
+        return Ok(Err(error));
     }
     let fallback_transfer;
     let transfer = if let Some(receipt) = checked_transfer {

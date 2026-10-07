@@ -261,10 +261,12 @@ milestone 7. The inventory names every file.
    state and lifetime holds. Count observations after an acquisition or a
    helper return are fresh; earlier facts remain historical only. Reject stale
    observations, wrong mutexes, and missing state. **Complete** for helpers that move the
-   guard and control between the mutex and their caller. A helper that opens
-   the acquired control itself, such as a locked retain or release, needs a
-   fresh opaque population per acquisition and a caller-side member delta.
-   That is split out of this chunk; milestone 6 chunk 4 depends on it.
+   guard and control between the mutex and their caller, and for locked
+   helpers that open the acquired control themselves, such as a locked
+   release: each acquisition enters a fresh opaque population, and the caller
+   applies the helper's checked member delta. An unconditional locked retain
+   still needs a bound that rules out counter overflow under the fresh total;
+   milestone 6 chunk 4 depends on it.
 3. **Protected bodies and local conservation.** Migrate the six
    `mutex_population_*` fixtures and both `population_conservation_local_mutex*`
    fixtures. These also use `guarded_by`, so they migrate both concerns at

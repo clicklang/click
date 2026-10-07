@@ -1,0 +1,45 @@
+# A locked helper cannot consume a member of a population it did not acquire
+
+`release` acquires the control of `obj` but declares the death of a member of
+`other`, whose authority it never holds. No checked spend of that member is
+possible, so the contract is refused.
+
+```c filename=authority_mutex_locked_release_other_population_rejected.c
+#include <pthread.h>
+struct object { pthread_mutex_t mu; int refs; };
+void release(struct object *obj, struct object *other) {
+    pthread_mutex_lock(&obj->mu);
+    obj->refs = obj->refs + 0;
+    pthread_mutex_unlock(&obj->mu);
+}
+```
+
+```click resource_semantics=authority
+target "x86_64-linux-userspace";
+runtime "modeled-pthread";
+verifying "authority_mutex_locked_release_other_population_rejected.c";
+resource reference(obj: struct object*) {}
+resource control(obj: struct object*) {
+    field refs: int32;
+    owns obj->refs;
+    owns authority(reference(obj));
+    fact obj->refs == refs;
+    fact refs == count(reference(obj));
+}
+void release(struct object *obj, struct object *other) {
+    owns access: mutex_use(&obj->mu, control(obj));
+    consumes reference(other);
+} by {
+    let { guard: guard, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
+    unfold(state);
+    step();
+    let restored = fold(control(obj), { refs: obj->refs });
+    step(pthread_mutex_unlock(&obj->mu), { access: access, guard: guard, state: restored });
+    step();
+    simp();
+}
+```
+
+```expect
+fail: Requires consumes reference(other)
+```
