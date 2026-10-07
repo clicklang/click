@@ -622,19 +622,15 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
 
     /// Closes the focused proposition goal when the step that produced this
     /// state added it as a fact. A goal that was already available before
-    /// the step stays open; only `assumption` closes that. An added fact
-    /// that spells the goal's order claim from the other side (`0 <= e` for
-    /// the goal `e >= 0`) is the goal: the comparison normalizes both sides
-    /// and is made once per fact this one step added, not over the fact set.
+    /// the step stays open; only `assumption` closes that. The match is
+    /// exact: a planned step sequence relies on the goal staying open after
+    /// a step that adds it under another spelling, and the written-script
+    /// runner closes that case with a recorded `assumption` instead.
     pub(crate) fn closed_if_goal_was_added(&self) -> Option<Self> {
         let (goal, _) = self.focused_proposition()?;
-        let goal = goal.proposition();
         self.state
             .added_facts
-            .iter()
-            .any(|fact| {
-                fact == goal || super::fact_reasoning::condition_polarity_equivalent(fact, goal)
-            })
+            .contains(goal.proposition())
             .then(|| self.closed_focused())
     }
 
@@ -696,7 +692,16 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 }
             }
         };
-        if available(proposition) {
+        // The goal under another spelling of the same order claim (`0 <= e`
+        // for the goal `e >= 0`, over machine or `Integer` operands) is an
+        // available fact: a fixed set of exact lookups, one per spelling,
+        // with no derivation or transport.
+        let spelled_otherwise = || {
+            super::fact_reasoning::order_claim_forms(proposition)
+                .iter()
+                .any(|form| form != proposition && facts.contains(form))
+        };
+        if available(proposition) || spelled_otherwise() {
             return Ok(self.closed_focused());
         }
         // A conjunction or disjunction that is not itself a fact still

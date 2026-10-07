@@ -109,10 +109,10 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     let expanded = expand_c0_claim_source(&click, &sources, "drain", CProofClaim::Grouped)
         .expect("nested conjunction provenance should expand");
     assert!(expanded.contains("extract(n >= 0);"), "{expanded}");
-    assert!(
-        expanded.contains("arithmetic_certificate signed_int32"),
-        "{expanded}"
-    );
+    // The extracted conjunct spells the goal under a mirrored order, which
+    // the closers now accept, so the certificate needs no arithmetic step
+    // after the extraction.
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c0_sources(&expanded, &sources)
     });

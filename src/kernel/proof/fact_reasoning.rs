@@ -419,6 +419,22 @@ pub(crate) fn is_implicit_fact_transport_context(proposition: &Proposition) -> b
 /// `condition_polarity_equivalent`. Callers can probe an exact index for these
 /// instead of maintaining another project-sized index.
 pub(crate) fn condition_polarity_forms(proposition: &Proposition) -> Vec<Proposition> {
+    polarity_forms_by(proposition, canonical_order_condition)
+}
+
+/// The fixed set of condition forms accepted by [`order_claim_equivalent`]:
+/// [`condition_polarity_forms`] extended to every order family. The explicit
+/// closers (`assumption`, and the written step that adds the goal under its
+/// other spelling) probe an exact index for these; the planners and
+/// availability paths keep [`condition_polarity_forms`].
+pub(crate) fn order_claim_forms(proposition: &Proposition) -> Vec<Proposition> {
+    polarity_forms_by(proposition, canonical_order_claim)
+}
+
+fn polarity_forms_by(
+    proposition: &Proposition,
+    canonical: fn(&ConditionTerm, bool) -> Option<CanonicalOrderCondition>,
+) -> Vec<Proposition> {
     let Some((condition, value)) =
         crate::kernel::spec::proposition_as_single_condition(proposition)
     else {
@@ -426,7 +442,7 @@ pub(crate) fn condition_polarity_forms(proposition: &Proposition) -> Vec<Proposi
     };
     let mut conditions = vec![(condition, value)];
     if let Some(CanonicalOrderCondition { operands, strict }) =
-        canonical_order_condition(&conditions[0].0, conditions[0].1)
+        canonical(&conditions[0].0, conditions[0].1)
     {
         // The four spellings of one order claim: the canonical direction at
         // both polarities, and the mirrored direction at both polarities.
@@ -615,11 +631,26 @@ pub(crate) fn propositions_are_exact_negations(left: &Proposition, right: &Propo
 
 /// Whether two propositions are one condition fact: the same condition at
 /// the same polarity, a condition and its negation at opposite polarities,
-/// or one order claim under two spellings (`a <= b` and `b >= a`, `a < b`
-/// and `not (a >= b)`), for every order family the kernel lowers to: 32-bit
-/// and 64-bit machine orders and the `Integer` order. Each side is
-/// normalized once and the results compared; nothing is searched.
+/// or one 32-bit signed order claim under two spellings (`a <= b` and
+/// `b >= a`, `a < b` and `not (a >= b)`). This is the equivalence every
+/// availability path and planner accepts; [`order_claim_equivalent`] extends
+/// it to the other order families for the explicit closers.
 pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposition) -> bool {
+    polarity_equivalent_by(left, right, canonical_order_condition)
+}
+
+/// [`condition_polarity_equivalent`] over every order family the kernel
+/// lowers to: 32-bit and 64-bit machine orders and the `Integer` order. Each
+/// side is normalized once and the results compared; nothing is searched.
+pub(crate) fn order_claim_equivalent(left: &Proposition, right: &Proposition) -> bool {
+    polarity_equivalent_by(left, right, canonical_order_claim)
+}
+
+fn polarity_equivalent_by(
+    left: &Proposition,
+    right: &Proposition,
+    canonical: fn(&ConditionTerm, bool) -> Option<CanonicalOrderCondition>,
+) -> bool {
     if left == right {
         return true;
     }
@@ -637,8 +668,8 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
     }
     matches!(
         (
-            canonical_order_condition(&left_condition, left_value),
-            canonical_order_condition(&right_condition, right_value),
+            canonical(&left_condition, left_value),
+            canonical(&right_condition, right_value),
         ),
         (Some(left), Some(right)) if left == right
     )
@@ -806,7 +837,20 @@ fn order_condition_parts(condition: &ConditionTerm) -> Option<(OrderOperator, Or
     })
 }
 
+/// The canonical order claim of a 32-bit signed order condition, and `None`
+/// for every other condition. This is the normalization every availability
+/// path and planner shares, unchanged from before the other families were
+/// normalized; see [`canonical_order_claim`] for those.
 fn canonical_order_condition(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<CanonicalOrderCondition> {
+    canonical_order_claim(condition, value)
+        .filter(|claim| matches!(claim.operands, OrderOperands::Bitvector32Signed(..)))
+}
+
+/// The canonical order claim of an order condition in any family.
+fn canonical_order_claim(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<CanonicalOrderCondition> {
