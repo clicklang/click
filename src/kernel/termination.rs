@@ -6629,7 +6629,6 @@ mod local_descent_tests {
             required_assumptions: PureFactContext::new(),
             paths: Vec::new(),
             composite_resource_definitions: Vec::new(),
-            ordinary_abstract_families: Vec::new(),
             recursion_anchor: anchor.map(Arc::new),
         }
     }
