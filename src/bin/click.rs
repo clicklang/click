@@ -522,6 +522,10 @@ mod tests {
                 "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    simp();\n}}\n"
             )
         };
+        // Each case's `assumption()` must fail. A goal that is a mirrored
+        // spelling of a fact (`0 <= n` beside `requires n >= 0`, or `i <= n`
+        // with `i == 0`) is closed by `assumption`, so the loop cases ask for
+        // `-1 < n`, which is true but no spelling of any fact.
         let cases = [
             (
                 "if_arm",
@@ -547,14 +551,14 @@ mod tests {
             (
                 "initialize_helper",
                 count_up(
-                    "            have 0 <= n by {\n                have n == n by simp;\n                assumption();\n            }\n            simp();\n",
+                    "            have -1 < n by {\n                have n == n by simp;\n                assumption();\n            }\n            simp();\n",
                 ),
                 15,
             ),
             (
                 "initialize_invariant_body",
                 count_up(
-                    "            have i >= 0 by simp;\n            have i <= n by {\n                have n == n by simp;\n                assumption();\n            }\n",
+                    "            have i >= 0 by simp;\n            have -1 < n by {\n                have n == n by simp;\n                assumption();\n            }\n",
                 ),
                 16,
             ),
