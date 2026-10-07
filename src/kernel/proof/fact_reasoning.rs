@@ -331,6 +331,35 @@ pub(crate) fn discharge_instantiated_guards(
     Ok((guards, current))
 }
 
+/// The guard conjuncts of `quantified` at `argument` that do not hold on
+/// their own: what an `instantiate` without a premise list must find as facts.
+pub(crate) fn instantiated_int32_guard_conjuncts(
+    quantified: &Proposition,
+    argument: Bitvector32Term,
+) -> Result<Vec<Proposition>, ForallInt32InstantiationError> {
+    let Proposition::ForAll { var, sort, body } = quantified else {
+        return Err(ForallInt32InstantiationError::RequiresUniversal);
+    };
+    if *sort != Sort::CInt32 {
+        return Err(ForallInt32InstantiationError::UnsupportedSort);
+    }
+    let instantiated = substitute_int32_variable_in_proposition(body, *var, argument);
+    let mut guards = Vec::new();
+    let mut current = &instantiated;
+    while let Proposition::Implies(guard, body) = current {
+        let mut conjuncts = Vec::new();
+        atomic_conjuncts(guard, &mut conjuncts);
+        guards.extend(
+            conjuncts
+                .into_iter()
+                .filter(|conjunct| !normalizes_context_free(conjunct))
+                .cloned(),
+        );
+        current = body;
+    }
+    Ok(guards)
+}
+
 pub(crate) fn check_forall_int32_instantiation(
     quantified: &Proposition,
     argument: Bitvector32Term,

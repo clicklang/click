@@ -6296,27 +6296,25 @@ impl Parser {
                 let argument = self.parse_contract_expression()?;
                 self.expect(Token::RParen)?;
                 if self.peek_ident() != Some("using") {
-                    return Err(self.error(
-                        "`instantiate` requires explicit evidence: `instantiate(F, value) using { ... }`",
-                    ));
+                    ProofTactic::InstantiateUsing {
+                        quantified,
+                        argument,
+                        premises: None,
+                    }
+                } else {
+                    let premises = self.parse_exact_premises()?;
+                    self.skip_redundant_semicolon();
+                    return Ok(ProofTactic::InstantiateUsing {
+                        quantified,
+                        argument,
+                        premises: Some(premises),
+                    });
                 }
-                let premises = self.parse_exact_premises()?;
-                self.skip_redundant_semicolon();
-                return Ok(ProofTactic::InstantiateUsing {
-                    quantified,
-                    argument,
-                    premises,
-                });
             }
             "simp" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
-                    if premises.is_empty() {
-                        return Err(self.error(
-                            "`simp() using` requires at least one explicit premise; use `simp()` for ambient simplification",
-                        ));
-                    }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::SimpUsing(ProofSimpUsing { premises }));
                 }

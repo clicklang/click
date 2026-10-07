@@ -2227,16 +2227,22 @@ impl<'a> Proof<'a> {
         &self,
         surface_quantified: &ClickProposition,
         argument: &ContractExpression,
-        surface_premises: &[ClickProposition],
+        surface_premises: Option<&[ClickProposition]>,
     ) -> Result<KernelProofHandle, ClickError> {
         let surface_quantified =
             self.substitute_fixed_state_locals_in_proposition(surface_quantified)?;
         let explicit_premises = surface_premises
-            .iter()
-            .map(|surface| {
-                self.lower_cited_surface_proposition(surface, "`instantiate using` premise")
+            .map(|premises| {
+                premises
+                    .iter()
+                    .map(|surface| {
+                        self.lower_cited_surface_proposition(surface, "`instantiate using` premise")
+                    })
+                    .collect::<Result<Vec<_>, _>>()
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .transpose()?;
+        let bare = surface_premises.is_none();
+        let surface_premises = surface_premises.unwrap_or_default();
         let lowered_quantified = self.lower_cited_surface_proposition(
             &surface_quantified,
             "`instantiate` quantified fact",
@@ -2244,7 +2250,7 @@ impl<'a> Proof<'a> {
         let argument = self.capture_instantiate_argument(argument)?;
 
         self.state
-            .apply_instantiate(lowered_quantified, argument, &explicit_premises)
+            .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
                     self.step_error("`instantiate` requires a proposition goal")
@@ -2263,6 +2269,19 @@ impl<'a> Proof<'a> {
                     self.step_error(format!(
                         "`instantiate` quantified fact is not exactly available: {}",
                         describe_click_proposition(&surface_quantified)
+                    ))
+                }
+                PropositionCloseError::InstantiateInvalid(
+                    crate::kernel::proof::fact_reasoning::ForallInt32InstantiationError::MissingGuard(
+                        missing,
+                    ),
+                ) if bare => {
+                    let (names, values) = self.diagnostic_naming_tables();
+                    self.step_error(format!(
+                        "`instantiate` without `using` needs each instantiated guard as an exact fact, and `{}` is not one; prove it first with `have`, or list the facts it follows from with `using {{ ... }}`",
+                        crate::surface::diagnostics::describe_pure_fact_spelled(
+                            &missing, &names, &values
+                        ),
                     ))
                 }
                 PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(

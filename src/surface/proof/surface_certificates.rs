@@ -192,7 +192,7 @@ pub(super) fn plan_explicit_forall_instantiation(
                 ProofTactic::InstantiateUsing {
                     quantified: surface.clone(),
                     argument,
-                    premises: other_surfaces.clone(),
+                    premises: Some(other_surfaces.clone()),
                 },
                 ProofTactic::Assumption,
             ];
@@ -343,7 +343,7 @@ fn plan_explicit_universal_conclusion_discharge(
     let mut tactics = vec![ProofTactic::InstantiateUsing {
         quantified: premise_surface.clone(),
         argument: argument_expression.clone(),
-        premises: using_surfaces.to_vec(),
+        premises: Some(using_surfaces.to_vec()),
     }];
     if let Some((source, target)) = transport_closure {
         if let Some((historical, current)) = comparison_snapshot_expression_pair(&source, &target) {

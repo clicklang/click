@@ -5479,10 +5479,12 @@ impl<'a> Proof<'a> {
                     let instantiated_proof = match self.apply_step(ProofStep::InstantiateUsing {
                         quantified: surface.clone(),
                         argument: argument.clone(),
-                        premises: guard_facts
-                            .iter()
-                            .map(|(_, surface)| surface.clone())
-                            .collect(),
+                        premises: Some(
+                            guard_facts
+                                .iter()
+                                .map(|(_, surface)| surface.clone())
+                                .collect(),
+                        ),
                     }) {
                         Ok(proof) => proof,
                         Err(_) => continue,

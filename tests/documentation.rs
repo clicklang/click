@@ -947,6 +947,7 @@ fn tactic_form_inventory_is_bidirectional() {
             "arithmetic-using" => surface == "`arithmetic() using { P; ... }`",
             "transport" => surface == "`transport(P, Q)`",
             "transport-using" => surface == "`transport(P, Q) using { R; ... }`",
+            "instantiate" => surface == "`instantiate(F, value)`",
             "simp" => surface == "`simp()`",
             "simp-using" => surface == "`simp() using { P; ... }`",
             "unfold-function" => surface == "`unfold(function(args))`",

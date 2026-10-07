@@ -3198,10 +3198,12 @@ pub enum ProofTactic {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
+    /// `instantiate(F, value)`, with `premises` the written `using` list.
+    /// Without a list, each instantiated guard must itself be an exact fact.
     InstantiateUsing {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Vec<ClickProposition>,
+        premises: Option<Vec<ClickProposition>>,
     },
     Simp,
     SimpUsing(ProofSimpUsing),
@@ -3664,6 +3666,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "instantiate",
+        syntax: "instantiate(F, value)",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "instantiate-using",
         syntax: "instantiate(F, value) using",
         class: "simple",
@@ -3783,10 +3790,12 @@ pub enum ProofStep {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
+    /// `instantiate(F, value)`, with `premises` the written `using` list.
+    /// Without a list, each instantiated guard must itself be an exact fact.
     InstantiateUsing {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Vec<ClickProposition>,
+        premises: Option<Vec<ClickProposition>>,
     },
     Have {
         proposition: ClickProposition,

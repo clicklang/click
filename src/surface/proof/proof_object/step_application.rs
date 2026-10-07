@@ -850,7 +850,11 @@ impl<'a> Proof<'a> {
                 quantified,
                 argument,
                 premises,
-            } => Some(self.apply_fixed_state_instantiate_using(quantified, argument, premises)),
+            } => Some(self.apply_fixed_state_instantiate_using(
+                quantified,
+                argument,
+                premises.as_deref(),
+            )),
             ProofStep::Mark(name) => Some(self.apply_execution_mark(name)),
             _ => None,
         };
@@ -2748,7 +2752,7 @@ impl<'a> Proof<'a> {
             context.click_function_environment,
         )?;
         self.state
-            .apply_instantiate(quantified, argument, &explicit_premises)
+            .apply_instantiate(quantified, argument, Some(&explicit_premises))
             .map(|state| {
                 // `apply_instantiate` has performed the complete kernel
                 // premise/order/conclusion check. Publish its exact fact

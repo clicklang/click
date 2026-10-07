@@ -808,9 +808,14 @@ fn instantiate_proof_tactic(
             quantified: proposition(quantified)?,
             argument: expression(argument)?,
             premises: premises
-                .iter()
-                .map(proposition)
-                .collect::<Result<Vec<_>, _>>()?,
+                .as_ref()
+                .map(|premises| {
+                    premises
+                        .iter()
+                        .map(proposition)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
         },
         ProofTactic::SimpUsing(using) => ProofTactic::SimpUsing(ProofSimpUsing {
             premises: using

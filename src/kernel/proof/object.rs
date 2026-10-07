@@ -1207,11 +1207,39 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         quantified: Proposition,
         argument: crate::kernel::Bitvector32Term,
-        explicit_premises: &[Proposition],
+        explicit_premises: Option<&[Proposition]>,
     ) -> Result<Self, PropositionCloseError> {
         let (_, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
+        // Without a written list the premises are the instantiated guards
+        // themselves: one availability lookup per guard conjunct, no search.
+        let guard_premises;
+        let explicit_premises = match explicit_premises {
+            Some(premises) => premises,
+            None => {
+                guard_premises = super::fact_reasoning::instantiated_int32_guard_conjuncts(
+                    facts
+                        .contains(&quantified)
+                        .then_some(&quantified)
+                        .or(facts.matching_quantified_fact(&quantified).as_ref())
+                        .ok_or(PropositionCloseError::InstantiateQuantifiedUnavailable)?,
+                    argument.clone(),
+                )
+                .map_err(PropositionCloseError::InstantiateInvalid)?;
+                if let Some(missing) = guard_premises
+                    .iter()
+                    .find(|guard| !facts.listed_premise_available(guard, &[], true))
+                {
+                    return Err(PropositionCloseError::InstantiateInvalid(
+                        super::fact_reasoning::ForallInt32InstantiationError::MissingGuard(
+                            missing.clone(),
+                        ),
+                    ));
+                }
+                &guard_premises
+            }
+        };
         for (index, premise) in explicit_premises.iter().enumerate() {
             if !facts.listed_premise_available(premise, &[], true) {
                 return Err(PropositionCloseError::InstantiatePremiseUnavailable(

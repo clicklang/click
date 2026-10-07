@@ -263,6 +263,11 @@ path = "src/surface/tests/tactic_tests/statement_steps.rs"
 needle = "transport(old(p[0]) == 7, p[0] == 7) using {"
 
 [[form]]
+id = "instantiate"
+path = "mdtests/instantiate_without_using_finds_its_guards.md"
+needle = "}, k);"
+
+[[form]]
 id = "instantiate-using"
 path = "src/surface/tests/tactic_tests/logical_tactics.rs"
 needle = "instantiate(forall (k: int32) {"

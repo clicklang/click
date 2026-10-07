@@ -685,17 +685,19 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             argument,
             premises,
         } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "instantiate({}, {}) using {{",
-                    source_click_proposition(quantified),
-                    describe_contract_expression(argument)
-                ),
+            let instantiate = format!(
+                "instantiate({}, {})",
+                source_click_proposition(quantified),
+                describe_contract_expression(argument)
             );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "}");
+            match premises {
+                Some(premises) => {
+                    line(output, &prefix, &format!("{instantiate} using {{"));
+                    write_premise_list(output, premises, indent + 1);
+                    line(output, &prefix, "}");
+                }
+                None => line(output, &prefix, &format!("{instantiate};")),
+            }
         }
         ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(_) | ProofTactic::Simp => {
             unreachable!("certificate validation rejects this tactic")
