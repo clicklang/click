@@ -578,3 +578,29 @@ joint-bound profile remains a regression. The next integration slice is the
 unchanged `CFeeRate::GetFee` wrapper: inherited `FeePerVSize` field access,
 empty-rate behavior and its negative-fee minimum correction require their own
 contracts before composing these rounding proofs.
+
+
+## CFeeRate wrapper preparation
+
+The selected unchanged `CFeeRate::GetFee` implementation adds encapsulation,
+header-declared records, nested field access and inherited `FeePerVSize`
+receivers to the existing rounding proof. The first prerequisite now supports
+named standard-layout classes with the same signed scalar/pointer fields as
+structs. Private, protected and default-private fields retain Clang-resolved
+declaration identities, offsets and sizes. Clang checks source access control;
+proof sidecars use the ordinary field views and ownership required by the
+shared C memory model. Const reads do not grant write authority.
+
+The [`class-record` fixture](../../tests/fixtures/cpp-verification/class-record/class_record.cpp)
+checks const readers, mutable field updates, frames, expansion/reverification
+and retained verification. Hostile claims, omitted authority and writes through
+views are rejected, as are illegal C++ client access, unions, mixed-access
+non-standard layouts, inheritance and bit-fields.
+
+The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
+its class declaration is in `policy/feerate.h`, outside the currently selected
+record source profile. The exporter now reports that actual header location
+and writes no partial artifact. Header record provenance, nested record places
+and inherited base-subobject authority are the next prerequisites; `GetFee`
+itself is not yet verified. Its empty-rate branch and negative-fee minimum
+correction will need contracts of their own when composing the Up proof.

@@ -2626,9 +2626,9 @@ private:
            "C++ class template instances are unsupported");
       return false;
     }
-    if (!record->isStruct() || record->getName().empty()) {
+    if ((!record->isStruct() && !record->isClass()) || record->getName().empty()) {
       fail(record->getLocation(),
-           "the supported C++ record must be a named struct");
+           "the supported C++ record must be a named struct or class");
       return false;
     }
     if (!is_in_logical_source(record->getLocation())) {
@@ -2670,13 +2670,15 @@ private:
           !pointer->getPointeeType().hasQualifiers() &&
           context_.hasSameType(pointer->getPointeeType().getUnqualifiedType(),
                                context_.IntTy);
-      if (field->getAccess() != clang::AS_public || field->isBitField() ||
+      // Access control is checked by Clang at each source use. It does not
+      // change the layout or memory authority of a resolved data field.
+      if (field->isBitField() ||
           field->isMutable() || field->hasInClassInitializer() ||
           field->getName().empty() ||
           (!mutable_int && !mutable_int_pointer)) {
         fail(
             field->getLocation(),
-            "the supported C++ record fields must be named public mutable int, "
+            "the supported C++ record fields must be named mutable int, "
             "signed 64-bit integer, or mutable int* fields without bit-fields");
         return false;
       }
@@ -3225,10 +3227,16 @@ private:
       return;
     }
     if (location.isValid()) {
+      const clang::SourceLocation diagnostic_location =
+          source_manager_.getExpansionLoc(location);
       const clang::PresumedLoc presumed =
-          source_manager_.getPresumedLoc(location);
+          source_manager_.getPresumedLoc(diagnostic_location);
       if (presumed.isValid()) {
-        state_.error = logical_source_ + ":" +
+        const std::string source = is_in_logical_source(diagnostic_location)
+                                       ? logical_source_
+                                       : dependency_source(diagnostic_location).value_or(
+                                             presumed.getFilename());
+        state_.error = source + ":" +
                        std::to_string(presumed.getLine()) + ":" +
                        std::to_string(presumed.getColumn()) +
                        ": error: " + std::move(message);

@@ -10418,3 +10418,157 @@ int32 choose(const struct Box* box) {
         assert!(verify_program_prepared_project(&parsed, &import).is_err());
     }
 }
+
+#[test]
+fn class_records_preserve_private_and_protected_field_layout_and_authority() {
+    let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
+    for access in ["private:", "protected:", ""] {
+        for (selected, sidecar) in [
+            (
+                "FeeRateState::IsEmpty",
+                include_str!("fixtures/cpp-verification/class-record/is_empty.click"),
+            ),
+            (
+                "FeeRateState::ReadFee",
+                include_str!("fixtures/cpp-verification/class-record/read_fee.click"),
+            ),
+            (
+                "FeeRateState::SetFee",
+                include_str!("fixtures/cpp-verification/class-record/set_fee.click"),
+            ),
+        ] {
+            let project = Project::with_fixture(
+                "class_record.cpp",
+                selected,
+                &source.replace("private:", access),
+            );
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let [record] = import.export().records.as_slice() else {
+                panic!("one class layout")
+            };
+            assert_eq!(record.name, "FeeRateState");
+            assert_eq!(record.size_bytes, 16);
+            assert_eq!(record.alignment_bytes, 8);
+            assert_eq!(
+                record
+                    .fields
+                    .iter()
+                    .map(|f| (f.name.as_str(), f.offset_bytes, f.size_bytes))
+                    .collect::<Vec<_>>(),
+                [("fee", 0, 8), ("size", 8, 4)]
+            );
+            fs::remove_file(&project.exporter).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            check_return_call_sidecar(&project, &import, sidecar);
+        }
+    }
+}
+
+#[test]
+fn class_record_proofs_reject_missing_authority_false_frames_and_readonly_writes() {
+    let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
+    for (selected, original, mutants) in [
+        (
+            "FeeRateState::ReadFee",
+            include_str!("fixtures/cpp-verification/class-record/read_fee.click"),
+            vec![
+                ("views self->fee;", ""),
+                ("result == old(self->fee)", "result != old(self->fee)"),
+            ],
+        ),
+        (
+            "FeeRateState::SetFee",
+            include_str!("fixtures/cpp-verification/class-record/set_fee.click"),
+            vec![
+                ("owns self->fee;", ""),
+                ("owns self->fee;", "views self->fee;"),
+                ("self->fee == next", "self->fee == old(self->fee)"),
+                (
+                    "self->size == old(self->size)",
+                    "self->size != old(self->size)",
+                ),
+            ],
+        ),
+    ] {
+        let project = Project::with_fixture("class_record.cpp", selected, source);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        for (before, after) in mutants {
+            let hostile = original.replace(before, after);
+            assert_ne!(hostile, original);
+            let sidecar = project.directory.join("hostile.click");
+            fs::write(&sidecar, &hostile).unwrap();
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("class field proof accepted missing authority or false claim");
+            };
+            assert!(error.message().len() < 8000);
+        }
+    }
+}
+
+#[test]
+fn class_record_import_keeps_cpp_access_control_and_layout_restrictions() {
+    let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
+    for (access, diagnostic) in [
+        ("private:", "private member"),
+        ("protected:", "protected member"),
+    ] {
+        let invalid = format!(
+            "{}\nlong long read_external(const FeeRateState& state) {{ return state.fee; }}\n",
+            source.replace("private:", access)
+        );
+        let project = Project::with_fixture("class_record.cpp", "read_external", &invalid);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+    for (invalid, diagnostic) in [
+        (
+            source.replace("class FeeRateState", "union FeeRateState"),
+            "named struct or class",
+        ),
+        (
+            source.replace("    int size;", "public:\n    int size;"),
+            "standard-layout",
+        ),
+        (
+            source.replace(
+                "class FeeRateState {",
+                "struct Base { int value; };\nclass FeeRateState : public Base {",
+            ),
+            "have no bases",
+        ),
+        (
+            source.replace("    int size;", "    int size : 4;"),
+            "without bit-fields",
+        ),
+    ] {
+        let project = Project::with_fixture("class_record.cpp", "FeeRateState::IsEmpty", &invalid);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn record_refusal_diagnostics_keep_macro_expansion_source_and_line_together() {
+    let mut project = Project::with_fixture(
+        "record_macro.cpp",
+        "read_value",
+        "#include \"layout.h\"\nBAD_RECORD(State)\nint read_value(const State& state) noexcept { return state.value; }\n",
+    );
+    fs::write(
+        project.directory.join("layout.h"),
+        "#define BAD_RECORD(name) struct name { int value : 4; };\n",
+    )
+    .unwrap();
+    project.dependencies.push("layout.h".into());
+    project.write_config("read_value");
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("record_macro.cpp:2:"), "{error}");
+    assert!(error.contains("without bit-fields"), "{error}");
+    assert!(!error.contains("layout.h:2:"), "{error}");
+    assert!(!project.artifact().exists());
+}
