@@ -305,8 +305,8 @@ untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
 The wide-fallback `EvaluateFeeDown/Up` composition and both unsigned fast paths
-are verified below. A unified caller contract, broader mode-specific result-fit
-domain and full 96/32 contract remain open.
+are verified below, along with unified callers on the joint input profile.
+The broader mode-specific result-fit domain and full 96/32 contract remain open.
 
 ## CompactSize encoded length
 
@@ -417,6 +417,18 @@ are verified in the prepared project. The gate checks wrapper/instance expansion
 reverification and retained verification, and refuses missing domain/fee bounds,
 missing numerator bridges, forged shifted identities and false quotient/rounding.
 
-Separate contracts now cover both modes in the negative, unsigned-fast and
-positive-wide fee domains under the joint amount/size bounds. Next combine them
-into one caller contract, then broaden mode-specific result-fit and fee division.
+Separate contracts cover both modes in the negative, unsigned-fast and
+positive-wide fee domains under the joint amount/size bounds. The unified caller
+contract below combines them; broader mode-specific result-fit remains next.
+
+[`FeeFracEvaluateBounded.click.in`](FeeFracEvaluateBounded.click.in) unifies the
+three domains for Down and Up without a native fee-branch prerequisite. It
+requires full int64 fee observer bounds, positive int32 size, field views and
+`0 <= at_size <= size`. Both caller levels preserve fields, prove int64 result
+bounds and the corresponding floor/ceiling product inequalities for every fee.
+The hermetic factory reuses the existing verified helper and branch proof
+fragments, supplying distinct captures for the two wide branches. Checked
+signed 64-bit `<` and `>=` observation bridges derive the fast-path range from
+Bitcoin's source guard. Expansion/reverification, retained verification and
+missing-bound, false-rounding and missing-transport regressions cover both modes.
+Next broaden the amount/size domain and mode-specific result-fit contracts.

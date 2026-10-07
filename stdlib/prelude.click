@@ -1071,6 +1071,16 @@ theorem int64_less_equal_to_integer(left: int64, right: int64) {
     ensures to_integer(left) <= to_integer(right);
 }
 
+theorem int64_less_than_to_integer(left: int64, right: int64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right);
+}
+
+theorem int64_greater_equal_to_integer(left: int64, right: int64) {
+    requires left >= right;
+    ensures to_integer(left) >= to_integer(right);
+}
+
 theorem int64_less_equal_of_to_integer(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;

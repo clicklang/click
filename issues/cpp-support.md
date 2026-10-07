@@ -784,8 +784,21 @@ Zero fee/amount, exact division and maximal fast-path operands remain in scope.
 The unchanged implementations now have separate proofs for both rounding modes
 in all three native fee domains, under `0 <= at_size <= size` and positive size.
 
-Next combine the fee-domain proofs into one caller contract under the current
-joint bounds, then broaden mode-specific result-fit and fee division.
+Unified caller contracts are now delivered for both modes on the joint input
+profile. `FeeFracEvaluateBounded.click.in` has no native fee-branch prerequisite:
+it requires the full signed fee observer bounds, positive int32 size,
+`0 <= at_size <= size`, and field views. The proof splits on the unchanged
+source comparisons, derives fast-path observer bounds through checked signed
+64-bit `<` and `>=` bridges, and reuses the existing fast/wide proof fragments.
+Both caller levels preserve fields, derive int64 result bounds, and prove exact
+floor/ceiling product inequalities across all signed fee values. Ordinary,
+expanded and retained verification and hostile missing bounds, false rounding
+and missing comparison transport are covered. The new shared bridges check their
+exact typed declarations and native premises; endpoint models, forged declarations
+and checked expansion cover them independently of Bitcoin.
+
+Next broaden mode-specific result-fit and fee division beyond the current
+joint amount/size bounds.
 The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
 current joint range ensures both rounding modes fit.
 The selected source narrows `n / d` to int64 and

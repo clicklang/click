@@ -1483,6 +1483,32 @@ The exact signed mathematical observation preserves native non-strict order. The
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
+### `int64_less_than_to_integer`
+
+```click
+theorem int64_less_than_to_integer(left: int64, right: int64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right);
+}
+```
+
+Preserves the exact source comparison in signed 64-bit Integer observations, including the signed endpoints. The native comparison premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_greater_equal_to_integer`
+
+```click
+theorem int64_greater_equal_to_integer(left: int64, right: int64) {
+    requires left >= right;
+    ensures to_integer(left) >= to_integer(right);
+}
+```
+
+Preserves the exact source comparison in signed 64-bit Integer observations, including the signed endpoints. The native comparison premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int64_less_equal_of_to_integer`
 
 ```click

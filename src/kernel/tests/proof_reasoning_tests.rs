@@ -9682,3 +9682,54 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         .is_none()
     );
 }
+
+#[test]
+fn signed_64_branch_observation_bridges_match_boundary_models() {
+    let left = Bitvector32Term::Variable(Variable(185101));
+    let right = Bitvector32Term::Variable(Variable(185102));
+    for strict in [false, true] {
+        let theorem = if strict {
+            prove_int64_less_than_to_integer(left.clone(), right.clone())
+        } else {
+            prove_int64_greater_equal_to_integer(left.clone(), right.clone())
+        };
+        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+            panic!("missing comparison premise");
+        };
+        let expected_native = if strict {
+            ConditionTerm::int64_signed_less_than(left.clone(), right.clone())
+        } else {
+            ConditionTerm::int64_signed_greater_equal(left.clone(), right.clone())
+        };
+        assert_eq!(
+            premise.as_ref(),
+            &Proposition::ConditionIs(expected_native, true)
+        );
+        let observe = |v| IntegerTerm::from_machine(MachineIntegerType::Int64, v).unwrap();
+        let expected_integer = if strict {
+            ConditionTerm::IntegerLessThan(
+                observe(left.clone()).into(),
+                observe(right.clone()).into(),
+            )
+        } else {
+            ConditionTerm::IntegerGreaterEqual(
+                observe(left.clone()).into(),
+                observe(right.clone()).into(),
+            )
+        };
+        assert_eq!(
+            conclusion.as_ref(),
+            &Proposition::ConditionIs(expected_integer, true)
+        );
+        let values = [i64::MIN, -1, 0, 1, 8589934591, 8589934592, i64::MAX];
+        for a in values {
+            for b in values {
+                let native = if strict { a < b } else { a >= b };
+                let a = num_bigint::BigInt::from(a);
+                let b = num_bigint::BigInt::from(b);
+                let mathematical = if strict { a < b } else { b <= a };
+                assert_eq!(native, mathematical);
+            }
+        }
+    }
+}

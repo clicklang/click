@@ -3349,3 +3349,11 @@ path = "reference/library/index.md#integer_multiply_order_nonpositive"
 [[item]]
 id = "stdlib.theorem.integer_scaled_product_bounds"
 path = "reference/library/index.md#integer_scaled_product_bounds"
+
+[[item]]
+id = "stdlib.theorem.int64_less_than_to_integer"
+path = "reference/library/index.md#int64_less_than_to_integer"
+
+[[item]]
+id = "stdlib.theorem.int64_greater_equal_to_integer"
+path = "reference/library/index.md#int64_greater_equal_to_integer"

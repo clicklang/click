@@ -980,6 +980,18 @@ mod tests {
                 "to_integer(left) <= to_integer(right)",
             ),
             (
+                "int64_less_than_to_integer",
+                "int64",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
+                "int64_greater_equal_to_integer",
+                "int64",
+                "left >= right",
+                "to_integer(left) >= to_integer(right)",
+            ),
+            (
                 "int64_less_equal_of_to_integer",
                 "int64",
                 "to_integer(left) <= to_integer(right)",

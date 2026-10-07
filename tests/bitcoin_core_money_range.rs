@@ -335,7 +335,8 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     if evaluation_caller
         && (name.ends_with("Negative")
             || name.ends_with("PositiveWide")
-            || name.ends_with("SymbolicFast"))
+            || name.ends_with("SymbolicFast")
+            || name.ends_with("Unified"))
         && phase == Some(RoundingPhase::FullExpansion)
     {
         let instance = if selected.ends_with("Down") {
@@ -374,7 +375,32 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             )
         )
     {
-        let hostile = if name.ends_with("SymbolicFast") {
+        let hostile = if name.ends_with("Unified") {
+            if phase == Some(RoundingPhase::Rejections) {
+                vec![
+                    source.replace("views self->size;", ""),
+                    source.replace("requires self->size > 0;", ""),
+                    source.replace("requires 0 <= at_size;", ""),
+                    source.replace("requires at_size <= self->size;", ""),
+                ]
+            } else {
+                vec![
+                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
+                    source.replace(
+                        if selected.ends_with("Down") {
+                            "(to_integer(result) + 1) * to_integer(self->size)"
+                        } else {
+                            "(to_integer(result) + -1) * to_integer(self->size)"
+                        },
+                        "to_integer(result) * to_integer(self->size)",
+                    ),
+                    source.replace(
+                        "apply(int64_less_than_to_integer(self->fee, 8589934592i64));",
+                        "",
+                    ),
+                ]
+            }
+        } else if name.ends_with("SymbolicFast") {
             if phase == Some(RoundingPhase::NumeratorRejections) {
                 assert!(selected.ends_with("Up"));
                 vec![
@@ -1230,6 +1256,100 @@ fn wide_fee_evaluation_source(mode: &str, positive: bool) -> String {
         "{}\n{div}\n{fragment}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     )
+}
+
+fn unified_fee_evaluation_source(mode: &str) -> String {
+    let wide = wide_fee_evaluation_source(mode, true);
+    let (helpers, callers) = wide.split_once("int64 FeeFrac_EvaluateFee__bool_").unwrap();
+    let wide_body = callers
+        .split_once("} by {")
+        .unwrap()
+        .1
+        .split_once("\n}\nint64")
+        .unwrap()
+        .0;
+    let negative = wide_body
+        .replace("denominator", "negative_denominator")
+        .replace("let product =", "let negative_product =")
+        .replace("to_integer(product)", "to_integer(negative_product)")
+        .replace("FeeFrac_Div(product,", "FeeFrac_Div(negative_product,")
+        .replace("rounded", "negative_rounded");
+    let fast = if mode == "Down" {
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in")
+    } else {
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
+    };
+    let fast_body = fast
+        .split_once("} by {")
+        .unwrap()
+        .1
+        .split_once("\n}\n\nint64")
+        .unwrap()
+        .0;
+    let fast_body = fast_body.strip_suffix("    simp();").unwrap();
+    let contract = callers.split_once("} by {").unwrap().0;
+    let bounds = contract
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("ensures "))
+        .filter(|l| l.contains(" * "))
+        .map(|l| l.trim_end_matches(';'))
+        .collect::<Vec<_>>();
+    assert_eq!(bounds.len(), 2);
+    let fragment =
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateBounded.click.in")
+            .replace("@INSTANCE@", if mode == "Down" { "true" } else { "false" })
+            .replace("@MODE@", mode)
+            .replace("@CALLER_BOUND_1@", bounds[0])
+            .replace("@CALLER_BOUND_2@", bounds[1])
+            .replace("@FAST_PROOF@", fast_body)
+            .replace("@WIDE_POSITIVE_PROOF@", wide_body)
+            .replace("@WIDE_NEGATIVE_PROOF@", &negative);
+    assert!(!fragment.contains('@'));
+    format!("{helpers}{fragment}")
+}
+
+fn check_upstream_unified_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}Unified"),
+        &unified_fee_evaluation_source(mode),
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_unified_fee_evaluation_down_verifies_all_fee_branches() {
+    check_upstream_unified_fee_evaluation("Down", RoundingPhase::Tools);
+}
+#[test]
+fn upstream_unified_fee_evaluation_up_verifies_all_fee_branches() {
+    check_upstream_unified_fee_evaluation("Up", RoundingPhase::Tools);
+}
+#[test]
+fn upstream_unified_fee_evaluation_down_expands_and_reverifies() {
+    check_upstream_unified_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_unified_fee_evaluation_up_expands_and_reverifies() {
+    check_upstream_unified_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_unified_fee_evaluation_down_rejects_missing_domain_bounds() {
+    check_upstream_unified_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_unified_fee_evaluation_up_rejects_missing_domain_bounds() {
+    check_upstream_unified_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_unified_fee_evaluation_down_rejects_false_rounding_and_missing_transport() {
+    check_upstream_unified_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+#[test]
+fn upstream_unified_fee_evaluation_up_rejects_false_rounding_and_missing_transport() {
+    check_upstream_unified_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
 fn check_upstream_negative_fee_evaluation(mode: &str, phase: RoundingPhase) {
