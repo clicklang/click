@@ -63,6 +63,23 @@ pub(super) struct WorkerCreation {
     pub(super) parent_after_create: super::population_authority::c_creation::CreationEvents,
     pub(super) worker: super::population_authority::c_creation::CreationEvents,
     pub(super) definitions: Vec<super::CCompositeResourceDefinition>,
+    pub(super) deferred: Option<DeferredMemberExchange>,
+}
+
+/// A locked worker's declared member change. Its authority stays in the
+/// mutex escrow while the worker is outstanding, and the worker may lock at
+/// any time before it finishes, so create records nothing. Join is the first
+/// point at which the change is known to have happened; it lends the
+/// escrowed authority to the worker's call identity, applies the change, and
+/// takes the authority back, exactly as a sequential locked call returns.
+/// Until then the parent cannot observe that population's total.
+#[derive(Clone, Debug)]
+pub(super) struct DeferredMemberExchange {
+    pub(super) block: PointerBlock,
+    pub(super) description: super::ResourceDescription,
+    pub(super) produce: bool,
+    pub(super) quantity: Bitvector32Term,
+    pub(super) exclusive: bool,
 }
 
 /// A checked contract effect accumulated into a reserved final total. That
@@ -585,6 +602,26 @@ impl ThreadLedger {
                         CResourceFact::Own(super::CResource::PopulationAuthority(lent), _)
                             if lent == description
                     )
+                })
+        })
+    }
+
+    /// Whether an outstanding locked worker will change this population at
+    /// its join. Work is linear in the live workers of this path.
+    pub(super) fn defers_population_change(
+        &self,
+        description: &super::ResourceDescription,
+    ) -> bool {
+        self.storage.rights.iter().any(|(_, right)| {
+            crate::instrumentation::record_deterministic_work(1);
+            right
+                .completion
+                .creation
+                .as_ref()
+                .and_then(|creation| creation.deferred.as_ref())
+                .is_some_and(|deferred| {
+                    deferred.description.family() == description.family()
+                        && deferred.description.arguments() == description.arguments()
                 })
         })
     }
@@ -1119,9 +1156,35 @@ impl ThreadContext {
                 .creation
                 .as_ref()
                 .ok_or("worker join lost the parent's creation history")?;
+            let mut worker_events = current.return_to(&creation.worker);
+            if let Some(deferred) = &creation.deferred {
+                let lent = worker_events
+                    .transfer_call_fact(current, &creation.worker, &deferred.description, true)
+                    .map_err(|_| "a locked worker's population authority is not in its mutex")?;
+                let (changed, _) = if deferred.exclusive {
+                    lent.checked_exclusive_member_exchange_quantity(
+                        &deferred.block,
+                        &deferred.description,
+                        deferred.produce,
+                        &deferred.quantity,
+                        assumptions,
+                    )
+                } else {
+                    lent.checked_member_exchange_quantity(
+                        &deferred.block,
+                        &deferred.description,
+                        deferred.produce,
+                        &deferred.quantity,
+                        assumptions,
+                    )
+                }
+                .map_err(|_| "a locked worker's member change is refused at join")?;
+                worker_events = changed
+                    .transfer_call_fact(&creation.worker, current, &deferred.description, true)
+                    .map_err(|_| "a locked worker did not return its population authority")?;
+            }
             let mut worker = self.parent.clone();
-            Arc::make_mut(&mut worker.population_effects).creation =
-                Some(current.return_to(&creation.worker));
+            Arc::make_mut(&mut worker.population_effects).creation = Some(worker_events);
             let mut from = self.parent.clone();
             Arc::make_mut(&mut from.population_effects).creation = Some(creation.worker.clone());
             let returned = super::functions::transfer_population_call_facts(

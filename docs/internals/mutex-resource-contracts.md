@@ -521,6 +521,17 @@ regressions are `authority_mutex_control_helper_open.md`,
 `authority_mutex_locked_undeclared_birth_rejected.md`, and
 `authority_mutex_locked_reacquire_rejected.md`.
 
+A locked helper may also run as a `pthread_create` worker, and several may be
+outstanding at once. Create lends no authority; each worker's declared change
+applies at its join, and the parent cannot count the population until then
+(the [worker authority protocol](worker-authority-protocol.md#workers-that-lock-the-populations-control)).
+The regressions are `authority_mutex_locked_workers.md`,
+`authority_mutex_locked_workers_reverse_join.md`,
+`authority_mutex_locked_workers_parent_lock.md`,
+`authority_mutex_locked_workers_pending_count_rejected.md`,
+`authority_mutex_locked_workers_stale_rejected.md`, and
+`authority_mutex_locked_workers_destroy_before_join_rejected.md`.
+
 A locked retain that creates a member unconditionally still needs a bound
 that rules out counter overflow under the fresh total; it and worker transfer
 are later work in `issues/authority-migration.md`.

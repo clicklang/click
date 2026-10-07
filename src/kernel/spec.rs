@@ -6313,6 +6313,15 @@ fn evaluate_resource_count_paths(
                         obligations,
                     });
                 }
+                // An outstanding locked worker changes this population at an
+                // unknown time before its join, so no total is current.
+                if state
+                    .thread_ledger
+                    .as_ref()
+                    .is_some_and(|ledger| ledger.defers_population_change(&description))
+                {
+                    return Err(ExecutionLimit::AuthorityCountPendingLockedWorker);
+                }
                 let authority =
                     CResourceFact::own(CResource::PopulationAuthority(description.clone()));
                 if !state
