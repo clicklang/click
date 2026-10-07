@@ -1828,6 +1828,106 @@ theorem default_have(x: int32) {
     }
 }
 
+/// `by T(args);` is `by { T(args); }` without its braces. The source tools
+/// address a proof's tactics through its block, so each of them must see the
+/// one-tactic form as that block: every smart tactic in the proof below
+/// expands and rechecks, wherever the one-tactic proofs stand.
+#[test]
+fn expansion_reads_a_one_tactic_proof_as_its_block() {
+    let source = r#"
+theorem helper(x: int32) {
+    requires 0 <= x;
+    ensures 0 <= x by assumption();
+}
+
+theorem one_tactic_proofs(x: int32) {
+    requires 0 <= x;
+    ensures 0 <= x and x == x by simp();
+    ensures 0 <= x by apply(helper(x));
+    ensures 0 <= x and x == x by {
+        have x == x by normalize();
+        have 0 <= x by apply(helper(x));
+        have 0 <= x and x == x by simp();
+        simp();
+    }
+}
+"#;
+    verify_c0_sources(source, &[]).expect("the one-tactic proofs should verify");
+    let smart = [
+        "simp();\n    ensures 0 <= x by apply",
+        "apply(helper(x));\n    ensures 0 <= x and x == x by {",
+        "apply(helper(x));\n        have 0 <= x and x == x",
+        "simp();\n        simp();",
+        "simp();\n    }",
+    ];
+    for needle in smart {
+        let offset = source
+            .find(needle)
+            .unwrap_or_else(|| panic!("expected `{needle}` in the source"));
+        let position = expansion::position_at_offset(source, offset);
+        let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+            .unwrap_or_else(|error| panic!("expanding at `{needle}`: {}", error.message()));
+        assert_ne!(expanded, source, "expanding at `{needle}` changed nothing");
+        verify_c0_sources(&expanded, &[]).unwrap_or_else(|error| {
+            panic!(
+                "the proof expanded at `{needle}` must recheck: {}\n{expanded}",
+                error.message()
+            )
+        });
+    }
+
+    // An in-place expansion of a one-tactic proof writes the braces the
+    // expanded form needs, and leaves the other one-tactic proofs as written.
+    let offset = source.find("apply(helper(x));\n    ensures").unwrap();
+    let position = expansion::position_at_offset(source, offset);
+    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
+    assert!(
+        expanded.contains("ensures 0 <= x by {\n        apply(helper(x)) using {"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("have x == x by normalize();"),
+        "{expanded}"
+    );
+}
+
+/// The inventory `click audit` walks is the same whether a one-tactic proof
+/// is written with its braces or without.
+#[test]
+fn smart_site_inventory_is_the_same_for_a_one_tactic_proof_and_its_block() {
+    let without = r#"
+theorem helper(x: int32) {
+    requires 0 <= x;
+    ensures 0 <= x by assumption();
+}
+
+theorem one_tactic_proofs(x: int32) {
+    requires 0 <= x;
+    ensures 0 <= x and x == x by simp();
+    ensures 0 <= x by apply(helper(x));
+    ensures 0 <= x and x == x by {
+        have 0 <= x and x == x by simp();
+        simp();
+    }
+}
+"#;
+    let with = without
+        .replace("by assumption();", "by { assumption(); }")
+        .replace("by simp();", "by { simp(); }")
+        .replace("by apply(helper(x));", "by { apply(helper(x)); }");
+    assert_ne!(with, without);
+    let inventory = |source: &str| {
+        c0_smart_tactic_source_sites(source, &[])
+            .unwrap()
+            .into_iter()
+            .map(|site| (site.claim_label, site.source_index, site.tactic_name))
+            .collect::<Vec<_>>()
+    };
+    let sites = inventory(without);
+    assert!(!sites.is_empty(), "the proof has smart tactics to find");
+    assert_eq!(sites, inventory(&with));
+}
+
 #[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [
