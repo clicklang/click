@@ -305,8 +305,41 @@ untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
 The wide-fallback `EvaluateFeeDown/Up` composition and both unsigned fast paths
-are verified below. A unified caller contract, broader mode-specific result-fit
-domain and full 96/32 contract remain open.
+are verified below, along with unified callers on the joint input profile.
+The alternative result-fit profiles below widen the helper's mode-specific
+numerator domain. Fee callers still use the joint profile.
+
+## Mode-specific fee division result fit
+
+[`FeeFracDivResultFitDown.click`](FeeFracDivResultFitDown.click) and
+[`FeeFracDivResultFitUp.click`](FeeFracDivResultFitUp.click) verify the same
+unchanged `FeeFrac::Div` source under separate contracts. Select the profile
+for the required rounding mode; these sidecars are alternatives to the joint
+helper contract, rather than declarations to load together.
+
+With `N = to_integer(n)`, `D = to_integer(d)`, `MIN = INT64_MIN` and
+`MAX = INT64_MAX`, both require a positive int32 divisor and explicit native
+`d <= INT32_MAX`. Down requires `round_down != 0` and
+`MIN * D <= N < (MAX + 1) * D`. Up requires `round_down == 0` and
+`(MIN - 1) * D < N <= MAX * D`. For `D > 1`, Down includes positive
+numerators above `MAX * D`; Up includes negative numerators below `MIN * D`.
+For example, with `D = 2`, Down accepts `2 * MAX + 1` and returns `MAX`,
+while Up accepts `2 * MIN - 1` and returns `MIN`.
+
+Each proof derives the int64 truncating quotient bounds using the shared
+strict quotient lemmas on its widened side, checks the actual native division
+and both casts, and establishes int32 remainder bounds. Down proves decrement
+safety only for a negative remainder; Up proves increment safety only for a
+positive remainder. The source still performs its original mode-dependent
+correction. Both contracts export native and observer result bounds, exact
+remainder-sign correction identities, and unguarded floor/ceiling inequalities
+for the selected mode. No C++ source, importer or kernel change is needed.
+
+Eight hermetic phases cover ordinary verification, source expansion and
+reverification, retained verification, missing mode/divisor/numerator guards,
+strict endpoints weakened to inclusive ones, false rounding inequalities,
+missing correction bounds and reversed cast evidence. The original callers retain the joint contract. The alternative wide caller
+profiles below compose these mode-specific interfaces with larger amounts.
 
 ## CompactSize encoded length
 
@@ -417,6 +450,57 @@ are verified in the prepared project. The gate checks wrapper/instance expansion
 reverification and retained verification, and refuses missing domain/fee bounds,
 missing numerator bridges, forged shifted identities and false quotient/rounding.
 
-Separate contracts now cover both modes in the negative, unsigned-fast and
-positive-wide fee domains under the joint amount/size bounds. Next combine them
-into one caller contract, then broaden mode-specific result-fit and fee division.
+Separate contracts cover both modes in the negative, unsigned-fast and
+positive-wide fee domains under the joint amount/size bounds. The unified caller
+contract below combines them; the alternative wide result-fit profiles follow.
+
+[`FeeFracEvaluateBounded.click.in`](FeeFracEvaluateBounded.click.in) unifies the
+three domains for Down and Up without a native fee-branch prerequisite. It
+requires full int64 fee observer bounds, positive int32 size, field views and
+`0 <= at_size <= size`. Both caller levels preserve fields, prove int64 result
+bounds and the corresponding floor/ceiling product inequalities for every fee.
+The hermetic factory reuses the existing verified helper and branch proof
+fragments, supplying distinct captures for the two wide branches. Checked
+signed 64-bit `<` and `>=` observation bridges derive the fast-path range from
+Bitcoin's source guard. Expansion/reverification, retained verification and
+missing-bound, false-rounding and missing-transport regressions cover both modes.
+Shared strict quotient lemmas now establish initial int64 quotient fit on
+floor's `MIN * d <= n < (MAX + 1) * d` and ceiling's
+`(MIN - 1) * d < n <= MAX * d` mathematical domains; see
+[`integer_quotient_strict_bound.md`](../../mdtests/integer_quotient_strict_bound.md).
+The mode-specific helper profiles above prove native narrowing and correction
+on these domains. The wide callers below now compose those helper contracts.
+
+
+## Wide fee callers with explicit result fit
+
+[`FeeFracEvaluateWideResultFit.click.in`](FeeFracEvaluateWideResultFit.click.in)
+verifies Down and Up on both wide fallback domains: negative fees, and
+nonnegative fees at or above the source's `2^33` fast-path threshold. The
+hermetic factory supplies the selected mode's Div sidecar and the unchanged
+Mul sidecar in the same prepared project. These alternative caller profiles
+preserve the actual source guards; they do not cover the unsigned fast path.
+
+Both caller levels require field views, full signed fee observer bounds,
+positive int32 size, and `0 <= at_size <= INT32_MAX`. With `F`, `A`, `D`
+the Integer observations of fee, amount and size, Down requires
+`MIN * D <= F * A < (MAX + 1) * D`; Up requires
+`(MIN - 1) * D < F * A <= MAX * D`. There is no `at_size <= size`
+prerequisite. Native multiplication is checked by the Mul sidecar, and explicit
+rewrites transport its exact product identity to the selected Div contract.
+The callers derive signed result bounds and exact floor/ceiling inequalities,
+and preserve both fields.
+
+Each of the four profiles includes a modular execution example with fee
+`2^33` or `-2^33`, size `1`, and amount `2`. Its contract explicitly states the
+same fit/authority premises and the fixed inputs, and exports the rounding
+intervals and field frames. This makes `at_size > size` a checked contract
+application, rather than only an example mentioned in prose.
+
+Sixteen hermetic phases cover ordinary, wrapper/instance expansion and retained
+verification, missing field/size/amount/product guards, strict input endpoints
+weakened to inclusive ones, omitted wide-branch or fee bounds, forged product
+transport and false rounding. Original wide, fast and unified joint-bound
+profiles remain separate regressions. Next extend the unsigned fast path to
+these amount/result-fit bounds, then unify all signed fee branches under the
+broader caller contract.

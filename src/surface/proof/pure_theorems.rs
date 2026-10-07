@@ -2365,6 +2365,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_add_to_integer"
                 | "int32_less_equal_of_to_integer"
                 | "int64_less_equal_to_integer"
+                | "int64_less_than_to_integer"
+                | "int64_greater_equal_to_integer"
                 | "int64_less_equal_of_to_integer"
                 | "int64_add_to_integer"
                 | "int64_subtract_to_integer"
@@ -2460,6 +2462,8 @@ fn verify_kernel_standard_theorem_axiom(
         "int32_add_to_integer"
         | "int32_less_equal_of_to_integer"
         | "int64_less_equal_to_integer"
+        | "int64_less_than_to_integer"
+        | "int64_greater_equal_to_integer"
         | "int64_less_equal_of_to_integer"
         | "int64_add_to_integer"
         | "int64_subtract_to_integer"
@@ -2603,6 +2607,12 @@ fn verify_kernel_standard_theorem_axiom(
         match theorem.name() {
             "int64_less_equal_to_integer" => {
                 crate::kernel::prove_int64_less_equal_to_integer(left, right)
+            }
+            "int64_less_than_to_integer" => {
+                crate::kernel::prove_int64_less_than_to_integer(left, right)
+            }
+            "int64_greater_equal_to_integer" => {
+                crate::kernel::prove_int64_greater_equal_to_integer(left, right)
             }
             "int64_less_equal_of_to_integer" => {
                 crate::kernel::prove_int64_less_equal_of_to_integer(left, right)
@@ -4071,6 +4081,18 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) <= to_integer(right)",
             ),
             (
+                "int64_less_than_to_integer",
+                "int64",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
+                "int64_greater_equal_to_integer",
+                "int64",
+                "left >= right",
+                "to_integer(left) >= to_integer(right)",
+            ),
+            (
                 "int64_less_equal_of_to_integer",
                 "int64",
                 "to_integer(left) <= to_integer(right)",
@@ -4089,7 +4111,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
             verify_standard_declaration(&source).unwrap();
             for invalid in [
                 source.replace(&format!("requires {premise};"), ""),
-                source.replace(&format!("requires {premise};"), "requires left < right;"),
+                source.replace(&format!("requires {premise};"), "requires left > right;"),
                 source.replace(&format!("ensures {goal};"), "ensures left > right;"),
                 source.replace(&format!(": {ty}"), ": uint64"),
                 source.replace(

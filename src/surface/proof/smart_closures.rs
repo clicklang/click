@@ -114,13 +114,22 @@ fn collect_signed_surface_terms<'a>(
 fn surface_comparison_with_anchored_operands(proposition: &ClickProposition) -> ClickProposition {
     let mut inner = proposition;
     let mut selectors = Vec::new();
-    while let ClickProposition::At {
-        selector,
-        proposition,
-    } = inner
-    {
-        selectors.push(selector);
-        inner = proposition;
+    let mut negated = false;
+    loop {
+        match inner {
+            ClickProposition::At {
+                selector,
+                proposition,
+            } => {
+                selectors.push(selector);
+                inner = proposition;
+            }
+            ClickProposition::Not(proposition) => {
+                negated = !negated;
+                inner = proposition;
+            }
+            _ => break,
+        }
     }
     let ClickProposition::Comparison {
         left,
@@ -129,6 +138,19 @@ fn surface_comparison_with_anchored_operands(proposition: &ClickProposition) -> 
     } = inner
     else {
         return proposition.clone();
+    };
+    let operator = if negated {
+        match operator {
+            ComparisonOperator::LessEqual => ComparisonOperator::GreaterThan,
+            ComparisonOperator::LessThan => ComparisonOperator::GreaterEqual,
+            ComparisonOperator::GreaterEqual => ComparisonOperator::LessThan,
+            ComparisonOperator::GreaterThan => ComparisonOperator::LessEqual,
+            ComparisonOperator::Equal => ComparisonOperator::NotEqual,
+            ComparisonOperator::NotEqual => ComparisonOperator::Equal,
+            ComparisonOperator::In => return proposition.clone(),
+        }
+    } else {
+        *operator
     };
     let anchor = |expression: &ContractExpression| {
         selectors
@@ -143,7 +165,7 @@ fn surface_comparison_with_anchored_operands(proposition: &ClickProposition) -> 
     };
     ClickProposition::Comparison {
         left: anchor(left),
-        operator: *operator,
+        operator,
         right: anchor(right),
     }
 }
@@ -8305,6 +8327,42 @@ mod synthesized_literal_tests {
             left: expression(left),
             operator,
             right: expression(right),
+        }
+    }
+
+    #[test]
+    fn arithmetic_operand_anchoring_preserves_negated_comparison_polarity() {
+        for (operator, complement) in [
+            (
+                ComparisonOperator::LessEqual,
+                ComparisonOperator::GreaterThan,
+            ),
+            (
+                ComparisonOperator::LessThan,
+                ComparisonOperator::GreaterEqual,
+            ),
+            (
+                ComparisonOperator::GreaterEqual,
+                ComparisonOperator::LessThan,
+            ),
+            (
+                ComparisonOperator::GreaterThan,
+                ComparisonOperator::LessEqual,
+            ),
+            (ComparisonOperator::Equal, ComparisonOperator::NotEqual),
+            (ComparisonOperator::NotEqual, ComparisonOperator::Equal),
+        ] {
+            let original = comparison("a", operator, "b");
+            let negated = ClickProposition::Not(Box::new(original.clone()));
+            assert_eq!(
+                surface_comparison_with_anchored_operands(&negated),
+                comparison("a", complement, "b")
+            );
+            let doubled = ClickProposition::Not(Box::new(negated));
+            assert_eq!(
+                surface_comparison_with_anchored_operands(&doubled),
+                original
+            );
         }
     }
 

@@ -8939,6 +8939,47 @@ pub fn prove_int64_less_equal_to_integer(left: Bitvector32Term, right: Bitvector
     prove_machine_integer_order_bridge(MachineIntegerType::Int64, left, right, false)
 }
 
+/// Preserve a strict native signed int64 comparison in Integer arithmetic.
+pub fn prove_int64_less_than_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let integer = ConditionTerm::IntegerLessThan(
+        IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
+            .unwrap()
+            .into(),
+        IntegerTerm::from_machine(MachineIntegerType::Int64, right.clone())
+            .unwrap()
+            .into(),
+    );
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::int64_signed_less_than(left, right),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(integer, true)),
+    ))
+}
+
+/// Preserve the source's signed greater-or-equal comparison without changing its operands.
+pub fn prove_int64_greater_equal_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    let integer = ConditionTerm::IntegerGreaterEqual(
+        IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
+            .unwrap()
+            .into(),
+        IntegerTerm::from_machine(MachineIntegerType::Int64, right.clone())
+            .unwrap()
+            .into(),
+    );
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::int64_signed_greater_equal(left, right),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(integer, true)),
+    ))
+}
+
 /// Reflect mathematical order into native signed int64 order.
 pub fn prove_int64_less_equal_of_to_integer(
     left: Bitvector32Term,
