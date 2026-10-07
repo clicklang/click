@@ -760,9 +760,15 @@ share an indexed resolver and exact accumulated byte offsets. Root constness
 applies to the full path; ownership and views apply to the accessed leaf, with
 separate sibling objects retaining separate authority. A const object's pointer
 field may still reference mutable memory; pointee authority is checked separately.
-Projection use spans
-belong to the selected source. Projected method receivers, projected reference
-arguments and automatic objects with embedded records remain outside this slice.
+Projection use spans belong to the selected source. Methods and helpers can
+receive an embedded record by reference, and helpers can receive a signed-32
+field by reference. These calls use the same checked field path and exact byte
+address. The root's constness controls binding to mutable references, including
+implicit method receivers; it cannot be discarded by projecting a mutable field.
+Callee contracts require authority at the selected subobject or scalar leaf and
+preserve sibling frames. Plain scalar locals, temporary objects, arbitrary record
+pointers, inherited subobjects and automatic objects with embedded records remain
+outside this reference-call slice.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one

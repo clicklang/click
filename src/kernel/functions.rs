@@ -27596,7 +27596,7 @@ pub(super) fn jointly_consume_returned_resource_units(
         }
         if let Some(remaining) = available
             .clone()
-            .without_fact_delaying_normalization(required, assumptions)
+            .without_fact_incrementally(required, assumptions)
         {
             return Some(remaining);
         }

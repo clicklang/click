@@ -5829,6 +5829,8 @@ enum ResourceNormalizationKey {
     ExactShapeAnchoredAll(ResourceFamily, String, usize),
     MemoryStart(MemoryBaseRoot, bool, Bitvector32Term),
     MemoryEnd(MemoryBaseRoot, bool, Bitvector32Term),
+    MemoryByteStart(MemoryBaseRoot, bool, i64),
+    MemoryByteEnd(MemoryBaseRoot, bool, i64),
 }
 
 /// The adjacency coordinate one memory bound contributes to the
@@ -5879,6 +5881,30 @@ fn memory_normalization_position(range: &CMemoryRange, bound: &Bitvector32Term) 
         .unwrap_or_else(|| bound.clone())
 }
 
+/// Constant endpoints also meet in bytes relative to a symbolic object root.
+/// Element-unit keys alone cannot pair a returned scalar with bytewise padding.
+/// These keys only select candidates; merging still checks exact adjacency.
+fn memory_normalization_relative_byte_position(
+    range: &CMemoryRange,
+    bound: &Bitvector32Term,
+) -> Option<i64> {
+    let elements = signed_bitvector_constant(bound)?;
+    let displacement = match memory_base_root(range.base()).1 {
+        Some(offset) => {
+            let root = Pointer {
+                block: range.base().block.clone(),
+                offset,
+            };
+            let delta = range.base().exact_element_delta_from_base(&root, 1, None)?;
+            delta
+                .constant
+                .checked_add(signed_bitvector_constant(&delta.index)?)?
+        }
+        None => range.base().offset.as_const()?,
+    };
+    displacement.checked_add(elements.checked_mul(i64::from(range.element_width()))?)
+}
+
 #[derive(Default)]
 struct ResourceNormalizationIndex {
     positions: BTreeMap<ResourceNormalizationKey, BTreeSet<usize>>,
@@ -5897,6 +5923,22 @@ impl ResourceNormalizationIndex {
             | CResource::MutexLive(_)
             | CResource::MutexUse(_) => {}
             CResource::Memory(range) => {
+                if let Some(start) =
+                    memory_normalization_relative_byte_position(range, range.start())
+                {
+                    keys.push(ResourceNormalizationKey::MemoryByteStart(
+                        memory_base_root(range.base()),
+                        fact.is_own(),
+                        start,
+                    ));
+                }
+                if let Some(end) = memory_normalization_relative_byte_position(range, range.end()) {
+                    keys.push(ResourceNormalizationKey::MemoryByteEnd(
+                        memory_base_root(range.base()),
+                        fact.is_own(),
+                        end,
+                    ));
+                }
                 keys.push(ResourceNormalizationKey::MemoryStart(
                     memory_base_root(range.base()),
                     fact.is_own(),
@@ -5990,6 +6032,15 @@ impl ResourceNormalizationIndex {
                     .chain(assumptions.bitvector_equality_class(range.start()))
                 {
                     for root in &roots {
+                        if let Some(byte) =
+                            memory_normalization_relative_byte_position(range, &start)
+                        {
+                            keys.push(ResourceNormalizationKey::MemoryByteEnd(
+                                root.clone(),
+                                owned,
+                                byte,
+                            ));
+                        }
                         keys.push(ResourceNormalizationKey::MemoryEnd(
                             root.clone(),
                             owned,
@@ -6001,6 +6052,14 @@ impl ResourceNormalizationIndex {
                     .chain(assumptions.bitvector_equality_class(range.end()))
                 {
                     for root in &roots {
+                        if let Some(byte) = memory_normalization_relative_byte_position(range, &end)
+                        {
+                            keys.push(ResourceNormalizationKey::MemoryByteStart(
+                                root.clone(),
+                                owned,
+                                byte,
+                            ));
+                        }
                         keys.push(ResourceNormalizationKey::MemoryStart(
                             root.clone(),
                             owned,
