@@ -4005,6 +4005,11 @@ pub struct CVerifiedLoopRule {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CUndefinedBehavior {
     SignedOverflow,
+    /// The signed overflow of an `int32` division or remainder, which
+    /// happens at exactly one operand pair, `INT_MIN / -1`. Kept apart from
+    /// [`Self::SignedOverflow`] so the refusal names the pair the facts
+    /// leave open instead of a bare `signed overflow`.
+    SignedDivisionOverflow,
     PointerArithmetic,
     DivisionByZero,
     InvalidShift,
@@ -4023,6 +4028,10 @@ impl CUndefinedBehavior {
     pub fn description(&self) -> String {
         match self {
             Self::SignedOverflow => "signed overflow".to_string(),
+            Self::SignedDivisionOverflow => {
+                "signed overflow (INT_MIN / -1 is the one int32 division or remainder that overflows)"
+                    .to_string()
+            }
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
             Self::DivisionByZero => "division by zero".to_string(),
             Self::InvalidShift => "invalid shift".to_string(),

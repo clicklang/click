@@ -3106,7 +3106,9 @@ fn apply_c_int32_division_nonzero(
     let overflow = ConditionTerm::signed_divide_overflows(left.clone(), right.clone());
     match decide_with_facts(assumptions, &facts, &overflow) {
         Some(true) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+            outcome: CExpressionOutcome::UndefinedBehavior(
+                CUndefinedBehavior::SignedDivisionOverflow,
+            ),
             facts,
             obligations,
         }],
@@ -3132,7 +3134,7 @@ fn apply_c_int32_division_nonzero(
                 },
                 CExpressionPath {
                     outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SignedOverflow,
+                        CUndefinedBehavior::SignedDivisionOverflow,
                     ),
                     facts: overflow_facts,
                     obligations,

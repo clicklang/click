@@ -12,8 +12,6 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
 - [Pointer arithmetic past an object of unknown size is accepted without an obligation](pointer-arithmetic-past-unknown-size-object-is-unchecked.md)
 - [A one-past-the-end pointer is proved unequal to every other object's start](one-past-end-pointer-decided-unequal-to-adjacent-object.md)
-- [int32 division by a symbolic divisor is refused as signed overflow](int32-symbolic-divisor-refused-as-signed-overflow.md)
 - [A nested loop with an inner `break` is refused under concrete execution](nested-loop-inner-break-refused-under-concrete-execution.md)
 - [A decidably false return narrowing reports an internal error, not the range](false-return-narrowing-reports-internal-error.md)
-- [`requires x != INT_MIN` does not discharge the overflow of `-x`](negation-not-discharged-by-int-min-disequality.md)
 - [A natural `goto` cycle's forward `goto` exit is dropped, so the contract is vacuous](natural-goto-cycle-forward-exit-is-dropped.md)
