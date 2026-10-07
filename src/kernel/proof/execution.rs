@@ -6997,6 +6997,22 @@ fn check_evidence_events_with_call_events(
 /// path), and the interface facts of the branches it joined. A trace that
 /// does not complete, continues past its completion, or completes in an
 /// error outcome yields nothing.
+/// Extends an already checked completion context by genuinely new facts.
+/// A typed producer can also carry a load bridge beyond its proposition.
+fn retain_completed_path_fact(
+    assumptions: PureFactContext,
+    fact: &ExecutionPureFact,
+) -> PureFactContext {
+    crate::instrumentation::record_deterministic_work(1);
+    if assumptions.contains_assumed_exact(fact.proposition())
+        && (!fact.is_certified() || fact.generated_load_binding().is_none())
+    {
+        return assumptions;
+    }
+    crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+    assumptions.assume_execution_pure_fact(fact)
+}
+
 fn trace_completion(
     function: &CFunction,
     events: &[CheckedExecutionEvent],
@@ -9992,13 +10008,23 @@ impl ExecutionProofCore {
             // execution applies at return. A contract the body violates at
             // exit ends the path in that runtime error.
             let body_outcome = candidate.outcome().clone();
-            let boundary_assumptions = candidate
-                .facts()
-                .iter()
-                .map(|fact| fact.proposition().clone())
-                .fold(statement_assumptions.clone(), |assumptions, fact| {
-                    assumptions.assume_proposition(fact)
-                });
+            let retain_post_context = function.resource_requires().is_empty();
+            let mut boundary_assumptions = statement_assumptions.clone();
+            let mut typed_candidate_facts = Vec::new();
+            for fact in candidate.facts() {
+                crate::instrumentation::record_deterministic_work(1);
+                if !boundary_assumptions.contains_assumed_exact(fact.proposition()) {
+                    crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+                    boundary_assumptions =
+                        boundary_assumptions.assume_proposition(fact.proposition().clone());
+                }
+                if retain_post_context
+                    && fact.is_certified()
+                    && fact.generated_load_binding().is_some()
+                {
+                    typed_candidate_facts.push(fact);
+                }
+            }
             let (
                 outcome,
                 obligations,
@@ -10072,17 +10098,38 @@ impl ExecutionProofCore {
             // branches, and the facts of the context its final theorem was
             // proved under (a `have` in one arm that both arms share, say).
             let mut facts = candidate.facts().to_vec();
-            for fact in interface_execution_facts.into_iter().chain(
-                statement_assumptions
-                    .pure_facts()
-                    .into_iter()
-                    .map(ExecutionPureFact::new),
-            ) {
+            let mut post_assumptions = boundary_assumptions;
+            for fact in interface_execution_facts {
+                if retain_post_context {
+                    post_assumptions = retain_completed_path_fact(post_assumptions, &fact);
+                }
                 if !facts
                     .iter()
                     .any(|retained| retained.proposition() == fact.proposition())
                 {
                     facts.push(fact);
+                }
+            }
+            for fact in statement_assumptions
+                .pure_facts()
+                .into_iter()
+                .map(ExecutionPureFact::new)
+            {
+                if !facts
+                    .iter()
+                    .any(|retained| retained.proposition() == fact.proposition())
+                {
+                    facts.push(fact);
+                }
+            }
+            // Preserve the typed-load bridges that the former certification
+            // import installed, including private memory-effect evidence.
+            if retain_post_context {
+                for fact in typed_candidate_facts
+                    .into_iter()
+                    .chain(candidate.effect_facts())
+                {
+                    post_assumptions = retain_completed_path_fact(post_assumptions, fact);
                 }
             }
             let theorem = Theorem::new(crate::kernel::reasoning::wrap_proof_facts(
@@ -10094,6 +10141,7 @@ impl ExecutionProofCore {
             paths.push(crate::kernel::SymbolicCExecutionPath {
                 completion_origin: Some(candidate.outcome().clone()),
                 assumptions: assumptions.clone(),
+                post_assumptions: retain_post_context.then_some(post_assumptions),
                 facts,
                 effect_facts: candidate.effect_facts().to_vec(),
                 obligations,

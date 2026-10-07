@@ -6079,8 +6079,9 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
 
 /// Indexed constant equalities avoid selecting every earlier guard about `a`.
 /// Pin the selector's work and the complete transaction, so a shortcut cannot
-/// move its quadratic selection work to another phase. Context rebuilding is
-/// still a separate known violation; this does not assert shared path storage.
+/// move its quadratic selection work to another phase. The context-reuse
+/// regression below separately bounds construction; flat storage remains a
+/// known violation.
 #[test]
 fn indexed_simp_premises_reduce_whole_early_return_work() {
     std::thread::Builder::new()
@@ -6118,16 +6119,92 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
         .expect("indexed fan-out thread");
 }
 
-/// The early-return fan-out proved with simple tactics only verifies in work
-/// near linear in its returns. This is the form the simple-verification
-/// contract governs. Completed early-return cases are processed iteratively,
-/// so the measurement extends through 64 returns despite the written nesting.
-///
-/// The grouped `execute(); simp();` proof of the same function is not yet
-/// linear: each checked path retains its facts whole and later rebuilds its
-/// context (`bugs/early-return-paths-store-facts-whole.md`).
+/// Contract preparation reuses completed contexts in both proof forms.
+/// Bound whole-transaction construction too for the grouped form. The explicit
+/// form has a separate existing context-build cost before certification, kept
+/// in the measurements and tracked in the early-return bug report.
+fn check_completed_early_return_context_reuse(explicit: bool) {
+    let mut samples = Vec::new();
+    let mut entries = Vec::new();
+    let mut contract_entries = Vec::new();
+    for returns in [4, 8, 16, 32, 64] {
+        let c = early_return_fan_out(returns);
+        let click = if explicit {
+            early_return_fan_out_explicit_proof(returns)
+        } else {
+            concat!(
+                "verifying \"fan_out.c\";\n",
+                "int g(int a) { ensures result == a or result == -1; } ",
+                "by { execute(); simp(); }",
+            )
+            .to_string()
+        };
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        let contract_before = crate::kernel::reasoning::path_facts::contract_path_context_entries();
+        let (verified, sample) = scaling_sample(returns, || {
+            verify_c0_sources(&click, &[("fan_out.c", c.as_str())])
+        });
+        verified.unwrap_or_else(|error| {
+            panic!(
+                "{returns} returns, explicit={explicit}: {}",
+                error.message()
+            )
+        });
+        entries.push(crate::kernel::reasoning::path_facts::context_rebuild_entries() - before);
+        contract_entries.push(
+            crate::kernel::reasoning::path_facts::contract_path_context_entries() - contract_before,
+        );
+        samples.push(sample);
+    }
+    eprintln!(
+        "context reuse explicit={explicit}: {samples:?}; entries: {entries:?}; contract entries: {contract_entries:?}"
+    );
+    assert!(
+        contract_entries
+            .windows(2)
+            .all(|pair| pair[1] <= pair[0] * 2 + 8),
+        "contract preparation must reuse contexts: explicit={explicit}, {contract_entries:?}"
+    );
+    if !explicit {
+        assert!(
+            entries
+                .windows(2)
+                .all(|pair| pair[1] * 100 <= pair[0] * 225 + 800),
+            "completed contexts must be reused: {entries:?}"
+        );
+        assert!(
+            samples
+                .windows(2)
+                .skip(2)
+                .all(|pair| pair[1].work * 100 <= pair[0].work * 225),
+            "whole verification must retain context savings: {samples:?}; {}",
+            named_growth_diagnostic(&samples)
+        );
+    }
+}
+
 #[test]
-fn explicit_early_return_proof_is_near_linear_in_its_returns() {
+fn completed_early_return_contexts_are_reused_for_certification() {
+    std::thread::Builder::new()
+        .name("fan-out-context-reuse".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let _ = roundtrip_sample(1, 0);
+            for explicit in [false, true] {
+                check_completed_early_return_context_reuse(explicit);
+            }
+        })
+        .expect("spawn the context-reuse thread")
+        .join()
+        .expect("context-reuse thread");
+}
+
+/// Completed early-return cases are processed iteratively, so an explicit
+/// proof reaches 64 returns despite the written nesting. Keep the broad work
+/// guard, which rejects 4x growth per doubling. Its 3x tolerance does not reject
+/// the separate context-build violation measured in the early-return report.
+#[test]
+fn explicit_early_return_proof_completes_through_sixty_four_returns() {
     std::thread::Builder::new()
         .name("fan-out-explicit".into())
         .stack_size(64 << 20)
@@ -6225,8 +6302,8 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
 
 /// simp spells only the premises its derivation's recorded path names, not
 /// every fact the derivation's selection held. On path `k` of the
-/// early-return fan-out the selection holds all `k` conditions about `a`
-/// while the equality path names one, and a derivation that only selects a
+/// early-return fan-out the selection formerly held all `k` conditions about
+/// `a` while the equality path named one, and a derivation that only selects a
 /// disjunct spells none: its disjunct is proved on its own goal. Spelling
 /// the whole selection cost each path work linear in its length (the three
 /// spelling sites charged 15.8k units at 64 returns on 2026-10-06); now the
