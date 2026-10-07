@@ -81,7 +81,7 @@ tactic convert(p: struct node*) {
             have y.model == old(x.model) by { simp(); }
         },
         Links::Cons(rest_model) => {
-            let { y: y } = convert(p) { x: x };
+            let { y: y } = convert(p, { x: x });
             have y.model == old(x.model) by { simp(); }
         },
     }
@@ -91,7 +91,7 @@ void user(struct node* p) {
     consumes a: list_at(p);
     produces b: list2_at(p);
 } by {
-    let { y: b } = convert(p) { x: a };
+    let { y: b } = convert(p, { x: a });
     step();
     step();
     simp();

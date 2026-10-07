@@ -1,14 +1,9 @@
-# a user-defined tactic reshapes the resources a proof holds
+# a tactic's binder map is its last argument
 
-`divide` is a user-defined tactic. Its contract consumes one instance owning
-`p->a` and `p->b` and produces two, one per cell, with a fact about the first.
-Its `by` block proves that contract once, by unfolding and folding; no C runs.
-
-`user` applies it as one step, `let { y: y, z: z } = divide(p, { x: x });`, which
-binds `divide`'s `x` to the instance `user` holds and names the two it gets
-back. An application changes only which instances the proof holds and adds the
-tactic's `ensures`; memory is untouched, so the requirement `p->b == 5` still
-holds afterwards and proves the result.
+A tactic application writes its binder map inside the parentheses, as a call
+step and a fold write theirs: `divide(p, { x: x })`. A brace block after a
+call is a proof block everywhere else in Click, so the trailing form is
+refused with the spelling to write.
 
 ```c filename=user_tactic_reshapes_owned_resources.c
 struct pr { int32 a; int32 b; };
@@ -57,7 +52,7 @@ int32 user(struct pr* p) {
     ensures result == 5;
     ensures y.tag == 7;
 } by {
-    let { y: y, z: z } = divide(p, { x: x });
+    let { y: y, z: z } = divide(p) { x: x };
     unfold(z);
     step();
     let z = fold(second(p), { tag: 0 });
@@ -66,5 +61,5 @@ int32 user(struct pr* p) {
 ```
 
 ```expect
-pass
+fail: the binder map is the last argument of a tactic application: write `divide(..., { binder: instance })`
 ```

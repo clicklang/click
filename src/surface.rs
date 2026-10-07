@@ -1064,9 +1064,11 @@ impl CallBinderTransport {
             }
             spelling.push_str(&diagnostics::describe_contract_expression(argument));
         }
-        spelling.push(')');
         if !self.binders.is_empty() {
-            spelling.push_str(" { ");
+            if !self.arguments.is_empty() {
+                spelling.push_str(", ");
+            }
+            spelling.push_str("{ ");
             for (index, binding) in self.binders.iter().enumerate() {
                 if index != 0 {
                     spelling.push_str(", ");
@@ -1075,6 +1077,7 @@ impl CallBinderTransport {
             }
             spelling.push_str(" }");
         }
+        spelling.push(')');
         spelling
     }
 }
@@ -3225,7 +3228,7 @@ pub enum ProofTactic {
     /// Name the scalar value assigned by this checked statement.
     StepBind(String),
     StepCall(CallBinderTransport),
-    /// `name(args) { binder: instance }`: one application of a user-defined
+    /// `name(args, { binder: instance })`: one application of a user-defined
     /// tactic's verified contract, with no C statement.
     UserTactic(CallBinderTransport),
     /// A tactic Click adds to a script, never written in source: the end of
@@ -3519,7 +3522,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "user-tactic",
-        syntax: "name(args) { binder: instance }",
+        syntax: "name(args, { binder: instance })",
         class: "simple",
     },
     PublicTacticForm {

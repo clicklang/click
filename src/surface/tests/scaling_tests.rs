@@ -1903,12 +1903,12 @@ fn repeated_tactic_applications(count: usize) -> (String, String) {
     );
     for index in 0..count {
         click_source.push_str(&format!(
-            "    let {{ y: t{} }} = retag(p) {{ x: t{index} }};\n",
+            "    let {{ y: t{} }} = retag(p, {{ x: t{index} }});\n",
             index + 1
         ));
     }
     click_source.push_str(&format!(
-        "    let {{ y: out }} = retag(p) {{ x: t{count} }};\n    step();\n    step();\n    simp();\n}}\n"
+        "    let {{ y: out }} = retag(p, {{ x: t{count} }});\n    step();\n    step();\n    simp();\n}}\n"
     ));
     (c_source, click_source)
 }

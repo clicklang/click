@@ -44,7 +44,7 @@ tactic divide(p: struct pr*) {
 void user(struct pr* p) {
     consumes z: second(p);
 } by {
-    let { y: y, z: z2 } = divide(p) { x: z };
+    let { y: y, z: z2 } = divide(p, { x: z });
     step();
     step();
     simp();
