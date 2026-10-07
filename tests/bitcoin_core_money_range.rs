@@ -332,7 +332,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
     }
     if evaluation_caller
-        && name.ends_with("Negative")
+        && (name.ends_with("Negative") || name.ends_with("PositiveWide"))
         && phase == Some(RoundingPhase::FullExpansion)
     {
         let instance = if selected.ends_with("Down") {
@@ -367,7 +367,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             Some(RoundingPhase::Rejections | RoundingPhase::TransportRejections)
         )
     {
-        let hostile = if name.ends_with("Negative") {
+        let hostile = if name.ends_with("Negative") || name.ends_with("PositiveWide") {
             if phase == Some(RoundingPhase::Rejections) {
                 vec![
                     source.replace("views self->size;", ""),
@@ -377,7 +377,14 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 ]
             } else {
                 vec![
-                    source.replace("requires not (self->fee >= 0i64);", ""),
+                    source.replace(
+                        if name.ends_with("Negative") {
+                            "requires not (self->fee >= 0i64);"
+                        } else {
+                            "requires self->fee >= 0i64 and not (self->fee < 8589934592i64);"
+                        },
+                        "",
+                    ),
                     source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
                     source
                         .replace("* to_integer(self->size) <=", "* to_integer(self->size) <")
@@ -1059,7 +1066,7 @@ fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
 }
 
-fn negative_fee_evaluation_source(mode: &str) -> String {
+fn wide_fee_evaluation_source(mode: &str, positive: bool) -> String {
     let down = mode == "Down";
     let bounds = |result: &str, size: &str, product: &str| {
         if down {
@@ -1085,7 +1092,15 @@ fn negative_fee_evaluation_source(mode: &str) -> String {
         "to_integer(product)",
     );
     let fragment =
-        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateNegative.click.in")
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateWide.click.in")
+            .replace(
+                "@WIDE_GUARD@",
+                if positive {
+                    "self->fee >= 0i64 and not (self->fee < 8589934592i64)"
+                } else {
+                    "not (self->fee >= 0i64)"
+                },
+            )
             .replace("@MODE@", mode)
             .replace("@INSTANCE@", if down { "true" } else { "false" })
             .replace("@ROUND@", if down { "1" } else { "0" })
@@ -1108,7 +1123,7 @@ fn check_upstream_negative_fee_evaluation(mode: &str, phase: RoundingPhase) {
     check_upstream_cpp_rounding_phase(
         &format!("FeeFrac::EvaluateFee{mode}"),
         &format!("FeeFracEvaluate{mode}Negative"),
-        &negative_fee_evaluation_source(mode),
+        &wide_fee_evaluation_source(mode, false),
         "bitcoin-src/src/util/feefrac.h",
         "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
         Some(phase),
@@ -1149,4 +1164,55 @@ fn upstream_negative_fee_evaluation_down_rejects_forged_product_and_rounding_tra
 #[test]
 fn upstream_negative_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::TransportRejections);
+}
+
+fn check_upstream_positive_wide_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}PositiveWide"),
+        &wide_fee_evaluation_source(mode, true),
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_has_symbolic_bounds() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_instance_expands_and_reverifies() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
+    check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_has_symbolic_bounds() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_instance_expands_and_reverifies() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
+    check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }

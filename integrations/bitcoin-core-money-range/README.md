@@ -346,15 +346,16 @@ It checks ordinary verification, caller expansion/reverification, and rejection
 of false results, missing field authority and missing size/amount premises.
 These concrete fast-path claims remain source admission regressions.
 
-[`FeeFracEvaluateNegative.click.in`](FeeFracEvaluateNegative.click.in) now supplies
-symbolic caller contracts for negative fees on the unchanged wide fallback.
-The hermetic tests instantiate its Down/Up mode and product inequalities, then
-compose it with the existing verified Mul and Div sidecars in one prepared
+[`FeeFracEvaluateWide.click.in`](FeeFracEvaluateWide.click.in) now supplies
+symbolic caller contracts for negative fees and positive fees at least `2^33`
+on the unchanged wide fallback.
+The hermetic tests instantiate its native branch guard, Down/Up mode and
+product inequalities, then compose it with the existing verified Mul and Div sidecars in one prepared
 project. It is a caller template, rather than a standalone sidecar with assumed
 helpers; the same run proves the actual helper bodies and both caller levels.
 
-The contract explicitly requires field `views`, a negative native fee, its
-full int64 observer bounds, positive int32 size and `0 <= at_size <= size`.
+The contract explicitly requires field `views`, a native fee below zero or at
+least `2^33`, its full int64 observer bounds, positive int32 size and `0 <= at_size <= size`.
 Both modes preserve fee and size and prove full int64 result observer bounds.
 Writing `F`, `A`, `D` and `R` for the Integer observations of fee, amount, size
 and result, Down proves `R * D <= F * A < (R + 1) * D`; Up proves
@@ -369,6 +370,5 @@ verification, and rejects missing authority/domain bounds, forged Mul product
 equalities and false rounding inequalities. The evaluated `Assume` contract
 and compiler/library pins remain the profile described above.
 
-Next extend these symbolic contracts to positive fees on the wide fallback,
-then prove the unsigned fast paths and the broader mode-specific result-fit
-domain. This does not yet verify `EvaluateFeeDown/Up` for all fees.
+Next prove the symbolic unsigned fast paths and the broader mode-specific
+result-fit domain. This does not yet verify `EvaluateFeeDown/Up` for all fees.

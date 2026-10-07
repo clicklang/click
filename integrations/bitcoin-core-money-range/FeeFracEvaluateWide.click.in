@@ -1,7 +1,7 @@
 int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_size) {
     views self->fee;
     views self->size;
-    requires not (self->fee >= 0i64);
+    requires @WIDE_GUARD@;
     requires -9223372036854775808 <= to_integer(self->fee);
     requires to_integer(self->fee) <= 9223372036854775807;
     requires self->size > 0;
@@ -59,7 +59,7 @@ int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_
 int64 FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
     views self->fee;
     views self->size;
-    requires not (self->fee >= 0i64);
+    requires @WIDE_GUARD@;
     requires -9223372036854775808 <= to_integer(self->fee);
     requires to_integer(self->fee) <= 9223372036854775807;
     requires self->size > 0;

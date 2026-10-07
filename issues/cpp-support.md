@@ -720,8 +720,9 @@ This removes a
 stack-overflow retry loop and an unverifiable short-circuit expansion, without
 changing the Bitcoin source or increasing execution budgets.
 
-The unchanged negative-fee `EvaluateFeeDown/Up` callers now have symbolic
-wide-path contracts. Under the explicit full int64 fee observer bounds,
+The unchanged `EvaluateFeeDown/Up` callers now have symbolic wide-path
+contracts for negative fees and positive fees at least `2^33`. Under the explicit
+full int64 fee observer bounds,
 positive int32 size and `0 <= at_size <= size`, both preserve the fields and
 return within int64 observer bounds. Down proves the floor product inequalities;
 Up proves the ceiling inequalities. The proof names the captured denominator,
@@ -733,9 +734,10 @@ field/domain premises, forged product equalities and false rounding bounds are
 covered. No new arithmetic axiom, search heuristic or Bitcoin source edit is
 needed.
 
-Next extend the symbolic caller contracts to positive fees that take the wide
-fallback, then prove the unsigned fast paths. The broader mode-specific
-result-fit precondition and full 96/32 fee-division contract remain open; the
+The two fee domains share one caller template, with separate native branch
+guards and ordinary, expansion, retained-verification and hostile regressions
+for each mode. Next prove the symbolic unsigned fast paths. The broader
+mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
 current joint range ensures both rounding modes fit.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
