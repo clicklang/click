@@ -683,12 +683,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
                     "signed narrowing upper bound",
                 ),
             ] {
-                add_proof_obligation_with_context(
-                    obligations,
-                    assumptions,
-                    Proposition::ConditionIs(condition, true),
-                    Some(context),
-                )?;
+                add_narrowing_bound_obligation(obligations, assumptions, condition, context)?;
             }
         }
         return destination.convert_modulo_value(value);
@@ -791,27 +786,19 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
                     "int32 narrowing upper bound",
                 ),
             ] {
-                add_proof_obligation_with_context(
-                    obligations,
-                    assumptions,
-                    Proposition::ConditionIs(condition, true),
-                    Some(context),
-                )?;
+                add_narrowing_bound_obligation(obligations, assumptions, condition, context)?;
             }
             Some(CValue::Int32(Bitvector32Term::uint32_from_64(value)))
         }
         (CType::Int32, CValue::UInt64(value)) => {
-            add_proof_obligation_with_context(
+            add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                Proposition::ConditionIs(
-                    ConditionTerm::uint64_less_equal(
-                        value.clone(),
-                        Bitvector32Term::UInt64Constant(i32::MAX as u64),
-                    ),
-                    true,
+                ConditionTerm::uint64_less_equal(
+                    value.clone(),
+                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
                 ),
-                Some("int32 narrowing upper bound"),
+                "int32 narrowing upper bound",
             )?;
             Some(CValue::Int32(Bitvector32Term::uint32_from_64(value)))
         }
@@ -836,14 +823,11 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
         }
         (CType::Int8, CValue::UInt8(value)) => {
             // The unsigned-byte source already guarantees the lower bound.
-            add_proof_obligation_with_context(
+            add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                Proposition::ConditionIs(
-                    ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(127)),
-                    true,
-                ),
-                Some(narrowing_context("int8", false)),
+                ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(127)),
+                narrowing_context("int8", false),
             )?;
             Some(CValue::Int8(value))
         }
@@ -917,17 +901,11 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
         (CType::UInt16, CValue::UInt8(value)) => Some(CValue::UInt16(value)),
         (CType::UInt8, CValue::Int8(value)) => {
             // Every nonnegative signed byte fits in an unsigned byte.
-            add_proof_obligation_with_context(
+            add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                Proposition::ConditionIs(
-                    ConditionTerm::signed_greater_equal(
-                        value.clone(),
-                        Bitvector32Term::Constant(0),
-                    ),
-                    true,
-                ),
-                Some(narrowing_context("uint8", true)),
+                ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(0)),
+                narrowing_context("uint8", true),
             )?;
             Some(CValue::UInt8(value))
         }
@@ -936,17 +914,14 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
             Some(CValue::UInt8(value))
         }
         (CType::Int64, CValue::UInt64(value)) => {
-            add_proof_obligation_with_context(
+            add_narrowing_bound_obligation(
                 obligations,
                 assumptions,
-                Proposition::ConditionIs(
-                    ConditionTerm::uint64_less_equal(
-                        value.clone(),
-                        Bitvector32Term::UInt64Constant(i64::MAX as u64),
-                    ),
-                    true,
+                ConditionTerm::uint64_less_equal(
+                    value.clone(),
+                    Bitvector32Term::UInt64Constant(i64::MAX as u64),
                 ),
-                Some("int64 narrowing upper bound"),
+                "int64 narrowing upper bound",
             )?;
             Some(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(
                 value,
@@ -1068,30 +1043,54 @@ fn add_signed_narrowing_obligations(
     upper: i32,
     type_name: &str,
 ) -> Option<()> {
-    add_proof_obligation_with_context(
+    add_narrowing_bound_obligation(
         obligations,
         assumptions,
-        Proposition::ConditionIs(
-            ConditionTerm::signed_greater_equal(
-                value.clone(),
-                Bitvector32Term::Constant(lower as u32),
-            ),
-            true,
-        ),
-        Some(narrowing_context(type_name, true)),
+        ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(lower as u32)),
+        narrowing_context(type_name, true),
     )?;
-    add_proof_obligation_with_context(
+    add_narrowing_bound_obligation(
         obligations,
         assumptions,
-        Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(
-                value.clone(),
-                Bitvector32Term::Constant(upper as u32),
-            ),
-            true,
-        ),
-        Some(narrowing_context(type_name, false)),
+        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(upper as u32)),
+        narrowing_context(type_name, false),
     )
+}
+
+/// Files one bound of an integer narrowing conversion as the obligation the
+/// conversion owes.
+///
+/// A bound the facts refute is filed as well: the conversion then yields its
+/// value under an obligation no proof discharges, and the proof reports that
+/// bound against the facts that refute it. Refusing the conversion here was
+/// reported as `type mismatch`, which names neither the range nor the
+/// value, and made a `return`'s outcome depend on how much its context
+/// reasons: the surface published the path as refuted while the checked
+/// trace, reasoning only exactly, filed the bound and returned, and the
+/// proof object reported the two outcomes' disagreement instead of either.
+/// A bound a constant fails on its own stays a refusal: that is a defect of
+/// the program text, decided without any fact of the proof.
+fn add_narrowing_bound_obligation(
+    obligations: &mut Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    condition: ConditionTerm,
+    context: &'static str,
+) -> Option<()> {
+    if add_proof_obligation_with_context(
+        obligations,
+        assumptions,
+        Proposition::ConditionIs(condition.clone(), true),
+        Some(context),
+    )
+    .is_some()
+    {
+        return Some(());
+    }
+    if PureFactContext::decide_intrinsically(&condition) == Some(false) {
+        return None;
+    }
+    obligations.push(ProofObligation::condition(condition, true).with_context(context));
+    Some(())
 }
 
 fn narrowing_context(type_name: &str, lower: bool) -> &'static str {

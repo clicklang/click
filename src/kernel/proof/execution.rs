@@ -7730,7 +7730,7 @@ impl ExecutionProofCore {
                 self.evidence_completed = true;
             }
             CStatementOutcome::Break(state) => {
-                let source_after = self.advance_loop_control(false, None)?;
+                let source_after = self.advance_loop_control(false, source_after)?;
                 self.evidence_source = source_after;
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
@@ -7783,6 +7783,19 @@ impl ExecutionProofCore {
     /// `break`/`continue`. The ordinary statement theorem proves only the
     /// control statement itself; this frontier movement supplies the exact
     /// source that the next condition or statement theorem must consume.
+    ///
+    /// The continuation holds the source the driver's frontier saw when it
+    /// entered the loop: the loop head followed by the rest of the region
+    /// that contains the loop. For a loop nested in another concretely
+    /// executed loop that region is the enclosing body alone; the enclosing
+    /// loop head and everything after it live in the next continuation
+    /// down. The frontier resumes from that body tail, as it does when the
+    /// loop exits at its head. The evidence source is the kernel's own:
+    /// `validated_source_after`, the source left after the control
+    /// statement's theorem, still holds the rest of this body, this loop
+    /// head and whatever follows the head, so the source the next theorem
+    /// must consume is read from it at the head, never from the
+    /// continuation's shorter view.
     fn advance_loop_control(
         &mut self,
         continue_statement: bool,
@@ -7798,33 +7811,35 @@ impl ExecutionProofCore {
                 "loop control has an empty enclosing-loop continuation",
             ));
         };
+        let (loop_head, frontier_tail) = split_shared_source(&loop_source);
         let (next_statement_index, source_after) = if continue_statement {
-            let frontier_source = loop_source.clone();
             // The validated tail still contains the rest of the source body
             // before the loop head. Preserve the exact loop head (and any
             // enclosing-loop suffix after it) rather than treating that body
             // tail as the next frontier statement.
-            let loop_head = split_shared_source(&loop_source).0;
-            let mut source = validated_source_after;
             let source_after =
-                loop_head_source(source.take(), &loop_head).or(Some(loop_source.clone()));
+                loop_head_source(validated_source_after, &loop_head).or(Some(loop_source.clone()));
             self.frontier.position = FrontierPosition::StatementEntry {
-                remaining: frontier_source,
+                remaining: loop_source.clone(),
             };
             (continuation.next_statement_index, source_after)
         } else {
-            let (_, tail) = split_shared_source(&loop_source);
-            (continuation.loop_exit_statement_index, tail)
-        };
-        self.frontier.next_statement_index = next_statement_index;
-        if !continue_statement {
-            self.frontier.position = match &source_after {
+            // A `break` leaves the loop: the source after it is what follows
+            // this loop head in the validated tail. The continuation's own
+            // tail is the fallback when the head is not found there, and is
+            // what the driver's frontier resumes from either way.
+            let source_after = loop_head_source(validated_source_after, &loop_head)
+                .map(|from_head| split_shared_source(&from_head).1)
+                .unwrap_or_else(|| frontier_tail.clone());
+            self.frontier.position = match &frontier_tail {
                 Some(remaining) => FrontierPosition::StatementEntry {
                     remaining: remaining.clone(),
                 },
                 None => FrontierPosition::RegionBoundary,
             };
-        }
+            (continuation.loop_exit_statement_index, source_after)
+        };
+        self.frontier.next_statement_index = next_statement_index;
         Ok(source_after)
     }
 

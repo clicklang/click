@@ -1,5 +1,6 @@
 use super::proof_object::ProofCheckpoint;
 use super::*;
+use crate::surface::planning::proposition_search::PropositionSearch;
 use std::sync::Arc;
 
 fn resource_receipts_jointly_available(
@@ -2043,26 +2044,64 @@ pub(super) fn finish_ordered_proof<'a>(
                         .pending_loop_return_pure_facts(path_index)
                         .cloned()
                         .unwrap_or_else(|| proof.facts().clone());
-                    let missing_obligations = crate::instrumentation::measure_operation(
-                        function_block.signature().name(),
-                        &proof_label,
-                        "path obligation lookup",
-                        || {
-                            path.obligations()
-                                .iter()
-                                .filter(|obligation| {
+                    // What the path still owes at exit: the obligations the
+                    // kernel filed on the way to its outcome, converting the
+                    // returned value to the function's type among them,
+                    // under a context that reasons only exactly. An exact
+                    // fact of the path's base discharges one, and so does
+                    // the checked derivation over that base that discharges
+                    // a statement's prerequisite under `execute()`
+                    // (`certified_statement_transitions`, the retained
+                    // policy): the bare prover verdict is not evidence, a
+                    // derivation that checks is. A bound the facts decide
+                    // against is refuted, not missing: no smaller step or
+                    // listed premise supplies it, and the report names the
+                    // facts that refute it.
+                    let (missing_obligations, refuted_obligations) =
+                        crate::instrumentation::measure_operation(
+                            function_block.signature().name(),
+                            &proof_label,
+                            "path obligation lookup",
+                            || {
+                                let assumptions = path_base_facts.assumptions();
+                                let mut missing = Vec::new();
+                                let mut refuted = Vec::new();
+                                for obligation in path.obligations() {
                                     if post_execution_population_obligation(obligation) {
-                                        return false;
+                                        continue;
                                     }
-                                    !exact_fact_is_available(
-                                        obligation.proposition(),
-                                        &path_base_facts,
-                                    )
-                                })
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        },
-                    );
+                                    let proposition = obligation.proposition();
+                                    if exact_fact_is_available(proposition, &path_base_facts) {
+                                        continue;
+                                    }
+                                    if let Proposition::ConditionIs(condition, value) = proposition
+                                        && assumptions.decide(condition) == Some(!*value)
+                                    {
+                                        refuted.push(obligation.clone());
+                                        continue;
+                                    }
+                                    if assumptions
+                                        .derive_proposition(proposition)
+                                        .is_some_and(|derivation| derivation.check(assumptions))
+                                    {
+                                        continue;
+                                    }
+                                    missing.push(obligation.clone());
+                                }
+                                (missing, refuted)
+                            },
+                        );
+                    if let Some(refuted) = refuted_obligations.first() {
+                        return Err(ClickError::new(format!(
+                            "execution proof failed for `{proof_label}` path {path_index}: {}",
+                            describe_refuted_proof_obligation(
+                                refuted,
+                                &path_base_facts.to_vec(),
+                                parsed_function.parameters(),
+                                arguments,
+                            )
+                        )));
+                    }
                     if !missing_obligations.is_empty() {
                         return Err(ClickError::new(format!(
                             "execution proof failed for `{proof_label}` path {path_index}: {}",

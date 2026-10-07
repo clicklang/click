@@ -216,7 +216,23 @@ pub(super) fn describe_derivation_failure(
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
     let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
-    if matches!(proposition, Proposition::ConditionIs(_, _)) {
+    if let Proposition::ConditionIs(condition, value) = proposition {
+        // A condition the consulted facts decide against is refuted, not
+        // underived: a narrowing bound the facts contradict, say. The
+        // search's miss is then not the news, and neither smaller steps nor
+        // listed premises would supply the condition.
+        let consulted = available
+            .iter()
+            .cloned()
+            .fold(PureFactContext::new(), PureFactContext::assume_proposition);
+        if consulted.decide(condition) == Some(!*value) {
+            return crate::surface::diagnostics::describe_refuted_condition(
+                proposition,
+                available,
+                &parameters,
+                &arguments,
+            );
+        }
         describe_condition_search_miss(proposition, available, &parameters, &arguments)
     } else if matches!(
         proposition,
