@@ -833,6 +833,10 @@ pub(in crate::surface::proof) struct LoopPreservationProofResult {
     /// The body paths that left this loop through `break`, each an exit at
     /// its own state. The loop rule joins them with the guard-false exit.
     pub(in crate::surface::proof) break_exits: Vec<CLoopBreakExit>,
+    /// The body paths that left the function through `return`, each with
+    /// the value it returned and the state it returned in. The loop rule
+    /// exports each as a `Return` outcome of the loop statement.
+    pub(in crate::surface::proof) return_exits: Vec<CLoopReturnExit>,
     /// Loop rules checked by frontier-local tactics inside this loop's
     /// preservation proof. They are evidence for termination only; the
     /// enclosing contract still uses the outer loop's checked artifact.
@@ -1098,11 +1102,13 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let mut certificate_paths = Vec::new();
     let mut final_exit_candidates = Vec::new();
     let mut break_exits = Vec::new();
+    let mut return_exits = Vec::new();
     // Each exit is recorded once. The lists are compared by a hash of the
     // exit's state and facts first, so a new exit is checked for equality only against
     // exits in its own bucket rather than against every exit recorded so far.
     let mut seen_final_exits = SeenLoopExits::default();
     let mut seen_break_exits = SeenLoopExits::default();
+    let mut seen_return_exits = SeenLoopExits::default();
     let mut nested_loop_rules = Vec::new();
     for (execution, path_certificate) in refuted_match_paths {
         let case_path = execution
@@ -1169,14 +1175,18 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         // owes no invariant and no measure, and the loop rule joins it with
         // the loop's other exits instead of returning it to the head.
         let is_break_exit = context_frontier.loop_control.is_exit();
+        // A path that reached the function exit left through `return`. It is
+        // a function-exit path of the enclosing execution in every loop form,
+        // and owes neither an invariant nor a measure.
         let is_return_exit = context_frontier.is_at_function_exit();
-        let is_natural_return_exit = natural_loop
-            && (is_return_exit
-                || matches!(
-                    context_frontier.loop_control,
-                    crate::kernel::proof::LoopControlExit::NaturalExit(_)
-                ));
-        let is_terminal_return_exit = is_return_exit || is_natural_return_exit;
+        // A natural cycle's checked forward `goto` leaves the loop at its
+        // named exit target.
+        let is_natural_exit_jump = natural_loop
+            && matches!(
+                context_frontier.loop_control,
+                crate::kernel::proof::LoopControlExit::NaturalExit(_)
+            );
+        let is_terminal_return_exit = is_return_exit || is_natural_exit_jump;
         let has_retained_invariant_body =
             context_execution.core.checked_invariant_lowerings.is_some();
         let statement_index = context_frontier.next_statement_index;
@@ -1310,10 +1320,32 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })?
         };
         let checked_execution = checked.execution_view()?.execution.clone();
-        if is_natural_return_exit {
-            // A natural-cycle return is a terminal loop exit. It does not
-            // owe the loop invariant or ranking bundle; the kernel joins its
-            // checked return path with the other exits.
+        if is_return_exit {
+            // The path left the function here. The loop rule exports it as a
+            // `Return` outcome of the loop statement, so the enclosing
+            // execution certifies the postcondition and the resource
+            // obligations on the returned value and the state at the
+            // `return`. It is neither a back edge nor a candidate for the
+            // loop guard's next evaluation: offered as a candidate, a guard
+            // the C never falsifies (a natural cycle's `while (1)`) swallowed
+            // it, and dropped outright it never reached certification.
+            let (value, state) = checked_execution
+                .core
+                .completed_return_outcome()
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "`{claim_label}` (loop {loop_index} preservation): a path that reached the function exit retained no returned outcome"
+                    ))
+                })?;
+            let exit = CLoopReturnExit::new(value, state, checked.facts().to_vec())
+                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+            if seen_return_exits.is_new(exit.state(), exit.pure_facts(), &return_exits, &exit) {
+                return_exits.push(exit);
+            }
+        } else if is_natural_exit_jump {
+            // A natural cycle's forward `goto` is a terminal loop exit at its
+            // named target. It does not owe the loop invariant or ranking
+            // bundle; the kernel joins it with the other exits.
             let exit = CLoopFinalExitCandidate::new(
                 (*checked_execution.core.state).clone(),
                 checked.facts().to_vec(),
@@ -1327,12 +1359,6 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             ) {
                 final_exit_candidates.push(exit);
             }
-        } else if is_return_exit {
-            // The kernel's independently checked body execution contributes
-            // the actual function-return outcome. This proof leaf only shows
-            // that the source preservation path reached that terminal point;
-            // it is neither a back edge nor a candidate for the loop guard's
-            // next evaluation.
         } else if is_break_exit {
             // The exit is this path's own state and the facts it retained
             // there. The loop rule joins it with every other exit into the
@@ -1473,6 +1499,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         certificate,
         final_exit_candidates,
         break_exits,
+        return_exits,
         nested_loop_rules,
     })
 }

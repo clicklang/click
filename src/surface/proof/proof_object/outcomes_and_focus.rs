@@ -676,7 +676,14 @@ impl<'a> Proof<'a> {
         let requirement_surfaces = Arc::new(requirement_surfaces);
         let mut goals = Vec::new();
         for (path_index, path) in checked.paths().iter().enumerate() {
-            let mut facts = self.facts().clone();
+            // A returned path of a summarized loop keeps the fact base it was
+            // certified under, not the facts the continuing path established
+            // after the loop.
+            let mut facts = execution
+                .core
+                .pending_loop_return_pure_facts(path_index)
+                .cloned()
+                .unwrap_or_else(|| self.facts().clone());
             // One checked statement may produce several candidate outcomes.
             // The enclosing Proof facts select the feasible successors; an
             // exact contradictory path fact cannot become a typed outcome
@@ -739,7 +746,19 @@ impl<'a> Proof<'a> {
                         OutcomeProofPresentation {
                             surface_propositions: provenance.surface_propositions,
                             recorded_snapshots: provenance.recorded_snapshots,
-                            premise_anchor: frontier_anchor.clone(),
+                            // A returned path of a summarized loop states its
+                            // facts over the loop's iteration identities,
+                            // which the loop's exit snapshot binds; the
+                            // frontier's own anchor is wherever the
+                            // continuing path last stepped.
+                            premise_anchor: execution
+                                .core
+                                .pending_loop_return_loop_index(path_index)
+                                .map(|loop_index| ProgramPointRef {
+                                    region: crate::surface::CodeRegionRef::Loop(loop_index),
+                                    kind: ProgramPointKind::Exit,
+                                })
+                                .or_else(|| frontier_anchor.clone()),
                             requirement_surfaces: requirement_surfaces.clone(),
                             branch_decisions: provenance.branch_decisions,
                             call_routes: if provenance.call_routes.is_empty() {
@@ -977,7 +996,14 @@ pub(in crate::surface::proof) fn frontier_premise_anchor(
                     SnapshotSelector::Mark(_) => None,
                 })
         })?;
-    if anchor.kind != ProgramPointKind::Exit {
+    // A loop's exit snapshot is the state the loop rule's paths are stated
+    // over: the head's fresh identities for everything the body writes. Its
+    // entry snapshot predates them, so a premise over a returned path's
+    // identities could not be spelled there. A statement's exit, by
+    // contrast, is read at its entry as before.
+    if anchor.kind != ProgramPointKind::Exit
+        || matches!(anchor.region, crate::surface::CodeRegionRef::Loop(_))
+    {
         return Some(anchor);
     }
     let entry = ProgramPointRef {

@@ -10,8 +10,6 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
-- [A `return` inside a summarized loop body is dropped from the function's paths](return-inside-summarized-loop-body-is-dropped.md)
-- [A natural `goto` cycle's `return` exit is dropped, so the contract is vacuous](natural-goto-cycle-return-exit-is-dropped.md)
 - [Pointer arithmetic past an object of unknown size is accepted without an obligation](pointer-arithmetic-past-unknown-size-object-is-unchecked.md)
 - [A one-past-the-end pointer is proved unequal to every other object's start](one-past-end-pointer-decided-unequal-to-adjacent-object.md)
 - [int32 division by a symbolic divisor is refused as signed overflow](int32-symbolic-divisor-refused-as-signed-overflow.md)
@@ -21,3 +19,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [`apply` closes `0 <= e` but not the same claim spelled `e >= 0`](apply-does-not-match-flipped-order-spelling.md)
 - [A parent cannot lock its own mutex after joining a typed `mutex_use` worker](mutex-lock-after-joining-typed-worker-refused.md)
 - [An `obtain`ed int32 witness is unbound in a later `have`, `instantiate`, or `contradiction`](obtained-int32-witness-unbound-in-later-tactics.md)
+- [A natural `goto` cycle's forward `goto` exit is dropped, so the contract is vacuous](natural-goto-cycle-forward-exit-is-dropped.md)

@@ -2035,7 +2035,14 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut path_surface_post_tactics = Vec::new();
                     let mut path_deferred_capture_tactics = Vec::new();
                     let mut path_deferred_capture_prefix = (0, 0);
-                    let path_base_facts = proof.facts().clone();
+                    // A returned path of a summarized loop keeps the fact base
+                    // it was certified under; nothing the continuing path
+                    // established after the loop holds on it.
+                    let path_base_facts = proof_execution
+                        .core
+                        .pending_loop_return_pure_facts(path_index)
+                        .cloned()
+                        .unwrap_or_else(|| proof.facts().clone());
                     let missing_obligations = crate::instrumentation::measure_operation(
                         function_block.signature().name(),
                         &proof_label,
