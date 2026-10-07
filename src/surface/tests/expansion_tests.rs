@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn post_execution_have_expansion_preserves_later_smart_proofs() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/bubble_sort3_loop_sorted.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap();
+    for needle in ["have p[0] <= p[1] by simp;", "have p[1] <= p[2] by simp;"] {
+        let offset = source.find(needle).unwrap();
+        let position = expansion::position_at_offset(source, offset);
+        let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
+            .unwrap_or_else(|error| panic!("{needle}: {error:?}"));
+        assert!(!expanded.contains(needle), "{expanded}");
+        assert!(
+            expanded.ends_with(&source[offset + needle.len()..]),
+            "the unselected suffix stays written: {expanded}"
+        );
+        assert_eq!(
+            expanded.matches("if ").count(),
+            source.matches("if ").count()
+        );
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let claim =
+            expansion::position_at_offset(&expanded, expanded.find("ensures sorted:").unwrap());
+        verify_c0_sources_at(&expanded, &sources, claim.line, claim.column).unwrap();
+        let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+        session
+            .verify_at(&expanded, claim.line, claim.column)
+            .unwrap();
+        let false_claim = expanded.replace(
+            "ensures sorted: sorted(p, 3)",
+            "ensures sorted: p[0] > p[1]",
+        );
+        verify_c0_sources(&false_claim, &sources)
+            .expect_err("a sorted result cannot have its first cells in strict descending order");
+    }
+}
+
+#[test]
 fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_decreases_recursive_in_loop.md");

@@ -240,10 +240,13 @@ return expression.
 ## Expansion and diagnosis
 
 `click expand` replaces a selected smart tactic with a checked explicit proof.
-When a post-execution claim closer needs different proofs on different paths,
+When a post-execution tactic needs different proofs on different paths,
 expansion may also replace the preceding execution script with its explicit
 certificate. Each proof stays in the branch where it was checked, so a loop's
 earlier guards are not evaluated again at function exit.
+A post-execution `have` retains its established fact for later tactics. Smart
+proofs recheck snapshot-qualified premise spellings, so a statement snapshot
+recorded again by a loop cannot substitute a different fact for an earlier one.
 A trailing `close_invariants` shared by several preservation paths can likewise
 expand the preceding preservation script, placing each explicit closer in its
 own branch. The loop's initialization and the script after the loop stay written.

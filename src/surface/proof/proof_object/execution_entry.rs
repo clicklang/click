@@ -230,7 +230,9 @@ impl<'a> Proof<'a> {
                     branch_skeleton: branch_skeleton()?,
                     can_expand_execution_prefix: matches!(
                         &tactic,
-                        PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_)
+                        PostExecutionTactic::Simp
+                            | PostExecutionTactic::SimpUsing(_)
+                            | PostExecutionTactic::Have(_)
                     ),
                 })
             } else {
