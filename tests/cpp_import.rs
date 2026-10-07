@@ -10694,3 +10694,272 @@ fn header_record_artifacts_reject_forged_declaration_and_executable_sources() {
         );
     }
 }
+
+fn nested_record_project(selected: &str) -> Project {
+    let mut project = Project::with_fixture(
+        "nested_record.cpp",
+        selected,
+        include_str!("fixtures/cpp-verification/nested-record/nested_record.cpp"),
+    );
+    fs::write(
+        project.directory.join("state.h"),
+        include_str!("fixtures/cpp-verification/nested-record/state.h"),
+    )
+    .unwrap();
+    project.dependencies.push("state.h".into());
+    project.write_config(selected);
+    project
+}
+
+#[test]
+fn nested_record_declarations_preserve_layout_identity_and_offline_field_frames() {
+    use click::languages::cpp::CppType;
+    for (selected, sidecar) in [
+        (
+            "FeeEnvelope::SetStamp",
+            include_str!("fixtures/cpp-verification/nested-record/set_stamp.click"),
+        ),
+        (
+            "FeeEnvelope::ReadStamp",
+            include_str!("fixtures/cpp-verification/nested-record/read_stamp.click"),
+        ),
+    ] {
+        let project = nested_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let records = &import.export().records;
+        assert_eq!(records.len(), 3);
+        let leaf = records
+            .iter()
+            .find(|record| record.name == "FeeState")
+            .unwrap();
+        let pair = records
+            .iter()
+            .find(|record| record.name == "PairState")
+            .unwrap();
+        let outer = records
+            .iter()
+            .find(|record| record.name == "FeeEnvelope")
+            .unwrap();
+        assert_eq!(
+            (leaf.size_bytes, pair.size_bytes, outer.size_bytes),
+            (16, 40, 48)
+        );
+        assert_eq!(
+            pair.fields
+                .iter()
+                .map(|field| field.offset_bytes)
+                .collect::<Vec<_>>(),
+            [0, 16, 32]
+        );
+        assert_eq!(
+            outer
+                .fields
+                .iter()
+                .map(|field| field.offset_bytes)
+                .collect::<Vec<_>>(),
+            [0, 40]
+        );
+        for field in &pair.fields[..2] {
+            assert!(
+                matches!(&field.value_type, CppType::Record { declaration_id, name, is_const: false } if declaration_id == &leaf.declaration_id && name == "FeeState")
+            );
+            assert_eq!(field.size_bytes, 16);
+        }
+        assert!(
+            matches!(&outer.fields[0].value_type, CppType::Record { declaration_id, .. } if declaration_id == &pair.declaration_id)
+        );
+        for record in records {
+            assert_eq!(record.span.file, "state.h");
+        }
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), sidecar);
+    }
+}
+
+#[test]
+fn nested_record_contracts_reject_missing_authority_false_frames_and_readonly_writes() {
+    let sidecar = include_str!("fixtures/cpp-verification/nested-record/set_stamp.click");
+    let project = nested_record_project("FeeEnvelope::SetStamp");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    for invalid in [
+        sidecar.replace("    owns self->stamp;\n", ""),
+        sidecar.replace(
+            "ensures self->state.right.fee == old(self->state.right.fee);",
+            "ensures self->state.right.fee == old(self->state.left.fee);",
+        ),
+        sidecar.replace("owns self->stamp;", "views self->stamp;"),
+    ] {
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &invalid).unwrap();
+        let parsed = read_click_project(&path, &invalid).unwrap();
+        let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+            panic!("invalid nested field contract verified")
+        };
+        assert!(error.message().len() < 8000);
+    }
+}
+
+#[test]
+fn nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles() {
+    use sha2::{Digest, Sha256};
+    let project = nested_record_project("FeeEnvelope::ReadStamp");
+    refresh_import(&project.config()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let original_lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let pair = original["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|record| record["name"] == "PairState")
+        .unwrap();
+    let leaf = original["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|record| record["name"] == "FeeState")
+        .unwrap();
+    for change in [
+        "identity",
+        "name",
+        "width",
+        "offset",
+        "alignment",
+        "const",
+        "missing",
+        "cycle",
+    ] {
+        let mut artifact = original.clone();
+        let field = &mut artifact["records"][pair]["fields"][0];
+        match change {
+            "identity" => field["value_type"]["declaration_id"] = "unknown".into(),
+            "name" => field["value_type"]["name"] = "OtherState".into(),
+            "width" => field["size_bytes"] = 8.into(),
+            "offset" => field["offset_bytes"] = 4.into(),
+            "alignment" => artifact["records"][pair]["alignment_bytes"] = 4.into(),
+            "const" => field["value_type"]["is_const"] = true.into(),
+            "missing" => {
+                artifact["records"].as_array_mut().unwrap().remove(leaf);
+            }
+            "cycle" => {
+                let id = artifact["records"][leaf]["declaration_id"].clone();
+                artifact["records"][leaf]["fields"]
+                    .as_array_mut()
+                    .unwrap()
+                    .truncate(1);
+                artifact["records"][leaf]["fields"][0]["value_type"] = serde_json::json!({"kind":"record", "declaration_id":id, "name":"FeeState", "is_const":false});
+                artifact["records"][leaf]["fields"][0]["size_bytes"] = 16.into();
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        let mut lock = original_lock.clone();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{change}: {error}");
+        assert!(
+            error.contains("record") || error.contains("layout"),
+            "{change}: {error}"
+        );
+        if change == "cycle" {
+            assert!(error.contains("by-value cycle"), "{error}");
+        }
+    }
+}
+
+#[test]
+fn nested_record_source_projections_and_nontrivial_fields_remain_explicit_boundaries() {
+    for (declaration, body) in [
+        ("FeeState state;", "return state.size;"),
+        ("const FeeState state;", "return stamp;"),
+        ("mutable FeeState state;", "return stamp;"),
+        ("FeeState* state;", "return stamp;"),
+    ] {
+        let source = format!(
+            "struct FeeState {{ int size; }}; struct Envelope {{ {declaration} int stamp; int Read() const noexcept {{ {body} }} }};"
+        );
+        let project = Project::with_fixture("nested.cpp", "Envelope::Read", &source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{error}");
+        assert!(!project.artifact().exists());
+    }
+    let project = Project::with_fixture(
+        "nested.cpp",
+        "Envelope::Read",
+        "struct Child { int size; ~Child() noexcept { size = 0; } }; struct Envelope { Child state; int stamp; int Read() const noexcept { return stamp; } };",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("trivial destruction") || error.contains("trivially copyable"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+}
+
+#[test]
+fn nested_record_shared_layout_expansion_has_a_bounded_leaf_budget() {
+    let mut source = "struct R0 { int value; };\n".to_owned();
+    for level in 1..=17 {
+        source.push_str(&format!(
+            "struct R{level} {{ R{} left; R{} right; }};\n",
+            level - 1,
+            level - 1
+        ));
+    }
+    source.push_str("struct Envelope { R17 state; int Read() const noexcept { return 0; } };\n");
+    let project = Project::with_fixture("nested.cpp", "Envelope::Read", &source);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = "verifying \"nested.cpp\"; int Envelope_Read(const struct Envelope* self) { ensures result == 0; } by { execute(); simp(); }";
+    let path = project.directory.join("budget.click");
+    fs::write(&path, sidecar).unwrap();
+    let parsed = read_click_project(&path, sidecar).unwrap();
+    let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+        panic!("unbounded layout expansion accepted")
+    };
+    assert!(
+        error
+            .message()
+            .contains("materialized record layout leaves"),
+        "{}",
+        error.message()
+    );
+    assert!(error.message().len() < 8000);
+}
+
+#[test]
+fn nested_record_exporter_counts_pending_declarations_in_the_inventory_budget() {
+    for count in [256, 257] {
+        let mut source = "struct R0 { int value; };\n".to_owned();
+        for level in 1..count {
+            source.push_str(&format!("struct R{level} {{ R{} state; }};\n", level - 1));
+        }
+        source.push_str(&format!(
+            "int read(const R{}& state) noexcept {{ return 0; }}\n",
+            count - 1
+        ));
+        let project = Project::with_fixture("nested.cpp", "read", &source);
+        if count == 256 {
+            refresh_import(&project.config()).unwrap();
+            assert_eq!(
+                load_import(&project.config())
+                    .unwrap()
+                    .export()
+                    .records
+                    .len(),
+                count
+            );
+        } else {
+            let error = refresh_import(&project.config()).unwrap_err();
+            assert!(error.contains("record declarations (limit 256)"), "{error}");
+            assert!(error.len() < 8000);
+            assert!(!project.artifact().exists());
+        }
+    }
+}

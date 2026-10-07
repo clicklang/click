@@ -6,6 +6,7 @@
 use super::CppExport;
 
 pub(super) const MAX_RECORDS: usize = 256;
+pub(super) const MAX_RECORD_LAYOUT_LEAVES: usize = 65_536;
 pub(super) const MAX_CONSTANTS: usize = 1024;
 pub(super) const MAX_FUNCTIONS: usize = 1024;
 pub(super) const MAX_CALL_DEPTH: usize = 64;

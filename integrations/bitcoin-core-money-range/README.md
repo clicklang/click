@@ -598,8 +598,8 @@ views are rejected, as are illegal C++ client access, unions, mixed-access
 non-standard layouts, inheritance and bit-fields.
 
 The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
-its nested `FeePerVSize` field in `policy/feerate.h` remains outside the scalar
-record-field profile. Header-declared records are now supported through the
+its nested `FeePerVSize` field now reaches the unsupported class template
+instance in `util/feefrac.h`. Header-declared records are now supported through the
 explicitly locked dependency mechanism described below. The exporter reports
 the actual header location and writes no partial artifact. Nested record places
 and inherited base-subobject authority are the next prerequisites; `GetFee`
@@ -628,4 +628,29 @@ Regressions reject missing header dependencies, changed locked header bytes,
 forged or mismatched record/field source spans, and executable spans relabeled
 as header declarations. Semantic validation is checked even when artifact
 file digests are recomputed. Deterministic inventory regressions cover both
-selected-source and header origins without expanding work limits.
+selected-source and header origins with work linear in declarations and fields.
+
+
+## Embedded record declarations and contract fields
+
+The [`nested-record` fixture](../../tests/fixtures/cpp-verification/nested-record/nested_record.cpp)
+retains a private embedded record with two fields of the same child record type.
+Exact declaration identities, offsets, widths and alignment remain structural;
+only the physical copy layout uses C's existing qualified leaf representation.
+Nested contract views and ownership use the same C field metadata and memory
+model. Const scalar reads and outer scalar updates verify offline, expand and
+reverify, and preserve nested field frames under retained verification.
+
+The artifact validator resolves all child declarations before checking extents,
+rejects by-value cycles, and checks transitive record reachability. Shared
+layouts are visited once by the declaration walk. Materializing physical leaf
+layouts is separately bounded to 65,536 leaves across the import. Regressions
+reject forged child identities, names, constness, widths, offsets, alignment,
+missing declarations, cycles, false sibling frames, missing authority,
+read-only writes and excessive shared-layout expansion.
+
+This chunk supplies declaration and contract metadata. Nested C++ source member
+accesses, projected method receivers, inherited base subobjects, automatic
+objects with embedded fields and nontrivial embedded destruction remain explicit
+boundaries. `CFeeRate::GetFee` is still a refusal regression at its actual
+`FeePerVSize` template instance; no Bitcoin source is changed.

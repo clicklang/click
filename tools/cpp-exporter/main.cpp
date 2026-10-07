@@ -2607,7 +2607,7 @@ private:
     }
     const clang::CXXRecordDecl *canonical = definition->getCanonicalDecl();
     if (known_records_.insert(canonical).second) {
-      if (record_definitions_.size() >= kMaxRecordDeclarations) {
+      if (known_records_.size() > kMaxRecordDeclarations) {
         fail(definition->getLocation(), "C++ artifact budget exhausted: record declarations (limit " +
                  std::to_string(kMaxRecordDeclarations) + ")");
         return false;
@@ -2671,17 +2671,28 @@ private:
           !pointer->getPointeeType().hasQualifiers() &&
           context_.hasSameType(pointer->getPointeeType().getUnqualifiedType(),
                                context_.IntTy);
+      const auto *embedded = type->getAsCXXRecordDecl();
+      const bool mutable_record = embedded != nullptr && !type.hasQualifiers();
       // Access control is checked by Clang at each source use. It does not
       // change the layout or memory authority of a resolved data field.
       if (field->isBitField() ||
           field->isMutable() || field->hasInClassInitializer() ||
           field->getName().empty() ||
-          (!mutable_int && !mutable_int_pointer)) {
+          (!mutable_int && !mutable_int_pointer && !mutable_record)) {
         fail(
             field->getLocation(),
             "the supported C++ record fields must be named mutable int, "
-            "signed 64-bit integer, or mutable int* fields without bit-fields");
+            "signed 64-bit integer, mutable int*, or embedded record fields without bit-fields");
         return false;
+      }
+      if (mutable_record) {
+        if (!remember_record(embedded))
+          return false;
+        if (!embedded->getDefinition()->hasTrivialDestructor()) {
+          fail(field->getLocation(),
+               "embedded C++ record fields require trivial destruction");
+          return false;
+        }
       }
     }
     return true;

@@ -932,7 +932,6 @@ fn validate_record_inventory<'a>(
         if !record_names.insert(record.name.as_str()) {
             return Err("C++ record profile does not support same-named record layouts".into());
         }
-        record.validate(logical_source, declaration_sources)?;
         for field in &record.fields {
             crate::instrumentation::record_deterministic_work(1);
             if !field_identities.insert(field.declaration_id.as_str()) {
@@ -953,7 +952,63 @@ fn validate_record_inventory<'a>(
             ));
         }
     }
+    for record in inventory {
+        record.validate(logical_source, declaration_sources, &records)?;
+    }
+    record_layout_order(&records)?;
     Ok(records)
+}
+
+// Resolve embedded declarations once, without recursively expanding shared layouts.
+// The returned order places every child before its owners.
+pub(super) fn record_layout_order<'a>(
+    records: &BTreeMap<String, &'a CppRecord>,
+) -> Result<Vec<&'a CppRecord>, String> {
+    let mut remaining = BTreeMap::new();
+    let mut owners: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut ready = Vec::new();
+    for (id, record) in records {
+        crate::instrumentation::record_deterministic_work(1);
+        let mut count = 0;
+        for field in &record.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            if let CppType::Record {
+                declaration_id,
+                name,
+                is_const,
+            } = &field.value_type
+            {
+                let child = validate_record_reference(records, declaration_id, name)?;
+                if *is_const || child.destructor.is_some() {
+                    return Err("embedded C++ record fields require mutable, trivially destructible records".into());
+                }
+                count += 1;
+                owners.entry(declaration_id).or_default().push(id);
+            }
+        }
+        remaining.insert(id.as_str(), count);
+        if count == 0 {
+            ready.push(id.as_str());
+        }
+    }
+    let mut ordered = Vec::with_capacity(records.len());
+    while let Some(id) = ready.pop() {
+        ordered.push(records[id]);
+        if let Some(parents) = owners.get(id) {
+            for parent in parents {
+                crate::instrumentation::record_deterministic_work(1);
+                let count = remaining.get_mut(parent).expect("indexed record owner");
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(parent);
+                }
+            }
+        }
+    }
+    if ordered.len() != records.len() {
+        return Err("C++ embedded record declarations contain a by-value cycle".into());
+    }
+    Ok(ordered)
 }
 
 // Every layout must belong to a typed declaration in the selected graph.
@@ -1024,6 +1079,20 @@ fn validate_reachable_records(
             }
         }
     }
+    let mut pending: Vec<_> = referenced.iter().copied().collect();
+    while let Some(id) = pending.pop() {
+        let record = records
+            .get(id)
+            .ok_or_else(|| format!("unknown C++ record declaration `{id}`"))?;
+        for field in &record.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            if let CppType::Record { declaration_id, .. } = &field.value_type
+                && referenced.insert(declaration_id.as_str())
+            {
+                pending.push(declaration_id.as_str());
+            }
+        }
+    }
     if referenced != records.keys().map(String::as_str).collect() {
         return Err("C++ export contains a record outside the selected function graph".into());
     }
@@ -1031,7 +1100,12 @@ fn validate_reachable_records(
 }
 
 impl CppRecord {
-    fn validate(&self, logical_source: &str, sources: &BTreeSet<String>) -> Result<(), String> {
+    fn validate(
+        &self,
+        logical_source: &str,
+        sources: &BTreeSet<String>,
+        records: &BTreeMap<String, &CppRecord>,
+    ) -> Result<(), String> {
         if self.declaration_id.is_empty() || self.name.is_empty() {
             return Err("C++ record is missing declaration identity".into());
         }
@@ -1087,9 +1161,17 @@ impl CppRecord {
                     require_int32(pointee, false, "record pointer field")?;
                     (8, 8)
                 }
+                CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } => {
+                    let child = validate_record_reference(records, declaration_id, name)?;
+                    (child.size_bytes, child.alignment_bytes)
+                }
                 _ => {
                     return Err(format!(
-                        "C++ record field `{}.{}` is outside the `int`/`int*` slice",
+                        "C++ record field `{}.{}` is outside the scalar/pointer/embedded-record slice",
                         self.name, field.name
                     ));
                 }
@@ -1099,6 +1181,8 @@ impl CppRecord {
                 .checked_add(field.size_bytes)
                 .ok_or_else(|| format!("C++ record `{}` field layout overflows", self.name))?;
             if field.size_bytes != size
+                || alignment == 0
+                || self.alignment_bytes < alignment
                 || field.offset_bytes % alignment != 0
                 || field.offset_bytes < previous_end
                 || end > self.size_bytes
@@ -2026,6 +2110,23 @@ impl CppInitializer {
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
+        if let CppType::Record {
+            declaration_id,
+            name,
+            ..
+        } = local_type
+        {
+            let record = validate_record_reference(records, declaration_id, name)?;
+            if record
+                .fields
+                .iter()
+                .any(|field| matches!(field.value_type, CppType::Record { .. }))
+            {
+                return Err(
+                    "automatic C++ objects with embedded record fields remain unsupported".into(),
+                );
+            }
+        }
         match (self, local_type) {
             (Self::Value { value }, CppType::Integer { .. }) => {
                 value.validate(places, records, logical_source)?;
@@ -5510,7 +5611,7 @@ mod tests {
                 });
                 assert_eq!(indexed.unwrap().len(), size);
                 assert!(
-                    work >= size && work <= 4 * size,
+                    work >= size && work <= 6 * size,
                     "{size} layouts: {work} work"
                 );
             }
@@ -5534,7 +5635,13 @@ mod tests {
                 .unwrap_err()
                 .contains("same-named record layouts")
         );
-        record.validate("fixture.cpp", &sources).unwrap();
+        record
+            .validate(
+                "fixture.cpp",
+                &sources,
+                &BTreeMap::from([("record".into(), &record)]),
+            )
+            .unwrap();
         let records = BTreeMap::from([("record".into(), &record)]);
         assert!(
             validate_reachable_records(&BTreeMap::new(), &records)
@@ -5564,6 +5671,61 @@ mod tests {
         };
         validate_reachable_records(&BTreeMap::from([("function".into(), &function)]), &records)
             .unwrap();
+    }
+
+    #[test]
+    fn embedded_record_graph_validation_is_linear_and_rejects_cycles() {
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        for size in [8, 32, 128, 256] {
+            let mut inventory = (0..size)
+                .map(|index| CppRecord {
+                    declaration_id: format!("r{index}"),
+                    name: format!("R{index}"),
+                    size_bytes: 4,
+                    alignment_bytes: 4,
+                    destructor: None,
+                    span: cleanup_span(),
+                    fields: vec![CppField {
+                        declaration_id: format!("f{index}"),
+                        name: "value".into(),
+                        value_type: if index + 1 == size {
+                            signed_integer(32, false)
+                        } else {
+                            CppType::Record {
+                                declaration_id: format!("r{}", index + 1),
+                                name: format!("R{}", index + 1),
+                                is_const: false,
+                            }
+                        },
+                        offset_bytes: 0,
+                        size_bytes: 4,
+                        span: cleanup_span(),
+                    }],
+                })
+                .collect::<Vec<_>>();
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+            });
+            let checked = checked.unwrap();
+            assert!(
+                work >= size && work <= 7 * size,
+                "{size} nested declarations: {work} work"
+            );
+            assert_eq!(
+                record_layout_order(&checked).unwrap().first().unwrap().name,
+                format!("R{}", size - 1)
+            );
+            inventory[size - 1].fields[0].value_type = CppType::Record {
+                declaration_id: "r0".into(),
+                name: "R0".into(),
+                is_const: false,
+            };
+            assert!(
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+                    .unwrap_err()
+                    .contains("by-value cycle")
+            );
+        }
     }
 
     #[test]

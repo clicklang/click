@@ -12,12 +12,36 @@ pub(super) fn prepare(
     reachable: &[CFunction],
 ) -> Result<PreparedExecution, String> {
     let mut layouts = BTreeMap::new();
-    for record in &import.export().records {
+    let records = import
+        .export()
+        .records
+        .iter()
+        .map(|record| (record.declaration_id.clone(), record))
+        .collect();
+    let mut leaf_counts = BTreeMap::new();
+    let mut total_leaves = 0usize;
+    for record in super::schema::record_layout_order(&records)? {
+        let mut leaves = 0usize;
+        for field in &record.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            leaves = leaves.saturating_add(match &field.value_type {
+                CppType::Record { name, .. } => leaf_counts[name.as_str()],
+                _ => 1,
+            });
+        }
+        total_leaves = total_leaves.saturating_add(leaves);
+        super::budget::limit(
+            "materialized record layout leaves",
+            total_leaves,
+            super::budget::MAX_RECORD_LAYOUT_LEAVES,
+        )?;
+        leaf_counts.insert(record.name.as_str(), leaves);
         let fields = record
             .fields
             .iter()
             .map(|field| {
                 crate::instrumentation::record_deterministic_work(1);
+                let mut struct_name = None;
                 let value_type = match &field.value_type {
                     value
                         if Scalar::mutable_kind(value).is_some_and(|kind| {
@@ -31,6 +55,14 @@ pub(super) fn prepare(
                     {
                         C0Type::Int32Pointer
                     }
+                    CppType::Record {
+                        name,
+                        is_const: false,
+                        ..
+                    } => {
+                        struct_name = Some(name.clone());
+                        C0Type::Int32 // C's nominal embedded-record placeholder.
+                    }
                     _ => {
                         return Err(format!(
                             "C++ record field `{}.{}` is outside the supported proof interface",
@@ -41,15 +73,17 @@ pub(super) fn prepare(
                 Ok((
                     field.name.clone(),
                     value_type,
+                    struct_name,
                     field.offset_bytes,
                     field.size_bytes,
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        let layout = syntax::C0StructLayout::from_explicit_fields(
+        let layout = syntax::C0StructLayout::from_explicit_fields_with_structs(
             fields,
             record.size_bytes,
             record.alignment_bytes,
+            &layouts,
         )
         .map_err(|error| format!("invalid C++ record layout for `{}`: {error}", record.name))?;
         if layouts.insert(record.name.clone(), layout).is_some() {

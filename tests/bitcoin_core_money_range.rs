@@ -164,10 +164,10 @@ fn check_upstream_cpp_rounding_phase(
     if fee_rate_boundary {
         let error = refreshed.expect_err("GetFee must retain the unsupported record boundary");
         assert!(
-            error.contains("record fields must be named mutable int"),
+            error.contains("class template instances are unsupported"),
             "{error}"
         );
-        assert!(error.contains("feerate.h"), "{error}");
+        assert!(error.contains("feefrac.h"), "{error}");
         assert!(error.len() < 8000);
         assert!(!root.join(format!("{name}.click-cpp.json")).exists());
         fs::remove_dir_all(root).unwrap();
