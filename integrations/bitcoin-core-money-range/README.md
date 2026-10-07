@@ -304,9 +304,9 @@ terms opaque. The modular caller exports the same four inequalities and frames
 untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
-The wide-fallback `EvaluateFeeDown/Up` composition is verified below. Symbolic
-unsigned fast paths, the broader mode-specific result-fit domain and the full
-96/32 contract remain open.
+The wide-fallback `EvaluateFeeDown/Up` composition and unsigned Down fast path
+are verified below. The unsigned Up fast path, broader mode-specific result-fit
+domain and full 96/32 contract remain open.
 
 ## CompactSize encoded length
 
@@ -380,6 +380,27 @@ source bounds. The symbolic uint64 return-to-int64 conversion is admitted only
 with a proved native INT64_MAX upper bound. Ordinary C modular regressions and
 the checked [cast fixture](../../mdtests/legacy_integer_cast_identity.md) cover
 these shared prerequisites.
-Next compose these into the symbolic unsigned fast paths, preserving the
-source's mixed casts and ceiling numerator, then broaden the mode-specific
-result-fit domain. This does not yet verify `EvaluateFeeDown/Up` for all fees.
+
+[`FeeFracEvaluateFastDown.click.in`](FeeFracEvaluateFastDown.click.in) verifies
+the unchanged unsigned Down fast path for symbolic fees from zero through
+`2^33 - 1`, positive int32 size and `0 <= at_size <= size`. Both the wrapper and
+Boolean template instance preserve the fields, prove `0 <= R <= 2^33 - 1`,
+establish `R == truncating_quotient(F * A, D)`, and prove the floor inequalities
+`R * D <= F * A < (R + 1) * D`. Native branch guards and fee observer bounds
+are explicit prerequisites; result representability is derived.
+
+The proof checks each mixed-width cast, uses the scaled-product bound to
+exclude uint64 multiplication wrap, excludes zero in both divisor domains,
+and transports exact division into Integer arithmetic. Quotient bounds prove
+the native INT64_MAX guard for the source's signed return. Integer reconstruction
+and nonnegative remainder bounds establish floor rounding. It uses the same
+pinned compiler graph, evaluated Assume profile and verified helper sidecars;
+the Bitcoin implementation is unchanged.
+The gate expands and reverifies both caller levels, checks retained verification,
+and rejects missing field/domain/fee bounds and false quotient or strict rounding
+claims. Zero fee, zero amount, exact division and maximal fast-path fee/size
+are included in the symbolic domain.
+
+Next verify the unsigned Up fast path's ceiling numerator, then broaden the
+mode-specific result-fit domain. This does not yet verify `EvaluateFeeDown/Up`
+for all fees.

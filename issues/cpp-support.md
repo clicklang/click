@@ -757,8 +757,21 @@ fold. The signed/unsigned 32/64-bit conversion matrix, ordinary C modular
 callers, hostile bounds/certificates, endpoint checks and expansion cover these
 prerequisites; no Bitcoin source edit or new arithmetic axiom is needed.
 
-Next compose the symbolic unsigned fast-path callers, including the source's
-mixed signed/unsigned casts and the ceiling numerator `fee * amount + size - 1`.
+The unchanged unsigned `EvaluateFeeDown` caller now has a symbolic contract
+for `0 <= fee < 2^33`, positive int32 size and `0 <= at_size <= size`,
+with explicit native branch guards, fee observer bounds and field views.
+`FeeFracEvaluateFastDown.click.in` composes the existing verified helper sidecars
+in the same project and proves both caller levels. Exact cast certificates,
+no-wrap uint64 multiplication and nonzero division transport the source product
+to Integer arithmetic; quotient bounds justify the checked signed return.
+The result is nonnegative and at most `2^33 - 1`, equals the truncating quotient,
+and satisfies `R * D <= F * A < (R + 1) * D`. The fields are preserved.
+Wrapper and instance expansion/reverification, retained verification and hostile
+missing authority/domain/fee bounds and false quotient/rounding claims are covered.
+No assumed result range, new arithmetic axiom or Bitcoin source edit is needed.
+
+Next compose the symbolic unsigned `EvaluateFeeUp` fast path, preserving its
+mixed signed/unsigned casts and ceiling numerator `fee * amount + size - 1`.
 The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
 current joint range ensures both rounding modes fit.
 The selected source narrows `n / d` to int64 and
