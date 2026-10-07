@@ -1027,7 +1027,9 @@ The initial margin profile used `K = INT64_MAX - 1`; the endpoint proof below
 widens it to `INT64_MIN * d <= n <= INT64_MAX * d`. Both profiles include
 int128 numerators outside int64 and every positive int32 divisor. The broader
 mode-specific result-fit contracts are verified as alternative helper profiles;
-real fee-evaluation callers still use the joint amount/size profile.
+the alternative wide fee callers now compose them under explicit product-fit
+premises without `at_size <= size`. The unsigned fast and unified callers still
+use the joint amount/size profile.
 
 
 ## Remainder signs and correction endpoints
