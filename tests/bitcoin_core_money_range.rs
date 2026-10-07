@@ -106,7 +106,10 @@ fn check_upstream_cpp_rounding_phase(
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
     let evaluation_caller = name.starts_with("FeeFracEvaluate");
+    let result_fit_div = name.starts_with("FeeFracDivResultFit");
+    let bounded_div = name == "FeeFracDivBounded" || result_fit_div;
     if evaluation_caller
+        || bounded_div
         || matches!(
             name,
             "FeeFracDivConstevalRefused" | "FeeFracDivImported" | "FeeFracDivBounded"
@@ -125,7 +128,7 @@ fn check_upstream_cpp_rounding_phase(
             "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
         }]);
     }
-    if evaluation_caller || matches!(name, "FeeFracDivImported" | "FeeFracDivBounded") {
+    if evaluation_caller || bounded_div || name == "FeeFracDivImported" {
         const STRING_VIEW_HASH: &str =
             "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c";
         let header = "sysroot/usr/include/c++/12/string_view";
@@ -152,7 +155,7 @@ fn check_upstream_cpp_rounding_phase(
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
     let refreshed = refresh_import(&config_path);
-    if selected == "FeeFrac::Div" && !matches!(name, "FeeFracDivImported" | "FeeFracDivBounded") {
+    if selected == "FeeFrac::Div" && !bounded_div && name != "FeeFracDivImported" {
         let error = refreshed.expect_err("the library Assume boundary must remain explicit");
         assert!(error.contains("export C++ source"), "{error}");
         if name == "FeeFracDivConstevalRefused" {
@@ -187,7 +190,7 @@ fn check_upstream_cpp_rounding_phase(
     } else {
         assert!(import.export().reachable_functions.is_empty());
     }
-    if selected == "FeeFrac::Div" && name != "FeeFracDivBounded" {
+    if selected == "FeeFrac::Div" && !bounded_div {
         use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding, CppStatement};
         let CppStatement::LibraryAssert { metadata, .. } = &import.export().function.body[0] else {
             panic!("retained upstream annotation")
@@ -502,7 +505,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             assert!(error.message().len() < 8000);
         }
     }
-    if name == "FeeFracDivBounded" && phase == Some(RoundingPhase::FullExpansion) {
+    if bounded_div && phase == Some(RoundingPhase::FullExpansion) {
         let expanded = expand_program_prepared_project_claim_source_by_label(
             &project,
             &import,
@@ -510,6 +513,84 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         )
         .unwrap();
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+    }
+    if result_fit_div && phase == Some(RoundingPhase::Rejections) {
+        let down = name.ends_with("Down");
+        let mode_guard = if down {
+            "requires round_down != 0;"
+        } else {
+            "requires round_down == 0;"
+        };
+        let lower = if down {
+            "requires -9223372036854775808 * to_integer(d) <= to_integer(n);"
+        } else {
+            "requires -9223372036854775809 * to_integer(d) < to_integer(n);"
+        };
+        let upper = if down {
+            "requires to_integer(n) < 9223372036854775808 * to_integer(d);"
+        } else {
+            "requires to_integer(n) <= 9223372036854775807 * to_integer(d);"
+        };
+        let strict = if down { upper } else { lower };
+        for hostile in [
+            source.replace(mode_guard, ""),
+            source.replace(lower, ""),
+            source.replace(upper, ""),
+            source.replace("requires d > 0;", ""),
+            source.replace("requires d <= 2147483647;", ""),
+            source.replace("requires d > 0;", "requires d == 0;"),
+            source.replace(strict, &strict.replace(" < ", " <= ")),
+        ] {
+            assert_ne!(hostile, source);
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("{name} accepted missing or weakened result-fit guard");
+            };
+            assert!(error.message().len() < 8000);
+        }
+    }
+    if result_fit_div && phase == Some(RoundingPhase::TransportRejections) {
+        let down = name.ends_with("Down");
+        let strict_bound = if down {
+            "to_integer(n) < (to_integer(result) + 1) * to_integer(d)"
+        } else {
+            "(to_integer(result) + -1) * to_integer(d) < to_integer(n)"
+        };
+        let bad_bound = if down {
+            "to_integer(n) < to_integer(result) * to_integer(d)"
+        } else {
+            "to_integer(result) * to_integer(d) < to_integer(n)"
+        };
+        let inclusive = if down {
+            "to_integer(result) * to_integer(d) <= to_integer(n)"
+        } else {
+            "to_integer(n) <= to_integer(result) * to_integer(d)"
+        };
+        let correction = if down {
+            "apply(integer_lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));"
+        } else {
+            "apply(integer_upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));"
+        };
+        for hostile in [
+            source.replace(strict_bound, bad_bound),
+            source.replace(inclusive, &inclusive.replace(" <= ", " < ")),
+            source.replace(correction, ""),
+            source.replace(
+                "integer_cast_identity bounds [0, 1]",
+                "integer_cast_identity bounds [1, 0]",
+            ),
+            source.replace(
+                "ensures -9223372036854775808 <= to_integer(result);",
+                "ensures to_integer(result) == 9223372036854775808;",
+            ),
+        ] {
+            assert_ne!(hostile, source);
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("{name} accepted false rounding or missing narrowing/correction evidence");
+            };
+            assert!(error.message().len() < 8000);
+        }
     }
     if name == "FeeFracDivBounded" && phase == Some(RoundingPhase::Rejections) {
         for hostile in [
@@ -1084,6 +1165,66 @@ fn upstream_fee_frac_div_bounded_full_expansion_reverifies() {
 #[test]
 fn upstream_fee_frac_div_bounded_rejects_false_rounding_and_missing_guards() {
     check_bounded_upstream_rounding(RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_result_fit_div_down_verifies_native_narrowing_and_correction() {
+    check_result_fit_upstream_rounding("Down", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_result_fit_div_down_expands_and_reverifies() {
+    check_result_fit_upstream_rounding("Down", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_result_fit_div_down_rejects_missing_or_inclusive_fit_guards() {
+    check_result_fit_upstream_rounding("Down", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_result_fit_div_down_rejects_false_rounding_and_missing_transport() {
+    check_result_fit_upstream_rounding("Down", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_result_fit_div_up_verifies_native_narrowing_and_correction() {
+    check_result_fit_upstream_rounding("Up", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_result_fit_div_up_expands_and_reverifies() {
+    check_result_fit_upstream_rounding("Up", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_result_fit_div_up_rejects_missing_or_inclusive_fit_guards() {
+    check_result_fit_upstream_rounding("Up", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_result_fit_div_up_rejects_false_rounding_and_missing_transport() {
+    check_result_fit_upstream_rounding("Up", RoundingPhase::TransportRejections);
+}
+
+fn check_result_fit_upstream_rounding(mode: &str, phase: RoundingPhase) {
+    let source = match mode {
+        "Down" => {
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitDown.click")
+        }
+        "Up" => {
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitUp.click")
+        }
+        _ => unreachable!(),
+    };
+    check_upstream_cpp_rounding_phase(
+        "FeeFrac::Div",
+        &format!("FeeFracDivResultFit{mode}"),
+        source,
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
 }
 
 fn check_bounded_upstream_rounding(phase: RoundingPhase) {

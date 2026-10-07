@@ -800,14 +800,22 @@ and checked expansion cover them independently of Bitcoin.
 Strict positive-divisor quotient bounds are now proof-backed shared lemmas,
 with explicit sign guards, checked expansion and hostile endpoint/guard tests.
 A mathematical fixture proves the initial int64 quotient fit for both wider
-mode-specific domains, including floor's extra positive interval and ceiling's
-extra negative interval. This does not yet widen the imported Div contract or
-prove the native remainder narrowing and correction on those domains.
+mode-specific domains. Separate `FeeFracDivResultFitDown/Up.click` sidecars now
+verify native quotient and remainder narrowing, the selected correction and
+exact floor/ceiling results on the unchanged upstream Div implementation.
+Down accepts `MIN * d <= n < (MAX + 1) * d`; Up accepts
+`(MIN - 1) * d < n <= MAX * d`, with positive int32 `d` and the corresponding
+explicit native mode guard. The other correction direction is not a proof
+obligation on the selected profile. Ordinary, expanded and retained verification
+and hostile mode/divisor/numerator, strict endpoint, rounding, cast and
+correction evidence are covered by eight hermetic phases. Both profiles are
+alternatives to the existing joint helper contract; existing callers retain it.
 
-Next apply those lemmas to mode-specific result-fit for the unchanged Div
-implementation, then broaden callers beyond the current joint amount/size bounds.
-The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
-current joint range ensures both rounding modes fit.
+Next compose the mode-specific Div contracts into wider fee callers. Replace
+the joint `0 <= at_size <= size` bound with useful mode-specific product/result-fit
+premises, while retaining full signed fee coverage, actual source branches,
+field frames and native multiplication/cast obligations. Keep the alternative
+helper interfaces explicit until a shared guarded contract is justified.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
@@ -817,8 +825,8 @@ an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
-machine observer ranges, general range inference, and the wider rounding
-profile remain open.
+machine observer ranges, general range inference, wider fee callers and the
+portable `DivFallback` implementation remain open.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false

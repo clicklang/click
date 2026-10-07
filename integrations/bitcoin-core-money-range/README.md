@@ -306,7 +306,40 @@ untouched memory. Strict claims that fail on exact division are rejected.
 This completes mathematical rounding on the stated joint bounded profile.
 The wide-fallback `EvaluateFeeDown/Up` composition and both unsigned fast paths
 are verified below, along with unified callers on the joint input profile.
-The broader mode-specific result-fit domain and full 96/32 contract remain open.
+The alternative result-fit profiles below widen the helper's mode-specific
+numerator domain. Fee callers still use the joint profile.
+
+## Mode-specific fee division result fit
+
+[`FeeFracDivResultFitDown.click`](FeeFracDivResultFitDown.click) and
+[`FeeFracDivResultFitUp.click`](FeeFracDivResultFitUp.click) verify the same
+unchanged `FeeFrac::Div` source under separate contracts. Select the profile
+for the required rounding mode; these sidecars are alternatives to the joint
+helper contract, rather than declarations to load together.
+
+With `N = to_integer(n)`, `D = to_integer(d)`, `MIN = INT64_MIN` and
+`MAX = INT64_MAX`, both require a positive int32 divisor and explicit native
+`d <= INT32_MAX`. Down requires `round_down != 0` and
+`MIN * D <= N < (MAX + 1) * D`. Up requires `round_down == 0` and
+`(MIN - 1) * D < N <= MAX * D`. For `D > 1`, Down includes positive
+numerators above `MAX * D`; Up includes negative numerators below `MIN * D`.
+For example, with `D = 2`, Down accepts `2 * MAX + 1` and returns `MAX`,
+while Up accepts `2 * MIN - 1` and returns `MIN`.
+
+Each proof derives the int64 truncating quotient bounds using the shared
+strict quotient lemmas on its widened side, checks the actual native division
+and both casts, and establishes int32 remainder bounds. Down proves decrement
+safety only for a negative remainder; Up proves increment safety only for a
+positive remainder. The source still performs its original mode-dependent
+correction. Both contracts export native and observer result bounds, exact
+remainder-sign correction identities, and unguarded floor/ceiling inequalities
+for the selected mode. No C++ source, importer or kernel change is needed.
+
+Eight hermetic phases cover ordinary verification, source expansion and
+reverification, retained verification, missing mode/divisor/numerator guards,
+strict endpoints weakened to inclusive ones, false rounding inequalities,
+missing correction bounds and reversed cast evidence. Existing callers retain
+the joint contract until their amount/size domains are widened.
 
 ## CompactSize encoded length
 
@@ -419,7 +452,7 @@ missing numerator bridges, forged shifted identities and false quotient/rounding
 
 Separate contracts cover both modes in the negative, unsigned-fast and
 positive-wide fee domains under the joint amount/size bounds. The unified caller
-contract below combines them; broader mode-specific result-fit remains next.
+contract below combines them; broader mode-specific fee callers remain next.
 
 [`FeeFracEvaluateBounded.click.in`](FeeFracEvaluateBounded.click.in) unifies the
 three domains for Down and Up without a native fee-branch prerequisite. It
@@ -435,5 +468,6 @@ Shared strict quotient lemmas now establish initial int64 quotient fit on
 floor's `MIN * d <= n < (MAX + 1) * d` and ceiling's
 `(MIN - 1) * d < n <= MAX * d` mathematical domains; see
 [`integer_quotient_strict_bound.md`](../../mdtests/integer_quotient_strict_bound.md).
-The imported helper still uses its joint contract. Next prove its native
-narrowing and correction on these wider domains, then broaden callers.
+The mode-specific helper profiles above now prove native narrowing and
+correction on these domains. Next compose them into broader fee callers whose
+amount/size bounds express the selected mode's result fit.

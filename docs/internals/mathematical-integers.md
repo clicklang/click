@@ -949,8 +949,8 @@ minus one precisely for a negative remainder; ceiling mode returns it plus one
 precisely for a positive remainder. A zero remainder leaves the quotient
 unchanged in both modes. The synthetic modular caller exports the same
 formulas while framing its untouched memory. These guarantees retain the
-nonzero divisor and narrowing/overflow evidence. The product-inequality characterizations follow below; the full 96/32 input
-profile remains open.
+nonzero divisor and narrowing/overflow evidence. The product-inequality
+characterizations and wider mode-specific result-fit profiles follow below.
 
 
 ## Rounded quotient product intervals
@@ -975,8 +975,9 @@ The unchanged Bitcoin `FeeFrac::Div` and synthetic modular caller apply these
 shared lemmas to fixed-state native observations and the explicit truncating
 quotient/remainder. Their four mode-guarded product inequalities use mathematical
 Integer arithmetic, including successor/predecessor operations, and retain all
-previous native evaluation, narrowing and correction guards. This uses the joint scaled numerator/divisor profile described below; the
-full 96/32 contract remains open.
+previous native evaluation, narrowing and correction guards. The joint scaled
+numerator/divisor profile and the wider mode-specific result-fit profiles are
+described below; the portable `DivFallback` implementation remains open.
 
 Opaque atom collection stops at the product, quotient or remainder root, using
 shared node identity without traversing its operands. Distinct source terms
@@ -1015,15 +1016,18 @@ rule, signed remainder facts and reconstruction; no new kernel rule or search
 is involved. The [strict-bound fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_quotient_strict_bound.md)
 proves the int64 quotient fit needed by floor's `MIN * d <= n < (MAX + 1) * d`
 and ceiling's `(MIN - 1) * d < n <= MAX * d` domains. These mathematical
-quotient-fit results do not establish native narrowing or correction safety.
+quotient-fit results alone do not establish native narrowing or correction
+safety. The separate Bitcoin `FeeFracDivResultFitDown/Up.click` sidecars now
+prove those obligations on the unchanged source, using the strict lemma only
+on the selected mode's widened boundary.
 
 The unchanged C++ rounding sidecars now use joint guards
 `-K * to_integer(d) <= to_integer(n) <= K * to_integer(d)` (two clauses).
 The initial margin profile used `K = INT64_MAX - 1`; the endpoint proof below
 widens it to `INT64_MIN * d <= n <= INT64_MAX * d`. Both profiles include
 int128 numerators outside int64 and every positive int32 divisor. The broader
-mode-specific result-fit contract remains open; real fee-evaluation callers
-are verified under the joint amount/size profile.
+mode-specific result-fit contracts are verified as alternative helper profiles;
+real fee-evaluation callers still use the joint amount/size profile.
 
 
 ## Remainder signs and correction endpoints
