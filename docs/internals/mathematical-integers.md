@@ -1033,8 +1033,16 @@ widens it to `INT64_MIN * d <= n <= INT64_MAX * d`. Both profiles include
 int128 numerators outside int64 and every positive int32 divisor. The broader
 mode-specific result-fit contracts are verified as alternative helper profiles;
 the alternative wide fee callers now compose them under explicit product-fit
-premises without `at_size <= size`. The unsigned fast and unified callers still
-use the joint amount/size profile.
+premises without `at_size <= size`. Alternative unsigned fast callers also use
+explicit upper product-fit bounds: Down bounds the product quotient, while Up
+first bounds the adjusted numerator `product + size - 1`. Rectangular product
+bounds check the actual uint64 operations independently of size, and the strict
+quotient bound checks the int64 return cast. The alternative unified callers
+now combine these fast and wide proofs under one full-signed-fee contract per
+mode, using the same product-fit bounds and native amount bounds. Checked
+source-comparison bridges derive the fast fee observer range within its
+branch; both caller levels retain exact rounding and field frames. The original
+joint amount/size profile remains a separate regression.
 
 
 ## Remainder signs and correction endpoints

@@ -501,6 +501,80 @@ Sixteen hermetic phases cover ordinary, wrapper/instance expansion and retained
 verification, missing field/size/amount/product guards, strict input endpoints
 weakened to inclusive ones, omitted wide-branch or fee bounds, forged product
 transport and false rounding. Original wide, fast and unified joint-bound
-profiles remain separate regressions. Next extend the unsigned fast path to
-these amount/result-fit bounds, then unify all signed fee branches under the
-broader caller contract.
+profiles remain separate regressions. The unsigned fast profiles below now use
+these amount/result-fit bounds; the broader unified profiles follow below.
+
+
+## Unsigned fast fee callers with explicit result fit
+
+[`FeeFracEvaluateFastResultFitDown.click.in`](FeeFracEvaluateFastResultFitDown.click.in)
+and [`FeeFracEvaluateFastResultFitUp.click.in`](FeeFracEvaluateFastResultFitUp.click.in)
+verify the unchanged unsigned fast path with `0 <= at_size <= INT32_MAX` and
+positive int32 size. They retain the source's native nonnegative fee and
+`fee < 2^33` guards, explicit fee observer bounds `0 <= F <= 2^33 - 1`,
+and field views. Down requires `F * A < (INT64_MAX + 1) * D`; Up requires
+`F * A <= INT64_MAX * D`. The lower signed-fit bound is automatic on this
+nonnegative domain. Neither profile requires `at_size <= size`, and the
+result bound is now `0 <= result <= INT64_MAX`, rather than a fee-sized bound.
+
+Explicit rectangular product certificates give
+`0 <= F * A <= 18446744062972133377` from the fee/amount ranges, independently
+of `D`. This checks the uint64 multiplication. Up also checks the actual
+`product + size` addition and subtraction of one, including the lower bound
+that prevents unsigned underflow. Down applies the shared strict scaled
+quotient upper bound to the product. Up derives
+`F * A + D - 1 < (INT64_MAX + 1) * D` from its fit premise and applies the
+same quotient bound to that adjusted numerator. Both reflect the derived
+quotient limit back to native uint64 order before the ordinary int64 return
+cast, and check the cast's observer identity.
+
+Both caller levels preserve fields, export exact floor/ceiling product
+inequalities, and identify the result with the corresponding truncating
+quotient of the actual native numerator. Four modular examples cover fee 7,
+size 1, amount 2, and the maximum fast fee/native amount with size 2. The latter
+uses a uint64 product above `INT64_MAX`, while the rounded result still fits.
+
+Twelve bounded hermetic phases cover ordinary, wrapper/instance expansion and
+retained verification, omitted authority/amount/result-fit/fee/branch guards,
+relaxed result-fit bounds, false rounding, missing product/division bridges,
+and Up's missing addition/subtraction or forged adjusted numerator. The wider
+fast and wide profiles remain available separately; the unified profiles below
+compose them under the broader product-fit domain.
+
+
+## Unified fee callers with explicit result fit
+
+[`FeeFracEvaluateResultFit.click.in`](FeeFracEvaluateResultFit.click.in) combines
+all three source branches under one contract per rounding mode. Both caller
+levels require field views, full int64 fee observer bounds, positive int32
+size, and `0 <= at_size <= INT32_MAX`. For Integer observations `F`, `A`, `D`,
+Down requires `MIN * D <= F * A < (MAX + 1) * D`; Up requires
+`(MIN - 1) * D < F * A <= MAX * D`. There is no fee-branch prerequisite or
+`at_size <= size` requirement. The contracts export int64 result bounds, exact
+floor/ceiling product intervals, and both field frames.
+
+The hermetic factory reuses the wider fast and fallback proof bodies and the
+selected mode's Div sidecar, alongside the unchanged Mul sidecar. Checked
+signed comparison bridges derive the fast fee observer bounds from Bitcoin's
+actual native guards. The two fallback branches have distinct captures. The
+fast proof checks uint64 product and adjusted-numerator arithmetic and the
+ordinary int64 return cast; the fallback proofs transport the exact int128
+product to the selected result-fit Div contract. Bitcoin's implementation,
+compiler/library assumptions, importer and kernel are unchanged.
+
+Each mode includes four modular contract applications: fee `7`, size `1`,
+amount `2`; fee `2^33 - 1`, size `2`, amount `INT32_MAX`; and fees `2^33` and
+`-2^33`, each with size `1` and amount `2`. They state the general authority
+and fit premises plus fixed inputs and export the rounding intervals, result
+bounds and frames. All source branches are covered, including an unsigned
+product above `INT64_MAX` whose quotient fits.
+
+Seventeen bounded hermetic phases cover ordinary verification, wrapper and
+instance expansion/reverification, retained verification, missing field,
+amount, fee or fit bounds, strict fit endpoints weakened to inclusive ones,
+missing source-comparison transport, false rounding, missing arithmetic
+bridges, and forged wide products or ceiling numerators. The original unified
+joint-bound profile remains a regression. The next integration slice is the
+unchanged `CFeeRate::GetFee` wrapper: inherited `FeePerVSize` field access,
+empty-rate behavior and its negative-fee minimum correction require their own
+contracts before composing these rounding proofs.

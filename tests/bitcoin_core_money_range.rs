@@ -50,6 +50,10 @@ enum RoundingPhase {
     Rejections,
     TransportRejections,
     NumeratorRejections,
+    RoundingRejections,
+    FitRejections,
+    AuthorityRejections,
+    AdjustedNumeratorRejections,
 }
 
 fn check_upstream_cpp_rounding_phase(
@@ -375,10 +379,128 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 RoundingPhase::Rejections
                     | RoundingPhase::TransportRejections
                     | RoundingPhase::NumeratorRejections
+                    | RoundingPhase::RoundingRejections
+                    | RoundingPhase::FitRejections
+                    | RoundingPhase::AuthorityRejections
+                    | RoundingPhase::AdjustedNumeratorRejections
             )
         )
     {
-        let hostile = if name.contains("ResultFit") {
+        let hostile = if name.contains("ResultFit") && name.ends_with("SymbolicFast") {
+            let down = selected.ends_with("Down");
+            let fit = if down {
+                "requires to_integer(self->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(self->size);"
+            } else {
+                "requires to_integer(self->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(self->size);"
+            };
+            if phase == Some(RoundingPhase::Rejections) {
+                vec![
+                    source.replace("views self->size;", ""),
+                    source.replace("requires self->size > 0;", ""),
+                    source.replace("requires 0 <= at_size;", ""),
+                    source.replace("requires at_size <= 2147483647;", ""),
+                    source.replace(fit, ""),
+                    source.replace(
+                        fit,
+                        &fit.replace(
+                            if down {
+                                " < 9223372036854775808"
+                            } else {
+                                " <= 9223372036854775807"
+                            },
+                            " <= 18446744073709551615",
+                        ),
+                    ),
+                ]
+            } else if phase == Some(RoundingPhase::NumeratorRejections) {
+                let mut cases = vec![
+                    source.replace("apply(uint64_multiply_to_integer((uint64)self->fee, (uint64)at_size));", ""),
+                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)(uint32)self->size));" } else { "apply(uint64_divide_to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64), (uint64)(uint32)self->size));" }, ""),
+                ];
+                if !down {
+                    cases.extend([
+                        source.replace("apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));", ""),
+                        source.replace("apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));", ""),
+                        source.replace("== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1", "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 2"),
+                    ]);
+                }
+                cases
+            } else if phase == Some(RoundingPhase::TransportRejections) {
+                vec![
+                    source.replace("requires self->fee < 8589934592i64;", ""),
+                    source.replace("requires to_integer(self->fee) <= 8589934591;", ""),
+                    source.replace("requires 0 <= to_integer(self->fee);", ""),
+                ]
+            } else {
+                assert!(phase == Some(RoundingPhase::RoundingRejections));
+                vec![
+                    source.replace(
+                        "ensures to_integer(result) == truncating_quotient(",
+                        "ensures to_integer(result) != truncating_quotient(",
+                    ),
+                    source.replace(
+                        if down {
+                            "(to_integer(result) + 1) * to_integer(self->size)"
+                        } else {
+                            "(to_integer(result) + -1) * to_integer(self->size)"
+                        },
+                        "to_integer(result) * to_integer(self->size)",
+                    ),
+                ]
+            }
+        } else if name.contains("ResultFit") && name.ends_with("Unified") {
+            let down = selected.ends_with("Down");
+            let lower = if down {
+                "requires -9223372036854775808 * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size);"
+            } else {
+                "requires -9223372036854775809 * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size);"
+            };
+            let upper = if down {
+                "requires to_integer(self->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(self->size);"
+            } else {
+                "requires to_integer(self->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(self->size);"
+            };
+            match phase.unwrap() {
+                RoundingPhase::AuthorityRejections => vec![
+                    source.replace("views self->fee;", ""),
+                    source.replace("views self->size;", ""),
+                ],
+                RoundingPhase::Rejections => vec![
+                    source.replace("requires self->size > 0;", ""),
+                    source.replace("requires 0 <= at_size;", ""),
+                    source.replace("requires at_size <= 2147483647;", ""),
+                ],
+                RoundingPhase::FitRejections => {
+                    let strict = if down { upper } else { lower };
+                    vec![source.replace(lower, ""), source.replace(upper, ""), source.replace(strict, &strict.replace(" < ", " <= "))]
+                }
+                RoundingPhase::TransportRejections => vec![
+                    source.replace("requires -9223372036854775808 <= to_integer(self->fee);", ""),
+                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
+                    source.replace("apply(int64_greater_equal_to_integer(self->fee, 0i64));", ""),
+                    source.replace("apply(int64_less_than_to_integer(self->fee, 8589934592i64));", ""),
+                ],
+                RoundingPhase::RoundingRejections => vec![
+                    source.replace(if down { "(to_integer(result) + 1) * to_integer(self->size)" } else { "(to_integer(result) + -1) * to_integer(self->size)" }, "to_integer(result) * to_integer(self->size)"),
+                    source.replace(if down { "to_integer(result) * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size)" } else { "to_integer(self->fee) * to_integer(at_size) <= to_integer(result) * to_integer(self->size)" }, if down { "to_integer(result) * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size)" } else { "to_integer(self->fee) * to_integer(at_size) < to_integer(result) * to_integer(self->size)" }),
+                ],
+                RoundingPhase::NumeratorRejections => vec![
+                    source.replace("apply(uint64_multiply_to_integer((uint64)self->fee, (uint64)at_size));", ""),
+                    source.replace("to_integer(product) == to_integer(self->fee) * to_integer(at_size)", "to_integer(product) == to_integer(self->fee) * to_integer(at_size) + 1"),
+                    source.replace("to_integer(negative_product) == to_integer(self->fee) * to_integer(at_size)", "to_integer(negative_product) == to_integer(self->fee) * to_integer(at_size) + 1"),
+                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)(uint32)self->size));" } else { "apply(uint64_divide_to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64), (uint64)(uint32)self->size));" }, ""),
+                ],
+                RoundingPhase::AdjustedNumeratorRejections => {
+                    assert!(!down);
+                    vec![
+                        source.replace("apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));", ""),
+                        source.replace("apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));", ""),
+                        source.replace("== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1", "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 2"),
+                    ]
+                }
+                _ => unreachable!(),
+            }
+        } else if name.contains("ResultFit") {
             let down = selected.ends_with("Down");
             let lower = if down {
                 "requires -9223372036854775808 * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size);"
@@ -1315,6 +1437,97 @@ fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
 }
 
+fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    let (div, caller) = match mode {
+        "Down" => (
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitDown.click"),
+            include_str!(
+                "../integrations/bitcoin-core-money-range/FeeFracEvaluateFastResultFitDown.click.in"
+            ),
+        ),
+        "Up" => (
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracDivResultFitUp.click"),
+            include_str!(
+                "../integrations/bitcoin-core-money-range/FeeFracEvaluateFastResultFitUp.click.in"
+            ),
+        ),
+        _ => unreachable!(),
+    };
+    let div = div.split_once(';').unwrap().1;
+    let source = format!(
+        "{}\n{div}\n{caller}",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
+    );
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}ResultFitSymbolicFast"),
+        &source,
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_fast_result_fit_down_verifies_beyond_size() {
+    check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_fast_result_fit_down_expands_and_reverifies() {
+    check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_fast_result_fit_down_rejects_missing_or_weakened_fit_bounds() {
+    check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_fast_result_fit_down_rejects_missing_fee_and_branch_bounds() {
+    check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_fast_result_fit_down_rejects_false_rounding() {
+    check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::RoundingRejections);
+}
+
+#[test]
+fn upstream_fast_result_fit_down_rejects_missing_bridges_and_forged_numerator() {
+    check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::NumeratorRejections);
+}
+
+#[test]
+fn upstream_fast_result_fit_up_verifies_beyond_size() {
+    check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_fast_result_fit_up_expands_and_reverifies() {
+    check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_fast_result_fit_up_rejects_missing_or_weakened_fit_bounds() {
+    check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_fast_result_fit_up_rejects_missing_fee_and_branch_bounds() {
+    check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_fast_result_fit_up_rejects_false_rounding() {
+    check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::RoundingRejections);
+}
+
+#[test]
+fn upstream_fast_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
+    check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
+}
+
 fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
     let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
         .split_once(';')
@@ -1573,7 +1786,11 @@ fn upstream_wide_result_fit_up_positive_rejects_false_rounding_and_missing_trans
 }
 
 fn unified_fee_evaluation_source(mode: &str) -> String {
-    let wide = wide_fee_evaluation_source(mode, true);
+    unified_fee_evaluation_source_with_profile(mode, false)
+}
+
+fn unified_fee_evaluation_source_with_profile(mode: &str, result_fit: bool) -> String {
+    let wide = wide_fee_evaluation_source_with_profile(mode, true, result_fit);
     let (helpers, callers) = wide.split_once("int64 FeeFrac_EvaluateFee__bool_").unwrap();
     let wide_body = callers
         .split_once("} by {")
@@ -1588,10 +1805,20 @@ fn unified_fee_evaluation_source(mode: &str) -> String {
         .replace("to_integer(product)", "to_integer(negative_product)")
         .replace("FeeFrac_Div(product,", "FeeFrac_Div(negative_product,")
         .replace("rounded", "negative_rounded");
-    let fast = if mode == "Down" {
-        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in")
-    } else {
-        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
+    let fast = match (mode, result_fit) {
+        ("Down", false) => include_str!(
+            "../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in"
+        ),
+        ("Up", false) => {
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
+        }
+        ("Down", true) => include_str!(
+            "../integrations/bitcoin-core-money-range/FeeFracEvaluateFastResultFitDown.click.in"
+        ),
+        ("Up", true) => include_str!(
+            "../integrations/bitcoin-core-money-range/FeeFracEvaluateFastResultFitUp.click.in"
+        ),
+        _ => panic!("unknown rounding mode"),
     };
     let fast_body = fast
         .split_once("} by {")
@@ -1609,17 +1836,134 @@ fn unified_fee_evaluation_source(mode: &str) -> String {
         .map(|l| l.trim_end_matches(';'))
         .collect::<Vec<_>>();
     assert_eq!(bounds.len(), 2);
-    let fragment =
+    let input_bounds = contract
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("requires "))
+        .filter(|l| l.contains(" * "))
+        .map(|l| l.trim_end_matches(';'))
+        .collect::<Vec<_>>();
+    let template = if result_fit {
+        assert_eq!(input_bounds.len(), 2);
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateResultFit.click.in")
+    } else {
         include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateBounded.click.in")
-            .replace("@INSTANCE@", if mode == "Down" { "true" } else { "false" })
-            .replace("@MODE@", mode)
-            .replace("@CALLER_BOUND_1@", bounds[0])
-            .replace("@CALLER_BOUND_2@", bounds[1])
-            .replace("@FAST_PROOF@", fast_body)
-            .replace("@WIDE_POSITIVE_PROOF@", wide_body)
-            .replace("@WIDE_NEGATIVE_PROOF@", &negative);
+    };
+    let template = if result_fit {
+        template
+            .replace("@INPUT_BOUND_1@", input_bounds[0])
+            .replace("@INPUT_BOUND_2@", input_bounds[1])
+    } else {
+        template.to_owned()
+    };
+    let fragment = template
+        .replace("@INSTANCE@", if mode == "Down" { "true" } else { "false" })
+        .replace("@MODE@", mode)
+        .replace("@CALLER_BOUND_1@", bounds[0])
+        .replace("@CALLER_BOUND_2@", bounds[1])
+        .replace("@FAST_PROOF@", fast_body)
+        .replace("@WIDE_POSITIVE_PROOF@", wide_body)
+        .replace("@WIDE_NEGATIVE_PROOF@", &negative);
     assert!(!fragment.contains('@'));
     format!("{helpers}{fragment}")
+}
+
+fn check_upstream_result_fit_unified_fee_evaluation(mode: &str, phase: RoundingPhase) {
+    check_upstream_cpp_rounding_phase(
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}ResultFitUnified"),
+        &unified_fee_evaluation_source_with_profile(mode, true),
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
+    );
+}
+
+#[test]
+fn upstream_unified_result_fit_down_verifies_all_fee_branches_beyond_size() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_unified_result_fit_down_expands_and_reverifies() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_unified_result_fit_down_rejects_missing_field_authority() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::AuthorityRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_down_rejects_missing_domain_bounds() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_down_rejects_missing_or_weakened_fit_bounds() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::FitRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_down_rejects_missing_fee_bounds_and_branch_transport() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_down_rejects_false_rounding() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::RoundingRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_down_rejects_missing_bridges_and_forged_numerator() {
+    check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::NumeratorRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_verifies_all_fee_branches_beyond_size() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_expands_and_reverifies() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_rejects_missing_field_authority() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::AuthorityRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_rejects_missing_domain_bounds() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_rejects_missing_or_weakened_fit_bounds() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::FitRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_rejects_missing_fee_bounds_and_branch_transport() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_rejects_false_rounding() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::RoundingRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
+    check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
+}
+
+#[test]
+fn upstream_unified_result_fit_up_rejects_missing_or_forged_adjusted_numerator() {
+    check_upstream_result_fit_unified_fee_evaluation(
+        "Up",
+        RoundingPhase::AdjustedNumeratorRejections,
+    );
 }
 
 fn check_upstream_unified_fee_evaluation(mode: &str, phase: RoundingPhase) {
