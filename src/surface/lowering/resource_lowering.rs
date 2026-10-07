@@ -1492,6 +1492,52 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals(
     lower_resource_clause_with_values(resource, parameters, &values, state, result)
 }
 
+/// [`lower_resource_clause_at_current_locals`] under the facts the proof
+/// holds, for a join interface. An interface names what the proof holds
+/// where its arms end, so a parameter the function has reassigned is read as
+/// it stands there, exactly as the `fold` that built the resource read it.
+pub(in crate::surface) fn lower_interface_resource_clause(
+    resource: &ResourceClause,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Result<CResourceFact, ClickError> {
+    let values =
+        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
+    let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
+    let (values, _) = contract_environment_at_state(&values, &array_refs, state);
+    if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
+        let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
+            resource,
+            parameters,
+            &values,
+            state,
+            state,
+            None,
+            false,
+            assumptions,
+        )?;
+        if facts.len() != 1 {
+            return Err(ClickError::new(format!(
+                "resource clause expands to {} typed memory facts where one fact is required",
+                facts.len()
+            )));
+        }
+        return Ok(facts.pop().expect("resource clause fact count was checked"));
+    }
+    lower_resource_clause_with_values_mode_at_entry(
+        resource,
+        parameters,
+        &values,
+        state,
+        state,
+        None,
+        false,
+        assumptions,
+    )
+}
+
 pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_entry(
     resource: &ResourceClause,
     parameters: &[syntax::C0Parameter],

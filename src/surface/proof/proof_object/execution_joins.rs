@@ -658,23 +658,21 @@ impl<'a> Proof<'a> {
             let ProofAssertion::Resource(resource) = assertion else {
                 continue;
             };
-            let then_expected = lower_resource_clause_at_state_with_assumptions(
+            let then_expected = lower_interface_resource_clause(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 &arms[0].execution.core.state,
-                None,
                 arms[0].facts.assumptions(),
             )?;
             if !then_expected.is_own() {
                 continue;
             }
-            let else_expected = lower_resource_clause_at_state_with_assumptions(
+            let else_expected = lower_interface_resource_clause(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 &arms[1].execution.core.state,
-                None,
                 arms[1].facts.assumptions(),
             )?;
             then_residual = then_residual

@@ -1349,7 +1349,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         assumption();
                                                                     }
                                                                     have node != 0 by { simp(); }
-                                                                    match cs.model {
+                                                                    match cs.model ensuring {
+                                                                        owns sn: rb_at(tmp);
+                                                                        fact sn.model == rb_reparent(csib, gparent);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             have csib == RbTree::Empty by {
                                                                                 rewrite(csib == cs.model);
@@ -1425,7 +1428,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                         normalize();
                                                                     }
-                                                                    match uu.model {
+                                                                    match uu.model ensuring {
+                                                                        owns uu: ctx_at(parent, root);
+                                                                        owns gn: rb_at(gparent);
+                                                                        fact uu.model == uup;
+                                                                        fact gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr));
+                                                                    } {
                                                                         Context::Top => {
                                                                             have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                                 rewrite(Context::Top == uu.model);
@@ -1487,6 +1495,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(ugp == 0);
                                                                                 simp();
                                                                             }
+                                                                            have uu.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                            have gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr)) by { normalize(); }
                                                                         },
                                                                         Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -1498,6 +1508,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
                                                                                     ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
                                                                                 }
+                                                                                assumption();
+                                                                            }
+                                                                            have uup == Context::Left(xid, xgp, xcol, xsib, xup) by {
+                                                                                rewrite(uup == uu.model);
                                                                                 assumption();
                                                                             }
                                                                             let { sibling: xs, up: xu } = unfold(uu);
@@ -1525,6 +1539,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                                 simp();
                                                                             }
+                                                                            have uu.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                            have gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr)) by { normalize(); }
                                                                         },
                                                                         Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -1538,20 +1554,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 }
                                                                                 assumption();
                                                                             }
+                                                                            have uup == Context::Right(xid, xgp, xcol, xsib, xup) by {
+                                                                                rewrite(uup == uu.model);
+                                                                                assumption();
+                                                                            }
                                                                             let { sibling: xs, up: xu } = unfold(uu);
-                                                                            match xsib {
+                                                                            match xsib ensuring {
+                                                                                owns uu: ctx_at(parent, root);
+                                                                                fact uu.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                            } {
                                                                                 RbTree::Empty => {
                                                                                     unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                                    let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                                 RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                                     let { left: yl_at, right: yr_at } = unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                                    let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                             }
-                                                                            let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                             have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
                                                                                 apply(rb_reparent_parent_is(csib, gparent));
                                                                                 assumption();
@@ -1574,6 +1600,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                                 simp();
                                                                             }
+                                                                            have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                            have gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr)) by { normalize(); }
                                                                         },
                                                                     }
                                                                     let c = fold(ctx_at(node, root), { model: Context::Left(cid, ugp, Color::Black, RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr)), uup) }, { sibling: gn, up: uu });
@@ -1688,7 +1716,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 assumption();
                                                             }
                                                             have node != 0 by { simp(); }
-                                                            match cs.model {
+                                                            match cs.model ensuring {
+                                                                owns sn: rb_at(tmp);
+                                                                fact sn.model == rb_reparent(csib, gparent);
+                                                            } {
                                                                 RbTree::Empty => {
                                                                     have csib == RbTree::Empty by {
                                                                         rewrite(csib == cs.model);
@@ -1764,7 +1795,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                 normalize();
                                                             }
-                                                            match uu.model {
+                                                            match uu.model ensuring {
+                                                                owns uu: ctx_at(parent, root);
+                                                                owns gn: rb_at(gparent);
+                                                                fact uu.model == uup;
+                                                                fact gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Empty);
+                                                            } {
                                                                 Context::Top => {
                                                                     have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                         rewrite(Context::Top == uu.model);
@@ -1826,6 +1862,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(ugp == 0);
                                                                         simp();
                                                                     }
+                                                                    have uu.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                    have gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Empty) by { normalize(); }
                                                                 },
                                                                 Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -1837,6 +1875,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
                                                                             ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
                                                                         }
+                                                                        assumption();
+                                                                    }
+                                                                    have uup == Context::Left(xid, xgp, xcol, xsib, xup) by {
+                                                                        rewrite(uup == uu.model);
                                                                         assumption();
                                                                     }
                                                                     let { sibling: xs, up: xu } = unfold(uu);
@@ -1864,6 +1906,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                         simp();
                                                                     }
+                                                                    have uu.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                    have gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Empty) by { normalize(); }
                                                                 },
                                                                 Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -1877,20 +1921,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         }
                                                                         assumption();
                                                                     }
+                                                                    have uup == Context::Right(xid, xgp, xcol, xsib, xup) by {
+                                                                        rewrite(uup == uu.model);
+                                                                        assumption();
+                                                                    }
                                                                     let { sibling: xs, up: xu } = unfold(uu);
-                                                                    match xsib {
+                                                                    match xsib ensuring {
+                                                                        owns uu: ctx_at(parent, root);
+                                                                        fact uu.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                            let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                         RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                             let { left: yl_at, right: yr_at } = unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                            let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                     }
-                                                                    let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                     have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
                                                                         apply(rb_reparent_parent_is(csib, gparent));
                                                                         assumption();
@@ -1913,6 +1967,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                         simp();
                                                                     }
+                                                                    have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                    have gn.model == RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Empty) by { normalize(); }
                                                                 },
                                                             }
                                                             let c = fold(ctx_at(node, root), { model: Context::Left(cid, ugp, Color::Black, RbTree::Node(gparent, cid, Color::Red, rb_reparent(csib, gparent), RbTree::Empty), uup) }, { sibling: gn, up: uu });
@@ -2217,7 +2273,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     step();
                                                                     have tmp == node by { simp(); }
                                                                     step();
-                                                                    match nr_at.model {
+                                                                    match nr_at.model ensuring {
+                                                                        owns bn: rb_at(tmp);
+                                                                        fact bn.model == rb_reparent(nright, cid);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             have nright == RbTree::Empty by {
                                                                                 rewrite(nright == nr_at.model);
@@ -2285,7 +2344,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib) }, { left: bn, right: cs });
                                                                     step();
                                                                     step();
-                                                                    match nl_at.model {
+                                                                    match nl_at.model ensuring {
+                                                                        owns rn: rb_at(tmp);
+                                                                        fact rn.model == rb_reparent(nleft, gparent);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             have nleft == RbTree::Empty by {
                                                                                 rewrite(nleft == nl_at.model);
@@ -2352,7 +2414,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                         normalize();
                                                                     }
-                                                                    match uu.model {
+                                                                    match uu.model ensuring {
+                                                                        owns c: ctx_at(node, root);
+                                                                        owns t: rb_at(node);
+                                                                        fact c.model == uup;
+                                                                        fact t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib));
+                                                                        fact rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model)));
+                                                                        fact is_rb_root(plug(c.model, t.model)) == 1;
+                                                                        fact rb_parent_consistent(plug(c.model, t.model), 0) == 1;
+                                                                    } {
                                                                         Context::Top => {
                                                                             have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                                 rewrite(Context::Top == uu.model);
@@ -2428,6 +2498,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
                                                                                 assumption();
                                                                             }
+                                                                            have c.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                            have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) by { normalize(); }
                                                                         },
                                                                         Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -2493,6 +2565,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
                                                                                 assumption();
                                                                             }
+                                                                            have c.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                            have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) by { normalize(); }
                                                                         },
                                                                         Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -2511,19 +2585,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 assumption();
                                                                             }
                                                                             let { sibling: xs, up: xu } = unfold(uu);
-                                                                            match xsib {
+                                                                            match xsib ensuring {
+                                                                                owns c: ctx_at(node, root);
+                                                                                fact c.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                            } {
                                                                                 RbTree::Empty => {
                                                                                     unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                                    let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                                 RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                                     let { left: yl_at, right: yr_at } = unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                                    let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                             }
-                                                                            let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                             have rb_parent_is(rb_reparent(nleft, gparent), gparent) == 1 by {
                                                                                 apply(rb_reparent_parent_is(nleft, gparent));
                                                                                 assumption();
@@ -2569,6 +2649,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
                                                                                 assumption();
                                                                             }
+                                                                            have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                            have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) by { normalize(); }
                                                                         },
                                                                     }
                                                                     have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
@@ -2676,7 +2758,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             step();
                                                             have tmp == node by { simp(); }
                                                             step();
-                                                            match nr_at.model {
+                                                            match nr_at.model ensuring {
+                                                                owns bn: rb_at(tmp);
+                                                                fact bn.model == rb_reparent(nright, cid);
+                                                            } {
                                                                 RbTree::Empty => {
                                                                     have nright == RbTree::Empty by {
                                                                         rewrite(nright == nr_at.model);
@@ -2744,7 +2829,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib) }, { left: bn, right: cs });
                                                             step();
                                                             step();
-                                                            match nl_at.model {
+                                                            match nl_at.model ensuring {
+                                                                owns rn: rb_at(tmp);
+                                                                fact rn.model == rb_reparent(nleft, gparent);
+                                                            } {
                                                                 RbTree::Empty => {
                                                                     have nleft == RbTree::Empty by {
                                                                         rewrite(nleft == nl_at.model);
@@ -2811,7 +2899,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                 normalize();
                                                             }
-                                                            match uu.model {
+                                                            match uu.model ensuring {
+                                                                owns c: ctx_at(node, root);
+                                                                owns t: rb_at(node);
+                                                                fact c.model == uup;
+                                                                fact t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Empty, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib));
+                                                                fact rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model)));
+                                                                fact is_rb_root(plug(c.model, t.model)) == 1;
+                                                                fact rb_parent_consistent(plug(c.model, t.model), 0) == 1;
+                                                            } {
                                                                 Context::Top => {
                                                                     have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                         rewrite(Context::Top == uu.model);
@@ -2887,6 +2983,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Empty, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
                                                                         assumption();
                                                                     }
+                                                                    have c.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                    have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Empty, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) by { normalize(); }
                                                                 },
                                                                 Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -2952,6 +3050,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Empty, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
                                                                         assumption();
                                                                     }
+                                                                    have c.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                    have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Empty, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) by { normalize(); }
                                                                 },
                                                                 Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -2970,19 +3070,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         assumption();
                                                                     }
                                                                     let { sibling: xs, up: xu } = unfold(uu);
-                                                                    match xsib {
+                                                                    match xsib ensuring {
+                                                                        owns c: ctx_at(node, root);
+                                                                        fact c.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                            let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                         RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                             let { left: yl_at, right: yr_at } = unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                            let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                     }
-                                                                    let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                     have rb_parent_is(rb_reparent(nleft, gparent), gparent) == 1 by {
                                                                         apply(rb_reparent_parent_is(nleft, gparent));
                                                                         assumption();
@@ -3028,6 +3134,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Empty, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)));
                                                                         assumption();
                                                                     }
+                                                                    have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                    have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(gparent, nid, Color::Red, RbTree::Empty, rb_reparent(nleft, gparent)), RbTree::Node(cid, nid, Color::Red, rb_reparent(nright, cid), csib)) by { normalize(); }
                                                                 },
                                                             }
                                                             have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
@@ -3484,7 +3592,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     step();
                                                                     have tmp == node by { simp(); }
                                                                     step();
-                                                                    match nl_at.model {
+                                                                    match nl_at.model ensuring {
+                                                                        owns bn: rb_at(tmp);
+                                                                        fact bn.model == rb_reparent(nleft, cid);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             have nleft == RbTree::Empty by {
                                                                                 rewrite(nleft == nl_at.model);
@@ -3552,7 +3663,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)) }, { left: cs, right: bn });
                                                                     step();
                                                                     step();
-                                                                    match nr_at.model {
+                                                                    match nr_at.model ensuring {
+                                                                        owns rn: rb_at(tmp);
+                                                                        fact rn.model == rb_reparent(nright, gparent);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             have nright == RbTree::Empty by {
                                                                                 rewrite(nright == nr_at.model);
@@ -3619,7 +3733,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                         normalize();
                                                                     }
-                                                                    match uu.model {
+                                                                    match uu.model ensuring {
+                                                                        owns c: ctx_at(node, root);
+                                                                        owns t: rb_at(node);
+                                                                        fact c.model == uup;
+                                                                        fact t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr)));
+                                                                        fact rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model)));
+                                                                        fact is_rb_root(plug(c.model, t.model)) == 1;
+                                                                        fact rb_parent_consistent(plug(c.model, t.model), 0) == 1;
+                                                                    } {
                                                                         Context::Top => {
                                                                             have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                                 rewrite(Context::Top == uu.model);
@@ -3695,6 +3817,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr))));
                                                                                 assumption();
                                                                             }
+                                                                            have c.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                            have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr))) by { normalize(); }
                                                                         },
                                                                         Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -3760,6 +3884,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr))));
                                                                                 assumption();
                                                                             }
+                                                                            have c.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                            have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr))) by { normalize(); }
                                                                         },
                                                                         Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -3778,19 +3904,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 assumption();
                                                                             }
                                                                             let { sibling: xs, up: xu } = unfold(uu);
-                                                                            match xsib {
+                                                                            match xsib ensuring {
+                                                                                owns c: ctx_at(node, root);
+                                                                                fact c.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                            } {
                                                                                 RbTree::Empty => {
                                                                                     unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                                    let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                                 RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                                     let { left: yl_at, right: yr_at } = unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                                    let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                             }
-                                                                            let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                             have rb_parent_is(rb_reparent(nright, gparent), gparent) == 1 by {
                                                                                 apply(rb_reparent_parent_is(nright, gparent));
                                                                                 assumption();
@@ -3836,6 +3968,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr))));
                                                                                 assumption();
                                                                             }
+                                                                            have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                            have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Node(unid, gparent, Color::Black, unl, unr))) by { normalize(); }
                                                                         },
                                                                     }
                                                                     have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
@@ -3942,7 +4076,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             step();
                                                             have tmp == node by { simp(); }
                                                             step();
-                                                            match nl_at.model {
+                                                            match nl_at.model ensuring {
+                                                                owns bn: rb_at(tmp);
+                                                                fact bn.model == rb_reparent(nleft, cid);
+                                                            } {
                                                                 RbTree::Empty => {
                                                                     have nleft == RbTree::Empty by {
                                                                         rewrite(nleft == nl_at.model);
@@ -4010,7 +4147,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             let pn = fold(rb_at(parent), { model: RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)) }, { left: cs, right: bn });
                                                             step();
                                                             step();
-                                                            match nr_at.model {
+                                                            match nr_at.model ensuring {
+                                                                owns rn: rb_at(tmp);
+                                                                fact rn.model == rb_reparent(nright, gparent);
+                                                            } {
                                                                 RbTree::Empty => {
                                                                     have nright == RbTree::Empty by {
                                                                         rewrite(nright == nr_at.model);
@@ -4077,7 +4217,15 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                 normalize();
                                                             }
-                                                            match uu.model {
+                                                            match uu.model ensuring {
+                                                                owns c: ctx_at(node, root);
+                                                                owns t: rb_at(node);
+                                                                fact c.model == uup;
+                                                                fact t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Empty));
+                                                                fact rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Node(identity, node_parent, color, left_model, right_model)));
+                                                                fact is_rb_root(plug(c.model, t.model)) == 1;
+                                                                fact rb_parent_consistent(plug(c.model, t.model), 0) == 1;
+                                                            } {
                                                                 Context::Top => {
                                                                     have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                         rewrite(Context::Top == uu.model);
@@ -4153,6 +4301,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Empty)));
                                                                         assumption();
                                                                     }
+                                                                    have c.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                    have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Empty)) by { normalize(); }
                                                                 },
                                                                 Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -4218,6 +4368,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Empty)));
                                                                         assumption();
                                                                     }
+                                                                    have c.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                    have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Empty)) by { normalize(); }
                                                                 },
                                                                 Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -4236,19 +4388,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         assumption();
                                                                     }
                                                                     let { sibling: xs, up: xu } = unfold(uu);
-                                                                    match xsib {
+                                                                    match xsib ensuring {
+                                                                        owns c: ctx_at(node, root);
+                                                                        fact c.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                            let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                         RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                             let { left: yl_at, right: yr_at } = unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                            let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have c.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                     }
-                                                                    let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                     have rb_parent_is(rb_reparent(nright, gparent), gparent) == 1 by {
                                                                         apply(rb_reparent_parent_is(nright, gparent));
                                                                         assumption();
@@ -4294,6 +4452,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Empty)));
                                                                         assumption();
                                                                     }
+                                                                    have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                    have t.model == RbTree::Node(nid, ugp, Color::Black, RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid)), RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), RbTree::Empty)) by { normalize(); }
                                                                 },
                                                             }
                                                             have rb_tree_parent_consistent(plug(c.model, t.model)) == 1 by {
@@ -4589,7 +4749,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         assumption();
                                                                     }
                                                                     have node != 0 by { simp(); }
-                                                                    match cs.model {
+                                                                    match cs.model ensuring {
+                                                                        owns sn: rb_at(tmp);
+                                                                        fact sn.model == rb_reparent(csib, gparent);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             have csib == RbTree::Empty by {
                                                                                 rewrite(csib == cs.model);
@@ -4665,7 +4828,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                         normalize();
                                                                     }
-                                                                    match uu.model {
+                                                                    match uu.model ensuring {
+                                                                        owns uu: ctx_at(parent, root);
+                                                                        owns gn: rb_at(gparent);
+                                                                        fact uu.model == uup;
+                                                                        fact gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(csib, gparent));
+                                                                    } {
                                                                         Context::Top => {
                                                                             have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                                 rewrite(Context::Top == uu.model);
@@ -4727,6 +4895,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(ugp == 0);
                                                                                 simp();
                                                                             }
+                                                                            have uu.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                            have gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(csib, gparent)) by { normalize(); }
                                                                         },
                                                                         Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -4738,6 +4908,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
                                                                                     ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
                                                                                 }
+                                                                                assumption();
+                                                                            }
+                                                                            have uup == Context::Left(xid, xgp, xcol, xsib, xup) by {
+                                                                                rewrite(uup == uu.model);
                                                                                 assumption();
                                                                             }
                                                                             let { sibling: xs, up: xu } = unfold(uu);
@@ -4765,6 +4939,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                                 simp();
                                                                             }
+                                                                            have uu.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                            have gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(csib, gparent)) by { normalize(); }
                                                                         },
                                                                         Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                             have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -4778,20 +4954,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 }
                                                                                 assumption();
                                                                             }
+                                                                            have uup == Context::Right(xid, xgp, xcol, xsib, xup) by {
+                                                                                rewrite(uup == uu.model);
+                                                                                assumption();
+                                                                            }
                                                                             let { sibling: xs, up: xu } = unfold(uu);
-                                                                            match xsib {
+                                                                            match xsib ensuring {
+                                                                                owns uu: ctx_at(parent, root);
+                                                                                fact uu.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                            } {
                                                                                 RbTree::Empty => {
                                                                                     unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                                    let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                                 RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                                     let { left: yl_at, right: yr_at } = unfold(xs);
                                                                                     step();
                                                                                     let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                                    let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                                    have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                                 },
                                                                             }
-                                                                            let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                             have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
                                                                                 apply(rb_reparent_parent_is(csib, gparent));
                                                                                 assumption();
@@ -4814,6 +5000,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                                 simp();
                                                                             }
+                                                                            have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                            have gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(csib, gparent)) by { normalize(); }
                                                                         },
                                                                     }
                                                                     let c = fold(ctx_at(node, root), { model: Context::Right(cid, ugp, Color::Black, RbTree::Node(gparent, cid, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), rb_reparent(csib, gparent)), uup) }, { sibling: gn, up: uu });
@@ -4929,7 +5117,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 assumption();
                                                             }
                                                             have node != 0 by { simp(); }
-                                                            match cs.model {
+                                                            match cs.model ensuring {
+                                                                owns sn: rb_at(tmp);
+                                                                fact sn.model == rb_reparent(csib, gparent);
+                                                            } {
                                                                 RbTree::Empty => {
                                                                     have csib == RbTree::Empty by {
                                                                         rewrite(csib == cs.model);
@@ -5005,7 +5196,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 rewrite((gparent->__rb_parent_color & 1) == 1);
                                                                 normalize();
                                                             }
-                                                            match uu.model {
+                                                            match uu.model ensuring {
+                                                                owns uu: ctx_at(parent, root);
+                                                                owns gn: rb_at(gparent);
+                                                                fact uu.model == uup;
+                                                                fact gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Empty, rb_reparent(csib, gparent));
+                                                            } {
                                                                 Context::Top => {
                                                                     have ctx_node_is(Context::Top, ugp) == 1 by {
                                                                         rewrite(Context::Top == uu.model);
@@ -5067,6 +5263,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         rewrite(ugp == 0);
                                                                         simp();
                                                                     }
+                                                                    have uu.model == uup by { rewrite(uup == Context::Top); normalize(); }
+                                                                    have gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Empty, rb_reparent(csib, gparent)) by { normalize(); }
                                                                 },
                                                                 Context::Left(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -5078,6 +5276,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         apply(ctx_node_is_left_identity(xid, xgp, xcol, xsib, xup, ugp)) using {
                                                                             ctx_node_is(Context::Left(xid, xgp, xcol, xsib, xup), ugp) == 1;
                                                                         }
+                                                                        assumption();
+                                                                    }
+                                                                    have uup == Context::Left(xid, xgp, xcol, xsib, xup) by {
+                                                                        rewrite(uup == uu.model);
                                                                         assumption();
                                                                     }
                                                                     let { sibling: xs, up: xu } = unfold(uu);
@@ -5105,6 +5307,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                         simp();
                                                                     }
+                                                                    have uu.model == uup by { rewrite(uup == Context::Left(xid, xgp, xcol, xsib, xup)); normalize(); }
+                                                                    have gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Empty, rb_reparent(csib, gparent)) by { normalize(); }
                                                                 },
                                                                 Context::Right(xid, xgp, xcol, xsib, xup) => {
                                                                     have ctx_node_is(Context::Right(xid, xgp, xcol, xsib, xup), ugp) == 1 by {
@@ -5118,20 +5322,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                         }
                                                                         assumption();
                                                                     }
+                                                                    have uup == Context::Right(xid, xgp, xcol, xsib, xup) by {
+                                                                        rewrite(uup == uu.model);
+                                                                        assumption();
+                                                                    }
                                                                     let { sibling: xs, up: xu } = unfold(uu);
-                                                                    match xsib {
+                                                                    match xsib ensuring {
+                                                                        owns uu: ctx_at(parent, root);
+                                                                        fact uu.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    } {
                                                                         RbTree::Empty => {
                                                                             unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(0), { model: RbTree::Empty });
+                                                                            let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                         RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                             let { left: yl_at, right: yr_at } = unfold(xs);
                                                                             step();
                                                                             let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
+                                                                            let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                            have uu.model == Context::Right(xid, xgp, xcol, xsib, xup) by { normalize(); }
                                                                         },
                                                                     }
-                                                                    let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
                                                                     have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
                                                                         apply(rb_reparent_parent_is(csib, gparent));
                                                                         assumption();
@@ -5154,6 +5368,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have parent->__rb_parent_color == address(ugp) + (parent->__rb_parent_color & 1) by {
                                                                         simp();
                                                                     }
+                                                                    have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                    have gn.model == RbTree::Node(gparent, cid, Color::Red, RbTree::Empty, rb_reparent(csib, gparent)) by { normalize(); }
                                                                 },
                                                             }
                                                             let c = fold(ctx_at(node, root), { model: Context::Right(cid, ugp, Color::Black, RbTree::Node(gparent, cid, Color::Red, RbTree::Empty, rb_reparent(csib, gparent)), uup) }, { sibling: gn, up: uu });

@@ -4910,6 +4910,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state(
     events.iter().find_map(|event| match event {
         CheckedExecutionEvent::ProofCase(_)
         | CheckedExecutionEvent::Context(_)
+        | CheckedExecutionEvent::StatementEffects(_)
         | CheckedExecutionEvent::Call(_) => None,
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
         CheckedExecutionEvent::ResourceObservation(observation) => Some(observation.before_state()),
@@ -4985,6 +4986,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::Call(_)
                 | CheckedExecutionEvent::Condition(_)
                 | CheckedExecutionEvent::Context(_)
+                | CheckedExecutionEvent::StatementEffects(_)
                 | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
                 | CheckedExecutionEvent::ResourceObservation(_)
                 | CheckedExecutionEvent::ResourceRewrite(_)
