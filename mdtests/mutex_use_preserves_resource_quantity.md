@@ -50,7 +50,6 @@ abstract resource increment_credit(counter: struct mutex_counter*);
 resource counter_state(counter: struct mutex_counter*) {
     field value: uint32;
     field credits: int32;
-    guarded_by counter->mutex;
     owns counter->value;
     owns credits of increment_credit(counter);
     fact credits >= 0;

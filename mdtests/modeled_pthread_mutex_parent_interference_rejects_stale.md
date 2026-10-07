@@ -39,7 +39,6 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_mutex_parent_interference.c";
 resource counter_state(counter: struct counter*) {
     field value: uint32;
-    guarded_by counter->mu;
     owns counter->value;
     fact counter->value == value;
 }

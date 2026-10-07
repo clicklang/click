@@ -37,7 +37,6 @@ runtime "modeled-pthread";
 
 resource counter_state(p: struct counter*) {
     field value: uint32;
-    guarded_by p->mu;
     owns p->value;
     fact p->value == value;
 }

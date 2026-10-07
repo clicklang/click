@@ -4,28 +4,27 @@ This is the consumer inventory and migration record for `issues/authority-migrat
 
 ## Current status
 
-Milestones 1–3 of the migration issue are complete. The sequential refcount project, the shared-parent design project, the bounded-pool project, and every sequential mdtest population consumer select authority semantics. The remaining legacy consumers are listed in the next section:
+Milestones 1–4 of the migration issue are complete. The sequential refcount project, the shared-parent design project, the bounded-pool project, every sequential mdtest population consumer, and every mutex count fixture without workers select authority semantics. The remaining legacy consumers are listed in the next section:
 
-- 34 count fixtures in the mutex and worker groups (milestones 4 and 6);
-- 64 `guarded_by` fixtures (milestone 5), eight of which are also in the mutex count group and migrate with it in milestone 4;
+- 21 count fixtures in the worker groups (milestone 6);
+- 2 `guarded_by` fixtures, both in the worker protected-memory group, which migrate in milestone 6;
 - `fold_negative_quantity_legacy_control.md`, a deliberate legacy control retired in milestone 7 against its authority replacement `fold_rejects_a_negative_quantity.md`.
 
 Remaining `count(` search hits outside these groups are C functions named `count` or the standard library's array `count(p, lo, hi, x)`; none observes a declared-resource population.
 
 ## Remaining legacy groups
 
-These fixtures use the legacy path. The two worker families are intentionally separate: ordinary abstract accounting does not prove a protected C counter equality. The issue assigns the count-and-protected-memory group to milestone 4, the `guarded_by` group to milestone 5, and both worker groups to milestone 6.
+These fixtures use the legacy path. The two worker families are intentionally separate: ordinary abstract accounting does not prove a protected C counter equality. The issue assigns the `guarded_by` group to milestone 5 and the worker groups, including the two worker fixtures with protected memory, to milestone 6.
 
 | Group | Files and preserved behavior |
 | --- | --- |
 | Abstract workers and joins | `modeled_pthread_counted_join.md`, `modeled_pthread_counted_reverse_join.md`, `modeled_pthread_counted_before_join.md`, `modeled_pthread_counted_join_stale.md`, `modeled_pthread_counted_neutral_pending.md`, `modeled_pthread_counted_pending_helper.md`, `modeled_pthread_counted_pending_wildcard.md`, `modeled_pthread_counted_overlap_rejected.md`, `modeled_pthread_thread_confined_resource_rejected.md`: worker transfer and join, failure to observe pending/stale counts, wildcard refusal, independent/reversed joins, and overlap/confinement rejection. The [worker authority protocol](worker-authority-protocol.md) maps each fixture to its replacement. |
 | Shared abstract worker population | `modeled_pthread_counted_shared_join.md`, `modeled_pthread_counted_shared_forward_join.md`, `modeled_pthread_counted_shared_partial_then_create.md`, `modeled_pthread_counted_shared_retained.md`, `modeled_pthread_counted_shared_symbolic.md`, `modeled_pthread_counted_shared_neutral.md`, `modeled_pthread_counted_shared_observer.md`, `modeled_pthread_counted_shared_stale.md`, `modeled_pthread_counted_shared_early_count.md`, `modeled_pthread_counted_shared_missing_unit.md`: shared worker-ticket accounting, create failure, either join order, retained units, and early/stale/missing-unit refusals. These no-lock workers follow the frozen [worker authority protocol](worker-authority-protocol.md): only one worker may hold the authority, others borrow members, and join cannot retroactively authorize a worker update. |
-| Count and protected memory | `population_conservation_local_mutex.md`, `population_conservation_local_mutex_bad_increment.md`, `population_mutex_helper_held.md`, `population_mutex_helper_unheld.md`, `population_mutex_cleanup_held.md`, `population_mutex_direct_read_unheld.md`, `population_mutex_hidden_unit_at_release.md`, `population_mutex_incomplete_publication.md`, `population_mutex_second_custodian.md`, `mutex_population_separate_body.md`, `mutex_population_missing_value_relation.md`, `mutex_population_body_helper.md`, `mutex_population_body_view_helper.md`, `mutex_population_body_missing.md`, `mutex_population_body_missing_direct.md`: held/unheld helper access, complete publication/release, local conservation, exclusive custodian, and separation of contribution count from concrete counter value. The missing-value-relation case must continue to fail. |
-| `guarded_by` positive and negative | `guarded_resource_mutex_flow.md`, `guarded_resource_unlock_unfolded_rejected.md`, `guarded_resource_wrong_mutex_rejected.md`, `modeled_pthread_mutex_early_destroy.md`, `modeled_pthread_mutex_parent_interference.md`, `modeled_pthread_mutex_parent_interference_rejects_stale.md`; plus `mutex_guard_*.md`, `mutex_use_*.md`, `mutex_helper_transfers*.md`, `mutex_lifetime_named*.md`, `mutex_resource_quantity_requires_conservation.md`, `mutex_unlock_missing_guard_and_invariant.md`, and `runtime_mutex_contract_*.md`. These families hold 56 of the 64 `guarded_by` fixtures; the other eight are the six `mutex_population_*` and two `population_conservation_local_mutex*` fixtures in the protected-memory row. The glob families are finite and discoverable with the commands below. Preserve authenticated protected-resource type and initialization identity, folded restoration, wrong-mutex/stale-state rejection, and mutex lifetime/use/guard behavior while removing the annotation. |
+| Count and protected memory with workers | `mutex_population_separate_body.md`, `mutex_population_missing_value_relation.md`: separation of contribution count from concrete counter value. Both count contributions that `pthread_create` workers consume, so they migrate with the shared worker population in milestone 6 chunk 3. The missing-value-relation case must continue to fail. |
 
 `guarded_by` also appears in `src/languages/c/modeled_pthread_spec.md` and the implementation paths named below. The plain mutex tests without the annotation remain neighboring controls for ordinary mutex transfer; they are not authorization to drop the guarded negative cases.
 
-For the explicitly named concurrent fixtures, the **fail** `expect` blocks are: `modeled_pthread_counted_before_join.md`, `modeled_pthread_counted_join_stale.md`, `modeled_pthread_counted_neutral_pending.md`, `modeled_pthread_counted_pending_helper.md`, `modeled_pthread_counted_pending_wildcard.md`, `modeled_pthread_counted_overlap_rejected.md`, `modeled_pthread_thread_confined_resource_rejected.md`, `modeled_pthread_counted_shared_early_count.md`, `modeled_pthread_counted_shared_missing_unit.md`, `modeled_pthread_counted_shared_observer.md`, `modeled_pthread_counted_shared_stale.md`, `population_conservation_local_mutex_bad_increment.md`, `population_mutex_cleanup_held.md`, `population_mutex_direct_read_unheld.md`, `population_mutex_helper_unheld.md`, `population_mutex_hidden_unit_at_release.md`, `population_mutex_incomplete_publication.md`, `population_mutex_second_custodian.md`, `mutex_population_body_missing.md`, `mutex_population_body_missing_direct.md`, `mutex_population_missing_value_relation.md`, `guarded_resource_unlock_unfolded_rejected.md`, `guarded_resource_wrong_mutex_rejected.md`, `modeled_pthread_mutex_early_destroy.md`, `modeled_pthread_mutex_parent_interference_rejects_stale.md`, `mutex_resource_quantity_requires_conservation.md`, and `mutex_unlock_missing_guard_and_invariant.md`. Every other individually named concurrent mdtest above has a success `expect` block. For the `mutex_guard_*`, `mutex_use_*`, `mutex_helper_transfers*`, `mutex_lifetime_named*`, and `runtime_mutex_contract_*` families, inspect each `expect` block before migrating that family; both passes and refusals are present. The expected failures include unsuffixed `..._observer.md` and `..._cleanup_held.md`, so migration must not infer outcome from the filename.
+For the explicitly named concurrent fixtures, the **fail** `expect` blocks are: `modeled_pthread_counted_before_join.md`, `modeled_pthread_counted_join_stale.md`, `modeled_pthread_counted_neutral_pending.md`, `modeled_pthread_counted_pending_helper.md`, `modeled_pthread_counted_pending_wildcard.md`, `modeled_pthread_counted_overlap_rejected.md`, `modeled_pthread_thread_confined_resource_rejected.md`, `modeled_pthread_counted_shared_early_count.md`, `modeled_pthread_counted_shared_missing_unit.md`, `modeled_pthread_counted_shared_observer.md`, `modeled_pthread_counted_shared_stale.md`, `population_conservation_local_mutex_bad_increment.md`, `population_mutex_cleanup_held.md`, `population_mutex_direct_read_unheld.md`, `population_mutex_helper_unheld.md`, `population_mutex_hidden_unit_at_release.md`, `population_mutex_incomplete_publication.md`, `population_mutex_second_custodian.md`, `mutex_population_body_missing.md`, `mutex_population_body_missing_direct.md`, `mutex_population_missing_value_relation.md`, `guarded_resource_unlock_unfolded_rejected.md`, `guarded_resource_wrong_mutex_rejected.md`, `modeled_pthread_mutex_early_destroy.md`, `modeled_pthread_mutex_parent_interference_rejects_stale.md`, `mutex_resource_quantity_requires_conservation.md`, and `mutex_unlock_missing_guard_and_invariant.md`. Every other individually named concurrent mdtest above has a success `expect` block. The `mutex_guard_*`, `mutex_use_*`, `mutex_helper_transfers*`, `mutex_lifetime_named*`, and `runtime_mutex_contract_*` families contain both passes and refusals; milestone 5 kept every checked-in outcome, as its migration record lists. The expected failures include unsuffixed `..._observer.md` and `..._cleanup_held.md`, so migration must not infer outcome from the filename.
 
 When a group leaves legacy, record its fixtures or unchanged migrated source proof, positive claims, corresponding rejections, selected verification path, and verify/expand/audit evidence in the migration record below, then move its row to the migrated groups. The final switch must also inspect imported summaries, caches, and certificates; a successful new proof must never retry through legacy consumers.
 
@@ -1023,4 +1022,104 @@ restores the control). Negative:
 `authority_mutex_control_helper_missing_state_rejected.md`,
 `authority_mutex_control_helper_wrong_mutex_rejected.md`, and
 `authority_mutex_control_helper_open_rejected.md`.
+
+**Chunk 3, protected bodies and local conservation:** Six fixtures leave the
+legacy path; each also drops `guarded_by`, since initialization supplies the
+association.
+
+- `mutex_population_body_helper.md` and `mutex_population_body_view_helper.md`
+  (pass), `mutex_population_body_missing.md` (fail: missing `owns
+  p[10..12]`), and `mutex_population_body_missing_direct.md` (fail: missing
+  `views p[10..11]`) select authority with unchanged C, proofs, and
+  outcomes. Each holds a `contribution` unit beside a typed protected
+  counter; the unit still grants no protected memory.
+- `population_conservation_local_mutex.md` (pass) keeps its C and `twice`
+  result of two. The legacy body that owned the counter and counted its own
+  units becomes a field-bearing control that owns the counter and
+  `authority(remaining(p))` and states `p->value == 3 - count(remaining(p))`.
+  `contribute` borrows the authority and counter, folds the control, deposits
+  it at initialization, spends one unit and increments under the lock, and
+  must restore the equation before unlock. `twice` creates the three units
+  under its borrowed authority and spends the last.
+- `population_conservation_local_mutex_bad_increment.md` (fail) keeps its
+  increment by two; restoring the control fails on the conservation
+  equation, fact 3 of 3.
+
+`mutex_population_separate_body.md` and
+`mutex_population_missing_value_relation.md` stay on the legacy path: their
+contributions are consumed by `pthread_create` workers, which authority mode
+refuses until milestone 6. They move to milestone 6 chunk 3.
+
+**Chunk 4, held and unheld helpers and closeout:** The seven
+`population_mutex_*` fixtures leave the legacy path with their C unchanged.
+The legacy member body that owned the counter and stated its own count
+becomes a field-bearing control that owns the counter and
+`authority(member(p))` and states `p->value == count(member(p))`. The caller
+borrows an arbitrary population with zero members, creates three members,
+and deposits the control. `read_member` borrows the authority and the
+counter, and states that it leaves the counter unchanged.
+
+- `population_mutex_helper_held.md` (pass): under the lock, the helper
+  observes the count of three, and the control is restored before unlock.
+- `population_mutex_helper_unheld.md` (fail: `Requires owns
+  authority(member(...))`) and `population_mutex_direct_read_unheld.md`
+  (fail: missing `views p[10..11]`): without an acquisition, the control and
+  its counter stay in the mutex.
+- `population_mutex_cleanup_held.md` (fail: `Requires owns
+  authority(member(p))`): spending members after unlock and before
+  destruction needs the escrowed authority.
+- `population_mutex_hidden_unit_at_release.md` and
+  `population_mutex_incomplete_publication.md` (fail: the claimed count of
+  two does not hold): a member hidden in another wrapper is still counted.
+- `population_mutex_second_custodian.md` (fail: `Requires owns
+  authority(member(...))`): depositing the control in a second mutex removes
+  it from the first critical section.
+
+The legacy refusal messages about complete custody and a second custodian
+no longer appear: authority makes each condition an ordinary ownership or
+count fact. `mutex-resource-contracts.md` marks the legacy custody rule for
+deletion in milestone 7. Milestone 4's exit gate holds: lock gives control
+ownership, unlock requires its restored invariant, a member alone cannot
+expose it, and no authority proof uses counted-population custody.
+
+### Milestone 5: retire `guarded_by` associations
+
+**Chunk 1, core association semantics:** Ten fixtures drop `guarded_by` with
+their C unchanged. Initialization now supplies each association.
+
+- Nine keep their outcomes and messages unchanged:
+  `guarded_resource_mutex_flow.md`, `modeled_pthread_mutex_parent_interference.md`,
+  and `mutex_lifetime_named_runtime.md` (pass), and
+  `guarded_resource_unlock_unfolded_rejected.md` (unfolded restoration),
+  `modeled_pthread_mutex_early_destroy.md` (early destroy),
+  `modeled_pthread_mutex_parent_interference_rejects_stale.md` (stale parent
+  observation), `mutex_lifetime_named_stale_runtime.md` (stale
+  initialization), `mutex_resource_quantity_requires_conservation.md`, and
+  `mutex_unlock_missing_guard_and_invariant.md` (missing guard and state)
+  (fail).
+- `guarded_resource_wrong_mutex_rejected.md` refused publication because the
+  annotation named a different mutex. Without the annotation, depositing
+  `cell_state` in `cell->other` is an ordinary publication, so its unchanged
+  C now fails because `wrong` returns with that mutex still live and holding
+  the state. The wrong-association refusal moves to the new
+  `mutex_association_wrong_mutex_rejected.md`: a helper's typed use of
+  `cell->guard` cannot be supplied by the lifetime of `cell->other` (`Requires
+  owns mutex_use(&cell->guard, cell_state(cell))`).
+
+**Chunk 2, guard family:** The 27 `mutex_guard_*` fixtures that used
+`guarded_by` drop it with their C, proofs, and expectations unchanged. Each
+already deposits its state at a named initialization, so the annotation
+added no association. All keep their checked-in outcomes and messages: 9
+pass and 18 fail, including the preserving-contract, incomplete-fold,
+missing-guard, live-acquisition, duplicated-guard, and missing-storage
+refusals.
+
+**Chunk 3, use, helper-transfer, and runtime-contract families:** The 10
+`mutex_use_*`, 3 `mutex_helper_transfers*`, and 6 `runtime_mutex_contract_*`
+fixtures that used `guarded_by` drop it with their C, proofs, and
+expectations unchanged. All keep their outcomes and messages: 6 pass and 13
+fail. The failures include the wrong-type, untyped, missing-restore,
+stale-acquisition, stale-call, stale-payload, and unlocked-read refusals, and
+the six named-initialization contract refusals. The only remaining
+`guarded_by` fixtures are the two worker `mutex_population_*` fixtures.
 

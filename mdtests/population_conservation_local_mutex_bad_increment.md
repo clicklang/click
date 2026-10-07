@@ -1,7 +1,8 @@
 # Unlock cannot restore a population after two increments
 
 The contract permits consuming one unit. Increasing the value by two cannot
-restore the shared invariant before unlock.
+restore the control's conservation equation, so the control cannot be folded
+again for unlock.
 
 ```c filename=local_conservation.c
 #include <pthread.h>
@@ -16,58 +17,48 @@ void contribute(struct counter *p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "local_conservation.c";
-resource remaining(p: struct counter*) {
+resource remaining(p: struct counter*) {}
+resource control(p: struct counter*) {
+    field value: uint32;
     owns p->value;
+    owns authority(remaining(p));
+    fact p->value == value;
     fact count(remaining(p)) <= 3;
     fact p->value == 3 - count(remaining(p));
 }
-resource counter_state(p: struct counter*) {
-    field retained: int32;
-    guarded_by p->mutex;
-    owns retained of remaining(p);
-    fact retained > 0;
-}
 void contribute(struct counter* p) {
-    owns state: counter_state(p);
+    owns authority(remaining(p));
+    owns p->value;
     consumes remaining(p);
     requires count(remaining(p)) > 1;
-    requires state.retained > 0;
-    requires state.retained <= 2;
-    requires count(remaining(p)) == state.retained + 1;
+    requires count(remaining(p)) <= 3;
+    requires p->value == 3 - count(remaining(p));
     owns &p->mutex;
     requires aligned(&p->mutex, 8);
-    ensures state.retained == old(state.retained);
+    ensures p->value == 3 - count(remaining(p));
 } by {
+    let state = fold(control(p), { value: p->value });
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mutex, 0), { state: state });
     step();
-    let { retained: kept } = unfold(state);
-    open(remaining(p)) {
-        have count(remaining(p)) - 1 == kept by {
-            simp();
-        }
-        have count(remaining(p)) - 1 >= 1 by {
-            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
-        }
-        have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
-        }
-        have count(remaining(p)) - 1 <= 3 by {
-            arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
-        }
-        step();
+    unfold(state);
+    have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
+        arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
     }
-    fold(state);
+    unfold(remaining(p));
+    step();
+    let state = fold(control(p), { value: p->value });
     step();
     step(pthread_mutex_destroy(&p->mutex), { lifetime: lifetime });
+    unfold(state);
     step();
     simp();
 }
 ```
 
 ```expect
-fail: Requires p->value == (3 - count(remaining(p))) after consumption
+fail: fold requires the instance body facts for the proposed fields: fact 3 of 3 of the resource body is not established
 ```

@@ -183,10 +183,11 @@ change here.
 
 ### Status
 
-Milestones 1–3 are complete, building on the foundation that the earlier
+Milestones 1–4 are complete, building on the foundation that the earlier
 checkpoints 0–5 delivered. Authority semantics now cover sequential refcount,
-shared-parent ownership, the bounded pool, field-bearing named members, and
-every sequential population consumer. The approved
+shared-parent ownership, the bounded pool, field-bearing named members,
+every sequential population consumer, and mutex-held authority controls.
+Milestone 6 chunk 1, the worker protocol freeze, is also complete. The approved
 [object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md)
 governs establishment and retirement. The
 [consumer inventory](../docs/internals/authority-migration-inventory.md) lists
@@ -198,8 +199,8 @@ holds only the plan.
 | 1. Bounded pool | Complete | Original pool C verifies initialization, checkout/return, resize, transfer, and cleanup |
 | 2. Member identity and proof fields | Complete | Count identified members without erasing private proof state |
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
-| 4. Mutex-held authority controls | Chunks 1–2 complete; 2 chunks | Ordinary protected controls replace counted-population mutex custody |
-| 5. Retire `guarded_by` associations | 4 chunks | No active `guarded_by` consumer; associations come from checked initialization |
+| 4. Mutex-held authority controls | Complete | Ordinary protected controls replace counted-population mutex custody |
+| 5. Retire `guarded_by` associations | Chunks 1–3 complete; 1 chunk | No active `guarded_by` consumer; associations come from checked initialization |
 | 6. Concurrent lifetime and worker accounting | Chunk 1 complete; 3 chunks | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
 
@@ -207,8 +208,8 @@ The remaining plan is **four milestones of four chunks**. These are planning
 estimates, not promises. The milestone 6 worker protocol is now frozen and
 needs no new syntax or kernel algebra. Tooling repairs may still add chunks.
 
-What remains on the legacy path is 34 mutex and worker count fixtures and 64
-`guarded_by` fixtures. Eight fixtures appear in both groups. One deliberate
+What remains on the legacy path is 21 worker count fixtures; two of them are
+also the last `guarded_by` fixtures. One deliberate
 legacy control, `fold_negative_quantity_legacy_control.md`, stays until
 milestone 7. The inventory names every file.
 
@@ -268,10 +269,14 @@ milestone 7. The inventory names every file.
    `mutex_population_*` fixtures and both `population_conservation_local_mutex*`
    fixtures. These also use `guarded_by`, so they migrate both concerns at
    once. The missing-value-relation and bad-increment cases must still fail.
+   **Complete** for six of the eight. `mutex_population_separate_body.md` and
+   `mutex_population_missing_value_relation.md` count contributions consumed
+   by `pthread_create` workers, so they move to milestone 6 chunk 3.
 4. **Held/unheld helpers and closeout.** Migrate the seven `population_mutex_*`
    fixtures: held and unheld helper access, unheld direct reads, complete
    publication and release, hidden units, and the second custodian. Update the
-   mutex internals documentation.
+   mutex internals documentation. **Complete:** all seven select authority;
+   the inventory records each replacement refusal.
 
 **Exit gate:** Lock gives control ownership, unlock requires its restored
 invariant, and a member alone cannot expose it. No authority proof or helper
@@ -289,13 +294,16 @@ milestone 7; this milestone removes consumers, not the syntax.
    `mutex_unlock_missing_guard_and_invariant.md`. Together these cover
    authenticated protected types, initialization identity, folded restoration,
    wrong-mutex and stale-state rejection, early destroy, and parent interference.
-   They set the replacement pattern for the remaining families.
+   They set the replacement pattern for the remaining families. **Complete:**
+   the inventory's milestone 5 record lists each outcome; the wrong-mutex
+   refusal moves to a typed-use companion fixture.
 2. **Guard family.** Migrate the 27 guarded `mutex_guard_*` fixtures. Inspect
    each `expect` block; the family contains both passes and refusals. This chunk
    is mostly mechanical once chunk 1 lands, and may land as two increments.
+   **Complete:** all 27 keep their outcomes and messages.
 3. **Use, helper-transfer, and runtime-contract families.** Migrate the 10
    guarded `mutex_use_*`, 3 guarded `mutex_helper_transfers*`, and 6
-   `runtime_mutex_contract_*` fixtures.
+   `runtime_mutex_contract_*` fixtures. **Complete:** all keep their outcomes.
 4. **Specification, documentation, and audit.** Update
    `src/languages/c/modeled_pthread_spec.md`, `docs/concepts/resources.md`,
    `docs/internals/mutex-resource-contracts.md`,
@@ -323,7 +331,8 @@ negatives retain their refusals through ordinary initialization and transfer.
    protocol with independent certificate checks and misuse regressions,
    rejecting premature observation and reclamation. Migrate the nine abstract
    worker and join fixtures.
-3. **Shared worker population.** Migrate the ten shared-population fixtures:
+3. **Shared worker population.** Migrate the ten shared-population fixtures
+   and the two worker `mutex_population_*` fixtures moved from milestone 4:
    create failure, either join order, retained units, symbolic joins, and
    early, stale, observer, and missing-unit refusals.
 4. **Shared-refcount acceptance example.** Freeze and verify a small ordinary

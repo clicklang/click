@@ -12,14 +12,13 @@ unsigned int read_locked(struct counter *p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_body_helper.c";
 abstract resource contribution(p: struct counter*);
 resource counter_state(p: struct counter*) {
     field value: uint32;
-    guarded_by p->mutex;
     owns p->value;
     fact p->value == value;
 }

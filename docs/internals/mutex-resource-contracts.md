@@ -416,31 +416,32 @@ suspended-worker protocol transfer or stateful population confinement.
 
 ## Local counted-population payloads
 
-A field-bearing payload may contain a positive quantity of one unconditional
-counted resource with a memory body. Initialization must own the complete
-population: the wrapper's quantity plus all directly held units must equal
-`count`. Resource parameters alone determine which population the wrapper
-contains; the wrapper's fields may determine its retained quantity.
+This section describes the legacy rule, which milestone 7 of
+`issues/authority-migration.md` deletes. Under legacy semantics a
+field-bearing payload may contain a positive quantity of one unconditional
+counted resource whose memory body states its own count. Initialization must
+own the complete population. While unlocked, retained units carry membership
+without body access, and release requires every unit accounted for. The
+kernel represents that guarded membership separately, bound to the
+initialization identity, and a second mutex cannot take custody of the same
+population.
 
-While unlocked, retained units carry membership without body access. An
-ordinary unit-taking helper therefore also needs the acquisition; a missing
-acquisition reports `Requires owns mutex_guard(mu)`. Acquisition restores the
-body permission. Release requires every unit accounted for, a closed body,
-and no active memory loan before withdrawing that permission. Destroy returns
-the local population representation; full-population cleanup is forbidden
-until then. A second mutex cannot acquire custody of the same population.
+No fixture depends on this rule any more. The seven `population_mutex_*`
+fixtures, the two `population_conservation_local_mutex*` fixtures, and the
+four `mutex_population_body_*` fixtures select authority semantics. Their
+protected payload is an authority-bearing control, described in the next
+section. Each legacy refusal becomes an ordinary ownership refusal:
 
-The kernel represents guarded membership separately from body-bearing units,
-bound to the initialization identity. This adds no source keyword or declared
-resource type. Converting membership does not change Count. Hidden units are
-not collected from arbitrary wrappers: missing complete ownership is a refusal.
-
-This slice supports local concrete mutexes only. Lending typed use authority,
-worker transfer, independent acquisition observations, and join accounting for
-these payloads remain unsupported. The positive and negative helper fixtures
-are `mdtests/population_mutex_helper_held.md` and
-`mdtests/population_mutex_helper_unheld.md`; the quantity-bearing consumption
-control is `mdtests/population_conservation_local_mutex.md`.
+- **Unheld helper access and unheld direct reads.** The control owns the
+  counter and the authority, and it is in the mutex. Without an acquisition,
+  a helper that borrows them cannot be called, and the C read has no
+  ownership.
+- **Cleanup while the mutex is live.** Spending members needs the authority,
+  which destruction returns.
+- **Hidden units at publication or release.** A member moved into another
+  wrapper is still counted, so a smaller total cannot be claimed.
+- **A second custodian.** The control is exclusive. Depositing it in a second
+  mutex removes it from the first critical section.
 
 ## Authority-bearing controls
 

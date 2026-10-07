@@ -15,7 +15,6 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 resource cell_state(cell: struct cell*) {
     field value: int32;
-    guarded_by cell->mu;
     owns cell->value;
     fact cell->value == value;
 }

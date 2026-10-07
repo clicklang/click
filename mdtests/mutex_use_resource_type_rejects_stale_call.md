@@ -22,7 +22,6 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 resource counter_state(counter: struct counter*) {
     field value: uint32;
-    guarded_by counter->mu;
     owns counter->value;
     fact counter->value == value;
 }
