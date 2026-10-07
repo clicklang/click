@@ -1384,3 +1384,8 @@ member or authority event. Authority semantics no longer refuse them; the
 same guard and coverage checks apply. Regressions:
 `authority_mode_iterated_gather_scatter.md` and
 `authority_mode_iterated_take_false_guard_rejected.md`.
+
+Loop exits that reach the join through different calls carry different
+creation-ledger successors. When neither ledger records anything, the exits
+now join as the certification checks of chunk 1c compare them. Regression:
+`authority_mode_loop_exits_after_calls_join.md`.
