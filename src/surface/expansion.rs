@@ -288,12 +288,7 @@ pub fn expand_c0_claim_source(
             unreachable!("function claim edits are never loop phases")
         }
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
-    Ok(expanded)
+    Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
 fn expand_c0_project_claim_source(
@@ -335,12 +330,7 @@ fn expand_c0_project_claim_source(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
-    Ok(expanded)
+    Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
 fn expand_c0_prepared_project_claim_source(
@@ -382,12 +372,7 @@ fn expand_c0_prepared_project_claim_source(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
-    Ok(expanded)
+    Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
 fn expand_c0_prepared_claim_source(
@@ -427,12 +412,7 @@ fn expand_c0_prepared_claim_source(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
-    Ok(expanded)
+    Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
 /// Expands one function claim selected by the same stable label used by
@@ -792,12 +772,7 @@ fn expand_program_prepared_claim_source_context(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
-    Ok(expanded)
+    Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
 pub use crate::source::SourcePosition;
@@ -1442,11 +1417,12 @@ fn expand_c0_tactic_source_at_context(
         span
     };
     let replacement = indent_replacement(click_source, span.start, &replacement);
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
+    let expanded = splice_source(
+        click_source,
+        &scan_source_tokens(click_source)?,
+        &span,
+        &replacement,
+    );
     if let Some(project) = project {
         let rewritten = project.with_entry_source(expanded.clone());
         let sources = CSourceContext::bundle(c_sources).with_click_project(&rewritten);
@@ -1646,11 +1622,12 @@ fn expand_program_prepared_tactic_source_at_context(
             (span, replacement)
         }
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
+    let expanded = splice_source(
+        click_source,
+        &scan_source_tokens(click_source)?,
+        &span,
+        &replacement,
+    );
     checked_expanded_source(click_source, &sources, &replacement, expanded)
 }
 
@@ -1779,11 +1756,12 @@ fn expand_c0_prepared_tactic_source_at_context(
             (span, replacement)
         }
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
+    let expanded = splice_source(
+        click_source,
+        &scan_source_tokens(click_source)?,
+        &span,
+        &replacement,
+    );
     if let Some(project) = project {
         let rewritten = project.with_entry_source(expanded.clone());
         let project_sources = CSourceContext::prepared(imports).with_click_project(&rewritten);
@@ -1887,12 +1865,7 @@ fn rewrite_verified_pure_theorem(
             unreachable!("theorem ensure edits are never loop phases")
         }
     };
-    let mut expanded =
-        String::with_capacity(click_source.len() - (span.end - span.start) + replacement.len());
-    expanded.push_str(&click_source[..span.start]);
-    expanded.push_str(&replacement);
-    expanded.push_str(&click_source[span.end..]);
-    Ok(expanded)
+    Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
 /// Spells the checked certificate that replaces a whole claim proof.
@@ -2029,7 +2002,104 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
             span: start..index,
         });
     }
+    with_implicit_proof_blocks(tokens)
+}
+
+/// A proof written as one tactic, `by T(args);`, is the block
+/// `by { T(args); }` without its braces. Every reader below addresses a
+/// proof's tactics through the block that holds them, so the scan supplies
+/// the missing pair as zero-width tokens at the tactic's two ends. Their
+/// spans are exact source positions, and [`splice_source`] writes the braces
+/// out whenever a rewrite lands inside one.
+fn with_implicit_proof_blocks(
+    mut tokens: Vec<SourceToken>,
+) -> Result<Vec<SourceToken>, ClickError> {
+    let mut index = 0;
+    while index + 2 < tokens.len() {
+        let starts_tactic_call = tokens[index].text == "by"
+            && tokens[index + 1]
+                .text
+                .starts_with(|character: char| character.is_ascii_alphabetic() || character == '_')
+            && tokens[index + 2].text == "(";
+        if !starts_tactic_call {
+            index += 1;
+            continue;
+        }
+        let first = index + 1;
+        let last = tactic_end_token(&tokens, first, tokens.len())?;
+        let open = tokens[first].span.start;
+        let close = tokens[last].span.end;
+        tokens.insert(
+            last + 1,
+            SourceToken {
+                text: "}".to_string(),
+                span: close..close,
+            },
+        );
+        tokens.insert(
+            first,
+            SourceToken {
+                text: "{".to_string(),
+                span: open..open,
+            },
+        );
+        // Continue inside the tactic: it may hold a nested one-tactic proof.
+        index = first + 1;
+    }
     Ok(tokens)
+}
+
+/// `source` with `span` replaced by `replacement`. A span inside an implicit
+/// proof block (see [`with_implicit_proof_blocks`]) gets that block's braces
+/// written out, since the replacement may be more than one tactic.
+fn splice_source(
+    source: &str,
+    tokens: &[SourceToken],
+    span: &Range<usize>,
+    replacement: &str,
+) -> String {
+    let mut open_blocks = Vec::new();
+    let mut enclosing: Option<Range<usize>> = None;
+    for token in tokens.iter().filter(|token| token.span.is_empty()) {
+        if token.text == "{" {
+            open_blocks.push(token.span.start);
+        } else if let Some(open) = open_blocks.pop()
+            && open <= span.start
+            && span.end <= token.span.start
+            && enclosing
+                .as_ref()
+                .is_none_or(|outer| outer.start <= open && token.span.start <= outer.end)
+        {
+            // Blocks close innermost first, so the first match is the
+            // innermost and later, wider ones are skipped.
+            if enclosing.is_none() {
+                enclosing = Some(open..token.span.start);
+            }
+        }
+    }
+    let whole_block_rewritten_as_a_block = enclosing.as_ref().is_some_and(|block| {
+        block.start == span.start
+            && block.end == span.end
+            && replacement.trim_start().starts_with('{')
+    });
+    let mut spliced = String::with_capacity(source.len() + replacement.len() + 4);
+    match enclosing {
+        Some(block) if !whole_block_rewritten_as_a_block => {
+            spliced.push_str(&source[..block.start]);
+            spliced.push_str("{ ");
+            spliced.push_str(&source[block.start..span.start]);
+            spliced.push_str(replacement);
+            spliced.push_str(&source[span.end..block.end]);
+            spliced.push_str(" }");
+            spliced.push_str(&source[block.end..]);
+        }
+        _ => {
+            spliced.push_str(&source[..span.start]);
+            spliced.push_str(replacement);
+            spliced.push_str(&source[span.end..]);
+        }
+    }
+    spliced
 }
 
 /// Every block whose proof the expansion tools address: the C function

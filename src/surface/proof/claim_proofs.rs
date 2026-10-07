@@ -2954,7 +2954,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     ProofTactic::Witness(witness.clone()),
                                 );
                             }
-                            PostExecutionTactic::Intro => {
+                            PostExecutionTactic::Intro(rename) => {
                                 let (claim_index, surface_goal, proof) =
                                     match existence_proof.take() {
                                         Some(active) => active,
@@ -2976,7 +2976,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                 let proof = proof
                                     .refresh_outcome_from(required_outcome(&outcome_proof)?)?
-                                    .apply_step(ProofStep::Intro)?;
+                                    .apply_step(match rename {
+                                        Some(name) => ProofStep::IntroAs(name.clone()),
+                                        None => ProofStep::Intro,
+                                    })?;
                                 existence_proof = Some((claim_index, surface_goal, proof));
                                 introduced_claim_scope = true;
                                 record_post_execution_surface_tactic(
@@ -2990,7 +2993,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                         .as_ref(),
                                     post_execution_index,
                                     *tactic_index,
-                                    ProofTactic::Intro,
+                                    match rename {
+                                        Some(name) => ProofTactic::IntroAs(name.clone()),
+                                        None => ProofTactic::Intro,
+                                    },
                                 );
                             }
                             PostExecutionTactic::Assumption => {

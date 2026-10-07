@@ -1307,7 +1307,8 @@ pub(super) enum PostExecutionTactic {
     Choose(ProofChoice),
     LetSatisfy(ProofLetSatisfy),
     Witness(ProofWitness),
-    Intro,
+    /// `intro()`, or `intro() as name` with the chosen name.
+    Intro(Option<String>),
     Assumption,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
@@ -1586,7 +1587,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::Choose(_) => ("choose", "simple"),
         PostExecutionTactic::LetSatisfy(_) => ("obtain", "simple"),
         PostExecutionTactic::Witness(_) => ("witness", "simple"),
-        PostExecutionTactic::Intro => ("intro", "simple"),
+        PostExecutionTactic::Intro(_) => ("intro", "simple"),
         PostExecutionTactic::Assumption => ("assumption", "simple"),
         PostExecutionTactic::Normalize => ("normalize", "simple"),
         PostExecutionTactic::NormalizeUsing(_) => ("normalize", "simple"),

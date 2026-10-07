@@ -642,7 +642,8 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
         ProofTactic::Choose(choice) => Some(PostExecutionTactic::Choose(choice.clone())),
         ProofTactic::LetSatisfy(binding) => Some(PostExecutionTactic::LetSatisfy(binding.clone())),
         ProofTactic::Witness(witness) => Some(PostExecutionTactic::Witness(witness.clone())),
-        ProofTactic::Intro => Some(PostExecutionTactic::Intro),
+        ProofTactic::Intro => Some(PostExecutionTactic::Intro(None)),
+        ProofTactic::IntroAs(name) => Some(PostExecutionTactic::Intro(Some(name.clone()))),
         ProofTactic::Assumption => Some(PostExecutionTactic::Assumption),
         ProofTactic::Normalize => Some(PostExecutionTactic::Normalize),
         ProofTactic::NormalizeUsing(premises) => {

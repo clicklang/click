@@ -367,6 +367,7 @@ pub(in crate::surface::proof) fn explicit_linear_step(tactic: &ProofTactic) -> O
         }
         ProofTactic::NormalizeUsing(premises) => Some(ProofStep::NormalizeUsing(premises.clone())),
         ProofTactic::Intro => Some(ProofStep::Intro),
+        ProofTactic::IntroAs(name) => Some(ProofStep::IntroAs(name.clone())),
         ProofTactic::Enumerate => Some(ProofStep::Enumerate),
         ProofTactic::Contradiction(proposition) => {
             Some(ProofStep::Contradiction(proposition.clone()))
@@ -2625,7 +2626,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Assumption => "assumption()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
         ProofStep::ArithmeticUsing(_) | ProofStep::ArithmeticCertificate(_) => "arithmetic()",
-        ProofStep::Intro => "intro()",
+        ProofStep::Intro | ProofStep::IntroAs(_) => "intro()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step
         | ProofStep::StepBind(_)
