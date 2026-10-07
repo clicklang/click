@@ -803,6 +803,14 @@ pub(crate) enum SignedArithmeticNode {
         comparison: SignedArithmeticComparison,
         result: Proposition,
     },
+    /// Flatten a selected premise only with checked interval evidence for
+    /// both expression roots. The source must be an ordinary premise node.
+    AffinePremise {
+        source: usize,
+        left_evidence: usize,
+        right_evidence: usize,
+        result: SignedArithmeticClaim,
+    },
     /// Re-express an interval-justified affine machine term as a checked
     /// proposition.  The source affine node supplies the algebraic fact;
     /// the interval node proves that every decomposed machine operation is
@@ -1429,6 +1437,34 @@ impl SignedArithmeticCertificate {
                         return Err(SignedArithmeticCheckError::NodeResultMismatch(node_index));
                     }
                     CheckedValue::Proposition(result.clone())
+                }
+                SignedArithmeticNode::AffinePremise {
+                    source,
+                    left_evidence,
+                    right_evidence,
+                    result,
+                } => {
+                    let _ = affine_at(&checked, *source)?;
+                    let Some(SignedArithmeticNode::Premise { index, .. }) = self.nodes.get(*source)
+                    else {
+                        return Err(SignedArithmeticCheckError::InvalidNodeReference(*source));
+                    };
+                    let proposition = premises
+                        .get(*index)
+                        .ok_or(SignedArithmeticCheckError::InvalidPremise(*index))?;
+                    let expected = affine_claim_from_interval_evidence_refs(
+                        &self.nodes,
+                        &checked,
+                        &mut terms,
+                        Some(*left_evidence),
+                        Some(*right_evidence),
+                        proposition,
+                    )
+                    .ok_or(SignedArithmeticCheckError::NodeResultMismatch(node_index))?;
+                    if !same_int32_claim(&expected, result) {
+                        return Err(SignedArithmeticCheckError::NodeResultMismatch(node_index));
+                    }
+                    CheckedValue::Affine(expected)
                 }
                 SignedArithmeticNode::AffineConclusion {
                     source,

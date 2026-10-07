@@ -1058,6 +1058,17 @@ fn expand_declared_resource_signed_step(
             comparison,
             result: proposition(result)?,
         },
+        SignedArithmeticStep::AffinePremise {
+            source,
+            left_evidence,
+            right_evidence,
+            result,
+        } => SignedArithmeticStep::AffinePremise {
+            source,
+            left_evidence,
+            right_evidence,
+            result: proposition(result)?,
+        },
         SignedArithmeticStep::AffineConclusion {
             source,
             evidence,

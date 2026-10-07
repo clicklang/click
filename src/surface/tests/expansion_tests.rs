@@ -16064,3 +16064,56 @@ int64 identity(int64 x, int64 y) {
     verify_c0_sources(&expanded, &inputs)
         .expect("fixed-state observed Integer rewrite should recheck");
 }
+
+#[test]
+fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
+    for (name, premise, extra) in [
+        ("difference", "a <= 1000 - b", ""),
+        ("equality", "a == 1000 - b", ""),
+        (
+            "sum",
+            "a + b <= 1000",
+            "requires a >= 0; requires a <= 1000;",
+        ),
+        (
+            "both_roots",
+            "a + b <= 999 + b",
+            "requires a >= 0; requires a <= 1000;",
+        ),
+    ] {
+        let extra_using = if extra.is_empty() {
+            ""
+        } else {
+            "a >= 0; a <= 1000;"
+        };
+        let source = format!("theorem {name}(a: int32, b: int32) {{
+            requires b >= 1; requires b <= 1000; requires {premise}; {extra}
+            ensures a <= 999 by {{ arithmetic() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
+        }}");
+        verify_c0_sources(&source, &[]).expect("symbolic upper bound should verify");
+        let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+            .expect("symbolic upper bound should expand");
+        assert!(expanded.contains("affine_premise"), "{expanded}");
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &[])
+            });
+        result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+        assert_eq!(planning, 0, "explicit certificate recheck must not plan");
+        let conversion = expanded
+            .lines()
+            .find(|line| line.contains("affine_premise"))
+            .unwrap();
+        let (prefix, _) = conversion.trim().split_once("=>").unwrap();
+        let source = prefix.split_whitespace().nth(1).unwrap();
+        let forged = expanded.replacen(
+            prefix,
+            &format!("affine_premise {source} {source} {source} "),
+            1,
+        );
+        verify_c0_sources(&forged, &[])
+            .expect_err("affine values cannot replace checked interval evidence");
+        let forged = expanded.replace("a <= 999", "a <= 998");
+        verify_c0_sources(&forged, &[]).expect_err("a false tighter bound must be refused");
+    }
+}

@@ -7377,6 +7377,20 @@ impl Parser {
                         result,
                     }
                 }
+                "affine_premise" => {
+                    let source = self.expect_index("premise source")?;
+                    let left_evidence = self.expect_index("left interval evidence")?;
+                    let right_evidence = self.expect_index("right interval evidence")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    SignedArithmeticStep::AffinePremise {
+                        source,
+                        left_evidence,
+                        right_evidence,
+                        result,
+                    }
+                }
                 "affine_conclusion" => {
                     let source = self.expect_index("affine source")?;
                     let evidence = self.expect_index("interval evidence")?;
