@@ -75,6 +75,9 @@ enum MemberForm {
 enum OpaqueMemberInputs {
     Quantity(Option<ResourceDescription>),
     NamedAuthority,
+    /// A typed lock in a standalone body. Its anchor is the caller's pointer,
+    /// which no storage created earlier in this proof can alias.
+    Acquired,
 }
 
 struct Root {
@@ -373,7 +376,14 @@ impl CreationEvents {
         if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
             return Ok(existing.clone());
         }
-        let next = self.import_observable_contract_population(description, owned_members)?;
+        let next = self.import_opaque_contract_population_with_member(
+            description,
+            owned_members,
+            Some(self.fresh_opaque_entry_count(description)?),
+            None,
+            None,
+            OpaqueMemberInputs::Acquired,
+        )?;
         Ok(self.memoized_c_event(key, || next))
     }
 
@@ -401,6 +411,33 @@ impl CreationEvents {
         )
     }
 
+    /// The arbitrary entry total of an opaque import, stable across rechecks
+    /// of the same ledger.
+    fn fresh_opaque_entry_count(
+        &self,
+        description: &ResourceDescription,
+    ) -> Result<Bitvector32Term, CreationRefusal> {
+        if let Some(import) = self.0.opaque_imports.get(description) {
+            return import
+                .entry_count
+                .clone()
+                .ok_or(CreationRefusal::UnknownTotal);
+        }
+        Ok(self
+            .0
+            .opaque_entry_counts
+            .lock()
+            .expect("opaque entry count cache")
+            .entry(description.clone())
+            .or_insert_with(|| {
+                Bitvector32Term::Variable(
+                    crate::kernel::Variable::allocate_fresh()
+                        .expect("opaque count identity exhausted"),
+                )
+            })
+            .clone())
+    }
+
     pub(in crate::kernel) fn import_observable_contract_population_quantity(
         &self,
         description: &ResourceDescription,
@@ -411,25 +448,7 @@ impl CreationEvents {
             Some(_) => return Err(CreationRefusal::InvalidQuantity),
             None => (0, Some(quantity.clone())),
         };
-        let count = if let Some(import) = self.0.opaque_imports.get(description) {
-            import
-                .entry_count
-                .clone()
-                .ok_or(CreationRefusal::UnknownTotal)?
-        } else {
-            self.0
-                .opaque_entry_counts
-                .lock()
-                .expect("opaque entry count cache")
-                .entry(description.clone())
-                .or_insert_with(|| {
-                    Bitvector32Term::Variable(
-                        crate::kernel::Variable::allocate_fresh()
-                            .expect("opaque count identity exhausted"),
-                    )
-                })
-                .clone()
-        };
+        let count = self.fresh_opaque_entry_count(description)?;
         self.import_opaque_contract_population_inner(
             description,
             owned_members,
@@ -705,6 +724,7 @@ impl CreationEvents {
         members: OpaqueMemberInputs,
     ) -> Result<Self, CreationRefusal> {
         let named_authority = matches!(members, OpaqueMemberInputs::NamedAuthority);
+        let acquired = matches!(members, OpaqueMemberInputs::Acquired);
         if named_authority
             && (description.schema().is_countable()
                 || owned_members != 0
@@ -715,7 +735,7 @@ impl CreationEvents {
         }
         let wildcard_member = match members {
             OpaqueMemberInputs::Quantity(member) => member,
-            OpaqueMemberInputs::NamedAuthority => None,
+            OpaqueMemberInputs::NamedAuthority | OpaqueMemberInputs::Acquired => None,
         };
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
             return Err(CreationRefusal::InvalidMember);
@@ -739,7 +759,7 @@ impl CreationEvents {
             }
             return Err(CreationRefusal::OpaqueImportConflict);
         }
-        if !self.0.creators.is_empty() || !self.0.anchors.is_empty() {
+        if !acquired && (!self.0.creators.is_empty() || !self.0.anchors.is_empty()) {
             return Err(CreationRefusal::NotCreationEnvironment);
         }
         let mut pattern = ResourceDescription::new(
