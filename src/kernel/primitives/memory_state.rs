@@ -2687,12 +2687,93 @@ impl CMemory {
         });
     }
 
+    /// Whether a recorded cell or run slot holds a byte of
+    /// `[pointer, pointer + byte_width)`.
+    ///
+    /// The exact-address lookups a load makes first miss a narrower cell
+    /// stored strictly inside the loaded bytes and a wider cell containing
+    /// them alike, so a zeroed allocation must not answer such a load as
+    /// zero: the bytes a store wrote are no longer zero. For an offset with a
+    /// constant line this is a bounded range query over the cells of that
+    /// line from `WIDEST_CELL_BYTES - 1` below the load to its end, which is
+    /// where any overlapping cell starts, plus the block's runs by byte range.
+    /// An offset with no constant line is separated from a cell by no bound
+    /// this question can read, so it answers `true` whenever its block holds
+    /// a cell at all; the equal-cell scan before this question has already
+    /// split off the cells it can relate to the load.
+    pub(in crate::kernel) fn stored_bytes_overlap(
+        &self,
+        pointer: &Pointer,
+        byte_width: u32,
+    ) -> bool {
+        /// The widest cell a store records, in bytes (`Int128`).
+        const WIDEST_CELL_BYTES: i64 = 16;
+        let (stem, start) = cell_store::offset_stem_and_constant(&pointer.offset);
+        let end = start.saturating_add(i64::from(byte_width));
+        let overlaps = |cell_offset: i64, cell_width: u32| {
+            cell_offset < end && cell_offset.saturating_add(i64::from(cell_width)) > start
+        };
+        let mut visited = 0usize;
+        let found = match stem {
+            None => {
+                let at = |offset: i64| Pointer {
+                    block: pointer.block.clone(),
+                    offset: PointerOffsetTerm::Constant(offset),
+                };
+                let low = start.saturating_sub(WIDEST_CELL_BYTES - 1);
+                let cell_overlaps = self.cells.concrete().range(at(low)..at(end)).any(
+                    |(cell, value)| {
+                        visited += 1;
+                        cell.offset.as_const().is_some_and(|cell_offset| {
+                            overlaps(
+                                cell_offset,
+                                crate::kernel::reasoning::memory_resolution::cell_access_byte_width(
+                                    value,
+                                ),
+                            )
+                        })
+                    },
+                );
+                cell_overlaps
+                    || self.cells.runs_in_block(&pointer.block).any(|run| {
+                        visited += 1;
+                        match run.base().offset.as_const() {
+                            Some(run_start) => {
+                                let bytes = u32::try_from(
+                                    u64::from(run.count()) * u64::from(run.element_width()),
+                                )
+                                .unwrap_or(u32::MAX);
+                                overlaps(run_start, bytes)
+                            }
+                            // A run based at a symbolic offset is not
+                            // separated from the load by any constant.
+                            None => true,
+                        }
+                    })
+            }
+            Some(_) => {
+                let candidates = AliasCandidates::of_block(&pointer.block);
+                visited += 1;
+                candidates.entries(self.cells.concrete()).next().is_some()
+                    || self.cells.candidate_runs(&candidates).next().is_some()
+            }
+        };
+        crate::instrumentation::record_deterministic_work(visited);
+        found
+    }
+
     pub(in crate::kernel) fn is_zeroed_heap_address(
         &self,
         pointer: &Pointer,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
+        // A zeroed allocation reads as zero only where nothing was stored
+        // over the bytes the load reads; a store at another address can
+        // still cover some of them.
+        if self.stored_bytes_overlap(pointer, byte_width) {
+            return false;
+        }
         let candidates = AliasCandidates::of_block(&pointer.block);
         candidates.any_element(&self.heap.zeroed_allocations, |base| {
             heap_allocation_may_contain_pointer(base, pointer, assumptions)
