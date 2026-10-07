@@ -622,12 +622,19 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
 
     /// Closes the focused proposition goal when the step that produced this
     /// state added it as a fact. A goal that was already available before
-    /// the step stays open; only `assumption` closes that.
+    /// the step stays open; only `assumption` closes that. An added fact
+    /// that spells the goal's order claim from the other side (`0 <= e` for
+    /// the goal `e >= 0`) is the goal: the comparison normalizes both sides
+    /// and is made once per fact this one step added, not over the fact set.
     pub(crate) fn closed_if_goal_was_added(&self) -> Option<Self> {
         let (goal, _) = self.focused_proposition()?;
+        let goal = goal.proposition();
         self.state
             .added_facts
-            .contains(goal.proposition())
+            .iter()
+            .any(|fact| {
+                fact == goal || super::fact_reasoning::condition_polarity_equivalent(fact, goal)
+            })
             .then(|| self.closed_focused())
     }
 

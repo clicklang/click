@@ -425,48 +425,25 @@ pub(crate) fn condition_polarity_forms(proposition: &Proposition) -> Vec<Proposi
         return Vec::new();
     };
     let mut conditions = vec![(condition, value)];
-    if let Some((left, right, strict)) =
+    if let Some(CanonicalOrderCondition { operands, strict }) =
         canonical_order_condition(&conditions[0].0, conditions[0].1)
     {
-        let left = Box::new(left);
-        let right = Box::new(right);
+        // The four spellings of one order claim: the canonical direction at
+        // both polarities, and the mirrored direction at both polarities.
+        let mirrored = operands.clone().mirrored();
         let mut equivalent = if strict {
             vec![
-                (
-                    ConditionTerm::Bitvector32SignedLessThan(left.clone(), right.clone()),
-                    true,
-                ),
-                (
-                    ConditionTerm::Bitvector32SignedGreaterEqual(left.clone(), right.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::Bitvector32SignedLessEqual(right.clone(), left.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::Bitvector32SignedGreaterThan(right, left),
-                    true,
-                ),
+                (operands.clone().condition(OrderOperator::LessThan), true),
+                (operands.condition(OrderOperator::GreaterEqual), false),
+                (mirrored.clone().condition(OrderOperator::LessEqual), false),
+                (mirrored.condition(OrderOperator::GreaterThan), true),
             ]
         } else {
             vec![
-                (
-                    ConditionTerm::Bitvector32SignedLessEqual(left.clone(), right.clone()),
-                    true,
-                ),
-                (
-                    ConditionTerm::Bitvector32SignedGreaterThan(left.clone(), right.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::Bitvector32SignedLessThan(right.clone(), left.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::Bitvector32SignedGreaterEqual(right, left),
-                    true,
-                ),
+                (operands.clone().condition(OrderOperator::LessEqual), true),
+                (operands.condition(OrderOperator::GreaterThan), false),
+                (mirrored.clone().condition(OrderOperator::LessThan), false),
+                (mirrored.condition(OrderOperator::GreaterEqual), true),
             ]
         };
         conditions.append(&mut equivalent);
@@ -636,6 +613,12 @@ pub(crate) fn propositions_are_exact_negations(left: &Proposition, right: &Propo
     }
 }
 
+/// Whether two propositions are one condition fact: the same condition at
+/// the same polarity, a condition and its negation at opposite polarities,
+/// or one order claim under two spellings (`a <= b` and `b >= a`, `a < b`
+/// and `not (a >= b)`), for every order family the kernel lowers to: 32-bit
+/// and 64-bit machine orders and the `Integer` order. Each side is
+/// normalized once and the results compared; nothing is searched.
 pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposition) -> bool {
     if left == right {
         return true;
@@ -661,33 +644,201 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
     )
 }
 
+/// The comparison an order condition spells, before its polarity and
+/// direction are normalized away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OrderOperator {
+    LessThan,
+    LessEqual,
+    GreaterThan,
+    GreaterEqual,
+}
+
+/// The two sides of an order condition, tagged with the order they are
+/// compared in. Every family the kernel lowers an order to is here: 32-bit
+/// signed (unsigned 32-bit comparisons lower to signed ones over sign-flipped
+/// terms), both 64-bit orders, and the mathematical `Integer` order. Sides
+/// from different families are never one claim.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum OrderOperands {
+    Bitvector32Signed(Box<Bitvector32Term>, Box<Bitvector32Term>),
+    Bitvector64Signed(Box<Bitvector32Term>, Box<Bitvector32Term>),
+    Bitvector64Unsigned(Box<Bitvector32Term>, Box<Bitvector32Term>),
+    Integer(SharedIntegerTerm, SharedIntegerTerm),
+}
+
+impl OrderOperands {
+    /// The same sides read from the other end: `b ? a` for `a ? b`.
+    fn mirrored(self) -> Self {
+        match self {
+            Self::Bitvector32Signed(left, right) => Self::Bitvector32Signed(right, left),
+            Self::Bitvector64Signed(left, right) => Self::Bitvector64Signed(right, left),
+            Self::Bitvector64Unsigned(left, right) => Self::Bitvector64Unsigned(right, left),
+            Self::Integer(left, right) => Self::Integer(right, left),
+        }
+    }
+
+    /// The condition comparing these sides with `operator` in their family.
+    fn condition(self, operator: OrderOperator) -> ConditionTerm {
+        use OrderOperator::*;
+        match (self, operator) {
+            (Self::Bitvector32Signed(l, r), LessThan) => {
+                ConditionTerm::Bitvector32SignedLessThan(l, r)
+            }
+            (Self::Bitvector32Signed(l, r), LessEqual) => {
+                ConditionTerm::Bitvector32SignedLessEqual(l, r)
+            }
+            (Self::Bitvector32Signed(l, r), GreaterThan) => {
+                ConditionTerm::Bitvector32SignedGreaterThan(l, r)
+            }
+            (Self::Bitvector32Signed(l, r), GreaterEqual) => {
+                ConditionTerm::Bitvector32SignedGreaterEqual(l, r)
+            }
+            (Self::Bitvector64Signed(l, r), LessThan) => {
+                ConditionTerm::Bitvector64SignedLessThan(l, r)
+            }
+            (Self::Bitvector64Signed(l, r), LessEqual) => {
+                ConditionTerm::Bitvector64SignedLessEqual(l, r)
+            }
+            (Self::Bitvector64Signed(l, r), GreaterThan) => {
+                ConditionTerm::Bitvector64SignedGreaterThan(l, r)
+            }
+            (Self::Bitvector64Signed(l, r), GreaterEqual) => {
+                ConditionTerm::Bitvector64SignedGreaterEqual(l, r)
+            }
+            (Self::Bitvector64Unsigned(l, r), LessThan) => {
+                ConditionTerm::Bitvector64UnsignedLessThan(l, r)
+            }
+            (Self::Bitvector64Unsigned(l, r), LessEqual) => {
+                ConditionTerm::Bitvector64UnsignedLessEqual(l, r)
+            }
+            (Self::Bitvector64Unsigned(l, r), GreaterThan) => {
+                ConditionTerm::Bitvector64UnsignedGreaterThan(l, r)
+            }
+            (Self::Bitvector64Unsigned(l, r), GreaterEqual) => {
+                ConditionTerm::Bitvector64UnsignedGreaterEqual(l, r)
+            }
+            (Self::Integer(l, r), LessThan) => ConditionTerm::IntegerLessThan(l, r),
+            (Self::Integer(l, r), LessEqual) => ConditionTerm::IntegerLessEqual(l, r),
+            (Self::Integer(l, r), GreaterThan) => ConditionTerm::IntegerGreaterThan(l, r),
+            (Self::Integer(l, r), GreaterEqual) => ConditionTerm::IntegerGreaterEqual(l, r),
+        }
+    }
+}
+
+/// One order claim in its canonical direction: `left < right` when `strict`,
+/// otherwise `left <= right`. `a <= b`, `b >= a`, `not (a > b)` and
+/// `not (b < a)` all normalize to the same value, so two conditions are the
+/// same claim exactly when their canonical forms are equal. This is a
+/// normalization of the condition at hand, not a search.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CanonicalOrderCondition {
+    operands: OrderOperands,
+    strict: bool,
+}
+
+/// Splits an order condition into its operator and typed sides; `None` for
+/// any condition that is not an order (equalities, overflow checks, ...).
+fn order_condition_parts(condition: &ConditionTerm) -> Option<(OrderOperator, OrderOperands)> {
+    use OrderOperator::*;
+    Some(match condition {
+        ConditionTerm::Bitvector32SignedLessThan(l, r) => (
+            LessThan,
+            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector32SignedLessEqual(l, r) => (
+            LessEqual,
+            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector32SignedGreaterThan(l, r) => (
+            GreaterThan,
+            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector32SignedGreaterEqual(l, r) => (
+            GreaterEqual,
+            OrderOperands::Bitvector32Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64SignedLessThan(l, r) => (
+            LessThan,
+            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64SignedLessEqual(l, r) => (
+            LessEqual,
+            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64SignedGreaterThan(l, r) => (
+            GreaterThan,
+            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64SignedGreaterEqual(l, r) => (
+            GreaterEqual,
+            OrderOperands::Bitvector64Signed(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64UnsignedLessThan(l, r) => (
+            LessThan,
+            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64UnsignedLessEqual(l, r) => (
+            LessEqual,
+            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64UnsignedGreaterThan(l, r) => (
+            GreaterThan,
+            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
+        ),
+        ConditionTerm::Bitvector64UnsignedGreaterEqual(l, r) => (
+            GreaterEqual,
+            OrderOperands::Bitvector64Unsigned(l.clone(), r.clone()),
+        ),
+        ConditionTerm::IntegerLessThan(l, r) => {
+            (LessThan, OrderOperands::Integer(l.clone(), r.clone()))
+        }
+        ConditionTerm::IntegerLessEqual(l, r) => {
+            (LessEqual, OrderOperands::Integer(l.clone(), r.clone()))
+        }
+        ConditionTerm::IntegerGreaterThan(l, r) => {
+            (GreaterThan, OrderOperands::Integer(l.clone(), r.clone()))
+        }
+        ConditionTerm::IntegerGreaterEqual(l, r) => {
+            (GreaterEqual, OrderOperands::Integer(l.clone(), r.clone()))
+        }
+        _ => return None,
+    })
+}
+
 fn canonical_order_condition(
     condition: &ConditionTerm,
     value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    match (condition, value) {
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), true)
-        | (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), false) => {
-            Some((left.as_ref().clone(), right.as_ref().clone(), true))
+) -> Option<CanonicalOrderCondition> {
+    let (operator, operands) = order_condition_parts(condition)?;
+    // A false `a < b` is `b <= a`, and a true `a >= b` is `b <= a`: each
+    // operator at each polarity names one direction and one strictness.
+    Some(match (operator, value) {
+        (OrderOperator::LessThan, true) | (OrderOperator::GreaterEqual, false) => {
+            CanonicalOrderCondition {
+                operands,
+                strict: true,
+            }
         }
-        (ConditionTerm::Bitvector32SignedLessThan(left, right), false) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), false))
+        (OrderOperator::LessThan, false) | (OrderOperator::GreaterEqual, true) => {
+            CanonicalOrderCondition {
+                operands: operands.mirrored(),
+                strict: false,
+            }
         }
-        (ConditionTerm::Bitvector32SignedGreaterEqual(left, right), true) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), false))
+        (OrderOperator::LessEqual, true) | (OrderOperator::GreaterThan, false) => {
+            CanonicalOrderCondition {
+                operands,
+                strict: false,
+            }
         }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), true)
-        | (ConditionTerm::Bitvector32SignedGreaterThan(left, right), false) => {
-            Some((left.as_ref().clone(), right.as_ref().clone(), false))
+        (OrderOperator::LessEqual, false) | (OrderOperator::GreaterThan, true) => {
+            CanonicalOrderCondition {
+                operands: operands.mirrored(),
+                strict: true,
+            }
         }
-        (ConditionTerm::Bitvector32SignedLessEqual(left, right), false) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), true))
-        }
-        (ConditionTerm::Bitvector32SignedGreaterThan(left, right), true) => {
-            Some((right.as_ref().clone(), left.as_ref().clone(), true))
-        }
-        _ => None,
-    }
+    })
 }
 
 pub(crate) fn quantified_equivalent_available_fact(
