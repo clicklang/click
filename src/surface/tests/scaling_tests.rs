@@ -6204,12 +6204,13 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
 
 /// Contract preparation reuses completed contexts in both proof forms.
 /// Bound whole-transaction construction too for the grouped form. The explicit
-/// form has a separate existing context-build cost before certification, kept
+/// form has separate existing return-context and other costs, kept
 /// in the measurements and tracked in the early-return bug report.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
     let mut entries = Vec::new();
     let mut contract_entries = Vec::new();
+    let mut allocation_resolution = Vec::new();
     for returns in [4, 8, 16, 32, 64] {
         let c = early_return_fan_out(returns);
         let click = if explicit {
@@ -6237,6 +6238,13 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         contract_entries.push(
             crate::kernel::reasoning::path_facts::contract_path_context_entries() - contract_before,
         );
+        allocation_resolution.push(
+            sample
+                .named_work
+                .get("operation `branch allocation resolution`")
+                .copied()
+                .unwrap_or(0),
+        );
         samples.push(sample);
     }
     eprintln!(
@@ -6247,6 +6255,30 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             .windows(2)
             .all(|pair| pair[1] <= pair[0] * 2 + 8),
         "contract preparation must reuse contexts: explicit={explicit}, {contract_entries:?}"
+    );
+    // Small explicit proofs may complete without the branch-step driver.
+    // Require the largest case to exercise it, so absent instrumentation
+    // cannot turn every measured cost into zero.
+    if explicit {
+        assert!(
+            samples
+                .last()
+                .unwrap()
+                .named_work
+                .contains_key("operation `branch allocation resolution`")
+        );
+    }
+    // Once malloc is resolved, later branches must not rebuild their growing
+    // local fact lists merely to ask allocation resolution to do nothing.
+    // Compare the largest sizes, after the explicit driver starts running;
+    // resolving the initial malloc has a fixed setup cost.
+    eprintln!("branch allocation resolution explicit={explicit}: {allocation_resolution:?}");
+    assert!(
+        allocation_resolution
+            .windows(2)
+            .skip(2)
+            .all(|pair| pair[1] <= pair[0] + 8),
+        "settled allocations must not rebuild branch contexts: {allocation_resolution:?}"
     );
     if !explicit {
         assert!(

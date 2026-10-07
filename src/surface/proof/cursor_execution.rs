@@ -600,10 +600,22 @@ pub(super) fn execute_branch_step_from_frontier_position(
             ))
         })?;
     *available_pure_facts = condition_transition.pure_facts;
-    current_state = crate::kernel::resolve_pending_heap_allocations(
-        &current_state,
-        &assumptions_from_propositions(available_pure_facts),
-    );
+    {
+        let _allocation_resolution = crate::instrumentation::OperationTiming::new(
+            function.name(),
+            claim_label,
+            "branch allocation resolution",
+        );
+        // A settled allocation needs no branch context. Explicit steps carry a
+        // fresh statement-local list here, so eagerly building its context after
+        // every later `if` would repeatedly import all enclosing branch facts.
+        if current_state.memory().has_pending_heap_allocation() {
+            current_state = crate::kernel::resolve_pending_heap_allocations(
+                &current_state,
+                &assumptions_from_propositions(available_pure_facts),
+            );
+        }
+    }
     let selected_branch = if selected_then {
         *then_branch
     } else {
