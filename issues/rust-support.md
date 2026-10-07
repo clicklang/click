@@ -1225,6 +1225,24 @@ multiplication ceiling example uses arithmetic for its native quotient guard.
 Both arithmetic tooling bugs are resolved; the complete original four-byte
 computation remains unproved.
 
+### Exact preservation through lane reduction
+
+The checked `uint32_remainder_of_lt` rule now proves `value % divisor == value`
+from the strict native unsigned bound `value < divisor`. That bound excludes
+zero divisors and works across the full unsigned range, including values above
+the signed sign bit. Exact standard-library declarations and independently
+rechecked expansion reject missing or weakened guards and altered conclusions.
+A byte-lane execution fixture connects native reduction to exact Integer
+observations for values at most 255.
+
+The unchanged original `U32X4::rem_assign` contract now exports preservation for
+each lane when its incoming value is below the divisor. Its original nonzero
+divisor requirement and unconditional remainder/range guarantees remain in
+place. Per-lane regressions reject a non-strict guard, changed byte value, and
+cross-lane substitution. Rust source and the locked Charon artifact are unchanged.
+This supplies the exact lane identity needed after reduction on the first
+four-byte path; the complete original four-byte computation remains unproved.
+
 Next prove the first nonempty four-byte vector path and establish/preserve the
 derived lane ceilings over the original stored nested iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic

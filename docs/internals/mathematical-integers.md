@@ -59,6 +59,11 @@ bounds `value % divisor` strictly below it for every u32 dividend. Combining
 these with `uint32_to_integer_bounds` bounds the remainder's Integer observation
 without changing its unsigned meaning or defining division by zero.
 
+`uint32_remainder_of_lt(value, divisor)` proves `value % divisor == value`
+under the strict native unsigned premise `value < divisor`. This premise also
+excludes a zero divisor. It preserves exact byte lane values through Adler32's
+reduction without a signed cast or a change to the Rust implementation.
+
 ## Exact operations and definedness
 
 Integer literals, unary negation, addition, subtraction, multiplication,

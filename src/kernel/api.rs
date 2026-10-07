@@ -8644,6 +8644,24 @@ pub fn prove_uint32_remainder_less_than_divisor(
     ))
 }
 
+/// A dividend strictly below an unsigned divisor is already its remainder.
+/// The strict unsigned premise also excludes division by zero.
+pub fn prove_uint32_remainder_of_lt(value: Bitvector32Term, divisor: Bitvector32Term) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::unsigned_remainder(value.clone(), divisor),
+                value,
+            ),
+            true,
+        )),
+    ))
+}
+
 /// Preserve native unsigned u32 order in exact mathematical observations.
 /// The unsigned interpretation includes values above the signed sign bit.
 pub fn prove_uint32_less_equal_to_integer(

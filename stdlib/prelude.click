@@ -1023,6 +1023,11 @@ theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
     ensures value % divisor < divisor;
 }
 
+theorem uint32_remainder_of_lt(value: uint32, divisor: uint32) {
+    requires value < divisor;
+    ensures value % divisor == value;
+}
+
 theorem uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by {
         have 0u32 <= value by { simp(); }

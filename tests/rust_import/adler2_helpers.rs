@@ -250,6 +250,49 @@ fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
 }
 
 #[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_0() {
+    reject_helper_reduction_preservation(0);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_1() {
+    reject_helper_reduction_preservation(1);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_2() {
+    reject_helper_reduction_preservation(2);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_3() {
+    reject_helper_reduction_preservation(3);
+}
+
+fn reject_helper_reduction_preservation(lane: usize) {
+    let postcondition = format!(
+        "ensures old(self->_0[{lane}]) < quotient implies self->_0[{lane}] == old(self->_0[{lane}])"
+    );
+    reject_helper_contracts(
+        2,
+        &[
+            (
+                &postcondition,
+                &postcondition.replace(" < quotient", " <= quotient"),
+            ),
+            (&postcondition, &format!("{postcondition} + 1u32")),
+            (
+                &postcondition,
+                &postcondition.replace(
+                    &format!("== old(self->_0[{lane}])"),
+                    &format!("== old(self->_0[{}])", (lane + 1) % 4),
+                ),
+            ),
+        ],
+    );
+}
+
+#[test]
 fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
     reject_helper_contracts(
         2,
