@@ -1,6 +1,34 @@
 use super::*;
 
 impl PureFactContext {
+    /// Selects exact premises for two terms pinned to the same signed constant.
+    /// This query reads the constant-equality index, never the connected facts
+    /// of either term. The caller must still check a derivation from the result.
+    pub(crate) fn indexed_constant_equality_premises(
+        &self,
+        proposition: &Proposition,
+    ) -> Option<Vec<Proposition>> {
+        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
+            proposition
+        else {
+            return None;
+        };
+        let pinned = |term: &Bitvector32Term| {
+            if simp_reasoning_interrupted() {
+                return None;
+            }
+            if let Some(value) = signed_bitvector_constant(term) {
+                Some((value, None))
+            } else {
+                self.indexed_exact_int32_constant(term)
+                    .map(|(value, source)| (value, Some(*source)))
+            }
+        };
+        let (left_value, left_source) = pinned(left)?;
+        let (right_value, right_source) = pinned(right)?;
+        (left_value == right_value).then(|| left_source.into_iter().chain(right_source).collect())
+    }
+
     pub(super) fn decide_algebraic_equality(
         &self,
         left: &AlgebraicTerm,
