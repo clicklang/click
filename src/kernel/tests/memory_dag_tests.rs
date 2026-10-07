@@ -2682,19 +2682,22 @@ fn an_exact_constant_gap_decides_bytes_at_every_anchor() {
     );
 }
 
-/// Where the gap is not an exact constant, nothing is decided from it. Two
-/// different `int64` indices have no gap at all, and an `int32` index `i + 1`
-/// is one element past `i` only when that addition does not wrap, so the
-/// summand is compared whole rather than split into `i` plus one element.
+/// Where the gap is not an exact constant, only its stride decides. Two
+/// different `int64` indices of eight-byte elements are a nonzero multiple
+/// of eight apart, which clears two eight-byte accesses once their addresses
+/// differ; two indices of different element widths share only the smaller
+/// stride, which clears nothing wider. An `int32` index `i + 1` is one
+/// element past `i` only when that addition does not wrap, so the summand is
+/// compared whole rather than split into `i` plus one element.
 #[test]
 fn a_gap_that_may_wrap_or_differ_is_not_decided() {
     use crate::kernel::reasoning::memory_resolution::{AccessByteOverlap, access_byte_overlap};
 
     let bare = PureFactContext::new();
     let block = "wrap-anchor-memory";
-    let scaled64 = |id: u64| PointerOffsetTerm::Int64Scaled {
+    let scaled64 = |id: u64, byte_width: i64| PointerOffsetTerm::Int64Scaled {
         value: Box::new(Bitvector32Term::Variable(Variable(id))),
-        byte_width: 8,
+        byte_width,
         unsigned: false,
     };
     let pointer = |offset: PointerOffsetTerm| Pointer {
@@ -2703,9 +2706,19 @@ fn a_gap_that_may_wrap_or_differ_is_not_decided() {
     };
     assert_eq!(
         access_byte_overlap(
-            &pointer(scaled64(97_201)),
+            &pointer(scaled64(97_201, 8)),
             8,
-            &pointer(scaled64(97_202)),
+            &pointer(scaled64(97_202, 8)),
+            8,
+            &bare
+        ),
+        AccessByteOverlap::Separate
+    );
+    assert_eq!(
+        access_byte_overlap(
+            &pointer(scaled64(97_201, 8)),
+            8,
+            &pointer(scaled64(97_202, 4)),
             8,
             &bare
         ),

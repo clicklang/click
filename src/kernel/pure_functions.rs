@@ -21,13 +21,18 @@
 //!
 //! Only memory-independent functions are registered (the classification
 //! package A20 added), so an evaluation here reads no snapshot and the value
-//! it produces is a function of the argument values alone.
+//! it produces is a function of the argument values alone. The registry does
+//! not take that on trust: [`register_pure_function_definition`] refuses a
+//! body that loads memory or reads a C name that is not one of its
+//! parameters, whenever the body is built from forms the check inspects.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::primitives::{
-    AlgebraicTerm, AlgebraicType, CState, CType, CValue, ExecutionBudget, PureFactContext,
-    PureFunctionArgument, SpecExpression,
+    AlgebraicTerm, AlgebraicType, CExpression, CState, CType, CValue, ExecutionBudget,
+    PureFactContext, PureFunctionArgument, SpecAlgebraicExpression, SpecAlgebraicExpressionNode,
+    SpecAlgebraicValue, SpecExpression, SpecIntegerExpression, SpecIntegerRangeFoldIndex,
+    SpecPredicateArgument, SpecProposition, SpecPureFunctionArgument,
 };
 
 /// One parameter of a registered pure function: the name its body refers to
@@ -84,6 +89,383 @@ impl CPureFunctionDefinition {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// Why this body is not a function of its parameters alone, when the
+    /// closedness check can decide that.
+    ///
+    /// The body was lowered with its parameters left as names, so a C name
+    /// it reads that is not a parameter, a `let`, a fold binder or a match
+    /// binding is something outside the function: a file-scope object the
+    /// Surface left as a bare name, or a local of whatever contract applies
+    /// the function. A memory load is outside it the same way. Either would
+    /// make one application term stand for different values, which is what
+    /// the memory-independent classification promises cannot happen.
+    fn openness(&self) -> Option<String> {
+        let mut bound = self
+            .parameters
+            .iter()
+            .map(|parameter| match parameter {
+                CPureFunctionParameter::C { name, .. }
+                | CPureFunctionParameter::Algebraic { name, .. } => name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let mut reads = BodyReads::default();
+        if collect_body_reads(&self.body, &mut bound, &mut reads).is_err() {
+            // A form the check does not inspect: the classification stands
+            // on its own, as it did before the check existed.
+            return None;
+        }
+        if reads.memory {
+            return Some("loads memory".to_string());
+        }
+        reads
+            .free_c_names
+            .into_iter()
+            .next()
+            .map(|name| format!("reads the C name `{name}`, which is not a parameter"))
+    }
+}
+
+/// What a declared body reads besides the names bound around the read.
+#[derive(Default)]
+struct BodyReads {
+    free_c_names: BTreeSet<String>,
+    memory: bool,
+}
+
+/// A body form the closedness check does not inspect.
+struct UninspectedForm(#[allow(dead_code)] &'static str);
+
+fn note_c_name(name: &str, bound: &[String], reads: &mut BodyReads) {
+    if !bound.iter().any(|bound| bound == name) {
+        reads.free_c_names.insert(name.to_string());
+    }
+}
+
+fn with_bound<T>(
+    bound: &mut Vec<String>,
+    names: impl IntoIterator<Item = String>,
+    visit: impl FnOnce(&mut Vec<String>) -> T,
+) -> T {
+    let depth = bound.len();
+    bound.extend(names);
+    let result = visit(bound);
+    bound.truncate(depth);
+    result
+}
+
+fn collect_body_reads(
+    expression: &SpecExpression,
+    bound: &mut Vec<String>,
+    reads: &mut BodyReads,
+) -> Result<(), UninspectedForm> {
+    match expression {
+        // A resource field reads the binder's instance, not a C name.
+        SpecExpression::Value(_) | SpecExpression::ResourceField { .. } => Ok(()),
+        SpecExpression::CExpression(expression) => {
+            collect_c_expression_reads(expression, bound, reads);
+            Ok(())
+        }
+        SpecExpression::IntegerToMachine { value, .. } => {
+            collect_integer_body_reads(value, bound, reads)
+        }
+        SpecExpression::AlgebraicMatch { scrutinee, arms } => {
+            collect_algebraic_body_reads(scrutinee, bound, reads)?;
+            for arm in arms {
+                with_bound(bound, arm.bindings.iter().cloned(), |bound| {
+                    collect_body_reads(&arm.body, bound, reads)
+                })?;
+            }
+            Ok(())
+        }
+        SpecExpression::CountedResourceCount { .. } => {
+            Err(UninspectedForm("a counted-resource count"))
+        }
+        SpecExpression::Add(left, right)
+        | SpecExpression::Subtract(left, right)
+        | SpecExpression::Multiply(left, right)
+        | SpecExpression::Divide(left, right)
+        | SpecExpression::Remainder(left, right)
+        | SpecExpression::ShiftLeft(left, right)
+        | SpecExpression::ShiftRight(left, right)
+        | SpecExpression::BitwiseAnd(left, right)
+        | SpecExpression::BitwiseOr(left, right)
+        | SpecExpression::BitwiseXor(left, right)
+        | SpecExpression::PointerOffset {
+            pointer: left,
+            elements: right,
+            ..
+        } => {
+            collect_body_reads(left, bound, reads)?;
+            collect_body_reads(right, bound, reads)
+        }
+        SpecExpression::BitwiseNot(inner) | SpecExpression::Cast(inner, _) => {
+            collect_body_reads(inner, bound, reads)
+        }
+        SpecExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            collect_proposition_body_reads(condition, bound, reads)?;
+            collect_body_reads(then_branch, bound, reads)?;
+            collect_body_reads(else_branch, bound, reads)
+        }
+        SpecExpression::RangeFold {
+            start,
+            end,
+            initial,
+            accumulator,
+            item,
+            body,
+        } => {
+            collect_body_reads(start, bound, reads)?;
+            collect_body_reads(end, bound, reads)?;
+            collect_body_reads(initial, bound, reads)?;
+            with_bound(bound, [accumulator.clone(), item.clone()], |bound| {
+                collect_body_reads(body, bound, reads)
+            })
+        }
+        SpecExpression::Let { name, value, body } => {
+            collect_body_reads(value, bound, reads)?;
+            with_bound(bound, [name.clone()], |bound| {
+                collect_body_reads(body, bound, reads)
+            })
+        }
+        SpecExpression::PureFunctionApplication { arguments, .. } => {
+            collect_argument_body_reads(arguments, bound, reads)
+        }
+        SpecExpression::LoopEntrySnapshot(_) => Err(UninspectedForm("a loop-entry snapshot")),
+        SpecExpression::MemoryLoad { pointer, .. } => {
+            reads.memory = true;
+            collect_body_reads(pointer, bound, reads)
+        }
+        SpecExpression::AggregateFieldValue {
+            parameter, pointer, ..
+        } => {
+            note_c_name(parameter, bound, reads);
+            collect_body_reads(pointer, bound, reads)
+        }
+    }
+}
+
+fn collect_c_expression_reads(expression: &CExpression, bound: &[String], reads: &mut BodyReads) {
+    use CExpression::*;
+    match expression {
+        Variable(name) => note_c_name(name, bound, reads),
+        Value(_) | FunctionAddress(_) => {}
+        Load(expression) => {
+            reads.memory = true;
+            collect_c_expression_reads(expression, bound, reads);
+        }
+        TypedLoad { pointer, .. } => {
+            reads.memory = true;
+            collect_c_expression_reads(pointer, bound, reads);
+        }
+        Cast { expression, .. }
+        | FloatNegate(expression)
+        | FloatClassification { expression, .. }
+        | AddressOf(expression)
+        | PointerOffsetBytes {
+            pointer: expression,
+            ..
+        }
+        | Not(expression)
+        | BitwiseNot(expression) => collect_c_expression_reads(expression, bound, reads),
+        Conditional {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            collect_c_expression_reads(condition, bound, reads);
+            collect_c_expression_reads(then_branch, bound, reads);
+            collect_c_expression_reads(else_branch, bound, reads);
+        }
+        LessThan(left, right)
+        | LessEqual(left, right)
+        | GreaterThan(left, right)
+        | GreaterEqual(left, right)
+        | Equal(left, right)
+        | NotEqual(left, right)
+        | And(left, right)
+        | Or(left, right)
+        | Add(left, right)
+        | Subtract(left, right)
+        | Multiply(left, right)
+        | Divide(left, right)
+        | Remainder(left, right)
+        | ShiftLeft(left, right)
+        | ShiftRight(left, right)
+        | BitwiseAnd(left, right)
+        | BitwiseOr(left, right)
+        | BitwiseXor(left, right)
+        | Index(left, right) => {
+            collect_c_expression_reads(left, bound, reads);
+            collect_c_expression_reads(right, bound, reads);
+        }
+    }
+}
+
+fn collect_integer_body_reads(
+    expression: &SpecIntegerExpression,
+    bound: &mut Vec<String>,
+    reads: &mut BodyReads,
+) -> Result<(), UninspectedForm> {
+    match expression {
+        SpecIntegerExpression::ResourceField(_) | SpecIntegerExpression::Term(_) => Ok(()),
+        SpecIntegerExpression::PureFunctionApplication { arguments, .. } => {
+            collect_argument_body_reads(arguments, bound, reads)
+        }
+        SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
+            collect_algebraic_body_reads(scrutinee, bound, reads)?;
+            for arm in arms {
+                with_bound(bound, arm.bindings.iter().cloned(), |bound| {
+                    collect_integer_body_reads(&arm.body, bound, reads)
+                })?;
+            }
+            Ok(())
+        }
+        SpecIntegerExpression::FromMachine(value) => collect_body_reads(value, bound, reads),
+        SpecIntegerExpression::Negate(inner) => collect_integer_body_reads(inner, bound, reads),
+        SpecIntegerExpression::Add(left, right)
+        | SpecIntegerExpression::Subtract(left, right)
+        | SpecIntegerExpression::Multiply(left, right)
+        | SpecIntegerExpression::TruncatingQuotient(left, right)
+        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
+            collect_integer_body_reads(left, bound, reads)?;
+            collect_integer_body_reads(right, bound, reads)
+        }
+        // The fold's accumulator and item are variables, not names.
+        SpecIntegerExpression::RangeFold {
+            index,
+            initial,
+            body,
+            ..
+        } => {
+            match index {
+                SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                    collect_body_reads(start, bound, reads)?;
+                    collect_body_reads(end, bound, reads)?;
+                }
+                SpecIntegerRangeFoldIndex::Integer { start, end } => {
+                    collect_integer_body_reads(start, bound, reads)?;
+                    collect_integer_body_reads(end, bound, reads)?;
+                }
+            }
+            collect_integer_body_reads(initial, bound, reads)?;
+            collect_integer_body_reads(body, bound, reads)
+        }
+    }
+}
+
+fn collect_algebraic_body_reads(
+    expression: &SpecAlgebraicExpression,
+    bound: &mut Vec<String>,
+    reads: &mut BodyReads,
+) -> Result<(), UninspectedForm> {
+    match &expression.node {
+        // An algebraic binding is a parameter or a match binding of the
+        // algebraic sort, never a C name.
+        SpecAlgebraicExpressionNode::Variable(_)
+        | SpecAlgebraicExpressionNode::Binding(_)
+        | SpecAlgebraicExpressionNode::ResourceField(_) => Ok(()),
+        SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
+            for field in fields {
+                match field {
+                    SpecAlgebraicValue::C(value) => collect_body_reads(value, bound, reads)?,
+                    SpecAlgebraicValue::Integer(value) => {
+                        collect_integer_body_reads(value, bound, reads)?
+                    }
+                    SpecAlgebraicValue::Algebraic(value) => {
+                        collect_algebraic_body_reads(value, bound, reads)?
+                    }
+                }
+            }
+            Ok(())
+        }
+        SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
+            collect_algebraic_body_reads(scrutinee, bound, reads)?;
+            for arm in arms {
+                with_bound(bound, arm.bindings.iter().cloned(), |bound| {
+                    collect_algebraic_body_reads(&arm.body, bound, reads)
+                })?;
+            }
+            Ok(())
+        }
+        SpecAlgebraicExpressionNode::PureFunctionApplication { arguments, .. } => {
+            collect_argument_body_reads(arguments, bound, reads)
+        }
+    }
+}
+
+fn collect_argument_body_reads(
+    arguments: &[SpecPureFunctionArgument],
+    bound: &mut Vec<String>,
+    reads: &mut BodyReads,
+) -> Result<(), UninspectedForm> {
+    for argument in arguments {
+        match argument {
+            // An array reference carries its own snapshot as an argument;
+            // only the pointer expression is a read of this body's scope.
+            SpecPureFunctionArgument::Value(value)
+            | SpecPureFunctionArgument::ArrayRef { pointer: value, .. } => {
+                collect_body_reads(value, bound, reads)?
+            }
+            SpecPureFunctionArgument::Integer(value) => {
+                collect_integer_body_reads(value, bound, reads)?
+            }
+            SpecPureFunctionArgument::Algebraic(value) => {
+                collect_algebraic_body_reads(value, bound, reads)?
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_proposition_body_reads(
+    proposition: &SpecProposition,
+    bound: &mut Vec<String>,
+    reads: &mut BodyReads,
+) -> Result<(), UninspectedForm> {
+    match proposition {
+        SpecProposition::Comparison { left, right, .. } => {
+            collect_body_reads(left, bound, reads)?;
+            collect_body_reads(right, bound, reads)
+        }
+        SpecProposition::IntegerComparison { left, right, .. } => {
+            collect_integer_body_reads(left, bound, reads)?;
+            collect_integer_body_reads(right, bound, reads)
+        }
+        SpecProposition::AlgebraicComparison { left, right, .. } => {
+            collect_algebraic_body_reads(left, bound, reads)?;
+            collect_algebraic_body_reads(right, bound, reads)
+        }
+        SpecProposition::FloatClassification { expression, .. }
+        | SpecProposition::Defined(expression) => collect_body_reads(expression, bound, reads),
+        SpecProposition::And(left, right)
+        | SpecProposition::Or(left, right)
+        | SpecProposition::Implies(left, right) => {
+            collect_proposition_body_reads(left, bound, reads)?;
+            collect_proposition_body_reads(right, bound, reads)
+        }
+        SpecProposition::Not(body) => collect_proposition_body_reads(body, bound, reads),
+        SpecProposition::Predicate { arguments, .. } => {
+            for argument in arguments {
+                match argument {
+                    SpecPredicateArgument::Value(value)
+                    | SpecPredicateArgument::ArrayRef { pointer: value, .. } => {
+                        collect_body_reads(value, bound, reads)?
+                    }
+                }
+            }
+            Ok(())
+        }
+        // Quantifiers, sequences, resources and loadability do not occur in
+        // a memory-independent body; a body that has one is not inspected.
+        _ => Err(UninspectedForm(
+            "a proposition form the closedness check does not inspect",
+        )),
+    }
 }
 
 thread_local! {
@@ -97,13 +479,28 @@ thread_local! {
 /// Records one declared function body for this verification. A name recorded
 /// twice keeps the first body: two declarations of one name are a Surface
 /// error, and the kernel never resolves that by preferring the later one.
-pub fn register_pure_function_definition(definition: CPureFunctionDefinition) {
+///
+/// A recorded body must be a function of its parameters alone, because the
+/// application of a memory-independent function is keyed on its argument
+/// values and nothing else. A body that loads memory, or reads a C name that
+/// is not one of its parameters, is refused with a reason that completes the
+/// sentence "pure function `f` ...". The check inspects the forms a
+/// memory-independent body is built from and records a body it cannot
+/// inspect as before; it is a defence behind the Surface classification, not
+/// a replacement for it.
+pub fn register_pure_function_definition(
+    definition: CPureFunctionDefinition,
+) -> Result<(), String> {
+    if let Some(openness) = definition.openness() {
+        return Err(openness);
+    }
     PURE_FUNCTION_DEFINITIONS.with(|registry| {
         registry
             .borrow_mut()
             .entry(definition.name.clone())
             .or_insert_with(|| std::sync::Arc::new(definition));
     });
+    Ok(())
 }
 
 pub(crate) fn registered_pure_function_definition(

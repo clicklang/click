@@ -3756,6 +3756,17 @@ fn one_element_gap_separates_bytes(
         // ladder, which needs no width: distinct objects share no byte.
         return true;
     }
+    // Two offsets whose difference is a multiple of some stride at least as
+    // wide as both accesses are separated by the inequality alone: a
+    // nonzero multiple of the stride is at least the stride away. This is
+    // what clears the `int32` field at `s + 8x + 4` from the one at `s + 4`,
+    // and declines a byte at `p + 5` against the `int32` at `p + 4k`, whose
+    // difference `4k - 5` has no stride but one.
+    if offset_difference_stride(&left.offset, &right.offset)
+        .is_some_and(|stride| i64::from(left_bytes.max(right_bytes)) <= stride)
+    {
+        return true;
+    }
     // Cancelling a shared additive base is what lets two indexed addresses be
     // compared, and a pair with no base to cancel — `a + 4` against `a[i]`,
     // where one side is a bare constant and the other a bare scaled index —
@@ -3791,6 +3802,105 @@ fn one_element_gap_separates_bytes(
         return false;
     };
     i64::from(lower_access_bytes) <= element_width
+}
+
+/// The stride every value of `left - right` is a multiple of, when the two
+/// offsets have one and are not provably equal: the greatest common divisor
+/// of the element widths of their symbolic scaled summands and of their
+/// constant difference, after cancelling summands both sides share.
+///
+/// A `PointerOffsetTerm` is an exact `i64` sum, and a scaled summand is its
+/// index sign- or zero-extended times its width, so each symbolic summand
+/// contributes a multiple of its width whatever the index is. An opaque
+/// offset variable that does not cancel has no stride, and so has the pair.
+/// A difference that is a constant is left to exact geometry (`None`), as is
+/// a difference with no summand at all, which is the equal pair.
+fn offset_difference_stride(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> Option<i64> {
+    fn summands<'a>(offset: &'a PointerOffsetTerm, into: &mut Vec<&'a PointerOffsetTerm>) {
+        match offset {
+            PointerOffsetTerm::Add(left, right) => {
+                summands(left, into);
+                summands(right, into);
+            }
+            other => into.push(other),
+        }
+    }
+    fn gcd(a: i64, b: i64) -> i64 {
+        let (mut a, mut b) = (a.unsigned_abs(), b.unsigned_abs());
+        while b != 0 {
+            (a, b) = (b, a % b);
+        }
+        i64::try_from(a).unwrap_or(i64::MAX)
+    }
+    let mut left_summands = Vec::new();
+    summands(left, &mut left_summands);
+    let mut right_summands = Vec::new();
+    summands(right, &mut right_summands);
+    // Cancel summands both sides share, one occurrence for one.
+    left_summands.retain(|summand| {
+        if let Some(position) = right_summands.iter().position(|other| other == summand) {
+            right_summands.swap_remove(position);
+            false
+        } else {
+            true
+        }
+    });
+    let mut constant = 0i64;
+    let mut stride = 0i64;
+    let mut symbolic = false;
+    for (summand, sign) in left_summands
+        .iter()
+        .map(|summand| (*summand, 1i64))
+        .chain(right_summands.iter().map(|summand| (*summand, -1i64)))
+    {
+        match summand {
+            PointerOffsetTerm::Constant(value) => {
+                constant = constant.checked_add(sign.checked_mul(*value)?)?;
+            }
+            PointerOffsetTerm::Variable(_) => return None,
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                match signed_bitvector_constant(value) {
+                    Some(index) => {
+                        constant = constant
+                            .checked_add(sign.checked_mul(index.checked_mul(*byte_width)?)?)?;
+                    }
+                    None => {
+                        symbolic = true;
+                        stride = gcd(stride, *byte_width);
+                    }
+                }
+            }
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => {
+                let index = if *unsigned {
+                    value
+                        .uint64_as_const()
+                        .and_then(|index| i64::try_from(index).ok())
+                } else {
+                    value.int64_as_const()
+                };
+                match index {
+                    Some(index) => {
+                        constant = constant
+                            .checked_add(sign.checked_mul(index.checked_mul(*byte_width)?)?)?;
+                    }
+                    None => {
+                        symbolic = true;
+                        stride = gcd(stride, *byte_width);
+                    }
+                }
+            }
+            PointerOffsetTerm::Add(..) => unreachable!("summands are not sums"),
+        }
+    }
+    if !symbolic {
+        return None;
+    }
+    let stride = gcd(stride, constant);
+    (stride > 0).then_some(stride)
 }
 
 /// The exact byte distance from `base` to `pointer`, when their offsets are

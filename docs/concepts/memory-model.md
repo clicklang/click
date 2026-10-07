@@ -107,6 +107,8 @@ arbitrary positive byte extent. Heap identities are not reused within a proof.
 Fresh `malloc` bytes are
 uninitialized, so ownership permits stores but does not make an unstored cell
 readable; successful `calloc` cells read as zero or null until overwritten.
+A store over any byte of a cell ends that cell's zero reading, whether the
+store is narrower than the load and lies inside it or wider and contains it.
 Pointer-array `malloc` uses `count * sizeof(int32*)` or
 `count * sizeof(uint8*)` with the eight-byte LP64 pointer stride; pointer cells
 are uninitialized until stored, and the complete pointer-array range is
