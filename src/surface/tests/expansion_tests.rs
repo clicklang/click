@@ -1801,6 +1801,33 @@ theorem reflexive_implication(x: int32) {
         .expect_err("removing the retained introduction must invalidate the proof");
 }
 
+/// A `have` with no written proof is `have P by simp;`. Expansion addresses
+/// a proof's tactics through source positions, so a default proof must not
+/// leave it without a block to rewrite: the `have` gains one, and a smart
+/// tactic beside it still expands and rechecks.
+#[test]
+fn expansion_rewrites_a_have_with_a_default_proof() {
+    let source = r#"
+theorem default_have(x: int32) {
+    requires 0 <= x;
+    ensures 0 <= x and x == x by {
+        have x == x;
+        simp();
+    }
+}
+"#;
+    verify_c0_sources(source, &[]).expect("the default `have` proof should verify");
+    for needle in ["have x == x;", "simp();"] {
+        let offset = source.find(needle).expect("expected tactic");
+        let position = expansion::position_at_offset(source, offset);
+        let expanded =
+            expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
+        assert!(expanded.contains("have x == x by {"), "{expanded}");
+        assert!(!expanded.contains("have x == x;"), "{expanded}");
+        verify_c0_sources(&expanded, &[]).expect("the expanded proof should recheck");
+    }
+}
+
 #[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [

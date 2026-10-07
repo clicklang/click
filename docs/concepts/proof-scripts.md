@@ -18,9 +18,8 @@ An omitted proof means `simp` at the point where the statement holds:
 - `have P;` holds where it is written. It is `have P by simp;` and never
   executes C. `auto` is refused inside a `have` for the same reason.
 
-A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
-any tactic, as in `have 0 <= x by assumption();`. `by simp;` and `by auto;`
-are written without parentheses.
+`by simp;` and `by auto;` are the only proofs written without a block. Any
+other proof, even of one step, is a block: `have 0 <= x by { assumption(); }`.
 
 `by simp;` does not execute C. For a whole-function proof, use `by auto;` or make the
 sequence explicit:
