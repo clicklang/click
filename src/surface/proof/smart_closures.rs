@@ -3746,12 +3746,10 @@ impl<'a> Proof<'a> {
         // A refold moves a constructor equation: a proof `match` arm's case
         // fact states the scrutinee's constructor at unchanged function entry,
         // and once the arm has refolded its instance, `c.model == C(..)` reads
-        // the refolded field. That is the one shape whose recorded pair can
-        // still answer a lookup while the spelling itself has moved to another
-        // fact, so it is the one shape re-lowered below. Testing the kernel's
-        // shape once keeps other live premise spellings on the cheap
-        // recorded-pair route: re-lowering every candidate costs a smart
-        // `have` about half its real-time budget again.
+        // the refolded field. Like a snapshot selector recorded again in a
+        // loop, that spelling may stop denoting its old checked fact.
+        // Re-lower those movable forms below; other live recorded pairs keep
+        // their indexed lookup without repeating proposition lowering.
         let constructor_equation = matches!(
             kernel,
             Proposition::Equal(
@@ -3798,7 +3796,11 @@ impl<'a> Proof<'a> {
                                     .any(|(_, snapshot)| snapshot.locals().contains_name(name))
                         })
                     });
-                if !constructor_equation && !names_a_dead_local {
+                // A statement selector can be recorded again on a later
+                // loop iteration. Its old pair remains a checked fact, but
+                // an explicit snapshot spelling must still denote it now.
+                let snapshot_spelling = proposition_contains_at_expression(candidate);
+                if !constructor_equation && !names_a_dead_local && !snapshot_spelling {
                     // The recorded pair is authoritative for this shape.
                     return Some(());
                 }
