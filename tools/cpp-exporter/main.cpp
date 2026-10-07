@@ -2989,6 +2989,23 @@ private:
   lower_place_reference(const clang::Expr *expression,
                         const clang::FunctionDecl *expected_function) {
     expression = expression->IgnoreParenImpCasts();
+    if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(expression)) {
+      auto lowered = lower_member(member, expected_function);
+      if (!lowered)
+        return std::nullopt;
+      auto *object = lowered->object.getAsObject();
+      auto *path = object->getArray("projections");
+      if (path == nullptr) {
+        (*object)["projections"] = llvm::json::Array();
+        path = object->getArray("projections");
+      }
+      if (path->size() >= kMaxRecordDeclarations) {
+        fail(member->getMemberLoc(), "C++ artifact budget exhausted: record field projections");
+        return std::nullopt;
+      }
+      path->push_back(std::move(lowered->field));
+      return std::move(lowered->object);
+    }
     if (llvm::isa<clang::CXXThisExpr>(expression)) {
       const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(expected_function);
       if (method == nullptr || method->isStatic()) {

@@ -114,7 +114,9 @@ impl<'a> Proof<'a> {
                 step: None,
                 focused_branch: self.focused_branch_id(),
                 depth: self.node.depth,
-                split_branches: Vec::new(),
+                // This marker belongs only to the current lineage. A later
+                // sibling must not follow it into this arm's nested matches.
+                split_branches: vec![self.focused_branch_id()],
             }),
         }
     }

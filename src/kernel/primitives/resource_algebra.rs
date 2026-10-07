@@ -5262,7 +5262,7 @@ impl ResourceContext {
         for entry in entries {
             suppliers.insert_fact(self.fact(*entry).clone());
         }
-        Some(suppliers.normalized(assumptions))
+        Some(suppliers.normalized_with_byte_endpoints(assumptions, true))
     }
 
     fn without_fact_from_local_indexes(
@@ -5587,7 +5587,17 @@ impl ResourceContext {
         self
     }
 
-    pub(in crate::kernel) fn normalized(mut self, assumptions: &PureFactContext) -> Self {
+    pub(in crate::kernel) fn normalized(self, assumptions: &PureFactContext) -> Self {
+        self.normalized_with_byte_endpoints(assumptions, false)
+    }
+
+    // Bytewise regrouping belongs to explicitly selected memory suppliers.
+    // Ambient normalization preserves the representation of borrowed clauses.
+    fn normalized_with_byte_endpoints(
+        mut self,
+        assumptions: &PureFactContext,
+        byte_endpoints: bool,
+    ) -> Self {
         if !self.storage.supported_by.is_empty()
             || !self.storage.expansions_by_support_occurrence.is_empty()
         {
@@ -5634,7 +5644,7 @@ impl ResourceContext {
                 materialized: std::sync::OnceLock::new(),
             });
             return self
-                .normalized(assumptions)
+                .normalized_with_byte_endpoints(assumptions, byte_endpoints)
                 .restore_supported_projection_pairs(supported)
                 .restore_cached_support_expansions(expansions);
         }
@@ -5657,7 +5667,10 @@ impl ResourceContext {
             })
             .collect::<Vec<_>>();
         let mut slots = retained.iter().cloned().map(Some).collect::<Vec<_>>();
-        let mut index = ResourceNormalizationIndex::default();
+        let mut index = ResourceNormalizationIndex {
+            byte_endpoints,
+            ..Default::default()
+        };
         for (position, (_, fact)) in retained.iter().enumerate() {
             index.insert(position, fact);
         }
@@ -5829,6 +5842,8 @@ enum ResourceNormalizationKey {
     ExactShapeAnchoredAll(ResourceFamily, String, usize),
     MemoryStart(MemoryBaseRoot, bool, Bitvector32Term),
     MemoryEnd(MemoryBaseRoot, bool, Bitvector32Term),
+    MemoryByteStart(MemoryBaseRoot, bool, i64),
+    MemoryByteEnd(MemoryBaseRoot, bool, i64),
 }
 
 /// The adjacency coordinate one memory bound contributes to the
@@ -5879,13 +5894,38 @@ fn memory_normalization_position(range: &CMemoryRange, bound: &Bitvector32Term) 
         .unwrap_or_else(|| bound.clone())
 }
 
+/// Constant endpoints also meet in bytes relative to a symbolic object root.
+/// Element-unit keys alone cannot pair a returned scalar with bytewise padding.
+/// These keys only select candidates; merging still checks exact adjacency.
+fn memory_normalization_relative_byte_position(
+    range: &CMemoryRange,
+    bound: &Bitvector32Term,
+) -> Option<i64> {
+    let elements = signed_bitvector_constant(bound)?;
+    let displacement = match memory_base_root(range.base()).1 {
+        Some(offset) => {
+            let root = Pointer {
+                block: range.base().block.clone(),
+                offset,
+            };
+            let delta = range.base().exact_element_delta_from_base(&root, 1, None)?;
+            delta
+                .constant
+                .checked_add(signed_bitvector_constant(&delta.index)?)?
+        }
+        None => range.base().offset.as_const()?,
+    };
+    displacement.checked_add(elements.checked_mul(i64::from(range.element_width()))?)
+}
+
 #[derive(Default)]
 struct ResourceNormalizationIndex {
+    byte_endpoints: bool,
     positions: BTreeMap<ResourceNormalizationKey, BTreeSet<usize>>,
 }
 
 impl ResourceNormalizationIndex {
-    fn keys(fact: &CResourceFact) -> Vec<ResourceNormalizationKey> {
+    fn keys(&self, fact: &CResourceFact) -> Vec<ResourceNormalizationKey> {
         let mut keys = vec![ResourceNormalizationKey::Resource(fact.resource().clone())];
         match fact.resource() {
             CResource::Instance(instance) => {
@@ -5897,6 +5937,26 @@ impl ResourceNormalizationIndex {
             | CResource::MutexLive(_)
             | CResource::MutexUse(_) => {}
             CResource::Memory(range) => {
+                if self.byte_endpoints
+                    && let Some(start) =
+                        memory_normalization_relative_byte_position(range, range.start())
+                {
+                    keys.push(ResourceNormalizationKey::MemoryByteStart(
+                        memory_base_root(range.base()),
+                        fact.is_own(),
+                        start,
+                    ));
+                }
+                if self.byte_endpoints
+                    && let Some(end) =
+                        memory_normalization_relative_byte_position(range, range.end())
+                {
+                    keys.push(ResourceNormalizationKey::MemoryByteEnd(
+                        memory_base_root(range.base()),
+                        fact.is_own(),
+                        end,
+                    ));
+                }
                 keys.push(ResourceNormalizationKey::MemoryStart(
                     memory_base_root(range.base()),
                     fact.is_own(),
@@ -5936,13 +5996,13 @@ impl ResourceNormalizationIndex {
     }
 
     fn insert(&mut self, position: usize, fact: &CResourceFact) {
-        for key in Self::keys(fact) {
+        for key in self.keys(fact) {
             self.positions.entry(key).or_default().insert(position);
         }
     }
 
     fn remove(&mut self, position: usize, fact: &CResourceFact) {
-        for key in Self::keys(fact) {
+        for key in self.keys(fact) {
             if let Some(positions) = self.positions.get_mut(&key) {
                 positions.remove(&position);
             }
@@ -5990,6 +6050,16 @@ impl ResourceNormalizationIndex {
                     .chain(assumptions.bitvector_equality_class(range.start()))
                 {
                     for root in &roots {
+                        if self.byte_endpoints
+                            && let Some(byte) =
+                                memory_normalization_relative_byte_position(range, &start)
+                        {
+                            keys.push(ResourceNormalizationKey::MemoryByteEnd(
+                                root.clone(),
+                                owned,
+                                byte,
+                            ));
+                        }
                         keys.push(ResourceNormalizationKey::MemoryEnd(
                             root.clone(),
                             owned,
@@ -6001,6 +6071,16 @@ impl ResourceNormalizationIndex {
                     .chain(assumptions.bitvector_equality_class(range.end()))
                 {
                     for root in &roots {
+                        if self.byte_endpoints
+                            && let Some(byte) =
+                                memory_normalization_relative_byte_position(range, &end)
+                        {
+                            keys.push(ResourceNormalizationKey::MemoryByteStart(
+                                root.clone(),
+                                owned,
+                                byte,
+                            ));
+                        }
                         keys.push(ResourceNormalizationKey::MemoryStart(
                             root.clone(),
                             owned,

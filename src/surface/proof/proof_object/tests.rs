@@ -933,6 +933,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     let left_closed = split_proof
         .focus_branch(ids[0])
         .expect("the left sibling is open")
+        .begin_execution_match()
         .apply_step(ProofStep::Assumption)
         .expect("the shared disjunction fact closes the left claim");
     assert!(left_closed.state.open_branches().get(ids[1]).is_some());
@@ -944,8 +945,8 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     assert!(both_closed.is_complete());
 
     // An unjoined arm's own certificate follows its lineage: the sibling's
-    // interleaved step is attributed elsewhere, while the whole chain
-    // still lists both.
+    // interleaved step and nested match marker are attributed elsewhere,
+    // while the whole chain still lists both checked steps.
     assert_eq!(left_closed.path_certificate().unwrap().steps().len(), 1);
     assert_eq!(both_closed.path_certificate().unwrap().steps().len(), 1);
     assert_eq!(both_closed.certificate().steps().len(), 2);

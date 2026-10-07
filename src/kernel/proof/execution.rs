@@ -10165,6 +10165,11 @@ impl ExecutionProofCore {
             .ok_or("return fold selected an unknown path")
     }
 
+    /// Whether this path retains a kernel-checked exchange after its C return.
+    pub(crate) fn has_checked_return_resource_rewrite(&self, path_index: usize) -> bool {
+        self.return_resource_rewrites.get(&path_index).is_some()
+    }
+
     /// Collect a finished outcome's exchange without copying sibling traces.
     pub(crate) fn collect_return_resource_rewrites(
         &mut self,
@@ -15077,6 +15082,15 @@ mod authority_transfer_wrapper_scaling_tests {
                 resources = resources.unchecked_with_fact(unrelated);
                 before = before.with_local(format!("local_{index}"), int32(index as u32));
                 memory = memory.with_block(format!("block_{index}"), 4);
+                resources =
+                    resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                        Pointer {
+                            block: format!("block_{index}").into(),
+                            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                        },
+                        0.into(),
+                        1.into(),
+                    )));
                 facts = facts.with_fact(Proposition::ConditionIs(
                     crate::kernel::ConditionTerm::Bitvector32Equal(
                         Box::new(Bitvector32Term::Variable(Variable(index as u64 + 100))),
@@ -15143,6 +15157,36 @@ mod authority_transfer_wrapper_scaling_tests {
                 .is_err(),
                 "the unrelated frame must remain authenticated"
             );
+            let unrelated_memory = CResourceFact::own_memory(CMemoryRange::new(
+                Pointer {
+                    block: "block_0".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                },
+                0.into(),
+                1.into(),
+            ));
+            for (input, output) in [(&before, &folded), (&folded, &unfolded)] {
+                let forged = output.clone().with_resource_context(
+                    output
+                        .resources()
+                        .clone()
+                        .without_fact_incrementally(&unrelated_memory, facts.assumptions())
+                        .unwrap(),
+                );
+                assert!(
+                    CheckedResourceRewrite::check(
+                        &function,
+                        input,
+                        &facts,
+                        &selected,
+                        &forged,
+                        &facts,
+                        &CheckedCallEvents::default(),
+                    )
+                    .is_err(),
+                    "a wrapper exchange cannot remove unrelated memory"
+                );
+            }
             work
         });
         assert!(

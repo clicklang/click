@@ -979,8 +979,14 @@ impl LoweringContext<'_> {
     }
 
     fn lower_place(&self, place: &CppPlaceReference) -> Result<CExpression, String> {
-        self.place(place)?;
-        Ok(c_variable(place.name.clone()))
+        let root = self.place(place)?;
+        let (_, offset) = self
+            .records
+            .resolve_path(&root.value_type, &place.projections)?;
+        Ok(c_pointer_offset_bytes(
+            c_variable(place.name.clone()),
+            offset,
+        ))
     }
 
     fn lower_typed_int32_load(&mut self, pointer: &CppExpression) -> Result<CExpression, String> {
