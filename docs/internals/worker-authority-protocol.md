@@ -210,7 +210,13 @@ resources, including any `owns authority(R(p))`, to the worker's call identity
 in the creation ledger, and the contract's checked member effects apply under
 that identity. The parent then continues with that ledger but without the
 worker's resources, so it holds neither the lent authority nor the lent
-members. A failed create selects the parent's unchanged ledger. Join performs
+members. A failed create selects the parent's unchanged ledger. Explicit
+`step()` into a status branch retains the condition check's exact successor,
+just as `branch` does. Whole-claim expansion therefore keeps each outcome's
+resources and their checked ledger history rather than continuing from the
+unresolved pre-condition state. `modeled_pthread_counted_join.md` covers the
+failed-create authority and count; the counted and shared-worker fixtures
+cover expansion across joins and subsequent creates. Join performs
 the sequential return: the worker's outputs move back to the parent through
 the same ledger transfer, and the call must retain nothing. Join itself makes
 no population transition, and every count observed afterward is read from the
