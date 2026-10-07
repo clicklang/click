@@ -1763,7 +1763,16 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
+        // A family that reaches no population keeps its ordinary definition
+        // law; only population-reaching bodies take the checks below.
+        let reaches_population = match selected.resource() {
+            CResource::Composite { name, .. } => function
+                .composite_resource_definition(name)
+                .is_none_or(|definition| definition.reaches_population()),
+            _ => true,
+        };
         if before_state.uses_population_authority_semantics()
+            && reaches_population
             && !matches!(selected.resource(), CResource::Instance(_))
         {
             if let CResource::Composite { name, .. } = selected.resource()

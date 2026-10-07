@@ -1354,3 +1354,8 @@ list, or the built-in allocation token, reaches no population; any other
 abstract token, including one from an interface built without the list, is
 still refused. Regressions: `authority_mode_ordinary_abstract_token_call.md`
 and `authority_mode_external_abstract_member_birth_refused.md`.
+
+The kernel's authority-mode body checks (population authority wrappers,
+transfer wrappers and member body access) now apply only to a composite that
+reaches a population; any other composite folds and unfolds by its
+definition. Regression: `authority_mode_ordinary_composite_of_tokens_folds.md`.
