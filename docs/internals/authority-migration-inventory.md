@@ -1023,6 +1023,34 @@ restores the control). Negative:
 `authority_mutex_control_helper_wrong_mutex_rejected.md`, and
 `authority_mutex_control_helper_open_rejected.md`.
 
+**Chunk 2 follow-up, locked helpers:** A standalone helper may now open the
+control it acquires. The typed lock enters the control's population into the
+helper's proof once, with a fresh total bounded below by the members the
+helper owns and no creator right. A locked helper contract preserves one typed
+`mutex_use` and declares at most one consumed or produced member of the
+acquired population; at return, the checked births and deaths under the
+acquired authority must match it exactly, read from the ledger after unlock
+has returned the authority to the escrow. The caller lends the escrowed
+population to the call in its ledger and applies the declared effect on
+return. The wildcard-consumption check from
+`authority-establishment-review.md` defers acquired populations to this check.
+
+`authority_mutex_control_helper_open_rejected.md` becomes
+`authority_mutex_control_helper_open.md` (pass) with its C and proof
+unchanged: the helper's observation of a fresh total that it does not change
+is sound, and the new negatives below protect the population instead.
+Positive: `authority_mutex_locked_release.md` (a locked release that spends
+its caller's member; the creator observes zero after destruction). Negative:
+`authority_mutex_locked_release_unspent_rejected.md` (declared death never
+spent), `authority_mutex_locked_release_other_population_rejected.md` (member
+of a population the helper never acquired),
+`authority_mutex_locked_release_stale_rejected.md` (the caller's counter fact
+from before the call), `authority_mutex_locked_undeclared_birth_rejected.md`
+(a birth with no `produces`), and
+`authority_mutex_locked_reacquire_rejected.md` (a second acquisition in one
+proof). An unconditional locked retain remains open: creating a member under
+a fresh total needs a bound that rules out counter overflow.
+
 **Chunk 3, protected bodies and local conservation:** Six fixtures leave the
 legacy path; each also drops `guarded_by`, since initialization supplies the
 association.

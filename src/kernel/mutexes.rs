@@ -43,6 +43,7 @@ pub(super) enum MutexTransitionError {
     MissingUse(Pointer),
     MissingInvariant(CResourceFact),
     Refusal(&'static str),
+    OwnedRefusal(String),
 }
 
 impl From<&'static str> for MutexTransitionError {
@@ -64,6 +65,7 @@ impl MutexTransitionError {
                 resource: Box::new(resource),
             },
             Self::Refusal(message) => super::CRuntimeError::FunctionContract(message.into()),
+            Self::OwnedRefusal(message) => super::CRuntimeError::FunctionContract(message),
         }
     }
 }

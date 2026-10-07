@@ -1,11 +1,13 @@
-# A standalone acquiring helper cannot open the acquired control
+# A standalone acquiring helper may open the acquired control
 
-An acquiring helper's own proof receives a fresh control from the lock but
-no recognized population for its authority. Opening it, which would let the
-helper observe or change the population, is refused; the caller that
-established the population opens the returned control instead.
+An acquiring helper's own proof receives a fresh control from the lock. Its
+authority enters the helper's proof with a fresh total, bounded below only by
+the members the helper owns, so the helper may open the control and observe
+that total. It changes no member, so its contract declares no member effect,
+and it refolds the control before returning it. The caller that established
+the population opens the returned control under its own ledger.
 
-```c filename=authority_mutex_control_helper_open_rejected.c
+```c filename=authority_mutex_control_helper_open.c
 #include <pthread.h>
 struct object { pthread_mutex_t mu; int refs; };
 void acquire(struct object *obj) { pthread_mutex_lock(&obj->mu); }
@@ -30,7 +32,7 @@ int run(void) {
 ```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
-verifying "authority_mutex_control_helper_open_rejected.c";
+verifying "authority_mutex_control_helper_open.c";
 resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {
@@ -97,5 +99,5 @@ int32 run() {
 ```
 
 ```expect
-fail: Requires owns authority(reference(...))
+pass
 ```
