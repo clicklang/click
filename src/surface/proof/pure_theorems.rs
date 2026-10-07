@@ -3515,6 +3515,28 @@ mod tests {
     }
 
     #[test]
+    fn obtained_machine_witness_scope_retains_authority_and_expands() {
+        let fixture = include_str!("../../../mdtests/obtain_pure_witness_scope.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let verified = verify_instantiation_theorem(source)
+            .expect("obtained witnesses must resolve in later pure tactics");
+        assert!(verified.kernel_authority.is_some());
+        let expanded = crate::surface::expand_c0_claim_source_by_label(
+            source,
+            &[],
+            "obtained_int32.ensures_0",
+        )
+        .unwrap();
+        crate::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+
+    #[test]
     fn pure_instantiate_rejects_omitted_guard_and_preserves_checked_error() {
         let missing =
             INSTANTIATE_BOUND.replace("using { 0 <= x; x < limit; }", "using { 0 <= x; }");

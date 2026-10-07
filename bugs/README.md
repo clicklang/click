@@ -19,6 +19,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A nested loop with an inner `break` is refused under concrete execution](nested-loop-inner-break-refused-under-concrete-execution.md)
 - [A decidably false return narrowing reports an internal error, not the range](false-return-narrowing-reports-internal-error.md)
 - [A parent cannot lock its own mutex after joining a typed `mutex_use` worker](mutex-lock-after-joining-typed-worker-refused.md)
-- [An `obtain`ed int32 witness is unbound in a later `have`, `instantiate`, or `contradiction`](obtained-int32-witness-unbound-in-later-tactics.md)
 - [Arithmetic cannot render an observed product after a zero rewrite](arithmetic-cannot-render-observed-product-after-zero-rewrite.md)
 - [Whole-claim expansion fails on proofs with a proof `match`](whole-claim-expansion-fails-on-proof-matches.md)

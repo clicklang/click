@@ -222,10 +222,10 @@ impl<'a> Proof<'a> {
                 {
                     return Ok(recorded.clone());
                 }
-                // A pure goal's universal binders are named only by this
-                // goal's retained bindings; the theorem's parameter values
-                // do not mention them.
-                let surface = &self.substitute_goal_surface_bindings_in_proposition(surface)?;
+                // Resolve both introduced goal binders and proof locals such
+                // as obtained machine witnesses. The theorem's parameter
+                // values contain neither; select only names in this input.
+                let surface = &self.substitute_fixed_state_locals_in_proposition(surface)?;
                 let empty_algebraic_values = BTreeMap::new();
                 let algebraic_values = algebraic_values_for_surface_proposition(
                     surface,
@@ -418,7 +418,7 @@ impl<'a> Proof<'a> {
     ) -> Result<Proposition, ClickError> {
         match self.context.as_ref() {
             ProofContext::Pure(context) => {
-                let surface = &self.substitute_goal_surface_bindings_in_proposition(surface)?;
+                let surface = &self.substitute_fixed_state_locals_in_proposition(surface)?;
                 let empty_algebraic_values = BTreeMap::new();
                 let algebraic_values = algebraic_values_for_surface_proposition(
                     surface,
@@ -591,7 +591,7 @@ impl<'a> Proof<'a> {
                 {
                     return Ok((recorded.clone(), None));
                 }
-                let surface = self.substitute_goal_surface_bindings_in_proposition(surface)?;
+                let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
                 let empty_algebraic_values = BTreeMap::new();
                 let mut integer_values = context.theorem_context.integer_values.clone();
                 for (name, value) in self.local_integer_values().iter() {
