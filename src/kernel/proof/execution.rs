@@ -1820,7 +1820,7 @@ impl CheckedResourceRewrite {
                     after_facts,
                     call_events,
                     definition,
-                    selected_children,
+                    selected_children.clone(),
                 );
                 // A wrapper that reaches no population and has a body this
                 // delta check does not model keeps its ordinary definition law.
