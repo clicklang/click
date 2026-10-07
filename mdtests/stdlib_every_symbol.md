@@ -70,6 +70,43 @@ theorem use_uint32_add_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint32_add_to_integer(left, right)); }
 }
 
+theorem use_uint64_add_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) + to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint64_add_to_integer(left, right)); }
+}
+
+theorem use_uint64_multiply_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) * to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by { apply(uint64_multiply_to_integer(left, right)); }
+}
+
+theorem use_uint64_subtract_to_integer(left: uint64, right: uint64) {
+    requires to_integer(right) <= to_integer(left);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(uint64_subtract_to_integer(left, right)); }
+}
+
+theorem use_uint64_divide_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right)) by { apply(uint64_divide_to_integer(left, right)); }
+}
+
+theorem use_uint64_remainder_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right)) by { apply(uint64_remainder_to_integer(left, right)); }
+}
+
+theorem use_uint64_less_equal_to_integer(left: uint64, right: uint64) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right) by { apply(uint64_less_equal_to_integer(left, right)); }
+}
+
+theorem use_uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right by { apply(uint64_less_equal_of_to_integer(left, right)); }
+}
+
 theorem use_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
     requires n == q * d + r;

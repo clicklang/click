@@ -1157,6 +1157,99 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint64_add_to_integer`
+
+```click
+theorem uint64_add_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) + to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+}
+```
+
+Unsigned addition agrees with Integer addition when the sum fits uint64. Native unsigned definedness alone permits wrapping.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_multiply_to_integer`
+
+```click
+theorem uint64_multiply_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) * to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right);
+}
+```
+
+Unsigned multiplication agrees with the Integer product when it fits uint64. The explicit product bound excludes wrap.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_subtract_to_integer`
+
+```click
+theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
+    requires to_integer(right) <= to_integer(left);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+```
+
+Unsigned subtraction agrees with Integer subtraction when the subtrahend is at most the minuend, excluding underflow.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_divide_to_integer`
+
+```click
+theorem uint64_divide_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right));
+}
+```
+
+Unsigned division agrees with the truncating Integer quotient. Both native and observed nonzero divisor premises are required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_remainder_to_integer`
+
+```click
+theorem uint64_remainder_to_integer(left: uint64, right: uint64) {
+    requires right != 0u64;
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+```
+
+Unsigned remainder agrees with the truncating Integer remainder. Both native and observed nonzero divisor premises are required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_less_equal_to_integer`
+
+```click
+theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right);
+}
+```
+
+Native uint64 non-strict order implies exact Integer observation order, including values above the sign bit.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_less_equal_of_to_integer`
+
+```click
+theorem uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+```
+
+Exact Integer observation order implies native uint64 non-strict order. The mathematical order premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_less_equal_to_integer`
 
 ```click
