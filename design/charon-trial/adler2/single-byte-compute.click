@@ -285,7 +285,7 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  premise 1: to_integer(at(reduced_b, __rust_mir_151)) <= 65535 => to_integer(at(reduced_b, __rust_mir_151)) <= 65535;
  integer_cast_identity bounds [0, 1] => to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); conclusion 0;
  } }
- have bytes[0] == old(bytes[0]) by { simp() using { 0 == 0; } }
+ have bytes[0] == old(bytes[0]) by { simp() using {} }
  simp() using { bytes[0] == old(bytes[0]); to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)); at(reduced_a, __rust_mir_149) == (1u32 + old((uint32)bytes[0])) % 65521u32; to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); at(reduced_b, __rust_mir_151) == (393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32; }
 }
 
