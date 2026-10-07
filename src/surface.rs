@@ -3129,9 +3129,9 @@ pub enum ProofTactic {
     ExecuteUntil(CodeRegionRef),
     UnfoldPredicate(String),
     UnfoldFunction(ClickFunctionApplication),
-    /// `unfold(f(args)) using { ... }`: the same defining equation, plus
+    /// `peel(f(args)) using { ... }`: the same defining equation, plus
     /// the range-fold law the listed guards select, stated over `f(args)`.
-    UnfoldFunctionUsing {
+    PeelFunction {
         application: ClickFunctionApplication,
         premises: Vec<ClickProposition>,
     },
@@ -3198,10 +3198,12 @@ pub enum ProofTactic {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
+    /// `instantiate(F, value)`, with `premises` the written `using` list.
+    /// Without a list, each instantiated guard must itself be an exact fact.
     InstantiateUsing {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Vec<ClickProposition>,
+        premises: Option<Vec<ClickProposition>>,
     },
     Simp,
     SimpUsing(ProofSimpUsing),
@@ -3439,8 +3441,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "unfold-function-using",
-        syntax: "unfold(function(args)) using { P; ... }",
+        id: "peel-function",
+        syntax: "peel(function(args)) using { P; ... }",
         class: "simple",
     },
     PublicTacticForm {
@@ -3664,6 +3666,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "instantiate",
+        syntax: "instantiate(F, value)",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "instantiate-using",
         syntax: "instantiate(F, value) using",
         class: "simple",
@@ -3732,9 +3739,9 @@ pub enum ProofStep {
     UserTactic(CallBinderTransport),
     UnfoldPredicate(String),
     UnfoldFunction(ClickFunctionApplication),
-    /// `unfold(f(args)) using { ... }`: the same defining equation, plus
+    /// `peel(f(args)) using { ... }`: the same defining equation, plus
     /// the range-fold law the listed guards select, stated over `f(args)`.
-    UnfoldFunctionUsing {
+    PeelFunction {
         application: ClickFunctionApplication,
         premises: Vec<ClickProposition>,
     },
@@ -3783,10 +3790,12 @@ pub enum ProofStep {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
+    /// `instantiate(F, value)`, with `premises` the written `using` list.
+    /// Without a list, each instantiated guard must itself be an exact fact.
     InstantiateUsing {
         quantified: ClickProposition,
         argument: ContractExpression,
-        premises: Vec<ClickProposition>,
+        premises: Option<Vec<ClickProposition>>,
     },
     Have {
         proposition: ClickProposition,
@@ -4065,10 +4074,10 @@ impl ProofStep {
             ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
             ProofTactic::UnfoldPredicate(name) => Self::UnfoldPredicate(name.clone()),
             ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
-            ProofTactic::UnfoldFunctionUsing {
+            ProofTactic::PeelFunction {
                 application,
                 premises,
-            } => Self::UnfoldFunctionUsing {
+            } => Self::PeelFunction {
                 application: application.clone(),
                 premises: premises.clone(),
             },
@@ -4306,10 +4315,10 @@ impl ProofStep {
             Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
             Self::UnfoldPredicate(name) => ProofTactic::UnfoldPredicate(name.clone()),
             Self::UnfoldFunction(application) => ProofTactic::UnfoldFunction(application.clone()),
-            Self::UnfoldFunctionUsing {
+            Self::PeelFunction {
                 application,
                 premises,
-            } => ProofTactic::UnfoldFunctionUsing {
+            } => ProofTactic::PeelFunction {
                 application: application.clone(),
                 premises: premises.clone(),
             },
@@ -4566,7 +4575,7 @@ fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::StepCall(_) => TacticClass::Simple(SimpleTactic::StatementTransition),
         ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
         ProofStep::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
-        ProofStep::UnfoldFunction(_) | ProofStep::UnfoldFunctionUsing { .. } => {
+        ProofStep::UnfoldFunction(_) | ProofStep::PeelFunction { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldFunction)
         }
         ProofStep::UnfoldResource(_) => TacticClass::Simple(SimpleTactic::UnfoldResource),
@@ -4895,7 +4904,7 @@ impl ProofTactic {
             }
             Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
             Self::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
-            Self::UnfoldFunction(_) | Self::UnfoldFunctionUsing { .. } => {
+            Self::UnfoldFunction(_) | Self::PeelFunction { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldFunction)
             }
             Self::UnfoldResource(_) => TacticClass::Simple(SimpleTactic::UnfoldResource),

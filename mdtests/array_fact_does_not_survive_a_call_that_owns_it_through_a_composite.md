@@ -56,12 +56,12 @@ void caller(int32 a[], int32 n) {
     unfold(vecbox(a, n));
     have 0 <= 0 by { simp(); }
     have icount(a, 0, 0) == 0 by {
-        unfold(icount(a, 0, 0)) using { 0 <= 0; }
+        peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
     }
     have to_integer(a[0]) == 5 by { simp() using { a[0] == 5; } }
     have icount(a, 0, 1) == 5 by {
-        unfold(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; }
+        peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; }
         arithmetic() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; }
     }
     fold(vecbox(a, n));

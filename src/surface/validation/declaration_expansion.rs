@@ -1207,9 +1207,15 @@ fn expand_declared_resource_tactic_with_expressions(
             quantified: expand_declared_resource_proposition(quantified, resource_definitions)?,
             argument: expand_declared_resource_expression(argument, resource_definitions)?,
             premises: premises
-                .into_iter()
-                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
+                .map(|premises| {
+                    premises
+                        .into_iter()
+                        .map(|premise| {
+                            expand_declared_resource_proposition(premise, resource_definitions)
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
         }),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }

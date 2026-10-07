@@ -109,7 +109,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldPredicate(_)
             | ProofTactic::UnfoldFunction(_)
-            | ProofTactic::UnfoldFunctionUsing { .. }
+            | ProofTactic::PeelFunction { .. }
             | ProofTactic::ObserveResource(_)
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
@@ -158,10 +158,10 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
         ProofTactic::UnfoldFunction(application) => {
             Some(ProofStep::UnfoldFunction(application.clone()))
         }
-        ProofTactic::UnfoldFunctionUsing {
+        ProofTactic::PeelFunction {
             application,
             premises,
-        } => Some(ProofStep::UnfoldFunctionUsing {
+        } => Some(ProofStep::PeelFunction {
             application: application.clone(),
             premises: premises.clone(),
         }),
@@ -612,7 +612,7 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             application: application.clone(),
             premises: None,
         }),
-        ProofTactic::UnfoldFunctionUsing {
+        ProofTactic::PeelFunction {
             application,
             premises,
         } => Some(PostExecutionTactic::UnfoldFunction {

@@ -11,7 +11,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
     ensures 0 <= unmarked(v, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            unfold(unmarked(v, lo, hi)) using { hi <= lo; }
+            peel(unmarked(v, lo, hi)) using { hi <= lo; }
             simp();
         } else {
             have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
@@ -27,7 +27,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
             }
             have lo <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; } }
-            unfold(unmarked(v, lo, hi)) using {
+            peel(unmarked(v, lo, hi)) using {
                 lo <= hi - 1;
                 hi - 1 < 2147483647;
             }
@@ -68,8 +68,8 @@ theorem unmarked_frame(
     ensures unmarked(a, lo, hi) == unmarked(b, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            unfold(unmarked(a, lo, hi)) using { hi <= lo; }
-            unfold(unmarked(b, lo, hi)) using { hi <= lo; }
+            peel(unmarked(a, lo, hi)) using { hi <= lo; }
+            peel(unmarked(b, lo, hi)) using { hi <= lo; }
             simp();
         } else {
             have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
@@ -95,11 +95,11 @@ theorem unmarked_frame(
                 }, hi - 1) using { lo <= hi - 1; hi - 1 < m; }
                 assumption();
             }
-            unfold(unmarked(a, lo, hi)) using {
+            peel(unmarked(a, lo, hi)) using {
                 lo <= hi - 1;
                 hi - 1 < 2147483647;
             }
-            unfold(unmarked(b, lo, hi)) using {
+            peel(unmarked(b, lo, hi)) using {
                 lo <= hi - 1;
                 hi - 1 < 2147483647;
             }
@@ -176,11 +176,11 @@ theorem unmarked_point_update(
                 }
                 have a[hi - 1] == 0 by { simp() using { a[j] == 0; j == hi - 1; } }
                 have b[hi - 1] != 0 by { simp() using { b[j] != 0; j == hi - 1; } }
-                unfold(unmarked(a, lo, hi)) using {
+                peel(unmarked(a, lo, hi)) using {
                     lo <= hi - 1;
                     hi - 1 < 2147483647;
                 }
-                unfold(unmarked(b, lo, hi)) using {
+                peel(unmarked(b, lo, hi)) using {
                     lo <= hi - 1;
                     hi - 1 < 2147483647;
                 }
@@ -236,11 +236,11 @@ theorem unmarked_point_update(
                     }, hi - 1) using { j < hi - 1; hi - 1 < n; }
                     assumption();
                 }
-                unfold(unmarked(a, lo, hi)) using {
+                peel(unmarked(a, lo, hi)) using {
                     lo <= hi - 1;
                     hi - 1 < 2147483647;
                 }
-                unfold(unmarked(b, lo, hi)) using {
+                peel(unmarked(b, lo, hi)) using {
                     lo <= hi - 1;
                     hi - 1 < 2147483647;
                 }

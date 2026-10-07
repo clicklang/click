@@ -1,6 +1,6 @@
 # unfolding a fold-bodied function appends its last cell
 
-With the two append guards listed, `unfold(f(args)) using { ... }` opens the
+With the two append guards listed, `peel(f(args)) using { ... }` opens the
 append-last-cell equation instead: `f(.., hi)` equals `f(.., hi - 1)` plus the
 fold's body at `hi - 1`. The split endpoint is the fold's own end minus one; it
 is not named separately, because the guards the kernel law needs at that
@@ -32,7 +32,7 @@ int32 prefix_sum_equation(int32 a[], int32 n) {
     ensures icount(a, 0, n) == icount(a, 0, n - 1) + to_integer(a[n - 1]) by {
         execute();
         have 0 <= n - 1 by { simp(); }
-        unfold(icount(a, 0, n)) using {
+        peel(icount(a, 0, n)) using {
             0 <= n - 1;
             n - 1 < 2147483647;
         }

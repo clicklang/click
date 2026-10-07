@@ -62,7 +62,7 @@ documentation inventory keep the following accepted words synchronized.
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `assumption`, `extract`, `normalize`, `intro`, `split`, `left`, `right`, `enumerate`, `contradiction` | Explicit proposition tactics. |
-| `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate special { ... }`. `integer_certificate { ... }` remains a parser-only legacy alias for the mathematical family. |
+| `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate special { ... }`. |
 | `signed_int32` | Selects the public checked signed-machine arithmetic-certificate family. |
 | `special` | Selects the pointer, tagged-word, finite-float, and `int32` / `int64` definedness arithmetic-certificate family. |
 | `int32_defined`, `int64_defined` | Proves `defined(a + b)` or `defined(a - b)` over `int32` or `int64` in a `special` certificate from the operands' width ranges and the listed constant bounds on them. One checker serves both widths. |

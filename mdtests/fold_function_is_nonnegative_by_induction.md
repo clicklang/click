@@ -8,7 +8,7 @@ empty-range equation, and the step case relates `marks(lo, hi)` to
 because both sides of the append equation are the same function.
 
 Nothing here retypes the fold, and no fold law is applied by name. The two
-`unfold ... using` steps refresh the goal through the equation they open, so
+`peel` steps refresh the goal through the equation they open, so
 the step case closes with the induction hypothesis and one bound on the cell
 the last iteration adds.
 
@@ -23,7 +23,7 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
     ensures 0 <= marks(lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            unfold(marks(lo, hi)) using {
+            peel(marks(lo, hi)) using {
                 hi <= lo;
             }
             simp();
@@ -38,7 +38,7 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
             }
             have lo <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; } }
-            unfold(marks(lo, hi)) using {
+            peel(marks(lo, hi)) using {
                 lo <= hi - 1;
                 hi - 1 < 2147483647;
             }

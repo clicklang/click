@@ -2185,7 +2185,7 @@ fn integer_affine_terminal_constant_certificate_preserves_true_goal() {
     let source = r#"
 theorem integer_affine_terminal_constant(x: Integer) {
     ensures x == x by {
-        integer_certificate {
+        arithmetic_certificate {
             trivial => 0 <= 1;
             conclusion 0;
         }
@@ -2205,7 +2205,7 @@ fn integer_affine_terminal_false_constant_certificate_is_rejected() {
     let source = r#"
 theorem integer_affine_terminal_false_constant(x: Integer) {
     ensures x == x by {
-        integer_certificate {
+        arithmetic_certificate {
             trivial => 1 <= 0;
             conclusion 0;
         }
@@ -2230,7 +2230,7 @@ fn integer_affine_intermediate_false_constant_certificate_is_rejected() {
 theorem integer_affine_intermediate_false_constant(x: Integer) {
     requires 0 <= x;
     ensures 0 <= x by {
-        integer_certificate {
+        arithmetic_certificate {
             premise 0: 0 <= x => 0 <= x;
             trivial => 1 <= 0;
             add 0, 1 => 0 <= x;

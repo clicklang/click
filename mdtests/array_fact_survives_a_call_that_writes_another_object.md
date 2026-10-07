@@ -42,7 +42,7 @@ int32 keep_h() {
 } by {
     have 0 <= 0 by { simp(); }
     have icount(h, 0, 0) == 0 by {
-        unfold(icount(h, 0, 0)) using { 0 <= 0; }
+        peel(icount(h, 0, 0)) using { 0 <= 0; }
         normalize();
     }
     execute();

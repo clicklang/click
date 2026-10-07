@@ -3,7 +3,7 @@
 A listed premise that lowers to the ground constant it asserts (`0 <= 0`), or
 to a comparison of a term with itself (`n <= n`), holds with no fact behind
 it. The listed-premise check every `using` list shares accepts both, so
-the same premise is accepted by `unfold ... using`, `apply ... using`,
+the same premise is accepted by `peel ... using`, `apply ... using`,
 `instantiate ... using` and `arithmetic() using` alike, and a proof does not
 need a `have 0 <= 0` or `have n <= n` first.
 
@@ -76,7 +76,7 @@ void empty_prefix(int32 a[], int32 n) {
 } by {
     step();
     have icount(a, 0, 0) == 0 by {
-        unfold(icount(a, 0, 0)) using { 0 <= 0; }
+        peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
     }
     execute();
@@ -89,7 +89,7 @@ void empty_suffix(int32 a[], int32 n) {
 } by {
     step();
     have icount(a, n, n) == 0 by {
-        unfold(icount(a, n, n)) using { n <= n; }
+        peel(icount(a, n, n)) using { n <= n; }
         normalize();
     }
     execute();

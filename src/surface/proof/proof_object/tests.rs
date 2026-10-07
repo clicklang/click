@@ -3904,12 +3904,12 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         let step = ProofStep::InstantiateUsing {
             quantified: quantified_surface.clone(),
             argument: value(7),
-            premises: vec![premise.clone()],
+            premises: Some(vec![premise.clone()]),
         };
         let omitted = ProofStep::InstantiateUsing {
             quantified: quantified_surface.clone(),
             argument: value(7),
-            premises: Vec::new(),
+            premises: Some(Vec::new()),
         };
         assert!(
             root.apply_step(omitted).is_err(),

@@ -26,7 +26,7 @@ void bump(int32 a[], int32 n) {
 } by {
     have 0 <= 0 by { simp(); }
     have icount(a, 0, 0) == 0 by {
-        unfold(icount(a, 0, 0)) using { 0 <= 0; }
+        peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
     }
     step();

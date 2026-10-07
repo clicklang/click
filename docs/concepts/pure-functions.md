@@ -250,12 +250,12 @@ Pure theorem induction is also unrelated to a C function's optional
 termination evidence: it proves a proposition about specification values, not
 that a C call returns.
 
-### Unfolding a fold-bodied function over a symbolic range
+### Peeling a fold-bodied function over a symbolic range
 
 A function whose body is exactly a range fold is the usual way to summarize an
 array range, and for those the raw defining equation is rarely the layer a
 proof wants: it replaces the call with a fold nobody can then reason about
-without retyping it. `unfold(function(args)) using { ... }` opens a different
+without retyping it. `peel(function(args)) using { ... }` opens a different
 layer — the range-fold law the listed guards select, stated over the call:
 
 <!-- verified-example: mdtests/unfold_fold_function_empty_range.md -->

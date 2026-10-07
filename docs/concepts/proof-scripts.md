@@ -43,8 +43,9 @@ simp() using {
 }
 ```
 
-An empty `using {}` block is valid. It means the simple rule needs no pure
-premises. `step()` is simple and executes the next statement with the whole
+An empty `using {}` block is valid on every tactic that takes a list. It means
+the tactic uses no pure premises, which is not the same as leaving `using`
+off: `simp()` searches the context while `simp() using {}` uses nothing. `step()` is simple and executes the next statement with the whole
 proof context visible to the kernel.
 `execute()` and `execute_until(statement(N))` are its repetitions; expansion
 replaces them with the corresponding sequence of `step();` tactics.

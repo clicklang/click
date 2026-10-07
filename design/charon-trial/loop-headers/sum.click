@@ -11,7 +11,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
 } by {
     execute_until(statement(7));
     have prefix(bytes, (int32)(uint32)i) == 0 by {
-        unfold(prefix(bytes, (int32)(uint32)i)) using {
+        peel(prefix(bytes, (int32)(uint32)i)) using {
             0 >= (int32)(uint32)i;
         } simp();
     }
@@ -118,7 +118,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                 }
             }
             have prefix(bytes, (int32)(uint32)i + 1) == prefix(bytes, (int32)(uint32)i) + to_integer((int32)bytes[(int32)(uint32)i]) by {
-                unfold(prefix(bytes, (int32)(uint32)i + 1)) using {
+                peel(prefix(bytes, (int32)(uint32)i + 1)) using {
                     0 <= (int32)(uint32)i;
                     ((int32)(uint32)i) < 2147483647;
                 }

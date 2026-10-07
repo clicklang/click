@@ -1,6 +1,6 @@
 # unfolding a fold-bodied function over an empty range
 
-`unfold(f(args)) using { ... }` opens one layer of a pure function whose body
+`peel(f(args)) using { ... }` opens one layer of a pure function whose body
 is a range fold, but the layer it opens is the range-fold law the listed guards
 select, stated over `f(args)` itself rather than over the fold the declaration
 writes. With the empty-range guard listed, that layer is `f(args) == <initial>`.
@@ -22,7 +22,7 @@ theorem icount_of_an_empty_range(p: int32[], lo: int32, hi: int32, x: int32) {
     requires hi <= lo;
     requires hi >= 0 and viewable(p[lo..hi]);
     ensures icount(p, lo, hi, x) == 0 by {
-        unfold(icount(p, lo, hi, x)) using {
+        peel(icount(p, lo, hi, x)) using {
             hi <= lo;
         }
         simp();

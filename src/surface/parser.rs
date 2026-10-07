@@ -6079,16 +6079,9 @@ impl Parser {
                 };
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
-                    let ProofTactic::UnfoldFunction(application) = tactic else {
-                        return Err(self
-                            .error("`using` requires a pure-function unfold, `unfold(f(args))`"));
-                    };
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::UnfoldFunctionUsing {
-                        application,
-                        premises,
-                    });
+                    return Err(self.error(
+                        "`unfold` takes no `using` list; write `peel(f(args)) using { ... }` to open a range fold by the law its guards select",
+                    ));
                 }
                 if self.peek_ident() == Some("as") {
                     self.position += 1;
@@ -6101,6 +6094,29 @@ impl Parser {
                         Some(self.parse_resource_child_bindings(resource, true)?.into());
                 }
                 tactic
+            }
+            "peel" => {
+                self.expect(Token::LParen)?;
+                if !(matches!(self.peek(), Some(Token::Ident(_)))
+                    && self.peek_next() == Some(&Token::LParen))
+                {
+                    return Err(
+                        self.error("`peel` requires a pure-function application, `peel(f(args))`")
+                    );
+                }
+                let (name, arguments) = self.parse_call_arguments("function name")?;
+                self.expect(Token::RParen)?;
+                if self.peek_ident() != Some("using") {
+                    return Err(self.error(
+                        "`peel` requires a `using { ... }` list naming the guard that decides the range",
+                    ));
+                }
+                let premises = self.parse_exact_premises()?;
+                self.skip_redundant_semicolon();
+                return Ok(ProofTactic::PeelFunction {
+                    application: ClickFunctionApplication { name, arguments },
+                    premises,
+                });
             }
             "apply" => {
                 self.expect(Token::LParen)?;
@@ -6220,7 +6236,7 @@ impl Parser {
                 }
                 ProofTactic::ArithmeticUsing(Vec::new())
             }
-            "arithmetic_certificate" | "integer_certificate" => {
+            "arithmetic_certificate" => {
                 return self.parse_arithmetic_certificate_tactic();
             }
             "intro" => {
@@ -6280,27 +6296,25 @@ impl Parser {
                 let argument = self.parse_contract_expression()?;
                 self.expect(Token::RParen)?;
                 if self.peek_ident() != Some("using") {
-                    return Err(self.error(
-                        "`instantiate` requires explicit evidence: `instantiate(F, value) using { ... }`",
-                    ));
+                    ProofTactic::InstantiateUsing {
+                        quantified,
+                        argument,
+                        premises: None,
+                    }
+                } else {
+                    let premises = self.parse_exact_premises()?;
+                    self.skip_redundant_semicolon();
+                    return Ok(ProofTactic::InstantiateUsing {
+                        quantified,
+                        argument,
+                        premises: Some(premises),
+                    });
                 }
-                let premises = self.parse_exact_premises()?;
-                self.skip_redundant_semicolon();
-                return Ok(ProofTactic::InstantiateUsing {
-                    quantified,
-                    argument,
-                    premises,
-                });
             }
             "simp" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
-                    if premises.is_empty() {
-                        return Err(self.error(
-                            "`simp() using` requires at least one explicit premise; use `simp()` for ambient simplification",
-                        ));
-                    }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::SimpUsing(ProofSimpUsing { premises }));
                 }
