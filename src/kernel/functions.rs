@@ -2238,8 +2238,8 @@ pub(super) fn execute_c_function_verification_paths(
 }
 
 /// Whether any resource the contract moves can touch a population: a
-/// population authority, a mutex protocol resource, an abstract token, or a
-/// family that reaches an authorized family. A contract over ordinary
+/// population authority, a mutex protocol resource, an abstract token not
+/// known to be ordinary, or a family that reaches an authorized family. A contract over ordinary
 /// families and memory alone has no population effect.
 pub(super) fn contract_reaches_population(interface: &CFunctionContractInterface) -> bool {
     interface
@@ -2257,6 +2257,12 @@ fn spec_reaches_population(interface: &CFunctionContractInterface, spec: &CResou
     ) || matches!(spec.term(), CResourceTerm::PopulationAuthority { .. })
     {
         return true;
+    }
+    if let CResourceTerm::Token { name, .. } = spec.term()
+        && (name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            || interface.is_ordinary_abstract_family(name))
+    {
+        return false;
     }
     match spec.contained_definition_name() {
         Some(name) => interface

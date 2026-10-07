@@ -1343,3 +1343,14 @@ without switching the default.
   Regression: `authority_mode_loop_contract_certifies.md`.
 
 With these, the trial switch changes 253 outcomes.
+
+#### Chunk 1b: ordinary abstract tokens
+
+Abstract families have no kernel definition, so the call gate of chunk 1a
+treated every abstract token as a possible population member. Each kernel
+function now carries the sorted names of the project's abstract families
+declared without `authorized`, set beside its definitions. A token on that
+list, or the built-in allocation token, reaches no population; any other
+abstract token, including one from an interface built without the list, is
+still refused. Regressions: `authority_mode_ordinary_abstract_token_call.md`
+and `authority_mode_external_abstract_member_birth_refused.md`.
