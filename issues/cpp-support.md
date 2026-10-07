@@ -770,8 +770,22 @@ Wrapper and instance expansion/reverification, retained verification and hostile
 missing authority/domain/fee bounds and false quotient/rounding claims are covered.
 No assumed result range, new arithmetic axiom or Bitcoin source edit is needed.
 
-Next compose the symbolic unsigned `EvaluateFeeUp` fast path, preserving its
-mixed signed/unsigned casts and ceiling numerator `fee * amount + size - 1`.
+The unsigned `EvaluateFeeUp` fast path is also delivered on the same symbolic
+input profile. `FeeFracEvaluateFastUp.click.in` preserves the source's mixed
+casts and exact `fee * amount + size - 1` numerator. Separate checked uint64
+addition and subtraction bridges establish no wrap and no underflow for the
+intermediate operations. The shifted quotient is nonnegative, its loose upper
+bound justifies the signed return, and reconstruction plus multiplication order
+sharpen it to `2^33 - 1`. The result equals that quotient and satisfies
+`(R - 1) * D < F * A <= R * D`, preserving both fields. Wrapper/instance
+expansion and retained verification agree; missing domain/fee bounds, missing
+numerator bridges, forged shifted identities and false rounding are refused.
+Zero fee/amount, exact division and maximal fast-path operands remain in scope.
+The unchanged implementations now have separate proofs for both rounding modes
+in all three native fee domains, under `0 <= at_size <= size` and positive size.
+
+Next combine the fee-domain proofs into one caller contract under the current
+joint bounds, then broaden mode-specific result-fit and fee division.
 The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
 current joint range ensures both rounding modes fit.
 The selected source narrows `n / d` to int64 and

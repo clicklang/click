@@ -304,8 +304,8 @@ terms opaque. The modular caller exports the same four inequalities and frames
 untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
-The wide-fallback `EvaluateFeeDown/Up` composition and unsigned Down fast path
-are verified below. The unsigned Up fast path, broader mode-specific result-fit
+The wide-fallback `EvaluateFeeDown/Up` composition and both unsigned fast paths
+are verified below. A unified caller contract, broader mode-specific result-fit
 domain and full 96/32 contract remain open.
 
 ## CompactSize encoded length
@@ -401,6 +401,22 @@ and rejects missing field/domain/fee bounds and false quotient or strict roundin
 claims. Zero fee, zero amount, exact division and maximal fast-path fee/size
 are included in the symbolic domain.
 
-Next verify the unsigned Up fast path's ceiling numerator, then broaden the
-mode-specific result-fit domain. This does not yet verify `EvaluateFeeDown/Up`
-for all fees.
+[`FeeFracEvaluateFastUp.click.in`](FeeFracEvaluateFastUp.click.in) proves the
+unsigned Up fast path on the same symbolic domain, including both caller levels.
+It establishes `R == truncating_quotient(F * A + D - 1, D)`,
+`0 <= R <= 2^33 - 1`, and the ceiling inequalities
+`(R - 1) * D < F * A <= R * D`, preserving the fields.
+
+The mixed-width casts remain explicit. The proof separately checks that the
+source's uint64 product-plus-size cannot wrap and that subtracting one cannot
+underflow, then transports the exact shifted numerator to Integer arithmetic.
+A loose quotient bound first justifies the checked signed return; reconstruction,
+remainder bounds and multiplication order sharpen the result bound and prove
+ceiling rounding. The same helper bodies and pinned compiler/library profile
+are verified in the prepared project. The gate checks wrapper/instance expansion,
+reverification and retained verification, and refuses missing domain/fee bounds,
+missing numerator bridges, forged shifted identities and false quotient/rounding.
+
+Separate contracts now cover both modes in the negative, unsigned-fast and
+positive-wide fee domains under the joint amount/size bounds. Next combine them
+into one caller contract, then broaden mode-specific result-fit and fee division.

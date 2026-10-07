@@ -49,6 +49,7 @@ enum RoundingPhase {
     FullExpansion,
     Rejections,
     TransportRejections,
+    NumeratorRejections,
 }
 
 fn check_upstream_cpp_rounding_phase(
@@ -366,11 +367,31 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     if evaluation_caller
         && matches!(
             phase,
-            Some(RoundingPhase::Rejections | RoundingPhase::TransportRejections)
+            Some(
+                RoundingPhase::Rejections
+                    | RoundingPhase::TransportRejections
+                    | RoundingPhase::NumeratorRejections
+            )
         )
     {
         let hostile = if name.ends_with("SymbolicFast") {
-            if phase == Some(RoundingPhase::Rejections) {
+            if phase == Some(RoundingPhase::NumeratorRejections) {
+                assert!(selected.ends_with("Up"));
+                vec![
+                    source.replace(
+                        "apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));",
+                        "",
+                    ),
+                    source.replace(
+                        "apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));",
+                        "",
+                    ),
+                    source.replace(
+                        "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1",
+                        "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 2",
+                    ),
+                ]
+            } else if phase == Some(RoundingPhase::Rejections) {
                 vec![
                     source.replace("views self->size;", ""),
                     source.replace("requires self->size > 0;", ""),
@@ -387,7 +408,11 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                         "ensures to_integer(result) != truncating_quotient(",
                     ),
                     source.replace(
-                        "(to_integer(result) + 1) * to_integer(self->size)",
+                        if selected.ends_with("Down") {
+                            "(to_integer(result) + 1) * to_integer(self->size)"
+                        } else {
+                            "(to_integer(result) + -1) * to_integer(self->size)"
+                        },
                         "to_integer(result) * to_integer(self->size)",
                     ),
                 ]
@@ -1091,20 +1116,24 @@ fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
 }
 
-fn check_upstream_symbolic_fast_fee_evaluation_down(phase: RoundingPhase) {
+fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase) {
     let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
         .split_once(';')
         .unwrap()
         .1;
-    let caller =
-        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in");
+    let caller = if mode == "Down" {
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastDown.click.in")
+    } else {
+        assert_eq!(mode, "Up");
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracEvaluateFastUp.click.in")
+    };
     let source = format!(
         "{}\n{div}\n{caller}",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
     check_upstream_cpp_rounding_phase(
-        "FeeFrac::EvaluateFeeDown",
-        "FeeFracEvaluateDownSymbolicFast",
+        &format!("FeeFrac::EvaluateFee{mode}"),
+        &format!("FeeFracEvaluate{mode}SymbolicFast"),
         &source,
         "bitcoin-src/src/util/feefrac.h",
         "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
@@ -1114,19 +1143,40 @@ fn check_upstream_symbolic_fast_fee_evaluation_down(phase: RoundingPhase) {
 
 #[test]
 fn upstream_symbolic_fast_fee_evaluation_down_has_exact_floor_bounds() {
-    check_upstream_symbolic_fast_fee_evaluation_down(RoundingPhase::Tools);
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Tools);
 }
 #[test]
 fn upstream_symbolic_fast_fee_evaluation_down_expands_and_reverifies() {
-    check_upstream_symbolic_fast_fee_evaluation_down(RoundingPhase::FullExpansion);
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 #[test]
 fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_authority_and_amount_bounds() {
-    check_upstream_symbolic_fast_fee_evaluation_down(RoundingPhase::Rejections);
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 #[test]
 fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_fee_bounds_and_false_rounding() {
-    check_upstream_symbolic_fast_fee_evaluation_down(RoundingPhase::TransportRejections);
+    check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::TransportRejections);
+}
+
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_has_exact_ceiling_bounds() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Tools);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_expands_and_reverifies() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::FullExpansion);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_authority_and_amount_bounds() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Rejections);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_fee_bounds_and_false_rounding() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::TransportRejections);
+}
+#[test]
+fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_bridges_and_forged_numerator() {
+    check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
 }
 
 fn wide_fee_evaluation_source(mode: &str, positive: bool) -> String {
