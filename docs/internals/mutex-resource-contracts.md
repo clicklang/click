@@ -373,6 +373,18 @@ restrictions as runtime typed use apply: unconditional leaf resources with
 fixed memory footprints. These transfers are synchronous and stay on the same
 thread. They do not permit moving pthread guard ownership to a worker.
 
+A worker created with `pthread_create` under `runtime "modeled-pthread"`
+receives its preserved `mutex_use` the same way, as a loan split from the
+parent's `mutex_live` or retained use share, so the parent keeps a retained
+share and may lock while the worker is pending. `pthread_join` returns only
+that loan: it ends the worker's scope, rejoins the shares, and restores the
+parent's source, `mutex_live` once the last worker has joined. The worker's
+preserved use fact is a loan of that source and is not composed into the
+parent's frame, so after join the parent holds exactly what it held before
+the create, and a plain lock, a further create, or destroy proceeds with no
+use fact left behind. `mdtests/modeled_pthread_lock_after_join.md` is the
+regression.
+
 A releasing helper can modify the payload and deposit a replacement instance.
 Its summary must forget earlier field and memory observations consistently
 with that mutation. Acquiring again does not recover an old value merely

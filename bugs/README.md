@@ -16,5 +16,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A nested loop with an inner `break` is refused under concrete execution](nested-loop-inner-break-refused-under-concrete-execution.md)
 - [A decidably false return narrowing reports an internal error, not the range](false-return-narrowing-reports-internal-error.md)
 - [`requires x != INT_MIN` does not discharge the overflow of `-x`](negation-not-discharged-by-int-min-disequality.md)
-- [A parent cannot lock its own mutex after joining a typed `mutex_use` worker](mutex-lock-after-joining-typed-worker-refused.md)
 - [A natural `goto` cycle's forward `goto` exit is dropped, so the contract is vacuous](natural-goto-cycle-forward-exit-is-dropped.md)
