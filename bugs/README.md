@@ -12,5 +12,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
 - [A natural `goto` cycle's forward `goto` exit is dropped, so the contract is vacuous](natural-goto-cycle-forward-exit-is-dropped.md)
 - [Arithmetic cannot render an observed product after a zero rewrite](arithmetic-cannot-render-observed-product-after-zero-rewrite.md)
-- [Whole-claim expansion fails on a `branch` inside a proof `match`, and on `__rb_insert`](whole-claim-expansion-fails-on-proof-matches.md)
+- [Whole-claim expansion fails on counted populations, a loop `branch`, `sort3` and `__rb_insert`](whole-claim-expansion-fails-on-proof-matches.md)
 - [`arithmetic` cannot use an upper bound written as a symbolic difference](arithmetic-cannot-use-a-symbolic-difference-upper-bound.md)
