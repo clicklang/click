@@ -4198,20 +4198,44 @@ pub struct CProjectSummary {
     pub external_dependencies: BTreeMap<String, Vec<String>>,
     /// Selected function proofs plus selected theorems.
     pub selected_proof_count: usize,
+    /// Every function the sidecar's `verifying` sources define, with the
+    /// source that defines it. A sibling sidecar of the same project may not
+    /// assume one of these through an `extern` declaration: each sidecar is
+    /// verified alone, so nothing would reconcile the assumed contract with
+    /// the verified one, and termination ranks only calls whose callee has a
+    /// body in the same sidecar.
+    pub defined_functions: BTreeMap<String, String>,
+    /// The `extern` functions this sidecar itself declares (the standard
+    /// library's declarations are not its assumptions to reconcile).
+    pub external_declarations: BTreeSet<String>,
 }
 
 fn c0_project_summary_file(
     file: &ClickFile,
     sources: &CSourceContext<'_>,
 ) -> Result<CProjectSummary, ClickError> {
+    // The summary reads function names and call graphs, never `main`'s
+    // program-entry storage, so it does not build it.
+    let parsed_sources =
+        parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     Ok(CProjectSummary {
-        external_dependencies: c0_external_dependencies_file(file, sources)?,
+        external_dependencies: c0_external_dependencies_parsed(file, &parsed_sources)?,
         selected_proof_count: file.function_blocks().len()
             + file
                 .theorem_definitions()
                 .iter()
                 .filter(|theorem| file.theorem_is_selected(theorem.name()))
                 .count(),
+        defined_functions: parsed_sources
+            .iter()
+            .map(|(name, (source_path, _))| (name.clone(), source_path.clone()))
+            .collect(),
+        external_declarations: file
+            .function_blocks()
+            .iter()
+            .filter(|function| function.is_external())
+            .map(|function| function.signature().name().to_string())
+            .collect(),
     })
 }
 
@@ -4294,6 +4318,13 @@ fn c0_external_dependencies_file(
     // program-entry storage, so it does not build it.
     let parsed_sources =
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
+    c0_external_dependencies_parsed(file, &parsed_sources)
+}
+
+fn c0_external_dependencies_parsed(
+    file: &ClickFile,
+    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
     let function_blocks = combined_external_function_blocks(file)?;
     let external_names = function_blocks
         .iter()
@@ -4307,7 +4338,7 @@ fn c0_external_dependencies_file(
         .filter(|function| !function.is_external())
     {
         let required = verification_required_functions_with_blocks(
-            &parsed_sources,
+            parsed_sources,
             function.signature().name(),
             &function_blocks,
             file.selected_thread_runtime(),
