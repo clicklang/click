@@ -56,15 +56,6 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return false;
         };
-        // A wrapper that reaches no population folds by its definition, as
-        // the kernel checks it.
-        if context
-            .function
-            .composite_resource_definition(name)
-            .is_some_and(|definition| !definition.reaches_population())
-        {
-            return false;
-        }
         let Some(execution) = self.execution() else {
             return false;
         };
