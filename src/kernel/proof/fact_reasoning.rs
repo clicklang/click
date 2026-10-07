@@ -470,6 +470,8 @@ pub(crate) fn condition_polarity_forms(proposition: &Proposition) -> Vec<Proposi
             ]
         };
         conditions.append(&mut equivalent);
+    } else if let Some(mirrored) = mirrored_order_condition(&conditions[0].0) {
+        conditions.push((mirrored, conditions[0].1));
     }
     let mut forms = Vec::new();
     for (condition, value) in conditions {
@@ -652,6 +654,11 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
     if left_condition == right_condition && left_value == right_value {
         return true;
     }
+    if left_value == right_value
+        && mirrored_order_condition(&left_condition).as_ref() == Some(&right_condition)
+    {
+        return true;
+    }
     matches!(
         (
             canonical_order_condition(&left_condition, left_value),
@@ -659,6 +666,35 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
         ),
         (Some(left), Some(right)) if left == right
     )
+}
+
+/// The same total order comparison with its operands exchanged. Preserve the
+/// integer format and strictness; this is spelling equivalence, not arithmetic
+/// derivation or a bridge between snapshots. Float comparisons are excluded.
+fn mirrored_order_condition(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    macro_rules! mirror_pairs {
+        ($($less:ident, $greater:ident;)*) => {
+            match condition {
+                $(
+                    ConditionTerm::$less(left, right) =>
+                        Some(ConditionTerm::$greater(right.clone(), left.clone())),
+                    ConditionTerm::$greater(left, right) =>
+                        Some(ConditionTerm::$less(right.clone(), left.clone())),
+                )*
+                _ => None,
+            }
+        };
+    }
+    mirror_pairs! {
+        Bitvector32SignedLessThan, Bitvector32SignedGreaterThan;
+        Bitvector32SignedLessEqual, Bitvector32SignedGreaterEqual;
+        Bitvector64SignedLessThan, Bitvector64SignedGreaterThan;
+        Bitvector64SignedLessEqual, Bitvector64SignedGreaterEqual;
+        Bitvector64UnsignedLessThan, Bitvector64UnsignedGreaterThan;
+        Bitvector64UnsignedLessEqual, Bitvector64UnsignedGreaterEqual;
+        IntegerLessThan, IntegerGreaterThan;
+        IntegerLessEqual, IntegerGreaterEqual;
+    }
 }
 
 fn canonical_order_condition(
@@ -978,6 +1014,61 @@ mod tests {
         CMemory, CMemoryRange, CResource, CValue, Pointer, PointerBlock, PointerOffsetTerm,
         Variable, intern_c_memory, load_variable_for_cell_with_origin,
     };
+
+    #[test]
+    fn pure_order_lookup_preserves_strictness_format_and_free_operands() {
+        let left = IntegerTerm::var(Variable(730_000));
+        let right = IntegerTerm::var(Variable(730_001));
+        let fact = Proposition::ConditionIs(
+            ConditionTerm::IntegerLessEqual(left.clone().into(), right.clone().into()),
+            true,
+        );
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&fact));
+        let mirrored = Proposition::ConditionIs(
+            ConditionTerm::IntegerGreaterEqual(right.clone().into(), left.clone().into()),
+            true,
+        );
+        assert!(condition_polarity_equivalent(&fact, &mirrored));
+        assert!(condition_polarity_equivalent(&mirrored, &fact));
+        assert!(facts.pure_assumption_available(&mirrored));
+        for wrong in [
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterThan(right.clone().into(), left.clone().into()),
+                true,
+            ),
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterEqual(left.clone().into(), right.clone().into()),
+                true,
+            ),
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterEqual(
+                    IntegerTerm::var(Variable(730_002)).into(),
+                    left.into(),
+                ),
+                true,
+            ),
+            Proposition::Not(Box::new(mirrored)),
+        ] {
+            assert!(!condition_polarity_equivalent(&fact, &wrong));
+            assert!(!facts.pure_assumption_available(&wrong));
+        }
+        let left = Box::new(Bitvector32Term::Int64From32(Box::new(
+            Bitvector32Term::Variable(Variable(730_003)),
+        )));
+        let right = Box::new(Bitvector32Term::Int64From32(Box::new(
+            Bitvector32Term::Variable(Variable(730_004)),
+        )));
+        let signed = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64SignedLessEqual(left.clone(), right.clone()),
+            true,
+        );
+        let unsigned = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64UnsignedGreaterEqual(right, left),
+            true,
+        );
+        assert!(!condition_polarity_equivalent(&signed, &unsigned));
+        assert!(!ProofFacts::from_ordered(&[signed]).pure_assumption_available(&unsigned));
+    }
 
     #[test]
     fn context_free_normalization_checks_uint64_constant_disequality() {
