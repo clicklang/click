@@ -724,9 +724,10 @@ aliases share the canonical instance. Method, constructor and destructor names
 use the concrete record name. Record-name collisions are import errors. At most
 32 class arguments are supported. Clang completes reachable specializations
 before layout export, including unused reference parameter types; incomplete
-record declarations fail import without an artifact. Instances must satisfy the ordinary record and executable-body profile: no bases or
-virtual dispatch, and supported fields and destruction. Empty tags serve only
-as type arguments; this does not add empty runtime objects. Click verifies the
+record declarations fail import without an artifact. Instances must satisfy
+the ordinary record and executable-body profile, including the bounded single-base layout profile below, supported fields and
+destruction, and no virtual dispatch. Empty tags serve only as type arguments;
+this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
 
 For `if constexpr`, pinned Clang chooses the instantiated arm in constant
@@ -877,9 +878,24 @@ destructor synthesized on the path where no object exists. Objects in both
 arms, combination with another aggregate or cleanup scope, and deeper
 conditional construction remain rejected.
 
+A record may have one public, non-virtual base when it has no fields of its
+own, remains standard-layout and trivially copyable/destructible, and preserves
+the complete base's size and alignment at offset zero. The artifact stores an
+explicit nominal `base` edge with its own layout and source span; inherited
+fields are not copied into the derived declaration. The base must itself belong
+to the locked, reachable record graph. The proof interface exposes its storage
+under `base`, for example `state->left.base.fee`, retaining ordinary field
+authority and sibling frames. Base chains use the bounded record-layout walk
+and leaf-materialization budget. Forged edges, layouts and cycles are rejected.
+This is declaration and contract-layout support: inherited source accesses,
+derived-to-base receiver/reference conversions, automatic derived objects and
+base constructor/destructor execution remain unsupported. Multiple or virtual
+bases, empty bases, own derived fields and tail-padding reuse remain outside
+this profile.
+
 Copies and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
-virtual dispatch, inheritance, bit-fields, nested record construction,
+virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported

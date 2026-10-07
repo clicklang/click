@@ -21,7 +21,12 @@ pub(super) fn prepare(
     let mut leaf_counts = BTreeMap::new();
     let mut total_leaves = 0usize;
     for record in super::schema::record_layout_order(&records)? {
-        let mut leaves = 0usize;
+        let mut leaves: usize = record.base.as_ref().map_or(0, |base| {
+            let CppType::Record { name, .. } = &base.value_type else {
+                unreachable!("validated nominal base")
+            };
+            leaf_counts[name.as_str()]
+        });
         for field in &record.fields {
             crate::instrumentation::record_deterministic_work(1);
             leaves = leaves.saturating_add(match &field.value_type {
@@ -36,7 +41,7 @@ pub(super) fn prepare(
             super::budget::MAX_RECORD_LAYOUT_LEAVES,
         )?;
         leaf_counts.insert(record.name.as_str(), leaves);
-        let fields = record
+        let mut fields = record
             .fields
             .iter()
             .map(|field| {
@@ -79,6 +84,22 @@ pub(super) fn prepare(
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
+        if let Some(base) = &record.base {
+            crate::instrumentation::record_deterministic_work(1);
+            let CppType::Record { name, .. } = &base.value_type else {
+                unreachable!("validated nominal base")
+            };
+            fields.insert(
+                0,
+                (
+                    "base".into(),
+                    C0Type::Int32,
+                    Some(name.clone()),
+                    base.offset_bytes,
+                    base.size_bytes,
+                ),
+            );
+        }
         let layout = syntax::C0StructLayout::from_explicit_fields_with_structs(
             fields,
             record.size_bytes,
