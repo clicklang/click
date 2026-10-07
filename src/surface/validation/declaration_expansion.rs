@@ -40,6 +40,18 @@ struct DeclaredResourceScope {
 }
 
 impl DeclaredResourceScope {
+    /// Binder IDs are allocated by each module's parser. Only the enclosing
+    /// declaration gives them meaning; another declaration (especially in an
+    /// importer) may reuse an ID for a different resource family. Clear only
+    /// the preceding declaration's learned instances, retaining the shared
+    /// immutable resource definitions without a per-declaration clone.
+    fn begin_declaration(&self) {
+        self.children.borrow_mut().clear();
+        self.instances.borrow_mut().clear();
+        self.field_binders.borrow_mut().clear();
+        self.unowned_resource_parameters.borrow_mut().clear();
+    }
+
     fn get(&self, name: &str) -> Option<&DeclaredResourceInfo> {
         self.definitions.get(name)
     }
@@ -342,15 +354,20 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
     file.resource_definitions = file
         .resource_definitions
         .drain(..)
-        .map(|definition| expand_declared_resource_definition(definition, &resource_definitions))
+        .map(|definition| {
+            resource_definitions.begin_declaration();
+            expand_declared_resource_definition(definition, &resource_definitions)
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     for predicate in &mut file.predicate_definitions {
+        resource_definitions.begin_declaration();
         predicate.body =
             expand_declared_resource_proposition(predicate.body.clone(), &resource_definitions)?;
     }
 
     for function in &mut file.click_function_definitions {
+        resource_definitions.begin_declaration();
         function.body =
             expand_declared_resource_expression(function.body.clone(), &resource_definitions)?;
         function.decreases = function
@@ -363,6 +380,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
     }
 
     for contract in &mut file.contract_definitions {
+        resource_definitions.begin_declaration();
         if let Some(parameters) = &mut contract.proof_parameters {
             for parameter in parameters {
                 *parameter =
@@ -376,9 +394,11 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
     }
 
     for function in &mut file.function_blocks {
+        resource_definitions.begin_declaration();
         expand_declared_resources_in_function_block(function, &resource_definitions)?;
     }
     for tactic in &mut file.tactic_definitions {
+        resource_definitions.begin_declaration();
         expand_declared_resources_in_function_block(
             tactic.function_block_mut(),
             &resource_definitions,
@@ -386,6 +406,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
     }
 
     for theorem in &mut file.theorem_definitions {
+        resource_definitions.begin_declaration();
         crate::surface::enter_ambient_declaration(theorem.name());
         theorem.requires = theorem
             .requires
