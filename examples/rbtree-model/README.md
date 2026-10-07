@@ -2,12 +2,13 @@
 
 This project is the pure Click library for the Linux rbtree proofs planned in
 [`rbtree-example.md`](../../issues/rbtree-example.md)
-(decisions D1, D3, and D10). It contains no C and no resource:
-`rbtree_model.click` has no `verifying` line, and `click verify` accepts a
-sidecar that declares only specification values. The later packages attach
-`rb_at(p)` and `ctx_at(child, root)` to these definitions, so every claim a C
-contract will make about colors, black height, parent links, or the in-order
-node sequence is proved here once.
+(decisions D1, D3, and D10). `rbtree_model.click` contains only specification
+values and proofs, with no `verifying` line or C ownership.
+`rbtree_resources.click` is the shared declaration-only ownership layer:
+`rb_at(p)`, `ctx_at(child, root)`, and `rb_root_at(root)` attach the model to
+Linux node fields. It is imported by C sidecars, which supply the C layouts;
+it is not a standalone verification entry. The insertion sidecar uses these
+same resources, ready for the erase port to share.
 
 Run `cargo run --bin click -- verify examples/rbtree-model` from the repository
 root. The example is also checked by `scripts/check.sh`.

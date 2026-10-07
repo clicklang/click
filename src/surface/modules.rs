@@ -559,6 +559,77 @@ abstract resource tree_token(key: int32);
         )
     }
 
+    #[test]
+    fn imported_resource_binders_are_scoped_to_their_declaration() {
+        let library = r#"resource Leaf(p: int32*) {
+    field value: int32;
+    owns p[0..1];
+    fact *p == value;
+}
+resource Other(p: int32*) {
+    field value: int32;
+    owns p[0..1];
+    fact *p == value;
+}
+resource Container(p: int32*) {
+    field value: int32;
+    owns leaf: Leaf(p);
+    fact leaf.value == value;
+}
+spec enum Choice { First(int32), Second(int32), }
+resource Noise(p: int32*) {
+    field choice: Choice;
+    match choice {
+        Choice::First(value) => {
+            owns a: Other(p);
+            fact a.value == value;
+        },
+        Choice::Second(value) => {
+            owns b: Other(p);
+            fact b.value == value;
+        },
+    }
+}
+"#;
+        let entry = r#"verifying "entry.c";
+import "library.click";
+void f(int32* p) {
+    consumes box: Container(p);
+    produces leaf: Leaf(p);
+    ensures leaf.value == old(box.value);
+} by {
+    let { leaf: inner } = unfold(box);
+    unfold(inner);
+    execute();
+    let leaf = fold(Leaf(p), { value: old(box.value) });
+    simp();
+}
+"#;
+        let project = |entry: &str| {
+            ClickProject::new(
+                "entry.click",
+                [
+                    ClickModuleSource::new("library.click", library, []),
+                    ClickModuleSource::new("entry.click", entry, ["library.click".to_string()]),
+                ],
+            )
+        };
+        let c_sources = [("entry.c", "void f(int *p) {}")];
+        verify_c0_project(&project(entry), &c_sources)
+            .expect("an imported matched child's ID must not change a caller's child family");
+        let wrong_family = entry
+            .replace("produces leaf: Leaf(p)", "produces inner: Other(p)")
+            .replace("ensures leaf.value", "ensures inner.value");
+        let error = resolve_click_project(&project(&wrong_family), &c_sources)
+            .expect_err("a wrong child family within the caller must still be rejected");
+        assert!(
+            error
+                .message()
+                .contains("but slot `leaf` of `Container` owns `Leaf`"),
+            "{error:?}"
+        );
+    }
+
     /// A project preprocesses its C once and records one target in every
     /// proof artifact, so its modules must agree on the selected target. An
     /// imported module may restate the entry module's selection.
