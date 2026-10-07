@@ -124,6 +124,15 @@ pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
     output
 }
 
+/// A whole proof block holding `tactics`, as [`format_proof_certificate`]
+/// writes a certificate's.
+pub(in crate::surface) fn format_proof_block(tactics: &[ProofTactic]) -> String {
+    let mut output = String::from("by {\n");
+    write_tactics(&mut output, tactics, 1);
+    output.push('}');
+    output
+}
+
 /// The assertions of a join's `ensuring` block, one per line.
 fn write_join_interface(output: &mut String, assertions: &[ProofAssertion], indent: usize) {
     let prefix = "    ".repeat(indent);

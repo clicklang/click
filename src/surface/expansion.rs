@@ -1873,7 +1873,45 @@ fn rewrite_verified_pure_theorem(
 /// iteratively. As with tactic expansion, the caller verifies the rewrite.
 fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickError> {
     let certificate = theorem.expanded_proof_certificate()?;
-    Ok(super::printing::format_proof_certificate(&certificate))
+    if !theorem.function_block.is_tactic_procedure() {
+        return Ok(super::printing::format_proof_certificate(&certificate));
+    }
+    // A tactic's proof is checked with a fixed ending on every path: one
+    // step over the empty procedure's `return`, then an `assumption` per
+    // claim. That ending is supplied by the checker and cannot be written in
+    // a tactic's proof, which runs no code, so the expansion leaves it out.
+    let mut tactics = certificate.to_proof_tactics();
+    let ending = 1 + theorem.function_block.ensures().len();
+    remove_tactic_procedure_ending(&mut tactics, ending).map_err(|()| {
+        ClickError::new(format!(
+            "the expanded proof of tactic `{}` does not end in the step and {} closing assumption(s) its check supplies",
+            theorem.function_block.signature().name(),
+            ending - 1
+        ))
+    })?;
+    Ok(super::printing::format_proof_block(&tactics))
+}
+
+/// Removes the `ending` tactics the checker appends where each path of a
+/// tactic's proof ends: at the end of the script, or of each arm of a final
+/// proof `match`.
+fn remove_tactic_procedure_ending(tactics: &mut Vec<ProofTactic>, ending: usize) -> Result<(), ()> {
+    if let Some(ProofTactic::Match(proof_match)) = tactics.last_mut() {
+        for arm in &mut std::sync::Arc::make_mut(proof_match).arms {
+            remove_tactic_procedure_ending(&mut arm.tactics, ending)?;
+        }
+        return Ok(());
+    }
+    let kept = tactics.len().checked_sub(ending).ok_or(())?;
+    let supplied = matches!(tactics[kept], ProofTactic::Step)
+        && tactics[kept + 1..]
+            .iter()
+            .all(|tactic| matches!(tactic, ProofTactic::Assumption));
+    if !supplied {
+        return Err(());
+    }
+    tactics.truncate(kept);
+    Ok(())
 }
 
 fn select_expansion_theorem<'a>(
