@@ -3064,56 +3064,87 @@ pub(super) fn check_wildcard_consumption_at_return(
         .into_iter()
         .filter(|(produce, _)| !produce)
     {
+        let paired = authority_mode_exchange_effects(interface).is_some();
         let CResourceTerm::Composite {
             name: member_name, ..
         } = member.term()
         else {
-            unreachable!("checked member effect")
+            continue;
         };
-        let paired = authority_mode_exchange_effects(interface).is_some();
-        // This checkpoint covers direct authority inputs. Do not read
-        // unrelated unary control fields just to discover that they are outside
-        // this rule; their entry custody is checked by the existing boundary.
-        if !paired && !interface.resource_requires().iter().any(|input| {
-        matches!(input.term(), CResourceTerm::PopulationAuthority {
-            protected, population_arity, ..
-        } if (paired || population_arity.is_some()) && matches!(protected.resource.term(), CResourceTerm::Composite { name, .. } if name == member_name))
-    }) {
-        continue;
-    }
-        let fact = match evaluate_function_resource_spec_with_entry(
+        // A member argument may read a field inside a folded entry instance,
+        // which this exit check cannot open. The proof's own import of that
+        // family then identifies the governed population, when it is unique.
+        let (description, quantity) = match evaluate_function_resource_spec_with_entry(
             entry,
             entry,
             member,
             assumptions,
             budget,
         )? {
-            Ok(fact) => fact,
-            Err(error) => return Ok(Err(error)),
+            Ok(CResourceFact::Own(CResource::Composite { name, arguments }, quantity)) => (
+                ResourceDescription::new(
+                    name.clone(),
+                    arguments,
+                    ResourceFieldSchema::new(vec![]).expect("empty schema"),
+                ),
+                quantity,
+            ),
+            Ok(_) => continue,
+            Err(error) => {
+                let imported = exit
+                    .population_effects
+                    .creation
+                    .as_ref()
+                    .map(|events| events.imported_populations_of_family(member_name))
+                    .unwrap_or_default();
+                let (CResourceQuantity::One, [description]) =
+                    (member.quantity(), imported.as_slice())
+                else {
+                    return Ok(Err(error));
+                };
+                (description.clone(), Box::new(Bitvector32Term::Constant(1)))
+            }
         };
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact else {
-            continue;
-        };
-        let description = ResourceDescription::new(
-            name.clone(),
-            arguments,
-            ResourceFieldSchema::new(vec![]).expect("empty schema"),
-        );
-        let wildcard = entry
+        // A declared consumption under an authority this proof holds is a
+        // death the caller applies, so the body must have recorded it with a
+        // checked spend. Otherwise a returned control could state its counter
+        // equation before a death the caller then applies.
+        let governed = exit
             .population_effects
             .creation
             .as_ref()
             .and_then(|events| events.governing_authority(&description))
-            .is_some_and(|scope| scope.population_arity().is_some());
-        if !wildcard && !paired {
+            .is_some();
+        if !governed && !paired {
             continue;
         }
-        let consumed = exit
+        let zero = |term: &Bitvector32Term| {
+            term.as_const() == Some(0)
+                || crate::kernel::quantity_condition_holds(
+                    assumptions,
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(term.clone()),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                )
+        };
+        let delta = exit
             .population_effects
             .creation
             .as_ref()
-            .and_then(|events| events.imported_member_delta_since_entry(&description))
-            .is_some_and(|(produce, actual_quantity)| !produce && actual_quantity == *quantity);
+            .and_then(|events| events.imported_member_delta_since_entry(&description));
+        let consumed = (zero(&quantity) && delta.as_ref().is_none_or(|(_, actual)| zero(actual)))
+            || delta.is_some_and(|(produce, actual_quantity)| {
+                !produce
+                    && (actual_quantity == *quantity
+                        || crate::kernel::quantity_condition_holds(
+                            assumptions,
+                            ConditionTerm::Bitvector32Equal(
+                                Box::new(actual_quantity),
+                                quantity.clone(),
+                            ),
+                        ))
+            });
         if !consumed {
             return Ok(Err(CRuntimeError::FunctionContract(format!(
                 "Requires consumes {}",

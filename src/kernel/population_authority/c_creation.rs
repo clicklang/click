@@ -1026,6 +1026,22 @@ impl CreationEvents {
         })
     }
 
+    /// The exact imported populations of one family. Work is linear in the
+    /// imports this proof holds, which its contract bounds.
+    pub(in crate::kernel) fn imported_populations_of_family(
+        &self,
+        family: &str,
+    ) -> Vec<ResourceDescription> {
+        self.0
+            .opaque_imports
+            .keys()
+            .filter(|description| {
+                description.family() == family && description.population_arity().is_none()
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Exact signed batch delta from a checked control import. The quantity may
     /// be zero; the direction remains part of the checked transition.
     pub(in crate::kernel) fn imported_member_delta_since_entry(
