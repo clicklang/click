@@ -2660,12 +2660,40 @@ private:
            "the supported C++ record must be declared within the import root");
       return false;
     }
-    if (!record->isStandardLayout() || record->getNumBases() != 0) {
-      fail(record->getLocation(),
-           "the supported C++ record must be standard-layout and trivially-copyable except for a supported destructor, and have no bases");
+    if (record->getNumBases() != 0) {
+      if (record->getNumBases() != 1 || !record->field_empty()) {
+        fail(record->getLocation(),
+             "the supported C++ base profile requires one public non-virtual base and no own fields");
+        return false;
+      }
+      const auto &base = *record->bases_begin();
+      if (base.isVirtual() || base.getAccessSpecifier() != clang::AS_public ||
+          !record->isTriviallyCopyable() || !record->hasTrivialDestructor()) {
+        fail(record->getLocation(),
+             "the supported C++ base profile requires public non-virtual inheritance and trivial copying/destruction");
+        return false;
+      }
+      const auto *base_record = base.getType()->getAsCXXRecordDecl();
+      if (base_record == nullptr || !remember_record(base_record) ||
+          !base_record->getDefinition()->hasTrivialDestructor()) {
+        if (state_.error.empty())
+          fail(base.getBeginLoc(), "C++ base subobjects require trivial destruction");
+        return false;
+      }
+      const auto &layout = context_.getASTRecordLayout(record);
+      const auto &base_layout = context_.getASTRecordLayout(base_record);
+      if (!layout.getBaseClassOffset(base_record).isZero() ||
+          layout.getSize() != base_layout.getSize() ||
+          layout.getAlignment() != base_layout.getAlignment()) {
+        fail(base.getBeginLoc(), "C++ single-base layout must preserve the complete base layout");
+        return false;
+      }
+    }
+    if (!record->isStandardLayout()) {
+      fail(record->getLocation(), "the supported C++ record must be standard-layout");
       return false;
     }
-    if (record->field_empty()) {
+    if (record->field_empty() && record->getNumBases() == 0) {
       fail(record->getLocation(),
            "the supported C++ record must contain at least one field");
       return false;
@@ -2723,6 +2751,10 @@ private:
 
   bool validate_constructor(const clang::CXXConstructorDecl *constructor,
                             const clang::CXXRecordDecl *record) {
+    if (record->getNumBases() != 0) {
+      fail(constructor->getLocation(), "C++ constructors with base subobjects remain unsupported");
+      return false;
+    }
     const auto *prototype =
         constructor->getType()->getAs<clang::FunctionProtoType>();
     if (!constructor->isExplicit() || constructor->getAccess() != clang::AS_public ||
@@ -2857,6 +2889,19 @@ private:
     result["size_bytes"] = static_cast<std::int64_t>(size);
     result["alignment_bytes"] = static_cast<std::int64_t>(alignment);
     result["fields"] = std::move(fields);
+    if (record->getNumBases() == 1) {
+      const auto &base = *record->bases_begin();
+      auto value_type = lower_type(base.getType(), base.getBeginLoc());
+      if (!value_type) return std::nullopt;
+      llvm::json::Object subobject;
+      subobject["value_type"] = std::move(*value_type);
+      subobject["offset_bytes"] = static_cast<std::int64_t>(
+          layout.getBaseClassOffset(base.getType()->getAsCXXRecordDecl()).getQuantity());
+      subobject["size_bytes"] = static_cast<std::int64_t>(
+          context_.getTypeSizeInChars(base.getType()).getQuantity());
+      subobject["span"] = declaration_span(base.getSourceRange());
+      result["base"] = std::move(subobject);
+    }
     const clang::CXXDestructorDecl *destructor = record->getDestructor();
     if (destructor != nullptr && !destructor->isImplicit()) {
       const auto *definition = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(
@@ -2894,6 +2939,12 @@ private:
         fail(member->getMemberLoc(),
              "the supported C++ member access must resolve to a data field");
       }
+      return std::nullopt;
+    }
+    if (const auto *conversion = llvm::dyn_cast<clang::ImplicitCastExpr>(member->getBase()->IgnoreParens());
+        conversion != nullptr && (conversion->getCastKind() == clang::CK_UncheckedDerivedToBase ||
+                                  conversion->getCastKind() == clang::CK_DerivedToBase)) {
+      fail(member->getMemberLoc(), "inherited C++ field access requires base-subobject projections");
       return std::nullopt;
     }
     const clang::Expr *base = member->getBase()->IgnoreParenImpCasts();
