@@ -1,5 +1,9 @@
 The population cannot be destroyed while its mutex is live
 
+After unlock, the population authority is back in the mutex. Spending the
+members before destroying the mutex needs that authority, so cleanup must
+wait until destruction returns the control.
+
 ```c filename=population_access.c
 #include <pthread.h>
 #include <stddef.h>
@@ -16,24 +20,28 @@ unsigned int run(struct counter *p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "population_access.c";
-resource member(p: struct counter*) {
+resource member(p: struct counter*) {}
+resource control(p: struct counter*) {
+    field value: uint32;
     owns p->value;
+    owns authority(member(p));
+    fact p->value == value;
     fact p->value == count(member(p));
 }
-resource counter_state(p: struct counter*) {
-    field retained: int32;
-    owns retained of member(p);
-    fact retained > 0;
-}
 uint32 read_member(struct counter* p) {
-    owns member(p);
+    owns authority(member(p));
+    owns p->value;
+    requires p->value == count(member(p));
     ensures result == count(member(p));
-} by { open(member(p)) { step(); } simp(); }
+    ensures p->value == old(p->value);
+} by { execute(); simp(); }
 uint32 run(struct counter* p) {
+    owns authority(member(p));
+    requires count(member(p)) == 0;
     owns p->value;
     owns &p->mutex;
     requires aligned(&p->mutex, 8);
@@ -41,23 +49,24 @@ uint32 run(struct counter* p) {
 } by {
     step();
     fold(3 of member(p));
-    let state = fold(counter_state(p), { retained: 1 });
+    have count(member(p)) == 3 by simp;
+    let state = fold(control(p), { value: p->value });
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mutex, 0), { state: state });
     branch then { unfold(state); unfold(3 of member(p)); step(); simp(); } else {}
     step();
-    step();
-    step();
     unfold(state);
-    unfold(3 of member(p));
     step();
+    step();
+    let state = fold(control(p), { value: p->value });
+    step();
+    unfold(3 of member(p));
     step(pthread_mutex_destroy(&p->mutex), { lifetime: lifetime });
     unfold(state);
-    unfold(3 of member(p));
     step();
     simp();
 }
 ```
 
 ```expect
-fail: destroy the population's mutex before full-population cleanup
+fail: Requires owns authority(member(p))
 ```

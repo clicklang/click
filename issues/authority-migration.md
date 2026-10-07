@@ -183,10 +183,11 @@ change here.
 
 ### Status
 
-Milestones 1–3 are complete, building on the foundation that the earlier
+Milestones 1–4 are complete, building on the foundation that the earlier
 checkpoints 0–5 delivered. Authority semantics now cover sequential refcount,
-shared-parent ownership, the bounded pool, field-bearing named members, and
-every sequential population consumer. The approved
+shared-parent ownership, the bounded pool, field-bearing named members,
+every sequential population consumer, and mutex-held authority controls.
+Milestone 6 chunk 1, the worker protocol freeze, is also complete. The approved
 [object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md)
 governs establishment and retirement. The
 [consumer inventory](../docs/internals/authority-migration-inventory.md) lists
@@ -198,7 +199,7 @@ holds only the plan.
 | 1. Bounded pool | Complete | Original pool C verifies initialization, checkout/return, resize, transfer, and cleanup |
 | 2. Member identity and proof fields | Complete | Count identified members without erasing private proof state |
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
-| 4. Mutex-held authority controls | Chunks 1–3 complete; 1 chunk | Ordinary protected controls replace counted-population mutex custody |
+| 4. Mutex-held authority controls | Complete | Ordinary protected controls replace counted-population mutex custody |
 | 5. Retire `guarded_by` associations | 4 chunks | No active `guarded_by` consumer; associations come from checked initialization |
 | 6. Concurrent lifetime and worker accounting | Chunk 1 complete; 3 chunks | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
@@ -207,7 +208,7 @@ The remaining plan is **four milestones of four chunks**. These are planning
 estimates, not promises. The milestone 6 worker protocol is now frozen and
 needs no new syntax or kernel algebra. Tooling repairs may still add chunks.
 
-What remains on the legacy path is 28 mutex and worker count fixtures and 58
+What remains on the legacy path is 21 worker count fixtures and 58
 `guarded_by` fixtures. Two fixtures appear in both groups. One deliberate
 legacy control, `fold_negative_quantity_legacy_control.md`, stays until
 milestone 7. The inventory names every file.
@@ -274,7 +275,8 @@ milestone 7. The inventory names every file.
 4. **Held/unheld helpers and closeout.** Migrate the seven `population_mutex_*`
    fixtures: held and unheld helper access, unheld direct reads, complete
    publication and release, hidden units, and the second custodian. Update the
-   mutex internals documentation.
+   mutex internals documentation. **Complete:** all seven select authority;
+   the inventory records each replacement refusal.
 
 **Exit gate:** Lock gives control ownership, unlock requires its restored
 invariant, and a member alone cannot expose it. No authority proof or helper
