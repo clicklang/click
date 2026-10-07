@@ -1,4 +1,11 @@
-# A guarded resource cannot be published to another mutex
+# A resource published to another mutex cannot return to its owner
+
+Without a mutex annotation, initialization associates a protected resource
+with the mutex it initializes, so depositing `cell_state` in `cell->other` is
+an ordinary publication. The contract still promises to return the state,
+and the function ends with it held by a live mutex. The companion
+`mutex_association_wrong_mutex_rejected.md` checks that a typed use of one
+mutex cannot acquire a resource deposited in another.
 
 ```c filename=guarded_resource_wrong_mutex_rejected.c
 #include <pthread.h>
@@ -11,7 +18,6 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 resource cell_state(cell: struct cell*) {
     field value: int32;
-    guarded_by cell->guard;
     owns cell->value;
     fact cell->value == value;
 }
@@ -22,9 +28,11 @@ void wrong(struct cell *cell) {
     owns state: cell_state(cell);
 } by {
     let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&cell->other, 0), { state: state });
+    step();
+    simp();
 }
 ```
 
 ```expect
-fail: selected resource is guarded by a different mutex
+fail: a function cannot return with a held mutex or an unpublished guarded resource
 ```
