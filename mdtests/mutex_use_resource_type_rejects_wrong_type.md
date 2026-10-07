@@ -21,13 +21,11 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 resource counter_state(counter: struct counter*) {
     field value: uint32;
-    guarded_by counter->mu;
     owns counter->value;
     fact counter->value == value;
 }
 resource other_state(counter: struct counter*) {
     field value: uint32;
-    guarded_by counter->mu;
 }
 verifying "mutex_use_resource_type.c";
 void increment(struct counter *counter) {

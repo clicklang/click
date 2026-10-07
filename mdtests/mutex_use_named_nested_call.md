@@ -25,7 +25,6 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 resource empty_state(holder: struct holder*) {
     field tag: int32;
-    guarded_by holder->mu;
 }
 verifying "mutex_use_balanced_contract.c";
 

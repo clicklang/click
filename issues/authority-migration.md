@@ -200,7 +200,7 @@ holds only the plan.
 | 2. Member identity and proof fields | Complete | Count identified members without erasing private proof state |
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
 | 4. Mutex-held authority controls | Complete | Ordinary protected controls replace counted-population mutex custody |
-| 5. Retire `guarded_by` associations | Chunks 1–2 complete; 2 chunks | No active `guarded_by` consumer; associations come from checked initialization |
+| 5. Retire `guarded_by` associations | Chunks 1–3 complete; 1 chunk | No active `guarded_by` consumer; associations come from checked initialization |
 | 6. Concurrent lifetime and worker accounting | Chunk 1 complete; 3 chunks | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
 
@@ -208,8 +208,8 @@ The remaining plan is **four milestones of four chunks**. These are planning
 estimates, not promises. The milestone 6 worker protocol is now frozen and
 needs no new syntax or kernel algebra. Tooling repairs may still add chunks.
 
-What remains on the legacy path is 21 worker count fixtures and 21
-`guarded_by` fixtures. Two fixtures appear in both groups. One deliberate
+What remains on the legacy path is 21 worker count fixtures; two of them are
+also the last `guarded_by` fixtures. One deliberate
 legacy control, `fold_negative_quantity_legacy_control.md`, stays until
 milestone 7. The inventory names every file.
 
@@ -303,7 +303,7 @@ milestone 7; this milestone removes consumers, not the syntax.
    **Complete:** all 27 keep their outcomes and messages.
 3. **Use, helper-transfer, and runtime-contract families.** Migrate the 10
    guarded `mutex_use_*`, 3 guarded `mutex_helper_transfers*`, and 6
-   `runtime_mutex_contract_*` fixtures.
+   `runtime_mutex_contract_*` fixtures. **Complete:** all keep their outcomes.
 4. **Specification, documentation, and audit.** Update
    `src/languages/c/modeled_pthread_spec.md`, `docs/concepts/resources.md`,
    `docs/internals/mutex-resource-contracts.md`,
