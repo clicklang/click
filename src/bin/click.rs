@@ -519,7 +519,7 @@ mod tests {
         };
         let count_up = |phase: &str| {
             format!(
-                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    simp();\n}}\n"
+                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= -1 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    simp();\n}}\n"
             )
         };
         let cases = [
@@ -567,7 +567,8 @@ mod tests {
         for (name, source, line) in cases {
             let sidecar = directory.join(format!("{name}.click"));
             fs::write(&sidecar, &source).unwrap();
-            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            let error = entry(["verify".to_string(), sidecar.display().to_string()])
+                .expect_err(&format!("{name}: expected diagnostic, proof succeeded"));
             assert_eq!(
                 source.lines().nth(line - 1).map(str::trim),
                 Some("assumption();"),
