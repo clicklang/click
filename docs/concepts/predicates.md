@@ -36,6 +36,12 @@ unfold(sorted_pair);
 This opacity is useful. It lets predicates act as stable abstraction boundaries
 instead of being expanded everywhere.
 
+`unfold` takes the predicate's name, not one call, because it is a switch and
+not a step on one fact: from that point to the end of the proof branch the
+predicate is transparent. Every fact that mentions it gains its body, the
+current goal is rewritten, and a later goal such as `have sorted_pair(a, b)`
+is proved against the body.
+
 ## Predicates in requirements
 
 Predicates can package preconditions:
