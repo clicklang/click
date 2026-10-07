@@ -7,7 +7,7 @@ This is the consumer inventory and migration record for `issues/authority-migrat
 Milestones 1–4 of the migration issue are complete. The sequential refcount project, the shared-parent design project, the bounded-pool project, every sequential mdtest population consumer, and every mutex count fixture without workers select authority semantics. The remaining legacy consumers are listed in the next section:
 
 - 21 count fixtures in the worker groups (milestone 6);
-- 48 `guarded_by` fixtures (milestone 5), two of which are also in the mutex count group and migrate with it in milestone 6;
+- 21 `guarded_by` fixtures (milestone 5), two of which are also in the mutex count group and migrate with it in milestone 6;
 - `fold_negative_quantity_legacy_control.md`, a deliberate legacy control retired in milestone 7 against its authority replacement `fold_rejects_a_negative_quantity.md`.
 
 Remaining `count(` search hits outside these groups are C functions named `count` or the standard library's array `count(p, lo, hi, x)`; none observes a declared-resource population.
@@ -21,7 +21,7 @@ These fixtures use the legacy path. The two worker families are intentionally se
 | Abstract workers and joins | `modeled_pthread_counted_join.md`, `modeled_pthread_counted_reverse_join.md`, `modeled_pthread_counted_before_join.md`, `modeled_pthread_counted_join_stale.md`, `modeled_pthread_counted_neutral_pending.md`, `modeled_pthread_counted_pending_helper.md`, `modeled_pthread_counted_pending_wildcard.md`, `modeled_pthread_counted_overlap_rejected.md`, `modeled_pthread_thread_confined_resource_rejected.md`: worker transfer and join, failure to observe pending/stale counts, wildcard refusal, independent/reversed joins, and overlap/confinement rejection. The [worker authority protocol](worker-authority-protocol.md) maps each fixture to its replacement. |
 | Shared abstract worker population | `modeled_pthread_counted_shared_join.md`, `modeled_pthread_counted_shared_forward_join.md`, `modeled_pthread_counted_shared_partial_then_create.md`, `modeled_pthread_counted_shared_retained.md`, `modeled_pthread_counted_shared_symbolic.md`, `modeled_pthread_counted_shared_neutral.md`, `modeled_pthread_counted_shared_observer.md`, `modeled_pthread_counted_shared_stale.md`, `modeled_pthread_counted_shared_early_count.md`, `modeled_pthread_counted_shared_missing_unit.md`: shared worker-ticket accounting, create failure, either join order, retained units, and early/stale/missing-unit refusals. These no-lock workers follow the frozen [worker authority protocol](worker-authority-protocol.md): only one worker may hold the authority, others borrow members, and join cannot retroactively authorize a worker update. |
 | Count and protected memory with workers | `mutex_population_separate_body.md`, `mutex_population_missing_value_relation.md`: separation of contribution count from concrete counter value. Both count contributions that `pthread_create` workers consume, so they migrate with the shared worker population in milestone 6 chunk 3. The missing-value-relation case must continue to fail. |
-| `guarded_by` positive and negative | `mutex_guard_*.md`, `mutex_use_*.md`, `mutex_helper_transfers*.md`, and `runtime_mutex_contract_*.md`. These families hold 46 of the 48 `guarded_by` fixtures; the other two are the worker `mutex_population_*` fixtures in the protected-memory row. The glob families are finite and discoverable with the commands below. Preserve authenticated protected-resource type and initialization identity, folded restoration, wrong-mutex/stale-state rejection, and mutex lifetime/use/guard behavior while removing the annotation. |
+| `guarded_by` positive and negative | `mutex_use_*.md`, `mutex_helper_transfers*.md`, and `runtime_mutex_contract_*.md`. These families hold 19 of the 21 `guarded_by` fixtures; the other two are the worker `mutex_population_*` fixtures in the protected-memory row. The glob families are finite and discoverable with the commands below. Preserve authenticated protected-resource type and initialization identity, folded restoration, wrong-mutex/stale-state rejection, and mutex lifetime/use/guard behavior while removing the annotation. |
 
 `guarded_by` also appears in `src/languages/c/modeled_pthread_spec.md` and the implementation paths named below. The plain mutex tests without the annotation remain neighboring controls for ordinary mutex transfer; they are not authorization to drop the guarded negative cases.
 
@@ -1106,4 +1106,12 @@ their C unchanged. Initialization now supplies each association.
   `mutex_association_wrong_mutex_rejected.md`: a helper's typed use of
   `cell->guard` cannot be supplied by the lifetime of `cell->other` (`Requires
   owns mutex_use(&cell->guard, cell_state(cell))`).
+
+**Chunk 2, guard family:** The 27 `mutex_guard_*` fixtures that used
+`guarded_by` drop it with their C, proofs, and expectations unchanged. Each
+already deposits its state at a named initialization, so the annotation
+added no association. All keep their checked-in outcomes and messages: 9
+pass and 18 fail, including the preserving-contract, incomplete-fold,
+missing-guard, live-acquisition, duplicated-guard, and missing-storage
+refusals.
 
