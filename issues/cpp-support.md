@@ -784,10 +784,52 @@ Zero fee/amount, exact division and maximal fast-path operands remain in scope.
 The unchanged implementations now have separate proofs for both rounding modes
 in all three native fee domains, under `0 <= at_size <= size` and positive size.
 
-Next combine the fee-domain proofs into one caller contract under the current
-joint bounds, then broaden mode-specific result-fit and fee division.
-The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
-current joint range ensures both rounding modes fit.
+Unified caller contracts are now delivered for both modes on the joint input
+profile. `FeeFracEvaluateBounded.click.in` has no native fee-branch prerequisite:
+it requires the full signed fee observer bounds, positive int32 size,
+`0 <= at_size <= size`, and field views. The proof splits on the unchanged
+source comparisons, derives fast-path observer bounds through checked signed
+64-bit `<` and `>=` bridges, and reuses the existing fast/wide proof fragments.
+Both caller levels preserve fields, derive int64 result bounds, and prove exact
+floor/ceiling product inequalities across all signed fee values. Ordinary,
+expanded and retained verification and hostile missing bounds, false rounding
+and missing comparison transport are covered. The new shared bridges check their
+exact typed declarations and native premises; endpoint models, forged declarations
+and checked expansion cover them independently of Bitcoin.
+
+Strict positive-divisor quotient bounds are now proof-backed shared lemmas,
+with explicit sign guards, checked expansion and hostile endpoint/guard tests.
+A mathematical fixture proves the initial int64 quotient fit for both wider
+mode-specific domains. Separate `FeeFracDivResultFitDown/Up.click` sidecars now
+verify native quotient and remainder narrowing, the selected correction and
+exact floor/ceiling results on the unchanged upstream Div implementation.
+Down accepts `MIN * d <= n < (MAX + 1) * d`; Up accepts
+`(MIN - 1) * d < n <= MAX * d`, with positive int32 `d` and the corresponding
+explicit native mode guard. The other correction direction is not a proof
+obligation on the selected profile. Ordinary, expanded and retained verification
+and hostile mode/divisor/numerator, strict endpoint, rounding, cast and
+correction evidence are covered by eight hermetic phases. Both profiles are
+alternatives to the existing joint helper contract; existing callers retain it.
+
+The alternative `FeeFracEvaluateWideResultFit.click.in` caller profiles now
+compose these mode-specific Div contracts with the unchanged Mul sidecar for
+both Down/Up and negative/positive-wide fees. They replace `at_size <= size`
+with explicit `0 <= at_size <= INT32_MAX` and the selected mode's product-fit
+premises, retaining field views, signed fee bounds, native source guards,
+checked multiplication, exact rounding and field frames. Four modular contract
+applications fix size to 1 and amount to 2. Sixteen hermetic phases cover the
+profiles' ordinary, expanded and retained verification, missing authority and
+fit guards, weakened strict endpoints, false rounding and forged product
+transport. The unsigned fast path and original unified profile still use the
+joint amount/size bounds.
+
+Next extend the unsigned fast Down/Up callers to the same product/result-fit
+and native amount bounds. Check the actual uint64 product (and ceiling's
+adjusted numerator) before division, and derive the ordinary int64 result cast
+from explicit result-fit rather than `at_size <= size`. Then combine fast and
+wide proofs under a broader full-signed-fee caller contract, preserving source
+branch guards and field frames. Keep the alternative helper interfaces explicit
+until a shared guarded contract is justified.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
@@ -797,8 +839,8 @@ an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
-machine observer ranges, general range inference, and the wider rounding
-profile remain open.
+machine observer ranges, general range inference, wider fast/unified fee callers
+and the portable `DivFallback` implementation remain open.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false

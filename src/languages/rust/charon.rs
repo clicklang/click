@@ -2636,6 +2636,16 @@ mod tests {
     fn charon_array_unsize_metadata_has_bounded_work_across_lengths() {
         let export = decode(NESTED_ARTIFACT, "nested.rs", NESTED_SOURCE).unwrap();
         let prepared = super::super::import::prepared_for_test(export).unwrap();
+        // Standard-library initialization is fixed work, independent of the
+        // array length. Warm it outside the metadata scaling measurement.
+        {
+            let _session = crate::kernel::VerificationSession::enter();
+            crate::surface::verify_c0_sources(
+                "theorem warm_array_metadata_library() { ensures 0 == 0 by simp; }",
+                &[],
+            )
+            .unwrap();
+        }
         let mut samples = Vec::new();
         for (name, length) in [
             ("empty_array_len", 0),
@@ -2654,7 +2664,10 @@ mod tests {
             samples.push(work);
         }
         assert!(
-            samples[0] <= 40_000 && samples[1..].iter().all(|work| *work <= samples[1] + 128),
+            samples.iter().all(|work| *work <= 40_000)
+                && samples[1..]
+                    .iter()
+                    .all(|work| work.abs_diff(samples[1]) <= 128),
             "{samples:?}"
         );
     }
