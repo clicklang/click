@@ -232,7 +232,9 @@ impl InitializedBytes {
     /// both, at the narrower width. The result keeps the run invariant: two
     /// clipped pieces are separated by a gap of one side or the other.
     pub(crate) fn intersection(&self, other: &Self) -> Self {
-        if self.entries.ptr_eq(&other.entries) {
+        // Equal records intersect to themselves. Two records derived from
+        // one are compared along the paths that changed.
+        if self.entries.ptr_eq(&other.entries) || self.entries == other.entries {
             return self.clone();
         }
         let mut result = SnapshotMap::new();

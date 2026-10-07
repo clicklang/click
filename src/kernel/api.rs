@@ -1219,24 +1219,34 @@ fn abstract_c_state_for_join_across_with_policy(
     {
         return Err("stable-view occurrence bindings differ across branch join".to_string());
     }
+    // An interface join takes its fresh identities from the execution's one
+    // counter, continued from the highest mark any arm reached. That counter
+    // only moves forward and nothing else issues identities in its range,
+    // so every identity an arm holds from it lies below the mark and the
+    // join cannot re-issue one. The join therefore reads no arm state to
+    // find the names in use. The loop-head abstraction below is left as it
+    // was: whether its callers' marks cover the states it abstracts was not
+    // examined when the join stopped scanning.
     let mut existing_variables = BTreeSet::new();
-    for sibling in sibling_states {
-        crate::instrumentation::record_deterministic_work(
-            sibling.locals.bindings.len()
-                + sibling.memory.blocks.len()
-                + sibling.memory.cells.len()
-                + sibling.memory.union_cells.len()
-                + sibling.memory.forgotten.ended_local_blocks.len()
-                + sibling.resources().facts().len()
-                + sibling.counted_populations.len(),
-        );
-        // The state scan reserves the `havoc:N` and `call-havoc:N` marker
-        // blocks' identities itself; the join no longer harvests block names.
-        collect_c_state_bitvector_variables(sibling, &mut existing_variables);
-    }
-    for value in stable_entry_locals.values() {
-        crate::instrumentation::record_deterministic_work(1);
-        collect_c_value_bitvector_variables(value, &mut existing_variables);
+    if !preserve_exact_common_memory {
+        for sibling in sibling_states {
+            crate::instrumentation::record_deterministic_work(
+                sibling.locals.bindings.len()
+                    + sibling.memory.blocks.len()
+                    + sibling.memory.cells.len()
+                    + sibling.memory.union_cells.len()
+                    + sibling.memory.forgotten.ended_local_blocks.len()
+                    + sibling.resources().facts().len()
+                    + sibling.counted_populations.len(),
+            );
+            // The state scan reserves the `havoc:N` and `call-havoc:N` marker
+            // blocks' identities itself; the join no longer harvests block names.
+            collect_c_state_bitvector_variables(sibling, &mut existing_variables);
+        }
+        for value in stable_entry_locals.values() {
+            crate::instrumentation::record_deterministic_work(1);
+            collect_c_value_bitvector_variables(value, &mut existing_variables);
+        }
     }
     // The abstraction allocates through an execution budget, which is the one
     // counter every kernel allocation under this execution uses. Starting it
@@ -1249,12 +1259,29 @@ fn abstract_c_state_for_join_across_with_policy(
     // A nested arm may already carry a memory-havoc marker from an inner
     // join. Retain the union on every sibling so the enclosing abstraction is
     // deterministic without discarding any memory-distinction history.
+    // Only a block on which a sibling differs from this state can be one
+    // this state lacks, so the siblings' blocks are not walked.
     for sibling in sibling_states {
-        for (block, contents) in sibling.memory.blocks.iter() {
-            if block.starts_with("havoc:") {
-                std::sync::Arc::make_mut(&mut abstract_state.memory.blocks)
-                    .insert(block.clone(), contents.clone());
-            }
+        let differing = abstract_state
+            .memory
+            .blocks
+            .diff(&sibling.memory.blocks)
+            .filter_map(|change| match change {
+                crate::kernel::primitives::SnapshotMapChange::Removed(_) => None,
+                crate::kernel::primitives::SnapshotMapChange::Added(block)
+                | crate::kernel::primitives::SnapshotMapChange::Changed(block) => {
+                    block.starts_with("havoc:").then(|| block.clone())
+                }
+            })
+            .collect::<Vec<_>>();
+        for block in differing {
+            let contents = sibling
+                .memory
+                .blocks
+                .get(&block)
+                .expect("a differing block is held");
+            std::sync::Arc::make_mut(&mut abstract_state.memory.blocks)
+                .insert(block, contents.clone());
         }
     }
     abstract_state.next_local_lifetime = sibling_states
@@ -1356,28 +1383,16 @@ fn abstract_c_state_for_join_across_with_policy(
         abstract_objects.push((name.clone(), abstract_value, *c_type));
     }
 
-    let comparable_memory = |state: &CState| {
-        crate::instrumentation::record_deterministic_work(
-            state.memory.blocks.len()
-                + state.memory.cells.len()
-                + state.memory.union_cells.len()
-                + state.memory.forgotten.ended_local_blocks.len(),
-        );
-        let mut memory = state.memory.clone();
-        std::sync::Arc::make_mut(&mut memory.blocks)
-            .retain(|block, _| !preserved_blocks.contains(block));
-        std::sync::Arc::make_mut(&mut memory.cells)
-            .retain(|pointer, _| !preserved_blocks.contains(&pointer.block));
-        std::sync::Arc::make_mut(&mut memory.union_cells)
-            .retain(|(pointer, _), _| !preserved_blocks.contains(&pointer.block));
-        memory
-    };
-    let common_memory = preserve_exact_common_memory && {
-        let expected = comparable_memory(state);
-        sibling_states
-            .iter()
-            .all(|sibling| comparable_memory(sibling) == expected)
-    };
+    // The arms' memories are one memory when they differ only inside the
+    // blocks the join preserves anyway. The differences are read off the
+    // structure the snapshots share, so equal memories cost nothing and
+    // unequal ones cost what differs.
+    let common_memory = preserve_exact_common_memory
+        && sibling_states.iter().all(|sibling| {
+            state
+                .memory
+                .differs_only_within(&sibling.memory, &preserved_blocks)
+        });
     if !common_memory {
         if let Some(ledger) = abstract_state.loan_ledger() {
             for sibling in sibling_states {

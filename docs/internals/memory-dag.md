@@ -44,10 +44,14 @@ queries, the load path and the load-observability comparisons all visit only
 them. An entry outside the ranges is in a block proven distinct from the
 access, so each of those rules already kept it (or answered `false` for it)
 on the first rung of its ladder, and restricting the visit changes no answer.
-Loop havoc and the interface join stay whole-memory: their write set is every
-reachable cell. The join then keeps a cell, or a whole run, that every arm
-holds with the same value. The lookup is one per arm for each value visited,
-so the visit is no wider than before.
+Loop havoc stays whole-memory: its write set is every reachable cell. The
+interface join does not. It keeps a cell, or a whole run, that every arm
+holds with the same value, and it finds the rest by diffing the arms'
+snapshots, which share every subtree no arm touched. Its work is the entries
+on which the arms differ, not the snapshot
+(`interface_join_does_not_visit_cells_its_arms_share`). A snapshot that holds
+a typed union view takes the whole-map pass instead, because a view is
+forgotten whatever the arms agree on.
 
 Interning looks up the caller's storage roots first, then the content. A
 structural hit registers the caller's roots too, and the arena pins them so

@@ -62,7 +62,7 @@ use super::{
 };
 use crate::kernel::primitives::Bitvector32Term;
 use crate::kernel::primitives::LoadKind;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::ops::Bound;
 use std::sync::OnceLock;
@@ -1786,6 +1786,100 @@ impl CellStore {
             return Some(value);
         }
         self.concrete.remove(pointer)
+    }
+
+    /// Whether every cell and run on which the two stores differ lies in one
+    /// of `blocks`, visiting only those.
+    pub(crate) fn differs_only_within(
+        &self,
+        other: &Self,
+        blocks: &BTreeSet<PointerBlock>,
+    ) -> bool {
+        self.concrete
+            .diff(&other.concrete)
+            .all(|change| blocks.contains(&change.key().block))
+            && self.runs.diff(&other.runs).all(|change| {
+                let key = change.key();
+                self.runs
+                    .get(key)
+                    .or_else(|| other.runs.get(key))
+                    .is_some_and(|run| blocks.contains(&run.base().block))
+            })
+    }
+
+    /// Drops the values `self` and `others` do not all hold alike, for the
+    /// join of stores that are arms of one split, and returns the blocks in
+    /// which any of them holds such a value.
+    ///
+    /// The stores share every subtree no arm touched, so only the entries on
+    /// which they differ are visited: the work is the arms' changes, not the
+    /// stores. A concrete cell `self` holds and another store lacks or holds
+    /// with another value goes unless `keeps_cell` protects it; a run `self`
+    /// holds and another store lacks or holds with other holes is decided by
+    /// `run_rule`, as [`Self::retain_by`] decides one. Everything else every
+    /// store holds alike and is kept unvisited.
+    pub(crate) fn retain_agreed_with(
+        &mut self,
+        others: &[&Self],
+        mut keeps_cell: impl FnMut(&Pointer, &CValue) -> bool,
+        mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
+    ) -> BTreeSet<PointerBlock> {
+        let held = self.clone();
+        let mut blocks = BTreeSet::new();
+        let mut cells = BTreeSet::new();
+        let mut runs = BTreeMap::new();
+        let mut visited = 0usize;
+        for other in others {
+            for change in held.concrete.diff(&other.concrete) {
+                match change {
+                    SnapshotMapChange::Added(pointer) => {
+                        blocks.insert(pointer.block.clone());
+                    }
+                    SnapshotMapChange::Removed(pointer) | SnapshotMapChange::Changed(pointer) => {
+                        cells.insert(pointer.clone());
+                    }
+                }
+            }
+            for change in held.runs.diff(&other.runs) {
+                let key = change.key();
+                match held.runs.get(key) {
+                    Some(run) => {
+                        runs.insert(key.clone(), run.clone());
+                    }
+                    None => {
+                        if let Some(run) = other.runs.get(key) {
+                            blocks.insert(run.base().block.clone());
+                        }
+                    }
+                }
+            }
+        }
+        if cells.is_empty() && runs.is_empty() {
+            return blocks;
+        }
+        self.reset();
+        for pointer in cells {
+            visited += 1;
+            let Some(value) = self.concrete.get(&pointer) else {
+                continue;
+            };
+            if !keeps_cell(&pointer, value) {
+                self.concrete.remove(&pointer);
+                blocks.insert(pointer.block.clone());
+            }
+        }
+        for (key, mut run) in runs {
+            visited += 1;
+            let (decision, _) = run_rule(&run);
+            let before = run.holes.clone();
+            run.keep_only(decision, &mut keeps_cell, &mut visited);
+            if run.holes != before {
+                blocks.insert(run.base().block.clone());
+                self.set_run(&key, Some(run));
+            }
+        }
+        crate::instrumentation::record_deterministic_work(visited);
+        blocks
     }
 
     /// Keeps only the cells `keep` accepts, visiting every cell.

@@ -449,30 +449,19 @@ impl<K: Ord> SnapshotSet<K> {
         self.set.range(range)
     }
 
-    /// Elements in exactly one of the two sets, ascending. Empty in O(1)
-    /// for a shared root; otherwise a merge over both sets, O(n + m).
+    /// Elements in exactly one of the two sets, ascending. Subtrees the two
+    /// sets share are skipped by node identity, so for a set derived from
+    /// the other the walk is proportional to the changed paths.
     pub(crate) fn symmetric_difference<'a>(&'a self, other: &'a Self) -> Vec<&'a K> {
-        let mut difference = Vec::new();
         if self.set.ptr_eq(&other.set) {
-            return difference;
+            return Vec::new();
         }
-        let mut left = self.set.iter().peekable();
-        let mut right = other.set.iter().peekable();
-        loop {
-            match (left.peek(), right.peek()) {
-                (Some(l), Some(r)) => match l.cmp(r) {
-                    std::cmp::Ordering::Less => difference.extend(left.next()),
-                    std::cmp::Ordering::Greater => difference.extend(right.next()),
-                    std::cmp::Ordering::Equal => {
-                        left.next();
-                        right.next();
-                    }
-                },
-                (Some(_), None) => difference.extend(left.next()),
-                (None, Some(_)) => difference.extend(right.next()),
-                (None, None) => return difference,
-            }
-        }
+        self.set
+            .diff(&other.set)
+            .map(|change| match change {
+                imbl::ordset::DiffItem::Add(key) | imbl::ordset::DiffItem::Remove(key) => key,
+            })
+            .collect()
     }
 }
 
