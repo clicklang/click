@@ -2058,6 +2058,45 @@ function plug(ctx: Context, sub: RbTree) -> RbTree
     }
 }
 
+# Join the successor descent spine to the context above the erased node.
+function ctx_concat(inner: Context, outer: Context) -> Context
+    decreases inner
+{
+    match inner {
+        Context::Top => outer,
+        Context::Left(id, parent, color, sibling, up) =>
+            Context::Left(id, parent, color, sibling, ctx_concat(up, outer)),
+        Context::Right(id, parent, color, sibling, up) =>
+            Context::Right(id, parent, color, sibling, ctx_concat(up, outer)),
+    }
+}
+
+theorem plug_ctx_concat(inner: Context, outer: Context, sub: RbTree) {
+    ensures plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub)) by {
+        induct(inner) as ih {
+            Context::Top => {
+                unfold(ctx_concat(Context::Top, outer));
+                unfold(plug(Context::Top, sub));
+                normalize();
+            }
+            Context::Left(id, parent, color, sibling, up) => {
+                apply(ih(up, outer, RbTree::Node(id, parent, color, sub, sibling)));
+                unfold(ctx_concat(Context::Left(id, parent, color, sibling, up), outer));
+                unfold(plug(Context::Left(id, parent, color, sibling, ctx_concat(up, outer)), sub));
+                unfold(plug(Context::Left(id, parent, color, sibling, up), sub));
+                assumption();
+            }
+            Context::Right(id, parent, color, sibling, up) => {
+                apply(ih(up, outer, RbTree::Node(id, parent, color, sibling, sub)));
+                unfold(ctx_concat(Context::Right(id, parent, color, sibling, up), outer));
+                unfold(plug(Context::Right(id, parent, color, sibling, ctx_concat(up, outer)), sub));
+                unfold(plug(Context::Right(id, parent, color, sibling, up), sub));
+                assumption();
+            }
+        }
+    }
+}
+
 function ctx_consistent(ctx: Context, sub: RbTree, root_parent: struct rb_node*) -> int32
     decreases ctx
 {
@@ -3308,6 +3347,271 @@ theorem ctx_rb_right_frame(identity: struct rb_node*, grandparent: struct rb_nod
             black_height(sibling_model) == bh;
             node_color_ok(color, rb_color(sibling_model), focus_color) == 1;
         }
+    }
+}
+
+# A valid context fragment ending at a subtree boundary, not the tree root.
+# The boundary can be red. Only the outer ctx_rb imposes root blackness.
+function ctx_rb_between(ctx: Context, bh: Nat, focus_color: Color,
+                       boundary_bh: Nat, boundary_color: Color) -> int32
+    decreases ctx
+{
+    match ctx {
+        Context::Top =>
+            if bh == boundary_bh {
+                if focus_color == boundary_color { 1 } else { 0 }
+            } else { 0 },
+        Context::Left(id, parent, color, sibling, up) =>
+            if is_rb(sibling) == 1 {
+                if bh == black_height(sibling) {
+                    if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                        ctx_rb_between(up, frame_black_height(color, bh), color,
+                            boundary_bh, boundary_color)
+                    } else { 0 }
+                } else { 0 }
+            } else { 0 },
+        Context::Right(id, parent, color, sibling, up) =>
+            if is_rb(sibling) == 1 {
+                if black_height(sibling) == bh {
+                    if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                        ctx_rb_between(up, frame_black_height(color, bh), color,
+                            boundary_bh, boundary_color)
+                    } else { 0 }
+                } else { 0 }
+            } else { 0 },
+    }
+}
+
+theorem ctx_rb_between_top(bh: Nat, color: Color) {
+    ensures ctx_rb_between(Context::Top, bh, color, bh, color) == 1 by {
+        unfold(ctx_rb_between(Context::Top, bh, color, bh, color));
+        normalize();
+    }
+}
+
+theorem ctx_rb_between_left_frame(id: struct rb_node*, parent: struct rb_node*,
+        color: Color, sibling: RbTree, up: Context, bh: Nat, focus_color: Color,
+        boundary_bh: Nat, boundary_color: Color) {
+    requires is_rb(sibling) == 1;
+    requires bh == black_height(sibling);
+    requires node_color_ok(color, focus_color, rb_color(sibling)) == 1;
+    requires ctx_rb_between(up, frame_black_height(color, bh), color,
+        boundary_bh, boundary_color) == 1;
+
+    ensures ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+        bh, focus_color, boundary_bh, boundary_color) == 1 by {
+        unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+            bh, focus_color, boundary_bh, boundary_color));
+        rewrite(ctx_rb_between(up, frame_black_height(color, bh), color,
+            boundary_bh, boundary_color) == 1);
+        normalize() using { is_rb(sibling) == 1; bh == black_height(sibling);
+            node_color_ok(color, focus_color, rb_color(sibling)) == 1; }
+    }
+}
+
+theorem ctx_rb_between_right_frame(id: struct rb_node*, parent: struct rb_node*,
+        color: Color, sibling: RbTree, up: Context, bh: Nat, focus_color: Color,
+        boundary_bh: Nat, boundary_color: Color) {
+    requires is_rb(sibling) == 1;
+    requires black_height(sibling) == bh;
+    requires node_color_ok(color, rb_color(sibling), focus_color) == 1;
+    requires ctx_rb_between(up, frame_black_height(color, bh), color,
+        boundary_bh, boundary_color) == 1;
+
+    ensures ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+        bh, focus_color, boundary_bh, boundary_color) == 1 by {
+        unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+            bh, focus_color, boundary_bh, boundary_color));
+        rewrite(ctx_rb_between(up, frame_black_height(color, bh), color,
+            boundary_bh, boundary_color) == 1);
+        normalize() using { is_rb(sibling) == 1; black_height(sibling) == bh;
+            node_color_ok(color, rb_color(sibling), focus_color) == 1; }
+    }
+}
+
+theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Color,
+                      boundary_bh: Nat, boundary_color: Color) {
+    requires ctx_rb_between(inner, bh, focus_color, boundary_bh, boundary_color) == 1;
+    requires ctx_rb(outer, boundary_bh, boundary_color) == 1;
+
+    ensures ctx_rb(ctx_concat(inner, outer), bh, focus_color) == 1 by {
+        induct(inner) as ih {
+            Context::Top => {
+                if bh == boundary_bh {
+                    if focus_color == boundary_color {
+                        unfold(ctx_concat(Context::Top, outer));
+                        rewrite(bh == boundary_bh);
+                        rewrite(focus_color == boundary_color);
+                        assumption();
+                    } else {
+                        have ctx_rb_between(Context::Top, bh, focus_color,
+                            boundary_bh, boundary_color) != 1 by {
+                            unfold(ctx_rb_between(Context::Top, bh, focus_color,
+                                boundary_bh, boundary_color));
+                            normalize() using { bh == boundary_bh;
+                                not(focus_color == boundary_color); }
+                        }
+                        contradiction(ctx_rb_between(Context::Top, bh, focus_color,
+                            boundary_bh, boundary_color) == 1);
+                    }
+                } else {
+                    have ctx_rb_between(Context::Top, bh, focus_color,
+                        boundary_bh, boundary_color) != 1 by {
+                        unfold(ctx_rb_between(Context::Top, bh, focus_color,
+                            boundary_bh, boundary_color));
+                        normalize() using { not(bh == boundary_bh); }
+                    }
+                    contradiction(ctx_rb_between(Context::Top, bh, focus_color,
+                        boundary_bh, boundary_color) == 1);
+                }
+            }
+            Context::Left(id, parent, color, sibling, up) => {
+                if is_rb(sibling) == 1 {
+                    if bh == black_height(sibling) {
+                        if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                            have ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                                    bh, focus_color, boundary_bh, boundary_color)
+                                == ctx_rb_between(up, frame_black_height(color, bh), color,
+                                    boundary_bh, boundary_color) by {
+                                unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                                    bh, focus_color, boundary_bh, boundary_color));
+                                normalize() using {
+                                    is_rb(sibling) == 1;
+                                    bh == black_height(sibling);
+                                    node_color_ok(color, focus_color, rb_color(sibling)) == 1;
+                                }
+                            }
+                            have ctx_rb_between(up, frame_black_height(color, bh), color,
+                                boundary_bh, boundary_color) == 1 by {
+                                rewrite(ctx_rb_between(up, frame_black_height(color, bh), color,
+                                    boundary_bh, boundary_color)
+                                    == ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                                        bh, focus_color, boundary_bh, boundary_color));
+                                assumption();
+                            }
+                            apply(ih(up, outer, frame_black_height(color, bh), color,
+                                boundary_bh, boundary_color));
+                            apply(ctx_rb_left_frame(id, parent, color, sibling,
+                                ctx_concat(up, outer), bh, focus_color));
+                            unfold(ctx_concat(Context::Left(id, parent, color, sibling, up), outer));
+                            assumption();
+                        } else {
+                            have ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                                bh, focus_color, boundary_bh, boundary_color) != 1 by {
+                                unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                                    bh, focus_color, boundary_bh, boundary_color));
+                                normalize() using {
+                                    is_rb(sibling) == 1;
+                                    bh == black_height(sibling);
+                                    not(node_color_ok(color, focus_color, rb_color(sibling)) == 1);
+                                }
+                            }
+                            contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                                bh, focus_color, boundary_bh, boundary_color) == 1);
+                        }
+                    } else {
+                        have ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                            bh, focus_color, boundary_bh, boundary_color) != 1 by {
+                            unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                                bh, focus_color, boundary_bh, boundary_color));
+                            normalize() using { is_rb(sibling) == 1; not(bh == black_height(sibling)); }
+                        }
+                        contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                            bh, focus_color, boundary_bh, boundary_color) == 1);
+                    }
+                } else {
+                    have ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                        bh, focus_color, boundary_bh, boundary_color) != 1 by {
+                        unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                            bh, focus_color, boundary_bh, boundary_color));
+                        normalize() using { not(is_rb(sibling) == 1); }
+                    }
+                    contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
+                        bh, focus_color, boundary_bh, boundary_color) == 1);
+                }
+            }
+            Context::Right(id, parent, color, sibling, up) => {
+                if is_rb(sibling) == 1 {
+                    if black_height(sibling) == bh {
+                        if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                            have ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                                    bh, focus_color, boundary_bh, boundary_color)
+                                == ctx_rb_between(up, frame_black_height(color, bh), color,
+                                    boundary_bh, boundary_color) by {
+                                unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                                    bh, focus_color, boundary_bh, boundary_color));
+                                normalize() using {
+                                    is_rb(sibling) == 1;
+                                    black_height(sibling) == bh;
+                                    node_color_ok(color, rb_color(sibling), focus_color) == 1;
+                                }
+                            }
+                            have ctx_rb_between(up, frame_black_height(color, bh), color,
+                                boundary_bh, boundary_color) == 1 by {
+                                rewrite(ctx_rb_between(up, frame_black_height(color, bh), color,
+                                    boundary_bh, boundary_color)
+                                    == ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                                        bh, focus_color, boundary_bh, boundary_color));
+                                assumption();
+                            }
+                            apply(ih(up, outer, frame_black_height(color, bh), color,
+                                boundary_bh, boundary_color));
+                            apply(ctx_rb_right_frame(id, parent, color, sibling,
+                                ctx_concat(up, outer), bh, focus_color));
+                            unfold(ctx_concat(Context::Right(id, parent, color, sibling, up), outer));
+                            assumption();
+                        } else {
+                            have ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                                bh, focus_color, boundary_bh, boundary_color) != 1 by {
+                                unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                                    bh, focus_color, boundary_bh, boundary_color));
+                                normalize() using {
+                                    is_rb(sibling) == 1;
+                                    black_height(sibling) == bh;
+                                    not(node_color_ok(color, rb_color(sibling), focus_color) == 1);
+                                }
+                            }
+                            contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                                bh, focus_color, boundary_bh, boundary_color) == 1);
+                        }
+                    } else {
+                        have ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                            bh, focus_color, boundary_bh, boundary_color) != 1 by {
+                            unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                                bh, focus_color, boundary_bh, boundary_color));
+                            normalize() using { is_rb(sibling) == 1; not(black_height(sibling) == bh); }
+                        }
+                        contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                            bh, focus_color, boundary_bh, boundary_color) == 1);
+                    }
+                } else {
+                    have ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                        bh, focus_color, boundary_bh, boundary_color) != 1 by {
+                        unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                            bh, focus_color, boundary_bh, boundary_color));
+                        normalize() using { not(is_rb(sibling) == 1); }
+                    }
+                    contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
+                        bh, focus_color, boundary_bh, boundary_color) == 1);
+                }
+            }
+        }
+    }
+}
+
+theorem ctx_consistent_concat(inner: Context, outer: Context, sub: RbTree,
+                              root_parent: struct rb_node*) {
+    requires ctx_consistent(outer, plug(inner, sub), root_parent) == 1;
+
+    ensures ctx_consistent(ctx_concat(inner, outer), sub, root_parent) == 1 by {
+        apply(plug_parent_consistent_transport(outer, plug(inner, sub), root_parent));
+        apply(plug_ctx_concat(inner, outer, sub));
+        have rb_parent_consistent(plug(ctx_concat(inner, outer), sub), root_parent) == 1 by {
+            rewrite(plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub)));
+            assumption();
+        }
+        apply(plug_parent_consistent_ctx(ctx_concat(inner, outer), sub, root_parent));
+        assumption();
     }
 }
 
