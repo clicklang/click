@@ -1,4 +1,4 @@
-# Whole-claim expansion fails on counted populations and `__rb_insert`
+# Whole-claim expansion misplaces shared tactics in a nested `__rb_insert` match
 
 ## Violated invariant
 
@@ -13,51 +13,12 @@ expanding each of the claim's smart sites by location
 ## Reproduction
 
 A whole-repository audit found 44 claims whose whole-claim expansion failed.
-Thirty-four have been fixed. These ten remain; each verifies, and each fails
-with "expanded proof did not verify":
+Forty-three have been fixed. The remaining claim verifies, but its whole-claim
+expansion fails with "expanded proof did not verify":
 
 ```sh
-click expand --claim increment_twice.contract mdtests/mutex_population_separate_body.md
-click expand --claim run.contract mdtests/modeled_pthread_counted_join.md
-click expand --claim run.contract mdtests/modeled_pthread_counted_reverse_join.md
-click expand --claim run.contract mdtests/modeled_pthread_counted_shared_forward_join.md
-click expand --claim run.contract mdtests/modeled_pthread_counted_shared_join.md
-click expand --claim run.contract mdtests/modeled_pthread_counted_shared_partial_then_create.md
-click expand --claim run.contract mdtests/modeled_pthread_counted_shared_retained.md
-click expand --claim run.contract mdtests/modeled_pthread_counted_shared_symbolic.md
-click expand --claim run.contract mdtests/modeled_pthread_retire_after_join.md
 click expand --claim __rb_insert.contract examples/rbtree-insert/rbtree_insert.click
 ```
-
-### Counted populations (nine claims)
-
-The first nine consume members of a counted population
-(`consumes 2 of contribution(counter)`) in proofs over modeled pthread calls.
-The expanded proof is refused at an `unfold` of a population member with
-"population member rewrite has the wrong resource exchange", at a `have` with
-"count(...) requires owning authority for that population", or with "Requires
-owns authority(R(p))".
-
-The smallest is `run` in `modeled_pthread_counted_join.md`. Its C is
-
-```c
-if (pthread_create(&handle, NULL, worker, p) != 0) return 0;
-```
-
-and its proof steps over the call and then writes
-`branch then { have count(ticket(p)) == 1 by { simp(); } unfold(ticket(p)); step(); simp(); } else {}`.
-In the then-arm the call failed, so the caller still owns the ticket and its
-authority.
-
-The expansion writes the same steps and then
-`if at(statement(2).entry, __click_call_result0) != at(statement(2).entry, 0) { step(); have count(ticket(p)) == 1 ...`.
-Checking that, the trace shows the step over `pthread_create` losing
-`owns authority(ticket(p))` and `owns ticket(p)` before the branch, and the
-then-arm starting from that state, so `count(ticket(p))` has no authority to
-read. The written `branch` gives the failed-call arm the state in which the
-call transferred nothing; the expanded branch gives both arms the state after
-a successful call. The call has two outcomes with different resources, and
-the expanded form does not hand each arm its own outcome.
 
 ### `__rb_insert`
 
@@ -104,6 +65,13 @@ Causes found with these reproductions and fixed, with regression tests in
   rejoined inside its preservation arm. Retaining the parent case metadata
   keeps the resource unfolds inside their constructor scope; the complete
   expanded claim cold rechecks without planning and rejects a false contract.
+- all nine counted-population claims from the original reproduction now expand and reverify. Explicit
+  C condition steps retain the kernel's exact successor, including the
+  selected pending pthread-create outcome and its resource ledger ancestry.
+  Recomputing from the old state lost the failed-create authority or produced
+  the wrong member exchange. Each original fixture has a whole-claim
+  regression, and the smallest cold rechecks without planning and rejects a
+  false failed-create count and a contract omitting successful create.
 
 ## Effect on the audit
 

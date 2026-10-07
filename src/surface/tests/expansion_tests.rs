@@ -16167,3 +16167,132 @@ fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
         verify_c0_sources(&forged, &[]).expect_err("a false tighter bound must be refused");
     }
 }
+
+fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
+    let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let project_for = |source: &str| {
+        ClickProject::new(
+            "population.click",
+            [ClickModuleSource::new("population.click", source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        })
+    };
+    let project = project_for(&source);
+    verify_c0_project(&project, &sources).expect("the original counted pthread proof verifies");
+    let expanded = expand_c0_project_claim_source_by_label(&project, &sources, claim).unwrap();
+    verify_c0_project(&project_for(&expanded), &sources)
+        .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.message()));
+    if fixture == "modeled_pthread_counted_join" {
+        let position = expansion::position_at_offset(
+            &expanded,
+            expanded
+                .find("ensures result == 0 or result == 1;")
+                .unwrap(),
+        );
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_project_at(
+                    &project_for(&expanded),
+                    &sources,
+                    position.line,
+                    position.column,
+                )
+            });
+        result.expect("the complete expanded claim must cold recheck");
+        assert_eq!(
+            planning, 0,
+            "expanded create branches must not invoke planning"
+        );
+        let forged = expanded.replacen(
+            "have count(ticket(p)) == 1",
+            "have count(ticket(p)) == 0",
+            1,
+        );
+        assert_ne!(forged, expanded);
+        verify_c0_project(&project_for(&forged), &sources)
+            .expect_err("a failed create retains one ticket, not zero");
+        let false_contract = expanded.replace(
+            "ensures result == 0 or result == 1;",
+            "ensures result == 0;",
+        );
+        verify_c0_project(&project_for(&false_contract), &sources)
+            .expect_err("the successful create path must not disappear");
+    }
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_join() {
+    check_counted_pthread_whole_claim_expansion("modeled_pthread_counted_join", "run.contract");
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_reverse_join() {
+    check_counted_pthread_whole_claim_expansion(
+        "modeled_pthread_counted_reverse_join",
+        "run.contract",
+    );
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_shared_forward_join() {
+    check_counted_pthread_whole_claim_expansion(
+        "modeled_pthread_counted_shared_forward_join",
+        "run.contract",
+    );
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_shared_join() {
+    check_counted_pthread_whole_claim_expansion(
+        "modeled_pthread_counted_shared_join",
+        "run.contract",
+    );
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_partial_then_create() {
+    check_counted_pthread_whole_claim_expansion(
+        "modeled_pthread_counted_shared_partial_then_create",
+        "run.contract",
+    );
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_retained() {
+    check_counted_pthread_whole_claim_expansion(
+        "modeled_pthread_counted_shared_retained",
+        "run.contract",
+    );
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_symbolic() {
+    check_counted_pthread_whole_claim_expansion(
+        "modeled_pthread_counted_shared_symbolic",
+        "run.contract",
+    );
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_retire() {
+    check_counted_pthread_whole_claim_expansion(
+        "modeled_pthread_retire_after_join",
+        "run.contract",
+    );
+}
+
+#[test]
+fn counted_pthread_whole_claim_expansion_mutex() {
+    check_counted_pthread_whole_claim_expansion(
+        "mutex_population_separate_body",
+        "increment_twice.contract",
+    );
+}

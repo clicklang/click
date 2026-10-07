@@ -10,6 +10,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
-- [Whole-claim expansion fails on counted populations and `__rb_insert`](whole-claim-expansion-fails-on-proof-matches.md)
-
+- [Whole-claim expansion misplaces shared tactics in a nested `__rb_insert` match](whole-claim-expansion-fails-on-proof-matches.md)
 - [Return-instance certification loses proved post-return facts](return-instance-fold-loses-post-return-proofs.md)
