@@ -1221,8 +1221,18 @@ impl<'a> Proof<'a> {
             ),
         }
         .map_err(|message| {
+            // The kernel proves each interface fact in each arm from facts
+            // that are already there, the fact's side conditions included.
+            // The arm's own check above does not ask for those, so a fact
+            // an arm proved can still be refused here, and the missing
+            // piece is nearly always one of them.
+            let hint = if message == "an interface fact is not established by both concrete arms" {
+                ". Each arm must hold the fact and what its terms need to denote a value: for a fact that mentions `j + 1`, prove `defined(j + 1)` in each arm as well as the fact"
+            } else {
+                ""
+            };
             self.step_error(format!(
-                "kernel rejected the checked `ensuring` interface: {message}"
+                "kernel rejected the checked `ensuring` interface: {message}{hint}"
             ))
         })?;
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);

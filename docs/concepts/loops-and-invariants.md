@@ -239,6 +239,11 @@ closed automatically; the failure says so, and the body is written with
 `branch ensuring { ... }`, which states it
 (`mdtests/an_automatically_closed_loop_keeps_only_what_its_branches_agree_on.md`,
 `mdtests/a_written_branch_interface_carries_what_an_invariant_needs.md`).
+An interface fact holds in an arm only together with what its terms need to
+denote a value, so an arm that proves `p[j] <= p[j + 1]` for the interface
+also proves `defined(j + 1)`
+(`mdtests/bubble_pass3_max_suffix.md`,
+`mdtests/an_interface_fact_needs_its_terms_defined_in_each_arm.md`).
 Two kinds of `if` keep their arms as separate paths: one with an arm that
 leaves another way (a `break`, a `continue`, a `return`), and the body's last
 statement, which has nothing after it to walk twice.
