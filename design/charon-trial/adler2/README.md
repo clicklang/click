@@ -153,6 +153,30 @@ ownership prerequisites are ordinary regressions. Nonempty chunk/tail
 preservation, arbitrary initial-state preservation, and the general checksum
 contract remain later work.
 
+## Original single-byte computation
+
+[single-byte-compute.click](single-byte-compute.click) checks the unchanged
+`Adler32::compute` body with one arbitrary byte from the constructor state
+`a = 1`, `b = 0`. It owns both state fields, borrows the input, and proves that
+the input byte is preserved. The final field observations are checked in the
+original modulo form: `a = (1 + byte) % MOD` and
+`b = (6 * MOD + 1 + byte) % MOD`. For a byte in `0..=255`, these are the
+single-byte checksum values `a = b = 1 + byte`.
+
+The proof follows the stored serial iterator, identifies its read with the
+original byte, bounds both additions, and checks the final modulo and `u16`
+stores. The kernel cast-identity rule recognizes both canonical nested casts
+and the exact unsigned masks used by byte readback, with explicit destination
+range bounds. No Rust source, extraction artifact, lock, or import profile changes.
+
+This file is a contract fragment. Function-contract imports between Click
+sidecars are not admitted yet, so the fixture harness combines it with the
+canonical helper and constant-getter contracts from `helpers.click` and
+checks all seven bodies. This preserves the empty-input sidecar and avoids
+duplicate helper interfaces. The full positive proof, false checksum and
+byte-preservation claims, and verify/profile/audit/expansion rechecks are
+nightly tests; missing length/view and empty-input rejections are ordinary tests.
+
 ## Reproduce
 
 Build Click and pinned Charon with the normal repository setup. The frozen
@@ -162,6 +186,14 @@ artifact verifies without extracting again:
 target/debug/click verify design/charon-trial/adler2/helpers.click
 target/debug/click verify design/charon-trial/adler2/bounds.click
 target/debug/click verify design/charon-trial/adler2/iterator-bounds.click
+```
+
+Check the single-byte fragment against the same locked native body and shared
+contracts, including proof-tool rechecks:
+
+```sh
+cargo nextest run --test rust_import --run-ignored all \
+  -E 'test(charon_adler2_single_byte_compute)'
 ```
 
 Refresh the entire selected crate through the production adapter:
@@ -181,7 +213,9 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-With the empty-input boundary checked, establish and preserve the lane invariants over the original chunks/remainder
+With the empty and single-byte boundaries checked, next extend serial-tail
+preservation to two and three bytes over the stored cursor/remaining state.
+Then establish and preserve the lane invariants over the original chunks/remainder
 iterator states using the derived index, checked A/B recurrences, and native
 u32 observation bridges. Then use the helper contracts and byte accounting
 to connect the original computation to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).

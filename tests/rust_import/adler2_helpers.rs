@@ -2,6 +2,44 @@ use super::*;
 use sha2::{Digest, Sha256};
 
 const HELPERS: &str = include_str!("../../design/charon-trial/adler2/helpers.click");
+const SINGLE_BYTE_COMPUTE: &str =
+    include_str!("../../design/charon-trial/adler2/single-byte-compute.click");
+
+fn single_byte_proof(contract: &str) -> String {
+    let computation = HELPERS.split_once("# Empty-input boundary").unwrap().1;
+    let getters = &computation[computation.find("\nuint32 ").unwrap()..];
+    // Function-contract imports are not admitted yet. Assemble one verification
+    // unit from the canonical helper/getter bodies and this alternative compute
+    // contract, rather than duplicating or assuming their interfaces.
+    format!("{}\n{contract}\n{getters}", helper_library())
+}
+
+fn single_byte_project() -> Project {
+    let p = adler2_helpers_project();
+    fs::write(
+        p.root.join("borrow.click"),
+        single_byte_proof(SINGLE_BYTE_COMPUTE),
+    )
+    .unwrap();
+    p
+}
+
+fn reject_single_byte_compute(before: &str, after: &str) {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let changed = SINGLE_BYTE_COMPUTE.replacen(before, after, 1);
+    assert_ne!(changed, SINGLE_BYTE_COMPUTE, "missing mutation: {before}");
+    let invalid = single_byte_proof(&changed);
+    let offset = invalid.find("execute_until(assignment(b, 0))").unwrap();
+    let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let error = click::surface::verify_program_prepared_sources_at(&invalid, &prepared, line, 2)
+        .expect_err("invalid single-byte computation contract was accepted");
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{}",
+        error.message()
+    );
+}
 
 fn adler2_helpers_project() -> Project {
     let p = Project::new("");
@@ -728,6 +766,73 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
     }
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let offset = source.find("execute_until(assignment(b, 4))").unwrap();
+    let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
+    let audit = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(["audit", "--start-at", &cursor, "--max-sites", "1"])
+        .arg(p.root.join("borrow.click"))
+        .output()
+        .unwrap();
+    assert!(
+        audit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit.stderr)
+    );
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn charon_adler2_single_byte_compute_rejects_missing_length_and_view() {
+    reject_single_byte_compute("requires bytes_len == 1u64;", "");
+    reject_single_byte_compute("views bytes[0..1];", "");
+}
+
+#[test]
+fn charon_adler2_single_byte_compute_rejects_empty_input() {
+    reject_single_byte_compute("requires bytes_len == 1u64;", "requires bytes_len == 0u64;");
+}
+
+#[test]
+#[ignore = "nightly: original single-byte computation proof and false-output rejections"]
+fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outputs() {
+    let p = single_byte_project();
+    C0VerificationSession::new_program_prepared(
+        &single_byte_proof(SINGLE_BYTE_COMPUTE),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for field in ["a", "b"] {
+        reject_single_byte_compute(
+            &format!("ensures to_integer(self->{field}) == to_integer("),
+            &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
+        );
+    }
+    reject_single_byte_compute(
+        "ensures bytes[0] == old(bytes[0]);",
+        "ensures bytes[0] == old(bytes[0]) + 1;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: original single-byte computation proof-tool agreement and expansion"]
+fn charon_adler2_single_byte_compute_tools_recheck_original_contract() {
+    let p = single_byte_project();
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    let offset = source
+        .find("execute_until(assignment(__rust_mir_144, 0))")
+        .unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
     let audit = Command::new(env!("CARGO_BIN_EXE_click"))

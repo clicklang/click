@@ -1107,3 +1107,30 @@ Next establish the existing lane ceilings over the original stored nested
 iterators for nonempty chunks and tails. General initial-state preservation,
 nonempty byte accounting, whole-loop panic freedom, and full checksum
 correctness remain unproved.
+
+### Original computation single-byte boundary
+
+The unchanged `Adler32::compute` body now has a checked contract for one
+arbitrary byte from `a = 1`, `b = 0`. The serial iterator's actual read is tied
+to the original input, both additions have checked overflow bounds, the input
+byte is preserved, and both final field observations equal their native modulo
+expressions: `(1 + byte) % MOD` and `(6 * MOD + 1 + byte) % MOD`. These give
+the single-byte checksum values without wrapping. The proof retains original
+adapter operand snapshots and introduces no source counter or assumed invariant.
+
+The contract fragment shares the canonical helper/getter contracts through the
+fixture harness, which checks all seven bodies; the existing empty-input
+sidecar is retained. Function-contract imports between sidecars remain outside
+the import delivery. Kernel cast-identity certificates now recognize canonical
+nested conversions and exact unsigned byte-readback masks, retaining explicit
+destination bounds. A separate execution-driver repair admits `execute_until`
+inside proof-case arms and succeeds when the requested frontier is already
+current. Minimal C and expansion regressions cover that repair.
+
+Missing length/view and empty-input rejection are ordinary checks. Complete
+single-byte verification, false checksum/input-preservation claims, and proof
+tool agreement run nightly. Original Rust sources, extraction locks, artifact,
+and import profile are unchanged. Next extend the serial-tail proof to two and
+three bytes, then establish the derived lane ceilings over the original stored
+nested iterators. General initial states, nonempty vector batches, whole-loop
+panic freedom, and the common full checksum specification remain unproved.
