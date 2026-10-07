@@ -1253,6 +1253,43 @@ fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity
 }
 
 #[test]
+fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() {
+    let word = Bitvector32Term::Variable(Variable(4242));
+    for value in [CValue::UInt64(word.clone()), CValue::Int64(word.clone())] {
+        for known_value in [None, Some(0), Some(4)] {
+            let mut assumptions = PureFactContext::new();
+            if let Some(known) = known_value {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::uint64_equal(
+                        word.clone(),
+                        Bitvector32Term::UInt64Constant(known),
+                    ),
+                    true,
+                );
+            }
+            let mut obligations = Vec::new();
+            let cast = crate::kernel::eval::cast_c_value_to_type(
+                value.clone(),
+                CType::UInt8Pointer,
+                &mut obligations,
+                &assumptions,
+            );
+            if known_value == Some(0) {
+                assert_eq!(
+                    cast.unwrap(),
+                    CValue::typed_pointer(Pointer::null(), CType::UInt8Pointer),
+                );
+            } else {
+                assert!(matches!(cast, Err(CRuntimeError::PointerConversion(_))));
+            }
+            // An unknown integer must not acquire a pointer by leaving an
+            // unproved null obligation behind.
+            assert!(obligations.is_empty());
+        }
+    }
+}
+
+#[test]
 fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     let address = Pointer {
         block: "typed-pointer".into(),

@@ -23,6 +23,16 @@ Insert is finished. The black-successor splice's deficit-start model proof
 in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
 successors; next port the unlink in chunk 11 to the unchanged C. Its red
 successor and nonempty replacement-child branches still need their exit facts.
+The first C-port attempt exposed an imported-resource binder collision, now
+covered by a regression and fixed by scoping learned binders to each declaration.
+The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
+The loaded tagged-null conversion bug found in the root-leaf case is also
+fixed: explicit 64-bit casts now accept values proven zero by the current
+facts. `mdtests/tagged_pointer_null_word.md` covers loaded zero and masked
+loaded tag words, with a separate nonzero-load rejection fixture. The original
+C erase attempt now passes the parent cast; its ownership proof and the rest
+of chunk 11 remain unfinished.
+
 This section records what changed in the verifier since the insert proof was
 first written, and how to write the erase proofs so they do not need the same
 rework.

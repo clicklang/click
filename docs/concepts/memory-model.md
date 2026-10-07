@@ -30,7 +30,9 @@ original block, offset, and provenance. Two addresses are equal exactly when
 their pointers are equal, an address is zero exactly when its pointer is null,
 and an address compared with an integer that has no pointer origin is not
 decided either way. Integer coincidence therefore never manufactures an
-allocation identity. Null converts to the integer zero.
+allocation identity. Null converts to the integer zero. An explicit cast of a
+64-bit integer proven zero also yields null, including a loaded word whose
+cleared tag bits leave zero; it requires no allocation provenance.
 
 Tag arithmetic keeps the address form. `address(p) + t` is an exact integer
 identity, so additions track a tagged word without any obligation. A bit
