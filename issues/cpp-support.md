@@ -907,8 +907,8 @@ spans, read-only roots, missing/wrong sibling authority and unsupported projecte
 place consumers are refused. Deterministic regressions cover increasing path
 depth and sibling populations.
 
-The pinned unchanged `CFeeRate::GetFee` regression now reaches the unsupported
-`FeePerVSize` class template instance in `util/feefrac.h`, with a bounded
+The pinned unchanged `CFeeRate::GetFee` regression now reaches the inherited
+base-subobject boundary of `FeePerVSize` in `util/feefrac.h`, with a bounded
 diagnostic and no partial artifact. The wrapper is not verified yet.
 
 Projected method receivers and record/scalar reference arguments now use the
@@ -938,8 +938,21 @@ checks retain C++ access, constness, temporary and pointer-root restrictions;
 wide mutable references remain outside the profile. Deterministic checks cover
 reference resolution at increasing path depth and sibling populations.
 
-Next support the actual class template instance identity and a precise
-base-subobject representation for the inherited `FeePerVSize` field.
+Concrete class-template record instances now preserve Clang's canonical USRs
+and use ordered scalar/Boolean argument tokens and named empty tag tokens in
+contract-facing names. Record, field and method identities stay distinct across
+equal layouts; aliases canonicalize. Existing record layout, access, ownership,
+destruction and body restrictions still apply. Offline ordinary, expanded and
+retained proofs cover scalar and tag instances, simultaneous equal-layout
+instances and sibling frames; recomputed artifacts reject cross-instance
+receiver binding. Instantiated storage, constructor/method/destructor calls and
+automatic-object reference representation are covered alongside ordinary records.
+Clang completes reachable unused parameter specializations before exporting
+layout. Unsupported arguments, incomplete declarations, colliding record names
+and inheritance fail without an artifact.
+
+Next support a precise base-subobject representation for the inherited
+`FeePerVSize` field.
 Preserve declaration identity, layout and field authority instead of flattening
 inheritance into matching field names. Automatic objects with embedded records,
 nontrivial embedded destruction and cross-header executable graphs remain

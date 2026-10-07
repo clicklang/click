@@ -598,8 +598,8 @@ views are rejected, as are illegal C++ client access, unions, mixed-access
 non-standard layouts, inheritance and bit-fields.
 
 The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
-its nested `FeePerVSize` field now reaches the unsupported class template
-instance in `util/feefrac.h`. Header-declared records are now supported through the
+its nested `FeePerVSize` field now reaches the inherited-base restriction
+in `util/feefrac.h`. Header-declared records are now supported through the
 explicitly locked dependency mechanism described below. The exporter reports
 the actual header location and writes no partial artifact. Nested record places
 and inherited base-subobject authority are the next prerequisites; `GetFee`
@@ -654,7 +654,7 @@ reads, writes, signed compound updates and projected method/reference calls.
 Inherited base subobjects, automatic
 objects with embedded fields and nontrivial embedded destruction remain explicit
 boundaries. `CFeeRate::GetFee` is still a refusal regression at its actual
-`FeePerVSize` template instance; no Bitcoin source is changed.
+`FeePerVSize` base subobject; no Bitcoin source is changed.
 
 
 ## Nested source field accesses
@@ -683,6 +683,7 @@ frames. Ordinary, expanded and retained offline checks cover const/mutable child
 methods and record/scalar helper references. Hostile contracts and recomputed
 artifacts reject missing authority, false frames, wrong targets and const roots
 passed to mutable callees. Reference resolution shares the indexed path walk.
-`CFeeRate::GetFee` still stops at the class template instance; template instance
-identity, inherited base subobjects and locked-header executable calls remain
-prerequisites before composing the wrapper proof.
+Concrete class-template instances now retain their nominal identity, including
+empty tags such as `VSizeTag`. `CFeeRate::GetFee` still stops at the inherited
+base-subobject restriction. Base-subobject authority and locked-header executable
+calls remain prerequisites before composing the wrapper proof.
