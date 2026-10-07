@@ -155,6 +155,10 @@ fn natural_goto_exits_retain_checked_paths_and_expand() {
         ("natural_goto_multiple_exit_labels", "count_down_or_stop"),
         ("natural_goto_forward_exit_state", "count_down"),
         (
+            "natural_goto_forward_exit_differing_states",
+            "count_down_or_stop",
+        ),
+        (
             "natural_goto_forward_exit_multiple_edges_state",
             "count_down_or_stop",
         ),

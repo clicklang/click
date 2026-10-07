@@ -2957,7 +2957,20 @@ fn join_loop_exit_paths(
     // `!a | (a & !b)` into the `!a | !b` a proof can name.
     let mut facts = shared;
     facts.extend(facts_every_exit_restates(&exits, &facts));
-    if let Some(disjunction) = guard_path_disjunction(&own_facts) {
+    let historical_disjunction = guard_path_disjunction(&own_facts);
+    if let Some(disjunction) = &historical_disjunction {
+        facts.push(ExecutionPureFact::new(disjunction.clone()));
+    }
+    // Pinning equations describe only the successor's abstracted components.
+    // Keep their weaker disjunction independently of historical path guards:
+    // a guard can mention an iteration value no successor snapshot names.
+    let successor_equations = exits
+        .iter()
+        .map(|exit| exit.successor_equations.clone())
+        .collect::<Vec<_>>();
+    if let Some(disjunction) = guard_path_disjunction(&successor_equations)
+        && historical_disjunction.as_ref() != Some(&disjunction)
+    {
         facts.push(ExecutionPureFact::new(disjunction));
     }
     let mut obligations = first_obligations;
@@ -3057,6 +3070,8 @@ struct LoopExitFacts {
     /// renamed, with that value replaced by the successor's name; see
     /// [`facts_every_exit_restates`].
     restated: Vec<Proposition>,
+    /// Nonvacuous pinning equations, with no historical path conditions.
+    successor_equations: Vec<Proposition>,
     obligations: Vec<ProofObligation>,
     loan_evidence: CheckedLoanCallEvidenceSequence,
 }
@@ -3076,6 +3091,7 @@ impl LoopExitFacts {
                 .collect(),
             stated: facts,
             restated: Vec::new(),
+            successor_equations: Vec::new(),
             obligations,
             loan_evidence,
         }
@@ -3332,6 +3348,7 @@ mod loop_exit_shared_fact_tests {
             stated: Vec::new(),
             disjunct: Vec::new(),
             restated,
+            successor_equations: Vec::new(),
             obligations: Vec::new(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -3342,6 +3359,82 @@ mod loop_exit_shared_fact_tests {
             .into_iter()
             .map(|fact| fact.proposition().clone())
             .collect()
+    }
+
+    #[test]
+    fn merged_exit_equations_are_available_without_historical_guards() {
+        let fresh = CValue::Int32(Bitvector32Term::Variable(Variable(100)));
+        let make = |value: u32, guard: i64| {
+            let mut restatement = LoopExitRestatement::default();
+            restatement.pin(&fresh, &CValue::Int32(Bitvector32Term::Constant(value)));
+            restatement.restate(
+                vec![ExecutionPureFact::new(fact(1, guard))],
+                Vec::new(),
+                crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            )
+        };
+        let expected = Proposition::Or(Box::new(fact(100, 7)), Box::new(fact(100, 9)));
+        let (facts, _, _) = join_loop_exit_paths(vec![make(7, 0), make(9, 1)]).unwrap();
+        assert!(facts.iter().any(|fact| fact.proposition() == &expected));
+        assert!(
+            !facts
+                .iter()
+                .any(|entry| entry.proposition() == &fact(100, 7))
+        );
+        assert!(
+            !facts
+                .iter()
+                .any(|entry| entry.proposition() == &fact(100, 9))
+        );
+        // An exit with no equation cannot be silently omitted from the join.
+        let unknown = LoopExitFacts::unabstracted(
+            vec![ExecutionPureFact::new(fact(1, 2))],
+            Vec::new(),
+            crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        );
+        let (facts, _, _) = join_loop_exit_paths(vec![make(7, 0), unknown]).unwrap();
+        assert!(!facts.iter().any(|entry| entry.proposition() == &expected));
+        assert!(
+            !facts
+                .iter()
+                .any(|entry| entry.proposition() == &fact(100, 7))
+        );
+    }
+
+    #[test]
+    fn merged_exit_equations_have_output_sized_work() {
+        let mut work = Vec::new();
+        for count in [4usize, 8, 16, 32] {
+            let fresh = CValue::Int32(Bitvector32Term::Variable(Variable(100)));
+            let (facts, measured) = crate::instrumentation::measure_deterministic_work(|| {
+                let exits = (0..count)
+                    .map(|value| {
+                        let mut restatement = LoopExitRestatement::default();
+                        restatement.pin(
+                            &fresh,
+                            &CValue::Int32(Bitvector32Term::Constant(value as u32)),
+                        );
+                        restatement.restate(
+                            vec![ExecutionPureFact::new(fact(1, value as i64))],
+                            Vec::new(),
+                            crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                        )
+                    })
+                    .collect();
+                join_loop_exit_paths(exits).unwrap().0
+            });
+            assert_eq!(
+                facts.len(),
+                2,
+                "one historical and one successor disjunction"
+            );
+            work.push(measured);
+        }
+        assert!(work.windows(2).all(|pair| pair[1] > pair[0]), "{work:?}");
+        assert!(
+            work.windows(2).all(|pair| pair[1] <= 3 * pair[0] + 32),
+            "{work:?}"
+        );
     }
 
     /// A fact is kept only when every exit restates that very proposition.
@@ -4066,6 +4159,7 @@ impl LoopExitRestatement {
             .iter()
             .map(|fact| rename(fact.proposition()))
             .collect::<Vec<_>>();
+        let mut successor_equations = Vec::new();
         for equation in &self.equations {
             // An equation the renaming covers is dropped: every fact this exit
             // stated about the renamed value was restated about the
@@ -4074,12 +4168,14 @@ impl LoopExitRestatement {
             if equation_states_nothing(&renamed) {
                 continue;
             }
+            successor_equations.push(renamed.clone());
             disjunct.push(renamed);
         }
         LoopExitFacts {
             stated: facts,
             disjunct,
             restated,
+            successor_equations,
             obligations,
             loan_evidence,
         }

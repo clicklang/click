@@ -1968,6 +1968,7 @@ fn whole_claim_expansion_of_proof_matches_rechecks() {
             "loop_preserve_branch_tactic",
             "chain_countdown_decided.contract",
         ),
+        ("loop_preserve_branch_tactic", "chain_countdown.contract"),
         (
             "loop_body_proof_match_ensuring_inside_a_proof_if",
             "spin.contract",
@@ -1986,6 +1987,26 @@ fn whole_claim_expansion_of_proof_matches_rechecks() {
                 error.message()
             )
         });
+        if claim == "chain_countdown.contract" {
+            let position = expansion::position_at_offset(
+                &expanded,
+                expanded
+                    .find("ensures 1 == 1;")
+                    .expect("the selected contract"),
+            );
+            let (checked, planning) =
+                crate::surface::proof::count_planning_statement_transitions(|| {
+                    verify_c0_sources_at(&expanded, &sources, position.line, position.column)
+                });
+            checked.expect("the scoped preservation certificate must cold recheck");
+            assert_eq!(
+                planning, 0,
+                "expanded preservation must not invoke planning"
+            );
+            let forged = expanded.replacen("ensures 1 == 1;", "ensures 1 == 2;", 1);
+            verify_c0_sources(&forged, &sources)
+                .expect_err("retaining proof cases cannot certify a false contract");
+        }
     }
 }
 
@@ -2190,6 +2211,35 @@ int32 early(int32 x) {
     );
     verify_c0_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
+    let (click, sources) = mdtest_sources("mdtests/sort3_sorted.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&click, &sources).expect("the original sorting proof verifies");
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "sort3.sorted")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("unfold(sorted_range);"), "{expanded}");
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        verify_c0_sources(&expanded, &sources)
+    });
+    result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    assert_eq!(
+        planning, 0,
+        "the expansion must cold recheck without planning"
+    );
+    let last_step = expanded.rfind("step();").expect("expanded C return step");
+    let mut incomplete = expanded.clone();
+    incomplete.replace_range(last_step..last_step + "step();".len(), "");
+    verify_c0_sources(&incomplete, &sources)
+        .expect_err("logical steps cannot replace an omitted C transition");
+    let false_contract = expanded.replace("p[i] <= p[j]", "p[i] > p[j]");
+    verify_c0_sources(&false_contract, &sources)
+        .expect_err("a false sorting postcondition must remain rejected");
 }
 
 #[test]

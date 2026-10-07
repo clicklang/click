@@ -2182,8 +2182,9 @@ impl<'a> Proof<'a> {
             .map_err(|message| self.step_error(message))?;
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);
         migrate_arm_metadata(&mut execution, &arms, true);
-        execution.presentation.branch_path.clear();
-        execution.presentation.case_assumptions.clear();
+        // The joined C arms discharge only their own split. Execution was
+        // cloned from the parent, so retain its enclosing proof cases and
+        // branch path for certificate reconstruction and diagnostics.
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
         };
@@ -3561,12 +3562,8 @@ impl<'a> Proof<'a> {
                 continue;
             }
             if expanded {
-                if !matches!(steps.last(), Some(ProofStep::Step | ProofStep::If { .. })) {
-                    return Err(self.step_error(format!(
-                        "expanded execution {} arm does not end in a checked C step",
-                        if take_then { "then" } else { "else" },
-                    )));
-                }
+                // Proof operations may follow the last C step. Entry validation
+                // and the checked join enforce the arm's execution boundary.
                 advanced = advanced.apply_focused_expanded_execution_arm(
                     &arm_enclosing,
                     take_then,
