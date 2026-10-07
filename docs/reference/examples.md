@@ -59,6 +59,12 @@ and `authority(reference(obj))`; its invariant equates the stored count with
 symbolic-batch retain/release, final free, and allocation failure across
 opaque calls.
 
+`examples/shared-refcount/` shares one reference-counted object between its
+owner and two user threads. Retain and release run under the object's mutex,
+each worker's checked release applies at its join, and the owner reclaims the
+object after both joins. The control states a cap of three references,
+carried by retain permits, which bounds the plain counter increment.
+
 ## Basic function contracts
 
 - `mdtests/scalar.md`: simplest scalar postcondition.

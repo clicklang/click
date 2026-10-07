@@ -219,12 +219,18 @@ impl NamedMutexAuthorities {
             CResource::MutexUse(identity) => (&identity.mutex, identity.initialization),
             _ => return Err(NamedMutexAuthorityError::NotMutexAuthority),
         };
-        let CResource::MutexUse(target) = derived.resource() else {
-            return Err(NamedMutexAuthorityError::NotMutexAuthority);
+        // A use share may also return to the lifecycle authority it was split
+        // from, as when a join recovers a parent's retained share.
+        let (target_mutex, target_initialization) = match derived.resource() {
+            CResource::MutexUse(target) => (&target.mutex, target.initialization),
+            CResource::MutexLive(target) if matches!(source.resource(), CResource::MutexUse(_)) => {
+                (&target.mutex, target.epoch)
+            }
+            _ => return Err(NamedMutexAuthorityError::NotMutexAuthority),
         };
-        if source_mutex != &target.mutex
+        if source_mutex != target_mutex
             || source_initialization.is_none()
-            || source_initialization != target.initialization
+            || source_initialization != target_initialization
         {
             return Err(NamedMutexAuthorityError::MismatchedAuthority);
         }

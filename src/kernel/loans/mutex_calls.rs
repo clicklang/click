@@ -211,7 +211,12 @@ impl MutexUseCallTransfer {
         &self,
         resources: &ResourceContext,
     ) -> Option<MutexAuthorityUpdate> {
-        if !matches!(self.source.resource(), CResource::MutexUse(_)) {
+        // A lifecycle source keeps its proof name on the use share the parent
+        // retains; recovery at join moves the name back to the lifecycle.
+        if !matches!(
+            self.source.resource(),
+            CResource::MutexUse(_) | CResource::MutexLive(_)
+        ) {
             return None;
         }
         Some(MutexAuthorityUpdate {
@@ -638,10 +643,8 @@ mod tests {
                 names = names
                     .apply_checked_mutex_updates(&updates, &named_state)
                     .unwrap();
-                assert_eq!(
-                    names.resolve(Variable(7000), &named_state).is_some(),
-                    borrowed
-                );
+                // A lifecycle source's name follows its retained use share too.
+                assert!(names.resolve(Variable(7000), &named_state).is_some());
                 let retained = first
                     .caller_resources
                     .mutex_use_at(&Pointer::symbolic(Variable(100)))
@@ -708,10 +711,8 @@ mod tests {
                 names = names
                     .apply_checked_mutex_updates(&joined.authority_updates, &named_state)
                     .unwrap();
-                assert_eq!(
-                    names.resolve(Variable(7000), &named_state).is_some(),
-                    borrowed
-                );
+                // A lifecycle source's name follows its retained use share too.
+                assert!(names.resolve(Variable(7000), &named_state).is_some());
                 assert!(!joined.ledger.scope_can_end(parent.0.scope, caller));
                 assert!(
                     early
