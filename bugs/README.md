@@ -19,3 +19,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [int32 division by a symbolic divisor is refused as signed overflow](int32-symbolic-divisor-refused-as-signed-overflow.md)
 - [A nested loop with an inner `break` is refused under concrete execution](nested-loop-inner-break-refused-under-concrete-execution.md)
 - [A decidably false return narrowing reports an internal error, not the range](false-return-narrowing-reports-internal-error.md)
+- [A pure function or predicate that reads a C global carries no memory, so its facts survive stores to that global](global-reading-pure-function-survives-store.md)
+- [A quantifier binder shadows a same-named C local in the kernel, capturing an unfolded predicate's argument](quantifier-binder-captures-same-named-c-argument.md)
