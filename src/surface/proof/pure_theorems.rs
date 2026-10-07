@@ -2421,6 +2421,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_add_to_integer"
                 | "uint32_mul_to_integer"
                 | "uint32_remainder_less_than_divisor"
+                | "uint32_remainder_of_lt"
                 | "uint32_less_equal_to_integer"
                 | "uint32_less_equal_of_to_integer"
                 | "uint32_lt_implies_positive_difference"
@@ -2510,7 +2511,8 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint32_mul_to_integer"
         | "uint32_less_equal_to_integer"
         | "uint32_less_equal_of_to_integer"
-        | "uint32_remainder_less_than_divisor" => (2, 1),
+        | "uint32_remainder_less_than_divisor"
+        | "uint32_remainder_of_lt" => (2, 1),
         "uint32_positive_predecessor_strictly_decreases" => (1, 1),
         "uint32_increment_upper_bound"
         | "uint32_increment_strictly_increases"
@@ -2641,6 +2643,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "uint32_remainder_less_than_divisor" => {
                 crate::kernel::prove_uint32_remainder_less_than_divisor(value, uint32_parameter(1)?)
+            }
+            "uint32_remainder_of_lt" => {
+                crate::kernel::prove_uint32_remainder_of_lt(value, uint32_parameter(1)?)
             }
             "uint32_add_to_integer" => {
                 crate::kernel::prove_uint32_add_to_integer(value, uint32_parameter(1)?)
@@ -3907,6 +3912,24 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
             ] {
                 assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
             }
+        }
+    }
+
+    #[test]
+    fn uint32_small_remainder_checks_exact_declaration() {
+        let source = "theorem uint32_remainder_of_lt(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value; }";
+        verify_standard_declaration(source).unwrap();
+        for invalid in [
+            source.replace("requires value < divisor;", ""),
+            source.replace("value < divisor", "value <= divisor"),
+            source.replace("value < divisor", "divisor != 0u32"),
+            source.replace("value < divisor", "divisor < value"),
+            source.replace("value % divisor", "divisor % value"),
+            source.replace("== value", "== divisor"),
+            source.replace("value: uint32", "value: int32"),
+            source.replace("divisor: uint32", "divisor: uint64"),
+        ] {
+            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
         }
     }
 

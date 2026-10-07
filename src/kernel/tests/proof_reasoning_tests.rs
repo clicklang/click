@@ -9493,6 +9493,57 @@ fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
 }
 
 #[test]
+fn uint32_small_remainder_agrees_with_full_width_models() {
+    let value = Bitvector32Term::Variable(Variable(920));
+    let divisor = Bitvector32Term::Variable(Variable(921));
+    let theorem = prove_uint32_remainder_of_lt(value.clone(), divisor.clone());
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing strict unsigned guard")
+    };
+    assert_eq!(
+        premise.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
+            true,
+        )
+    );
+    assert_eq!(
+        conclusion.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::unsigned_remainder(value, divisor),
+                Bitvector32Term::Variable(Variable(920)),
+            ),
+            true,
+        )
+    );
+    // Includes equality, zero divisors, and values on both sides of the sign bit.
+    let samples = [
+        0u32,
+        1,
+        2,
+        255,
+        65520,
+        65521,
+        0x7fff_ffff,
+        0x8000_0000,
+        u32::MAX - 1,
+        u32::MAX,
+    ];
+    for value in samples {
+        for divisor in samples {
+            if value < divisor {
+                assert_ne!(divisor, 0);
+                assert_eq!(value % divisor, value);
+            }
+            if value == divisor && divisor != 0 {
+                assert_ne!(value % divisor, value);
+            }
+        }
+    }
+}
+
+#[test]
 fn uint32_remainder_bound_agrees_with_full_width_models() {
     fn machine(term: &Bitvector32Term, value: u32, divisor: u32) -> u32 {
         match term {

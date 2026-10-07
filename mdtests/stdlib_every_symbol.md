@@ -65,6 +65,10 @@ theorem use_unsigned_reduction(value: uint32, divisor: uint32) {
         apply(uint32_less_than_to_integer(value % divisor, divisor));
     }
 }
+theorem use_uint32_remainder_of_lt(value: uint32, divisor: uint32) {
+    requires value < divisor;
+    ensures value % divisor == value by { apply(uint32_remainder_of_lt(value, divisor)); }
+}
 theorem use_uint32_add_to_integer(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint32_add_to_integer(left, right)); }

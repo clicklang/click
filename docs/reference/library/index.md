@@ -1322,6 +1322,22 @@ The unsigned remainder is below its divisor for any dividend. The nonzero diviso
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_remainder_of_lt`
+
+```click
+theorem uint32_remainder_of_lt(value: uint32, divisor: uint32) {
+    requires value < divisor;
+    ensures value % divisor == value;
+}
+```
+
+A dividend below its unsigned divisor is unchanged by reduction. The strict
+unsigned premise excludes a zero divisor; a nonzero divisor or a non-strict
+bound alone is insufficient. Values above the signed sign bit retain their
+unsigned meaning.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_to_integer_bounds`
 
 ```click
