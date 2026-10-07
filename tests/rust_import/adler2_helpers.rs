@@ -504,6 +504,76 @@ fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
 }
 
 const BOUNDS: &str = include_str!("../../design/charon-trial/adler2/bounds.click");
+const RECOMBINATION: &str = include_str!("../../design/charon-trial/adler2/recombination.click");
+
+#[test]
+fn charon_adler2_recombination_bounds_verify_with_original_helpers() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        &format!("{}\n{RECOMBINATION}", helper_library()),
+        &prepared,
+    )
+    .unwrap();
+}
+
+#[test]
+fn charon_adler2_recombination_bounds_reject_underflow_overflow_and_false_weights() {
+    use click::surface::verify_click_theorems;
+    verify_click_theorems(RECOMBINATION).unwrap();
+    for (before, after) in [
+        ("requires a < 65521u32;", ""),
+        ("requires a < 65521u32;", "requires a <= 65522u32;"),
+        ("requires to_integer(b) <= 262080;", ""),
+        ("<= 327601", "<= 327600"),
+        ("<= 393122", "<= 393121"),
+        ("<= 458643", "<= 458642"),
+        (
+            "+ (65521 - to_integer(a)) * 2",
+            "+ (65521 - to_integer(a)) * 3",
+        ),
+        (
+            "+ (65521 - to_integer(a)) * 3",
+            "+ (65521 - to_integer(a)) * 2",
+        ),
+    ] {
+        let invalid = RECOMBINATION.replace(before, after);
+        assert_ne!(invalid, RECOMBINATION, "missing mutation: {before}");
+        assert!(
+            verify_click_theorems(&invalid).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: Adler recombination proof-tool agreement and expansion"]
+fn charon_adler2_recombination_bounds_tools_recheck_certificates() {
+    let p = adler2_helpers_project();
+    let path = p.root.join("recombination.click");
+    fs::write(&path, RECOMBINATION).unwrap();
+    let check = |args: &[&str]| {
+        let result = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(args)
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{args:?}: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    };
+    for command in ["verify", "profile", "audit"] {
+        check(&[command]);
+    }
+    for name in ["difference", "lane_1", "lane_2", "lane_3"] {
+        let claim = format!("adler_recombine_{name}.ensures_0");
+        check(&["expand", "--claim", &claim, "--in-place"]);
+    }
+    check(&["verify"]);
+}
 
 #[test]
 fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {

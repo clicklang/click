@@ -849,6 +849,64 @@ mod tests {
     }
 
     #[test]
+    fn uint32_subtract_bridge_rechecks_guards_and_expansion() {
+        let source = "theorem exact(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(uint32_subtract_to_integer(left, right)) using { right <= left; } } }";
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(source, &[], "exact.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        for invalid in [
+            source.replace("requires right <= left;", ""),
+            source.replace("requires right <= left;", "requires defined(left - right);"),
+            source.replace("requires right <= left;", "requires left <= right;"),
+            source.replace("using { right <= left; }", "using {}"),
+            source.replace(
+                "to_integer(left) - to_integer(right) by",
+                "to_integer(left) + to_integer(right) by",
+            ),
+        ] {
+            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+        }
+        for (left, right, difference) in [
+            (0u32, 0u32, 0u32),
+            (65521, 65520, 1),
+            (0x8000_0000, 1, 0x7fff_ffff),
+            (u32::MAX, 0, u32::MAX),
+            (u32::MAX, 0x8000_0000, 0x7fff_ffff),
+        ] {
+            let concrete = format!(
+                "theorem boundary() {{ ensures to_integer({left}u32 - {right}u32) == {difference} by {{ apply(uint32_subtract_to_integer({left}u32, {right}u32)); simp(); }} }}"
+            );
+            verify_c0_sources(&concrete, &[]).unwrap();
+        }
+        let underflow = "theorem wrapping() { ensures to_integer(0u32 - 1u32) == -1 by { apply(uint32_subtract_to_integer(0u32, 1u32)); } }";
+        assert!(verify_c0_sources(underflow, &[]).is_err());
+    }
+
+    #[test]
+    fn uint32_subtract_bridge_verifies_executed_c_difference() {
+        let c = "unsigned int difference(unsigned int left, unsigned int right) { return left - right; }";
+        let source = "verifying \"difference.c\"; uint32 difference(uint32 left, uint32 right) { requires right <= left; ensures to_integer(result) == to_integer(left) - to_integer(right); } by { execute(); apply(uint32_subtract_to_integer(left, right)) using { right <= left; } simp(); }";
+        verify_c0_sources(source, &[("difference.c", c)]).unwrap();
+        let expanded =
+            expand_c0_claim_source_by_label(source, &[("difference.c", c)], "difference.contract")
+                .unwrap();
+        verify_c0_sources(&expanded, &[("difference.c", c)]).unwrap();
+        for invalid in [
+            source.replace("requires right <= left;", ""),
+            source.replace("requires right <= left;", "requires defined(left - right);"),
+            source.replace(
+                "ensures to_integer(result) == to_integer(left) - to_integer(right);",
+                "ensures to_integer(result) == to_integer(right) - to_integer(left);",
+            ),
+        ] {
+            assert!(
+                verify_c0_sources(&invalid, &[("difference.c", c)]).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
     fn uint64_integer_bridges_recheck_guards_full_width_and_expansion() {
         for (name, guard, goal) in [
             (

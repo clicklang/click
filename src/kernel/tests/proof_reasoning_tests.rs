@@ -9343,6 +9343,83 @@ fn uint32_add_bridges_agree_with_boundary_models() {
 }
 
 #[test]
+fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
+    fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u32 {
+        match term {
+            Bitvector32Term::Variable(v) if *v == Variable(910) => a,
+            Bitvector32Term::Variable(v) if *v == Variable(911) => b,
+            Bitvector32Term::Constant(value) => *value,
+            Bitvector32Term::Subtract(left, right) => {
+                machine(left, a, b).wrapping_sub(machine(right, a, b))
+            }
+            Bitvector32Term::BitwiseXor(left, right) => machine(left, a, b) ^ machine(right, a, b),
+            _ => panic!("unexpected subtraction term {term:?}"),
+        }
+    }
+    fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
+        match term {
+            IntegerTerm::Machine(value) => {
+                assert_eq!(value.ty(), MachineIntegerType::UInt32);
+                machine(value.value(), a, b).into()
+            }
+            IntegerTerm::Subtract(left, right) => integer(left, a, b) - integer(right, a, b),
+            _ => panic!("unexpected difference observation {term:?}"),
+        }
+    }
+    let theorem = prove_uint32_subtract_to_integer(
+        Bitvector32Term::Variable(Variable(910)),
+        Bitvector32Term::Variable(Variable(911)),
+    );
+    let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
+        panic!("missing no-underflow guard");
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(left, right), true) =
+        guard.as_ref()
+    else {
+        panic!("wrong unsigned guard");
+    };
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
+        conclusion.as_ref()
+    else {
+        panic!("wrong observation equality");
+    };
+    let samples = [
+        0,
+        1,
+        2,
+        255,
+        65520,
+        65521,
+        0x7fff_ffff,
+        0x8000_0000,
+        u32::MAX - 1,
+        u32::MAX,
+    ];
+    for a in samples {
+        for b in samples {
+            let safe = a.checked_sub(b).is_some();
+            assert_eq!(
+                (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+                safe
+            );
+            assert_eq!(
+                integer(observed, a, b),
+                num_bigint::BigInt::from(a.wrapping_sub(b))
+            );
+            assert_eq!(
+                integer(exact, a, b),
+                num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b)
+            );
+            assert_eq!(
+                integer(observed, a, b) == integer(exact, a, b),
+                safe,
+                "{a} - {b}"
+            );
+        }
+    }
+}
+
+#[test]
 fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
     fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u32 {
         match term {
