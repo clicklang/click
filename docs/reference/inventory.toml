@@ -1758,6 +1758,10 @@ id = "cli.audit.--keep-going"
 path = "reference/cli/audit.md#options-and-defaults"
 
 [[item]]
+id = "cli.audit.--exclude"
+path = "reference/cli/audit.md#options-and-defaults"
+
+[[item]]
 id = "cli.audit.--max-sites"
 path = "reference/cli/audit.md#options-and-defaults"
 

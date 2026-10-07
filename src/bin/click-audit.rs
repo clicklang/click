@@ -117,6 +117,8 @@ options:
   --changed-since <REVISION>  audit claims affected since a Git revision
   --verbose                   print one successful row per smart site
   --keep-going                continue after failures instead of stopping
+  --exclude <PATH>            leave out a proof container, or every one
+                              under a directory; may be repeated
   --max-sites <COUNT>         bounded diagnostic run; prints the next cursor";
 
 fn main() {
@@ -136,6 +138,8 @@ struct Arguments {
     changed_since: Option<String>,
     verbose: bool,
     keep_going: bool,
+    /// Proof containers, or directories of them, left out of the audit.
+    exclude: Vec<PathBuf>,
     max_sites: Option<usize>,
 }
 
@@ -458,6 +462,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut changed_since = None;
     let mut verbose = false;
     let mut keep_going = false;
+    let mut exclude = Vec::new();
     let mut max_sites = None;
     let mut parse_options = true;
     let mut arguments = arguments.into_iter();
@@ -527,6 +532,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             }
             "--verbose" => verbose = true,
             "--keep-going" => keep_going = true,
+            "--exclude" => {
+                let excluded = arguments
+                    .next()
+                    .ok_or_else(|| format!("missing path after `{argument}`\n{USAGE}"))?;
+                exclude.push(PathBuf::from(excluded));
+            }
             "--max-sites" => {
                 let source = arguments
                     .next()
@@ -555,6 +566,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         changed_since,
         verbose,
         keep_going,
+        exclude,
         max_sites,
     })
 }
@@ -599,7 +611,7 @@ fn parse_work_units(source: &str) -> Result<usize, String> {
 }
 
 fn run_audit(arguments: Arguments) -> Result<(), String> {
-    let sources = audit_targets(&arguments.path)?;
+    let sources = without_excluded(audit_targets(&arguments.path)?, &arguments.exclude)?;
     println!("INVENTORY");
     for path in &sources {
         let source = load_audit_source(path)?;
@@ -1034,6 +1046,42 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     } else {
         Err(format!("{failures} expansion audit check(s) failed"))
     }
+}
+
+/// Drops every source that is an excluded path or lies under one. An
+/// exclusion that matches nothing is an error: it names a path that moved or
+/// was never part of the audit, and silently auditing it again is what the
+/// option exists to prevent.
+fn without_excluded(sources: Vec<PathBuf>, exclude: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+    if exclude.is_empty() {
+        return Ok(sources);
+    }
+    let mut excluded = Vec::with_capacity(exclude.len());
+    for path in exclude {
+        let resolved = fs::canonicalize(path).map_err(|error| {
+            format!("failed to resolve `--exclude {}`: {error}", path.display())
+        })?;
+        excluded.push((path, resolved, false));
+    }
+    let mut kept = Vec::with_capacity(sources.len());
+    for source in sources {
+        let resolved = fs::canonicalize(&source)
+            .map_err(|error| format!("failed to resolve `{}`: {error}", source.display()))?;
+        match excluded
+            .iter_mut()
+            .find(|(_, excluded, _)| resolved.starts_with(excluded))
+        {
+            Some((_, _, matched)) => *matched = true,
+            None => kept.push(source),
+        }
+    }
+    if let Some((path, _, _)) = excluded.iter().find(|(_, _, matched)| !matched) {
+        return Err(format!(
+            "`--exclude {}` matches no proof container in the audited path",
+            path.display()
+        ));
+    }
+    Ok(kept)
 }
 
 /// Selects audit sources with the target selection shared with `click
@@ -1584,6 +1632,10 @@ fn resume_command(arguments: &Arguments, location: &SourceLocation) -> String {
     ];
     if arguments.keep_going {
         words.push("--keep-going".to_string());
+    }
+    for excluded in &arguments.exclude {
+        words.push("--exclude".to_string());
+        words.push(excluded.display().to_string());
     }
     if arguments.verbose {
         words.push("--verbose".to_string());

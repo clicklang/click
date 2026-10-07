@@ -142,6 +142,27 @@ if [[ "${1:-}" == "--charon-live" ]]; then
     exit 0
 fi
 
+# The whole-repository expansion audit: every smart tactic in the examples
+# and mdtests must expand to a proof that verifies. It takes about twenty
+# minutes on a release build, so it is a job of the nightly workflow and not
+# part of the budgeted gate.
+#
+# Each exclusion is a known failure with an open issue, and goes when the
+# issue does:
+# - examples/multifile-registry does not verify; it is quarantined in
+#   tests/examples.rs (issues/static-state-caller-transport.md).
+# - mdtests/search_terminates_by_unmarked_count.md has a loop body `return`
+#   whose closing `simp` cannot be expanded by location
+#   (issues/loop-return-exit-is-closed-by-the-loops-tail.md).
+if [[ "${1:-}" == "--audit" ]]; then
+    export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
+    cargo build --release --bin click
+    exec target/release/click audit --keep-going --time-limit 180m \
+        --exclude examples/multifile-registry \
+        --exclude mdtests/search_terminates_by_unmarked_count.md \
+        .
+fi
+
 gate_started=$SECONDS
 nightly=""
 if [[ "${1:-}" == "--nightly" ]]; then

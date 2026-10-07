@@ -71,6 +71,7 @@ phase keeps the per-tactic work budgets [`click verify`](verify.md#deterministic
 | `--changed-since REVISION` | none | Select claims affected since a Git revision. |
 | `--verbose` | off | Print one success row per smart site instead of one per claim. |
 | `--keep-going` | off | Continue after failures instead of stopping at the first failure. |
+| `--exclude PATH` | none | Leave out a proof container, or every one under a directory. Repeat the option for several. A path that matches nothing in the audited path is an error. |
 | `--max-sites COUNT` | unlimited | Run a positive bounded number of sites and print the next cursor. |
 | `-h`, `--help` | none | Print command help and exit successfully. |
 
