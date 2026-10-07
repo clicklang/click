@@ -1080,6 +1080,10 @@ impl<'a> Proof<'a> {
                 chain_additions.insert(*left);
             }
         }
+        let has_affine_premise = plan
+            .nodes
+            .iter()
+            .any(|node| matches!(node, SignedArithmeticNode::AffinePremise { .. }));
         let mut surfaces: Vec<Option<ClickProposition>> = Vec::with_capacity(plan.nodes.len());
         let claim_surface = |claim: &SignedArithmeticClaim| {
             let value = claim.constant.to_i32()?;
@@ -1099,6 +1103,9 @@ impl<'a> Proof<'a> {
                 SignedArithmeticNode::Premise { index, .. } => {
                     Some(rendered_premises.get(*index)?.clone())
                 }
+                SignedArithmeticNode::AffinePremise { source, .. } => {
+                    surfaces.get(*source)?.clone()
+                }
                 SignedArithmeticNode::Scale {
                     source,
                     coefficient,
@@ -1117,7 +1124,12 @@ impl<'a> Proof<'a> {
                     // `i < i + 1` for the cancellation claim `0 <= 0`).
                     let left_surface = surfaces.get(*left)?.as_ref()?;
                     let right_surface = surfaces.get(*right)?.as_ref()?;
-                    if surfaces.len() == plan.conclusion
+                    if has_affine_premise && surfaces.len() == plan.conclusion {
+                        // The checked premise conversion gives the sum a
+                        // different affine spelling than its opaque source.
+                        // The kernel independently checks this exact goal.
+                        Some(surface_goal.clone())
+                    } else if surfaces.len() == plan.conclusion
                         && !result.terms.is_empty()
                         && result.terms.keys().all(|atom| atom.is_sign_bit_flip())
                     {
@@ -1436,6 +1448,17 @@ impl<'a> Proof<'a> {
                     right: r(*right),
                     comparison: comparison(*comparison_kind),
                     result: surface_goal.clone(),
+                },
+                SignedArithmeticNode::AffinePremise {
+                    source,
+                    left_evidence,
+                    right_evidence,
+                    ..
+                } => SignedArithmeticStep::AffinePremise {
+                    source: r(*source),
+                    left_evidence: r(*left_evidence),
+                    right_evidence: r(*right_evidence),
+                    result: result()?,
                 },
                 SignedArithmeticNode::AffineConclusion {
                     source, evidence, ..

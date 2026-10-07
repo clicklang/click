@@ -5444,6 +5444,12 @@ pub enum SignedArithmeticStep {
         comparison: SignedInt32Comparison,
         result: ClickProposition,
     },
+    AffinePremise {
+        source: usize,
+        left_evidence: usize,
+        right_evidence: usize,
+        result: ClickProposition,
+    },
     AffineConclusion {
         source: usize,
         evidence: usize,

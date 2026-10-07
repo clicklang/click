@@ -1163,6 +1163,15 @@ fn write_signed_int32_certificate(
                 signed_comparison_name(*comparison),
                 source_click_proposition(result)
             ),
+            SignedArithmeticStep::AffinePremise {
+                source,
+                left_evidence,
+                right_evidence,
+                result,
+            } => format!(
+                "affine_premise {source} {left_evidence} {right_evidence} => {};",
+                source_click_proposition(result)
+            ),
             SignedArithmeticStep::AffineConclusion {
                 source,
                 evidence,

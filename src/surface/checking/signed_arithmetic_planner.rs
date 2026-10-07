@@ -114,7 +114,81 @@ fn plan_signed_arithmetic_certificate_in_pass(
     if let Some(plan) = plan_interval_goal(goal, premises, &claims, int32_range_fallback) {
         return Some(plan);
     }
-    None
+    plan_affine_with_checked_premises(
+        goal,
+        premises,
+        &claims,
+        &expected,
+        allow_weakening,
+        int32_range_fallback,
+    )
+}
+
+fn plan_affine_with_checked_premises(
+    goal: &Proposition,
+    premises: &[Proposition],
+    claims: &[(usize, SignedArithmeticClaim)],
+    expected: &SignedArithmeticClaim,
+    allow_weakening: bool,
+    int32_range_fallback: bool,
+) -> Option<SignedArithmeticCertificate> {
+    // Keep the original opaque claims while proving every operation's
+    // definedness. No premise may justify its own decomposition circularly.
+    let (left, right, _) = comparison_terms(goal)?;
+    if !is_affine_planning_atom(left) || !is_affine_planning_atom(right) {
+        return None;
+    }
+    let mut evidence = Planner::new(premises, claims, int32_range_fallback);
+    let mut decomposed = Vec::with_capacity(claims.len());
+    let mut converted = false;
+    let mut converted_nodes = Vec::new();
+    for (index, claim) in claims {
+        charge_work(1)?;
+        let conversion = (|| {
+            let proposition = &premises[*index];
+            let (left, right) = affine_operation_terms(proposition)?;
+            let result = decomposed_signed_claim(proposition)?;
+            let left_evidence = match left {
+                Some(term) => Some(evidence.build_interval_for_affine(term)?),
+                None => None,
+            };
+            let right_evidence = match right {
+                Some(term) => Some(evidence.build_interval_for_affine(term)?),
+                None => None,
+            };
+            let left_evidence = left_evidence.or(right_evidence)?;
+            let right_evidence = right_evidence.unwrap_or(left_evidence);
+            let source = evidence.premise(*index, claim)?;
+            let node = evidence.push(SignedArithmeticNode::AffinePremise {
+                source,
+                left_evidence,
+                right_evidence,
+                result: result.clone(),
+            })?;
+            Some((result, node))
+        })();
+        if let Some((claim, node)) = conversion {
+            decomposed.push((*index, claim));
+            // Only the subsequent affine phase reads this replacement.
+            // Interval construction still uses the original premise nodes.
+            converted_nodes.push((*index, node));
+            converted = true;
+        } else {
+            decomposed.push((*index, claim.clone()));
+        }
+    }
+    if !converted {
+        return None;
+    }
+    let mut planner = Planner::new(premises, &decomposed, int32_range_fallback);
+    planner.nodes = evidence.nodes;
+    planner.intervals = evidence.intervals;
+    planner.premise_cache = evidence.premise_cache;
+    for (index, node) in converted_nodes {
+        planner.premise_cache.insert(index, node);
+    }
+    let conclusion = planner.affine_claim(expected, allow_weakening)?;
+    Some(certificate(planner.nodes, conclusion))
 }
 
 fn plan_affine_from_selected_claims(
@@ -243,7 +317,9 @@ fn signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
     })
 }
 
-fn decomposed_signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
+pub(in crate::surface) fn decomposed_signed_claim(
+    proposition: &Proposition,
+) -> Option<SignedArithmeticClaim> {
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
         Proposition::Not(body) => match body.as_ref() {
@@ -2532,6 +2608,103 @@ mod tests {
         plan.check(goal, premises)
             .expect("independent checker should accept planner output");
         plan
+    }
+
+    #[test]
+    fn symbolic_upper_premises_require_checked_operation_evidence() {
+        let difference = Bitvector32Term::Subtract(Box::new(constant(1000)), Box::new(var(2)));
+        let sum = Bitvector32Term::Add(Box::new(var(1)), Box::new(var(2)));
+        let goal = le(var(1), constant(999));
+        for premise in [
+            le(var(1), difference.clone()),
+            proposition(
+                ConditionTerm::Bitvector32Equal(Box::new(var(1)), Box::new(difference)),
+                true,
+            ),
+            le(sum, constant(1000)),
+        ] {
+            let premises = [
+                premise,
+                le(constant(1), var(2)),
+                le(var(2), constant(1000)),
+                le(constant(0), var(1)),
+                le(var(1), constant(1000)),
+            ];
+            let plan = check_plan(&goal, &premises);
+            assert!(
+                plan_signed_arithmetic_certificate(&le(var(1), constant(998)), &premises).is_none()
+            );
+            let conversion = plan
+                .nodes
+                .iter()
+                .position(|node| matches!(node, SignedArithmeticNode::AffinePremise { .. }))
+                .expect("compound premise needs a checked conversion");
+            for mutation in 0..5 {
+                let mut forged = plan.clone();
+                if let SignedArithmeticNode::AffinePremise {
+                    source,
+                    left_evidence,
+                    right_evidence,
+                    result,
+                } = &mut forged.nodes[conversion]
+                {
+                    match mutation {
+                        0 => *source = conversion,
+                        1 => *left_evidence = conversion,
+                        2 => *right_evidence = usize::MAX,
+                        3 => *source = *left_evidence,
+                        4 => result.constant -= 1,
+                        _ => unreachable!(),
+                    }
+                }
+                assert!(
+                    forged.check(&goal, &premises).is_err(),
+                    "mutation {mutation}"
+                );
+            }
+            let mut overflowing = premises.clone();
+            overflowing[1] = le(constant(i32::MIN), var(2));
+            overflowing[2] = le(var(2), constant(i32::MAX));
+            assert!(plan.check(&goal, &overflowing).is_err());
+        }
+        // A bound on the opaque operation itself is not recursive evidence
+        // that the operation was defined.
+        let overflowing_sum = Bitvector32Term::Add(Box::new(var(1)), Box::new(var(2)));
+        let premises = [le(overflowing_sum, constant(1000)), le(constant(1), var(2))];
+        assert!(plan_signed_arithmetic_certificate(&goal, &premises).is_none());
+    }
+
+    #[test]
+    fn checked_affine_premise_evidence_scales_with_both_expression_roots() {
+        let mut work = Vec::new();
+        for depth in [2usize, 4, 8, 16] {
+            let mut a = var(1);
+            let mut b = var(2);
+            for _ in 0..depth {
+                a = Bitvector32Term::Add(Box::new(a), Box::new(constant(0)));
+                b = Bitvector32Term::Add(Box::new(b), Box::new(constant(0)));
+            }
+            let sum = Bitvector32Term::Add(Box::new(a), Box::new(b.clone()));
+            let difference = Bitvector32Term::Add(Box::new(constant(1000)), Box::new(b));
+            let premises = [
+                le(sum, difference),
+                le(constant(0), var(1)),
+                le(var(1), constant(2000)),
+                le(constant(1), var(2)),
+                le(var(2), constant(1000)),
+            ];
+            let (plan, measured) = crate::instrumentation::measure_deterministic_work(|| {
+                check_plan(&le(var(1), constant(1000)), &premises)
+            });
+            assert!(plan.nodes.iter().any(|node| matches!(node, SignedArithmeticNode::AffinePremise { left_evidence, right_evidence, .. } if left_evidence != right_evidence)));
+            assert!(plan.nodes.len() <= 12 * depth + 32);
+            work.push(measured);
+        }
+        assert!(work.windows(2).all(|pair| pair[1] > pair[0]), "{work:?}");
+        assert!(
+            work.windows(2).all(|pair| pair[1] <= 3 * pair[0] + 128),
+            "{work:?}"
+        );
     }
 
     fn biased_extent_bound(term: Bitvector32Term) -> Proposition {

@@ -52,6 +52,7 @@ fn lower_signed_constant_comparison(
 fn signed_step_result_surface(step: &SignedArithmeticStep) -> Option<&ClickProposition> {
     match step {
         SignedArithmeticStep::Premise { result, .. }
+        | SignedArithmeticStep::AffinePremise { result, .. }
         | SignedArithmeticStep::Scale { result, .. }
         | SignedArithmeticStep::Add { result, .. }
         | SignedArithmeticStep::EqualityToLessEqual { result, .. }
@@ -1620,8 +1621,9 @@ impl<'a> Proof<'a> {
     ) -> Result<KernelProofHandle, ClickError> {
         use crate::kernel::proof::signed_arithmetic::{
             SignedArithmeticAtom, SignedArithmeticCarrier,
-            SignedArithmeticCertificate as KernelCertificate, SignedArithmeticNode, scale_claim,
-            signed_arithmetic_claim, signed_arithmetic_source_matches,
+            SignedArithmeticCertificate as KernelCertificate, SignedArithmeticNode,
+            SignedArithmeticRelation, scale_claim, signed_arithmetic_claim,
+            signed_arithmetic_source_matches,
         };
         let mut source_premises = std::collections::BTreeMap::new();
         let same_signed_claim =
@@ -1737,6 +1739,18 @@ impl<'a> Proof<'a> {
                 ))
             })
         };
+        let node_claim = |node: &SignedArithmeticNode| match node {
+            SignedArithmeticNode::Premise { result, .. }
+            | SignedArithmeticNode::AffinePremise { result, .. }
+            | SignedArithmeticNode::Scale { result, .. }
+            | SignedArithmeticNode::Add { result, .. }
+            | SignedArithmeticNode::EqualityToLessEqual { result, .. }
+            | SignedArithmeticNode::EqualityFromBounds { result, .. }
+            | SignedArithmeticNode::StrictFromDisequal { result, .. }
+            | SignedArithmeticNode::Trivial { result }
+            | SignedArithmeticNode::Int32Range { result } => Some(result.clone()),
+            _ => None,
+        };
         let mut nodes = Vec::with_capacity(certificate.nodes.len());
         for (node_index, node) in certificate.nodes.iter().enumerate() {
             let lowered = match node {
@@ -1760,6 +1774,24 @@ impl<'a> Proof<'a> {
                         result: claim(&declared_result, "signed_int32 premise result")?,
                     }
                 }
+                SignedArithmeticStep::AffinePremise {
+                    source,
+                    left_evidence,
+                    right_evidence,
+                    result,
+                } => {
+                    let proposition = lower_prop(self, result, "signed_int32 affine premise")?;
+                    let result =
+                        crate::surface::decomposed_signed_claim(&proposition).ok_or_else(|| {
+                            self.step_error("unsupported signed_int32 affine premise")
+                        })?;
+                    SignedArithmeticNode::AffinePremise {
+                        source: *source,
+                        left_evidence: *left_evidence,
+                        right_evidence: *right_evidence,
+                        result,
+                    }
+                }
                 SignedArithmeticStep::Scale {
                     source,
                     coefficient,
@@ -1780,7 +1812,12 @@ impl<'a> Proof<'a> {
                     })?;
                     let source_proposition =
                         lower_prop(self, source_result, "signed_int32 scale source")?;
-                    let source_claim = claim(&source_proposition, "signed_int32 scale source")?;
+                    let source_claim =
+                        nodes.get(*source).and_then(&node_claim).ok_or_else(|| {
+                            self.step_error(
+                                "signed_int32 scale source must be an earlier affine node",
+                            )
+                        })?;
                     let expected = scale_claim(&source_claim, &coefficient).ok_or_else(|| {
                         self.step_error("signed_int32 scale exceeds the verification budget")
                     })?;
@@ -1838,8 +1875,14 @@ impl<'a> Proof<'a> {
                     let left_proposition = lower_addend(left_result, "signed_int32 addition left")?;
                     let right_proposition =
                         lower_addend(right_result, "signed_int32 addition right")?;
-                    let left_claim = claim(&left_proposition, "signed_int32 addition left")?;
-                    let right_claim = claim(&right_proposition, "signed_int32 addition right")?;
+                    let left_claim = nodes.get(*left).and_then(&node_claim).ok_or_else(|| {
+                        self.step_error("signed_int32 addition left must be an earlier affine node")
+                    })?;
+                    let right_claim = nodes.get(*right).and_then(&node_claim).ok_or_else(|| {
+                        self.step_error(
+                            "signed_int32 addition right must be an earlier affine node",
+                        )
+                    })?;
                     let expected = crate::kernel::proof::signed_arithmetic::add_claim(
                         &left_claim,
                         &right_claim,
@@ -1872,14 +1915,36 @@ impl<'a> Proof<'a> {
                     source,
                     reverse,
                     result,
-                } => SignedArithmeticNode::EqualityToLessEqual {
-                    source: *source,
-                    reverse: *reverse,
-                    result: claim(
-                        &lower_prop(self, result, "signed_int32 equality bound")?,
-                        "signed_int32 equality bound",
-                    )?,
-                },
+                } => {
+                    SignedArithmeticNode::EqualityToLessEqual {
+                        source: *source,
+                        reverse: *reverse,
+                        result: {
+                            let proposition =
+                                lower_prop(self, result, "signed_int32 equality bound")?;
+                            let opaque = claim(&proposition, "signed_int32 equality bound")?;
+                            let mut expected = nodes.get(*source).and_then(&node_claim)
+                            .ok_or_else(|| self.step_error("signed_int32 equality source must be an earlier affine node"))?;
+                            expected.relation = SignedArithmeticRelation::LessEqual;
+                            if *reverse {
+                                for coefficient in expected.terms.values_mut() {
+                                    *coefficient = -coefficient.clone();
+                                }
+                                expected.constant = -expected.constant;
+                            }
+                            if crate::kernel::proof::signed_arithmetic::charge_claim_pair_work(
+                                &opaque, &expected,
+                            ) && opaque == expected
+                            {
+                                opaque
+                            } else {
+                                crate::surface::decomposed_signed_claim(&proposition).ok_or_else(
+                                    || self.step_error("unsupported signed_int32 equality bound"),
+                                )?
+                            }
+                        },
+                    }
+                }
                 SignedArithmeticStep::EqualityFromBounds {
                     lower,
                     upper,
