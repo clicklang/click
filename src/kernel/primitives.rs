@@ -4022,6 +4022,16 @@ pub enum CUndefinedBehavior {
     FreedPointerUse {
         allocation: String,
     },
+    /// An equality comparison whose answer C11 6.5.9p6 leaves to the
+    /// implementation's object layout: one operand may be one past the end
+    /// of its object and the other the start of a different object, and the
+    /// two are equal exactly when the objects are adjacent. The result is
+    /// unspecified rather than undefined, and refused because the kernel does
+    /// not model object placement. `pointer` names the one-past-the-end
+    /// operand for the diagnostic.
+    OnePastEndComparison {
+        pointer: String,
+    },
 }
 
 impl CUndefinedBehavior {
@@ -4040,6 +4050,10 @@ impl CUndefinedBehavior {
             Self::FreedPointerUse { allocation } => format!(
                 "use of a pointer into freed allocation {allocation}: its value is \
                  indeterminate after the free"
+            ),
+            Self::OnePastEndComparison { pointer } => format!(
+                "comparison of the one-past-the-end pointer {pointer} with the start of \
+                 another object: whether the two objects are adjacent is unspecified"
             ),
         }
     }

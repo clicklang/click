@@ -2251,7 +2251,9 @@ fn pointer_offset_by_elements_paths(
         Some((index, stride)) => pointer.offset_by_typed_elements(index, stride, false, false),
         None => pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide),
     };
+    let displaces = offset != Bitvector32Term::Constant(0);
     let mut guards = Vec::new();
+    let mut owed = Vec::new();
 
     // Pointer offsets are exact i64 terms, but the source index is a signed
     // int32. Once a pointer has a known element index, the next addition must
@@ -2272,16 +2274,66 @@ fn pointer_offset_by_elements_paths(
     // been materialized in the byte map yet. Let that explicit memory range
     // extend the concrete materialization bound; it is still only consulted
     // when the result (including a range endpoint) is provably in the range.
-    let resource_backed =
-        pointer_is_in_memory_resource(state.resources(), assumptions, &facts, &result, byte_width);
-    if !resource_backed {
+    let membership =
+        held_range_membership(state, assumptions, &facts, &pointer, &result, byte_width);
+    if !matches!(membership, HeldRangeMembership::Inside) {
         let Some(bounds) = pointer_block_bounds(state, &result, byte_width) else {
             return Vec::new();
         };
         guards.extend(bounds);
+        // C11 6.5.6p8 defines the sum only for a result inside the array
+        // object or one past its end. When the state does not record the
+        // block's extent (every pointer parameter, and every symbolic or
+        // loaded pointer), the ranges it holds in that block are the only
+        // extent it knows, so the result must lie in one of them, one-past
+        // end included. A range decided to exclude the result drops out: when
+        // the facts exclude it from every range the formation is refused, and
+        // when exactly one range is left undecided its bounds are owed, as
+        // refused paths carrying their negation. The normal path does not
+        // assume them: a specification term `p + i` is evaluated through this
+        // same operation and keeps the facts it had, and a proof that
+        // verified before the bound existed sees the same facts. A block
+        // with no range that resolves the result owes nothing here; the
+        // access through the pointer is what is refused then. Displacing by
+        // zero is left alone, as for null.
+        if displaces && state.memory().block_size(&result.block).is_none() {
+            match membership {
+                HeldRangeMembership::Inside => {
+                    unreachable!("a contained pointer owes no formation guard")
+                }
+                HeldRangeMembership::Undecided(range_guards) => {
+                    let Some(refused) = owed_guard_paths(
+                        range_guards,
+                        &facts,
+                        &obligations,
+                        assumptions,
+                        &CUndefinedBehavior::PointerArithmetic,
+                    ) else {
+                        return vec![CExpressionPath {
+                            outcome: CExpressionOutcome::UndefinedBehavior(
+                                CUndefinedBehavior::PointerArithmetic,
+                            ),
+                            facts,
+                            obligations,
+                        }];
+                    };
+                    owed = refused;
+                }
+                HeldRangeMembership::Outside => {
+                    return vec![CExpressionPath {
+                        outcome: CExpressionOutcome::UndefinedBehavior(
+                            CUndefinedBehavior::PointerArithmetic,
+                        ),
+                        facts,
+                        obligations,
+                    }];
+                }
+                HeldRangeMembership::Unknown => {}
+            }
+        }
     }
 
-    apply_pointer_formation_guards(
+    owed.extend(apply_pointer_formation_guards(
         result,
         pointer_type,
         pointee_volatile,
@@ -2289,7 +2341,8 @@ fn pointer_offset_by_elements_paths(
         facts,
         obligations,
         assumptions,
-    )
+    ));
+    owed
 }
 
 /// The element index and stride of a byte displacement `index * stride`.
@@ -2707,36 +2760,204 @@ fn strided_block_bounds(
     ])
 }
 
-fn pointer_is_in_memory_resource(
-    resources: &ResourceContext,
+/// How a formed pointer relates to the memory ranges the state holds in its
+/// block: the `owns` and `views` ranges of the current resources and of
+/// every admitted composition, and the `viewable` extents the facts hold for
+/// its object. A range contains the pointer when `start <= index <= end` in
+/// the range's own element coordinates, so the one-past end counts.
+///
+/// This is intentionally a small, structural query. Every lookup is keyed:
+/// the ranges by the pointer's block, the extents by its object identity,
+/// and the pointer is resolved against each range's base by exact offset
+/// arithmetic, never by searching the resource algebra. `ExternalArgument`
+/// is the one block every pointer parameter shares, so a formation there
+/// costs one resolution per range the contract holds.
+///
+/// Only a range based in the pointer's own object judges it. Two parameters
+/// `p` and `q` share a block, and the index of `q + i` relative to `p`
+/// resolves to the residue `(q + i) - p`, which an alias `p == q` published
+/// as an offset equality never decides; a range of `p` therefore neither
+/// refutes nor bounds `q + i`, and can only confirm it when both bounds are
+/// decided anyway. The store through `q` is still checked against `p`'s
+/// range by the resource algebra, which reads the alias.
+enum HeldRangeMembership {
+    /// Some held range contains the pointer, its one-past end included.
+    Inside,
+    /// No range is decided to contain the pointer and one range is left
+    /// undecided: the guards that place the pointer inside it.
+    Undecided(Vec<PointerFormationGuard>),
+    /// Every range the pointer resolves in is decided not to contain it.
+    Outside,
+    /// No held range resolves the pointer, or several are left undecided
+    /// and none of them is based at the displaced operand.
+    Unknown,
+}
+
+#[derive(Default)]
+struct HeldRangeSurvey {
+    refuted: bool,
+    /// The undecided resource ranges: whether the displaced operand is the
+    /// range's base, and the guards that place the result inside it.
+    undecided: Vec<(bool, Vec<PointerFormationGuard>)>,
+    /// A `viewable` extent is undecided. Its byte-scaled bounds are not the
+    /// element shape the formation guard rules read, so it is never a guard
+    /// source, and it keeps a resource range from standing in for it alone.
+    undecided_extent: bool,
+}
+
+impl HeldRangeSurvey {
+    /// Records how `start <= index <= end` decides, and whether it holds.
+    /// A range that does not `judge` the pointer can only confirm it: its
+    /// refutation and its open bounds are not recorded.
+    fn consider(
+        &mut self,
+        assumptions: &PureFactContext,
+        facts: &[ExecutionPureFact],
+        start: Bitvector32Term,
+        index: Bitvector32Term,
+        end: Bitvector32Term,
+        judge: bool,
+        from_operand: bool,
+        guard_source: bool,
+    ) -> bool {
+        let lower = ConditionTerm::signed_less_equal(start, index.clone());
+        let upper = ConditionTerm::signed_less_equal(index, end);
+        match (
+            decide_with_facts(assumptions, facts, &lower),
+            decide_with_facts(assumptions, facts, &upper),
+        ) {
+            (Some(true), Some(true)) => true,
+            _ if !judge => false,
+            (Some(false), _) | (_, Some(false)) => {
+                self.refuted = true;
+                false
+            }
+            _ => {
+                if guard_source {
+                    self.undecided.push((
+                        from_operand,
+                        vec![
+                            PointerFormationGuard {
+                                condition: lower,
+                                value: true,
+                            },
+                            PointerFormationGuard {
+                                condition: upper,
+                                value: true,
+                            },
+                        ],
+                    ));
+                } else {
+                    self.undecided_extent = true;
+                }
+                false
+            }
+        }
+    }
+
+    fn membership(self) -> HeldRangeMembership {
+        let Self {
+            refuted,
+            mut undecided,
+            undecided_extent,
+        } = self;
+        if undecided_extent {
+            return HeldRangeMembership::Unknown;
+        }
+        match undecided.len() {
+            0 if refuted => HeldRangeMembership::Outside,
+            0 => HeldRangeMembership::Unknown,
+            1 => {
+                HeldRangeMembership::Undecided(undecided.pop().expect("one undecided held range").1)
+            }
+            _ => {
+                // Several ranges could hold the result. The one the displaced
+                // operand is the base of is the range the arithmetic is
+                // relative to; with no such range, or two, the disjunction
+                // has no single guard and the formation owes nothing here.
+                let mut from_operand = undecided
+                    .into_iter()
+                    .filter(|(from_operand, _)| *from_operand);
+                match (from_operand.next(), from_operand.next()) {
+                    (Some((_, guards)), None) => HeldRangeMembership::Undecided(guards),
+                    _ => HeldRangeMembership::Unknown,
+                }
+            }
+        }
+    }
+}
+
+fn held_range_membership(
+    state: &CState,
     assumptions: &PureFactContext,
     facts: &[ExecutionPureFact],
+    operand: &Pointer,
     pointer: &Pointer,
     byte_width: u32,
-) -> bool {
-    let decide =
-        |condition: ConditionTerm| decide_with_facts(assumptions, facts, &condition) == Some(true);
-    // This is intentionally a small, structural query. It recognizes the
-    // range shape produced by pointer arithmetic without asking the resource
-    // algebra to search unrelated resources.
-    let contains_range = |resources: &ResourceContext| {
-        resources.facts().iter().any(|fact| {
+) -> HeldRangeMembership {
+    let mut survey = HeldRangeSurvey::default();
+    let object = pointer.object_base();
+    for resources in
+        std::iter::once(state.resources()).chain(assumptions.resource_compositions.iter())
+    {
+        for fact in resources.memory_facts_in_block(&pointer.block) {
             let Some(range) = fact.memory_range() else {
-                return false;
+                continue;
             };
             if range.element_width() != byte_width {
-                return false;
+                continue;
             }
             let Some(index) = pointer_index_from_base(pointer, range.base(), byte_width) else {
-                return false;
+                continue;
             };
-            decide(ConditionTerm::signed_less_equal(
+            if survey.consider(
+                assumptions,
+                facts,
                 range.start().clone(),
-                index.clone(),
-            )) && decide(ConditionTerm::signed_less_equal(index, range.end().clone()))
-        })
-    };
-    contains_range(resources) || assumptions.resource_compositions.iter().any(contains_range)
+                index,
+                range.end().clone(),
+                range.base().object_base() == object,
+                range.base() == operand,
+                true,
+            ) {
+                return HeldRangeMembership::Inside;
+            }
+        }
+    }
+    for proposition in assumptions.memory_loadable_candidates_for_object(pointer) {
+        let Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+        } = proposition
+        else {
+            continue;
+        };
+        if !crate::kernel::reasoning::memory_range_still_available(
+            memory,
+            state.memory(),
+            base,
+            assumptions,
+        ) {
+            continue;
+        }
+        let Some(offset) = pointer_byte_offset_from_base(pointer, base) else {
+            continue;
+        };
+        if survey.consider(
+            assumptions,
+            facts,
+            Bitvector32Term::Constant(0),
+            offset,
+            bytes.clone(),
+            true,
+            false,
+            false,
+        ) {
+            return HeldRangeMembership::Inside;
+        }
+    }
+    survey.membership()
 }
 
 fn pointer_index_from_base(
@@ -2745,9 +2966,9 @@ fn pointer_index_from_base(
     byte_width: u32,
 ) -> Option<Bitvector32Term> {
     match byte_width {
-        4 => pointer.element_index_from_base(base),
+        0 => None,
         1 => pointer_byte_offset_from_base(pointer, base),
-        _ => None,
+        width => pointer.element_index_from_base_with_width(base, width),
     }
 }
 
@@ -2845,6 +3066,48 @@ fn apply_pointer_formation_guards(
 
     paths.extend(normal);
     paths
+}
+
+/// The refused paths `guards` owe on a path with `facts`, without assuming
+/// the guards on that path: one path per guard the facts leave open,
+/// carrying the guard's negation under `refusal`. A guard the facts decide
+/// as required owes nothing. `None` when the facts decide a guard against
+/// its required value, so the path itself is refused.
+///
+/// This differs from a formation guard of a block with a recorded size,
+/// which the normal path assumes: the normal path here keeps exactly the
+/// facts it had, so a proof that verified before the guard existed sees the
+/// same facts, and only the refused path is new.
+fn owed_guard_paths(
+    guards: Vec<PointerFormationGuard>,
+    facts: &[ExecutionPureFact],
+    obligations: &[ProofObligation],
+    assumptions: &PureFactContext,
+    refusal: &CUndefinedBehavior,
+) -> Option<Vec<CExpressionPath>> {
+    let mut refused = Vec::new();
+    for guard in guards {
+        match decide_with_facts(assumptions, facts, &guard.condition) {
+            Some(known) if known == guard.value => {}
+            Some(_) => return None,
+            None => {
+                let mut refused_facts = facts.to_vec();
+                add_condition_path_fact(
+                    &mut refused_facts,
+                    assumptions,
+                    guard.condition,
+                    !guard.value,
+                )
+                .expect("an undecided guard's negation should be consistent");
+                refused.push(CExpressionPath {
+                    outcome: CExpressionOutcome::UndefinedBehavior(refusal.clone()),
+                    facts: refused_facts,
+                    obligations: obligations.to_vec(),
+                });
+            }
+        }
+    }
+    Some(refused)
 }
 
 pub(in crate::kernel) fn apply_c_int32_add(
@@ -4432,11 +4695,22 @@ pub(in crate::kernel) fn apply_c_equal(
                         holders,
                     )));
                 }
-                condition_as_c_int32_paths(
-                    pointer_equality_condition(left, right),
+                let (compared_left, compared_right) = (left.clone(), right.clone());
+                apply_pointer_adjacency_guard(
+                    state,
+                    &compared_left,
+                    &compared_right,
                     facts,
                     obligations,
                     assumptions,
+                    move |facts, obligations| {
+                        condition_as_c_int32_paths(
+                            pointer_equality_condition(left, right),
+                            facts,
+                            obligations,
+                            assumptions,
+                        )
+                    },
                 )
             }
         }
@@ -4601,11 +4875,22 @@ pub(in crate::kernel) fn apply_c_not_equal(
                         holders,
                     )));
                 }
-                condition_as_c_int32_not_paths(
-                    pointer_equality_condition(left, right),
+                let (compared_left, compared_right) = (left.clone(), right.clone());
+                apply_pointer_adjacency_guard(
+                    state,
+                    &compared_left,
+                    &compared_right,
                     facts,
                     obligations,
                     assumptions,
+                    move |facts, obligations| {
+                        condition_as_c_int32_not_paths(
+                            pointer_equality_condition(left, right),
+                            facts,
+                            obligations,
+                            assumptions,
+                        )
+                    },
                 )
             }
         }
@@ -4913,6 +5198,134 @@ pub(in crate::kernel) fn evaluate_c_logical_or_paths(
 
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+/// Refuses an equality comparison C11 6.5.9p6 leaves to the implementation's
+/// object layout. Two pointers into distinct objects compare unequal, except
+/// that one past the end of one object may equal the start of another: the
+/// two are equal exactly when the objects are adjacent, which the kernel does
+/// not model. The decision procedure answers a distinct-block
+/// `PointerEqual` false from the blocks alone, so that configuration is
+/// excluded here, before the condition is built: when the facts decide it
+/// the comparison is refused, and when they leave it open a refused path
+/// carrying the configuration is owed beside the comparison, whose own path
+/// keeps the facts it had.
+///
+/// Only a pair whose blocks are proven distinct is examined; any other pair
+/// is already an undecided condition. Null comparisons and same-block
+/// comparisons are unaffected. A pointer at its object's start is never
+/// taken for its one-past end, so two objects' starts stay decided; the
+/// kernel's objects are nonempty.
+fn apply_pointer_adjacency_guard(
+    state: &CState,
+    left: &Pointer,
+    right: &Pointer,
+    facts: Vec<ExecutionPureFact>,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    apply: impl FnOnce(Vec<ExecutionPureFact>, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+) -> Vec<CExpressionPath> {
+    if !left.blocks_proven_distinct(right) || left.is_in_null_block() || right.is_in_null_block() {
+        return apply(facts, obligations);
+    }
+    let mut guards = Vec::new();
+    let mut one_past_end = None;
+    for (end, start) in [(left, right), (right, left)] {
+        let Some(at_end) = pointer_at_block_end_condition(state, end) else {
+            continue;
+        };
+        let Some(at_start) = pointer_at_object_start_condition(start) else {
+            continue;
+        };
+        match (
+            decide_with_facts(assumptions, &facts, &at_end),
+            decide_with_facts(assumptions, &facts, &at_start),
+        ) {
+            (Some(false), _) | (_, Some(false)) => continue,
+            (Some(true), None) => guards.push(PointerFormationGuard {
+                condition: at_start,
+                value: false,
+            }),
+            _ => guards.push(PointerFormationGuard {
+                condition: at_end,
+                value: false,
+            }),
+        }
+        one_past_end.get_or_insert_with(|| describe_pointer_for_diagnostic(end));
+    }
+    let Some(pointer) = one_past_end else {
+        return apply(facts, obligations);
+    };
+    let refusal = CUndefinedBehavior::OnePastEndComparison { pointer };
+    let Some(mut paths) = owed_guard_paths(guards, &facts, &obligations, assumptions, &refusal)
+    else {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+            facts,
+            obligations,
+        }];
+    };
+    paths.extend(apply(facts, obligations));
+    paths
+}
+
+/// The pointer's displacement from its object's base: its offset for a block
+/// based at offset zero, and the summands after the parameter's opaque base
+/// for argument memory. `None` when the offset does not spell the base.
+fn pointer_object_displacement(pointer: &Pointer) -> Option<PointerOffsetTerm> {
+    pointer.offset_from_base(&pointer.object_base())
+}
+
+/// The condition under which `pointer` is one past the end of its block, or
+/// `None` when it cannot be: a pointer at its object's start, or one at a
+/// constant offset other than the block's constant size. A displacement the
+/// terms do not resolve, and any nonzero displacement into a block whose
+/// extent the state does not record, may be the end.
+fn pointer_at_block_end_condition(state: &CState, pointer: &Pointer) -> Option<ConditionTerm> {
+    let Some(displacement) = pointer_object_displacement(pointer) else {
+        return Some(ConditionTerm::Constant(true));
+    };
+    if displacement.as_const() == Some(0) {
+        return None;
+    }
+    let Some(size) = state.memory().block_size(&pointer.block).cloned() else {
+        return Some(ConditionTerm::Constant(true));
+    };
+    match (displacement.as_const(), size.as_const()) {
+        (Some(offset), Some(size)) => {
+            (offset == i64::from(size)).then_some(ConditionTerm::Constant(true))
+        }
+        _ => match byte_offset_from_pointer_offset(&displacement) {
+            Some(offset) => Some(ConditionTerm::equal(offset, size)),
+            None => Some(ConditionTerm::Constant(true)),
+        },
+    }
+}
+
+/// The condition under which `pointer` is the start of its object, or `None`
+/// when a constant displacement says it is not.
+fn pointer_at_object_start_condition(pointer: &Pointer) -> Option<ConditionTerm> {
+    let Some(displacement) = pointer_object_displacement(pointer) else {
+        return Some(ConditionTerm::Constant(true));
+    };
+    match displacement.as_const() {
+        Some(0) => Some(ConditionTerm::Constant(true)),
+        Some(_) => None,
+        None => match byte_offset_from_pointer_offset(&displacement) {
+            Some(offset) => Some(ConditionTerm::equal(offset, Bitvector32Term::Constant(0))),
+            None => Some(ConditionTerm::Constant(true)),
+        },
+    }
+}
+
+/// The block and offset of a pointer, for a diagnostic; the same spelling the
+/// freed-allocation diagnostic uses.
+fn describe_pointer_for_diagnostic(pointer: &Pointer) -> String {
+    match &pointer.offset {
+        PointerOffsetTerm::Constant(offset) => format!("{}@{offset}", pointer.block),
+        PointerOffsetTerm::Variable(variable) => format!("{}@v{}", pointer.block, variable.0),
+        _ => format!("{}@<symbolic offset>", pointer.block),
+    }
 }
 
 pub(in crate::kernel) fn pointer_equality_condition(
