@@ -1995,6 +1995,29 @@ pub(super) fn finish_ordered_proof<'a>(
         let mut surface_grouped_closers_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_tactics_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_choices_by_path = Vec::with_capacity(execution.paths().len());
+        // A summarized loop's terminal return and continuing exit need not
+        // have separate leaves in the execution surface. For two outcomes,
+        // a contract disjunct can name a post-execution case, provided the
+        // focused checker decides it independently on both paths below.
+        let loop_outcome_selector = (execution.paths().len() == 2
+            && (0..2).any(|index| {
+                proof_execution
+                    .core
+                    .pending_loop_return_loop_index(index)
+                    .is_some()
+            }))
+        .then(|| {
+            claims
+                .iter()
+                .find_map(|claim| match claim.clause().ensure() {
+                    Ensure::Proposition(ClickProposition::Or(left, _)) => {
+                        Some(left.as_ref().clone())
+                    }
+                    _ => None,
+                })
+        })
+        .flatten();
+        let mut loop_outcome_choices = Vec::new();
         let mut surface_post_path_indices = Vec::with_capacity(execution.paths().len());
         let mut deferred_capture_tactics_by_path = Vec::with_capacity(execution.paths().len());
         let mut deferred_capture_prefixes_by_path = Vec::with_capacity(execution.paths().len());
@@ -2253,6 +2276,13 @@ pub(super) fn finish_ordered_proof<'a>(
                         &proof_label,
                         "post-execution claim tactics",
                     );
+                    let loop_outcome_choice =
+                        loop_outcome_selector.as_ref().and_then(|condition| {
+                            outcome_proof
+                                .as_ref()?
+                                .checked_outcome_if_value(condition, None)
+                                .ok()
+                        });
                     let mut selected_post_execution_tactics = Vec::new();
                     let mut selected_post_choices = Vec::new();
                     if let Some(branch_proof) = outcome_proof.as_ref() {
@@ -5193,6 +5223,9 @@ pub(super) fn finish_ordered_proof<'a>(
                         surface_post_choices.push(choice);
                     }
                     surface_post_choices_by_path.push(surface_post_choices);
+                    if loop_outcome_selector.is_some() {
+                        loop_outcome_choices.push(loop_outcome_choice);
+                    }
                     surface_post_path_indices.push(path_index);
                     surface_post_tactics_by_path.push(path_surface_post_tactics);
                     let implicitly_closable = path_deferred_capture_tactics.is_empty()
@@ -5216,6 +5249,41 @@ pub(super) fn finish_ordered_proof<'a>(
                 Ok(())
             },
         )?;
+        // This is surface routing, never additional proof authority. If
+        // either outcome cannot decide the guard, retain the existing refusal.
+        let distinct_loop_suffixes = loop_outcome_choices.len() == 2
+            && (surface_post_tactics_by_path
+                .windows(2)
+                .any(|pair| pair[0] != pair[1])
+                || surface_grouped_closers_by_path
+                    .windows(2)
+                    .any(|pair| pair[0] != pair[1])
+                || surface_closers_by_claim
+                    .iter()
+                    .any(|paths| paths.windows(2).any(|pair| pair[0] != pair[1])));
+        if loop_outcome_choices.len() == 2
+            && distinct_loop_suffixes
+            && surface_post_choices_by_path.iter().all(Vec::is_empty)
+            && let (Some(first), Some(second), Some(condition)) = (
+                loop_outcome_choices[0],
+                loop_outcome_choices[1],
+                loop_outcome_selector,
+            )
+            && first != second
+        {
+            for (choices, value) in surface_post_choices_by_path.iter_mut().zip([first, second]) {
+                choices.insert(
+                    0,
+                    SurfacePathChoice {
+                        // Generated cases precede written post-execution sites.
+                        occurrence: usize::MAX,
+                        selector: SurfacePathSelector::Proposition(condition.clone()),
+                        value,
+                        tactic_offset: 0,
+                    },
+                );
+            }
+        }
         let mut final_checked_execution = completed_execution.clone();
         if any_return_instance_rewrite {
             let completed = returned_core

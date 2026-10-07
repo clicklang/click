@@ -312,7 +312,7 @@ fn authority_mode_refuses_legacy_count_observation() {
 }
 
 #[test]
-fn authority_mode_refuses_plain_c_helper_call() {
+fn authority_mode_plain_c_helper_call_follows_the_ordinary_call_rules() {
     let c_source = r#"
         int32 helper(void) { return 7; }
         int32 value(void) {
@@ -334,9 +334,13 @@ fn authority_mode_refuses_plain_c_helper_call() {
         &authority_stack_project(click_source),
         &[("authority_stack.c", c_source)],
     )
-    .expect_err("calls without resource contracts still lack checked population transfer");
+    .expect_err("an unverified helper without a contract cannot be called opaquely");
+    // The helper's contract moves no resource, so authority mode adds no
+    // refusal of its own; the ordinary rule for unverified callees applies.
     assert!(
-        error.message().contains("C calls are not yet supported"),
+        error
+            .message()
+            .contains("its contract has not been verified yet"),
         "{error:?}"
     );
 }

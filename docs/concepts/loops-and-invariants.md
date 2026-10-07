@@ -424,12 +424,14 @@ undefined behavior are checked. Use `execute()` after `loop` to execute the
 code at that label before closing the contract. Several checked edges to the same label retain
 the disjunction of their exit facts rather than discarding an edge
 (`mdtests/natural_goto_forward_exit_state.md` and
-`mdtests/natural_goto_forward_exit_multiple_edges_state.md`). Two
-proof-tooling gaps remain tracked: naming the joined facts when exit edges
-assign different local values
-(`bugs/natural-goto-exit-join-facts-cannot-be-spelled.md`), and expanding a
-whole claim whose natural cycle has both a return and a forward goto exit
-(`bugs/natural-goto-mixed-return-exit-expansion-loses-path-coverage.md`).
+`mdtests/natural_goto_forward_exit_multiple_edges_state.md`). A natural
+cycle with one terminal return path and one continuing forward goto path
+can expand a disjunctive postcondition into a post-execution `if` when the
+checker establishes opposite sides of its condition on the two outcomes.
+Each arm retains its own checked closer and cold reverifies
+(`mdtests/natural_goto_forward_exit_and_return.md`). Naming the joined facts
+when exit edges assign different local values remains a tracked gap
+(`bugs/natural-goto-exit-join-facts-cannot-be-spelled.md`).
 
 ### `do ... while`
 

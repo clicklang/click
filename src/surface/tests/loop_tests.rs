@@ -177,7 +177,7 @@ fn natural_goto_exits_retain_checked_paths_and_expand() {
 }
 
 #[test]
-fn natural_goto_mixed_return_retains_paths_and_reports_expansion_gap() {
+fn natural_goto_mixed_return_retains_paths_and_expands() {
     let (click, sources) = loop_fixture("natural_goto_forward_exit_and_return");
     let sources = borrowed_sources(&sources);
     with_proof_trace("count_down_or_stop", || {
@@ -186,14 +186,35 @@ fn natural_goto_mixed_return_retains_paths_and_reports_expansion_gap() {
             .expect("both exits must retain accepted execution paths");
         assert!(!trace.contains("<no checked simple steps"), "{trace}");
     });
-    let error =
-        expand_c0_claim_source(&click, &sources, "count_down_or_stop", CProofClaim::Grouped)
-            .expect_err("tracked mixed-exit expansion gap must report its coverage refusal");
-    assert!(
-        error
-            .message()
-            .contains("surface/certificate path coverage diverged")
-    );
+    for click in [
+        click.clone(),
+        click.replace("result == 0 or result == 7", "result == 7 or result == 0"),
+    ] {
+        let expanded =
+            expand_c0_claim_source(&click, &sources, "count_down_or_stop", CProofClaim::Grouped)
+                .expect("both checked loop exits must expand");
+        assert!(expanded.contains("if result =="), "{expanded}");
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &sources)
+            });
+        result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+        assert_eq!(
+            planning, 0,
+            "expanded proof must cold recheck without planning"
+        );
+        let forged = expanded.replacen("result == 7", "result == 8", 1);
+        verify_c0_sources(&forged, &sources)
+            .expect_err("a false return contract must remain rejected");
+        let selector = if click.contains("result == 0 or result == 7") {
+            "if result == 0"
+        } else {
+            "if result == 7"
+        };
+        let forged = expanded.replacen(selector, "if result == 123", 1);
+        verify_c0_sources(&forged, &sources)
+            .expect_err("a guard that assigns both outcomes one closer must fail");
+    }
 }
 
 /// The lexicographic pivot is an arm choice, not a kernel search. Only the

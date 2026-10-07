@@ -2137,7 +2137,8 @@ impl CheckedResourceRewrite {
             // through this path: those require ledger evidence. An exact owned
             // authority may move into or out of a control instance; the
             // creation-ledger equality below proves that no population changed.
-            if before_state.uses_population_authority_semantics() {
+            if before_state.uses_population_authority_semantics() && definition.reaches_population()
+            {
                 let memory_only = |spec: &crate::kernel::CResourceSpec| {
                     matches!(
                         spec.term(),
