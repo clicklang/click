@@ -968,6 +968,22 @@ theorem use_scaled_quotient(n: Integer, d: Integer, bound: Integer) {
     ensures truncating_quotient(n, d) <= bound by { apply(integer_positive_divisor_quotient_upper(n, d, bound)); }
 }
 
+theorem use_strict_lower(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound < 0;
+    requires bound * d < n;
+    ensures bound < truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_strict_lower(n, d, bound)); }
+}
+
+theorem use_strict_upper(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 < bound;
+    requires n < bound * d;
+    ensures truncating_quotient(n, d) < bound by { apply(integer_positive_divisor_quotient_strict_upper(n, d, bound)); }
+}
+
 theorem use_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, bound: Integer) {
     requires bound <= q; requires bound * d <= n;
     requires n == q * d + r;

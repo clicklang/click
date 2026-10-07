@@ -797,8 +797,15 @@ and missing comparison transport are covered. The new shared bridges check their
 exact typed declarations and native premises; endpoint models, forged declarations
 and checked expansion cover them independently of Bitcoin.
 
-Next broaden mode-specific result-fit and fee division beyond the current
-joint amount/size bounds.
+Strict positive-divisor quotient bounds are now proof-backed shared lemmas,
+with explicit sign guards, checked expansion and hostile endpoint/guard tests.
+A mathematical fixture proves the initial int64 quotient fit for both wider
+mode-specific domains, including floor's extra positive interval and ceiling's
+extra negative interval. This does not yet widen the imported Div contract or
+prove the native remainder narrowing and correction on those domains.
+
+Next apply those lemmas to mode-specific result-fit for the unchanged Div
+implementation, then broaden callers beyond the current joint amount/size bounds.
 The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
 current joint range ensures both rounding modes fit.
 The selected source narrows `n / d` to int64 and

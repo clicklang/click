@@ -1006,12 +1006,24 @@ Opaque operands are never cloned; constant-product folding is charged before
 computation.
 See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_quotient_bound.md).
 
+The proof-backed `integer_positive_divisor_quotient_strict_lower` and
+`integer_positive_divisor_quotient_strict_upper` expose strict scaled bounds.
+They additionally require a negative lower bound or a positive upper bound:
+truncation toward zero makes the unrestricted strict statements false (for
+example, `-1 / 2` truncates to zero). Their proofs use the existing quotient
+rule, signed remainder facts and reconstruction; no new kernel rule or search
+is involved. The [strict-bound fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_quotient_strict_bound.md)
+proves the int64 quotient fit needed by floor's `MIN * d <= n < (MAX + 1) * d`
+and ceiling's `(MIN - 1) * d < n <= MAX * d` domains. These mathematical
+quotient-fit results do not establish native narrowing or correction safety.
+
 The unchanged C++ rounding sidecars now use joint guards
 `-K * to_integer(d) <= to_integer(n) <= K * to_integer(d)` (two clauses).
 The initial margin profile used `K = INT64_MAX - 1`; the endpoint proof below
 widens it to `INT64_MIN * d <= n <= INT64_MAX * d`. Both profiles include
 int128 numerators outside int64 and every positive int32 divisor. The broader
-mode-specific result-fit contract and real fee-evaluation callers remain open.
+mode-specific result-fit contract remains open; real fee-evaluation callers
+are verified under the joint amount/size profile.
 
 
 ## Remainder signs and correction endpoints

@@ -431,4 +431,9 @@ fragments, supplying distinct captures for the two wide branches. Checked
 signed 64-bit `<` and `>=` observation bridges derive the fast-path range from
 Bitcoin's source guard. Expansion/reverification, retained verification and
 missing-bound, false-rounding and missing-transport regressions cover both modes.
-Next broaden the amount/size domain and mode-specific result-fit contracts.
+Shared strict quotient lemmas now establish initial int64 quotient fit on
+floor's `MIN * d <= n < (MAX + 1) * d` and ceiling's
+`(MIN - 1) * d < n <= MAX * d` mathematical domains; see
+[`integer_quotient_strict_bound.md`](../../mdtests/integer_quotient_strict_bound.md).
+The imported helper still uses its joint contract. Next prove its native
+narrowing and correction on these wider domains, then broaden callers.
