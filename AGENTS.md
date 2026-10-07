@@ -175,13 +175,14 @@ they find one and do not fix it in the same change:
 - a diagnostic is a wall of text: repeated or unbounded raw internal state
   where a bounded, actionable message belongs.
 
-File one kebab-case `.md` file per independent bug in `bugs/` plus a one-line
-entry in `bugs/README.md`. State the violated invariant, a small intended
-regression, and acceptance criteria, written so a fresh agent can act on the
-file alone. Reproduce it first: an observation that was seen once, or inferred
+File one kebab-case `.md` file per independent bug in `bugs/`. The directory
+is the bug backlog; do not add a list entry to `bugs/README.md`.
+State the violated invariant, a small intended regression, and acceptance
+criteria, written so a fresh agent can act on the file alone. Reproduce it
+first: an observation that was seen once, or inferred
 from reading code, is reported to the user, not filed. Tell the user what was
-filed. Delete the file and its list line when the fix, its regression
-coverage, and any documentation land.
+filed. Delete the bug file when the fix, its regression coverage, and any
+documentation land.
 
 **Issues: only the user approves them.** An issue is roadmap: a missing
 feature, a design gap, deferred work, a new milestone, or a change of
