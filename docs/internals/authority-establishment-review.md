@@ -23,6 +23,12 @@ owned-memory body. Creation consumes exactly the body's ordinary owned memory
 clauses and produces the member; consumption consumes the member and produces
 those same memory clauses. The standalone proof checks `fold` or `unfold`, and
 the concrete call updates the caller's population under transferred authority.
+Certification requires that check: a declared consumption of an exact member
+whose population the helper governs must appear as a recorded death at its
+exit. A helper that receives the member and does not spend it is refused,
+whether it holds the authority directly or through a borrowed control.
+Otherwise its caller would apply a death that never happened, and a returned
+control would state its counter equation before that death.
 Creation also checks that the caller's anchor is still live. An ordinary
 field-free `control(p)` may now own both the counter cell and
 `authority(reference(p))`, with a fact equating the cell to the current count.
