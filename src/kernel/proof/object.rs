@@ -2145,9 +2145,10 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
         .expect("the checked complementary facts form a proof-case partition");
         let [then_presentation, else_presentation] = presentations;
         let arm = |arm_index: usize, fact: Proposition, presentation: S| {
-            let facts = branch.state.facts.with_fact(fact);
+            let facts = branch.state.facts.with_fact(fact.clone());
             let mut core = execution.core.clone();
             assert!(core.record_proof_case_arm(partition.clone(), arm_index, facts.clone()));
+            core.retain_step_case(fact);
             ProofBranch::new(
                 ProofObligation::Frontier(frontier.clone()),
                 ProofBranchState {

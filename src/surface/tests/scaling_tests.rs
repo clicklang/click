@@ -6202,15 +6202,15 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
         .expect("indexed fan-out thread");
 }
 
-/// Contract preparation reuses completed contexts in both proof forms.
-/// Bound whole-transaction construction too for the grouped form. The explicit
-/// form has separate existing return-context and other costs, kept
-/// in the measurements and tracked in the early-return bug report.
+/// Return preparation and contract preparation share checked contexts in both
+/// proof forms. Bound whole-transaction construction, not just one tactic.
+/// The explicit form still has other flat-path costs tracked in the bug report.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
     let mut entries = Vec::new();
     let mut contract_entries = Vec::new();
     let mut allocation_resolution = Vec::new();
+    let mut return_context = Vec::new();
     for returns in [4, 8, 16, 32, 64] {
         let c = early_return_fan_out(returns);
         let click = if explicit {
@@ -6242,6 +6242,13 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             sample
                 .named_work
                 .get("operation `branch allocation resolution`")
+                .copied()
+                .unwrap_or(0),
+        );
+        return_context.push(
+            sample
+                .named_work
+                .get("operation `statement return context`")
                 .copied()
                 .unwrap_or(0),
         );
@@ -6280,13 +6287,26 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             .all(|pair| pair[1] <= pair[0] + 8),
         "settled allocations must not rebuild branch contexts: {allocation_resolution:?}"
     );
-    if !explicit {
+    if explicit {
         assert!(
-            entries
-                .windows(2)
-                .all(|pair| pair[1] * 100 <= pair[0] * 225 + 800),
-            "completed contexts must be reused: {entries:?}"
+            samples
+                .last()
+                .unwrap()
+                .named_work
+                .contains_key("operation `statement return context`")
         );
+        assert!(
+            return_context
+                .windows(2)
+                .all(|pair| pair[1] <= pair[0] * 2 + 8),
+            "returns must reuse their checked local prefix: {return_context:?}"
+        );
+    }
+    assert!(
+        entries.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 32),
+        "return and completion contexts must share their prefix: explicit={explicit}, {entries:?}"
+    );
+    if !explicit {
         assert!(
             samples
                 .windows(2)
