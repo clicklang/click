@@ -49,7 +49,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { ... }, { left: t, right: s });
             ... establish the measure's descent ...
-            let { whole: whole } = refold_to_root(identity, root) { c: u, t: sub };
+            let { whole: whole } = refold_to_root(identity, root, { c: u, t: sub });
         },
         Context::Right(...) => { ... mirrored ... },
     }
@@ -62,7 +62,7 @@ A C proof applies it with an explicit binder map, like a call step but with no
 C statement:
 
 ```text
-let { tree: tr } = refold_to_root(node, root) { c: c, t: t };
+let { tree: tr } = refold_to_root(node, root, { c: c, t: t });
 ```
 
 ## Declaration
@@ -201,7 +201,7 @@ One design, delivered in pull requests on it:
 
 - Application is spelled like every other tactic, `name(args)`, with an
   optional binder map and output pattern:
-  `let { tree: tr } = refold_to_root(node, root) { c: c, t: t };`. `apply` stays
+  `let { tree: tr } = refold_to_root(node, root, { c: c, t: t });`. `apply` stays
   for applying theorems, which are not tactics. A tactic name may not shadow a
   built-in tactic.
 - Delivery follows the order above: recursion before Click-typed logical

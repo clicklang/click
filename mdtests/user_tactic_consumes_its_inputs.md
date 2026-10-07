@@ -44,7 +44,7 @@ tactic divide(p: struct pr*) {
 void user(struct pr* p) {
     consumes x: both(p);
 } by {
-    let { y: y, z: z } = divide(p) { x: x };
+    let { y: y, z: z } = divide(p, { x: x });
     unfold(x);
     step();
     step();

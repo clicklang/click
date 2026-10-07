@@ -1036,7 +1036,7 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// `name(args) { binder: instance }`: one application of a user-defined
+    /// `name(args, { binder: instance })`: one application of a user-defined
     /// tactic at the execution frontier.
     ///
     /// The tactic's verified rule is applied by the kernel with no C

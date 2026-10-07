@@ -2271,7 +2271,7 @@ uses:
 
 <!-- verified-example: mdtests/user_tactic_reshapes_owned_resources.md -->
 ```click
-let { y: y, z: z } = divide(p) { x: x };
+let { y: y, z: z } = divide(p, { x: x });
 ```
 
 An application is one simple step. It checks each `requires` as an available

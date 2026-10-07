@@ -605,7 +605,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
                 rewrite(Context::Left(identity, grandparent, color, sibling_model, up_model) == old(c.model));
                 assumption();
             }
-            let { whole: whole } = refold_to_root(identity, root) { c: u, t: sub };
+            let { whole: whole } = refold_to_root(identity, root, { c: u, t: sub });
             have whole.model == plug(old(c.model), old(t.model)) by {
                 rewrite(old(c.model) == Context::Left(identity, grandparent, color, sibling_model, up_model));
                 rewrite(plug(Context::Left(identity, grandparent, color, sibling_model, up_model), old(t.model)) == plug(up_model, RbTree::Node(identity, grandparent, color, old(t.model), sibling_model)));
@@ -660,7 +660,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
                 rewrite(Context::Right(identity, grandparent, color, sibling_model, up_model) == old(c.model));
                 assumption();
             }
-            let { whole: whole } = refold_to_root(identity, root) { c: u, t: sub };
+            let { whole: whole } = refold_to_root(identity, root, { c: u, t: sub });
             have whole.model == plug(old(c.model), old(t.model)) by {
                 rewrite(old(c.model) == Context::Right(identity, grandparent, color, sibling_model, up_model));
                 rewrite(plug(Context::Right(identity, grandparent, color, sibling_model, up_model), old(t.model)) == plug(up_model, RbTree::Node(identity, grandparent, color, sibling_model, old(t.model))));
@@ -5407,7 +5407,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 assumption();
             }
             mark refold;
-            let { whole: tree } = refold_to_root(node, root) { c: c, t: t };
+            let { whole: tree } = refold_to_root(node, root, { c: c, t: t });
             have rb_inorder(tree.model) == rb_inorder(plug(old(c.model), old(t.model))) by {
                 rewrite(tree.model == at(refold, plug(c.model, t.model)));
                 assumption();

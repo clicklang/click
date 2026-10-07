@@ -3781,26 +3781,29 @@ impl Parser {
         } else {
             "call step callee"
         })?;
-        // A call step writes `step(callee(...), { ... })`; a tactic
-        // application writes `name(...) { ... }`, where the map is optional
-        // when the tactic supplies no binder.
+        // The binder map is the last argument in both forms, as a fold's
+        // field map is: a call step writes `step(callee(...), { ... })` and a
+        // tactic application writes `name(..., { ... })`, where the map is
+        // optional when the tactic supplies no binder.
         let form = if tactic { "name(...)" } else { "step(...)" };
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
+        let mut has_map = !tactic;
         while self.peek() != Some(&Token::RParen) {
+            if tactic && self.peek() == Some(&Token::LBrace) {
+                has_map = true;
+                break;
+            }
             arguments.push(self.parse_contract_expression()?);
             if self.peek() != Some(&Token::Comma) {
                 break;
             }
             self.position += 1;
         }
-        self.expect(Token::RParen)?;
-        let has_map = if tactic {
-            self.peek() == Some(&Token::LBrace)
-        } else {
+        if !tactic {
+            self.expect(Token::RParen)?;
             self.expect(Token::Comma)?;
-            true
-        };
+        }
         let mut declared = self
             .callee_resource_binders
             .get(&callee)
@@ -3861,6 +3864,14 @@ impl Parser {
         }
         if has_map {
             self.expect(Token::RBrace)?;
+        }
+        if tactic {
+            self.expect(Token::RParen)?;
+            if self.peek() == Some(&Token::LBrace) {
+                return Err(self.error(format!(
+                    "the binder map is the last argument of a tactic application: write `{callee}(..., {{ binder: instance }})`"
+                )));
+            }
         }
         // An empty mutex has no protected resource to deposit. Its named
         // initialization still produces ordinary lifetime authority.
