@@ -1910,13 +1910,12 @@ pub(super) fn finish_ordered_proof<'a>(
             ))
         })?;
         let base_certification_facts = certification_facts;
-        let execution_semantics = if proof_execution.core.concrete_loop_execution
-            || !proof_execution.core.frontier_loop_rules.is_empty()
-        {
-            CExecutionSemantics::APPLY_VERIFIED_RULES
-        } else {
-            CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS
-        };
+        // Checked statement steps apply verified loop rules; a loop with no
+        // rule can only be stepped concretely or avoided by a checked path.
+        // Keep that semantics even when no loop was reached. Calling it
+        // `Verify` in that case incorrectly suggests that an unreachable
+        // frame-annotated loop might have been summarized.
+        let execution_semantics = CExecutionSemantics::APPLY_VERIFIED_RULES;
         let execution_mode = if proof_execution.core.concrete_loop_execution {
             CFunctionContractExecutionMode::ExecuteLoops
         } else {

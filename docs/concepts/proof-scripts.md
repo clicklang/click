@@ -35,6 +35,11 @@ ensures result == x by {
 }
 ```
 
+Inside an `open(resource)` scope, a named resource fold after `execute()`
+uses each returned path's state before the scope closes, just as a fold after
+execution outside the scope does. A proposed field value must still match
+that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
+
 ## Smart and simple tactics
 
 Smart tactics plan or search. The most common are `execute()`,
