@@ -1292,8 +1292,50 @@ fn abstract_c_state_for_join_across_with_policy(
     let mut abstract_objects = Vec::new();
     let mut preserved_blocks = BTreeSet::new();
 
+    // A local that some arm of an interface join left uninitialized is
+    // uninitialized after the join: the path through that arm never gave it
+    // a value, so reading it afterwards is as undefined as it was there. An
+    // arm that did initialize it must not keep a value for it, or the two
+    // arms' abstractions differ and the arms cannot be joined at all.
+    let mut uninitialized_in_an_arm = BTreeSet::new();
+    if preserve_exact_common_memory {
+        for sibling in sibling_states {
+            for (name, binding) in sibling.locals.bindings.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                if matches!(binding, CLocalBinding::UninitializedObject { .. }) {
+                    uninitialized_in_an_arm.insert(name.as_str());
+                }
+            }
+        }
+    }
+    let mut left_uninitialized = Vec::new();
+
     for (name, binding) in state.locals.bindings.iter() {
         crate::instrumentation::record_deterministic_work(1);
+        if let CLocalBinding::Object {
+            c_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+            ..
+        } = binding
+            && uninitialized_in_an_arm.contains(name.as_str())
+        {
+            // Its block is not preserved, so the memory join below drops
+            // the value this arm stored and its initialization record.
+            left_uninitialized.push((
+                name.clone(),
+                *c_type,
+                slot.clone(),
+                *volatile,
+                *pointee_volatile,
+                *constant,
+                *pointee_constant,
+            ));
+            continue;
+        }
         let CLocalBinding::Object {
             value,
             c_type,
@@ -1434,6 +1476,19 @@ fn abstract_c_state_for_join_across_with_policy(
     for (name, value, c_type) in abstract_objects {
         sync_stack_local(&mut abstract_state, &name, &value);
         abstract_state.locals.set_typed(name, value, c_type);
+    }
+    for (name, c_type, slot, volatile, pointee_volatile, constant, pointee_constant) in
+        left_uninitialized
+    {
+        abstract_state.locals.set_uninitialized_with_all_qualifiers(
+            name,
+            c_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+        );
     }
     // Drop the resource context through the rebasing setter, not by writing
     // the field. The occurrence-to-loan sidecar is keyed by the occurrences of

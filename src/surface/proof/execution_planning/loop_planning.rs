@@ -713,10 +713,9 @@ impl AutomaticBodySearch<'_> {
     /// and joins them there, as a written `branch` does. `None` when an arm
     /// leaves another way, in which case the arms are separate paths.
     ///
-    /// Arms that end in one state join as they are. Arms that end apart are
-    /// joined through an interface that states nothing: the one path that
-    /// continues keeps what both arms agree on and nothing either arm alone
-    /// established. A loop whose invariants need more than that is not
+    /// Arms that end in one state join as they are. Arms that end apart
+    /// join keeping what both agree on: the one path that continues knows
+    /// nothing either arm alone established. A loop whose invariants need more than that is not
     /// closed here; its body is written out with `branch ensuring { ... }`.
     fn join_source_branch<'a>(
         &mut self,
@@ -750,19 +749,14 @@ impl AutomaticBodySearch<'_> {
             return Ok(None);
         }
         let empty = self.steps == steps_before;
-        if let Ok(joined) = advanced.join_focused_execution_split(&record, empty, None) {
-            return Ok(Some(joined));
-        }
-        let agreed = vec![ProofAssertion::Fact(ClickProposition::Comparison {
-            left: ContractExpression::IntegerLiteral("1".to_string()),
-            operator: ComparisonOperator::Equal,
-            right: ContractExpression::IntegerLiteral("1".to_string()),
-        })];
-        // Arms the join refuses have no one state to continue from, so they
-        // stay separate paths, like arms that leave different ways.
-        match advanced.join_focused_execution_split(&record, empty, Some(agreed)) {
+        // A bare `branch` joins arms that end in one state as they are and
+        // arms that end apart keeping what both agree on. Arms the join
+        // refuses have no one state to continue from, so they stay separate
+        // paths, like arms that leave different ways.
+        let apart = !empty && advanced.split_arms_end_apart(&record)?;
+        match advanced.join_focused_execution_split(&record, empty, None) {
             Ok(joined) => {
-                self.joined_apart = true;
+                self.joined_apart |= apart;
                 Ok(Some(joined))
             }
             Err(_) => {
@@ -859,16 +853,26 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         preservation,
         loop_body_statement_index,
     )?;
+    // The planned body runs on the same head state as the checked one, so
+    // it starts its identity counter where the head left it, for the same
+    // reason (`verify_one_loop_preservation_proof`). Starting at the base of
+    // the range gave a join in the planned body the identity the head's
+    // havoc had already given a local, and the two became one value.
+    let mut body_execution = ExecutionProofState::at_entry(
+        preservation.state().clone(),
+        frontier,
+        recorded_snapshots,
+        surface_propositions,
+        PersistentSequence::default(),
+    );
+    body_execution
+        .core
+        .advance_kernel_variable_mark(preservation.next_kernel_variable())
+        .map_err(|message| ClickError::new(format!("`{claim_label}`: {message}")))?;
     let root = Proof::for_execution_frontier(
         &claim_label,
         0,
-        ExecutionProofState::at_entry(
-            preservation.state().clone(),
-            frontier,
-            recorded_snapshots,
-            surface_propositions,
-            PersistentSequence::default(),
-        ),
+        body_execution,
         pure_facts.clone(),
         constants.clone(),
         environment.function_block,
