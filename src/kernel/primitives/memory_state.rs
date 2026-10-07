@@ -1149,7 +1149,14 @@ mod forget_cached_values_tests {
     #[test]
     fn loop_havoc_drops_the_zero_reading_under_a_forgotten_cell() {
         let (before, base) = zeroed_heap_with_cell();
-        assert!(before.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        let beside = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(4),
+        };
+        // The cell covers the first four bytes, so only the bytes beside it
+        // read as zero.
+        assert!(!before.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        assert!(before.is_zeroed_heap_address(&beside, 4, &PureFactContext::new()));
         let after = before.with_loop_memory_havoc_preserving_loans(
             Variable(944_102),
             &BTreeSet::new(),
@@ -1157,7 +1164,52 @@ mod forget_cached_values_tests {
             None,
         );
         assert_eq!(after.known_value(&base), None);
-        assert!(!after.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        assert!(!after.is_zeroed_heap_address(&beside, 4, &PureFactContext::new()));
+    }
+
+    /// A load that covers some byte a cell holds is never answered from the
+    /// allocation's zero reading: the cell may start inside the load, start
+    /// before it and reach into it, or be a run of slots over it.
+    #[test]
+    fn a_zero_reading_is_refused_for_bytes_a_cell_covers() {
+        let base = Pointer {
+            block: PointerBlock::Heap(944_104),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let at = |offset: i64| Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let mut memory = CMemory::new().with_block(base.block.clone(), 16);
+        let heap = std::sync::Arc::make_mut(&mut memory.heap);
+        heap.live_allocations
+            .insert(base.clone(), Bitvector32Term::Constant(16));
+        heap.zeroed_allocations.insert(base.clone());
+        let facts = PureFactContext::new();
+        // A byte at offset 5 lies inside the four bytes at 4 and the eight
+        // bytes at 0, and beside the four bytes at 8.
+        let narrow = memory.clone().store(at(5), uint8(9));
+        assert!(!narrow.is_zeroed_heap_address(&at(4), 4, &facts));
+        assert!(!narrow.is_zeroed_heap_address(&at(0), 8, &facts));
+        assert!(narrow.is_zeroed_heap_address(&at(8), 4, &facts));
+        // Eight bytes at 0 contain the four at 4, and miss the four at 8.
+        let wide = memory.clone().store(
+            at(0),
+            CValue::Int64(Bitvector32Term::Int64Constant(1 << 40)),
+        );
+        assert!(!wide.is_zeroed_heap_address(&at(4), 4, &facts));
+        assert!(wide.is_zeroed_heap_address(&at(8), 4, &facts));
+        // A symbolic offset into a block that holds a cell is not separated
+        // from it by any constant.
+        let symbolic = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::Variable(Variable(944_105))),
+                byte_width: 4,
+            },
+        };
+        assert!(memory.is_zeroed_heap_address(&symbolic, 4, &facts));
+        assert!(!narrow.is_zeroed_heap_address(&symbolic, 4, &facts));
     }
 
     /// An interface join whose arms agree on a zero reading still drops it
@@ -1180,7 +1232,11 @@ mod forget_cached_values_tests {
             .clone()
             .with_interface_memory_havoc(Variable(944_103), &BTreeSet::new(), &arms)
             .expect("joinable arms");
-        assert!(!from_wrote.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        let beside = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(4),
+        };
+        assert!(!from_wrote.is_zeroed_heap_address(&beside, 4, &PureFactContext::new()));
         assert_eq!(from_wrote.heap, from_untouched.heap);
     }
 }
@@ -2721,19 +2777,21 @@ impl CMemory {
                     offset: PointerOffsetTerm::Constant(offset),
                 };
                 let low = start.saturating_sub(WIDEST_CELL_BYTES - 1);
-                let cell_overlaps = self.cells.concrete().range(at(low)..at(end)).any(
-                    |(cell, value)| {
-                        visited += 1;
-                        cell.offset.as_const().is_some_and(|cell_offset| {
-                            overlaps(
+                let cell_overlaps =
+                    self.cells
+                        .concrete()
+                        .range(at(low)..at(end))
+                        .any(|(cell, value)| {
+                            visited += 1;
+                            cell.offset.as_const().is_some_and(|cell_offset| {
+                                overlaps(
                                 cell_offset,
                                 crate::kernel::reasoning::memory_resolution::cell_access_byte_width(
                                     value,
                                 ),
                             )
-                        })
-                    },
-                );
+                            })
+                        });
                 cell_overlaps
                     || self.cells.runs_in_block(&pointer.block).any(|run| {
                         visited += 1;
