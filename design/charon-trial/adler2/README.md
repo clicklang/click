@@ -63,7 +63,7 @@ most 262080. The theorem covers the full unsigned range; defined wrapping
 multiplication alone cannot justify an exact mathematical product. Kernel
 regressions check unsigned boundary values and both sides of the last safe
 quotient. Helper regressions reject false products/bounds and missing guards
-independently for every lane. The complete four-byte computation remains unproved.
+independently for every lane. The four-byte caller proof below uses these bridges.
 
 Frozen and live regressions check the original source hashes, prove all four
 helpers, and reject false lane claims, short reads, missing safety guards,
@@ -128,8 +128,9 @@ missing bounds, and false lane weights or ceilings.
 
 These are conditional arithmetic proofs checked alongside the original helper
 contracts. They do not establish the premises at each original recombination
-site or prove the complete four-byte checksum. That caller proof, general
-initial states, and preservation over nonempty vector batches remain open.
+site or prove the complete four-byte checksum by themselves. The four-byte
+caller proof below supplies those premises; general initial states and
+preservation over larger nonempty vector batches remain open.
 
 ## Index derived from iterator state
 
@@ -280,11 +281,24 @@ The first nonempty vector path also exercises a by-value copy of `a_vec` after
 its checked addition helper. Initialized local arrays now copy from the current
 memory snapshot when that helper has discarded cached lane values. The reduced
 [copy-after-call regression](../copy-after-call/README.md) checks this prerequisite
-and independence from subsequent source writes. The complete four-byte checksum
-proof remains subsequent work.
+and independence from subsequent source writes.
 
-With constructor-state inputs of lengths zero through three checked, next prove
-the first nonempty four-byte vector path and establish and preserve the lane
+The [four-byte computation contract](four-byte-compute.click) now checks the
+original constructor-state vector path through all three weighted lane updates,
+both ordered lane summation loops, the empty serial tail, and the final modulo
+and u16 stores. It preserves all four input bytes and gives exact native checksum
+expressions modulo 65521, retaining the original MOD offsets in B. The helper
+and recombination lemma bodies are checked alongside this contract. No original
+Rust, Charon artifact, import configuration, or lock changes are needed.
+
+The proof tracks the stored iterator cursors and remaining lengths. Checked
+native-to-Integer additions establish final scalar ceilings of 1021 and 397210;
+the output casts are justified by the modulo range. Nightly regressions check
+false outputs, byte ordering, repeated reads, and agreement between verification,
+profiling, audit, expansion, and verification of the expanded contract.
+
+With constructor-state inputs of lengths zero through four checked, next
+establish and preserve the lane
 invariants over the original chunks/remainder
 iterator states using the derived index, checked A/B recurrences, and native
 u32 observation bridges. Then use the helper contracts and byte accounting
