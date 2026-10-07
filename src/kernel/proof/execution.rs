@@ -8422,6 +8422,14 @@ impl ExecutionProofCore {
             (CStatement::Goto { .. }, _) => {
                 return Err("goto evidence does not carry its checked function target".into());
             }
+            (
+                CStatement::While {
+                    backedge_target: Some(_),
+                    natural_exit_target: Some(expected),
+                    ..
+                },
+                CStatementOutcome::Jump { target: actual, .. },
+            ) if expected == actual && function.control_target(*actual).is_some() => {}
             (_, CStatementOutcome::Jump { .. }) => {
                 return Err("non-goto evidence carries a control-flow jump".into());
             }

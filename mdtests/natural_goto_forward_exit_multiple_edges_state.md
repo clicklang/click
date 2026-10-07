@@ -13,7 +13,7 @@ again:
     n--;
     goto again;
 done:
-    return 0;
+    return n;
 }
 ```
 
@@ -22,7 +22,7 @@ verifying "natural_goto_multiple_exit_labels.c";
 
 int32 count_down_or_stop(int32 n) {
     requires n >= 0;
-    ensures result == 0;
+    ensures result == 0 or result == 1;
 } by {
     loop {
         invariant n >= 0;

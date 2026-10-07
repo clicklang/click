@@ -86,8 +86,9 @@ proposition goal that it adds, when it is the last written step or only
 `assumption`, `simp`, or `normalize` follows it. An added order fact closes
 the goal under either spelling of the same claim: `0 <= e` closes the goal
 `e >= 0`, and `a < b` closes `b > a`, for machine and `Integer` operands
-alike. When other written steps
-follow, the goal stays open with the added fact available, so every remaining
+alike. A written theorem application also closes the mirrored goal when
+its checked conclusion was already stated in the context. When other written
+steps follow, the goal stays open with the added fact available, so every remaining
 step is still checked.
 
 | Surface form | Class | Valid state and transition | Failure, checking, and tools | Verified success |

@@ -409,12 +409,13 @@ pub struct CLoopPreservationContext {
 }
 
 /// A body state produced by a checked preservation proof that may be the
-/// final loop iteration. The proof layer supplies the facts retained at that
-/// body frontier; the kernel independently checks the post-body condition
-/// before exporting the state as a loop exit.
+/// final loop iteration. A guard-exit candidate requires an independently
+/// checked false post-body condition. A natural cycle's checked forward jump
+/// instead carries its target and is exported at its own state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CLoopFinalExitCandidate {
     state: CState,
+    jump_target: Option<CControlTargetId>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: std::sync::Arc<[Proposition]>,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -425,9 +426,19 @@ impl CLoopFinalExitCandidate {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
+            jump_target: None,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
+    }
+
+    pub(crate) fn with_jump_target(mut self, target: CControlTargetId) -> Self {
+        self.jump_target = Some(target);
+        self
+    }
+
+    pub(crate) fn jump_target(&self) -> Option<CControlTargetId> {
+        self.jump_target
     }
 
     pub(crate) fn with_loan_evidence(
@@ -559,6 +570,52 @@ mod loop_exit_sharing_tests {
     use super::*;
 
     #[test]
+    fn natural_forward_exit_is_a_jump_and_only_absent_exits_diverge() {
+        let backedge = CControlTargetId(1);
+        let exit_target = CControlTargetId(2);
+        let statement = c_while(c_int32_literal(1), Vec::new(), c_goto(backedge))
+            .with_backedge_target(backedge)
+            .with_natural_exit_target(exit_target);
+        let check = |candidates| {
+            prove_symbolic_c_loop_exit_with_proven_phases(
+                CState::new(),
+                statement.clone(),
+                PureFactContext::new(),
+                CExecutionEnvironment::new(),
+                true,
+                true,
+                candidates,
+                Vec::new(),
+                Vec::new(),
+            )
+        };
+        let (_, returned) = check(vec![
+            CLoopFinalExitCandidate::new(CState::new(), Vec::new()).with_jump_target(exit_target),
+        ]);
+        let returned = returned.expect("a checked forward jump must form a loop rule");
+        assert_eq!(returned.paths.len(), 1);
+        assert!(matches!(
+            returned.paths[0].outcome,
+            CStatementOutcome::Jump { target, .. } if target == exit_target
+        ));
+        let (_, divergent) = check(Vec::new());
+        let divergent = divergent.expect("a loop with no reachable exits can diverge");
+        assert_eq!(divergent.paths.len(), 1);
+        assert!(matches!(
+            divergent.paths[0].outcome,
+            CStatementOutcome::VerificationDiverges
+        ));
+        let (_, invalid) = check(vec![
+            CLoopFinalExitCandidate::new(CState::new(), Vec::new())
+                .with_jump_target(CControlTargetId(3)),
+        ]);
+        assert!(
+            invalid.is_none(),
+            "a different target cannot certify this loop"
+        );
+    }
+
+    #[test]
     fn checked_loop_exit_copies_share_their_fact_storage() {
         for count in [4usize, 64, 1024] {
             let _session = crate::kernel::VerificationSession::enter();
@@ -574,6 +631,7 @@ mod loop_exit_sharing_tests {
                 });
             assert!(break_work >= count && break_work <= count * 4 + 32);
             assert!(final_work >= count && final_work <= count * 4 + 32);
+            let jump_exit = final_exit.clone().with_jump_target(CControlTargetId(2));
             for _ in 0..16 {
                 let copied_break = break_exit.clone();
                 let copied_final = final_exit.clone();
@@ -587,6 +645,12 @@ mod loop_exit_sharing_tests {
                 ));
                 assert_eq!(copied_break.pure_facts(), facts);
                 assert_eq!(copied_final.pure_facts(), facts);
+                let copied_jump = jump_exit.clone();
+                assert_eq!(copied_jump.jump_target(), Some(CControlTargetId(2)));
+                assert!(std::ptr::eq(
+                    jump_exit.pure_facts(),
+                    copied_jump.pure_facts()
+                ));
             }
         }
     }
@@ -4431,18 +4495,26 @@ fn symbolic_c_statement_execution_with_loop_rule(
     environment: &CExecutionEnvironment,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
     // A rule's paths are the loop statement's successors: the joined exit,
-    // a proven-divergent loop, and each `return` the body reaches. A returned
+    // a proven-divergent loop, each checked natural forward jump, and each
+    // `return` the body reaches. A returned
     // path leaves the function from inside the loop; the rule carries it so
     // the enclosing execution continues with it as a returned path instead of
     // certifying the function on the exit path alone.
     let loop_rule = (matches!(statement, CStatement::While { .. })
         && paths.iter().all(|path| {
-            matches!(
+            (matches!(
                 path.outcome,
                 CStatementOutcome::Normal(_)
                     | CStatementOutcome::Return { .. }
                     | CStatementOutcome::VerificationDiverges
-            ) && path.obligations.iter().all(ProofObligation::is_assumable)
+            ) || matches!(
+                (&statement, &path.outcome),
+                (CStatement::While {
+                    backedge_target: Some(_),
+                    natural_exit_target: Some(exit_target),
+                    ..
+                }, CStatementOutcome::Jump { target, .. }) if target == exit_target
+            )) && path.obligations.iter().all(ProofObligation::is_assumable)
         }))
     .then(|| CVerifiedLoopRule {
         symbolic_entry_state: state.clone(),

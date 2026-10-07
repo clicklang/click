@@ -474,11 +474,11 @@ impl<'a> Proof<'a> {
 
         let mut facts = self.facts().clone();
         let mut added_facts = Vec::new();
-        for fact in applied {
-            if !facts.contains(&fact) {
+        for fact in &applied {
+            if !facts.contains(fact) {
                 added_facts.push(fact.clone());
             }
-            facts = facts.with_kernel_checked_fact(fact);
+            facts = facts.with_kernel_checked_fact(fact.clone());
         }
         let complete = self
             .goal()
@@ -487,8 +487,8 @@ impl<'a> Proof<'a> {
             self.state().locals().clone(),
             facts,
             complete,
-            added_facts.clone(),
             added_facts,
+            applied,
         ))
     }
 
@@ -540,8 +540,8 @@ impl<'a> Proof<'a> {
             self.state().locals().clone(),
             checked.facts,
             complete,
-            checked.added_facts.clone(),
             checked.added_facts,
+            checked.checked_facts,
         ))
     }
 
@@ -599,8 +599,8 @@ impl<'a> Proof<'a> {
             checked.facts,
             complete,
             execution,
-            checked.added_facts.clone(),
             checked.added_facts,
+            checked.checked_facts,
         ))
     }
 
