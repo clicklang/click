@@ -1317,23 +1317,22 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
                                                                 match xsib ensuring {
-                                                                    owns uu: ctx_at(parent, root);
-                                                                    fact uu.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    owns xs: rb_at(xid->rb_left);
+                                                                    fact xs.model == xsib;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(0), { model: RbTree::Empty });
-                                                                        let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
-                                                                        let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
-                                                                have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
                                                         }
                                                             have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
@@ -1843,23 +1842,22 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
                                                                 match xsib ensuring {
-                                                                    owns c: ctx_at(node, root);
-                                                                    fact c.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    owns xs: rb_at(xid->rb_left);
+                                                                    fact xs.model == xsib;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(0), { model: RbTree::Empty });
-                                                                        let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
-                                                                        let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
-                                                                have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
                                                         }
                                                             have rb_parent_is(rb_reparent(nleft, gparent), gparent) == 1 by {
@@ -2512,23 +2510,22 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
                                                                 match xsib ensuring {
-                                                                    owns c: ctx_at(node, root);
-                                                                    fact c.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    owns xs: rb_at(xid->rb_left);
+                                                                    fact xs.model == xsib;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(0), { model: RbTree::Empty });
-                                                                        let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
-                                                                        let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
-                                                                have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                let c = fold(ctx_at(node, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                have c.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
                                                         }
                                                             have rb_parent_is(rb_reparent(nright, gparent), gparent) == 1 by {
@@ -3006,23 +3003,22 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 }
                                                                 let { sibling: xs, up: xu } = unfold(uu);
                                                                 match xsib ensuring {
-                                                                    owns uu: ctx_at(parent, root);
-                                                                    fact uu.model == Context::Right(xid, xgp, xcol, xsib, xup);
+                                                                    owns xs: rb_at(xid->rb_left);
+                                                                    fact xs.model == xsib;
                                                                 } {
                                                                     RbTree::Empty => {
                                                                         unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(0), { model: RbTree::Empty });
-                                                                        let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(0), { model: xsib });
                                                                     },
                                                                     RbTree::Node(yid, yp, ycol, yl, yr) => {
                                                                         let { left: yl_at, right: yr_at } = unfold(xs);
                                                                         step();
-                                                                        let xs = fold(rb_at(yid), { model: RbTree::Node(yid, yp, ycol, yl, yr) }, { left: yl_at, right: yr_at });
-                                                                        let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                        let xs = fold(rb_at(yid), { model: xsib }, { left: yl_at, right: yr_at });
                                                                     },
                                                                 }
-                                                                have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); assumption(); }
+                                                                let uu = fold(ctx_at(parent, root), { model: Context::Right(xid, xgp, xcol, xsib, xup) }, { sibling: xs, up: xu });
+                                                                have uu.model == uup by { rewrite(uup == Context::Right(xid, xgp, xcol, xsib, xup)); normalize(); }
                                                             },
                                                         }
                                                             have rb_parent_is(rb_reparent(csib, gparent), gparent) == 1 by {
