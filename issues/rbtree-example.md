@@ -26,8 +26,12 @@ successor and nonempty replacement-child branches still need their exit facts.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
-The C port is currently blocked by [loaded tagged-null conversion](../bugs/tagged-null-load-cannot-convert-to-pointer.md), reduced from the root-leaf
-case. Chunk 11 remains unproved; fix that verifier bug before resuming it.
+The loaded tagged-null conversion bug found in the root-leaf case is also
+fixed: explicit 64-bit casts now accept values proven zero by the current
+facts. `mdtests/tagged_pointer_null_word.md` covers loaded zero and masked
+loaded tag words, with a separate nonzero-load rejection fixture. The original
+C erase attempt now passes the parent cast; its ownership proof and the rest
+of chunk 11 remain unfinished.
 
 This section records what changed in the verifier since the insert proof was
 first written, and how to write the erase proofs so they do not need the same
