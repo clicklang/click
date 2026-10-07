@@ -11300,28 +11300,30 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                     simp();
                 }
                 preserve by {
-                    unfold(all_le_range);
-                    if p[j + 1] < p[j] {
+                    branch ensuring {
+                        fact p[j] <= p[j + 1];
+                        fact all_le_range(p, 0, j, p[j + 1]);
+                    } then {
                         step();
                         step();
                         step();
-                        step();
-                        step();
-                        have all_le_range(p, 0, j, p[j]) by {
+                        have defined(j + 1) by { simp(); }
+                        have p[j] <= p[j + 1] by { simp(); }
+                        have all_le_range(p, 0, j, p[j + 1]) by {
                             unfold(all_le_range);
                             simp();
                         }
-                        close_invariants();
                     } else {
-                        step();
-                        step();
-                        step();
-                        have all_le_range(p, 0, j, p[j]) by {
+                        have defined(j + 1) by { simp(); }
+                        have p[j] <= p[j + 1] by { simp(); }
+                        have all_le_range(p, 0, j, p[j + 1]) by {
                             unfold(all_le_range);
                             simp();
                         }
-                        close_invariants();
                     }
+                    step();
+                    unfold(all_le_range);
+                    close_invariants();
                 }
             }
             step();

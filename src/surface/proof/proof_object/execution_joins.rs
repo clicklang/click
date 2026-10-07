@@ -1221,8 +1221,51 @@ impl<'a> Proof<'a> {
             ),
         }
         .map_err(|message| {
+            // The kernel proves each interface fact in each arm from facts
+            // that are already there, the fact's side conditions included.
+            // The arm's own check above does not ask for those, so a fact
+            // an arm proved can still be refused here. Say which fact, in
+            // which arm, and what that arm does not hold.
+            let missing = (message
+                == "an interface fact is not established by both concrete arms")
+                .then(crate::kernel::proof::take_unestablished_interface_goal)
+                .flatten()
+                .map(|missing| {
+                    let fact = assertions
+                        .iter()
+                        .filter_map(|assertion| match assertion {
+                            ProofAssertion::Fact(fact) => Some(fact),
+                            ProofAssertion::Resource(_) => None,
+                        })
+                        .nth(missing.fact)
+                        .map_or_else(String::new, |fact| {
+                            format!(
+                                " `{}`",
+                                crate::surface::diagnostics::describe_click_proposition(fact)
+                            )
+                        });
+                    let arm = match (rejoins_cases, missing.arm) {
+                        (true, 0) => "first",
+                        (true, _) => "second",
+                        (false, 0) => "then",
+                        (false, _) => "else",
+                    };
+                    let goal = crate::surface::diagnostics::describe_required_pure_fact(
+                        &missing.goal,
+                        context.parsed_function.parameters(),
+                        context.arguments,
+                    );
+                    if missing.side_condition {
+                        format!(
+                            ": the {arm} arm holds the interface fact{fact} but not what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
+                        )
+                    } else {
+                        format!(": the {arm} arm does not hold the interface fact{fact}")
+                    }
+                })
+                .unwrap_or_default();
             self.step_error(format!(
-                "kernel rejected the checked `ensuring` interface: {message}"
+                "kernel rejected the checked `ensuring` interface: {message}{missing}"
             ))
         })?;
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);

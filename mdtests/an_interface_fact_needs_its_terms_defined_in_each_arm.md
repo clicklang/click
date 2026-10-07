@@ -1,21 +1,11 @@
-# bubble_pass3 moves the maximum to the end
+# An interface fact needs its terms defined in each arm
 
-This checks the first loop-invariant sorting step: one bubble-sort pass over
-three cells should establish that every earlier cell is less than or equal to
-the final cell. It intentionally does not prove permutation.
-
-The invariant depends on whether the swap ran, so the two arms of the C `if`
-cannot be joined keeping only what they agree on, which is all the automatic
-loop closer does at an `if`. The body is written out, and its `branch` says
-what both arms establish: after the `if`, `p[j] <= p[j + 1]`, and every
-earlier cell is at most `p[j + 1]`. Each arm proves both from what it did,
-and the rest of the iteration is checked once on the path that leaves the
-`if`.
-
-Each arm also proves `defined(j + 1)`. An interface fact holds in an arm
-only together with what its terms need to denote a value, and `p[j + 1]`
-needs `j + 1` not to overflow
-([`an_interface_fact_needs_its_terms_defined_in_each_arm.md`](an_interface_fact_needs_its_terms_defined_in_each_arm.md)).
+This is `bubble_pass3_max_suffix` without `have defined(j + 1)` in the arms.
+Each arm proves `p[j] <= p[j + 1]`, and the join still refuses the interface:
+a fact holds in an arm only together with what its terms need to denote a
+value, and `p[j + 1]` needs `j + 1` not to overflow. The join proves that
+from facts the arm already holds and does not search for it, so the arm has
+to have stated it. The refusal says so.
 
 ```c filename=bubble_pass3.c
 int32 bubble_pass3(int32 p[3]) {
@@ -66,14 +56,12 @@ int32 bubble_pass3(int32 p[3]) {
                 step();
                 step();
                 step();
-                have defined(j + 1) by { simp(); }
                 have p[j] <= p[j + 1] by { simp(); }
                 have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
                     simp();
                 }
             } else {
-                have defined(j + 1) by { simp(); }
                 have p[j] <= p[j + 1] by { simp(); }
                 have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
@@ -93,5 +81,5 @@ int32 bubble_pass3(int32 p[3]) {
 ```
 
 ```expect
-pass
+fail: the then arm holds the interface fact `p[j] <= p[(j + 1)]` but not what its terms need to denote a value
 ```

@@ -1248,6 +1248,35 @@ fn abstract_c_state_for_join_across_with_policy(
             collect_c_value_bitvector_variables(value, &mut existing_variables);
         }
     }
+    // The interface join takes that rule on trust. Debug builds, which
+    // the gate runs, check it: no identity an arm holds from the execution's
+    // range may lie at or above the mark the join counts from. A stale mark
+    // is how a join hands a fresh local an identity already in use; a loop
+    // tactic that did not move its proof's counter past its rule's
+    // identities did exactly that.
+    #[cfg(debug_assertions)]
+    if preserve_exact_common_memory {
+        crate::instrumentation::uncharged_debug_check(|| {
+            let mut held = BTreeSet::new();
+            for sibling in sibling_states {
+                collect_c_state_bitvector_variables(sibling, &mut held);
+            }
+            for value in stable_entry_locals.values() {
+                collect_c_value_bitvector_variables(value, &mut held);
+            }
+            let mark = ExecutionBudget::KERNEL_VARIABLE_BASE + next_kernel_variable;
+            let stale = held
+                .iter()
+                .filter(|variable| {
+                    variable.0 >= mark && variable.0 < ExecutionBudget::KERNEL_VARIABLE_CEILING
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                stale.is_empty(),
+                "an interface join counts fresh identities from {mark}, but its arms already hold {stale:?}"
+            );
+        });
+    }
     // The abstraction allocates through an execution budget, which is the one
     // counter every kernel allocation under this execution uses. Starting it
     // at the arms' counter rather than at the range's base keeps a join off
