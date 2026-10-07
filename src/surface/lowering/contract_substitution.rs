@@ -2417,11 +2417,14 @@ fn collect_contract_expression_referenced_names_one(
             collect_contract_expression_referenced_names(left, names);
             collect_contract_expression_referenced_names(right, names);
         }
-        ContractExpression::QualifiedC {
-            lowered: expression,
-            ..
+        // A qualified C object is referenced under its qualified spelling as
+        // well as through whatever its lowering names, so a body that reads
+        // one is seen to mention it (`reject_pure_bodies_reading_c_objects`).
+        ContractExpression::QualifiedC { name, lowered } => {
+            names.insert(name.clone());
+            collect_c_expression_referenced_names(lowered, names);
         }
-        | ContractExpression::CUnary {
+        ContractExpression::CUnary {
             lowered: expression,
             ..
         }

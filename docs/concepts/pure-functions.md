@@ -73,6 +73,47 @@ ensures permutation(p, old(p), 0, n) by auto;
 The first `p` means the current array. `old(p)` means the function-entry array
 at the same pointer.
 
+## Bodies read only their parameters
+
+A body may name its parameters, its own `let`, fold and quantifier bindings,
+and other pure functions. It may not read a C object by name: a file-scope
+variable such as `counter`, or any object by its qualified `unit::counter`
+spelling, is refused:
+
+<!-- verified-example: mdtests/a_pure_function_reading_a_global_by_name_is_refused.md -->
+```click
+function read_counter(x: int32) -> int32 {
+    counter + x
+}
+```
+
+An application is a term over its argument values, and the only memory it
+carries is the snapshot inside an array-ref argument. A body that read
+`counter` directly would make `read_counter(0)` one term before and after a
+store to `counter`, so a `requires` fact about it would prove a false
+`ensures`. Pass the value in instead; the application then says which value it
+was applied to, and `old(...)` names the entry value as usual:
+
+<!-- verified-example: mdtests/a_pure_function_takes_a_global_value_as_an_argument.md -->
+```click
+function read_counter(c: int32, x: int32) -> int32 {
+    c + x
+}
+
+int32 bump() {
+    owns &counter[0..1];
+    requires counter == 5;
+    requires read_counter(counter, 0) == 5;
+    ensures counter == 6;
+    ensures read_counter(old(counter), 0) == 5;
+} by {
+    execute();
+    simp();
+}
+```
+
+The same rule applies to [predicate bodies](predicates.md#bodies-read-only-their-parameters).
+
 ## Folds
 
 Range folds express computations over ranges:
