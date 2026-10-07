@@ -18,15 +18,18 @@ int run(void *p, void *q) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_reverse_join.c";
-abstract resource ticket(p: void*);
+resource ticket(p: void*) {}
 void* worker(void* argument) {
+    owns authority(ticket(argument));
     consumes ticket(argument);
-} by { execute(); simp(); }
+} by { unfold(ticket(argument)); execute(); simp(); }
 int32 run(void* p, void* q) {
+    owns authority(ticket(p));
+    owns authority(ticket(q));
     consumes ticket(p);
     consumes ticket(q);
     requires p != q;
@@ -37,12 +40,18 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch then { have count(ticket(p)) == 1 by { simp(); } step(); simp(); } else {}
+    branch then {
+        have count(ticket(p)) == 1 by { simp(); }
+        unfold(ticket(p));
+        unfold(ticket(q));
+        step(); simp();
+    } else {}
     step();
     branch then {
         step();
         have count(ticket(p)) == 0 by { simp(); }
         have count(ticket(q)) == 1 by { simp(); }
+        unfold(ticket(q));
         step(); simp();
     } else {}
     step();

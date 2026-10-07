@@ -14,26 +14,29 @@ int run(void *p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_pending_helper.c";
-abstract resource ticket(p: void*);
+resource ticket(p: void*) {}
 void* worker(void* argument) {
+    owns authority(ticket(argument));
     consumes ticket(argument);
-} by { execute(); simp(); }
+} by { unfold(ticket(argument)); execute(); simp(); }
 void observe(void* p) {
+    owns authority(ticket(p));
     ensures 1 == 1;
     requires count(ticket(p)) == 1;
 } by { execute(); simp(); }
 int32 run(void* p) {
+    owns authority(ticket(p));
     consumes ticket(p);
     requires count(ticket(p)) == 1;
     ensures result == 0 or result == 1;
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
+    branch then { unfold(ticket(p)); step(); simp(); } else {}
     step();
     step();
     step();
@@ -42,5 +45,5 @@ int32 run(void* p) {
 ```
 
 ```expect
-fail: count(...) requires joining its outstanding worker
+fail: Requires owns authority(ticket(...))
 ```

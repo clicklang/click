@@ -1,6 +1,10 @@
-# Neutral worker contracts do not grant intermediate Count observations
+# A worker without authority cannot keep a lent member
 
-```c filename=modeled_pthread_counted_neutral_pending.c
+The worker declares that it consumes the parent's member but holds no
+authority, so it cannot spend it. Ending with the member unreturned would
+hide it from the population, so the worker contract is refused.
+
+```c filename=modeled_pthread_worker_relinquishes_member_rejected.c
 #include <pthread.h>
 #include <stddef.h>
 void *worker(void *argument) { return NULL; }
@@ -15,22 +19,20 @@ int run(void *p) {
 ```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
-verifying "modeled_pthread_counted_neutral_pending.c";
+verifying "modeled_pthread_worker_relinquishes_member_rejected.c";
 resource ticket(p: void*) {}
 void* worker(void* argument) {
-    owns authority(ticket(argument));
-    owns ticket(argument);
+    consumes ticket(argument);
 } by { execute(); simp(); }
 int32 run(void* p) {
     owns authority(ticket(p));
-    owns ticket(p);
+    consumes ticket(p);
     requires count(ticket(p)) == 1;
     ensures result == 0 or result == 1;
 } by {
     step();
     step();
-    branch then { step(); simp(); } else {}
-    have count(ticket(p)) == 1 by { simp(); }
+    branch then { unfold(ticket(p)); step(); simp(); } else {}
     step();
     step();
     simp();
@@ -38,5 +40,5 @@ int32 run(void* p) {
 ```
 
 ```expect
-fail: which an outstanding worker holds until its pthread_join
+fail: helper contract needs conserved owns resources, a checked consumes/produces effect, or a supported unit exchange
 ```

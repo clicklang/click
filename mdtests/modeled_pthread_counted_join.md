@@ -1,4 +1,4 @@
-# Join commits a worker’s ordinary resource consumption
+# A worker spends its member under authority it holds until join
 
 ```c filename=modeled_pthread_counted_join.c
 #include <pthread.h>
@@ -12,22 +12,24 @@ int run(void *p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_join.c";
-abstract resource ticket(p: void*);
+resource ticket(p: void*) {}
 void* worker(void* argument) {
+    owns authority(ticket(argument));
     consumes ticket(argument);
-} by { execute(); simp(); }
+} by { unfold(ticket(argument)); execute(); simp(); }
 int32 run(void* p) {
+    owns authority(ticket(p));
     consumes ticket(p);
     requires count(ticket(p)) == 1;
     ensures result == 0 or result == 1;
 } by {
     step();
     step();
-    branch then { have count(ticket(p)) == 1 by { simp(); } step(); simp(); } else {}
+    branch then { have count(ticket(p)) == 1 by { simp(); } unfold(ticket(p)); step(); simp(); } else {}
     have old(count(ticket(p))) == 1 by { simp(); }
     step();
     have count(ticket(p)) == 0 by { simp(); }

@@ -49,6 +49,20 @@ pub(super) struct WorkerCompletion {
     facts: Vec<ExecutionPureFact>,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
     population_counts: Vec<WorkerPopulationCount>,
+    creation: Option<WorkerCreation>,
+}
+
+/// Authority-mode creation ledger transport. Create applies the worker's
+/// checked contract under its call identity, exactly as a sequential call
+/// does before it returns, and gives the parent that ledger back without
+/// returning the worker's resources. Join performs the sequential return:
+/// the worker's outputs move back to the parent and the call must retain
+/// nothing. Join itself authorizes no population transition.
+#[derive(Clone, Debug)]
+pub(super) struct WorkerCreation {
+    pub(super) parent_after_create: super::population_authority::c_creation::CreationEvents,
+    pub(super) worker: super::population_authority::c_creation::CreationEvents,
+    pub(super) definitions: Vec<super::CCompositeResourceDefinition>,
 }
 
 /// A checked contract effect accumulated into a reserved final total. That
@@ -147,6 +161,7 @@ impl WorkerCompletion {
         facts: Vec<ExecutionPureFact>,
         mutex_ledger: Option<super::mutexes::MutexLedger>,
         population_counts: Vec<WorkerPopulationCount>,
+        creation: Option<WorkerCreation>,
     ) -> Self {
         Self {
             plan,
@@ -156,6 +171,7 @@ impl WorkerCompletion {
             facts,
             mutex_ledger,
             population_counts,
+            creation,
         }
     }
 }
@@ -195,6 +211,7 @@ struct PendingCreateAuthority {
     mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
     opaque_mutex_acquisitions: Option<super::mutexes::OpaqueMutexAcquisitions>,
     named_mutex_authorities: Option<Arc<super::named_authority::NamedMutexAuthorities>>,
+    creation: Option<super::population_authority::c_creation::CreationEvents>,
 }
 
 impl PendingCreateAuthority {
@@ -209,6 +226,7 @@ impl PendingCreateAuthority {
             mutex_input_reservations: state.mutex_input_reservations.clone(),
             opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
             named_mutex_authorities: state.named_mutex_authorities.clone(),
+            creation: state.population_effects.creation.clone(),
         }
     }
 
@@ -223,6 +241,7 @@ impl PendingCreateAuthority {
         state.mutex_input_reservations = self.mutex_input_reservations.clone();
         state.opaque_mutex_acquisitions = self.opaque_mutex_acquisitions.clone();
         state.named_mutex_authorities = self.named_mutex_authorities.clone();
+        Arc::make_mut(&mut state.population_effects).creation = self.creation.clone();
     }
 }
 
@@ -299,6 +318,7 @@ impl PendingThreadCreate {
                     mutex_input_reservations: storage.success.mutex_input_reservations.clone(),
                     opaque_mutex_acquisitions: storage.success.opaque_mutex_acquisitions.clone(),
                     named_mutex_authorities: storage.success.named_mutex_authorities.clone(),
+                    creation: storage.success.creation.clone(),
                 },
                 failure: PendingCreateAuthority {
                     resources: storage.failure.resources.clone(),
@@ -310,6 +330,7 @@ impl PendingThreadCreate {
                     mutex_input_reservations: storage.failure.mutex_input_reservations.clone(),
                     opaque_mutex_acquisitions: storage.failure.opaque_mutex_acquisitions.clone(),
                     named_mutex_authorities: storage.failure.named_mutex_authorities.clone(),
+                    creation: storage.failure.creation.clone(),
                 },
                 deltas: storage.deltas.with_inserted(storage.next_delta, delta),
                 next_delta: storage.next_delta + 1,
@@ -337,6 +358,7 @@ impl PendingThreadCreate {
             mutex_input_reservations: authority.mutex_input_reservations.clone(),
             opaque_mutex_acquisitions: authority.opaque_mutex_acquisitions.clone(),
             named_mutex_authorities: authority.named_mutex_authorities.clone(),
+            creation: authority.creation.clone(),
         };
         let mut deltas = PersistentMap::default();
         for (index, delta) in &storage.deltas {
@@ -545,6 +567,26 @@ impl ThreadLedger {
 
     fn right(&self, handle: ThreadHandle) -> Option<&Arc<CompletionRight>> {
         self.storage.rights.get(&handle)
+    }
+
+    /// Whether an outstanding worker returns this exact authority at join.
+    /// Used only to explain a refused observation; work is linear in the
+    /// live workers of this path.
+    pub(super) fn lends_population_authority(
+        &self,
+        description: &super::ResourceDescription,
+    ) -> bool {
+        self.storage.rights.iter().any(|(_, right)| {
+            crate::instrumentation::record_deterministic_work(1);
+            right.completion.creation.is_some()
+                && right.completion.outputs.facts().iter().any(|fact| {
+                    matches!(
+                        fact,
+                        CResourceFact::Own(super::CResource::PopulationAuthority(lent), _)
+                            if lent == description
+                    )
+                })
+        })
     }
 
     pub(super) fn has_mutex_workers(&self, mutex: &Pointer) -> bool {
@@ -844,6 +886,10 @@ impl PreparedThreadCreate<'_> {
         for count in &self.completion.population_counts {
             count.reserve(&mut next.parent);
         }
+        if let Some(creation) = &self.completion.creation {
+            Arc::make_mut(&mut next.parent.population_effects).creation =
+                Some(creation.parent_after_create.clone());
+        }
         next.parent.mutex_ledger = self.completion.mutex_ledger.clone();
         next.parent.named_mutex_authorities = self.retained_names;
         let before_loans = self.parent.parent.loan_ledger().expect("parent ledger");
@@ -1066,6 +1112,40 @@ impl ThreadContext {
         }
         let after_loans = recovery.ledger.clone();
         let mut next = self.clone();
+        if let Some(creation) = &completion.creation {
+            let current = self
+                .parent
+                .population_effects
+                .creation
+                .as_ref()
+                .ok_or("worker join lost the parent's creation history")?;
+            let mut worker = self.parent.clone();
+            Arc::make_mut(&mut worker.population_effects).creation =
+                Some(current.return_to(&creation.worker));
+            let mut from = self.parent.clone();
+            Arc::make_mut(&mut from.population_effects).creation = Some(creation.worker.clone());
+            let returned = super::functions::transfer_population_call_facts(
+                worker,
+                &from,
+                &self.parent,
+                &self
+                    .parent
+                    .clone()
+                    .with_resource_context(recovery.resources.clone()),
+                completion.outputs.facts().iter(),
+                &creation.definitions,
+                assumptions,
+            )
+            .map_err(|_| "worker outputs cannot return through the population ledger")?;
+            let finished = returned
+                .population_effects
+                .creation
+                .as_ref()
+                .expect("returned worker ledger")
+                .finish_call(current)
+                .map_err(|_| "worker retained population ownership at join")?;
+            Arc::make_mut(&mut next.parent.population_effects).creation = Some(finished);
+        }
         next.parent = next
             .parent
             .with_resource_context(recovery.resources)

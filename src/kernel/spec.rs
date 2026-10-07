@@ -6324,7 +6324,17 @@ fn evaluate_resource_count_paths(
                         &path_assumptions,
                     )
                 {
-                    return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
+                    return Err(
+                        if state
+                            .thread_ledger
+                            .as_ref()
+                            .is_some_and(|ledger| ledger.lends_population_authority(&description))
+                        {
+                            ExecutionLimit::AuthorityCountLentToWorker
+                        } else {
+                            ExecutionLimit::AuthorityCountNeedsOwnership
+                        },
+                    );
                 }
                 let symbolic = if let Some(member) = member {
                     let mut arguments = member.arguments().to_vec();

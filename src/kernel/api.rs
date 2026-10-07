@@ -2578,6 +2578,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::AuthorityCountNeedsOwnership => {
             "count(...) requires owning authority for that population".to_string()
         }
+        ExecutionLimit::AuthorityCountLentToWorker => {
+            "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
+        }
         ExecutionLimit::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
         // The kernel knows the identity is absent; it does not know the name
         // the reader wrote for it. A caller that has the source expression

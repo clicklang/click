@@ -1,12 +1,10 @@
 # Worker authority protocol
 
-This page freezes how population authority and members cross
-`pthread_create` and `pthread_join` for workers that hold no lock. It is
-milestone 6 chunk 1 of `issues/authority-migration.md` and constrains the
-remaining milestone 4 and 6 chunks. It is a design, not an implemented
-surface: authority-mode verification still refuses `pthread_create`, and the
-worker fixtures remain on the legacy path until milestone 6 chunks 2 and 3
-implement and migrate them. The
+This page specifies how population authority and members cross
+`pthread_create` and `pthread_join` for workers that hold no lock. Milestone 6
+chunk 1 of `issues/authority-migration.md` froze it, and chunks 2 and 3
+implemented it and migrated every worker fixture; the
+[implementation](#implementation) section says how. The
 [object-anchored population authority](authority-establishment-review.md)
 page holds the sequential rules this protocol extends, and the
 [consumer inventory](authority-migration-inventory.md) records migration
@@ -202,6 +200,27 @@ negative fixture keeps the refusal it protected:
   property, that a member alone cannot expose shared accounting, with
   negatives in which a worker that borrows only the member observes the count
   or accesses the counter, and both fail.
+
+## Implementation
+
+Authority-mode create applies the worker's verified contract exactly as the
+entry and body of a sequential call do: the checked partition moves the task
+resources, including any `owns authority(R(p))`, to the worker's call identity
+in the creation ledger, and the contract's checked member effects apply under
+that identity. The parent then continues with that ledger but without the
+worker's resources, so it holds neither the lent authority nor the lent
+members. A failed create selects the parent's unchanged ledger. Join performs
+the sequential return: the worker's outputs move back to the parent through
+the same ledger transfer, and the call must retain nothing. Join itself makes
+no population transition, and every count observed afterward is read from the
+ledger. A count whose authority is lent reports `count(...) requires owning
+authority for that population, which an outstanding worker holds until its
+pthread_join`. The contract-claims recheck replays both transitions, and
+`click audit` expands and reverifies the migrated fixtures.
+
+A worker contract is admitted by the sequential authority-mode rules, so a
+worker that consumes or produces authority, or keeps a member it cannot
+spend, is refused at create or in its own proof.
 
 ## Implementation chunks
 

@@ -6129,6 +6129,38 @@ impl CState {
             .collect::<Vec<_>>();
         if let [held] = held.as_slice() {
             self.import_opaque_population_quantity(authority, held)
+        } else if held.len() > 1
+            && let Some(total) = held.iter().try_fold(0u32, |total, fact| {
+                fact.owned_quantity_term()
+                    .and_then(Bitvector32Term::as_const)
+                    .and_then(|quantity| total.checked_add(quantity))
+            })
+        {
+            // Separate contract clauses, such as a retained `owns` member
+            // beside a `consumes` batch, are one custody of their summed units.
+            if authority
+                .owned_quantity_term()
+                .and_then(Bitvector32Term::as_const)
+                != Some(1)
+                || !self.resources.contains_exact_representation(authority)
+            {
+                return Err(
+                    "batch import requires this authority's exact declared owned quantity".into(),
+                );
+            }
+            let events = self
+                .population_effects
+                .creation
+                .as_ref()
+                .ok_or("batch import requires authority mode")?
+                .import_observable_contract_population_quantity(
+                    description,
+                    &Bitvector32Term::Constant(total),
+                )
+                .map_err(|refusal| format!("batch population import refused: {refusal:?}"))?;
+            let mut next = self.clone();
+            Arc::make_mut(&mut next.population_effects).creation = Some(events);
+            Ok(next)
         } else {
             self.import_opaque_population(
                 authority,
@@ -6972,6 +7004,18 @@ impl CState {
         // contract: on birth the declared memory is consumed below, and on
         // death the imported member is consumed below. The concrete caller
         // still checks the live anchor and transfers those exact resources.
+        // An imported population has no local storage to check; spending a
+        // member this proof does not hold is a missing member, not storage.
+        if !imported_member_exchange
+            && !produce
+            && self
+                .population_effects
+                .creation
+                .as_ref()
+                .is_some_and(|events| events.recognizes_imported_population(&description))
+        {
+            return Err(format!("Requires owns {name}(p)"));
+        }
         if !imported_member_exchange
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
