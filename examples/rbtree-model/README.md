@@ -280,6 +280,39 @@ rejected with "returns List<...>, but its body is not algebraic". The append
 form is also stronger, because it fixes the removed element's position instead
 of relying on the identity's absence from the prefix.
 
+### Black successor and the rebalancing start
+
+Import `rbtree_erase_splice.click` for the successor descent and the
+black-successor/no-right-child splice. `RbMinimum::Found(identity, color,
+right_child)` records the minimum's original state without its parent payload;
+`rb_minimum_reparent` and `rb_remove_min_reparent` let the right root move to
+its new parent without losing the minimum's identity or the removal equation.
+
+`rb_successor_context(successor, parent, color, left, right, up)` starts with
+`Right(successor, parent, color, rb_reparent(left, successor), up)` and descends
+`rb_reparent(right, successor)` through `rb_min_context`. An immediate
+successor adds no frame; a deeper successor adds one `Left` frame per descent.
+This locates the hole and the fixup parent after the C unlink's writes; it
+does not change their execution order. The C finds the successor before
+reparenting the right root.
+
+`rb_erase_black_successor_splice` assumes the original subtree is red-black,
+its outer context is valid, its parent links are consistent, and the right
+subtree's minimum is `Found(successor, Black, Empty)`. It establishes:
+
+- `ctx_rb` of the resulting hole context at `Succ(Zero), Black`, the missing
+  black level needed by the existing `ctx_erase_case*` lemmas;
+- plugging `Empty` into that context equals the whole successor-spliced tree;
+- consistent parent links at the hole and throughout the surrounding tree;
+- the spliced subtree's in-order sequence is the original left sequence
+  followed by the original right sequence, removing the erased root's occurrence.
+
+The whole spliced tree still has a black deficit. Red successors and successors
+with a nonempty right child take different C branches and are not covered by
+this theorem. `successor_splice_checks.click` verifies the immediate and deep
+cases (including a red right-subtree root), their context shapes, the missing
+black level, and the excluded successor states.
+
 ## Context and `plug`
 
 `plug(ctx, sub)` rebuilds the whole model from a context and the focused
@@ -392,9 +425,9 @@ height, `Nat::Succ(Nat::Zero)`, while the actual hole is empty.
 including a nonempty inner spine, and rejects height/color mismatches and a
 red whole-tree root.
 
-These are composition tools for chunk 10. The successor descent, reparenting,
-and two-child splice still need to establish their premises before the C
-unlink proof can start rebalancing.
+These are composition tools for chunk 10. The black-successor splice above
+carries the outer context directly through its descent; the C unlink proof
+still needs to establish that theorem's premises from the concrete resources.
 
 ## The context-level red-black predicate
 
