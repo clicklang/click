@@ -5207,19 +5207,20 @@ impl Parser {
             return Ok(proof);
         }
 
-        // `by auto;` and `by simp;` are whole proofs with their own spelling;
-        // any other single tactic is the one-step script `by { T(...); }`.
-        if matches!(self.peek(), Some(Token::Ident(name)) if is_tactic_name(name))
-            && self.peek_next() == Some(&Token::Semicolon)
-        {
-            return Ok(SourceProof::Tactic(self.parse_tactic()?));
-        }
+        // Only `by auto;` and `by simp;` are written without a block. A
+        // proof written as tactics needs its braces: source tools address a
+        // proof's tactics through the block that holds them.
         match self.peek() {
-            Some(Token::Ident(_)) if self.peek_next() == Some(&Token::LParen) => {
-                Ok(SourceProof::Script(vec![self.parse_proof_tactic()?]))
+            Some(Token::Ident(name)) if is_tactic_name(name) => {
+                if self.peek_next() == Some(&Token::LParen) {
+                    return Err(self.error(format!(
+                        "`by {name}(...)` needs a block: write `by {{ {name}(...); }}`, or `by {name};` for the whole-proof form"
+                    )));
+                }
+                Ok(SourceProof::Tactic(self.parse_tactic()?))
             }
             Some(Token::Ident(name)) => Err(self.error(format!(
-                "expected a proof after `by`, got `{name}`: write one tactic call such as `{name}();`, or a block `{{ ... }}`"
+                "expected a proof after `by`, got `{name}`: a proof written as tactics needs a block, `by {{ {name}(...); }}`"
             ))),
             Some(token) => Err(self.error(format!("expected a proof after `by`, got {token}"))),
             None => Err(self.error("expected a proof after `by`, got end of input")),

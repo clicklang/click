@@ -8,7 +8,7 @@ refused and names that side. `have x <= 10 by simp;` before it repairs it.
 theorem assumption_missing_side(x: int32) {
     requires 0 <= x;
     requires x <= 5;
-    ensures 0 <= x and x <= 10 by assumption();
+    ensures 0 <= x and x <= 10 by { assumption(); }
 }
 ```
 

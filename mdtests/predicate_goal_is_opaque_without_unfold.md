@@ -11,7 +11,7 @@ theorem predicate_goal_is_opaque(c: int32) {
     requires 0 <= c;
     requires c <= 5;
     ensures 0 <= c by {
-        have small(c) by assumption();
+        have small(c) by { assumption(); }
         assumption();
     }
 }
