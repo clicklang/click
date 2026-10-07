@@ -1076,13 +1076,21 @@ read as an observation supported by whatever holds that memory, and folding a
 unit places no hold. Lending a unit of a bodyless token population leaves the
 remaining units usable.
 
-A resource body may place `guarded_by object->mutex;` after any field
-declarations to identify the C mutex intended to guard the whole body. The
-modeled pthread runtime accepts this for an exclusive, unmatched resource:
-initialization escrows a folded instance, locking transfers it to the current
-execution path, and unlocking requires it folded again. In an execution proof,
-`held(&object->mutex)` states whether that path owns the lock guard; it does
-not by itself grant the protected resource.
+An ordinary exclusive resource needs no mutex-specific declaration to be
+protected by a mutex. Initialization associates it: the proof supplies a
+folded instance as the initialization's `state`, the mutex escrows it, locking
+transfers it to the current execution path, and unlocking requires it folded
+again. A helper names the association with a typed use, which identifies both
+the mutex and the protected resource:
+
+<!-- verified-example: mdtests/mutex_use_resource_type_without_annotation.md -->
+```click
+void increment(struct counter *counter) {
+    owns access: mutex_use(&counter->mu, counter_state(counter));
+```
+
+In an execution proof, `held(&object->mutex)` states whether that path owns the
+lock guard; it does not by itself grant the protected resource.
 
 The built-in `mutex_guard(mu)` names the exclusive authority for the current
 acquisition of `mu`. It grants no memory access by itself. A declared resource

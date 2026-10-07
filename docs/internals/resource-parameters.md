@@ -139,9 +139,8 @@ checked lifetime-to-use loan determines the association. There is no separate
 resource-description argument to infer or supply.
 
 Initialization establishes the association from the owned state and mutex.
-An optional legacy `guarded_by` annotation further constrains the address;
-ordinary protected resources need no such annotation. No public
-`guarded_by(P, mu)` query is required.
+Protected resources need no mutex annotation, and no public association query
+is required.
 Unlock requires the exact acquisition and actual ownership of the full
 protected assertion. A replacement instance is valid when that assertion
 permits it; matching only the family is insufficient. Outstanding payload
@@ -169,7 +168,6 @@ The current implementation has these distinct capabilities:
 
 | Mechanism | What it establishes | What it does not establish |
 | --- | --- | --- |
-| `guarded_by counter->mu` in `counter_state` | Checks the mutex to which this resource may be published. | Does not assert that an arbitrary input authority was initialized with this resource. |
 | Initialization with `{ state: state }` | Consumes an owned instance and records its assertion for the fresh initialization. | Does not expose that association in an independent helper's unary authority requirement. |
 | Ordinary named child ownership | A parent owns a child; unfolding transfers that ownership to the proof. | Does not model state accessible only after a lock transition. |
 | Ordinary resource fields | Store C values, mathematical integers, or algebraic model values. | Cannot currently hold a resource reference. |
@@ -311,10 +309,10 @@ the worker contract below remains a target, not a verified example.
 The frozen counter worker was tried with the existing requirement
 `owns access: mutex_use(&((struct mutex_counter *)argument)->mutex);`.
 Its lock succeeds, but its ordinary increment fails for missing read authority
-on the counter's `value` field. The declaration of `counter_state` with
-`guarded_by counter->mutex` cannot supply the missing association: an arbitrary
-caller could supply use authority for a different protected assertion at that
-same address.
+on the counter's `value` field. A declaration-level mutex annotation on
+`counter_state` could not have supplied the missing association either: an
+arbitrary caller could supply use authority for a different protected
+assertion at that same address.
 
 The agreed minimum extension is to let an ordinary resource argument appear
 in another resource's arguments. Reuse the existing resource-parameter binder
