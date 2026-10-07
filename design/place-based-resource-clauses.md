@@ -1,8 +1,8 @@
 # Place-based resource clauses
 
-> PROPOSAL (2026-10-07). Nothing here is implemented. It records the problem,
-> the proposed rule, what each current spelling would become, and the
-> questions to settle first.
+> ACCEPTED (2026-10-07), being implemented in the order given below. It
+> records the problem, the rule, what each current spelling becomes, and the
+> questions still open.
 
 ## The problem
 
@@ -104,6 +104,11 @@ target := place
 - There is no `&`. A place already names storage; its address adds nothing.
 - `*p` is the whole object `p` points at. `object(p)` is retired in its
   favour and keeps its generated alignment requirement.
+- `p` alone, for a pointer, is the storage that holds the pointer.
+  `owns a->next` is the slot in `a`; `owns *a->next` is the node behind it.
+  Both are needed, so `owns p` cannot also mean the pointee. A pointer
+  parameter's own slot is not visible to a caller, so `owns p` in a contract
+  is refused with the suggestion `owns *p`.
 - Diagnostics print places.
 
 The same target grammar applies wherever a memory target is written: `owns`,
@@ -142,13 +147,21 @@ too, and three things need a decision.
 **References are spelled as one-element ranges.** C++ `int& value` appears in
 the sidecar as `int32* value` with `owns value[0..1];` and is read as
 `value[0]` (`tests/fixtures/cpp-verification/branch-return`). A Rust `&mut T`
-or `&T` parameter is the same. Under this proposal the referent is the place
-`*value`, so the clause is `owns *value;`. That is how Rust writes the place.
-C++ writes it `value`, since a reference names its referent directly. Either
-the sidecar keeps one spelling for every language, `*value` over the restated
-pointer, or it follows each source language. One spelling is simpler to
-implement and to teach; following the source reads more naturally beside the
-code.
+or `&T` parameter is the same. Decided: each language spells a place the way
+that language does.
+
+| Source | Whole object | Field |
+| --- | --- | --- |
+| C `struct cell *p` | `owns *p` | `owns p->value` |
+| C++ `cell& c` | `owns c` | `owns c.value` |
+| C++ `this` | `owns *this` | `owns this->value` |
+| Rust `c: &mut Cell` | `owns *c` | `owns c.value` |
+| Rust `&mut self` | `owns *self` | `owns self.value` |
+
+A C++ reference names its referent, so there is no separate slot and `owns c`
+is the object. This needs C++ and Rust sidecars to state signatures in the
+source's own parameter names and types, not a C-shaped restatement. That is
+its own step, after the C work.
 
 **Slices carry a separate length.** Rust `bytes: &[u8]` is restated as
 `const uint8* bytes, uint64 bytes_len`, and the clause is
@@ -172,9 +185,6 @@ existing meaning.
   suits this: the sidecar names `self.slot`, and the extent comes from the
   layout the importer was given. A cell range written by hand cannot be
   right across compiler versions.
-
-`this` in C++ and `self` in Rust are restated as a pointer `self`, so the
-whole receiver is `*self` and a field is `self->field`, as today.
 
 Rust's types already say which parameters are borrowed shared, borrowed
 exclusively, or moved. Deriving default `views`, `owns` and `consumes`
@@ -202,18 +212,16 @@ form. It needs an inventory of the proofs that rely on it first.
 5. Rewrite the 68 ranges on struct-typed bases, then make such a range count
    structs.
 
+6. State C++ and Rust sidecar signatures in the source language's own terms
+   and accept that language's place spellings.
+
 Steps 1 and 2 stand alone. Step 5 is the only one that changes the meaning of
 an accepted clause.
 
 ## Open questions
 
-- Is `*p` the right spelling for a whole struct, given that `owns *q` for an
-  `int *q` then means one `int`, the same as `owns q[0]`?
-- For references, one spelling across languages, or each language's own?
 - Should a whole slice have a spelling, and which?
 - What is the explicit form for viewing memory at another width, and how many
   proofs need it?
-- Should `&` be refused outright in step 4, or accepted for one release with
-  a warning?
 - Do resource bodies and `viewable(...)`, `memory(...)` and `separate(...)`
   move together with contract clauses, or after them?

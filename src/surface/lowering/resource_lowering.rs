@@ -2459,6 +2459,14 @@ fn lower_resource_segment_with_values(
         ),
     };
     let base = evaluate(&segment.base, surface_base).map_err(|message| {
+        // A parameter or local has no storage a contract can name.
+        if let CExpression::AddressOf(variable) = &segment.base
+            && let CExpression::Variable(name) = &**variable
+        {
+            return ClickError::new(format!(
+                "could not lower `{resource_name}` resource: `{name}` alone names the variable itself, which a contract cannot own; write `*{name}` for the object it points at"
+            ));
+        }
         ClickError::new(format!(
             "could not lower `{resource_name}` resource: {message} (segment {})",
             super::super::diagnostics::describe_contract_segment(segment)
