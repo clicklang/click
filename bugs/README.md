@@ -21,3 +21,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [`requires x != INT_MIN` does not discharge the overflow of `-x`](negation-not-discharged-by-int-min-disequality.md)
 - [A parent cannot lock its own mutex after joining a typed `mutex_use` worker](mutex-lock-after-joining-typed-worker-refused.md)
 - [An `obtain`ed int32 witness is unbound in a later `have`, `instantiate`, or `contradiction`](obtained-int32-witness-unbound-in-later-tactics.md)
+- [Arithmetic cannot render an observed product after a zero rewrite](arithmetic-cannot-render-observed-product-after-zero-rewrite.md)
+- [Whole-claim expansion fails on proofs with a proof `match`](whole-claim-expansion-fails-on-proof-matches.md)

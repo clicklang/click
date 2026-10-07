@@ -20,8 +20,12 @@ use click::surface::{
     c0_prepared_smart_tactic_source_sites, c0_prepared_tactic_source_position,
     c0_project_smart_tactic_source_sites, c0_project_tactic_source_position,
     c0_smart_tactic_source_sites, c0_tactic_source_position, click_import_sites,
-    expand_c0_prepared_project_tactic_source_at, expand_c0_prepared_tactic_source_at,
+    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
+    expand_c0_prepared_project_claim_source_by_label, expand_c0_prepared_project_tactic_source_at,
+    expand_c0_prepared_tactic_source_at, expand_c0_project_claim_source_by_label,
     expand_c0_project_tactic_source_at, expand_c0_tactic_source_at,
+    expand_program_prepared_claim_source_by_label,
+    expand_program_prepared_project_claim_source_by_label,
     expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
     program_prepared_project_smart_tactic_source_sites,
     program_prepared_project_tactic_source_position, program_prepared_smart_tactic_source_sites,
@@ -69,6 +73,11 @@ the emitted expansion introduced no new smart tactic). By default it stops at
 the first failure and prints an inclusive --start-at resume command.
 Successful progress is concise by default: one row per claim. `--verbose`
 restores one row per smart site.
+
+A claim whose sites are all selected is expanded once, with every site
+together, since expanding one site runs its whole claim. Its sites are audited
+one at a time, as above, only when that whole-claim expansion fails or the
+selection covers the claim in part.
 
 The audit's own checks count deterministic work units, the ones the tactic
 budgets are charged, so machine load cannot change them; wall-clock time is
@@ -679,6 +688,20 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     // Sites of the current claim whose rewrites await its one verification:
     // each site's position in `selected` and its rewritten container.
     let mut pending: Vec<(usize, String)> = Vec::new();
+    // Every inventoried site of each claim, to tell a wholly selected claim
+    // from one a cursor or a change selection covers in part.
+    let mut inventoried_claim_counts: BTreeMap<(PathBuf, String), usize> = BTreeMap::new();
+    for site in &sites {
+        *inventoried_claim_counts
+            .entry((site.click_path.clone(), site.claim.clone()))
+            .or_default() += 1;
+    }
+    // A claim whose sites did not expand together is audited a site at a
+    // time, which names the site at fault. The value is the together
+    // failure and the site failures counted before the claim began: if every
+    // site then passes alone, the together failure is the finding.
+    let mut together_failures: BTreeMap<(PathBuf, String), (String, usize)> = BTreeMap::new();
+    let mut whole_claim_failures = 0;
     let started = Instant::now();
     let deadline = started + arguments.time_limit;
 
@@ -750,6 +773,67 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                         cursor += 1;
                     }
                     continue;
+                }
+            }
+        }
+
+        // A wholly selected claim is expanded once, with all its sites
+        // together: expanding a site runs its whole claim, so expanding them
+        // one at a time runs the claim once per site.
+        let claim_key = (site.click_path.clone(), site.claim.clone());
+        let claim_sites = selected[cursor..]
+            .iter()
+            .take_while(|next| next.click_path == site.click_path && next.claim == site.claim)
+            .count();
+        let at_claim_start = pending.is_empty()
+            && cursor
+                .checked_sub(1)
+                .and_then(|previous| selected.get(previous))
+                .is_none_or(|previous| {
+                    previous.click_path != site.click_path || previous.claim != site.claim
+                });
+        if at_claim_start
+            && arguments.max_sites.is_none()
+            && inventoried_claim_counts.get(&claim_key) == Some(&claim_sites)
+            && !together_failures.contains_key(&claim_key)
+        {
+            print!(
+                "CLAIM [{}/{}] {}  {} ({claim_sites} sites) ... ",
+                selected_claim_order[&claim_key],
+                selected_claim_order.len(),
+                site.click_path.display(),
+                site.claim,
+            );
+            std::io::stdout()
+                .flush()
+                .map_err(|error| format!("failed to flush audit progress: {error}"))?;
+            let current = &mut worker
+                .as_mut()
+                .expect("the selected sidecar session was initialized")
+                .1;
+            match audit_claim_rewrite(site, current, &arguments.limits, deadline) {
+                Ok(costs) => {
+                    if arguments.verbose {
+                        println!("ok ({claim_sites} sites together: {costs})");
+                    } else {
+                        println!("ok ({claim_sites} sites)");
+                    }
+                    cold_reverified_claims.insert(claim_key);
+                    attempted_sites += claim_sites;
+                    audited_sites += claim_sites;
+                    cursor += claim_sites;
+                    continue;
+                }
+                Err(message) => {
+                    if Instant::now() >= deadline || message == RUN_LIMIT_EXHAUSTED {
+                        println!("STOPPED");
+                        println!("    {RUN_LIMIT_EXHAUSTED}");
+                        out_of_time = true;
+                        break;
+                    }
+                    println!("its sites did not expand together; auditing each alone");
+                    println!("    {}", message.replace('\n', "\n    "));
+                    together_failures.insert(claim_key, (message, site_failures));
                 }
             }
         }
@@ -892,6 +976,25 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             }
             pending.clear();
         }
+        if !next_is_same_claim
+            && let Some((message, failures_before)) =
+                together_failures.remove(&(site.click_path.clone(), site.claim.clone()))
+            && site_failures == failures_before
+            && !stop
+        {
+            // Whole-claim expansion is a faster route to the same audit, not
+            // yet a requirement of it: see
+            // `bugs/whole-claim-expansion-fails-on-proof-matches.md`. A claim
+            // whose sites all pass alone has passed; the difference is
+            // reported so it is not lost.
+            println!(
+                "NOTE {}  {}: every site expands alone, but `click expand --claim` on the whole claim fails",
+                site.click_path.display(),
+                site.claim
+            );
+            println!("    {}", message.replace('\n', "\n    "));
+            whole_claim_failures += 1;
+        }
         if stop {
             break;
         }
@@ -912,8 +1015,15 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
 
     println!(
         "\nSUMMARY: {audited_sites} sites passed; {site_failures} site failures; \
-         {session_failures} session failures; {} sites discovered{}",
+         {session_failures} session failures; {} sites discovered{}{}",
         scoped_sites.len(),
+        if whole_claim_failures == 0 {
+            String::new()
+        } else {
+            format!(
+                "; {whole_claim_failures} claim(s) audited a site at a time because whole-claim expansion failed"
+            )
+        },
         if arguments.max_sites.is_some() {
             " (bounded run)"
         } else {
@@ -1589,6 +1699,173 @@ fn render_site_rewrite(rewrite: &SiteRewrite) -> String {
 /// Expands one site and checks everything about the rewrite that does not
 /// need the retained session: the cold comparison and the re-expansion fixed
 /// point.
+/// Audits every smart site of one claim in a single expansion.
+///
+/// The claim is expanded once with all its sites, the expanded claim must
+/// keep no smart tactic, and it is verified in the retained session and
+/// through the cold direct entry point beside the original. Returns the
+/// phase costs for the progress row.
+fn audit_claim_rewrite(
+    site: &AuditSite,
+    worker: &mut AuditSessionWorker,
+    limits: &AuditLimits,
+    deadline: Instant,
+) -> Result<String, String> {
+    let (expanded, expansion) = run_phase("expansion", limits.expansion.within(deadline)?, || {
+        expand_claim_with_source(&site.click_path, &worker.source, &site.claim)
+    })?;
+    let original = worker.source.container_source.clone();
+    if expanded == original {
+        return Err("expansion returned the original sidecar unchanged".to_string());
+    }
+    let expanded_click_source = rewritten_click_source(&worker.source, &expanded)
+        .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
+    claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
+
+    // The fixed point: an expanded claim holds simple tactics only.
+    let remaining = claim_smart_sites(
+        &expanded_click_source,
+        &worker.source.inputs,
+        worker.source.project.as_ref(),
+        &site.claim,
+    )?;
+    if !remaining.is_empty() {
+        return Err(format!(
+            "the expanded claim `{}` still holds {} smart tactic(s): {}",
+            site.claim,
+            remaining.len(),
+            remaining.join(", ")
+        ));
+    }
+
+    let retained = verify_rewrite_in_session(worker, &site.claim, &expanded, limits, deadline)?;
+    let original_cost = cold_verify(
+        &original,
+        &worker.source,
+        &site.claim,
+        limits.verification.within(deadline)?,
+        "original proof-unit verification",
+    )?;
+    let expanded_cost = cold_verify(
+        &expanded,
+        &worker.source,
+        &site.claim,
+        limits.verification.within(deadline)?,
+        "expanded proof-unit verification",
+    )?;
+    if let Some(regression) =
+        performance_regression(original_cost, expanded_cost, limits.performance_slack)
+    {
+        return Err(format!(
+            "{regression}; reproduce the exact expanded workload with:\n  \
+             click expand --claim {} --time-limit {} --output {} {}\n  \
+             click profile {}",
+            shell_quote(&site.claim),
+            format_duration(limits.expansion.time),
+            shell_quote(&audit_artifact_path(&site.click_path).display().to_string()),
+            shell_quote(&site.click_path.display().to_string()),
+            shell_quote(&audit_artifact_path(&site.click_path).display().to_string()),
+        ));
+    }
+    Ok(format!(
+        "expand {expansion}, verify {retained}, cold original {original_cost}, cold rewritten {expanded_cost}"
+    ))
+}
+
+/// The proof container with every smart site of `claim_label` expanded.
+fn expand_claim_with_source(
+    click_path: &Path,
+    source: &AuditSource,
+    claim_label: &str,
+) -> Result<String, String> {
+    let expanded_click = match &source.inputs {
+        CInput::Bundle(sources) => match &source.project {
+            Some(project) => {
+                expand_c0_project_claim_source_by_label(project, &source_refs(sources), claim_label)
+            }
+            None => expand_c0_claim_source_by_label(
+                &source.click_source,
+                &source_refs(sources),
+                claim_label,
+            ),
+        },
+        CInput::Prepared(imports) => match &source.project {
+            Some(project) => {
+                expand_c0_prepared_project_claim_source_by_label(project, imports, claim_label)
+            }
+            None => {
+                expand_c0_prepared_claim_source_by_label(&source.click_source, imports, claim_label)
+            }
+        },
+        CInput::PreparedProgram(import) => match &source.project {
+            Some(project) => {
+                expand_program_prepared_project_claim_source_by_label(project, import, claim_label)
+            }
+            None => expand_program_prepared_claim_source_by_label(
+                &source.click_source,
+                import,
+                claim_label,
+            ),
+        },
+    }
+    .map_err(|error| error.report())?;
+    if looks_like_mdtest(click_path) {
+        source
+            .mdtest
+            .as_ref()
+            .expect("markdown audit sources retain their parsed container")
+            .replace_click_source(&source.container_source, &expanded_click)
+    } else {
+        Ok(expanded_click)
+    }
+}
+
+/// The names of the smart tactics the inventory finds in `claim_label`.
+fn claim_smart_sites(
+    source: &str,
+    inputs: &CInput,
+    project: Option<&ClickProject>,
+    claim_label: &str,
+) -> Result<Vec<String>, String> {
+    let sites = match inputs {
+        CInput::Bundle(sources) => match project {
+            Some(project) => c0_project_smart_tactic_source_sites(
+                &project.with_entry_source(source.to_string()),
+                &source_refs(sources),
+            ),
+            None => c0_smart_tactic_source_sites(source, &source_refs(sources)),
+        },
+        CInput::Prepared(imports) => match project {
+            Some(project) => c0_prepared_project_smart_tactic_source_sites(
+                &project.with_entry_source(source.to_string()),
+                imports,
+            ),
+            None => c0_prepared_smart_tactic_source_sites(source, imports),
+        },
+        CInput::PreparedProgram(import) => match project {
+            Some(project) => program_prepared_project_smart_tactic_source_sites(
+                &project.with_entry_source(source.to_string()),
+                import,
+            ),
+            None => program_prepared_smart_tactic_source_sites(source, import),
+        },
+    };
+    sites
+        .map(|sites| {
+            sites
+                .into_iter()
+                .filter(|site| site.claim_label == claim_label)
+                .map(|site| site.tactic_name)
+                .collect::<Vec<_>>()
+        })
+        .map_err(|error| {
+            format!(
+                "could not inventory smart tactics for `{claim_label}`: {}",
+                error.report()
+            )
+        })
+}
+
 fn audit_site_rewrite(
     site: &AuditSite,
     worker: &mut AuditSessionWorker,
@@ -2128,43 +2405,7 @@ fn reexpand_source_with_inputs(
     rewritten_container: &str,
 ) -> Result<String, String> {
     let claim_sites = |source: &str, inputs: &CInput, project: Option<&ClickProject>| {
-        let sites = match inputs {
-            CInput::Bundle(sources) => match project {
-                Some(project) => c0_project_smart_tactic_source_sites(
-                    &project.with_entry_source(source.to_string()),
-                    &source_refs(sources),
-                ),
-                None => c0_smart_tactic_source_sites(source, &source_refs(sources)),
-            },
-            CInput::Prepared(imports) => match project {
-                Some(project) => c0_prepared_project_smart_tactic_source_sites(
-                    &project.with_entry_source(source.to_string()),
-                    imports,
-                ),
-                None => c0_prepared_smart_tactic_source_sites(source, imports),
-            },
-            CInput::PreparedProgram(import) => match project {
-                Some(project) => program_prepared_project_smart_tactic_source_sites(
-                    &project.with_entry_source(source.to_string()),
-                    import,
-                ),
-                None => program_prepared_smart_tactic_source_sites(source, import),
-            },
-        };
-        sites
-            .map(|sites| {
-                sites
-                    .into_iter()
-                    .filter(|site| site.claim_label == claim_label)
-                    .map(|site| site.tactic_name)
-                    .collect::<Vec<_>>()
-            })
-            .map_err(|error| {
-                format!(
-                    "could not inventory smart tactics for `{claim_label}`: {}",
-                    error.report()
-                )
-            })
+        claim_smart_sites(source, inputs, project, claim_label)
     };
     let original_sites = claim_sites(
         &original.click_source,
