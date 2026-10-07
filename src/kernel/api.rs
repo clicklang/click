@@ -2578,6 +2578,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::AuthorityCountNeedsOwnership => {
             "count(...) requires owning authority for that population".to_string()
         }
+        ExecutionLimit::AuthorityCountPendingLockedWorker => {
+            "count(...) is unknown until pthread_join returns the workers that change this population under its mutex".to_string()
+        }
         ExecutionLimit::AuthorityCountLentToWorker => {
             "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
         }
