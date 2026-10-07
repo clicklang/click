@@ -3065,24 +3065,46 @@ pub(super) fn check_wildcard_consumption_at_return(
         .filter(|(produce, _)| !produce)
     {
         let paired = authority_mode_exchange_effects(interface).is_some();
-        let fact = match evaluate_function_resource_spec_with_entry(
+        let CResourceTerm::Composite {
+            name: member_name, ..
+        } = member.term()
+        else {
+            continue;
+        };
+        // A member argument may read a field inside a folded entry instance,
+        // which this exit check cannot open. The proof's own import of that
+        // family then identifies the governed population, when it is unique.
+        let (description, quantity) = match evaluate_function_resource_spec_with_entry(
             entry,
             entry,
             member,
             assumptions,
             budget,
         )? {
-            Ok(fact) => fact,
-            Err(error) => return Ok(Err(error)),
+            Ok(CResourceFact::Own(CResource::Composite { name, arguments }, quantity)) => (
+                ResourceDescription::new(
+                    name.clone(),
+                    arguments,
+                    ResourceFieldSchema::new(vec![]).expect("empty schema"),
+                ),
+                quantity,
+            ),
+            Ok(_) => continue,
+            Err(error) => {
+                let imported = exit
+                    .population_effects
+                    .creation
+                    .as_ref()
+                    .map(|events| events.imported_populations_of_family(member_name))
+                    .unwrap_or_default();
+                let (CResourceQuantity::One, [description]) =
+                    (member.quantity(), imported.as_slice())
+                else {
+                    return Ok(Err(error));
+                };
+                (description.clone(), Box::new(Bitvector32Term::Constant(1)))
+            }
         };
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact else {
-            continue;
-        };
-        let description = ResourceDescription::new(
-            name.clone(),
-            arguments,
-            ResourceFieldSchema::new(vec![]).expect("empty schema"),
-        );
         // A declared consumption under an authority this proof holds is a
         // death the caller applies, so the body must have recorded it with a
         // checked spend. Otherwise a returned control could state its counter
