@@ -1120,12 +1120,18 @@ pub(in crate::kernel) fn cast_c_value_to_type(
             }
             // Integer-to-pointer conversion is accepted only for a 64-bit
             // value that is exactly the recorded address of an object
-            // pointer, or the constant zero. Provenance comes from the term,
+            // pointer, or a value proven zero. Zero needs no allocation
+            // provenance; non-null provenance still comes from the term,
             // never from integer coincidence.
             CValue::UInt64(term) | CValue::Int64(term)
                 if !matches!(target_type, CType::FunctionPointer(_)) =>
             {
-                if term.uint64_as_const() == Some(0) {
+                if term.uint64_as_const() == Some(0)
+                    || assumptions.decide(&ConditionTerm::uint64_equal(
+                        term.clone(),
+                        Bitvector32Term::UInt64Constant(0),
+                    )) == Some(true)
+                {
                     return Ok(CValue::typed_pointer(Pointer::null(), target_type));
                 }
                 return match super::pointer_tags::cast_tagged_address_to_pointer(

@@ -598,8 +598,8 @@ views are rejected, as are illegal C++ client access, unions, mixed-access
 non-standard layouts, inheritance and bit-fields.
 
 The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
-its nested `FeePerVSize` field now reaches the unsupported class template
-instance in `util/feefrac.h`. Header-declared records are now supported through the
+its nested `FeePerVSize` field now reaches the inherited-base restriction
+in `util/feefrac.h`. Header-declared records are now supported through the
 explicitly locked dependency mechanism described below. The exporter reports
 the actual header location and writes no partial artifact. Nested record places
 and inherited base-subobject authority are the next prerequisites; `GetFee`
@@ -650,11 +650,11 @@ missing declarations, cycles, false sibling frames, missing authority,
 read-only writes and excessive shared-layout expansion.
 
 Declaration and contract metadata now also support nested C++ source field
-reads, writes and signed compound updates. Projected method receivers,
-inherited base subobjects, automatic
+reads, writes, signed compound updates and projected method/reference calls.
+Inherited base subobjects, automatic
 objects with embedded fields and nontrivial embedded destruction remain explicit
 boundaries. `CFeeRate::GetFee` is still a refusal regression at its actual
-`FeePerVSize` template instance; no Bitcoin source is changed.
+`FeePerVSize` base subobject; no Bitcoin source is changed.
 
 
 ## Nested source field accesses
@@ -675,5 +675,15 @@ false frames and unproved signed overflow. Recomputed-digest artifacts cannot
 launder invalid owners, field IDs/names, path order/depth, declaration-source
 spans, read-only roots or projections attached to unsupported plain places.
 Deterministic checks bound work by path length independently of sibling count.
-`CFeeRate::GetFee` still stops at the class template instance; projected method
-receivers and inherited base identity remain next.
+Projected calls now pass embedded record receivers and reference arguments, or
+signed-32 leaf references, at their exact byte addresses. Root constness controls
+mutable binding even when the projected field declaration is mutable. Modular
+callee contracts require authority for that leaf; caller proofs retain sibling
+frames. Ordinary, expanded and retained offline checks cover const/mutable child
+methods and record/scalar helper references. Hostile contracts and recomputed
+artifacts reject missing authority, false frames, wrong targets and const roots
+passed to mutable callees. Reference resolution shares the indexed path walk.
+Concrete class-template instances now retain their nominal identity, including
+empty tags such as `VSizeTag`. `CFeeRate::GetFee` still stops at the inherited
+base-subobject restriction. Base-subobject authority and locked-header executable
+calls remain prerequisites before composing the wrapper proof.

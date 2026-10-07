@@ -614,15 +614,10 @@ pub(super) fn execute_branch_step_from_frontier_position(
             claim_label,
             "branch allocation resolution",
         );
-        // A settled allocation needs no branch context. Explicit steps carry a
-        // fresh statement-local list here, so eagerly building its context after
-        // every later `if` would repeatedly import all enclosing branch facts.
-        if current_state.memory().has_pending_heap_allocation() {
-            current_state = crate::kernel::resolve_pending_heap_allocations(
-                &current_state,
-                &assumptions_from_propositions(available_pure_facts),
-            );
-        }
+        // Condition certification selects pending allocation and pthread-create
+        // outcomes. Retain that exact checked successor: recomputing from the
+        // old state can lose the selected resources or their mutation ancestry.
+        current_state = execution.core.reached_state().clone();
     }
     let selected_branch = if selected_then {
         *then_branch

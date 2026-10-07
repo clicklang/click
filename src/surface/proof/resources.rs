@@ -4330,34 +4330,41 @@ fn fold_composite_resources_on_outcome_with_facts(
         }
         let mut resources = post_state.resources().clone();
         for lowered in lowered_contained.as_slice() {
-            // Prefer consuming an equivalent whole representation. Generic
-            // range consumption is allowed to treat a requirement as a
-            // subrange; when the two endpoints are framed forms from
-            // different snapshots, that would leave spurious fragments.
-            let directly_matching = resources.facts().iter().find(|available| {
-                let quantities_match = match (available, lowered) {
-                    (
-                        CResourceFact::Own(_, available_quantity),
-                        CResourceFact::Own(_, lowered_quantity),
-                    ) => available_quantity == lowered_quantity,
-                    (CResourceFact::View(_), CResourceFact::View(_)) => true,
-                    _ => false,
-                };
-                quantities_match
-                    && c_resources_directly_match(
-                        available.resource(),
-                        lowered.resource(),
-                        &assumptions,
-                    )
-            });
-            if let Some(directly_matching) = directly_matching.cloned() {
-                resources = resources
-                    .without_exact_representation(&directly_matching)
-                    .expect("the directly matched resource came from this context");
-                continue;
-            }
-            let diagnostic_facts = resources.facts().to_vec();
-            let Some(next) = resources.without_fact(lowered, &assumptions) else {
+            let next = if post_state.uses_population_authority_semantics() {
+                // The kernel checks the selected exchange, with its frame intact.
+                resources
+                    .clone()
+                    .without_fact_incrementally(lowered, &assumptions)
+            } else {
+                // Prefer consuming an equivalent whole representation. Generic
+                // range consumption can leave fragments when endpoints denote
+                // framed forms from different snapshots.
+                let directly_matching = resources.facts().iter().find(|available| {
+                    let quantities_match = match (available, lowered) {
+                        (
+                            CResourceFact::Own(_, available_quantity),
+                            CResourceFact::Own(_, lowered_quantity),
+                        ) => available_quantity == lowered_quantity,
+                        (CResourceFact::View(_), CResourceFact::View(_)) => true,
+                        _ => false,
+                    };
+                    quantities_match
+                        && c_resources_directly_match(
+                            available.resource(),
+                            lowered.resource(),
+                            &assumptions,
+                        )
+                });
+                if let Some(directly_matching) = directly_matching.cloned() {
+                    resources = resources
+                        .without_exact_representation(&directly_matching)
+                        .expect("the directly matched resource came from this context");
+                    continue;
+                }
+                resources.clone().without_fact(lowered, &assumptions)
+            };
+            let Some(next) = next else {
+                let diagnostic_facts = resources.facts().to_vec();
                 let available_pure_facts = pure_facts.materialize();
                 let action = match closure {
                     ResourceBodyClosure::Initialize => {
@@ -4421,7 +4428,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                 binding.hold = Some(hold);
                 post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
             }
-            let (resources, inserted_occurrence) = if authority_control_body {
+            // Authority rewrites authenticate the selected exchange only;
+            // normalizing unrelated memory changes the checked frame.
+            let (resources, inserted_occurrence) = if authority_control_body
+                || post_state.uses_population_authority_semantics()
+            {
                 let (resources, inserted) = post_state
                     .resources()
                     .clone()

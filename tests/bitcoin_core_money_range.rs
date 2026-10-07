@@ -163,10 +163,7 @@ fn check_upstream_cpp_rounding_phase(
     let refreshed = refresh_import(&config_path);
     if fee_rate_boundary {
         let error = refreshed.expect_err("GetFee must retain the unsupported record boundary");
-        assert!(
-            error.contains("class template instances are unsupported"),
-            "{error}"
-        );
+        assert!(error.contains("have no bases"), "{error}");
         assert!(error.contains("feefrac.h"), "{error}");
         assert!(error.len() < 8000);
         assert!(!root.join(format!("{name}.click-cpp.json")).exists());

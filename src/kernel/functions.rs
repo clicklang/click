@@ -27606,6 +27606,15 @@ pub(super) fn jointly_consume_returned_resource_units(
         {
             return Some(remaining);
         }
+        // Only memory ranges need adjacent supplier fragments to rejoin.
+        // Preserve the checked representation of composite/population exchanges.
+        if required.memory_range().is_some()
+            && let Some(remaining) = available
+                .clone()
+                .without_fact_incrementally(required, assumptions)
+        {
+            return Some(remaining);
+        }
         let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = required else {
             return open_available_head(
                 &available,

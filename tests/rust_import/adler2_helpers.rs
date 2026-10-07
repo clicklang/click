@@ -9,6 +9,8 @@ const TWO_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/two-byte-compute.click");
 const THREE_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/three-byte-compute.click");
+const FOUR_BYTE_COMPUTE: &str =
+    include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
 
 fn compute_proof(contract: &str) -> String {
     let computation = HELPERS.split_once("# Empty-input boundary").unwrap().1;
@@ -16,7 +18,12 @@ fn compute_proof(contract: &str) -> String {
     // Function-contract imports are not admitted yet. Assemble one verification
     // unit from the canonical helper/getter bodies and this alternative compute
     // contract, rather than duplicating or assuming their interfaces.
-    format!("{}\n{contract}\n{getters}", helper_library())
+    let lemmas = if contract.contains("adler_recombine_difference(") {
+        RECOMBINATION
+    } else {
+        ""
+    };
+    format!("{}\n{lemmas}\n{contract}\n{getters}", helper_library())
 }
 
 fn compute_project(contract: &str) -> Project {
@@ -993,7 +1000,9 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
         assert_cli(&p, &[command]);
     }
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    let site = if bytes == 1 {
+    let site = if bytes == 4 {
+        "have __rust_mir_115_remaining == 3".to_owned()
+    } else if bytes == 1 {
         "execute_until(assignment(__rust_mir_144, 0))".to_owned()
     } else {
         format!("have __rust_mir_138_cursor == old(bytes) + {bytes}")
@@ -1107,4 +1116,58 @@ fn charon_adler2_two_byte_compute_tools_recheck_original_contract() {
 #[ignore = "nightly: original three-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
     recheck_compute_tools(THREE_BYTE_COMPUTE, 3);
+}
+
+#[test]
+fn charon_adler2_four_byte_compute_rejects_missing_extent_view_and_constructor() {
+    for (before, after) in [
+        ("requires bytes_len == 4u64;", ""),
+        ("views bytes[0..4];", "views bytes[0..3];"),
+        ("requires self->a == 1;", "requires self->a == 2;"),
+    ] {
+        reject_compute(FOUR_BYTE_COMPUTE, before, after);
+    }
+}
+
+#[test]
+#[ignore = "nightly: original four-byte vector computation and false-result/read rejections"]
+fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_outputs() {
+    let p = compute_project(FOUR_BYTE_COMPUTE);
+    C0VerificationSession::new_program_prepared(
+        &compute_proof(FOUR_BYTE_COMPUTE),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for field in ["a", "b"] {
+        reject_compute(
+            FOUR_BYTE_COMPUTE,
+            &format!("ensures to_integer(self->{field}) == to_integer("),
+            &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
+        );
+    }
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "ensures bytes[3] == old(bytes[3]);",
+        "ensures bytes[3] == old(bytes[3]) + 1;",
+    );
+    let b_result = FOUR_BYTE_COMPUTE
+        .lines()
+        .find(|line| line.contains("ensures to_integer(self->b)"))
+        .unwrap();
+    let swapped = b_result
+        .replace("bytes[2]", "@third@")
+        .replace("bytes[3]", "bytes[2]")
+        .replace("@third@", "bytes[3]");
+    reject_compute(FOUR_BYTE_COMPUTE, b_result, &swapped);
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "have av == old((uint32)bytes[3])",
+        "have av == old((uint32)bytes[2])",
+    );
+}
+
+#[test]
+#[ignore = "nightly: original four-byte computation proof-tool agreement and expansion"]
+fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
+    recheck_compute_tools(FOUR_BYTE_COMPUTE, 4);
 }

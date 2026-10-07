@@ -3109,9 +3109,19 @@ fn verify_c0_sources_in_context(
         // certification so resource occurrence IDs and loan ledger roots are
         // shared by proof and certification; rebuilding it independently
         // would create an equivalent-looking but unauthorized authority.
-        if let Some(entry) = function_verified
+        // A proof with a jointly checked return exchange supplies one coherent
+        // entry/exit pair. Prefer its caller over a separate clause proof's
+        // entry, whose borrowed-memory representation may differ and prevent
+        // reuse of the checked post-return exchange.
+        if let Some(entry) = checked_executions
             .iter()
-            .find_map(|verified| verified.checked_execution.caller_state())
+            .filter(|execution| execution.has_checked_resource_transitions())
+            .find_map(|execution| execution.caller_state())
+            .or_else(|| {
+                checked_executions
+                    .iter()
+                    .find_map(|execution| execution.caller_state())
+            })
         {
             certification_state = entry.clone();
         }

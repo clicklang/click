@@ -1275,8 +1275,29 @@ declaration, expansion, and false-bound/weight regressions cover the bridge and
 library. The unchanged four-byte computation is still unproved; the caller must
 establish these premises and connect the final lane sums to the checksum.
 
-Next apply the recombination bounds at the original call sites and prove both
-final lane sums and checksum stores for four-byte input. Then establish/preserve
+### Original four-byte vector computation
+
+The constructor-state four-byte boundary now verifies the unchanged computation
+through all three weighted lane recombinations, both ordered four-lane summation
+loops, the empty serial tail, and the final modulo and u16 checksum stores.
+Its contract gives exact native A/B expressions modulo 65521 and preserves all
+four shared input bytes. The B expression retains the original MOD offsets;
+the common mathematical checksum specification remains separate work.
+
+The proof follows the stored iterator cursors and remaining lengths without
+adding a processed-count variable. Native-to-Integer bridges check the original
+overflow guards; the final conservative scalar ceilings are 1021 and 397210.
+The helper and recombination lemma bodies are checked in the same verification
+unit. Regressions reject insufficient views, missing extents, wrong constructor
+states, false outputs, and reordered or repeated byte reads. Proof-tool rechecks
+and full-contract expansion run in nightly coverage.
+
+The investigation also exposed exhaustive historical premise-spelling search.
+Automatic snapshot synthesis now probes a bounded neighborhood, with deterministic
+scaling coverage for both successful and missing spellings. Explicit snapshot
+references and restricted premise lists retain their checked meaning.
+
+Next establish/preserve
 the derived lane ceilings over the original stored nested iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic
 freedom, and the common full checksum specification remain unproved.

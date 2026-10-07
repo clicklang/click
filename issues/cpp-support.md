@@ -907,12 +907,52 @@ spans, read-only roots, missing/wrong sibling authority and unsupported projecte
 place consumers are refused. Deterministic regressions cover increasing path
 depth and sibling populations.
 
-The pinned unchanged `CFeeRate::GetFee` regression now reaches the unsupported
-`FeePerVSize` class template instance in `util/feefrac.h`, with a bounded
-diagnostic and no partial artifact. The wrapper is not verified yet. Next add
-projected method receivers and reference arguments using the same field-path
-representation, then a precise
-base-subobject representation for the actual inherited `FeePerVSize` field.
+The pinned unchanged `CFeeRate::GetFee` regression now reaches the inherited
+base-subobject boundary of `FeePerVSize` in `util/feefrac.h`, with a bounded
+diagnostic and no partial artifact. The wrapper is not verified yet.
+
+Projected method receivers and record/scalar reference arguments now use the
+same ordered field paths. Call validation resolves the projected nominal type
+through the shared index and propagates root constness to mutable reference
+binding. Lowering passes the exact subobject byte address into the existing
+contract-call machinery. Offline ordinary, expanded and retained proofs cover
+const methods, mutable child methods, record helpers, signed-32 field references
+and sibling frames. Shared permission indexing and joint consumption rejoin scalar bytes returned
+by a call with bytewise field padding over symbolic object pointers; C and
+kernel regressions cover the same boundary without changing ownership extents.
+Byte-endpoint regrouping is limited to selected memory suppliers; ambient
+normalization preserves borrowed clause boundaries. Authority wrapper folds
+consume and compose only their checked exchange, retaining unrelated memory
+and population units. Positive mixed-width frame and negative hidden-unit
+regressions cover this boundary alongside the full Markdown proof corpus.
+Post-return authority wrapper folds and unfolds now retain their checked
+resource exchange through contract certification. Certification prefers the
+entry paired with a jointly checked return context, preserving borrowed field
+identities across separate clause proofs. The unchanged mixed-width frame
+reproduction verifies, expands and rechecks in a retained session; hostile
+proofs and deterministic checks reject missing/duplicate child authority and
+removal of unrelated memory. The wrapper-unfold tooling blocker is resolved.
+Recomputed-digest artifacts reject forged targets and use
+spans, missing/reordered paths and const roots passed to mutable callees. Source
+checks retain C++ access, constness, temporary and pointer-root restrictions;
+wide mutable references remain outside the profile. Deterministic checks cover
+reference resolution at increasing path depth and sibling populations.
+
+Concrete class-template record instances now preserve Clang's canonical USRs
+and use ordered scalar/Boolean argument tokens and named empty tag tokens in
+contract-facing names. Record, field and method identities stay distinct across
+equal layouts; aliases canonicalize. Existing record layout, access, ownership,
+destruction and body restrictions still apply. Offline ordinary, expanded and
+retained proofs cover scalar and tag instances, simultaneous equal-layout
+instances and sibling frames; recomputed artifacts reject cross-instance
+receiver binding. Instantiated storage, constructor/method/destructor calls and
+automatic-object reference representation are covered alongside ordinary records.
+Clang completes reachable unused parameter specializations before exporting
+layout. Unsupported arguments, incomplete declarations, colliding record names
+and inheritance fail without an artifact.
+
+Next support a precise base-subobject representation for the inherited
+`FeePerVSize` field.
 Preserve declaration identity, layout and field authority instead of flattening
 inheritance into matching field names. Automatic objects with embedded records,
 nontrivial embedded destruction and cross-header executable graphs remain

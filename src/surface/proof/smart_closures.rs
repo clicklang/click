@@ -3622,6 +3622,14 @@ impl<'a> Proof<'a> {
         premises: &[Proposition],
         introduced_surfaces: &[ClickProposition],
     ) -> Option<Vec<(Proposition, ClickProposition)>> {
+        // Broad atomic derivations may retain a whole connected fact
+        // component even when no checkable source spelling exists. Do not
+        // render an unbounded component speculatively. The recorded-path
+        // candidate is tried first, and explicit `using` lists have their
+        // own presentation/checking path.
+        if premises.len() > 64 {
+            return None;
+        }
         crate::instrumentation::measure_operation(
             "surface",
             "simp closure",
@@ -8252,7 +8260,14 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
         CodeRegionRef::Statement(index) => *index,
         _ => usize::MAX,
     };
-    let mut entries = recorded_snapshots.statement_entries_nearest(anchor_index);
+    // This is speculative premise presentation, not an explicit request to
+    // visit the execution history. A missing spelling must not scan every
+    // retained state for each equality candidate. Probe a small neighborhood;
+    // callers can name an older snapshot explicitly when this search misses.
+    const MAX_SNAPSHOT_CANDIDATES: usize = 256;
+    let mut entries = recorded_snapshots
+        .statement_entries_nearest(anchor_index)
+        .take(MAX_SNAPSHOT_CANDIDATES);
     let mut points = Vec::new();
     let mut finished = false;
     std::iter::from_fn(move || {
@@ -8324,6 +8339,61 @@ fn selected_premise_contains_goal(premise: &Proposition, goal: &Proposition) -> 
 #[cfg(test)]
 mod synthesized_literal_tests {
     use super::*;
+
+    #[test]
+    fn speculative_simp_premise_spelling_declines_large_components_without_rendering() {
+        let function = syntax::parse_function("int32 noop() { return 0; }").unwrap();
+        let state = CState::new();
+        let snapshots = RecordedSnapshots::new();
+        let surfaces = SurfacePropositionMap::default();
+        let predicates = PredicateEnvironment::new(&[]);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let theorems = TheoremEnvironment::new(&[]);
+        let proof = Proof::for_fixed_state_goal(
+            "speculative premise rendering",
+            0,
+            &[],
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::Constant(0)),
+                    Box::new(Bitvector32Term::Constant(0)),
+                ),
+                true,
+            ),
+            function.parameters(),
+            &[],
+            &state,
+            &state,
+            &snapshots,
+            &surfaces,
+            &predicates,
+            &functions,
+            &theorems,
+            &[],
+            &[],
+        );
+        for size in [128, 512, 2048, 8192] {
+            let premises = (0..size)
+                .map(|index| {
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(Bitvector32Term::Variable(Variable(8_179_000 + index))),
+                            Box::new(Bitvector32Term::Constant(0)),
+                        ),
+                        true,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.resolve_simp_premises(&premises, &[])
+            });
+            assert!(
+                result.is_none(),
+                "an oversized speculative component must be declined"
+            );
+            assert_eq!(work, 0, "size {size}: no candidate should be rendered");
+        }
+    }
 
     #[test]
     fn signed_literal_spelling_handles_int32_minimum_without_overflow() {

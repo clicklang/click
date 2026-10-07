@@ -109,6 +109,16 @@ failure from `auto`, `execute()`, `simp()`, or another smart tactic
 does not establish an engine bug. Split the task into smaller searches or use
 simple tactics with explicit premises.
 
+When `simp()` needs to reconstruct a premise at an execution snapshot, its
+automatic fallback probes at most 256 statement-entry snapshots nearest the
+current anchor. A missing spelling therefore cannot trigger a scan of the
+whole execution history. Name a relevant older snapshot with `at(...)`, or
+provide a small `using { ... }` list, when this bounded search misses. Each
+candidate still has to lower to the exact retained kernel fact.
+The automatic atomic fallback also declines components with more than 64
+premises before rendering them; it first tries the derivation's recorded path.
+This limit does not restrict an explicit `using` list.
+
 The result distinguishes three important cases:
 
 - If an explicit proof works, the smart tactic's miss is at most an

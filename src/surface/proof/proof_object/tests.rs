@@ -933,6 +933,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     let left_closed = split_proof
         .focus_branch(ids[0])
         .expect("the left sibling is open")
+        .begin_execution_match()
         .apply_step(ProofStep::Assumption)
         .expect("the shared disjunction fact closes the left claim");
     assert!(left_closed.state.open_branches().get(ids[1]).is_some());
@@ -944,8 +945,8 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     assert!(both_closed.is_complete());
 
     // An unjoined arm's own certificate follows its lineage: the sibling's
-    // interleaved step is attributed elsewhere, while the whole chain
-    // still lists both.
+    // interleaved step and nested match marker are attributed elsewhere,
+    // while the whole chain still lists both checked steps.
     assert_eq!(left_closed.path_certificate().unwrap().steps().len(), 1);
     assert_eq!(both_closed.path_certificate().unwrap().steps().len(), 1);
     assert_eq!(both_closed.certificate().steps().len(), 2);
@@ -14306,6 +14307,56 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
 }
 
 #[test]
+fn missing_snapshot_premise_spelling_has_bounded_history_search() {
+    let parameters = syntax::parse_function("int32 noop() { return 0; }").unwrap();
+    // No state or parameter names this symbolic value. Every synthesis probe
+    // misses, exercising the exhaustive-history fallback rather than the
+    // successful first-candidate case.
+    let kernel = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(Variable(8_178_903))),
+            Box::new(Bitvector32Term::Constant(0)),
+        ),
+        true,
+    );
+    for size in [16usize, 64, 256, 1024, 4096] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                CState::new(),
+            );
+        }
+        let anchor = ProgramPointRef {
+            region: CodeRegionRef::Statement(size / 2),
+            kind: ProgramPointKind::Entry,
+        };
+        let (count, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut candidates =
+                super::super::smart_closures::synthesize_surface_at_recorded_snapshots(
+                    &kernel,
+                    parameters.parameters(),
+                    &[],
+                    &snapshots,
+                    &anchor,
+                );
+            let count = candidates.by_ref().count();
+            assert!(candidates.next().is_none());
+            count
+        });
+        assert_eq!(count, 0);
+        let height = usize::BITS - size.leading_zeros();
+        assert!(
+            work <= 256 * height as usize + 8192,
+            "size {size}: {work} work"
+        );
+    }
+}
+
+#[test]
 fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
     use crate::instrumentation::{TacticEvent, TacticWorkLimits, VerificationEvent};
     let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
@@ -14330,7 +14381,9 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
                 CState::new(),
             );
         }
-        let limit = 64;
+        // Exhaust before the independent snapshot-candidate search cap. A
+        // normal bounded search miss need not consume the tactic budget.
+        let limit = 8;
         let ((candidates, work), events) = crate::instrumentation::with_tactic_work_limits(
             TacticWorkLimits {
                 simple: limit,
