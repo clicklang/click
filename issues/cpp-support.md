@@ -736,8 +736,21 @@ needed.
 
 The two fee domains share one caller template, with separate native branch
 guards and ordinary, expansion, retained-verification and hostile regressions
-for each mode. Next prove the symbolic unsigned fast paths. The broader
-mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
+for each mode.
+
+The shared machine model now has exact uint64 addition, multiplication,
+subtraction, division/remainder and non-strict order bridges. Addition and
+multiplication require explicit UINT64_MAX bounds; subtraction requires no
+underflow; division/remainder explicitly exclude zero in both the native and
+Integer evaluation domains. Checked declarations and typed
+parameters keep these laws separate from signed definedness and uint32
+arithmetic. Boundary models, hostile guards/types, ordinary C modular callers,
+expansion/reverification and deterministic order-application scaling cover this
+prerequisite for Bitcoin's unchanged unsigned fast paths.
+
+Next compose the symbolic unsigned fast-path callers, including the source's
+mixed signed/unsigned casts and the ceiling numerator `fee * amount + size - 1`.
+The broader mode-specific result-fit precondition and full 96/32 fee-division contract remain open; the
 current joint range ensures both rounding modes fit.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.

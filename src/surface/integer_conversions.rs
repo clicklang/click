@@ -700,6 +700,145 @@ mod tests {
         }
     }
     #[test]
+    fn uint64_integer_bridges_recheck_guards_full_width_and_expansion() {
+        for (name, guard, goal) in [
+            (
+                "uint64_add_to_integer",
+                "to_integer(left) + to_integer(right) <= 18446744073709551615",
+                "to_integer(left + right) == to_integer(left) + to_integer(right)",
+            ),
+            (
+                "uint64_multiply_to_integer",
+                "to_integer(left) * to_integer(right) <= 18446744073709551615",
+                "to_integer(left * right) == to_integer(left) * to_integer(right)",
+            ),
+            (
+                "uint64_subtract_to_integer",
+                "to_integer(right) <= to_integer(left)",
+                "to_integer(left - right) == to_integer(left) - to_integer(right)",
+            ),
+            (
+                "uint64_divide_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right))",
+            ),
+            (
+                "uint64_remainder_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
+            ),
+            (
+                "uint64_less_equal_to_integer",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "uint64_less_equal_of_to_integer",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+        ] {
+            let source = format!(
+                "theorem bridge(left: uint64, right: uint64) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{name}: {}", e.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {guard};"), ""),
+                source.replace(
+                    &format!("requires {guard};"),
+                    "requires defined(left + right);",
+                ),
+                source.replace("left: uint64", "left: int64"),
+                source.replace("right: uint64", "right: uint32"),
+                source.replace(&format!("ensures {goal}"), "ensures left > right"),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
+
+    #[test]
+    fn uint64_division_bridges_require_both_evaluation_domains() {
+        for (name, op, mathematical) in [
+            ("uint64_divide_to_integer", "/", "truncating_quotient"),
+            ("uint64_remainder_to_integer", "%", "truncating_remainder"),
+        ] {
+            let source = format!(
+                "theorem exact(left: uint64, right: uint64) {{ requires right != 0u64; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)) by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            for missing in [
+                "requires right != 0u64;",
+                "requires to_integer(right) != 0;",
+            ] {
+                assert!(verify_c0_sources(&source.replace(missing, ""), &[]).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn uint64_integer_bridges_verify_actual_c_operations_and_modular_calls() {
+        for (name, guard, goal, op) in [
+            (
+                "uint64_add_to_integer",
+                "to_integer(left) + to_integer(right) <= 18446744073709551615",
+                "to_integer(left + right) == to_integer(left) + to_integer(right)",
+                "+",
+            ),
+            (
+                "uint64_multiply_to_integer",
+                "to_integer(left) * to_integer(right) <= 18446744073709551615",
+                "to_integer(left * right) == to_integer(left) * to_integer(right)",
+                "*",
+            ),
+            (
+                "uint64_subtract_to_integer",
+                "to_integer(right) <= to_integer(left)",
+                "to_integer(left - right) == to_integer(left) - to_integer(right)",
+                "-",
+            ),
+            (
+                "uint64_divide_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right))",
+                "/",
+            ),
+            (
+                "uint64_remainder_to_integer",
+                "right != 0u64; requires to_integer(right) != 0",
+                "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
+                "%",
+            ),
+        ] {
+            let c = format!(
+                "uint64 op(uint64 left, uint64 right) {{ return left {op} right; }} uint64 caller(uint64 left, uint64 right) {{ return op(left, right); }}"
+            );
+            let result_goal = goal.replace(
+                &format!("to_integer(left {op} right)"),
+                "to_integer(result)",
+            );
+            let source = format!(
+                "verifying \"op.c\"; uint64 op(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ apply({name}(left, right)); execute(); simp(); }} uint64 caller(uint64 left, uint64 right) {{ requires {guard}; ensures {result_goal}; }} by {{ execute(); simp(); }}"
+            );
+            verify_c0_sources(&source, &[("op.c", &c)])
+                .unwrap_or_else(|e| panic!("{name}: {}", e.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[("op.c", &c)]).unwrap();
+            assert!(
+                verify_c0_sources(
+                    &source.replace(&format!("requires {guard};"), ""),
+                    &[("op.c", &c)]
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn signed_integer_order_bridges_recheck_source_guards_and_expansion() {
         for (name, ty, guard, goal) in [
             (
@@ -744,8 +883,8 @@ mod tests {
     }
 
     #[test]
-    fn signed_integer_order_bridge_applications_scale_with_steps_and_unused_bounds() {
-        for ty in ["int32", "int64"] {
+    fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds() {
+        for ty in ["int32", "int64", "uint64"] {
             let mut samples = Vec::new();
             for size in [4usize, 16, 64, 256] {
                 let mut source = format!(

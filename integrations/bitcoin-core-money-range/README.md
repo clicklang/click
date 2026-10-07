@@ -304,9 +304,9 @@ terms opaque. The modular caller exports the same four inequalities and frames
 untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
-The negative-fee `EvaluateFeeDown/Up` composition is verified below. Positive
-fees, the broader mode-specific result-fit domain and the full 96/32 contract
-remain open.
+The wide-fallback `EvaluateFeeDown/Up` composition is verified below. Symbolic
+unsigned fast paths, the broader mode-specific result-fit domain and the full
+96/32 contract remain open.
 
 ## CompactSize encoded length
 
@@ -370,5 +370,10 @@ verification, and rejects missing authority/domain bounds, forged Mul product
 equalities and false rounding inequalities. The evaluated `Assume` contract
 and compiler/library pins remain the profile described above.
 
-Next prove the symbolic unsigned fast paths and the broader mode-specific
+The shared uint64 Integer bridges now provide exact no-wrap addition and
+multiplication, no-underflow subtraction, nonzero division/remainder and
+non-strict order transport. Their checked contracts and ordinary C regressions
+are described in [the Integer model](../../docs/internals/mathematical-integers.md#exact-unsigned-64-bit-observations).
+Next compose these into the symbolic unsigned fast paths, preserving the
+source's mixed casts and ceiling numerator, then broaden the mode-specific
 result-fit domain. This does not yet verify `EvaluateFeeDown/Up` for all fees.

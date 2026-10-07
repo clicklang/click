@@ -682,6 +682,40 @@ See the checked
 [operation fixture](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
 
 
+## Exact unsigned 64-bit observations
+
+The shared `uint64` observation bridges preserve unsigned semantics, including
+values above `INT64_MAX`. Their premise is explicit; `defined(a + b)` alone
+cannot exclude unsigned wrapping.
+
+| Standard theorem | Required premise | Exact observation |
+| --- | --- | --- |
+| `uint64_add_to_integer` | `A + B <= UINT64_MAX` | `to_integer(a + b) == A + B` |
+| `uint64_multiply_to_integer` | `A * B <= UINT64_MAX` | `to_integer(a * b) == A * B` |
+| `uint64_subtract_to_integer` | `B <= A` | `to_integer(a - b) == A - B` |
+| `uint64_divide_to_integer` | `b != 0u64 and B != 0` | `to_integer(a / b) == truncating_quotient(A, B)` |
+| `uint64_remainder_to_integer` | `b != 0u64 and B != 0` | `to_integer(a % b) == truncating_remainder(A, B)` |
+| `uint64_less_equal_to_integer` | `a <= b` | `A <= B` |
+| `uint64_less_equal_of_to_integer` | `A <= B` | `a <= b` |
+
+Here `A = to_integer(a)`, `B = to_integer(b)` and
+`UINT64_MAX = 18446744073709551615`. Each is a kernel standard theorem with
+checked parameter types, declaration shape, exact premise and conclusion.
+These laws use the same observation model and theorem application path as the
+existing uint32 and signed bridges, without changing source-language arithmetic. Division states both the native
+and observed nonzero facts so the machine operation and mathematical
+truncation each have an explicit evaluation domain. The bridge does not
+infer either domain from the other.
+They apply to the shared machine model used by C, C++ and Rust.
+
+Boundary models cover zero, the sign bit, UINT64_MAX, wrapping and the Bitcoin
+fast-path operand limits. Regressions reject forged declarations, omitted or
+weakened guards, wrong widths and signed carriers. Ordinary C functions and
+modular callers verify all five operation laws; expansion reverifies, and
+explicit order-bridge applications retain deterministic scaling. See the checked
+[unsigned fixture](https://github.com/clicklang/click/blob/master/mdtests/unsigned_integer_bridges.md).
+
+
 ## Restoring signed native facts
 
 Signed `int32` and `int64` observations preserve and reflect non-strict order.
