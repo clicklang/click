@@ -350,6 +350,27 @@ impl Hash for CreationEvents {
 }
 
 impl CreationEvents {
+    /// Whether this ledger records nothing: no storage, member, authority,
+    /// import, scope or batch. Its identity and holders are fresh names that
+    /// nothing else in its state can refer to, so two such ledgers describe
+    /// the same population state.
+    pub(in crate::kernel) fn records_nothing(&self) -> bool {
+        let root = &self.0;
+        root.pending.is_empty()
+            && root.creators.is_empty()
+            && root.anchors.is_empty()
+            && root.authority.is_empty()
+            && root.scopes.is_empty()
+            && root.exact_members.is_empty()
+            && root.opaque_types.is_empty()
+            && root.symbolic_batches.is_empty()
+            && root.symbolic_holders.is_empty()
+            && root.tainted.is_empty()
+            && root.opaque_imports.is_empty()
+            && root.opaque_holders.is_empty()
+            && root.empty_populations.is_empty()
+    }
+
     fn memoized_c_event(&self, key: CEvent, create: impl FnOnce() -> Self) -> Self {
         if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
             return existing.clone();

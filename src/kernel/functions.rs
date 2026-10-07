@@ -33622,6 +33622,25 @@ mod population_creation_frame_tests {
     }
 
     #[test]
+    fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
+        let left = CState::new().with_population_creation_tracking();
+        let right = CState::new().with_population_creation_tracking();
+        assert_ne!(left, right, "fresh ledgers have distinct identities");
+        assert!(left.equal_up_to_unused_creation_ledgers(&right));
+        assert!(!left.equal_up_to_unused_creation_ledgers(&CState::new()));
+
+        let mut base = CState::new().with_local("frame:holder", int32(0));
+        let block = base.locals.slot("frame:holder").unwrap().block.clone();
+        base.set_memory(CMemory::new().with_block(block.clone(), 4));
+        let unused = base.clone().with_population_creation_tracking();
+        let mut used = base.with_population_creation_tracking();
+        assert!(used.equal_up_to_unused_creation_ledgers(&unused));
+        used.record_population_storage_creation(block);
+        assert!(!used.equal_up_to_unused_creation_ledgers(&unused));
+        assert!(!unused.equal_up_to_unused_creation_ledgers(&used));
+    }
+
+    #[test]
     fn ended_automatic_storage_retires_creation_evidence() {
         let function = c_function(CType::Int32, "scope", vec![], c_return(c_int32_literal(0)));
         for name in ["frame:holder", "lifetime:holder"] {

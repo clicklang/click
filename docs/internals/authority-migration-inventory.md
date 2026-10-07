@@ -1364,3 +1364,14 @@ definition. Regression: `authority_mode_ordinary_composite_of_tokens_folds.md`.
 an authorized family; observing any other resource under authority semantics
 exposes its body views as it does without them. Regression:
 `authority_mode_ordinary_observe.md`.
+
+#### Chunk 1c: certification across separately built entries
+
+Creation ledgers compare by identity, and every entry state built for a
+contract gets a fresh one. Certification therefore rejected a claim proved by
+its own proof, and a checked execution from a separately built entry, even
+when the two entry states differed only in that empty ledger. States now
+compare equal when they differ only in creation ledgers that record nothing:
+no storage, member, authority, import, scope or batch. Regressions:
+`authority_mode_separate_claim_proofs_certify.md`,
+`authority_mode_rebased_execution_certifies.md` and a kernel unit test.
