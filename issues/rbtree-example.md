@@ -17,19 +17,18 @@ correctness property is preservation of node identity and in-order order
 while links and colors change; a contract that consumes one well-formed
 tree and produces another cannot state that without an abstract model.
 
-## State, 2026-10-07: handoff
+## State, 2026-10-08: handoff
 
 Insert is finished. The black-successor splice's deficit-start model proof
 in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
 successors. Chunk 11 now verifies the unchanged C for a root with zero or
 one child, and for immediate red- and black-leaf successors at the root. The
 red-leaf successor has a no-deficit model theorem, with immediate and deep
-concrete checks. Non-root C unlink, deeper C successors, and immediate
-successors with a nonempty replacement child remain. Nonempty replacement
-children now have a balance exit theorem
-and immediate/deep checks in `rbtree_erase_child.click` and
-`successor_child_checks.click`; the exact successor-splice sequence and
-parent-consistency connection for that branch remains.
+concrete checks. Non-root C unlink and deeper C successors remain. Immediate successors with a nonempty replacement child now
+have an exact splice theorem and a C sidecar. The deeper replacement-child
+case has a balance exit theorem and concrete check in `rbtree_erase_child.click`
+and `successor_child_checks.click`; its exact splice sequence and
+parent-consistency connection remain.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
@@ -70,6 +69,15 @@ returning null or skipping root replacement.
 The proof also exposed scalar pure-function calls skipped by pointer
 `rewrite`; the existing binder-safe pointer walker now handles those goals,
 with missing-premise, capture, offset, snapshot, and scaling regressions.
+
+`rbtree_erase_child_successor.click` covers the immediate successor with a
+nonempty right child at the root (2026-10-08). Its `rb_immediate_successor_child`
+model reattaches the old left subtree and blackens the replacement child.
+`rb_erase_immediate_successor_child` proves balance under a valid outer context,
+local parent consistency, and the exact in-order sequence. The C contract
+returns that model, full root validity and parent consistency, and a null
+fixup parent. Neither the successor's nor its child's color is assumed by the
+contract. Mutation checks cover the required blackening write.
 
 Two proof-driver fixes support this increment: named folds after return inside
 `open` are deferred to the returned state, and exact checked execution retains
@@ -1001,7 +1009,8 @@ and the remaining two-child successor branches remain. The immediate red-leaf
 successor at the root is now covered, including its exact model, balance,
 parent consistency, and in-order contents. The immediate black-leaf case at
 the root returns the exact deficit context and non-null fixup parent for
-chunk 12. Depends on 7 and 10.
+chunk 12. The immediate nonempty-child case also verifies, including blackening,
+exact contents, parent consistency, and the null fixup parent. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.

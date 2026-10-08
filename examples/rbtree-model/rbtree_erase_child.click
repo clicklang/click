@@ -258,3 +258,104 @@ theorem rb_minimum_child_blackens_without_deficit(tree: RbTree, up: Context, suc
         assumption();
     }
 }
+
+# The immediate successor keeps its right child and blackens that child's root.
+function rb_immediate_successor_child(successor: struct rb_node*, parent: struct rb_node*,
+        color: Color, left: RbTree, child: RbTree) -> RbTree {
+    RbTree::Node(successor, parent, color, rb_reparent(left, successor),
+        rb_reparent(rb_recolor(child, Color::Black), successor))
+}
+
+theorem rb_erase_immediate_successor_child(erased: struct rb_node*, successor: struct rb_node*,
+        parent: struct rb_node*, color: Color, left: RbTree, sc: Color, child: RbTree, up: Context) {
+    requires is_rb(RbTree::Node(erased, parent, color, left,
+        RbTree::Node(successor, erased, sc, RbTree::Empty, child))) == 1;
+    requires ctx_rb(up, black_height(RbTree::Node(erased, parent, color, left,
+        RbTree::Node(successor, erased, sc, RbTree::Empty, child))), color) == 1;
+    requires rb_parent_consistent(RbTree::Node(erased, parent, color, left,
+        RbTree::Node(successor, erased, sc, RbTree::Empty, child)), parent) == 1;
+    requires not(child == RbTree::Empty);
+
+    ensures is_rb_root(plug(up, rb_immediate_successor_child(successor, parent, color, left, child))) == 1 by {
+        apply(rb_color_node(erased, parent, color, left,
+            RbTree::Node(successor, erased, sc, RbTree::Empty, child)));
+        have ctx_rb(up, black_height(RbTree::Node(erased, parent, color, left,
+            RbTree::Node(successor, erased, sc, RbTree::Empty, child))),
+            rb_color(RbTree::Node(erased, parent, color, left,
+            RbTree::Node(successor, erased, sc, RbTree::Empty, child)))) == 1 by {
+            rewrite(rb_color(RbTree::Node(erased, parent, color, left,
+                RbTree::Node(successor, erased, sc, RbTree::Empty, child))) == color); assumption();
+        }
+        apply(ctx_rb_successor_right(erased, successor, parent, color, left,
+            RbTree::Node(successor, erased, sc, RbTree::Empty, child), up));
+        apply(is_rb_node_right(erased, parent, color, left,
+            RbTree::Node(successor, erased, sc, RbTree::Empty, child)));
+        apply(rb_reparent_preserves_is_rb(RbTree::Node(successor, erased, sc, RbTree::Empty, child), successor));
+        unfold(rb_reparent(RbTree::Node(successor, erased, sc, RbTree::Empty, child), successor));
+        have is_rb(RbTree::Node(successor, successor, sc, RbTree::Empty, child)) == 1 by {
+            rewrite(RbTree::Node(successor, successor, sc, RbTree::Empty, child)
+                == rb_reparent(RbTree::Node(successor, erased, sc, RbTree::Empty, child), successor));
+            rewrite(is_rb(rb_reparent(RbTree::Node(successor, erased, sc, RbTree::Empty, child), successor))
+                == is_rb(RbTree::Node(successor, erased, sc, RbTree::Empty, child))); assumption();
+        }
+        have rb_minimum(RbTree::Node(successor, successor, sc, RbTree::Empty, child))
+            == RbMinimum::Found(successor, sc, child) by {
+            unfold(rb_minimum(RbTree::Node(successor, successor, sc, RbTree::Empty, child))); normalize();
+        }
+        have ctx_rb(Context::Right(successor, parent, color, rb_reparent(left, successor), up),
+            black_height(RbTree::Node(successor, successor, sc, RbTree::Empty, child)),
+            rb_color(RbTree::Node(successor, successor, sc, RbTree::Empty, child))) == 1 by {
+            rewrite(RbTree::Node(successor, successor, sc, RbTree::Empty, child)
+                == rb_reparent(RbTree::Node(successor, erased, sc, RbTree::Empty, child), successor)); assumption();
+        }
+        apply(rb_minimum_child_blackens_without_deficit(
+            RbTree::Node(successor, successor, sc, RbTree::Empty, child),
+            Context::Right(successor, parent, color, rb_reparent(left, successor), up),
+            successor, sc, child, successor));
+        have plug(rb_min_context(RbTree::Node(successor, successor, sc, RbTree::Empty, child),
+            Context::Right(successor, parent, color, rb_reparent(left, successor), up)),
+            rb_reparent(rb_recolor(child, Color::Black), successor))
+            == plug(up, rb_immediate_successor_child(successor, parent, color, left, child)) by {
+            unfold(rb_min_context(RbTree::Node(successor, successor, sc, RbTree::Empty, child),
+                Context::Right(successor, parent, color, rb_reparent(left, successor), up)));
+            unfold(plug(Context::Right(successor, parent, color, rb_reparent(left, successor), up),
+                rb_reparent(rb_recolor(child, Color::Black), successor)));
+            unfold(rb_immediate_successor_child(successor, parent, color, left, child)); normalize();
+        }
+        rewrite(plug(up, rb_immediate_successor_child(successor, parent, color, left, child))
+            == plug(rb_min_context(RbTree::Node(successor, successor, sc, RbTree::Empty, child),
+                Context::Right(successor, parent, color, rb_reparent(left, successor), up)),
+                rb_reparent(rb_recolor(child, Color::Black), successor))); assumption();
+    }
+
+    ensures rb_parent_consistent(rb_immediate_successor_child(successor, parent, color, left, child), parent) == 1 by {
+        apply(rb_parent_consistent_node_left(erased, parent, color, left,
+            RbTree::Node(successor, erased, sc, RbTree::Empty, child), parent));
+        apply(rb_parent_consistent_node_right(erased, parent, color, left,
+            RbTree::Node(successor, erased, sc, RbTree::Empty, child), parent));
+        apply(rb_parent_consistent_node_right(successor, erased, sc, RbTree::Empty, child, erased));
+        apply(rb_reparent_parent_consistent(left, erased, successor));
+        apply(rb_recolor_parent_consistent(child, Color::Black, successor));
+        apply(rb_reparent_parent_consistent(rb_recolor(child, Color::Black), successor, successor));
+        apply(rb_node_is_reflexive(parent));
+        apply(rb_parent_consistent_node(successor, parent, color, rb_reparent(left, successor),
+            rb_reparent(rb_recolor(child, Color::Black), successor), parent));
+        unfold(rb_immediate_successor_child(successor, parent, color, left, child)); assumption();
+    }
+
+    ensures rb_inorder(rb_immediate_successor_child(successor, parent, color, left, child))
+        == list_append(rb_inorder(left), rb_inorder(RbTree::Node(successor, erased, sc, RbTree::Empty, child))) by {
+        apply(rb_reparent_preserves_inorder(left, successor));
+        apply(rb_reparent_preserves_inorder(rb_recolor(child, Color::Black), successor));
+        apply(rb_recolor_preserves_inorder(child, Color::Black));
+        apply(rb_erase_no_left_child(successor, erased, sc, child));
+        unfold(rb_immediate_successor_child(successor, parent, color, left, child));
+        unfold(rb_inorder(RbTree::Node(successor, parent, color, rb_reparent(left, successor),
+            rb_reparent(rb_recolor(child, Color::Black), successor))));
+        rewrite(rb_inorder(rb_reparent(left, successor)) == rb_inorder(left));
+        rewrite(rb_inorder(rb_reparent(rb_recolor(child, Color::Black), successor)) == rb_inorder(rb_recolor(child, Color::Black)));
+        rewrite(rb_inorder(rb_recolor(child, Color::Black)) == rb_inorder(child));
+        rewrite(rb_inorder(RbTree::Node(successor, erased, sc, RbTree::Empty, child))
+            == List<struct rb_node*>::Cons(successor, rb_inorder(child))); normalize();
+    }
+}

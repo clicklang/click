@@ -21,11 +21,16 @@ preserves parent consistency and the remaining in-order sequence. This is
 the input to erase-color fixup; it does not claim that the tree is already
 red-black.
 
+`rbtree_erase_child_successor.click` covers an immediate successor with a
+nonempty replacement child at the root. Blackening the child's root restores
+balance without erase-color fixup. The proof returns the exact remaining
+model, red-black validity, parent consistency, and the remaining in-order
+sequence, with a null fixup parent.
+
 These are C increments of chunk 11 in
-[the rbtree issue](../../issues/rbtree-example.md). Non-root deletion, deeper
-successors, and immediate successors with a replacement child remain. The C
-file retains all branches; each sidecar states its
-current coverage explicitly.
+[the rbtree issue](../../issues/rbtree-example.md). Non-root deletion and
+deeper successors remain. The C file retains all branches; each sidecar
+states its current coverage explicitly.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
@@ -47,3 +52,6 @@ pin the source and reject skipped parent/color writes, root replacement, or
 the successor's left-child parent update. The successor's explicit final
 claim closers also re-verify. Black-successor mutations reject a skipped root
 replacement and incorrectly returning null instead of the fixup parent.
+
+Replacement-child mutations reject a missing parent/color write and a write
+that leaves the child red.

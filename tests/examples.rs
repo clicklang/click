@@ -572,6 +572,24 @@ fn rbtree_erase_black_successor_requires_the_fixup_parent() {
 }
 
 #[test]
+fn rbtree_erase_child_successor_requires_blackening() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_child_successor.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_child_successor_requires_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_child_successor.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "",
+    );
+}
+
+#[test]
 fn rbtree_erase_black_successor_requires_root_replacement() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_successor.click",
