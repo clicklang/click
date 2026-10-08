@@ -1112,6 +1112,12 @@ theorem int32_subtract_to_integer(left: int32, right: int32) {
     ensures to_integer(left - right) == to_integer(left) - to_integer(right);
 }
 
+theorem int32_remainder_to_integer(left: int32, right: int32) {
+    requires defined(left % right);
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+
 theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
     requires to_integer(left) + to_integer(right) >= -2147483648;
     requires to_integer(left) + to_integer(right) <= 2147483647;

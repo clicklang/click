@@ -376,3 +376,10 @@ unit passes; normal tests reject a missing input view, an admitted full outer
 batch, and either missing canonical seed bound. Whole-proof verification and late false-bound checks run nightly.
 Outer batches, lengths with a short byte tail, and the mathematical checksum
 postcondition remain unproved by this contract.
+
+The [partition lemmas](partition.click) independently prove the metadata split
+for lengths through 22,207: the rounded prefix fits the signed index type and
+is divisible by four, while the original nested subtraction gives exactly the
+zero-to-three-byte remainder. Verification and expanded-proof checks pass;
+false prefix ceilings, tail bounds, divisibility, and byte accounting fail.
+These arithmetic lemmas do not yet establish the original short-tail loop.

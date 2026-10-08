@@ -9304,6 +9304,44 @@ pub fn prove_int32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32
     prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, true)
 }
 
+/// Exact mathematical remainder of a defined signed 32-bit operation.
+/// Both zero division and MIN / -1 are excluded by the native definedness
+/// premise, even though mathematical remainder itself has no overflow.
+pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
+            .expect("typed signed operands have exact Integer interpretations")
+    };
+    let native_defined = Proposition::And(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+            false,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::signed_divide_overflows(left.clone(), right.clone()),
+            false,
+        )),
+    );
+    let integer_nonzero = Proposition::ConditionIs(
+        ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
+        true,
+    );
+    let exact = IntegerTerm::truncating_remainder(observe(left.clone()), observe(right.clone()));
+    let machine = Bitvector32Term::Remainder(left.into(), right.into());
+    Theorem::new(Proposition::Implies(
+        native_defined.into(),
+        Proposition::Implies(
+            integer_nonzero.into(),
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+                true,
+            )
+            .into(),
+        )
+        .into(),
+    ))
+}
+
 /// Exact mathematical observation of a defined signed 64-bit addition.
 pub fn prove_int64_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
     prove_signed_operation_to_integer(MachineIntegerType::Int64, left, right, false)
