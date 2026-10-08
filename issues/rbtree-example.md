@@ -70,6 +70,12 @@ Tracing the black-leaf prototype exposed repeated project resolution for
 each written tactic location. The CLI now resolves a claim's locations
 together and reuses them, with deterministic scaling checks. The original
 trace finishes in about 15 seconds instead of hitting its 60-second bound.
+The black-leaf context folds also exposed an alias gap for C pointers with a
+symbolic base and scaled offset. Fold-body checks now query exact aliases of
+the pointers in the requested fact, including pure-function arguments, and
+require exact evidence for the rewritten fact. Kernel regressions cover
+nonnull and parent-function facts, missing evidence, false conclusions, and
+16/64/256 unrelated aliases including null links.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.

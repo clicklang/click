@@ -71,6 +71,7 @@ struct CarrierVariables {
     work_exhausted: bool,
     registered_loads: BTreeSet<Variable>,
     pointer_applications: BTreeSet<u64>,
+    pointer_terms: Option<Vec<Pointer>>,
 }
 
 impl CarrierVariables {
@@ -521,6 +522,11 @@ fn collect_algebraic_carriers_seen(
 fn collect_pointer_carriers(pointer: &Pointer, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
+    }
+    if let Some(pointers) = &mut variables.pointer_terms
+        && *pointer != Pointer::null()
+    {
+        pointers.push(pointer.clone());
     }
     match &pointer.block {
         PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
@@ -996,6 +1002,15 @@ impl IntegerSubstitutionVariableCollector {
         variables.extend(self.carriers.integer.iter().copied());
         variables.extend(self.carriers.algebraic.iter().copied());
     }
+}
+
+/// Collect only pointer expressions reachable from this explicit goal. Memory
+/// snapshots remain opaque, just as in capture-avoiding term rewriting.
+pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<Pointer> {
+    let mut carriers = CarrierVariables::for_rewrite(false);
+    carriers.pointer_terms = Some(Vec::new());
+    collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
+    carriers.pointer_terms.unwrap_or_default()
 }
 
 fn collect_integer_substitution_variables_with_carriers(
