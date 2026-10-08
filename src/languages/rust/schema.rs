@@ -301,6 +301,9 @@ pub enum MirStatement {
         source: String,
         record: String,
     },
+    BeginStorage {
+        local: String,
+    },
     EndStorage {
         local: String,
     },
