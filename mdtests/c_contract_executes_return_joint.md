@@ -10,8 +10,8 @@ theorem lift(callback: int32 (*)(int32*)) executes callback(int32* cell) {
     requires Second(callback);
     ensures Target(callback) by {
         unfold(Cell(cell)); step(First);
-        have result == 0 by { assumption(); }
-        have cell[0] == result by { assumption(); }
+        have result == 0 by assumption();
+        have cell[0] == result by assumption();
         have cell[0] == 0 by {
             rewrite(cell[0] == result);
             rewrite(result == 0);

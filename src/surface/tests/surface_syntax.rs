@@ -860,6 +860,7 @@ fn parses_checked_signature_and_contract_clauses() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
     assert_eq!(
@@ -962,6 +963,7 @@ fn parses_pure_theorem_definition() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
     assert_eq!(theorem.requires().len(), 1);
@@ -3499,6 +3501,7 @@ fn parses_array_parameter_signature_as_pointer() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
 }
@@ -3526,6 +3529,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
     assert_eq!(
@@ -4361,6 +4365,32 @@ fn a_child_resource_is_owned_like_any_other() {
     }
 }
 
+/// An `invariant` takes a label as `ensures` does, and the label names it in
+/// a failure, where an unlabelled one is named by position.
+#[test]
+fn an_invariant_label_names_it_in_a_failure() {
+    let c_source = "int32 count(int32 n) { int32 i = 0; while (i < n) { i = i + 1; } return i; }";
+    let sidecar = |invariant: &str| {
+        format!(
+            "verifying \"count.c\"; int32 count(int32 n) {{ requires 0 <= n; ensures result == result; }} by {{ \
+             execute_until(loop(0)); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
+             preserve by {{ execute(); simp(); }} }} execute(); simp(); }}"
+        )
+    };
+    let labelled = verify_c0_sources(&sidecar("upper:"), &[("count.c", c_source)])
+        .expect_err("the invariant does not hold at entry");
+    assert!(
+        labelled.message.contains("loop 0 invariant `upper` entry"),
+        "{labelled:?}"
+    );
+    let unlabelled = verify_c0_sources(&sidecar(""), &[("count.c", c_source)])
+        .expect_err("the invariant does not hold at entry");
+    assert!(
+        unlabelled.message.contains("loop 0 invariant 0 entry"),
+        "{unlabelled:?}"
+    );
+}
+
 #[test]
 fn pointer_storage_views_name_the_field_alone() {
     let c_source =
@@ -4440,6 +4470,50 @@ fn a_contract_cannot_return_one_place_twice() {
             "{contract}: {refused}"
         );
     }
+}
+
+/// C has no references, so a C sidecar that declares one does not match its
+/// function.
+#[test]
+fn a_reference_parameter_does_not_match_a_c_pointer() {
+    let c_source = "int32 read(int32* p) { return p[0]; }";
+    let source = "verifying \"read.c\"; int32 read(int32& p) { views p; ensures result == p; } \
+        by { execute(); simp(); }";
+    let error = verify_c0_sources(source, &[("read.c", c_source)])
+        .expect_err("a C parameter is not a reference");
+    assert!(
+        error
+            .message
+            .contains(".click has Int32& p, C has Int32Pointer p"),
+        "{error:?}"
+    );
+}
+
+/// Two different clauses that return overlapping memory are refused where
+/// the contract is set up, naming both places, with or without a proof.
+#[test]
+fn a_contract_cannot_return_overlapping_places() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        int32 get(struct cell* p) { return p->value; }";
+    for contract in [
+        "int32 get(struct cell* p) { owns *p; produces p->value; ensures result == result; } by { execute(); simp(); }",
+        "contract int32 Whole(struct cell* p) { owns *p; produces p->value; } \
+         int32 get(struct cell* p) { views p->value; ensures result == result; } by { execute(); simp(); }",
+    ] {
+        let source = format!("verifying \"cell.c\"; {contract}");
+        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+            .expect_err("the contract returns overlapping places");
+        assert!(
+            error
+                .message
+                .contains("would return overlapping places: `p->value` and `*p`"),
+            "{contract}: {error:?}"
+        );
+    }
+    // Two fields of one struct do not overlap.
+    let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
+        consumes p->other; produces p->other; ensures result == result; } by { execute(); simp(); }";
+    verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
 }
 
 /// A missing memory fact is reported as the place a clause would name.

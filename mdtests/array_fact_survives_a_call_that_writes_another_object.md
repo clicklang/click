@@ -40,13 +40,13 @@ int32 keep_h() {
     views h[0..1];
     ensures result == 5;
 } by {
-    have 0 <= 0 by { simp(); }
+    have 0 <= 0;
     have icount(h, 0, 0) == 0 by {
         peel(icount(h, 0, 0)) using { 0 <= 0; }
         normalize();
     }
     execute();
-    have icount(h, 0, 0) == 0 by { simp(); }
+    have icount(h, 0, 0) == 0;
     simp();
 }
 ```

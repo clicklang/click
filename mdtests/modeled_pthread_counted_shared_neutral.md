@@ -40,20 +40,20 @@ int32 run(void* p, void* q) {
     step();
     step();
     branch then {
-        have count(ticket(p)) == 2 by { simp(); }
+        have count(ticket(p)) == 2;
         step(); simp();
     } else {}
     step();
     branch then {
         step();
-        have count(ticket(q)) == 1 by { simp(); }
+        have count(ticket(q)) == 1;
         step(); simp();
     } else {}
     step();
-    have count(ticket(p)) == 2 by { simp(); }
+    have count(ticket(p)) == 2;
     step();
-    have count(ticket(p)) == 2 by { simp(); }
-    have count(ticket(q)) == 1 by { simp(); }
+    have count(ticket(p)) == 2;
+    have count(ticket(q)) == 1;
     step(); simp();
 }
 ```

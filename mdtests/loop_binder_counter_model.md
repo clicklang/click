@@ -115,7 +115,7 @@ void bump_n(struct cell* p, int32 n) {
             }
         }
     }
-    have i == n by simp;
+    have i == n;
     execute();
     simp();
 }

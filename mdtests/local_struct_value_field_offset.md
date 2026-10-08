@@ -22,7 +22,7 @@ int probe() {
     step();
     step();
     step();
-    have pair.second == 11 by { normalize(); }
+    have pair.second == 11 by normalize();
     execute();
     simp();
 }

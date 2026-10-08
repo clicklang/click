@@ -543,6 +543,7 @@ mod tests {
                         function_pointer_signature: None,
                         constant: false,
                         pointee_constant: false,
+                        reference: false,
                     })
                     .collect(),
                 exceptional_type: None,

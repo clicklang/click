@@ -211,7 +211,7 @@ struct node* rotate_left(
                 unfold(shape_right(Shape::Node(root_node, left_model, right_model)));
                 normalize();
             }
-            have right_model != Shape::Empty by { simp(); }
+            have right_model != Shape::Empty;
             match right_model {
                 Shape::Empty => { contradiction(right_model == Shape::Empty); },
                 Shape::Node(pivot_node, middle_model, far_model) => {

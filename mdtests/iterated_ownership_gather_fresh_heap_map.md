@@ -56,7 +56,7 @@ void with_fresh_map(int32* data, int32 capacity) {
         };
         owns occupied[0..capacity];
     }
-    have i == capacity by simp;
+    have i == capacity;
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {

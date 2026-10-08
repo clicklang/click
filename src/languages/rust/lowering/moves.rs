@@ -10,6 +10,17 @@ pub(super) fn lower(
     f: &Function,
     mir: &MirBody,
 ) -> Result<CStatement, String> {
+    // Index storage starts once. Locals without a compiler storage event
+    // retain their function-entry backing (including return-place arrays).
+    let storage_starts: BTreeSet<&str> = mir
+        .blocks
+        .iter()
+        .flat_map(|block| &block.statements)
+        .filter_map(|statement| match statement {
+            S::BeginStorage { local } => Some(local.as_str()),
+            _ => None,
+        })
+        .collect();
     let mut records = BTreeMap::new();
     let mut live = BTreeMap::new();
     let mut declarations = c_skip();
@@ -80,13 +91,19 @@ pub(super) fn lower(
                     c_declare(flag.clone(), CType::Int32),
                     c_seq(
                         c_assign(flag, c_int32_literal(0)),
-                        c_begin_aggregate_construction(
-                            local.name.clone(),
-                            cx.layouts
-                                .get(name.as_str())
-                                .ok_or("missing owned record layout")?
-                                .to_kernel_aggregate_layout(),
-                        ),
+                        if storage_starts.contains(local.name.as_str())
+                            && check_copyable(cx, name).is_ok()
+                        {
+                            c_skip()
+                        } else {
+                            c_begin_aggregate_construction(
+                                local.name.clone(),
+                                cx.layouts
+                                    .get(name.as_str())
+                                    .ok_or("missing owned record layout")?
+                                    .to_kernel_aggregate_layout(),
+                            )
+                        },
                     ),
                 )
             }
@@ -164,14 +181,18 @@ pub(super) fn lower(
                 cx.local_arrays.insert(local.name.clone());
                 cx.arrays
                     .insert(local.name.clone(), (*length, element, false));
-                c_begin_aggregate_construction(
-                    local.name.clone(),
-                    CAggregateLayout::new(
-                        *length as u32 * element.byte_width(),
-                        element.byte_width(),
-                        vec![],
-                    ),
-                )
+                if storage_starts.contains(local.name.as_str()) {
+                    c_skip()
+                } else {
+                    c_begin_aggregate_construction(
+                        local.name.clone(),
+                        CAggregateLayout::new(
+                            *length as u32 * element.byte_width(),
+                            element.byte_width(),
+                            vec![],
+                        ),
+                    )
+                }
             }
             Type::Reference { mutable, .. } => c_declare_with_all_qualifiers(
                 local.name.clone(),
@@ -552,6 +573,20 @@ pub(super) fn lower(
                         ),
                     )
                 }
+                S::BeginStorage { local } if cx.local_arrays.contains(local) => {
+                    let (length, element, _) = cx.arrays[local];
+                    // Mint checked fresh automatic storage at the compiler's
+                    // lifetime start, including each symbolic loop iteration.
+                    // Re-entry retires the old object and checks live loans.
+                    c_begin_aggregate_construction(
+                        local.clone(),
+                        CAggregateLayout::new(
+                            arrays::array_length(element, length)? * element.byte_width(),
+                            element.byte_width(),
+                            vec![],
+                        ),
+                    )
+                }
                 S::BeginStorage { local } => {
                     let record = records
                         .get(local.as_str())
@@ -563,7 +598,16 @@ pub(super) fn lower(
                     // Drop/reference-bearing records retain their checked
                     // move/drop protocol; starting storage cannot erase it.
                     if check_copyable(cx, record).is_ok() {
-                        c_assign(flag, c_int32_literal(0))
+                        c_seq(
+                            c_begin_aggregate_construction(
+                                local.clone(),
+                                cx.layouts
+                                    .get(*record)
+                                    .ok_or("missing record storage layout")?
+                                    .to_kernel_aggregate_layout(),
+                            ),
+                            c_assign(flag, c_int32_literal(0)),
+                        )
                     } else {
                         c_skip()
                     }

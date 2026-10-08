@@ -31,7 +31,7 @@ int32 prefix_sum_equation(int32 a[], int32 n) {
     views a[0..n];
     ensures icount(a, 0, n) == icount(a, 0, n - 1) + to_integer(a[n - 1]) by {
         execute();
-        have 0 <= n - 1 by { simp(); }
+        have 0 <= n - 1;
         peel(icount(a, 0, n)) using {
             0 <= n - 1;
             n - 1 < 2147483647;

@@ -41,7 +41,7 @@ int32 identity(int32 value) {
 }
 
 theorem ordinary_pure_law(x: int32) {
-    ensures x == x by { simp(); }
+    ensures x == x by simp;
 }
 ```
 

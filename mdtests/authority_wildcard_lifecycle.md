@@ -18,14 +18,14 @@ verifying "wildcard_lifecycle.c";
 void lifecycle() { ensures 1 == 1; } by {
     step(); step(); step(); step(); step(); step();
     fold(authority(slot(&pool, _)));
-    have count(slot(&pool, _)) == 0 by simp;
+    have count(slot(&pool, _)) == 0;
     fold(slot(&pool, &first));
     fold(slot(&pool, &second));
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2;
     unfold(slot(&pool, &first));
-    have count(slot(&pool, _)) == 1 by simp;
+    have count(slot(&pool, _)) == 1;
     unfold(slot(&pool, &second));
-    have count(slot(&pool, _)) == 0 by simp;
+    have count(slot(&pool, _)) == 0;
     unfold(authority(slot(&pool, _)));
     execute(); simp();
 }

@@ -151,10 +151,10 @@ int32 two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     ensures result == 11;
 } by {
     step(put(pool, first, 11), { st: st, r: a });
-    have pool->data[first->at] == 11 by simp;
+    have pool->data[first->at] == 11;
     mark m1;
     step(put(pool, second, 22), { st: st, r: b });
-    have pool->data == at(m1, pool->data) by simp;
+    have pool->data == at(m1, pool->data);
     have pool->data[first->at] == 11 by {
         transport(at(m1, pool->data[first->at]) == 11, pool->data[first->at] == 11) using {
             at(m1, pool->data[first->at]) == 11;

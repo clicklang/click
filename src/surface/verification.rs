@@ -6975,6 +6975,7 @@ pub(in crate::surface) fn external_c0_function(
                 )
                 .with_constant(parameter.is_constant())
                 .with_pointee_constant(parameter.pointee_is_constant())
+                .with_reference(parameter.is_reference())
             })
             .collect(),
     )
@@ -8423,6 +8424,7 @@ pub(in crate::surface) fn check_signature(
     {
         if expected.c_type() != actual.c_type()
             || expected.pointee_is_constant() != actual.pointee_is_constant()
+            || expected.is_reference() != actual.is_reference()
             || expected.name() != actual.name()
             || expected.struct_name() != actual.struct_name()
             || expected.function_pointer_signature() != actual.function_pointer_signature()
@@ -8435,14 +8437,16 @@ pub(in crate::surface) fn check_signature(
                     expected.c_type(),
                     expected.struct_name(),
                     expected.pointee_is_constant(),
+                    expected.is_reference(),
                 ),
-                expected.name(),
+                written_parameter_name(expected.name(), expected.is_reference()),
                 describe_parameter_type(
                     actual.c_type(),
                     actual.struct_name(),
                     actual.pointee_is_constant(),
+                    actual.is_reference(),
                 ),
-                actual.name()
+                written_parameter_name(actual.name(), actual.is_reference())
             ))
             .with_kind(ClickErrorKind::Type));
         }
@@ -8451,15 +8455,28 @@ pub(in crate::surface) fn check_signature(
     Ok(())
 }
 
+/// A parameter's name as a signature writes it: a reference is written by
+/// its referent, not by the pointer that carries it.
+fn written_parameter_name(name: &str, reference: bool) -> &str {
+    syntax::referent_of_carrier(name)
+        .filter(|_| reference)
+        .unwrap_or(name)
+}
+
 pub(in crate::surface) fn describe_parameter_type(
     c_type: C0Type,
     struct_name: Option<&str>,
     pointee_constant: bool,
+    reference: bool,
 ) -> String {
     let parameter_type = match struct_name {
         Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => format!("struct {name}"),
+        Some(name) if reference => format!("struct {name}&"),
         Some(name) => format!("struct {name}*"),
-        None => format!("{c_type:?}"),
+        None => match c_type.pointee_type().filter(|_| reference) {
+            Some(referent) => format!("{referent:?}&"),
+            None => format!("{c_type:?}"),
+        },
     };
     if pointee_constant {
         format!("const {parameter_type}")

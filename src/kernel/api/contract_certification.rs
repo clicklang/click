@@ -2073,22 +2073,35 @@ pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
             let effect_facts = memory_effect_execution_facts(&facts);
             let facts = public_execution_pure_facts(&facts);
             CFunctionExecutionCandidate {
-                outcome,
-                facts,
-                effect_facts,
-                obligations,
-                loan_evidence,
+                data: Arc::new(CFunctionExecutionCandidateData {
+                    outcome: Arc::new(outcome),
+                    facts,
+                    effects_public_first: execution_effects_are_public_first(&effect_facts),
+                    effect_facts,
+                    obligations: Arc::new(obligations),
+                    loan_evidence,
+                }),
             }
         })
         .collect();
+    c_function_execution_candidates_from_retained_paths(state, function, arguments, paths)
+}
 
+/// Re-publish immutable untrusted candidates without copying their outcome
+/// states or re-classifying their already partitioned fact streams.
+pub(crate) fn c_function_execution_candidates_from_retained_paths(
+    state: CState,
+    function: CFunction,
+    arguments: Vec<CExpression>,
+    paths: Vec<CFunctionExecutionCandidate>,
+) -> CFunctionExecutionCandidates {
     #[cfg(test)]
     ExecutionFacts::record_published_storage(
         false,
         paths.len(),
         paths
             .iter()
-            .flat_map(|path| [&path.facts, &path.effect_facts]),
+            .flat_map(|path| [path.facts(), path.effect_facts()]),
     );
     CFunctionExecutionCandidates {
         data: std::sync::Arc::new(CFunctionExecutionCandidatesData {
@@ -2097,6 +2110,53 @@ pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
             arguments,
             paths,
         }),
+    }
+}
+
+fn execution_effects_are_public_first(facts: &ExecutionFacts) -> bool {
+    let mut private_seen = false;
+    for fact in facts {
+        if fact.is_public() {
+            if private_seen {
+                return false;
+            }
+        } else {
+            private_seen = true;
+        }
+    }
+    true
+}
+
+/// Classify only the new suffix. The caller has already suppressed identical
+/// facts against the candidate's combined execution facts, just as it does
+/// before publishing a fresh outcome. Preserve re-publication's public-then-
+/// private effect order without re-classifying the complete guard stream.
+/// All certification remains independent.
+pub(crate) fn c_function_execution_candidate_with_additional_facts(
+    candidate: &CFunctionExecutionCandidate,
+    additional: &ExecutionFacts,
+) -> CFunctionExecutionCandidate {
+    if additional.is_empty() && candidate.data.effects_public_first {
+        return candidate.clone();
+    }
+    let public = public_execution_pure_facts(additional);
+    let added_effects = memory_effect_execution_facts(additional);
+    let mut data = candidate.data.as_ref().clone();
+    data.facts.extend_shared(&public);
+    if !data.effects_public_first {
+        // The former reconstruction reads existing public facts first, then
+        // private effects. New facts follow that combined existing stream.
+        let mut effects = data.effect_facts.filtered(|fact| fact.is_public());
+        effects.extend_shared(&data.effect_facts.filtered(|fact| !fact.is_public()));
+        data.effect_facts = effects;
+        data.effects_public_first = true;
+    }
+    if !added_effects.is_empty() {
+        data.effect_facts.extend_shared(&added_effects);
+        data.effects_public_first = execution_effects_are_public_first(&data.effect_facts);
+    }
+    CFunctionExecutionCandidate {
+        data: Arc::new(data),
     }
 }
 

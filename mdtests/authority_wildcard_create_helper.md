@@ -32,7 +32,7 @@ void lifecycle() { ensures 1 == 1; } by {
     fold(slot(&pool, &first));
     fold(slot(&pool, &second));
     step();
-    have count(slot(&pool, _)) == 3 by simp;
+    have count(slot(&pool, _)) == 3;
     unfold(slot(&pool, &first));
     unfold(slot(&pool, &second));
     unfold(slot(&pool, &third));

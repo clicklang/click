@@ -1,8 +1,8 @@
 verifying "nested_record.cpp";
 
-void SetFeeRef(struct FeeState* state, int64 next) {
-    owns state->fee;
-    ensures state->fee == next;
+void SetFeeRef(struct FeeState& state, int64 next) {
+    owns state.fee;
+    ensures state.fee == next;
 } by { execute(); simp(); }
 
 void FeeEnvelope_SetLeftByReference(struct FeeEnvelope* self, int64 next) {

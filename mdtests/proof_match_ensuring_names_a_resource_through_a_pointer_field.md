@@ -55,16 +55,16 @@ int32 peek(struct holder* h, int32 x) {
         fact c.model == old(c.model);
     } {
         Sign::Neg(value) => {
-            have Sign::Neg(value) == old(c.model) by { simp(); }
+            have Sign::Neg(value) == old(c.model);
             unfold(c);
             let c = fold(cell(h->inner), { model: Sign::Neg(value) });
-            have c.model == old(c.model) by { simp(); }
+            have c.model == old(c.model);
         },
         Sign::Pos(value) => {
-            have Sign::Pos(value) == old(c.model) by { simp(); }
+            have Sign::Pos(value) == old(c.model);
             unfold(c);
             let c = fold(cell(h->inner), { model: Sign::Pos(value) });
-            have c.model == old(c.model) by { simp(); }
+            have c.model == old(c.model);
         },
     }
     step();

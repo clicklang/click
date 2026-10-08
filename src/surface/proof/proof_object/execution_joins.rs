@@ -1715,17 +1715,18 @@ impl<'a> Proof<'a> {
                     }
                     None => arm.introduced_facts.clone(),
                 };
+                let mut additional_facts = crate::kernel::ExecutionFacts::new();
                 for proposition in &introduced {
                     let fact = ExecutionPureFact::new(proposition.clone());
                     if !path_facts.contains(&fact) {
+                        additional_facts.push(fact.clone());
                         path_facts.push(fact);
                     }
                 }
-                let obligations = path.obligations().to_vec();
                 let path_key = (
-                    path.outcome().clone(),
+                    path.outcome(),
                     path_facts.clone(),
-                    obligations.clone(),
+                    path.obligations(),
                     provenance.call_routes.clone(),
                 );
                 let path_loan_evidence = path.loan_evidence().clone();
@@ -1759,12 +1760,12 @@ impl<'a> Proof<'a> {
                         .entry(path_key)
                         .or_default()
                         .push((path_loan_evidence.clone(), paths.len()));
-                    paths.push((
-                        path.outcome().clone(),
-                        path_facts,
-                        obligations,
-                        path_loan_evidence,
-                    ));
+                    paths.push(
+                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                            path,
+                            &additional_facts,
+                        ),
+                    );
                     execution_evidence
                         .push(arm.execution.core.execution_evidence[arm_path_index].clone());
                     // Proof cases retain their decision when the checked arm
@@ -1785,13 +1786,12 @@ impl<'a> Proof<'a> {
             }
         }
 
-        let outcomes =
-            crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
-                execution_start_state.clone(),
-                context.function.clone(),
-                context.arguments.to_vec(),
-                paths,
-            );
+        let outcomes = crate::kernel::c_function_execution_candidates_from_retained_paths(
+            execution_start_state.clone(),
+            context.function.clone(),
+            context.arguments.to_vec(),
+            paths,
+        );
         let mut execution = parent_execution.clone();
         execution.core.has_empty_execution_branch_leaf |= arms
             .iter()
@@ -3288,6 +3288,19 @@ impl<'a> Proof<'a> {
         let original = proof.lower_surface_proposition(&condition, "execute case condition")?;
         let frozen =
             proof.lower_surface_proposition(&anchored, "anchored execute case condition")?;
+        // A synthesized source selector can lower to a condition the case
+        // already knows without selecting the kernel statement's successors.
+        // Splitting that condition again makes no progress and can exhaust
+        // the native stack before the execution work budget is reached.
+        let opposite = proof.lower_surface_proposition(
+            &ClickProposition::Not(Box::new(condition.clone())),
+            "execute case negation",
+        )?;
+        if proof.facts().contains(&original) || proof.facts().contains(&opposite) {
+            return Err(proof.step_error(
+                "`execute` cannot advance after selecting this path condition; use explicit cases and `step()` to expose the remaining obligation",
+            ));
+        }
         if original != frozen {
             return Err(
                 proof.step_error("anchored execute case condition changed its checked meaning")
@@ -4171,6 +4184,118 @@ fn migrate_arm_metadata(
                 .presentation
                 .frontier_loop_clauses
                 .push(clause.clone());
+        }
+    }
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    fn indexed_fact(index: u32) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(Bitvector32Term::Variable(Variable(0))),
+                Box::new(Bitvector32Term::Constant(index)),
+            ),
+            true,
+        )
+    }
+
+    #[test]
+    fn execute_refuses_to_split_an_already_selected_path_condition() {
+        let click_file = crate::surface::parse(
+            r#"
+            int32 identity(int32 x) {
+                ensures result == x;
+            } by {
+                assumption();
+            }
+        "#,
+        )
+        .expect("test contract should parse");
+        let function_block = &click_file.function_blocks()[0];
+        let predicate_environment = PredicateEnvironment::new(&[]);
+        let click_function_environment =
+            ClickFunctionEnvironment::new(click_file.click_function_definitions());
+        let theorem_environment = TheoremEnvironment::new(click_file.theorem_definitions());
+        let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
+        let parsed_function = syntax::parse_function(
+            "int32 identity(int32 x) { int32 copied; copied = x; return copied; }",
+        )
+        .expect("test C function should parse");
+        let function = parsed_function.to_kernel_function();
+        let arguments = vec![CExpression::Value(CValue::Int32(
+            Bitvector32Term::Variable(Variable(71_000)),
+        ))];
+        let function_environment = CExecutionEnvironment::new();
+        let condition = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+            operator: ComparisonOperator::GreaterEqual,
+            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        };
+
+        for size in [8_u32, 32, 128] {
+            let root = Proof::for_execution_frontier(
+                "execution proof if scaling",
+                0,
+                ExecutionProofState::at_entry(
+                    CState::new(),
+                    ExecutionFrontier::default(),
+                    RecordedSnapshots::new(),
+                    SurfacePropositionMap::default(),
+                    PersistentSequence::default(),
+                ),
+                (0..size).map(indexed_fact).collect::<Vec<_>>(),
+                ExecutionProofConstants {
+                    source_layout: SourceExecutionLayout::new(parsed_function.body()),
+                    ..ExecutionProofConstants::default()
+                },
+                function_block,
+                &function,
+                &parsed_function,
+                &arguments,
+                &function_environment,
+                &resource_environment,
+                &predicate_environment,
+                &click_function_environment,
+                &theorem_environment,
+            )
+            .apply_step(ProofStep::Step)
+            .expect("the declaration prefix should execute before the proof split");
+
+            let (split, record) = root.split_focused_execution_if(condition.clone()).unwrap();
+            for take_then in [true, false] {
+                let focused = split.focus_execution_if_arm(&record, take_then).unwrap();
+                let mut steps = 0;
+                let error = focused
+                    .try_focused_execute_cases_to_exit(
+                        condition.clone(),
+                        &[],
+                        &mut BTreeSet::new(),
+                        &mut steps,
+                    )
+                    .err()
+                    .expect("a selected condition must not recurse into another identical split");
+                assert!(
+                    error
+                        .message()
+                        .contains("cannot advance after selecting this path condition"),
+                    "{error:?}"
+                );
+                assert_eq!(steps, 0, "refusal must precede recursive execution");
+            }
+            let mut steps = 0;
+            assert!(
+                root.try_focused_execute_cases_to_exit(
+                    condition.clone(),
+                    &[],
+                    &mut BTreeSet::new(),
+                    &mut steps,
+                )
+                .unwrap()
+                .is_some(),
+                "an undecided condition must still execute both cases"
+            );
         }
     }
 }

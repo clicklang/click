@@ -1714,7 +1714,7 @@ fn describe_struct_place_range(
         let high = u64::from(offset) + end * width;
         let size = u64::from(layout.size_bytes());
         if low == 0 && high == size {
-            return Some(format!("*{}", parameter.name()));
+            return Some(describe_pointee_place(parameter.name()));
         }
         for (name, field) in layout.fields() {
             let field_low = u64::from(field.offset_bytes());
@@ -1735,7 +1735,7 @@ fn describe_struct_place_range(
                 || high == field_low + u64::from(field.byte_width())
                 || pointer_word
             {
-                return Some(format!("{}->{name}", parameter.name()));
+                return Some(describe_field_place(parameter.name(), name));
             }
         }
         // A leaf of an embedded struct: `o->inner.count`.
@@ -1753,7 +1753,7 @@ fn describe_struct_place_range(
                 && low < high
                 && high <= leaf_high(low)
         }) {
-            return Some(format!("{}->{name}", parameter.name()));
+            return Some(describe_field_place(parameter.name(), name));
         }
     }
     None
@@ -2780,6 +2780,16 @@ fn describe_cell_version_stop(
         Some(cell) => format!("`{}`", cell.text()),
         None => "this read".to_string(),
     };
+    if let resource_tracker::Change::CellsSeeded { pointer: recorded } = &stop.change {
+        let recorded = describe_source_cell(recorded, parameters, arguments)
+            .map(|cell| format!("`{}`", cell.text()))
+            .unwrap_or_else(|| "another cell".to_string());
+        return format!(
+            "{named} is not yet related to {recorded}, whose range contents were recorded. \
+             The recording alone does not identify a source write. Establish the index/address \
+             relation or preservation needed to compare these reads."
+        );
+    }
     let certain = stop.reason == resource_tracker::StopReason::Affected;
     let changed = if certain {
         "changed"
@@ -2804,6 +2814,11 @@ fn describe_cell_cause(
     match &stop.change {
         resource_tracker::Change::Store { pointer } => {
             describe_store_cause(cell, pointer, widths, certain, parameters, arguments)
+        }
+        resource_tracker::Change::CellsSeeded { .. } => {
+            "range contents were recorded; establish the index/address relation or preservation needed \
+             to compare these reads."
+                .to_string()
         }
         resource_tracker::Change::Call { ranges } => {
             describe_havoc_cause("the call in between", cell, ranges, parameters, arguments)
@@ -3180,6 +3195,9 @@ fn describe_step(
                 None => "a store".to_string(),
             }
         }
+        resource_tracker::Change::CellsSeeded { .. } => {
+            "the recording of range contents".to_string()
+        }
         resource_tracker::Change::Call { .. } => "the call".to_string(),
         resource_tracker::Change::Loop { .. } => "the loop".to_string(),
         resource_tracker::Change::Free { allocation } => {
@@ -3411,10 +3429,24 @@ fn describe_source_range(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Option<String> {
+    // Inside the struct a parameter points at, the source names a field or
+    // the whole struct, never cells: `j[2..3]` there is one whole struct.
+    if let Some(place) = describe_struct_place_range(range, parameters, arguments) {
+        return Some(place);
+    }
     for (parameter, argument) in parameters.iter().zip(arguments) {
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
         };
+        // A range in a struct that is not exactly one place has no source
+        // spelling; cells counted from a struct pointer would read back as
+        // a count of structs.
+        if parameter.array_element_width().is_none()
+            && !parameter.is_struct_value()
+            && (parameter.pointee_struct_layout().is_some() || parameter.struct_layout().is_some())
+        {
+            continue;
+        }
         let Some(base_index) = diagnostic_pointer_element_index_from_base(
             range.base(),
             base,
@@ -3821,7 +3853,7 @@ fn describe_parameter_struct_field_pointer(
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
         (field_offset == Bitvector32Term::Constant(field.offset_bytes()))
-            .then(|| format!("{}->{name}", parameter.name()))
+            .then(|| describe_field_place(parameter.name(), name))
     })
 }
 
@@ -4187,9 +4219,9 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             ..
         } => match surface_base {
             Some(surface_base) => {
-                format!("{}->{name}", describe_contract_expression(surface_base))
+                describe_field_place(&describe_contract_expression(surface_base), name)
             }
-            None => format!("{base}->{name}"),
+            None => describe_field_place(&base, name),
         },
         // The object at a named object's address is that object.
         ContractSegmentSurface::Object(_)
@@ -4309,6 +4341,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::BitwiseOr(left, right) => describe_binary_c_expression(left, "|", right),
         CExpression::BitwiseXor(left, right) => describe_binary_c_expression(left, "^", right),
         CExpression::BitwiseNot(expression) => format!("~{}", describe_c_expression(expression)),
+        // A load through `&name` keeps its address form. Whether it reads a
+        // scalar referent whole or the first field of a struct referent
+        // depends on a type this printer does not have.
         CExpression::Load(pointer) => format!("*{}", describe_c_expression(pointer)),
         CExpression::TypedLoad {
             pointer,
@@ -4380,12 +4415,39 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             format!("{name}({})", describe_c_expression(pointer))
         }
         CExpression::Index(base, index) => {
-            format!(
-                "{}[{}]",
-                describe_c_expression(base),
-                describe_c_expression(index)
-            )
+            let (base, index) = (describe_c_expression(base), describe_c_expression(index));
+            match object_at_address(&base) {
+                Some(object) if index == "0" => object.to_string(),
+                _ => format!("{base}[{index}]"),
+            }
         }
+    }
+}
+
+/// The object whose address `rendered` spells, when it is `&name`. Reading
+/// through that address is the object itself: `(&value)[0]` and `*&value`
+/// are `value`, and `(&c)->field` is `c.field`. A reference parameter's
+/// carrying pointer is named this way, so its referent prints as the bare
+/// name a sidecar writes.
+pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
+    syntax::referent_of_carrier(rendered)
+}
+
+/// A field of the struct `base` points at: `c.field` through an object's
+/// address, `p->field` through a pointer.
+pub(super) fn describe_field_place(base: &str, field: &str) -> String {
+    match object_at_address(base) {
+        Some(object) => format!("{object}.{field}"),
+        None => format!("{base}->{field}"),
+    }
+}
+
+/// The whole object `base` points at: the object itself through its
+/// address, `*p` through a pointer.
+pub(super) fn describe_pointee_place(base: &str) -> String {
+    match object_at_address(base) {
+        Some(object) => object.to_string(),
+        None => format!("*{base}"),
     }
 }
 
@@ -4700,7 +4762,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         }
         ContractExpression::CFragment(expression) => describe_c_expression(expression),
         ContractExpression::Field { base, field, .. } => {
-            format!("{}->{field}", describe_contract_expression(base))
+            describe_field_place(&describe_contract_expression(base), field)
         }
         ContractExpression::CBinding(name) => format!("c({name})"),
         ContractExpression::ResourceWildcard => "_".to_string(),
@@ -4779,11 +4841,16 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 describe_contract_expression(index)
             )
         }
-        ContractExpression::Index(base, index) => format!(
-            "{}[{}]",
-            describe_contract_expression(base),
-            describe_contract_expression(index)
-        ),
+        ContractExpression::Index(base, index) => {
+            let (base, index) = (
+                describe_contract_expression(base),
+                describe_contract_expression(index),
+            );
+            match object_at_address(&base) {
+                Some(object) if index == "0" => object.to_string(),
+                _ => format!("{base}[{index}]"),
+            }
+        }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
             describe_contract_expression(base),

@@ -1222,6 +1222,8 @@ impl<'a> Proof<'a> {
             }
             _ => return Ok(None),
         };
+        #[cfg(test)]
+        let projection_allocations_before = persistent_node_allocations();
         let mut leaves = Vec::new();
         let mut pending = vec![(instantiated, Vec::new())];
         let bound_names = BTreeMap::from([(chosen_variable, choice.name.clone())]);
@@ -1306,6 +1308,13 @@ impl<'a> Proof<'a> {
                 }
             }
         }
+        #[cfg(test)]
+        CHOSEN_PROJECTION_WALK_WORK.with(|count| {
+            count.set((
+                work,
+                persistent_node_allocations() - projection_allocations_before,
+            ));
+        });
         Ok((!leaves.is_empty()).then_some(ChosenProjection {
             source_id: source_selection.source_id.clone(),
             principal_fact_index: source_selection.principal_fact_index,

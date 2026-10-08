@@ -67,18 +67,18 @@ int32 run() {
     requires beta_file::values[1] > -1000;
     requires beta_file::values[1] < 1000;
 } by {
-    have alpha_file::values[0] == 1 by simp;
-    have alpha_file::values[1] == 2 by simp;
-    have beta_file::values[0] == 10 by simp;
-    have beta_file::values[1] == 20 by simp;
-    have alpha_file::values[0] > -1000 by simp;
-    have alpha_file::values[0] < 1000 by simp;
-    have alpha_file::values[1] > -1000 by simp;
-    have alpha_file::values[1] < 1000 by simp;
-    have beta_file::values[0] > -1000 by simp;
-    have beta_file::values[0] < 1000 by simp;
-    have beta_file::values[1] > -1000 by simp;
-    have beta_file::values[1] < 1000 by simp;
+    have alpha_file::values[0] == 1;
+    have alpha_file::values[1] == 2;
+    have beta_file::values[0] == 10;
+    have beta_file::values[1] == 20;
+    have alpha_file::values[0] > -1000;
+    have alpha_file::values[0] < 1000;
+    have alpha_file::values[1] > -1000;
+    have alpha_file::values[1] < 1000;
+    have beta_file::values[0] > -1000;
+    have beta_file::values[0] < 1000;
+    have beta_file::values[1] > -1000;
+    have beta_file::values[1] < 1000;
     execute();
     simp();
 }

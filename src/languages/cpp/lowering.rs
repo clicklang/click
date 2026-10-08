@@ -148,12 +148,28 @@ fn lower_function(
         .chain(declared_places)
         .map(|parameter| (parameter.declaration_id.as_str(), parameter))
         .collect::<BTreeMap<_, _>>();
+    let reference_parameters = source
+        .parameters
+        .iter()
+        .enumerate()
+        .filter(|(index, parameter)| is_reference_parameter(*index, parameter))
+        .map(|(_, parameter)| parameter.declaration_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
     let parameters = source
         .parameters
         .iter()
-        .map(lower_parameter)
-        .collect::<Result<Vec<_>, _>>()?;
+        .enumerate()
+        .map(|(index, parameter)| {
+            if !is_reference_parameter(index, parameter) {
+                return lower_parameter(parameter);
+            }
+            let mut carrier = parameter.clone();
+            carrier.name = reference_carrier_name(&parameter.name);
+            lower_parameter(&carrier)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let mut context = LoweringContext {
+        reference_parameters,
         source_unit: import.logical_source(),
         function_name: names.require(&source.declaration_id)?,
         names,
@@ -181,14 +197,7 @@ fn lower_function(
     let return_type = match &source.function_kind {
         CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => CType::Void,
         _ if source.return_type == CppType::Void => CType::Void,
-        _ => Scalar::mutable_kind(&source.return_type)
-            .map(ScalarKind::kernel_type)
-            .ok_or_else(|| {
-                format!(
-                    "C++ function `{}` has a return type outside direct lowering",
-                    source.name
-                )
-            })?,
+        _ => cpp_return_scalar_type(&source.return_type)?,
     };
     Ok(c_function(
         return_type,
@@ -196,6 +205,16 @@ fn lower_function(
         parameters,
         body,
     ))
+}
+
+pub(super) use crate::languages::c::syntax::reference_carrier_name;
+
+/// Whether a parameter is a reference the sidecar names by its referent. A
+/// member function's receiver also arrives as a reference; it stays the
+/// pointer `self`.
+pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool {
+    matches!(parameter.value_type, CppType::LvalueReference { .. })
+        && !(index == 0 && parameter.name == "self")
 }
 
 fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, String> {
@@ -267,6 +286,9 @@ struct ScalarEvaluation {
 }
 
 struct LoweringContext<'a> {
+    /// Declarations of the reference parameters, whose carrying pointers are
+    /// named by [`reference_carrier_name`].
+    reference_parameters: std::collections::BTreeSet<&'a str>,
     source_unit: &'a str,
     function_name: &'a str,
     names: &'a ResolvedNames,
@@ -933,12 +955,12 @@ impl LoweringContext<'_> {
                         bits: 8,
                         is_const: false,
                     },
-                ) => Ok(c_variable(place.name.clone())),
+                ) => Ok(c_variable(self.variable_name(place))),
                 (CppType::Integer { .. }, CppType::Integer { .. })
                     if cpp_scalar_kernel_type(&self.place(place)?.value_type)?
                         == cpp_scalar_kernel_type(value_type)? =>
                 {
-                    Ok(c_variable(place.name.clone()))
+                    Ok(c_variable(self.variable_name(place)))
                 }
                 (
                     CppType::Pointer { pointee },
@@ -946,7 +968,7 @@ impl LoweringContext<'_> {
                         pointee: value_pointee,
                     },
                 ) if is_mutable_int32(pointee) && is_mutable_int32(value_pointee) => {
-                    Ok(c_variable(place.name.clone()))
+                    Ok(c_variable(self.variable_name(place)))
                 }
                 (CppType::LvalueReference { pointee }, value_type)
                     if (is_mutable_int32(pointee) || is_const_int32(pointee))
@@ -984,7 +1006,7 @@ impl LoweringContext<'_> {
                 (CppType::LvalueReference { pointee }, CppType::Pointer { pointee: result })
                     if is_mutable_int32(pointee) && is_mutable_int32(result) =>
                 {
-                    Ok(c_variable(place.name.clone()))
+                    Ok(c_variable(self.variable_name(place)))
                 }
                 _ => Err("C++ address-of is outside mutable `int&` lowering".into()),
             },
@@ -1064,7 +1086,7 @@ impl LoweringContext<'_> {
             .records
             .resolve_path(&root.value_type, &place.projections)?;
         Ok(c_pointer_offset_bytes(
-            c_variable(place.name.clone()),
+            c_variable(self.variable_name(place)),
             offset,
         ))
     }
@@ -1112,9 +1134,22 @@ impl LoweringContext<'_> {
                 .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
         )?;
         Ok((
-            c_pointer_offset_bytes(c_variable(object.name.clone()), offset),
+            c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
             cpp_scalar_kernel_type(value_type)?,
         ))
+    }
+
+    /// The kernel variable a place reference reads: the place's own name,
+    /// or the carrier of a reference parameter.
+    fn variable_name(&self, place: &CppPlaceReference) -> String {
+        if self
+            .reference_parameters
+            .contains(place.declaration_id.as_str())
+        {
+            reference_carrier_name(&place.name)
+        } else {
+            place.name.clone()
+        }
     }
 
     fn place(&self, place: &CppPlaceReference) -> Result<&CppPlace, String> {
@@ -1206,6 +1241,9 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    if is_mutable_int32_pointer(value_type) {
+        return Ok(CType::Int32Pointer);
+    }
     Scalar::mutable_kind(value_type)
         .map(ScalarKind::kernel_type)
         .ok_or_else(|| "unsupported C++ scalar kernel type".into())

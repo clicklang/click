@@ -10,14 +10,14 @@ theorem signed_by_simp(x: int32, a: int32, b: int32) {
     requires x < a;
     requires a <= b;
     requires b <= 4;
-    ensures x < 4 by { simp(); }
+    ensures x < 4 by simp;
 }
 
 theorem unsigned_by_simp(x: uint32, a: uint32, b: uint32) {
     requires x < a;
     requires a <= b;
     requires b <= 4u32;
-    ensures x < 4u32 by { simp(); }
+    ensures x < 4u32 by simp;
 }
 
 theorem signed_by_arithmetic(x: int32, a: int32, b: int32) {

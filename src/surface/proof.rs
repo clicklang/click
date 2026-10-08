@@ -2128,6 +2128,13 @@ pub(super) fn initial_claim_context_with_mode(
     state
         .resources()
         .synchronize_memory_equalities(&requirement_pure_facts.context());
+    refuse_overlapping_returned_places(
+        function_block,
+        parsed_function,
+        &state,
+        &arguments,
+        &requirement_pure_facts.context(),
+    )?;
     Ok(InitialClaimContext {
         state,
         arguments,
@@ -2135,6 +2142,80 @@ pub(super) fn initial_claim_context_with_mode(
         entry_fact_origins,
         surface_propositions,
     })
+}
+
+/// A function cannot hand back two owners of overlapping memory. Identical
+/// clauses are refused where the contract is parsed; this refuses clauses
+/// that differ and still overlap, such as `owns *p; produces p->value;`, by
+/// running the kernel's own check for overlapping owners on the places the
+/// contract returns.
+///
+/// Only places built from parameters are compared. An `owns` clause is read
+/// at entry and a `produces` clause at exit, and a place reached through
+/// memory the function may change can differ between the two.
+fn refuse_overlapping_returned_places(
+    function_block: &FunctionBlock,
+    parsed_function: &syntax::C0Function,
+    state: &CState,
+    arguments: &[CExpression],
+    assumptions: &crate::kernel::PureFactContext,
+) -> Result<(), ClickError> {
+    let parameters = parsed_function.parameters();
+    let mut returned = crate::kernel::ResourceContext::new();
+    let mut written = Vec::new();
+    let mut places = 0;
+    for clause in function_block.ensures() {
+        if clause.condition().is_some() {
+            continue;
+        }
+        let Ensure::Resource(resource @ ResourceClause::OwnMemory(segment)) = clause.ensure()
+        else {
+            continue;
+        };
+        let fixed_place = [&segment.base, &segment.start, &segment.end]
+            .into_iter()
+            .all(crate::surface::validation::c_expression_reads_no_memory);
+        if !fixed_place {
+            continue;
+        }
+        let Ok(fact) = crate::surface::lowering::lower_resource_clause_at_state(
+            resource, parameters, arguments, state,
+        ) else {
+            continue;
+        };
+        if let Some(range) = fact.memory_own_range() {
+            written.push((range.clone(), segment));
+        }
+        returned = returned.unchecked_with_fact(fact);
+        places += 1;
+    }
+    if places < 2 {
+        return Ok(());
+    }
+    let Some(crate::kernel::ResourceContextValidityError::OverlappingOwnedMemoryResources {
+        left,
+        right,
+    }) = returned.validity_error(assumptions)
+    else {
+        return Ok(());
+    };
+    // Name each place as its clause wrote it.
+    let spelled = |range: &crate::kernel::CMemoryRange| {
+        written
+            .iter()
+            .find(|(candidate, _)| candidate == range)
+            .map(|(_, segment)| crate::surface::diagnostics::describe_contract_segment(segment))
+            .unwrap_or_else(|| {
+                crate::surface::diagnostics::describe_memory_range(range, parameters, arguments)
+            })
+    };
+    Err(ClickError::new(format!(
+        "`{}` would return overlapping places: `{}` and `{}`; a function cannot hand back two owners of the same memory",
+        function_block.signature().name(),
+        spelled(&left),
+        spelled(&right),
+    ))
+    .with_kind(ClickErrorKind::Type))
 }
 
 fn declared_resource_family(resource: &ResourceClause) -> Option<&str> {

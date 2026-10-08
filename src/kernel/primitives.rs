@@ -10114,10 +10114,21 @@ pub(super) struct CFunctionExecutionCandidatesData {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionExecutionCandidate {
-    pub(super) outcome: CFunctionOutcome,
+    pub(super) data: Arc<CFunctionExecutionCandidateData>,
+}
+
+/// An immutable candidate record retained across distinct terminal frontiers.
+/// Adding facts shares the original outcome and obligations as well as the
+/// unchanged fact streams. This is untrusted publication, never a theorem.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct CFunctionExecutionCandidateData {
+    pub(super) outcome: Arc<CFunctionOutcome>,
     pub(super) facts: ExecutionFacts,
     pub(super) effect_facts: ExecutionFacts,
-    pub(super) obligations: Vec<ProofObligation>,
+    /// Whether re-publication's public-then-private effect order is already
+    /// retained. Derived only from the stored facts; carries no authority.
+    pub(super) effects_public_first: bool,
+    pub(super) obligations: Arc<Vec<ProofObligation>>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
 

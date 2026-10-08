@@ -44,8 +44,8 @@ void f() {
     step();
     step();
     step();
-    have a == &g[0] by { simp(); }
-    have a[0] == 1 by { simp(); }
+    have a == &g[0];
+    have a[0] == 1;
     execute();
     simp();
 }

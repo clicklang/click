@@ -36,12 +36,12 @@ int32 branch_nested_resource_scope(int32* p, int32 flag) {
         } then {
             open(bounded_cell(p)) {
                 step();
-                have result >= 0 by simp;
+                have result >= 0;
             }
         } else {
             open(bounded_cell(p)) {
                 step();
-                have result >= 0 by simp;
+                have result >= 0;
             }
         }
         step();

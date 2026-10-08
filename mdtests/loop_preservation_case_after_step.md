@@ -30,9 +30,9 @@ int32 count_once(int32 flag) {
         preserve by {
             step();
             if flag == i {
-                have flag == i by { assumption(); }
+                have flag == i by assumption();
             } else {
-                have not (flag == i) by { assumption(); }
+                have not (flag == i) by assumption();
             }
             close_invariants();
         }

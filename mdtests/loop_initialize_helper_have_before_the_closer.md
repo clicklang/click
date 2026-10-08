@@ -39,7 +39,7 @@ int spin(int n) {
         invariant i <= n;
 
         initialize by {
-            have n + 0 == n by { normalize(); }
+            have n + 0 == n by normalize();
             simp();
         }
         preserve by {

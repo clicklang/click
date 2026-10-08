@@ -220,19 +220,21 @@ Today both importers hand Click a C-shaped interface: `int& value` and
 5. **`this`.** A member function's receiver is named `this` and is a pointer,
    as in C++: `this->fee`, `owns *this`. Sidecars spell it `self` today.
 
-A first implementation of 1 to 3 was built and set aside unmerged. What it
-established:
+Items 1 to 4 are implemented. What building them established:
 
 - The flag, the `T&` parameter syntax and the signature check are small and
   mechanical. They follow `const` on a pointee through the same places.
 - Click has two expression parsers, one for contract expressions and one for
   C fragments in clause targets. Both must resolve a reference.
-- **The referent needs its own syntax-tree node.** Building it as the same
-  node an explicit `value[0]` produces verifies, but that node prints as
-  `value[0]`. Expansion and several proof steps print an expression and parse
-  it again, and the second parse reads `value` as the referent and indexes it
-  once more. So printing (item 4) is not a later refinement; items 3 and 4
-  land together, on a node that prints as the bare name.
+- **The carrier is named as the referent's address.** Building the referent
+  as the node an explicit `value[0]` produces verifies, but it prints as
+  `value[0]`; expansion and several proof steps print an expression and parse
+  it again, and the second parse indexes the referent once more. A dedicated
+  node fixes that for contract expressions only: kernel terms and a callee's
+  contract instantiated at a call still print the pointer as `value`. Naming
+  the pointer `&value` fixes all of them, because every printer already reads
+  `&x` as the address of the object `x`: `(&value)[0]` prints as `value` and
+  `(&c)->field` as `c.field`.
 - **The address of a referent needs a spelling.** `state.pointer = &value` in
   the source gives a postcondition that compares pointers. With `value`
   meaning the `int`, that is `state->pointer == &value`, which the parser
@@ -240,14 +242,17 @@ established:
   The same holds for a struct reference compared with `this`.
 - A member function's receiver arrives from the exporter as a reference
   named `self`. It stays a pointer until item 5 respells it as `this`.
-- About 30 negative tests in `tests/cpp_import.rs` make a false contract by
-  replacing a substring such as `value[0]` in a passing sidecar. Each needs
-  its replacement respelled, and an assertion that the replacement changed
-  the text, or the test silently stops testing anything.
+- Negative tests that make a false contract by replacing a substring of a
+  passing sidecar stop testing anything when the substring is respelled. The
+  conversion was checked by turning every reference-spelling error into a
+  panic and running the whole gate: one test was failing for the wrong
+  reason, and it now asserts the reason.
+- A name that was a pointer and is now a referent changes meaning silently
+  where it was compared as a pointer (`requires self == other`,
+  `requires writable == readable`). Each such use was found by comparing the
+  old text with the new and is written with `&`.
 
-Order of work: the node, its printing and `&name`, with the flag, syntax and
-signature check, for scalar and struct references and their sidecars
-converted; `this`; then reference locals in C++ bodies, which proofs name
+Still to do: `this`; then reference locals in C++ bodies, which proofs name
 through the lowered program.
 
 Rust is not covered here. Its natural spelling changes the signature syntax
@@ -297,7 +302,9 @@ an accepted clause.
   The parser scales the bounds to cells. A constant count works; a symbolic
   count is not usable, as it was not when the cells were written by hand
   (`bugs/a-symbolic-struct-count-range-is-not-usable.md`).
-- In progress: step 6 for C++, as designed under "Reference parameters".
+- Done: step 6 for C++ reference parameters, as designed under "Reference
+  parameters". Receivers, reference locals and Rust remain
+  (`issues/design-review.md`).
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 

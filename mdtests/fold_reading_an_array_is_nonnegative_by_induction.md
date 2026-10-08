@@ -38,7 +38,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
             }
             simp();
         } else {
-            have lo < hi by { simp(); }
+            have lo < hi;
             have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 <= n by { arithmetic() using { 0 <= lo; lo < hi; hi <= n; } }

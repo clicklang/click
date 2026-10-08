@@ -466,6 +466,7 @@ impl SourceExecutionLayout {
             }
         }
         visit(function.body(), &mut next_statement_index, &mut layout)?;
+        collect_kernel_automatic_exits(function.body(), &mut layout);
         Ok(Self {
             data: std::sync::Arc::new(layout),
         })
@@ -1010,6 +1011,131 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
 /// terminal source node of a scope (including a whole branch executed at once).
 /// Abrupt exits visit only the scopes they leave; ordinary statements do not
 /// copy their enclosing declarations or scan the function.
+/// Typed frontends already supply kernel statements. Track their automatic
+/// scope exits with the same pre-order numbering and scope rules as C syntax.
+/// Root function storage belongs to the call frame; only nested scopes expire
+/// here. Walking scope spines visits declarations once per containing scope.
+fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecutionLayoutData) {
+    fn declarations(s: &CStatement, names: &mut Vec<String>) {
+        match s {
+            CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
+                names.push(name.clone())
+            }
+            CStatement::Seq(a, b) => {
+                declarations(a, names);
+                declarations(b, names);
+            }
+            // Implementation cleanup does not introduce a lexical scope.
+            CStatement::TryCatchInt32 {
+                try_body,
+                cleanup_unwind: true,
+                ..
+            } => declarations(try_body, names),
+            _ => {}
+        }
+    }
+    fn scope(
+        s: &CStatement,
+        index: &mut usize,
+        scopes: &mut Vec<(Vec<String>, Option<usize>)>,
+        loop_head: Option<usize>,
+        layout: &mut SourceExecutionLayoutData,
+    ) -> Vec<usize> {
+        let mut names = Vec::new();
+        declarations(s, &mut names);
+        scopes.push((names, loop_head));
+        let tails = visit(s, index, scopes, layout);
+        let (names, _) = scopes.pop().unwrap();
+        for tail in &tails {
+            layout
+                .automatic_exits
+                .entry(*tail)
+                .or_default()
+                .extend(names.iter().cloned());
+        }
+        tails
+    }
+    fn visit(
+        s: &CStatement,
+        index: &mut usize,
+        scopes: &mut Vec<(Vec<String>, Option<usize>)>,
+        layout: &mut SourceExecutionLayoutData,
+    ) -> Vec<usize> {
+        if let CStatement::Seq(a, b) = s {
+            visit(a, index, scopes, layout);
+            return visit(b, index, scopes, layout);
+        }
+        let head = *index;
+        *index += 1;
+        match s {
+            CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                let mut tails = vec![head];
+                tails.extend(scope(then_branch, index, scopes, None, layout));
+                tails.extend(scope(else_branch, index, scopes, None, layout));
+                tails
+            }
+            CStatement::TryCatchInt32 {
+                try_body,
+                handler,
+                cleanup_unwind,
+                ..
+            } => {
+                let mut tails = vec![head];
+                if *cleanup_unwind {
+                    tails.extend(visit(try_body, index, scopes, layout));
+                } else {
+                    tails.extend(scope(try_body, index, scopes, None, layout));
+                }
+                tails.extend(scope(handler, index, scopes, None, layout));
+                tails
+            }
+            CStatement::While { body, .. } => {
+                scope(body, index, scopes, Some(head), layout);
+                vec![head]
+            }
+            CStatement::Break
+            | CStatement::Continue
+            | CStatement::Return(_)
+            | CStatement::Goto { .. } => {
+                let mut names = Vec::new();
+                for (declared, loop_head) in scopes.iter().rev() {
+                    names.extend(declared.iter().cloned());
+                    if let Some(loop_head) = loop_head
+                        && matches!(s, CStatement::Break | CStatement::Continue)
+                    {
+                        if matches!(s, CStatement::Break) {
+                            layout.automatic_break_heads.insert(head, *loop_head);
+                        }
+                        break;
+                    }
+                }
+                layout.automatic_abrupt_exits.insert(head, names);
+                vec![head]
+            }
+            // Switch is refused by the typed layout before this pass. Other
+            // operations occupy one native statement and introduce no scope.
+            _ => vec![head],
+        }
+    }
+    visit(source, &mut 0, &mut Vec::new(), layout);
+    for (at, head) in std::mem::take(&mut layout.automatic_break_heads) {
+        let exited = layout
+            .automatic_exits
+            .get(&head)
+            .cloned()
+            .unwrap_or_default();
+        layout
+            .automatic_abrupt_exits
+            .entry(at)
+            .or_default()
+            .extend(exited);
+    }
+}
+
 fn collect_automatic_exits(source: &syntax::C0Statement, layout: &mut SourceExecutionLayoutData) {
     use syntax::C0Statement as S;
     fn declarations(s: &S, names: &mut Vec<String>) {
@@ -1136,6 +1262,34 @@ fn collect_automatic_exits(source: &syntax::C0Statement, layout: &mut SourceExec
 #[cfg(test)]
 mod source_execution_layout_tests {
     use super::*;
+
+    #[test]
+    fn typed_automatic_scope_exits_match_c_for_nested_and_abrupt_paths() {
+        for source in [
+            "int32 f(int32 n) {int32 root; root=0; while(root<n) {int32 local; local=1; if(n==2) {int32 child; child=3; return child;} else {local=2;} root=root+1;} return root;}",
+            "int32 f(int32 n) {int32 root; root=0; while(root<n) {int32 local; local=1; if(n==2) {int32 child; child=3; continue;} else {break;}} return root;}",
+        ] {
+            let function = syntax::parse_function(source).unwrap();
+            let typed = function
+                .clone()
+                .with_prelowered_kernel_function(function.to_kernel_function());
+            let c = SourceExecutionLayout::for_function(&function).unwrap();
+            let native = SourceExecutionLayout::for_function(&typed).unwrap();
+            assert!(!native.data.automatic_exits.is_empty());
+            assert_eq!(native.data.automatic_exits, c.data.automatic_exits);
+            assert_eq!(
+                native.data.automatic_abrupt_exits,
+                c.data.automatic_abrupt_exits
+            );
+            assert!(
+                native
+                    .data
+                    .automatic_exits
+                    .values()
+                    .all(|names| !names.iter().any(|name| name == "root"))
+            );
+        }
+    }
 
     #[test]
     fn read_frontiers_index_loads_and_ignore_address_computation() {

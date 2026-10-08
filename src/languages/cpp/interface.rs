@@ -50,7 +50,13 @@ pub(super) fn prepare(
                 let value_type = match &field.value_type {
                     value
                         if Scalar::mutable_kind(value).is_some_and(|kind| {
-                            matches!(kind, ScalarKind::Int32 | ScalarKind::Int64)
+                            matches!(
+                                kind,
+                                ScalarKind::Int32
+                                    | ScalarKind::UInt32
+                                    | ScalarKind::Int64
+                                    | ScalarKind::UInt64
+                            )
                         }) =>
                     {
                         Scalar::mutable_kind(value).unwrap().proof_type()
@@ -168,6 +174,10 @@ fn function_interface(
 ) -> Result<syntax::C0Function, String> {
     let return_type = if source.return_type == CppType::Void {
         C0Type::Void
+    } else if matches!(&source.return_type, CppType::Pointer { pointee }
+        if Scalar::is(pointee, ScalarKind::Int32, false))
+    {
+        C0Type::Int32Pointer
     } else {
         Scalar::mutable_kind(&source.return_type)
             .map(ScalarKind::proof_type)
@@ -181,10 +191,17 @@ fn function_interface(
     let parameters = source
         .parameters
         .iter()
-        .map(|parameter| {
+        .enumerate()
+        .map(|(index, parameter)| {
             crate::instrumentation::record_deterministic_work(1);
+            let is_reference = super::lowering::is_reference_parameter(index, parameter);
+            let carried_name = if is_reference {
+                super::lowering::reference_carrier_name(&parameter.name)
+            } else {
+                parameter.name.clone()
+            };
             if let Some(kind) = Scalar::mutable_kind(&parameter.value_type) {
-                return Ok(syntax::C0Parameter::new(kind.proof_type(), parameter.name.clone(), None));
+                return Ok(syntax::C0Parameter::new(kind.proof_type(), carried_name.clone(), None));
             }
             match &parameter.value_type {
             CppType::LvalueReference { pointee }
@@ -196,20 +213,22 @@ fn function_interface(
                 };
                 Ok(syntax::C0Parameter::new(
                     C0Type::Int32Pointer,
-                    parameter.name.clone(),
+                    carried_name.clone(),
                     None,
                 )
-                .with_pointee_constant(*is_const))
+                .with_pointee_constant(*is_const)
+                .with_reference(is_reference))
             }
             CppType::LvalueReference { pointee }
                 if Scalar::is(pointee, ScalarKind::Int64, true) =>
             {
                 Ok(syntax::C0Parameter::new(
                     C0Type::Int64Pointer,
-                    parameter.name.clone(),
+                    carried_name.clone(),
                     None,
                 )
-                .with_pointee_constant(true))
+                .with_pointee_constant(true)
+                .with_reference(is_reference))
             }
             CppType::LvalueReference { pointee } => {
                 let CppType::Record { name, is_const, .. } = pointee.as_ref() else {
@@ -220,15 +239,16 @@ fn function_interface(
                 };
                 Ok(syntax::C0Parameter::new(
                     C0Type::Int32Pointer,
-                    parameter.name.clone(),
+                    carried_name.clone(),
                     Some(name.clone()),
-                ).with_pointee_constant(*is_const))
+                ).with_pointee_constant(*is_const)
+                .with_reference(is_reference))
             }
             CppType::Pointer { pointee } if Scalar::is(pointee, ScalarKind::Int32, false) =>
             {
                 Ok(syntax::C0Parameter::new(
                     C0Type::Int32Pointer,
-                    parameter.name.clone(),
+                    carried_name.clone(),
                     None,
                 ))
             }

@@ -44,7 +44,7 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
             mark iteration;
             unfold(permutation);
             step();
-            have i >= 0 and i <= 3 by simp;
+            have i >= 0 and i <= 3;
             close_invariants by {
                 both { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; } }
                 and { arithmetic() using { at(iteration, i) < 3; at(iteration, i) >= 0; } }

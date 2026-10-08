@@ -46,9 +46,9 @@ int32 peek(struct cell* node) {
             if value <= 0 ensuring {
                 fact value <= 0 or value > 0;
             } then {
-                have value <= 0 or value > 0 by { simp(); }
+                have value <= 0 or value > 0;
             } else {
-                have value <= 0 or value > 0 by { simp(); }
+                have value <= 0 or value > 0;
             }
             step();
             step();

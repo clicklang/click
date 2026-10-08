@@ -31,7 +31,7 @@ int32 count_to(int32 n) {
         invariant i <= n;
         initialize by { simp(); }
         preserve by {
-            have i + 1 <= 101 by { simp(); }
+            have i + 1 <= 101;
             step();
             close_invariants();
         }

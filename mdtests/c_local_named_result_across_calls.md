@@ -74,7 +74,7 @@ int32 result_box_pipeline(struct result_box* owner) {
     ensures owner->value == result;
 } by {
     execute();
-    have at(statement(4).entry, c(result)) == old(owner->value) by simp;
+    have at(statement(4).entry, c(result)) == old(owner->value);
     simp();
 }
 ```

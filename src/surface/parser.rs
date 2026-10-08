@@ -455,6 +455,7 @@ struct Parser {
     local_struct_pointers_by_function: BTreeMap<String, BTreeMap<String, String>>,
     current_aggregate_objects: BTreeMap<String, String>,
     current_struct_array_params: BTreeSet<String>,
+    current_reference_params: BTreeSet<String>,
     current_global_array_shapes: BTreeMap<String, GlobalArrayShape>,
     current_algebraic_params: BTreeMap<String, (AlgebraicTypeApplication, usize)>,
     current_click_type_parameters: BTreeSet<String>,
@@ -532,6 +533,8 @@ struct ParsedType {
     struct_pointer: bool,
     constant: bool,
     pointee_constant: bool,
+    /// Written `T&`: `c_type` is the pointer that carries the reference.
+    reference: bool,
 }
 
 /// A recognized `(struct name *)` cast prefix in a contract expression.
@@ -616,6 +619,7 @@ struct ParsedParameters {
     parameters: Vec<FunctionParameter>,
     struct_params: BTreeMap<String, String>,
     struct_array_params: BTreeSet<String>,
+    reference_params: BTreeSet<String>,
     declared_loadable_bytes: Vec<(String, u32)>,
 }
 
@@ -624,6 +628,7 @@ struct ParsedFunctionSignature {
     signature: FunctionSignature,
     struct_params: BTreeMap<String, String>,
     struct_array_params: BTreeSet<String>,
+    reference_params: BTreeSet<String>,
     return_struct_name: Option<String>,
 }
 
@@ -752,6 +757,7 @@ impl Parser {
             local_struct_pointers_by_function: BTreeMap::new(),
             current_aggregate_objects: BTreeMap::new(),
             current_struct_array_params: BTreeSet::new(),
+            current_reference_params: BTreeSet::new(),
             current_global_array_shapes: BTreeMap::new(),
             current_algebraic_params: BTreeMap::new(),
             current_click_type_parameters: BTreeSet::new(),
@@ -1471,6 +1477,10 @@ impl Parser {
             &mut self.current_struct_array_params,
             parsed_parameters.struct_array_params,
         );
+        let previous_reference_params = std::mem::replace(
+            &mut self.current_reference_params,
+            parsed_parameters.reference_params,
+        );
         let previous_algebraic_params = std::mem::replace(
             &mut self.current_algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
@@ -1478,6 +1488,7 @@ impl Parser {
         let body = self.parse_proposition()?;
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
+        self.current_reference_params = previous_reference_params;
         self.current_algebraic_params = previous_algebraic_params;
         self.current_click_type_parameters = previous_type_parameters;
         self.expect(Token::RBrace)?;
@@ -1525,6 +1536,10 @@ impl Parser {
             &mut self.current_struct_array_params,
             parsed_parameters.struct_array_params,
         );
+        let previous_reference_params = std::mem::replace(
+            &mut self.current_reference_params,
+            parsed_parameters.reference_params,
+        );
         let previous_algebraic_params = std::mem::replace(
             &mut self.current_algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
@@ -1532,6 +1547,7 @@ impl Parser {
         let body = self.parse_contract_expression()?;
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
+        self.current_reference_params = previous_reference_params;
         self.current_algebraic_params = previous_algebraic_params;
         self.current_click_type_parameters = previous_type_parameters;
         self.expect(Token::RBrace)?;
@@ -1579,6 +1595,10 @@ impl Parser {
             &mut self.current_struct_array_params,
             parsed_parameters.struct_array_params,
         );
+        let previous_reference_params = std::mem::replace(
+            &mut self.current_reference_params,
+            parsed_parameters.reference_params,
+        );
         let previous_algebraic_params = std::mem::replace(
             &mut self.current_algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
@@ -1608,6 +1628,7 @@ impl Parser {
         self.in_resource_definition = previous_definition;
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
+        self.current_reference_params = previous_reference_params;
         self.current_algebraic_params = previous_algebraic_params;
         self.current_resource_bindings = previous_resource_bindings;
         self.current_resource_targets = previous_resource_targets;
@@ -2063,6 +2084,7 @@ impl Parser {
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
         let mut struct_array_params = BTreeSet::new();
+        let mut reference_params = BTreeSet::new();
         let mut declared_loadable_bytes = Vec::new();
         if self.peek() == Some(&Token::RParen) {
             return Ok((
@@ -2070,6 +2092,7 @@ impl Parser {
                     parameters,
                     struct_params,
                     struct_array_params,
+                    reference_params,
                     declared_loadable_bytes,
                 },
                 resource_parameters,
@@ -2110,6 +2133,7 @@ impl Parser {
                                 function_pointer_signature: Some(function_pointer_signature),
                                 constant: false,
                                 pointee_constant: false,
+                                reference: false,
                             },
                             struct_name: None,
                             declared_bytes: None,
@@ -2127,6 +2151,7 @@ impl Parser {
                             function_pointer_signature: None,
                             constant: false,
                             pointee_constant: false,
+                            reference: false,
                         },
                         struct_name: None,
                         declared_bytes: None,
@@ -2147,6 +2172,13 @@ impl Parser {
                 if parsed_parameter.struct_array {
                     struct_array_params.insert(parsed_parameter.parameter.name.clone());
                 }
+                if parsed_parameter.parameter.is_reference() {
+                    reference_params.insert(
+                        syntax::referent_of_carrier(&parsed_parameter.parameter.name)
+                            .unwrap_or(&parsed_parameter.parameter.name)
+                            .to_string(),
+                    );
+                }
                 if let Some(bytes) = parsed_parameter.declared_bytes {
                     declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
                 }
@@ -2163,6 +2195,7 @@ impl Parser {
                             parameters,
                             struct_params,
                             struct_array_params,
+                            reference_params,
                             declared_loadable_bytes,
                         },
                         resource_parameters,
@@ -2201,6 +2234,7 @@ impl Parser {
         let previous_integer_lets = std::mem::take(&mut self.current_integer_lets);
         let mut execution_struct_params = BTreeMap::new();
         let mut execution_struct_array_params = BTreeSet::new();
+        let mut executed_reference_params = BTreeSet::new();
         let executes = if self.peek_ident() == Some("executes") {
             self.position += 1;
             let callback = self.expect_ident("callback parameter")?;
@@ -2209,6 +2243,9 @@ impl Parser {
             self.expect(Token::RParen)?;
             execution_struct_params = call_parameters.struct_params;
             execution_struct_array_params = call_parameters.struct_array_params;
+            // The proof names the executed function's parameters, so its
+            // references are referents there too.
+            executed_reference_params = call_parameters.reference_params;
             Some(TheoremExecution {
                 callback,
                 parameters: call_parameters.parameters,
@@ -2233,6 +2270,10 @@ impl Parser {
             &mut self.current_struct_array_params,
             parsed_parameters.struct_array_params,
         );
+        let mut theorem_reference_params = parsed_parameters.reference_params;
+        theorem_reference_params.extend(executed_reference_params);
+        let previous_reference_params =
+            std::mem::replace(&mut self.current_reference_params, theorem_reference_params);
         let previous_algebraic_params = std::mem::replace(
             &mut self.current_algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
@@ -2405,6 +2446,7 @@ impl Parser {
         self.expect(Token::RBrace)?;
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
+        self.current_reference_params = previous_reference_params;
         self.current_algebraic_params = previous_algebraic_params;
         self.current_click_type_parameters = previous_type_parameters;
         self.current_integer_params = previous_integer_params;
@@ -2461,6 +2503,7 @@ impl Parser {
             signature,
             mut struct_params,
             struct_array_params,
+            reference_params,
             return_struct_name,
         } = self.parse_function_signature()?;
         if let Some(struct_name) = return_struct_name {
@@ -2549,6 +2592,8 @@ impl Parser {
             &mut self.current_struct_array_params,
             visible_struct_array_params,
         );
+        let previous_reference_params =
+            std::mem::replace(&mut self.current_reference_params, reference_params);
         while self.peek() != Some(&Token::RBrace) {
             match self.peek_ident() {
                 Some("let") => {
@@ -2908,6 +2953,7 @@ impl Parser {
         self.current_aggregate_objects = previous_aggregate_objects;
         self.current_global_array_shapes = previous_global_array_shapes;
         self.current_struct_array_params = previous_struct_array_params;
+        self.current_reference_params = previous_reference_params;
         self.current_integer_params = previous_integer_params;
         self.current_integer_lets = previous_integer_lets;
         self.integer_literal_context = previous_integer_literal_context;
@@ -3049,6 +3095,7 @@ impl Parser {
                 },
                 struct_params: parsed_parameters.struct_params,
                 struct_array_params: parsed_parameters.struct_array_params,
+                reference_params: parsed_parameters.reference_params,
                 return_struct_name: None,
             });
         }
@@ -3110,6 +3157,7 @@ impl Parser {
         }
         let struct_params = parsed_parameters.struct_params;
         let struct_array_params = parsed_parameters.struct_array_params;
+        let reference_params = parsed_parameters.reference_params;
 
         Ok(ParsedFunctionSignature {
             signature: FunctionSignature {
@@ -3123,6 +3171,7 @@ impl Parser {
             },
             struct_params,
             struct_array_params,
+            reference_params,
             return_struct_name: parsed_return_type.struct_name,
         })
     }
@@ -3131,12 +3180,14 @@ impl Parser {
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
         let mut struct_array_params = BTreeSet::new();
+        let mut reference_params = BTreeSet::new();
         let mut declared_loadable_bytes = Vec::new();
         if self.peek() == Some(&Token::RParen) {
             return Ok(ParsedParameters {
                 parameters,
                 struct_params,
                 struct_array_params,
+                reference_params,
                 declared_loadable_bytes,
             });
         }
@@ -3154,6 +3205,7 @@ impl Parser {
                         function_pointer_signature: Some(function_pointer_signature),
                         constant: false,
                         pointee_constant: false,
+                        reference: false,
                     },
                     struct_name: None,
                     declared_bytes: None,
@@ -3177,6 +3229,13 @@ impl Parser {
             if parsed_parameter.struct_array {
                 struct_array_params.insert(parsed_parameter.parameter.name.clone());
             }
+            if parsed_parameter.parameter.is_reference() {
+                reference_params.insert(
+                    syntax::referent_of_carrier(&parsed_parameter.parameter.name)
+                        .unwrap_or(&parsed_parameter.parameter.name)
+                        .to_string(),
+                );
+            }
             if let Some(bytes) = parsed_parameter.declared_bytes {
                 declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
             }
@@ -3191,6 +3250,7 @@ impl Parser {
                         parameters,
                         struct_params,
                         struct_array_params,
+                        reference_params,
                         declared_loadable_bytes,
                     });
                 }
@@ -3216,6 +3276,17 @@ impl Parser {
             if self.peek_ident() == Some("const") {
                 self.position += 1;
                 object_constant = true;
+            }
+            if self.peek() == Some(&Token::Amp) {
+                self.position += 1;
+                return Ok(ParsedType {
+                    c_type: C0Type::Int32Pointer,
+                    struct_name: Some(struct_name),
+                    struct_pointer: true,
+                    constant: false,
+                    pointee_constant: object_constant,
+                    reference: true,
+                });
             }
             if self.peek() == Some(&Token::Star) {
                 let mut c_type = C0Type::Int32;
@@ -3248,6 +3319,7 @@ impl Parser {
                     struct_pointer: true,
                     constant: object_constant,
                     pointee_constant,
+                    reference: false,
                 });
             }
             return Ok(ParsedType {
@@ -3256,6 +3328,7 @@ impl Parser {
                 struct_pointer: false,
                 constant: object_constant,
                 pointee_constant: false,
+                reference: false,
             });
         }
 
@@ -3307,7 +3380,13 @@ impl Parser {
             object_constant = true;
         }
         let mut saw_pointer = false;
-        while self.peek() == Some(&Token::Star) {
+        // `T&` is carried by a pointer to `T`. A reference to a pointer is
+        // not supported.
+        let mut reference = false;
+        while self.peek() == Some(&Token::Star)
+            || (self.peek() == Some(&Token::Amp) && !saw_pointer && !reference)
+        {
+            reference = self.peek() == Some(&Token::Amp);
             if saw_pointer && pointee_constant {
                 return Err(self
                     .error("const qualification beyond the first pointer level is not supported"));
@@ -3316,6 +3395,9 @@ impl Parser {
             object_constant = false;
             self.position += 1;
             c_type = match c_type {
+                C0Type::Void if reference => {
+                    return Err(self.error("a reference to `void` is not a type"));
+                }
                 C0Type::Void => C0Type::VoidPointer,
                 C0Type::Int8 => C0Type::Int8Pointer,
                 C0Type::Int16 => C0Type::Int16Pointer,
@@ -3344,6 +3426,9 @@ impl Parser {
             if base_constant {
                 pointee_constant = true;
             }
+            if reference {
+                break;
+            }
             if self.peek_ident() == Some("const") {
                 self.position += 1;
                 object_constant = true;
@@ -3356,6 +3441,7 @@ impl Parser {
             struct_pointer: false,
             constant: object_constant,
             pointee_constant,
+            reference,
         })
     }
 
@@ -3611,11 +3697,18 @@ impl Parser {
             return Ok(ParsedParameter {
                 parameter: FunctionParameter {
                     click_type: ClickType::C(c_type),
-                    name,
+                    // The parameter is the pointer that carries the
+                    // reference; the written name is the referent.
+                    name: if parsed_type.reference {
+                        syntax::reference_carrier_name(&name)
+                    } else {
+                        name
+                    },
                     struct_name: struct_name.clone(),
                     function_pointer_signature: None,
                     constant: parsed_type.constant,
                     pointee_constant: parsed_type.pointee_constant,
+                    reference: parsed_type.reference,
                 },
                 struct_name,
                 declared_bytes: None,
@@ -3640,6 +3733,7 @@ impl Parser {
                     function_pointer_signature: None,
                     constant: false,
                     pointee_constant: parsed_type.constant || parsed_type.pointee_constant,
+                    reference: false,
                 },
                 struct_name,
                 declared_bytes: None,
@@ -3687,6 +3781,7 @@ impl Parser {
                 function_pointer_signature: None,
                 constant: false,
                 pointee_constant: parsed_type.constant || parsed_type.pointee_constant,
+                reference: false,
             },
             struct_name: None,
             declared_bytes,
@@ -3694,8 +3789,25 @@ impl Parser {
         })
     }
 
+    /// A clause's optional `name:` prefix, as `ensures` takes.
+    fn parse_clause_label(&mut self, what: &str) -> Result<Option<String>, ClickError> {
+        if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon) {
+            let name = self.expect_ident(what)?;
+            self.expect(Token::Colon)?;
+            return Ok(Some(name));
+        }
+        Ok(None)
+    }
+
     fn parse_requirement(&mut self) -> Result<Requirement, ClickError> {
         self.expect_ident_spelling("requires")?;
+        // A proof cites a precondition by its proposition and nothing names
+        // one, so a label here would be read by nothing.
+        if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon) {
+            return Err(self.error(
+                "a `requires` clause takes no label; a proof cites a precondition by its proposition",
+            ));
+        }
         let requirement = match (self.peek_ident(), self.peek_next()) {
             (Some("viewable"), Some(Token::LParen)) => self.parse_loadable_requirement()?,
             _ => {
@@ -4378,6 +4490,7 @@ impl Parser {
     fn parse_region_proof_items(&mut self) -> Result<Vec<StructuralItem>, ClickError> {
         match self.next() {
             Some(Token::Ident(kind)) if kind == "invariant" => {
+                let name = self.parse_clause_label("invariant name")?;
                 let proposition = self.parse_proposition()?;
                 if self.peek_ident() == Some("by") {
                     return Err(self.error(
@@ -4385,7 +4498,10 @@ impl Parser {
                     ));
                 }
                 self.expect(Token::Semicolon)?;
-                Ok(vec![StructuralItem { claim: proposition }])
+                Ok(vec![StructuralItem {
+                    claim: proposition,
+                    name,
+                }])
             }
             Some(Token::Ident(kind)) => {
                 Err(self.error(format!("expected `invariant`, got `{kind}`")))
@@ -8205,6 +8321,50 @@ impl Parser {
                 },
             }]);
         }
+        // A struct reference written alone is the struct it refers to.
+        let carries_reference = |name: &str| {
+            syntax::referent_of_carrier(name)
+                .is_some_and(|referent| self.current_reference_params.contains(referent))
+        };
+        let names_reference = match &surface_base {
+            ContractExpression::Binding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => carries_reference(name),
+            _ => false,
+        };
+        let names_scalar_referent = matches!(
+            &surface_base,
+            ContractExpression::CFragment(CExpression::Index(carrier, _))
+                if matches!(carrier.as_ref(), CExpression::Variable(name) if carries_reference(name))
+        );
+        if dereference && (names_reference || names_scalar_referent) {
+            return Err(self.error(
+                "a reference parameter already names what it refers to; write it without `*`",
+            ));
+        }
+        // Written alone, a scalar referent is the one element behind its
+        // carrier, typed and sized by the carrier.
+        if names_scalar_referent
+            && self.peek() != Some(&Token::LBracket)
+            && let CExpression::Index(carrier, _) = &base
+        {
+            let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
+            return Ok(vec![ContractSegment {
+                state: ContractSegmentState::Current,
+                base: (**carrier).clone(),
+                start: start.clone(),
+                end: end.clone(),
+                surface: ContractSegmentSurface::Range {
+                    base: ContractExpression::CFragment((**carrier).clone()),
+                    start: ContractExpression::CFragment(start),
+                    end: ContractExpression::CFragment(end),
+                },
+            }]);
+        }
+        // Written alone, a struct reference is the object it refers to.
+        let dereference = dereference
+            || (names_reference
+                && matches!(base, CExpression::Variable(_))
+                && self.peek() != Some(&Token::LBracket));
         if dereference {
             if self.peek() == Some(&Token::LBracket) {
                 return Err(self.error(
@@ -9130,6 +9290,9 @@ impl Parser {
                 CExpression::Load(Box::new(pointer)),
             ));
         }
+        if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
+            return self.parse_reference_parameter_address();
+        }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
@@ -9168,6 +9331,71 @@ impl Parser {
         self.parse_contract_postfix_suffix(expression)
     }
 
+    /// The address of a reference parameter's referent, `&value`: the
+    /// pointer that carries it.
+    ///
+    /// Kept out of the recursive expression parser's frame, like the postfix
+    /// suffix: deeply nested expressions parse on a small stack.
+    #[inline(never)]
+    fn at_reference_parameter_address(&self) -> bool {
+        matches!(self.peek_next(), Some(Token::Ident(name)) if self.current_reference_params.contains(name))
+            && !matches!(
+                self.tokens.get(self.position + 2),
+                Some(Token::Arrow | Token::Dot | Token::LBracket)
+            )
+    }
+
+    /// Consumes `&name` where [`Self::at_reference_parameter_address`] holds.
+    #[inline(never)]
+    fn parse_reference_parameter_address(&mut self) -> Result<ContractExpression, ClickError> {
+        let Some(Token::Ident(name)) = self.peek_next() else {
+            return Err(self.error("expected a reference parameter after `&`"));
+        };
+        let carrier = syntax::reference_carrier_name(name);
+        self.position += 2;
+        Ok(ContractExpression::CFragment(CExpression::Variable(
+            carrier,
+        )))
+    }
+
+    /// A reference parameter's name is its referent. The pointer that
+    /// carries it is named as the referent's address. A scalar referent is
+    /// the element behind that pointer; a struct referent is reached through
+    /// the pointer, as its fields are. Out of line for the same reason as
+    /// [`Self::parse_reference_parameter_address`].
+    #[inline(never)]
+    fn resolve_reference_parameter(
+        &mut self,
+        mut expression: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        if let ContractExpression::Binding(name)
+        | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
+            && self.current_reference_params.contains(name)
+        {
+            let name = name.clone();
+            let carrier = syntax::reference_carrier_name(&name);
+            let is_struct = self.current_struct_params.contains_key(&carrier);
+            if is_struct && !matches!(self.peek(), Some(Token::Arrow | Token::Dot)) {
+                return Err(self.error(format!(
+                    "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
+                )));
+            }
+            expression = ContractExpression::CFragment(CExpression::Variable(carrier));
+            if !is_struct {
+                if self.peek() == Some(&Token::LBracket) {
+                    return Err(self.error(format!(
+                        "`{name}` is a reference parameter and names the value it refers to, so it takes no index; write `{name}`"
+                    )));
+                }
+                expression = ContractExpression::Index(
+                    Box::new(expression),
+                    Box::new(ContractExpression::IntegerLiteral("0".to_string())),
+                );
+            }
+        }
+        Ok(expression)
+    }
+
     // Keep postfix metadata and field-lowering temporaries out of the
     // recursive expression parser frame. Nested `match` expressions only
     // retain this small dispatcher while their primary is parsed.
@@ -9176,6 +9404,7 @@ impl Parser {
         &mut self,
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
             ContractExpression::CUnary {
                 lowered: CExpression::Cast { pointee_struct, .. },
@@ -10402,6 +10631,19 @@ impl Parser {
         match self.next() {
             Some(Token::Ident(name)) if name == "by" => {
                 Err(self.error("expected result expression, got `by`"))
+            }
+            Some(Token::Ident(name)) if self.current_reference_params.contains(&name) => {
+                let carrier = syntax::reference_carrier_name(&name);
+                let is_struct = self.current_struct_params.contains_key(&carrier);
+                let carrier = C0Expression::Variable(carrier);
+                Ok(if is_struct {
+                    carrier
+                } else {
+                    C0Expression::Index(
+                        Box::new(carrier),
+                        Box::new(C0Expression::Int32Literal(0)),
+                    )
+                })
             }
             Some(Token::Ident(name)) => Ok(C0Expression::Variable(name)),
             Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),

@@ -42,7 +42,8 @@ profile decision before implementation:
   for the pinned `__int128` implementation.
 - **Bounded bytes and serialization.** Select an unchanged span/cursor or
   serialization helper and specify bounds, consumed/produced length, byte meaning,
-  and malformed-input behavior. Returned views must remain tied to live storage.
+  and malformed-input behavior. The proposed first target below isolates span
+  bounds and returned-reference lifetime before byte encoding.
 - **Owning containers.** Select one `prevector` operation with explicit content,
   ownership, allocation, copy/move, destruction, small-buffer transition, and
   invalidation claims.
@@ -51,6 +52,160 @@ profile decision before implementation:
   General inheritance, virtual dispatch, RTTI, arbitrary standard-library
   verification, full exception semantics, concurrency, and cross-target coverage
   remain deferred until a selected proof needs them.
+
+## Proposed next slice: SpanPopBack
+
+Select the unchanged `SpanPopBack<int>` in Bitcoin v31.1
+`src/span.h:75`, commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`.
+The header is already in the pinned input closure, with SHA-256
+`485dc37ba8ed9b0e8d8212061122a5c1cd4e71e6ecc5380ac1a2277de395b0e3`.
+This release uses `std::span`, not a Bitcoin-owned span class. The selected
+instance is a mutable, dynamic-extent `std::span<int>` on the existing LP64
+C++20 target. A fixture translation unit may instantiate the original header
+template; it must identify that harness separately from Bitcoin source and
+retain the pinned compiler profile. No proof is delivered for this target yet.
+
+### Implemented prerequisites
+
+Integral template values now retain the canonical builtin type and exact
+signed decimal value in their contract-facing names, alongside Clang's
+canonical declaration identity. For example, dynamic extent is
+`__value_unsigned_long_18446744073709551615`; negative values use `neg_`.
+Equal-width `unsigned long` and `unsigned long long` remain distinct, while
+aliases canonicalize. Existing Boolean names are unchanged. Narrow integral,
+enum and pack arguments remain outside this slice.
+
+Unsigned 32/64-bit descriptor fields use the existing shared typed cells and
+explicit C layout validation. Explicitly defaulted trivial destructors need
+no executable cleanup; nontrivial destructor checks still apply. The pinned
+`std::span<int>::size()` and nested extent-storage method now have offline
+ordinary, expanded and retained proof coverage through a separately identified
+harness with unchanged archived headers and compile flags. Their contracts
+require only the extent field's authority and retain its native uint64 type.
+Ordinary mutable `int*` returns now use shared typed C call results, including
+modular direct return calls. Pinned unchanged `std::span<int>::data()` has offline
+ordinary, expanded and retained proof coverage. Reading the descriptor pointer
+requires its field authority but no backing element authority, and returning it
+preserves identity without granting new storage authority. Other pointer types,
+C++ reference returns and aggregate results remain outside this increment.
+
+The full-width scalar regression does not claim that a backing allocation of
+that size can be constructed. `SpanPopBack` itself remains unverified.
+
+The user accepted an int32-bounded first backing-range proof, preserving native
+`size_t` storage and arithmetic. Implementation exposed a further bound:
+shared segment resources use a 32-bit byte extent, so a single four-byte
+`int` range requires `N <= UINT32_MAX / 4`, or **1,073,741,823 elements**.
+The proposed `INT32_MAX` bound alone is not the full usable range profile.
+The user accepted that explicit narrower limit for the first proof; wider
+shared byte extents are deferred. Do not silently narrow the
+source length or assume the unsigned index equals a truncated range endpoint.
+
+Native pointer addition now admits signed/unsigned 32/64-bit offsets through
+existing common execution rules, retaining the original index type and pointer
+identity. Pointer subtraction currently admits only signed int32 offsets;
+wide subtraction and pointer differences remain bounded import refusals.
+Offline ordinary, expanded and retained checks cover concrete forward/backward
+positions, singleton and three-element last loads, frame preservation and
+missing authority. Empty, one-past dereferences and full-width invalid offsets
+fail under trivial postconditions. These are explicitly synthetic arithmetic
+prerequisites, not a source proof of `SpanPopBack` or its symbolic length.
+The symbolic native-index/range-endpoint bridge still needs checked evidence.
+
+Read-only wide-index refusals now distinguish compact recorded cell ranges from
+individual source stores in the shared resource tracker. C0 and offline C++
+regressions reject invented source-store attribution and speculative unequal-index
+repairs. They request the unresolved address relation or preservation instead;
+relevant explicit equality rewrites still give ordinary, expanded and retained
+proofs. Actual individual-store alias/frame diagnostics remain covered.
+
+### Intended contract
+
+This is a semantic draft, not accepted Click syntax. Let the incoming
+descriptor denote pointer `p` and mathematical length `N`:
+
+```text
+requires:
+  authority to update the span descriptor
+  1 <= N <= 1073741823                        // accepted single-range byte-extent limit
+  p[0..N] is live, initialized and readable
+  descriptor storage is separate from that backing range
+
+ensures:
+  span.data == old(p)
+  span.size == N - 1
+  result refers to old(p)[N - 1] in the same live allocation
+  every original backing element is unchanged
+  caller authority over the original backing range is preserved
+  no backing storage is allocated, freed, or transferred
+```
+
+The stored size remains native `size_t`; the bound does not retag it as int32.
+The returned reference denotes an element outside the shortened span but
+inside the original backing allocation. Destroying or copying the descriptor
+does not end that reference's storage lifetime; freeing or invalidating the
+backing allocation does. The helper grants no new pointee ownership or write
+permission. A caller that already owns the last element can write through the
+returned reference using that existing authority. Empty spans are excluded by
+the contract; do not promise a recoverable error or rely on debug assertions.
+
+### Decisions exposed by the actual source
+
+1. **Library boundary and concrete profile.** Recommend verifying the selected
+   pinned `std::span` operations (`size`, `back`, runtime `first`, construction
+   and trivial assignment) rather than introducing assumed span intrinsics.
+   The pinned libstdc++ header is
+   `sysroot/usr/include/c++/12/span`, SHA-256
+   `f1e67ea2c1e2e0faef697f37d995abb59eeb7fb0c0cf13a586fe2799ed9196bd`.
+   Its descriptor contains `_M_ptr` and nested `_M_extent._M_extent_value`.
+   Source layout and provenance must come from Clang, not these spellings or
+   hard-coded offsets. Integral template identity and unsigned descriptor
+   storage prerequisites are implemented above; the remaining operations
+   still need frontend admission and source proofs.
+2. **Descriptor values and reference returns (next design decision).**
+   Recommended profile: preserve native reference result signatures in sidecars
+   (`int32&`), matching native reference parameters. The result is a non-owning
+   alias represented by the shared pointer/allocation-lifetime model. Reading or
+   writing through it still needs caller-held backing authority; no exclusive
+   borrow or ownership transfer is introduced. Its lifetime follows the backing
+   allocation, not the span descriptor.
+
+   Treat this trivial span's by-value result and defaulted copy/assignment as
+   ordinary shared C aggregate field copies with checked Clang layouts and
+   temporary lifetimes. Copy the descriptor pointer and native uint64 extent,
+   never pointee contents or authority. Verify the selected constructors and
+   methods from their pinned source. General nontrivial class value semantics
+   remain outside this profile. Reference results and aggregate results still
+   require implementation; the pointer-return increment above does not admit
+   either one.
+3. **Initial bounds profile (accepted).**
+   The user chose the explicit single-range limit above for the first proof. Keep
+   native unsigned arithmetic and prove the cross-width range/index bridge,
+   nonempty subtraction and pointer formation from the actual backing range.
+
+Existing typed pointers, array/range authority, stable views, allocation
+identity, and field layouts provide the foundation. Pointer fields to int32
+and embedded record layouts already have C++ support, as do unsigned size
+fields and the pointer-offset forms above. Local reference binding,
+reference/aggregate returns and automatic embedded descriptor objects still
+need frontend admission. Some of
+those are implementation work once the profiles above are chosen; they do not
+justify a separate C++ memory model.
+
+Acceptance should include the unchanged helper, a modular caller that reads
+the returned last element, and a caller that mutates it under existing write
+authority. Cover singleton spans, preserved siblings and a reference used after
+descriptor destruction while its backing buffer is still live. Reject missing
+nonempty/bounds/read/write authority, invalid backing lifetime and false pointer,
+length or content claims. Ordinary, expanded and retained checks must agree.
+
+No endian or typed-from-bytes rule is needed here. `ser_readdata32` is a later
+candidate: it reads into a local integer through `std::as_writable_bytes` and
+needs a concrete stream plus a precise raw-byte-to-typed-value rule. The current
+[byte design](../docs/internals/byte-representation.md) explicitly refuses
+assembling separate byte cells into wider typed loads and has no specification
+byte view. `ReadCompactSize` additionally brings stream failure and canonical
+encoding rules; do not bundle those decisions into this span slice.
 
 ## Delivery history
 

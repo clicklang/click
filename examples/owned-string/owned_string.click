@@ -122,8 +122,8 @@ int32 owned_string_init(
         unfold(terminated_at);
         simp();
     }
-    have 0 <= owner->len by simp;
-    have owner->len < owner->cap by simp;
+    have 0 <= owner->len;
+    have owner->len < owner->cap;
     have separate(
         memory(*owner),
         memory(owner->data[0..owner->cap])
@@ -210,8 +210,8 @@ int32 owned_string_set(
         unfold(terminated_at);
         assumption();
     }
-    have 0 <= owner->len by simp;
-    have owner->len < owner->cap by simp;
+    have 0 <= owner->len;
+    have owner->len < owner->cap;
     have separate(
         memory(*owner),
         memory(owner->data[0..owner->cap])
@@ -220,7 +220,7 @@ int32 owned_string_set(
     }
     fold(owned_string(owner));
     step();
-    have index <= index by { normalize(); }
+    have index <= index by normalize();
     have index < (index + 1) by {
         unfold(terminated_at);
         apply(int32_increment_strictly_increases(at(statement(1).entry, index), at(statement(1).entry, owner->len))) using {
@@ -598,7 +598,7 @@ int32 owned_string_clear(struct owned_string* owner) {
         unfold(terminated_at);
         normalize();
     }
-    have 0 <= owner->len by simp;
+    have 0 <= owner->len;
     have owner->len < owner->cap by {
         apply(int32_le_lt_transitive(at(statement(0).entry, 0), at(statement(0).entry, owner->len), at(statement(0).entry, owner->cap))) using {
             at(statement(0).entry, 0) <= at(statement(0).entry, owner->len);

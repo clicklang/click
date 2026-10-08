@@ -6,8 +6,8 @@ Strict order transfers to exact Integer observations without a signed cast.
 ```click
 theorem native_reduction(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
-    ensures value % divisor < divisor by { apply(uint32_remainder_less_than_divisor(value, divisor)); }
-    ensures 0 <= to_integer(value % divisor) by { apply(uint32_to_integer_bounds(value % divisor)); }
+    ensures value % divisor < divisor by apply(uint32_remainder_less_than_divisor(value, divisor));
+    ensures 0 <= to_integer(value % divisor) by apply(uint32_to_integer_bounds(value % divisor));
     ensures to_integer(value % divisor) < to_integer(divisor) by {
         apply(uint32_remainder_less_than_divisor(value, divisor));
         apply(uint32_less_than_to_integer(value % divisor, divisor));

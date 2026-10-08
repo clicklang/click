@@ -34,7 +34,7 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures pool->capacity == old(pool->capacity);
 } by {
     open(control(pool)) {
-        have 1 <= count(slot(pool)) by simp;
+        have 1 <= count(slot(pool));
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, pool->checked_out, count(slot(pool))
         )) using {
@@ -45,7 +45,7 @@ void checkout(struct pool* pool, struct payload* p) {
         unfold(slot(pool));
         step();
         fold(item(pool, p));
-        have pool->capacity == pool->checked_out + count(slot(pool)) by simp;
+        have pool->capacity == pool->checked_out + count(slot(pool));
     }
     execute(); simp();
 }

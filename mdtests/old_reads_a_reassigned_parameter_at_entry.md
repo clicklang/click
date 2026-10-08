@@ -26,11 +26,11 @@ int32 dec(int32 n) {
 } by {
     mark start;
     step();
-    have n == 0 by { simp(); }
-    have old(n) == 1 by { simp(); }
-    have at(function.entry, n) == 1 by { simp(); }
-    have at(start, n) == 1 by { simp(); }
-    have at(statement(0).entry, n) == 1 by { simp(); }
+    have n == 0;
+    have old(n) == 1;
+    have at(function.entry, n) == 1;
+    have at(start, n) == 1;
+    have at(statement(0).entry, n) == 1;
     step();
     simp();
 }

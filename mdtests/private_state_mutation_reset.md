@@ -64,18 +64,18 @@ int main() {
     ensures left_file::state.value == 1u64;
     ensures right_file::state.value == 41u64;
 } by {
-    have left_file::state.value == 7u64 by simp;
-    have right_file::state.value == 40u64 by simp;
+    have left_file::state.value == 7u64;
+    have right_file::state.value == 40u64;
     step();
-    have left_file::state.value == 8u64 by simp;
+    have left_file::state.value == 8u64;
     step();
-    have left_file::state.value == 9u64 by simp;
+    have left_file::state.value == 9u64;
     step();
-    have right_file::state.value == 41u64 by simp;
+    have right_file::state.value == 41u64;
     step();
-    have left_file::state.value == 0u64 by simp;
+    have left_file::state.value == 0u64;
     step();
-    have left_file::state.value == 1u64 by simp;
+    have left_file::state.value == 1u64;
     step();
     simp();
 }

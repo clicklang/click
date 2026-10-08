@@ -61,7 +61,7 @@ void walk(struct Node* p, int32* marker) {
             }
         }
     }
-    have c.model != Path::Top by { normalize(); }
+    have c.model != Path::Top by normalize();
     execute(); simp();
 }
 ```

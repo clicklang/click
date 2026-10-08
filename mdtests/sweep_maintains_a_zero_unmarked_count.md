@@ -40,7 +40,7 @@ void sweep(int32 visited[], int32 n) {
 } by {
     step();
     step();
-    have 0 <= 0 by { simp(); }
+    have 0 <= 0;
     have unmarked(visited, 0, 0) == 0 by {
         peel(unmarked(visited, 0, 0)) using { 0 <= 0; }
         normalize();

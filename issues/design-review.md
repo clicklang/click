@@ -24,38 +24,26 @@ position and refused in another without a reason a user could give.
 Design and progress: `design/place-based-resource-clauses.md`. Steps 1 to 5
 are done. These remain.
 
-### A1. C++ reference parameters (in progress)
+### A1. Referents in printed kernel terms
 
-Today a C++ `int& value` is declared in the sidecar as `int32* value` and
-read as `value[0]`. Decided: a reference is a property of the parameter. The
-sidecar writes `int32& value`, `const int64& nValue`, `struct cell& c`; the
-name is the referent (`owns value`, `value == old(value) + 1`, `c.value`,
-`owns c`); the signature check refuses `int32*` for an `int&`.
+C++ reference parameters are done: a sidecar declares `int32& value`, the
+name is the referent, `&value` is its address, and the pointer that carries
+it is named `&value` throughout (`reference_carrier_name` in
+`src/languages/c/syntax.rs`; design section "Reference parameters").
 
-A first implementation exists as a stash in the task worktree
-(`git stash list` in `/home/lacker/click-execute-single`, "wip: C++ reference
-parameters"). It is not green. It may be rebuilt from the design section
-"Reference parameters" instead; what it established is recorded there. The
-three things still to build:
+One printing gap remains. A contract expression prints a scalar referent as
+`value`. A kernel term for the same read, as in a "C operation" line or a
+condition `click expand` writes, prints `load_int32(&value)`. That parses
+back correctly, but it is not what a sidecar writes. The printer cannot print
+`value` there without the parameter's type: the same shape through a struct
+reference, `load_int64(&box)`, is the struct's first field, not the struct.
 
-- The referent gets its own syntax-tree node that prints as the bare name.
-  Built as the node `value[0]` produces, it prints as `value[0]`, and
-  `click expand` parses that again as the referent indexed once more.
-- `&value` on a reference parameter is its address, for postconditions that
-  compare pointers (`state->pointer == &value`, and a struct reference
-  compared with a receiver).
-- Negative tests in `tests/cpp_import.rs` that make a false contract by
-  replacing a substring such as `value[0]` must be respelled, each with an
-  assertion that the replacement changed the text.
+Regression: `click expand` on a branch over a scalar reference writes the
+condition with the bare name, and on a branch over a struct reference's
+first field writes `box.field`.
 
-Regression: the C++ fixtures under `tests/fixtures/cpp-verification` with
-reference parameters, converted; a sidecar that writes `int32*` for an
-`int&`, refused with both spellings named; `click expand` on a proof that
-names a reference parameter, re-verified.
-
-Done when: `scripts/check.sh` and `scripts/check.sh --audit` pass with every
-C++ sidecar in the repository converted, and a C sidecar that writes `&` in a
-signature is refused.
+Done when: no diagnostic or expansion prints `load_...(&name)` for a
+reference parameter.
 
 ### A2. Receivers are `this`
 
@@ -113,115 +101,60 @@ resource declares no fields to hold them; write the child without a name".
 Decide whether a parent without fields should be able to name a child. It
 would need a model for a resource that declares none.
 
-### B2. Labels only on `ensures`
+### B3. Reading through a declared resource (decide)
 
-`ensures same: result == p->value;` is accepted. `requires nonnull: p != 0;`
-is a syntax error ("expected comparison operator in `proposition`, got
-`:`").
+Checked on 2026-10-08 with `resource flat(p: struct cell*) { owns p->value;
+owns p->other; }` and a function that reads `p->value`:
 
-Decided: `requires` and `invariant` take a label as `ensures` does.
+- `views flat(p);` verifies with no `unfold`. C reads the memory the
+  resource owns directly.
+- `owns flat(p);` does not. It needs `unfold(flat(p));` before the read and
+  `fold(flat(p));` after.
+- Neither reads through a child. With `resource outer(p) { owns inner(p);
+  owns p->other; }`, a read of memory `inner` owns fails under `views
+  outer(p);`, with and without `unfold(outer(p));`.
 
-Regression: a labelled `requires` and a labelled `invariant`, each cited by
-its label where an `ensures` label can be cited today.
+So a view reads one level through a declared resource and ownership reads
+none. Decide whether the two should agree, and at what depth.
 
-Done when: those pass and the reference documents one label rule for all
-three.
+### B4. Overlap that depends on a symbolic bound
 
-### B3. Reading through a declared resource
+A contract that returns one place twice, or two places that overlap by
+layout (`owns *p; produces p->value;`), is refused where it is declared or
+set up, with a message naming the places.
 
-Recorded in the third pass: `views outer(p)` let C read the resource's
-memory without an `unfold`, while `owns outer(p)` did not. On 2026-10-07 a
-nested case did not confirm it: with `contains inner(p)` in `outer`, both
-`views outer(p)` and `owns outer(p)` needed the `unfold`. Re-check with a
-resource whose body owns memory directly before deciding anything.
+An overlap that depends on a symbolic bound is not: `requires n >= 2;
+owns q[0..n]; produces q[1];`. With a proof it is refused when the exit state
+is checked, with "two owned memory resource clauses overlap", which does not
+name them. A `contract` declaration with no proof is accepted.
 
-### B4. Overlapping places returned by one contract
-
-A contract that returns the same place twice, `owns p->value; produces
-p->value;` or `produces X; produces X;`, is refused where it is declared,
-with a message naming the place.
-
-Two places that overlap without being the same clause are not:
-`owns *p; produces p->value;`, or `owns q[0..n]; produces q[1];`. With a
-proof, the function is refused when its exit state is checked, with "two
-owned memory resource clauses overlap", which does not name them. A
-`contract` declaration with no proof is accepted.
-
-The declaration check is by spelling because an `owns` clause is read at
-entry and a `produces` clause at exit. Deciding overlap for different
-spellings needs the two places compared in one state, and a place reached
-through a loaded pointer can differ between the two.
-
-Regression: `owns *p; produces p->value;` refused at its declaration by a
-message naming both places, in a function with a proof and in a `contract`
-with none.
+Regression: that contract refused at setup by a message naming `q[0..n]` and
+`q[1]`, in a function with a proof and in a `contract` with none.
 
 ## C. Tactics
 
-### C1. Use the short proof forms in the existing proofs
+### C1. Short proof forms where they are not yet used
 
-The examples, standard library and mdtests are what a reader learns Click
-from. Three short forms landed after most were written, and the corpus still
-spells the long ones:
+Proofs that pass were rewritten on 2026-10-08: a `have` or `ensures` proved
+by a one-step block uses the brace-less form (`by T(args);`, `by simp;`), and
+`have P by simp;` is `have P;`. No `by { simp(); }` remains in examples or
+the standard library. Left in the long spelling:
 
-- `by T(args);` for a one-step proof, where the corpus writes
-  `by { T(args); }` (#332). `by simp;` already existed for `by { simp(); }`.
-- `have P;`, which is `have P by simp;` (#313).
-- `instantiate(F, value);` without a `using` list, which looks each
-  instantiated guard up as an exact fact (#307).
-
-Counted on 2026-10-07 in mdtests, examples, stdlib and integrations: 700
-`by { simp(); }`, 147 `by { assumption(); }`, 70 `by { normalize(); }`, and
-about 200 `instantiate` calls with a `using` list. How many of those lists
-are exactly the guards has not been counted; trying the bare form on each
-and keeping the ones that still verify gives the number.
-
-A mechanical rewrite with no change to what any proof proves. Leave a
-multi-step block, a block form such as `both { ... } and { ... }`, and any
-`instantiate` whose list derives a guard from other facts. Do not touch the
-hash-pinned sidecars under `design/charon-trial` without updating
-`parity.json`, and do not change an mdtest whose point is the long spelling
-(`empty_using_list_is_accepted.md`,
-`by_takes_one_tactic_without_braces.md`).
-
-Regression: none new; the rewritten proofs are the regression.
-
-Done when: `scripts/check.sh` and `scripts/check.sh --audit` pass, no
-`by { simp(); }` remains in examples or stdlib, and the pull request reports
-how many `instantiate` calls were rewritten and how many were left.
-
-### C2. `intro() as name` on a range quantifier
-
-`intro() as name` chooses the name of the variable a proof introduces. It is
-refused on a range quantifier: for a goal `(lo..hi).all(|k| { ... })`,
-`intro() as i;` fails with "`intro() as i` requires a goal written as
-`forall (x: T) { ... }`". Bare `intro()` works on the same goal. It is also
-untested on a `forall` over an algebraic type.
-
-```click
-theorem range_goal(n: int32) {
-    ensures (0..n).all(|k| { k == k }) by {
-        intro() as i;
-        intro();
-        normalize();
-    }
-}
-```
-
-A range quantifier keeps its binder in the lambda, so
-`universal_goal_renamed_for_intro` in
-`src/surface/proof/proof_object/step_application.rs` has no binder to
-respell. Rename the lambda parameter and its uses the way the `forall` case
-renames its binder, with the same rule that the new name is not in scope.
-
-Regression: an mdtest with the theorem above expecting `pass`, a theorem
-whose later step reads the variable under its new name, and a case for a
-`forall` over a `spec enum` type.
-
-Done when: those pass, a name already in scope is refused with the existing
-message, the `intro() as name` row in `docs/reference/tactics/index.md` no
-longer lists the range quantifier as refused, and `click expand` on a tactic
-after such an `intro() as` re-verifies.
+- Every expected-failure mdtest, because a failing short `have` reports less
+  than the block form
+  (`bugs/a-failing-short-have-reports-less-than-the-block-form.md`). Respell
+  them when that is fixed.
+- One-step blocks after `initialize`, `preserve` and `close_invariants`,
+  which do not take the brace-less form: `close_invariants by simp;` is a
+  syntax error. Decide whether they should.
+- `instantiate(F, v) using { ... }` calls whose list is exactly the guards,
+  which could drop the list. Try the bare form on each and keep the ones
+  that still verify; about 200 calls have a list.
+- The Rust examples and the sidecars under `design/charon-trial`, which are
+  hash-pinned in `design/charon-trial/parity.json`.
+- A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,
+  `cpp_guard_unwind_before_second.md`,
+  `post_execution_have_checks_each_path.md`).
 
 ## Decided and closed, for the record
 
@@ -233,6 +166,9 @@ after such an `intro() as` re-verifies.
   `assumption()` closes them.
 - `requires`, `ensures`, `fact` and `invariant` stay four words: each says
   where its proposition holds.
+- `requires` takes no label. Requirement labels were removed on 2026-09-23
+  when proofs began citing a precondition by its proposition, and nothing
+  would read one. `invariant` takes a label, which names it in a failure.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a
   property of the function, the other a measure with an expression.
 

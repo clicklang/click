@@ -23,11 +23,11 @@ int32 stored() {
 } by {
     execute_until(assignment(x, 0));
     step();
-    have x == 3 by { simp(); }
+    have x == 3;
     execute_until(assignment(x, 1));
-    have x == 3 by { simp(); }
+    have x == 3;
     step();
-    have x == 4 by { simp(); }
+    have x == 4;
     execute(); simp();
 }
 ```

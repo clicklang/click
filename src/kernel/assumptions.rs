@@ -7714,30 +7714,33 @@ impl CFunctionExecutionCandidates {
 
 impl CFunctionExecutionCandidate {
     pub fn outcome(&self) -> &CFunctionOutcome {
-        &self.outcome
+        &self.data.outcome
     }
 
     pub fn facts(&self) -> &ExecutionFacts {
-        &self.facts
+        &self.data.facts
     }
 
     pub fn effect_facts(&self) -> &ExecutionFacts {
-        &self.effect_facts
+        &self.data.effect_facts
     }
 
     pub fn execution_facts(&self) -> ExecutionFacts {
-        let mut facts = self.facts.clone();
-        let effects = self.effect_facts.filtered(|fact| !facts.contains(fact));
+        let mut facts = self.data.facts.clone();
+        let effects = self
+            .data
+            .effect_facts
+            .filtered(|fact| !facts.contains(fact));
         facts.extend_shared(&effects);
         facts
     }
 
     pub fn obligations(&self) -> &[ProofObligation] {
-        &self.obligations
+        &self.data.obligations
     }
 
     pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.loan_evidence
+        &self.data.loan_evidence
     }
 }
 

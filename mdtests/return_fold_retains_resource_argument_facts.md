@@ -22,7 +22,7 @@ int32 f(int32* p) {
 } by {
     unfold(before);
     execute();
-    have result == 0 by { normalize(); }
+    have result == 0 by normalize();
     let after = fold(Cell(p), { tag: 1 });
     simp();
 }

@@ -76,12 +76,12 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
         initialize by simp;
         preserve by {
             let { next: n } = unfold(w);
-            have n == i by simp;
-            have start < i by simp;
-            have i <= end by simp;
-            have end <= capacity by simp;
-            have 0 <= start by simp;
-            have 0 <= i by simp;
+            have n == i;
+            have start < i;
+            have i <= end;
+            have end <= capacity;
+            have 0 <= start;
+            have 0 <= i;
             mark opened;
             step();
             have start <= i by {
@@ -90,7 +90,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     0 <= start;
                 }
             }
-            have 0 <= i by simp;
+            have 0 <= i;
             step();
             give(data[i..i + 1]);
             have forall (k: int32) {
@@ -139,12 +139,12 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                             not (i < k);
                         }
                     }
-                    have k == i by simp;
+                    have k == i;
                     rewrite(k == i);
                     normalize();
                 }
             }
-            have at(opened, i) <= end by { assumption(); }
+            have at(opened, i) <= end by assumption();
             have i <= end by {
                 apply(int32_nonnegative_predecessor_upper_bound(at(opened, i), end)) using {
                     0 <= at(opened, i);

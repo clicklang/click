@@ -56,7 +56,7 @@ int32 touch(int32 n) {
         Chain::Link(rest_model) => {
             let { rest: r } = unfold(c);
             let d = fold(chain(n), { model: Chain::Link(rest_model) }, { rest: r });
-            have d.model == old(c.model) by { simp(); }
+            have d.model == old(c.model);
             step();
             simp();
         },
@@ -87,7 +87,7 @@ void caller(int32 n) {
             }
         }
     }
-    have n == 0 by { simp(); }
+    have n == 0;
     unfold(c);
     step();
     simp();

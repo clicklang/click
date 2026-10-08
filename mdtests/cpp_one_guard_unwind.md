@@ -68,10 +68,10 @@ int32 helper(bool should_throw) throws int32 {
     exceptional ensures exception == 7;
 }
 
-int32 guarded(int32* value, bool should_throw) {
-    owns value[0..1];
-    ensures result == old(value[0]);
-    ensures value[0] == old(value[0]);
+int32 guarded(int32& value, bool should_throw) {
+    owns value;
+    ensures result == old(value);
+    ensures value == old(value);
 } by {
     execute();
     simp();

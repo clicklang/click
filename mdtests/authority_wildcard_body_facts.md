@@ -28,13 +28,13 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
-    have 0 <= p[0] by simp;
-    have 0 <= p[1] by simp;
+    have 0 <= p[0];
+    have 0 <= p[1];
     fold(slot(&pool, p));
     fold(slot(&pool, p + 1));
-    have count(slot(&pool, _)) == 2 by simp;
-    open(slot(&pool, p)) { step(); have 0 <= p[0] by simp; }
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2;
+    open(slot(&pool, p)) { step(); have 0 <= p[0]; }
+    have count(slot(&pool, _)) == 2;
     open(slot(&pool, p)) {
         open(slot(&pool, p + 1)) { step(); step(); }
     }

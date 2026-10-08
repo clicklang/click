@@ -42,8 +42,8 @@ void pool_grow(struct pool* pool, int32 amount) {
     ensures pool->checked_out == old(pool->checked_out);
 } by {
     open(control(pool)) {
-        have count(slot(pool)) == pool->capacity by simp;
-        have 0 <= count(slot(pool)) by simp;
+        have count(slot(pool)) == pool->capacity;
+        have 0 <= count(slot(pool));
         have 0 <= pool->capacity by {
             arithmetic() using { 0 <= count(slot(pool)); pool->capacity == count(slot(pool)); }
         }
@@ -52,7 +52,7 @@ void pool_grow(struct pool* pool, int32 amount) {
         }
         step();
         fold(amount of slot(pool));
-        have pool->capacity == count(slot(pool)) by simp;
+        have pool->capacity == count(slot(pool));
     }
     execute(); simp();
 }
@@ -66,8 +66,8 @@ void forward(struct pool* pool, int32 amount) {
     ensures pool->checked_out == old(pool->checked_out);
 } by {
     open(control(pool)) {
-        have count(slot(pool)) == pool->capacity by simp;
-        have 0 <= count(slot(pool)) by simp;
+        have count(slot(pool)) == pool->capacity;
+        have 0 <= count(slot(pool));
         have 0 <= pool->capacity by {
             arithmetic() using { 0 <= count(slot(pool)); pool->capacity == count(slot(pool)); }
         }

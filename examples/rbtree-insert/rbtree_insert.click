@@ -106,7 +106,7 @@ theorem rb_ptr_transitive(a: struct rb_node*, b: struct rb_node*, c: struct rb_n
     requires a == b;
     requires a == c;
 
-    ensures c == b by { simp(); }
+    ensures c == b by simp;
 }
 
 theorem rb_has_parent_node(identity: struct rb_node*, parent: struct rb_node*, color: Color,
@@ -617,7 +617,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 }
                 assumption();
             }
-            have parent == node_parent by { simp(); }
+            have parent == node_parent;
             loop {
                 owns c: ctx_at(node, root);
                 owns t: rb_at(node);

@@ -652,7 +652,7 @@ fn refuse_a_place_returned_twice(function: &FunctionBlock) -> Result<(), ClickEr
 
 /// Whether an expression is built from parameters and constants alone, so
 /// that it denotes the same value at a function's entry and exit.
-fn c_expression_reads_no_memory(expression: &CExpression) -> bool {
+pub(in crate::surface) fn c_expression_reads_no_memory(expression: &CExpression) -> bool {
     match expression {
         CExpression::Variable(_) | CExpression::Value(_) => true,
         CExpression::Add(left, right)
@@ -1415,6 +1415,7 @@ fn resource_body_fields_as_parameters(
         function_pointer_signature: None,
         constant: false,
         pointee_constant: false,
+        reference: false,
     }));
     let mut view = body.clone();
     view.fields = other;

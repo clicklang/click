@@ -103,12 +103,12 @@ int32 global_stepped(int32 u) {
     step();
     if u == 0 {
         step();
-        have r == 7 by { simp(); }
+        have r == 7;
         step();
         simp();
     } else {
         step();
-        have r == 3 by { simp(); }
+        have r == 3;
         step();
         simp();
     }
@@ -142,13 +142,13 @@ int32 heap_stepped(int32 u) {
         step();
         if u == 0 {
             step();
-            have r == 7 by { simp(); }
+            have r == 7;
             step();
             step();
             simp();
         } else {
             step();
-            have r == 3 by { simp(); }
+            have r == 3;
             step();
             step();
             simp();

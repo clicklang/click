@@ -9,7 +9,7 @@ verifying "integer_equality_symmetry.c";
 
 theorem equal_arguments(a: Integer, b: Integer) {
     requires a == b;
-    ensures a == b by { assumption(); }
+    ensures a == b by assumption();
 }
 
 theorem reverse_requirement(a: Integer, b: Integer) {
