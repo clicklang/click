@@ -60,9 +60,16 @@ the non-null fixup parent and the exact context with a one-black-level deficit.
 Plugging its empty hole equals the intended successor splice in the original
 outer context. Parent consistency is preserved; balance still needs fixup.
 
+`rbtree_erase_nonroot_child_successor.click` covers an immediate successor
+with a nonempty replacement child below the root, on either parent link.
+The exact replacement blackens that child and preserves the outer context.
+The contract proves whole-tree balance, parent consistency, in-order contents,
+and null fixup without assuming the erased node's, successor's, or child's color.
+
 These are C increments of chunk 11 in
-[the rbtree issue](../../issues/rbtree-example.md). Non-root immediate nonempty-child successors and deeper successors remain. The C file retains all branches; each sidecar
-states its current coverage explicitly.
+[the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
+all immediate-successor exits now verify at any tree position. Deeper successors
+remain. The C file retains all branches; each sidecar states its coverage.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
@@ -100,3 +107,6 @@ and a non-null fixup return.
 
 Non-root black-successor mutations additionally reject null fixup and incorrectly
 returning the erased node's parent instead of the successor.
+
+Non-root replacement-child mutations also reject a missing child parent/color
+write and a write that leaves the child red.

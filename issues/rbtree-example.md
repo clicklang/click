@@ -20,20 +20,16 @@ tree and produces another cannot state that without an abstract model.
 ## State, 2026-10-08: handoff
 
 Insert is finished. The black-successor splice's deficit-start model proof
-in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
-successors. Chunk 11 now verifies the unchanged C for a root with zero or
-one child, and for immediate red- and black-leaf successors at the root. The
-red-leaf successor has a no-deficit model theorem, with immediate and deep
-concrete checks. Non-root red- and black-leaf C unlink now verify on either parent
-link. Non-root one-child deletion also verifies in both directions; non-root
-immediate red-leaf successors also verify on both parent links. Non-root
-nonempty-child successors and deeper C successors remain. Non-root immediate
-black-leaf successors also verify, retaining the deficit context. Immediate
-successors with a nonempty replacement child now have an exact splice theorem
-and a C sidecar. The deeper replacement-child
-case has a balance exit theorem and concrete check in `rbtree_erase_child.click`
-and `successor_child_checks.click`; its exact splice sequence and
-parent-consistency connection remain.
+in [chunk 10](#erase-d3-d4-d10) covers immediate and deep successors.
+Chunk 11 now verifies the unchanged C for zero/one-child deletion and every
+immediate-successor exit, at the root or below it on either parent link.
+Red-leaf and nonempty-child successors return balanced trees with null fixup;
+black-leaf successors retain the exact deficit context and return the successor
+for fixup. Exact models preserve parent consistency and in-order contents.
+Deeper C successors remain. The deeper replacement-child case has a balance
+exit theorem and concrete check in `rbtree_erase_child.click` and
+`successor_child_checks.click`; its exact splice sequence and parent-consistency
+connection remain.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
@@ -113,6 +109,13 @@ successors on both parent links. Its exact deficit context preserves parent
 consistency and completes to the intended splice in the original outer context.
 The returned fixup parent is the successor. Seven mutations cover the link and
 parent/color writes, null return, and returning the erased node's parent.
+
+`rbtree_erase_nonroot_child_successor.click` covers an immediate successor
+with a nonempty replacement child on either parent link. Its exact model
+blackens the child while preserving the outer context. Whole-tree balance,
+parent consistency, in-order contents, and null fixup follow without color
+assumptions. Eight mutations cover all required link and parent/color writes,
+child blackening, and the no-fixup return.
 
 The broader example gate exposed two post-return certification regressions in
 `arena_write` and `arena_region_length`. Exact-width readability of a
@@ -1044,23 +1047,13 @@ nonempty replacement child; its complete successor-splice sequence and
 parent-consistency equations remain. Keep these cases separate from the
 black-leaf theorem, whose whole spliced tree still needs fixup.
 
-**Chunk 11. `__rb_erase_augmented`: root zero/one-child cases written 2026-10-07.**
-The unchanged C now returns a red-black whole tree and the erased node's raw
-ownership for root deletion with at most one child. Its exact model and
-in-order contract drops that root's occurrence. Non-root black-leaf deletion
-also verifies for both parent links, retaining the deficit context and returning
-the parent for fixup. Non-root red leaves also verify, preserving balance and
-returning null.
-Non-root one-child cases now verify in both directions and on both parent
-links, including exact replacement, whole-tree balance, and parent consistency.
-Non-root immediate red-leaf successors also verify on either parent link.
-Non-root black-leaf successors now verify with exact deficit context and
-successor fixup parent. Non-root nonempty-child successors and deeper successors remain. The immediate red-leaf
-successor at the root is now covered, including its exact model, balance,
-parent consistency, and in-order contents. The immediate black-leaf case at
-the root returns the exact deficit context and non-null fixup parent for
-chunk 12. The immediate nonempty-child case also verifies, including blackening,
-exact contents, parent consistency, and the null fixup parent. Depends on 7 and 10.
+**Chunk 11. `__rb_erase_augmented`: zero/one-child and immediate-successor C written.**
+The unchanged C verifies zero/one-child deletion and every immediate-successor
+exit, at the root and on either non-root parent link. No-deficit cases return
+exact remaining models, whole-tree balance, parent consistency, in-order
+contents, and null fixup. Black-leaf cases retain the exact one-black-level
+deficit and return the correct fixup parent for chunk 12. Deeper successors
+and their descent loop remain. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.

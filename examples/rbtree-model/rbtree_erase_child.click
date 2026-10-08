@@ -359,3 +359,14 @@ theorem rb_erase_immediate_successor_child(erased: struct rb_node*, successor: s
             == List<struct rb_node*>::Cons(successor, rb_inorder(child))); normalize();
     }
 }
+
+function rb_erase_immediate_child_model(tree: RbTree) -> RbTree {
+    match tree {
+        RbTree::Empty => RbTree::Empty,
+        RbTree::Node(node, parent, color, left, right) => match right {
+            RbTree::Empty => RbTree::Empty,
+            RbTree::Node(successor, sp, sc, sl, child) =>
+                rb_immediate_successor_child(successor, parent, color, left, child),
+        },
+    }
+}

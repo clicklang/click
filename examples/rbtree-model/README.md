@@ -343,6 +343,8 @@ C sidecar uses the existing general-context `rb_erase_red_successor_splice`
 theorem to prove its balance, parent consistency, and in-order contents.
 `rb_erase_immediate_black_context` names the corresponding black-leaf deficit
 context, whose empty-hole completion equals that splice in the outer context.
+`rb_erase_immediate_child_model` specifies the immediate successor with a
+blackened replacement child, for both parent-link directions below the root.
 
 ## Context and `plug`
 
