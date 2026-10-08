@@ -13210,17 +13210,14 @@ int64 read(int32* slot) {
  views slot[0..1]; requires slot[0] == 7; ensures result == 4294967303i64;
  ensures slot[0] == old(slot[0]);
 } by { execute(); simp(); }
-int32 relay(int32* value) {
- owns value[0..1]; ensures result == 7; ensures value[0] == old(value[0]);
+int32 relay(int32& value) {
+ owns value; ensures result == 7; ensures value == old(value);
 } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
     for hostile in [
         source.replace("ensures result == 7;", "ensures result == 0;"),
-        source.replace(
-            "ensures value[0] == old(value[0]);",
-            "ensures value[0] == 7;",
-        ),
+        source.replace("ensures value == old(value);", "ensures value == 7;"),
     ] {
         let path = project.directory.join("hostile.click");
         fs::write(&path, &hostile).unwrap();
@@ -13241,11 +13238,11 @@ fn converted_return_calls_evaluate_mutators_once_and_preserve_sibling_authority(
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
-int64 bump(struct Box* box) { owns box->value; requires box->value == 0; ensures box->value == 1; ensures result == 1i64; } by { execute(); simp(); }
-int32 relay(struct Box* box) { owns box->value; views box->sibling; requires box->value == 0; ensures box->value == 1; ensures result == 1; ensures box->sibling == old(box->sibling); } by { execute(); simp(); }
+int64 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; } by { execute(); simp(); }
+int32 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1; ensures box.sibling == old(box.sibling); } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
-    let hostile = source.replace("owns box->value; views", "views box->value; views");
+    let hostile = source.replace("owns box.value; views", "views box.value; views");
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
