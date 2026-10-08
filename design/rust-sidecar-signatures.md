@@ -1,9 +1,16 @@
 # Rust sidecars in Rust syntax
 
-Status: proposal. Decided on 2026-10-08: a Rust sidecar states its signature
-in Rust syntax, and each language spells a place its own way
-(`design/place-based-resource-clauses.md`). This document proposes what that
-means and the order to build it in. Nothing here is built.
+Status: accepted on 2026-10-08, not built. A Rust sidecar states its
+signature in Rust syntax, and each language spells a place its own way
+(`design/place-based-resource-clauses.md`). This document says what that
+means and the order to build it in.
+
+The rule behind every choice below: a Rust sidecar looks like Rust, and
+Click's own words work the same in every language. `requires`, `ensures`,
+`owns`, `views`, `consumes`, `produces`, `invariant`, `decreases`, `result`,
+`old`, `forall`, the proof tactics and the resource declarations are not
+respelled for Rust. What changes is everything the source language already
+has a spelling for: signatures, types, places, casts and literals.
 
 ## What a Rust sidecar is today
 
@@ -168,17 +175,18 @@ Each step is a pull request that leaves every example verifying.
 Diagnostics and `click expand` print Rust spellings from step 2 on, by the
 same printer route the place-based work used for C.
 
-## Decisions wanted
+## Decided
 
-1. **`.` and no `->`** for fields through a reference (section 2). The
-   alternative keeps `->` for familiarity with the C sidecars.
-2. **`views *bytes`** for a whole slice (section 3). The alternative is
-   `views bytes[..]`.
-3. **Clauses stay written** for `&T` and `&mut T` parameters and are not
-   derived from the type (section 2).
-4. **`usize` indices by the surface-only route first** (section 4).
-5. **`impl` blocks** for methods (section 5). The alternative is a path
-   name, `fn Guard::drop(&mut self)`, which is smaller to build.
+Accepted on 2026-10-08 as proposed:
+
+1. Fields through a reference are `p.value`; `->` is refused in a Rust
+   sidecar.
+2. A whole slice is `*bytes`.
+3. Clauses stay written for `&T` and `&mut T` parameters and are not derived
+   from the type.
+4. `usize` indices go by the surface-only route first; the kernel change
+   follows only if proofs still carry conversions.
+5. Methods are declared in `impl` blocks.
 
 ## Not covered
 
