@@ -582,6 +582,13 @@ callee result requires native observer normalization and is explicitly refused;
 modular wide observer bounds alone do not establish a native cast observation. Schema 45 requires refreshing
 earlier locks.
 
+The pinned unchanged Bitcoin `CFeeRate::GetFee` integration composes the
+read-only `IsEmpty` contract and the unified Up result-fit contract through
+these calls and conversions. It proves zero for an empty rate without fee or
+fit premises, ceiling rounding on the nonempty profile, the negative minimum
+correction, int64 result bounds and both field frames. See the
+[integration proof and explicit assumptions](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#getfee-composition).
+
 The fixture preserves Bitcoin's quotient/remainder correction expression with
 a signed 64-bit dividend. It checks both rounding directions for positive and
 negative dividends, exact division, zero, signed extrema, and the largest

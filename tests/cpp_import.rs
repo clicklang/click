@@ -13391,3 +13391,85 @@ int64 relay(int32 value) { requires value == 7; ensures result == 8i64; } by { e
             .unwrap_err();
     assert!(error.message().contains("overflow"), "{}", error.message());
 }
+
+#[test]
+fn execution_theorem_proof_retains_struct_argument_field_metadata() {
+    let project = Project::with_fixture(
+        "read.cpp",
+        "read",
+        "struct Child { int value; }; struct State { long sibling; Child child; }; int read(const State& state) noexcept { return state.child.value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "read.cpp";
+int32 read(const struct State* state) {
+    views state->child.value;
+    ensures result == state->child.value;
+} by { execute(); simp(); }
+contract int32 PositiveRead(const struct State* state) {
+    views state->child.value;
+    requires state->child.value == 2;
+    ensures result == 2;
+}
+theorem read_application() executes read(const struct State* state) {
+    ensures PositiveRead(&read) by {
+        have state->child.value > 0 by { arithmetic() using { state->child.value == 2; } }
+        execute(); simp();
+    }
+}
+"#;
+    let path = project.directory.join("read.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let first = sites
+        .iter()
+        .find(|site| site.claim_label.starts_with("read_application."))
+        .unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        &import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    let path = project.directory.join("hostile.click");
+    let hostile = source.replace("requires state->child.value == 2;", "");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+    let (definitions, application) = source.split_once("theorem read_application()").unwrap();
+    let wrong_field = format!(
+        "{definitions}theorem read_application(){}",
+        application.replace("child.value", "child.missing")
+    );
+    fs::write(&path, &wrong_field).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &wrong_field).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.message().len() < 8000);
+}

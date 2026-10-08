@@ -910,7 +910,8 @@ depth and sibling populations.
 The pinned unchanged `CFeeRate::GetFee` regression now passes the `FeePerVSize`
 record-layout, direct Boolean condition-call, locked-header executable and
 converted `EvaluateFeeUp()` initializer boundaries. Its complete graph imports
-and lowers with explicit header dependencies; the wrapper is not verified yet.
+and lowers with explicit header dependencies; the composition proof below
+verifies the wrapper.
 
 Projected method receivers and record/scalar reference arguments now use the
 same ordered field paths. Call validation resolves the projected nominal type
@@ -1010,7 +1011,7 @@ refreshing earlier locks.
 
 Unchanged `CFeeRate::GetFee` now imports its complete reachable executable graph
 with explicit dependencies on `consensus/amount.h`, `policy/feerate.h` and
-`util/feefrac.h`. This is an import regression, not a proof of `GetFee`.
+`util/feefrac.h`. The composition proof is delivered below.
 Converted scalar returns now reuse the initializer conversion-chain exporter,
 metadata validation and scalar normalizer. Callee contracts retain their
 original result type; the selected return retains its converted type, which
@@ -1028,19 +1029,28 @@ Converted original 128-bit call results remain explicitly refused until native
 observer normalization connects modular wide-result bounds to the captured
 value used by cast certificates. Keep that prerequisite explicit rather than
 claiming result-fit from mathematical observers alone.
-Next select and prove the unchanged `GetFee` composition contract using
-`IsEmpty` and the unified Up contract, with explicit empty-rate and minimum-fee
-correction cases and caller-stated result-fit assumptions.
+The unchanged `GetFee` now composes read-only `IsEmpty` and the unified Up
+result-fit contract. Empty size returns zero without fee observer or product
+fit premises. Nonempty size uses the caller-stated Up fit endpoints and full
+fee observer bounds, exports the ceiling interval with the explicit negative
+minimum correction, excludes zero for nonzero negative-fee calls, and preserves
+both field views. Explicit helper-result captures and zero-observer rewrites
+use existing shared proof rules. Execution-theorem proof blocks retain the
+executed arguments' record metadata, including nested field paths, within
+their clause scope; a small independent regression covers expansion, retained
+checking, omitted premises and invalid fields. Ordinary verification, expansion/reverification,
+retained certificates and modular empty/negative/zero/oversize callers have
+offline coverage. Missing authority/domain/fee/fit bounds, weakened strict fit,
+false empty/correction claims and stale reachable headers fail promptly.
+Next reuse this composition contract for the unchanged `GetFeePerK` wrapper.
+Keep native observer normalization for original wide call-result conversions
+as a separate prerequisite before widening the conversion profile.
 Automatic objects with embedded records, nontrivial embedded destruction,
 header constructor/destructor bodies, header constant definitions and mixed-source
 executable macro spans remain separate work.
-The `GetFee` proof should reuse the individual observer and arithmetic contracts.
-State empty-rate behavior separately from the positive-size result-fit profile.
-Its negative-fee, nonzero-amount case changes a zero rounded result to `-1`, so
-specify that minimum correction explicitly. Keep object construction and the
-other `CFeeRate` methods separate until their own contracts are selected.
-Continue bounded ordinary/expanded/retained and hostile provenance, authority,
-fit, empty-branch and correction checks without editing Bitcoin.
+Keep object construction and the other `CFeeRate` methods separate until their
+own contracts are selected. Continue bounded ordinary/expanded/retained and
+hostile provenance, authority, fit and correction checks without editing Bitcoin.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
@@ -1050,7 +1060,7 @@ an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
-machine observer ranges, general range inference, `CFeeRate` composition and
+machine observer ranges, general range inference, further `CFeeRate` methods and
 the portable `DivFallback` implementation remain open.
 
 Before implementing the upstream proof, freeze a small regression that

@@ -574,10 +574,9 @@ instance expansion/reverification, retained verification, missing field,
 amount, fee or fit bounds, strict fit endpoints weakened to inclusive ones,
 missing source-comparison transport, false rounding, missing arithmetic
 bridges, and forged wide products or ceiling numerators. The original unified
-joint-bound profile remains a regression. The next integration slice is the
-unchanged `CFeeRate::GetFee` wrapper: inherited `FeePerVSize` field access,
-empty-rate behavior and its negative-fee minimum correction require their own
-contracts before composing these rounding proofs.
+joint-bound profile remains a regression. The unchanged `CFeeRate::GetFee`
+composition below adds inherited `FeePerVSize` field access, empty-rate behavior
+and the negative-fee minimum correction to these rounding proofs.
 
 
 ## CFeeRate wrapper preparation
@@ -597,16 +596,47 @@ and retained verification. Hostile claims, omitted authority and writes through
 views are rejected, as are illegal C++ client access, unions, mixed-access
 non-standard layouts, general inheritance and bit-fields.
 
-The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
-its nested `FeePerVSize` layout now imports, and the first refusal is the
-converted call `CAmount(m_feerate.EvaluateFeeUp(virtual_bytes))` at
-`policy/feerate.cpp:24:38`. Direct Boolean condition calls and executable ordinary
-callees in locked headers now import within their documented profiles.
-Header-declared records use the explicitly locked dependency mechanism described
-below. The exporter reports the actual source location and writes no partial
-artifact. Scalar-call result conversions remain a
-prerequisite; `GetFee` is not yet verified. Its empty-rate branch and negative-fee minimum
-correction will need contracts of their own when composing the Up proof.
+The pinned `CFeeRate::GetFee` now imports and verifies its complete unchanged
+call graph. Direct Boolean condition calls, executable ordinary callees in
+locked headers, inherited receivers and the `CAmount` conversion compose the
+observer and arithmetic proofs described below.
+
+## GetFee composition
+
+[`CFeeRateGetFee.click.in`](CFeeRateGetFee.click.in) composes the existing unified
+Up result-fit proof with a read-only `IsEmpty` contract. Both nested fields are
+viewed and preserved. Amount and stored size are nonnegative int32 values.
+For size zero, the result is zero; no fee observer or product-fit premise is
+needed. For positive size, write `F`, `A`, `D` for the Integer observations of
+fee, amount and size. The caller supplies the full int64 fee observer bounds
+and `(MIN - 1) * D < F * A <= MAX * D`, exactly the unified Up profile.
+
+Let `C` be the ceiling of `F * A / D`. The result is `C`, except that `C == 0`,
+a nonzero amount and a negative native fee produce `-1`. The sidecar expresses
+this exactly with the ceiling interval or the minimum-correction interval
+`-D < F * A <= 0`, together with the exclusion of a zero result for nonzero
+negative-fee calls. It also exports full int64 result bounds and both field
+frames. The `CAmount` conversion introduces no fit assumption.
+
+The shared `IsEmpty` sidecar now uses field views and exports both directions
+of its Boolean result. The proof names the ordinary helper results, branches at Bitcoin's `IsEmpty`
+condition, and explicitly rewrites the zero rounded value before transporting
+its ceiling bounds into the correction interval. It adds no kernel rule,
+range inference or source change. Execution-theorem proof blocks also retain
+their executed arguments' record type metadata, so their field paths use the
+same physical layout as ordinary function proofs. A small independent
+regression checks nested fields, expansion, retained certificates, omitted
+premises and invalid field names. Bitcoin's `Assume` calls and pinned standard
+library constructor remain explicit import assumptions.
+
+Bounded hermetic tests remove the exporter before locked loading and proof
+checking. Ordinary verification, expansion/reverification and retained
+certificates agree. Modular callers cover an empty rate without fee/fit bounds,
+negative minimum-fee inputs, zero amount and positive amount above stored size.
+Hostile checks omit either field view, amount/size guards, fee bounds or either
+fit endpoint; weaken the strict lower endpoint; falsify empty or correction
+results; and change a reachable locked header. The selected Bitcoin sources and
+input archive are unchanged.
 
 
 ## Record declarations in locked headers
@@ -659,8 +689,8 @@ read-only writes and excessive shared-layout expansion.
 Declaration and contract metadata now also support nested C++ source field
 reads, writes, signed compound updates and projected method/reference calls.
 Automatic objects with embedded fields and nontrivial embedded destruction
-remain explicit boundaries. `CFeeRate::GetFee`
-is still a refusal regression at the converted `EvaluateFeeUp()` call; no Bitcoin source is changed.
+remain explicit boundaries. The unchanged `CFeeRate::GetFee` composition is
+verified above.
 
 
 ## Nested source field accesses
@@ -693,11 +723,10 @@ Concrete class-template instances now retain their nominal identity, including
 empty tags such as `VSizeTag`. Public non-virtual single bases of data-free
 trivial wrappers now retain a separate nominal base layout, exposed as `base`
 in sidecars. Base fields are not copied into the derived declaration, and
-validation rejects forged edges, layouts and cycles. `CFeeRate::GetFee` now
-stops at the converted `EvaluateFeeUp()` call. Inherited source reads/writes and
+validation rejects forged edges, layouts and cycles. Inherited source reads/writes and
 implicit method/reference receivers now use
 ordered nominal base projections, including mixed field/base paths. Root
 constness and sibling authority are retained. Direct Boolean condition calls now normalize once before branching;
 locked-header ordinary executable calls now retain per-function source provenance.
-Scalar-call result conversions remain a prerequisite before composing the wrapper
-proof.
+Scalar-call result conversions preserve the callee type before the wrapper's
+`CAmount` alias conversion. The composition proof above uses these features.

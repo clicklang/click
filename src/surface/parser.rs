@@ -2203,12 +2203,16 @@ impl Parser {
         let previous_integer_literal_context =
             std::mem::replace(&mut self.integer_literal_context, false);
         let previous_integer_lets = std::mem::take(&mut self.current_integer_lets);
+        let mut execution_struct_params = BTreeMap::new();
+        let mut execution_struct_array_params = BTreeSet::new();
         let executes = if self.peek_ident() == Some("executes") {
             self.position += 1;
             let callback = self.expect_ident("callback parameter")?;
             self.expect(Token::LParen)?;
             let call_parameters = self.parse_parameters()?;
             self.expect(Token::RParen)?;
+            execution_struct_params = call_parameters.struct_params;
+            execution_struct_array_params = call_parameters.struct_array_params;
             Some(TheoremExecution {
                 callback,
                 parameters: call_parameters.parameters,
@@ -2368,8 +2372,18 @@ impl Parser {
                         let mut names = parameter_names.clone();
                         names.extend(execution.parameters.iter().map(|p| p.name().to_string()));
                         names.extend(contract_let_names.iter().cloned());
-                        let (ensure, introduced) =
-                            self.parse_ensure_clause_with_execution_scope(Some(&names))?;
+                        // Executed arguments are in scope in this proof block,
+                        // including the record metadata needed for field paths.
+                        let previous_structs = self.current_struct_params.clone();
+                        let previous_arrays = self.current_struct_array_params.clone();
+                        self.current_struct_params
+                            .extend(execution_struct_params.clone());
+                        self.current_struct_array_params
+                            .extend(execution_struct_array_params.clone());
+                        let parsed = self.parse_ensure_clause_with_execution_scope(Some(&names));
+                        self.current_struct_params = previous_structs;
+                        self.current_struct_array_params = previous_arrays;
+                        let (ensure, introduced) = parsed?;
                         target_instances.extend(introduced);
                         ensure
                     } else {
