@@ -33,13 +33,20 @@ innermost link around one shared C continuation. `refold_erase_spine` rebuilds
 the path, and `rb_erase_no_fixup_successor_splice` proves balance, exact
 in-order removal, and parent consistency for both complete transplants.
 The leaf and nonempty-child C branches join before the shared reconstruction. The
-contract also returns detached-node ownership and null fixup. All 61 sidecar
-smart sites and eight new model-theorem sites pass expansion audit. Six mutation
-checks cover the deeper links, replacement parent, blackening, and spurious
-fixup. Four run in the ordinary gate (8.8–9.7 seconds); the right-attachment
-and red-leaf fixup mutations (10.1 and 11 seconds) run nightly with the full
-erase project. Deeper black-leaf successors and non-root deeper successors
-remain in chunk 11.
+contract also returns detached-node ownership and null fixup.
+Root deletion with a deeper black-leaf successor now also verifies in
+`rbtree_erase_black_spine.click`: the terminating graft helper joins the
+retained descent spine to the transplanted successor's context. Its contract
+returns the empty deficit hole, exact context, red-black and parent-consistency
+invariants, in-order contents, detached-node ownership, and the nonnull minimum
+parent for color repair. Both deeper sidecars share the spine model and resource
+modules. All 124 expansion-audit sites pass across the shared spine model and
+the two deeper sidecars. All 13 erase sidecars verify in 176 seconds.
+All ten deeper-successor mutation checks pass: six run in the
+ordinary gate (8.1–9.7 seconds), while right attachment, right-parent update,
+wrong black-leaf fixup parent, and spurious red-leaf fixup (10.1–11.1 seconds)
+run nightly. Non-root deeper
+successors remain in chunk 11.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
@@ -76,6 +83,11 @@ the pointers in the requested fact, including pure-function arguments, and
 require exact evidence for the rewritten fact. Kernel regressions cover
 nonnull and parent-function facts, missing evidence, false conclusions, and
 16/64/256 unrelated aliases including null links.
+Documenting the shared spine modules exposed a parser/documentation mismatch:
+Click now accepts the documented `//` and `/* ... */` comments in both parsing
+and source-location scanning. Regressions cover imported modules, expansion
+offsets, literal contents, division, and unterminated block comments; the
+existing `#` spelling remains supported.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.

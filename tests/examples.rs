@@ -100,7 +100,7 @@ const NIGHTLY: &[(&str, &str)] = &[
     ),
     (
         "rbtree-erase",
-        "12 sidecars including the deeper successor verify in 158 s (2026-10-08)",
+        "13 sidecars including deeper black-leaf successors verify in 176 s (2026-10-08)",
     ),
 ];
 
@@ -990,6 +990,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
 }
 
 #[test]
+#[ignore = "nightly: deeper successor parent-update mutation takes 10.2s"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
@@ -1014,6 +1015,43 @@ fn rbtree_erase_deep_red_leaf_refuses_spurious_fixup() {
         "rbtree_erase_spine.click",
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_black_leaf_refuses_a_skipped_splice() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_spine.click",
+        "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_black_leaf_requires_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_spine.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = NULL;\n",
+    );
+}
+
+#[test]
+#[ignore = "nightly: deeper black-leaf fixup-parent mutation takes 10.2s"]
+fn rbtree_erase_deep_black_leaf_requires_the_splice_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_spine.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = successor;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_spine.click",
+        "\t\t\trb_set_parent(child, successor);\n",
+        "",
     );
 }
 
