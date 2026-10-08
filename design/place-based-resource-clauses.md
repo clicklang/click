@@ -227,12 +227,15 @@ established:
   mechanical. They follow `const` on a pointee through the same places.
 - Click has two expression parsers, one for contract expressions and one for
   C fragments in clause targets. Both must resolve a reference.
-- **The referent needs its own syntax-tree node.** Building it as the same
-  node an explicit `value[0]` produces verifies, but that node prints as
-  `value[0]`. Expansion and several proof steps print an expression and parse
-  it again, and the second parse reads `value` as the referent and indexes it
-  once more. So printing (item 4) is not a later refinement; items 3 and 4
-  land together, on a node that prints as the bare name.
+- **The carrier is named as the referent's address.** Building the referent
+  as the node an explicit `value[0]` produces verifies, but it prints as
+  `value[0]`; expansion and several proof steps print an expression and parse
+  it again, and the second parse indexes the referent once more. A dedicated
+  node fixes that for contract expressions only: kernel terms and a callee's
+  contract instantiated at a call still print the pointer as `value`. Naming
+  the pointer `&value` fixes all of them, because every printer already reads
+  `&x` as the address of the object `x`: `(&value)[0]` prints as `value` and
+  `(&c)->field` as `c.field`.
 - **The address of a referent needs a spelling.** `state.pointer = &value` in
   the source gives a postcondition that compares pointers. With `value`
   meaning the `int`, that is `state->pointer == &value`, which the parser
@@ -245,9 +248,8 @@ established:
   its replacement respelled, and an assertion that the replacement changed
   the text, or the test silently stops testing anything.
 
-Order of work: the node, its printing and `&name`, with the flag, syntax and
-signature check, for scalar and struct references and their sidecars
-converted; `this`; then reference locals in C++ bodies, which proofs name
+Order of work: the carrier naming with the flag, syntax and signature check,
+for scalar and struct references and their sidecars converted; `this`; then reference locals in C++ bodies, which proofs name
 through the lowered program.
 
 Rust is not covered here. Its natural spelling changes the signature syntax
