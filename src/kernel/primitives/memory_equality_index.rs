@@ -905,6 +905,7 @@ impl MemoryFactEntries {
         let mut entries = streams.into_iter().flatten().peekable();
         let sole = if entries.peek().is_none() && index.points_initialized {
             ResourceContext::sole_access_supplier(index, &start_pointer, owned)
+                .or_else(|| ResourceContext::sole_affine_supplier(index, &start_pointer, owned))
         } else {
             None
         };
@@ -1490,6 +1491,33 @@ impl ResourceContext {
         index.symbolic.sole_base(class, owned)
     }
 
+    /// Select a unique supplier in the query's trusted affine block class.
+    /// Cardinality is indexed; the caller must still check exact byte coverage.
+    fn sole_affine_supplier(
+        index: &PairedMemoryIndex,
+        pointer: &Pointer,
+        owned: bool,
+    ) -> Option<ResourceEntryId> {
+        let point = index.graph.canonical_pointer(pointer)?;
+        let bucket = index.addresses.classes.get(&point.representative)?;
+        let suppliers = if owned || bucket.owners.len() == 1 {
+            &bucket.owners
+        } else {
+            &bucket.suppliers
+        };
+        if suppliers.len() != 1 {
+            return None;
+        }
+        let entry = *suppliers.iter().next().expect("sole supplier");
+        let range = index.resources.facts.get(&entry)?.memory_range()?;
+        if Self::pointer_read_coordinate(range.base())
+            && !Self::query_has_base(&index.graph, pointer, range.base())
+        {
+            return None;
+        }
+        Some(entry)
+    }
+
     /// Indexed read candidates, or a sole retained supplier in the selected
     /// affine class. Unsupported or ambiguous inputs fail closed; queries never
     /// publish input, retry address spellings, or search a resource frame.
@@ -1522,24 +1550,7 @@ impl ResourceContext {
             let entry = if let Some(entry) = Self::sole_access_supplier(&index, pointer, owned) {
                 entry
             } else {
-                let point = index.graph.canonical_pointer(pointer)?;
-                let bucket = index.addresses.classes.get(&point.representative)?;
-                let suppliers = if owned || bucket.owners.len() == 1 {
-                    &bucket.owners
-                } else {
-                    &bucket.suppliers
-                };
-                if suppliers.len() != 1 {
-                    return None;
-                }
-                let entry = *suppliers.iter().next().expect("sole supplier");
-                let range = index.resources.facts.get(&entry)?.memory_range()?;
-                if Self::pointer_read_coordinate(range.base())
-                    && !Self::query_has_base(&index.graph, pointer, range.base())
-                {
-                    return None;
-                }
-                entry
+                Self::sole_affine_supplier(&index, pointer, owned)?
             };
             MemoryAccessEntries::SingleSupplier(Some(entry))
         };

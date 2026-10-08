@@ -11258,6 +11258,98 @@ mod tests {
     }
 
     #[test]
+    fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
+        let base = crate::kernel::Pointer::symbolic(Variable(72_000));
+        let alias = crate::kernel::Pointer::symbolic(Variable(72_001));
+        let offset = Bitvector32Term::Variable(Variable(72_002));
+        let empty = PureFactContext::new();
+        let assumptions = empty
+            .clone()
+            .assume_condition(
+                crate::kernel::ConditionTerm::pointer_equal(
+                    alias.clone(),
+                    base.offset_by_elements(offset.clone(), 1),
+                ),
+                true,
+            )
+            .assume_condition(
+                crate::kernel::ConditionTerm::signed_less_equal(0u32.into(), offset.clone()),
+                true,
+            )
+            .assume_condition(
+                crate::kernel::ConditionTerm::signed_less_equal(
+                    Bitvector32Term::add(offset, 4u32.into()),
+                    16u32.into(),
+                ),
+                true,
+            );
+        let range = |pointer, end| {
+            crate::kernel::CMemoryRange::new_with_element_width(pointer, 0u32.into(), end, 1)
+        };
+        let owned = CResourceFact::own_memory(range(base.clone(), 16u32.into()));
+        let parent_view = CResourceFact::view_memory(range(base, 16u32.into()));
+        let child_view = CResourceFact::view_memory(range(alias.clone(), 4u32.into()));
+        let (ledger, caller, callee) = participants();
+        let opening = lend_test(&ledger, caller, caller, owned);
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let resources = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(parent_view.clone());
+        let occurrence = resources.occurrences_for_fact(&parent_view)[0];
+        let bindings = LoanViewBindings::default().with_inserted(
+            occurrence,
+            LoanViewBinding {
+                loan: opening.loan,
+                scope: opening.scope,
+                share: opening.root_share,
+                support: opening.description.support(),
+                viewed: parent_view.clone(),
+                hold: None,
+            },
+        );
+        let plan = plan_stable_view_transfer_with_bindings(
+            &resources,
+            &[checked(child_view.clone())],
+            &assumptions,
+            &ledger,
+            caller,
+            callee,
+            &bindings,
+        )
+        .expect("checked offset alias selects the bound parent view");
+        assert!(
+            plan.callee_resources
+                .satisfies_fact(&child_view, &assumptions)
+        );
+        let recovery = plan
+            .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+            .unwrap();
+        assert_eq!(recovery.ledger, ledger);
+        assert_eq!(recovery.view_bindings, bindings);
+        for (facts, view, bound) in [
+            (&empty, child_view.clone(), &bindings),
+            (
+                &assumptions,
+                CResourceFact::view_memory(range(alias, 17u32.into())),
+                &bindings,
+            ),
+            (&assumptions, child_view, &LoanViewBindings::default()),
+        ] {
+            assert!(
+                plan_stable_view_transfer_with_bindings(
+                    &resources,
+                    &[checked(view)],
+                    facts,
+                    &ledger,
+                    caller,
+                    callee,
+                    bound,
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn nested_view_reborrow_rejects_wider_child_than_bound_parent() {
         let assumptions = PureFactContext::new();
         let owned_range = memory(0, 8, true);

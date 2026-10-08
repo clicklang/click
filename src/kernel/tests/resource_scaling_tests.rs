@@ -1612,3 +1612,58 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
     let (_, survived) = framed_store_beside_instances(&state, std::slice::from_ref(&kept));
     assert_eq!(survived, 1, "the opened instance keeps its cell");
 }
+
+#[test]
+fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
+    let base = symbolic_base(TARGET_HEAP);
+    let alias = symbolic_base(2 * TARGET_HEAP);
+    let index = Bitvector32Term::Variable(Variable(3 * TARGET_HEAP));
+    let displaced = base.offset_by_elements(index.clone(), 1);
+    let facts = PureFactContext::new()
+        .assume_condition(pointer_equal(alias.clone(), displaced), true)
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(
+                Bitvector32Term::add(index, 4u32.into()),
+                16u32.into(),
+            ),
+            true,
+        );
+    let view = |pointer, end| {
+        CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+            pointer,
+            0u32.into(),
+            end,
+            1,
+        ))
+    };
+    let held = view(base, 16u32.into());
+    let required = view(alias.clone(), 4u32.into());
+    let mut samples = Vec::new();
+    for size in SIZES {
+        let resources = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts((0..size).map(|i| view(heap_base(i as u64 + 1), 16u32.into())))
+            .unchecked_with_fact(held.clone());
+        resources.synchronize_memory_equalities(&facts);
+        let occurrence = resources.occurrences_for_fact(&held)[0];
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources.view_occurrences_for_fact(&required, &facts)
+        });
+        assert_eq!(found, vec![occurrence]);
+        assert!(
+            resources
+                .view_occurrences_for_fact(&required, &PureFactContext::new())
+                .is_empty()
+        );
+        assert!(
+            resources
+                .view_occurrences_for_fact(&view(alias.clone(), 17u32.into()), &facts)
+                .is_empty()
+        );
+        samples.push((size, work));
+    }
+    assert_constant_plus_log_growth("shared view offset alias", &samples, 64.0);
+}
