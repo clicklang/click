@@ -1948,9 +1948,8 @@ impl Parser {
                 }
                 Some("owns") => {
                     self.position += 1;
-                    let named = self.peek_next() == Some(&Token::Colon);
                     let clause = self.parse_owned_resource_binding()?;
-                    if named && hidden_record {
+                    if hidden_record {
                         self.hold_child_fields_in_a_hidden_record(
                             resource_name,
                             &clause,
@@ -4470,7 +4469,8 @@ impl Parser {
         }
         if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::Colon)
         {
-            return self.parse_owned_resource_target();
+            let target = self.parse_owned_resource_target()?;
+            return Ok(self.hold_a_hidden_record_unnamed(target));
         }
         let name = self.expect_ident("resource instance name")?;
         self.expect(Token::Colon)?;
@@ -4538,6 +4538,66 @@ impl Parser {
         };
         self.current_resource_targets.insert(name, target.clone());
         Ok(target)
+    }
+
+    /// Whether every field of `resource` is hidden: it declares none and
+    /// holds its named children's fields in a record the author does not
+    /// write.
+    fn is_hidden_record(&self, resource: &str) -> bool {
+        self.declared_resource_fields
+            .get(resource)
+            .is_some_and(|fields| {
+                !fields.is_empty() && fields.iter().all(|field| field.name.contains('.'))
+            })
+    }
+
+    /// The binder an unnamed hidden-record resource is held under, if this
+    /// exact resource is held.
+    fn hidden_binder(&self, resource: &ResourceClause) -> Option<ResourceClause> {
+        self.current_resource_targets
+            .iter()
+            .find(|(name, target)| {
+                name.starts_with('#')
+                    && matches!(target, ResourceClause::Named { resource: held, .. } if held.as_ref() == resource)
+            })
+            .map(|(_, target)| target.clone())
+    }
+
+    /// A resource whose every field is hidden has no field a contract could
+    /// name, so it is held without a name: `owns pair(p);`. It is still an
+    /// instance, and is bound under a name the author cannot write. Naming
+    /// the same resource again, in a loop header or a proof step, is the
+    /// same binder.
+    #[inline(never)]
+    fn hold_a_hidden_record_unnamed(&mut self, target: ResourceClause) -> ResourceClause {
+        let ResourceClause::Declared { name, .. } = &target else {
+            return target;
+        };
+        if !self.is_hidden_record(name) {
+            return target;
+        }
+        if let Some(held) = self.hidden_binder(&target) {
+            return held;
+        }
+        let identity = Variable(self.next_resource_identity);
+        self.next_resource_identity += 1;
+        let binder = format!("#{name}{}", identity.0);
+        self.current_resource_bindings
+            .insert(binder.clone(), (identity, name.clone()));
+        let named = ResourceClause::Named {
+            binding: ResourceInstanceBinding {
+                name: binder.clone(),
+                identity,
+                children: vec![],
+                schema: None,
+                fields: None,
+                fold_fields: None,
+                child_bindings: None,
+            },
+            resource: Box::new(target),
+        };
+        self.current_resource_targets.insert(binder, named.clone());
+        named
     }
 
     fn parse_owned_resource_target(&mut self) -> Result<ResourceClause, ClickError> {
@@ -5647,10 +5707,12 @@ impl Parser {
             };
             self.position += 1;
             self.expect(Token::LParen)?;
+            let target = self.parse_owned_resource_target()?;
+            let target = self.hidden_binder(&target).unwrap_or(target);
             let ResourceClause::Named {
                 mut binding,
                 resource,
-            } = self.parse_owned_resource_target()?
+            } = target
             else {
                 return Err(self.error("resource unfold outputs require a named resource"));
             };
@@ -5672,6 +5734,15 @@ impl Parser {
         };
         self.expect_ident_spelling("fold")?;
         self.expect(Token::LParen)?;
+        self.parse_fold_construction(Some(name))
+    }
+
+    /// `fold(resource, { field: value }, { slot: child })` after its opening
+    /// parenthesis. `let name = fold(...)` binds the instance to `name`. A
+    /// resource whose every field is hidden is folded without a name,
+    /// `fold(pair(p), { first: c });`, under the binder it is held by.
+    #[inline(never)]
+    fn parse_fold_construction(&mut self, name: Option<String>) -> Result<ProofTactic, ClickError> {
         let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
         let ResourceClause::Declared {
             name: resource_name,
@@ -5679,6 +5750,13 @@ impl Parser {
         } = &resource
         else {
             return Err(self.error("fold construction requires a declared resource"));
+        };
+        let name = match name {
+            Some(name) => name,
+            None => match self.hidden_binder(&resource) {
+                Some(ResourceClause::Named { binding, .. }) => binding.name,
+                _ => format!("#{resource_name}{}", self.next_resource_identity),
+            },
         };
         if self.current_contract_bindings.contains(&name)
             || self.current_integer_params.contains(&name)
@@ -6625,6 +6703,12 @@ impl Parser {
             }
             "fold" => {
                 self.expect(Token::LParen)?;
+                if self
+                    .peek_ident()
+                    .is_some_and(|resource| self.is_hidden_record(resource))
+                {
+                    return self.parse_fold_construction(None);
+                }
                 let resource = self.parse_owned_resource_target()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::FoldResource(resource)
