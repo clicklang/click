@@ -100,7 +100,7 @@ const NIGHTLY: &[(&str, &str)] = &[
     ),
     (
         "rbtree-erase",
-        "13 sidecars including deeper black-leaf successors verify in 176 s (2026-10-08)",
+        "13 erase contracts take 176 s; the parent-link helper also runs here (2026-10-08)",
     ),
 ];
 
@@ -1052,6 +1052,36 @@ fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
         "rbtree_erase_black_spine.click",
         "\t\t\trb_set_parent(child, successor);\n",
         "",
+    );
+}
+
+#[test]
+fn rbtree_change_child_requires_left_link() {
+    erase_source_refuses_mutation(
+        "rbtree_change_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_change_child_requires_right_link() {
+    erase_source_refuses_mutation(
+        "rbtree_change_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_change_child_requires_root_link() {
+    erase_source_refuses_mutation(
+        "rbtree_change_child.click",
+        "rbtree.h",
+        "        WRITE_ONCE(root->rb_node, new);",
+        "        WRITE_ONCE(root->rb_node, old);",
     );
 }
 

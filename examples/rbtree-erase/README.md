@@ -83,6 +83,13 @@ empty hole, the exact deficit context, its red-black and parent-consistency
 invariants, preserved in-order contents, detached-node ownership, and the
 nonnull minimum parent where color repair must begin.
 
+`rbtree_change_child.click` verifies the shared C parent-link replacement
+helper for root, left-child, and right-child links. Its contract retargets an
+owned context while preserving its exact model and the old node's tag. Holding
+that tag separates the old node from a nonempty sibling. Three mutation checks
+reject a missing update on each link. This supplies the context transfer needed
+by deeper non-root deletion.
+
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
 all immediate-successor exits now verify at any tree position. Root deletion also covers every deeper-successor exit. Deeper successors

@@ -41,12 +41,18 @@ returns the empty deficit hole, exact context, red-black and parent-consistency
 invariants, in-order contents, detached-node ownership, and the nonnull minimum
 parent for color repair. Both deeper sidecars share the spine model and resource
 modules. All 124 expansion-audit sites pass across the shared spine model and
-the two deeper sidecars. All 13 erase sidecars verify in 176 seconds.
+the two deeper sidecars. All 13 `__rb_erase_augmented` sidecars verify in
+176 seconds.
 All ten deeper-successor mutation checks pass: six run in the
 ordinary gate (8.1–9.7 seconds), while right attachment, right-parent update,
 wrong black-leaf fixup parent, and spurious red-leaf fixup (10.1–11.1 seconds)
-run nightly. Non-root deeper
-successors remain in chunk 11.
+run nightly. Non-root deeper successors remain in chunk 11.
+The C parent-link helper now verifies separately in `rbtree_change_child.click`
+for root, left, and right links. Its contract transfers the surrounding context
+to the new focus with the same model and preserves the old node's tag; three
+mutation checks reject missing link updates in about two seconds each, and all
+ten helper expansion-audit sites pass. Deeper non-root proofs can use
+this verified call instead of duplicating the parent-link cases.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
