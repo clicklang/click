@@ -13,7 +13,7 @@ resource Positive(n: int32) { fact 1 <= n; }
 resource Cell(p: int32*) {
     field tag: int32;
     owns p[0..1];
-    contains Positive(p[0]);
+    owns Positive(p[0]);
 }
 int32 f(int32* p) {
     consumes before: Cell(p);

@@ -27,7 +27,7 @@ resource zero_list(node: struct node*) {
         owns node->value;
         owns node->next;
         fact node->value == 0;
-        contains zero_list(node->next);
+        owns zero_list(node->next);
     }
 }
 

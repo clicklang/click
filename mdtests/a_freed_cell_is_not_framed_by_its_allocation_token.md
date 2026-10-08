@@ -26,7 +26,7 @@ void dispose(int32* data, int32 n) { free(data); }
 verifying "a_freed_cell_is_not_framed_by_its_allocation_token.c";
 
 resource cell(p: int32*, n: int32) {
-    contains allocation(p, n * 4);
+    owns allocation(p, n * 4);
     owns p[0..n];
 }
 

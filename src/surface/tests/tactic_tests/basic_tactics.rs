@@ -241,7 +241,7 @@ fn parses_composite_resource_definition() {
             abstract resource socket_open(fd: int32);
 
             resource uncalled(flag: int32*) {
-                contains socket_open(7);
+                owns socket_open(7);
                 owns flag[0..1];
                 fact flag[0] == 0;
             }

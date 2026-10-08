@@ -1526,7 +1526,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                         "`{claim_label}` (loop {loop_index} preservation): a path that reached the function exit retained no returned outcome"
                     ))
                 })?;
-            let exit = CLoopReturnExit::new(value, state, checked.facts().to_vec())
+            let (state, exit_facts) = preservation.restored_return(
+                &state,
+                checked.facts(),
+                &assumptions_from_propositions(checked.facts()),
+            );
+            let exit = CLoopReturnExit::new(value, state, exit_facts)
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             // Equal semantic exits may carry different written proofs. Keep
             // each arm so no source proof disappears through deduplication.
@@ -1583,15 +1588,17 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // A natural cycle's forward `goto` is a terminal loop exit at its
             // named target. It does not owe the loop invariant or ranking
             // bundle; the kernel joins it with the other exits.
-            let exit = CLoopFinalExitCandidate::new(
-                (*checked_execution.core.state).clone(),
-                checked.facts().to_vec(),
-            )
-            .with_jump_target(match context_frontier.loop_control {
-                crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
-                _ => unreachable!("the checked frontier is a natural exit jump"),
-            })
-            .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+            let (state, exit_facts) = preservation.restored_exit(
+                &checked_execution.core.state,
+                checked.facts(),
+                &assumptions_from_propositions(checked.facts()),
+            );
+            let exit = CLoopFinalExitCandidate::new(state, exit_facts)
+                .with_jump_target(match context_frontier.loop_control {
+                    crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
+                    _ => unreachable!("the checked frontier is a natural exit jump"),
+                })
+                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_final_exits.is_new(
                 exit.state(),
                 exit.pure_facts(),
@@ -1605,11 +1612,13 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // there. The loop rule joins it with every other exit into the
             // single successor, so nothing about this path is dropped and
             // nothing about it is assumed to satisfy the invariants.
-            let exit = CLoopBreakExit::new(
-                (*checked_execution.core.state).clone(),
-                checked.facts().to_vec(),
-            )
-            .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+            let (state, exit_facts) = preservation.restored_exit(
+                &checked_execution.core.state,
+                checked.facts(),
+                &assumptions_from_propositions(checked.facts()),
+            );
+            let exit = CLoopBreakExit::new(state, exit_facts)
+                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
                 break_exits.push(exit);
             }
@@ -1628,33 +1637,41 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // The body must return to the head it started from, which carries
             // the loop's own resource context when the loop declares one.
             let join_assumptions = assumptions_from_propositions(&join_facts);
-            let back_edge_fails = crate::kernel::c_loop_state_with_loop_binders_rebound(
+            let rebound = crate::kernel::c_loop_state_with_loop_binders_rebound(
                 preservation.state(),
                 &checked_execution.core.state,
                 preservation.binders(),
                 &join_assumptions,
-            )
-            .and_then(|rebound| {
+            );
+            let back_edge_fails = rebound.as_ref().map_or(true, |rebound| {
                 crate::kernel::c_loop_binder_state_components_match_at_back_edge(
                     preservation.state(),
-                    &rebound,
+                    rebound,
                     preservation.binders(),
                     &join_assumptions,
                     environment.function.composite_resource_definitions(),
                 )
-            })
-            .is_err();
+                .is_err()
+            });
             // A `do ... while` reads its guard after the body, so the state a
             // body path ends in is the loop's only guard-false exit. Recording
             // it only when the back edge fails to close exported no exit at
             // all for a body that does close it, and every claim after the
             // loop was then vacuous.
             if do_while || back_edge_fails {
-                let candidate = CLoopFinalExitCandidate::new(
-                    (*checked_execution.core.state).clone(),
-                    checked.facts().to_vec(),
-                )
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                // The guard-false exit exports the loop's named instances at
+                // their final arguments, just as the checked kernel back edge
+                // does. Keeping a body-local fold name here loses the binder's
+                // model field when the enclosing proof resumes after the loop.
+                // An exit may deliberately consume a declared instance; in that
+                // case keep its actual state, without inventing ownership.
+                let (state, exit_facts) = preservation.restored_exit(
+                    &rebound.unwrap_or_else(|_| (*checked_execution.core.state).clone()),
+                    checked.facts(),
+                    &join_assumptions,
+                );
+                let candidate = CLoopFinalExitCandidate::new(state, exit_facts)
+                    .with_loan_evidence(checked_execution.core.loan_evidence().clone());
                 if seen_final_exits.is_new(
                     candidate.state(),
                     candidate.pure_facts(),

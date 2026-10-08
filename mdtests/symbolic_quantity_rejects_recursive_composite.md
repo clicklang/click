@@ -18,7 +18,7 @@ void hold_many(struct node* node, int32 amount) {
 resource list(node: struct node*) {
     if node != 0 {
         owns node->next;
-        contains list(node->next);
+        owns list(node->next);
     }
 }
 

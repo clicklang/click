@@ -75,6 +75,9 @@ pub(in crate::surface::proof) struct ProofStepSite {
     enclosing: Option<Arc<ProofStepSite>>,
     block: ProofStepBlock,
     position: Option<ProofStepPosition>,
+    /// Planner-generated block positions can attribute checked steps for
+    /// tracing, but never identify a written occurrence for expansion.
+    generated: bool,
 }
 
 impl ProofStepSite {
@@ -89,9 +92,12 @@ impl ProofStepSite {
                 enclosing: self.enclosing.clone(),
                 block: self.block,
                 position: None,
+                generated: true,
             };
         }
-        self.with_position(ProofStepPosition::SourceTactic(index))
+        let mut site = self.with_position(ProofStepPosition::SourceTactic(index));
+        site.generated = false;
+        site
     }
 
     /// The same site addressing the `index`th tactic written in the innermost
@@ -123,6 +129,7 @@ impl ProofStepSite {
             enclosing: self.enclosing.clone(),
             block: self.block,
             position: Some(position),
+            generated: self.generated,
         }
     }
 
@@ -133,6 +140,7 @@ impl ProofStepSite {
             enclosing: Some(Arc::new(self.clone())),
             block,
             position: None,
+            generated: self.generated,
         }
     }
 
@@ -165,6 +173,17 @@ impl ProofStepSite {
     /// contributes two (the arm's written position, then the position in the
     /// arm). Every written tactic therefore has its own path, and the source
     /// mapper decodes it by reading which tactic each prefix names.
+    /// The source path used to select a written occurrence for expansion.
+    /// Generated checking steps retain trace attribution to their enclosing
+    /// source body, but must not claim an independent written occurrence.
+    pub(super) fn written_source_tactic_path(&self) -> Option<Vec<usize>> {
+        if self.generated {
+            None
+        } else {
+            self.source_tactic_path()
+        }
+    }
+
     pub(super) fn source_tactic_path(&self) -> Option<Vec<usize>> {
         let mut path = if let Some(enclosing) = &self.enclosing {
             enclosing.source_tactic_path()?

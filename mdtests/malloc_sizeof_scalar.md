@@ -14,7 +14,7 @@ int32* malloc_sizeof_scalar(int32 count) {
 ```click
 resource maybe_allocated(data: int32*, count: int32) {
     if data != 0 {
-        contains allocation(data, count * sizeof(int32));
+        owns allocation(data, count * sizeof(int32));
         owns data[0..count];
     }
 }

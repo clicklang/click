@@ -52,14 +52,14 @@ resource owned_state_storage(data: int32*) {
 resource zero_state(owner: struct state_owner*) {
     owns owner->state;
     owns owner->data;
-    contains owned_state_storage(owner->data);
+    owns owned_state_storage(owner->data);
     fact owner->state == 0;
 }
 
 resource one_state(owner: struct state_owner*) {
     owns owner->state;
     owns owner->data;
-    contains owned_state_storage(owner->data);
+    owns owned_state_storage(owner->data);
     fact owner->state == 1;
 }
 

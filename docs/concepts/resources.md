@@ -454,7 +454,7 @@ an accounting field to zero does not consume those members. The
 consumes the entry-capacity slot batch, checks the private-object population
 is empty, and retires both authorities while keeping the pool's C storage.
 
-Ordinary wrappers can package existing members with `contains R(p)` and later
+Ordinary wrappers can package existing members with `owns R(p)` and later
 expose them with `unfold`; these transfers require no authority and do not
 change the population. A wrapper cannot create a missing child or bypass the
 authority requirement for membership changes. The source-backed
@@ -923,7 +923,7 @@ resource nonnegative_fd(fd: int32) {
 }
 
 resource live_fd(fd: int32) {
-    contains nonnegative_fd(fd);
+    owns nonnegative_fd(fd);
 }
 ```
 
@@ -1194,7 +1194,7 @@ resource list(node: struct node*) {
     if node != 0 {
         owns node->value;
         owns node->next;
-        contains list(node->next);
+        owns list(node->next);
     }
 }
 ```
@@ -1373,6 +1373,12 @@ has the same repair: say what you want kept.
   model a binder carries there is whatever the invariants state about it, never
   the model it held at loop entry. `invariant c.rank == old(c.rank);` is what
   carries a field through.
+  A checked exit keeps the body's final model under the loop binder's name,
+  including a guard-false `do ... while` exit or a `break` after refolding.
+  Ownership withheld from the body is returned with that final resource
+  exchange; it does not become writable inside the loop. See
+  `mdtests/do_while_returns_rebound_resources.md` for returning a reconstructed
+  path and an empty list while retaining a caller-owned cell.
 - **`unfold` and the `fold` that answers it.** `unfold(c)` gives the instance up,
   so at the `fold` below it `c.rank` names no model at all — there is no
   instance of that identity to read. Name the value it had where it still

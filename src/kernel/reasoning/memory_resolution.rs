@@ -2119,7 +2119,11 @@ pub(in crate::kernel) fn cell_access_byte_width(value: &CValue) -> u32 {
 /// union view, or one holding `Void`, has no value width to read here and
 /// stands in the widest scalar — over-stating a width can only shrink the
 /// separated set.
-fn differing_cell_byte_width(left: &CMemory, right: &CMemory, cell_pointer: &Pointer) -> u32 {
+pub(in crate::kernel) fn differing_cell_byte_width(
+    left: &CMemory,
+    right: &CMemory,
+    cell_pointer: &Pointer,
+) -> u32 {
     let stored_width = |memory: &CMemory| {
         memory
             .cells

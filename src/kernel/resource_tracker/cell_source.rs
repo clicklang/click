@@ -104,8 +104,8 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
         left: CMemoryRange,
         right: CMemoryRange,
         orientation: StoreSeparatedRangeOrientation,
-        write_membership: PointerInRangeEvidence,
-        load_membership: PointerInRangeEvidence,
+        write_membership: AccessInRangeEvidence,
+        load_membership: AccessInRangeEvidence,
     },
     IntrinsicNoWrite,
     AllocationOfOtherBlock,
@@ -179,6 +179,12 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
         condition: ConditionTerm,
         membership: Box<PointerInRangeEvidence>,
     },
+    ShiftedExactAlias {
+        base: Pointer,
+        alias: Pointer,
+        bytes: u32,
+        membership: Box<PointerInRangeEvidence>,
+    },
     /// Existing structural constant/affine membership. Retaining this cheap
     /// form keeps ordinary store edges out of the symbolic bound producer.
     Shallow,
@@ -187,6 +193,62 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
         lower: RangeBoundEvidence,
         upper: RangeBoundEvidence,
     },
+}
+
+/// A complete access stays in one range when its first and last addressed
+/// elements are in that range. Both memberships retain their own premises.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) struct AccessInRangeEvidence {
+    first: PointerInRangeEvidence,
+    last: Option<PointerInRangeEvidence>,
+}
+
+impl AccessInRangeEvidence {
+    pub(in crate::kernel) fn for_access(
+        pointer: &Pointer,
+        bytes: u32,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let last_offset = Self::last_offset(bytes, range)?;
+        Some(Self {
+            first: PointerInRangeEvidence::for_pointer(pointer, range, assumptions)?,
+            last: if last_offset == 0 {
+                None
+            } else {
+                Some(PointerInRangeEvidence::for_pointer(
+                    &pointer.offset_by_bytes(last_offset),
+                    range,
+                    assumptions,
+                )?)
+            },
+        })
+    }
+
+    fn last_offset(bytes: u32, range: &CMemoryRange) -> Option<u32> {
+        let width = range.element_width();
+        (bytes != 0 && width != 0).then(|| ((bytes - 1) / width) * width)
+    }
+
+    fn checks(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let Some(last_offset) = Self::last_offset(bytes, range) else {
+            return false;
+        };
+        self.first.checks(pointer, range, assumptions)
+            && match (last_offset, &self.last) {
+                (0, None) => true,
+                (offset, Some(last)) if offset != 0 => {
+                    last.checks(&pointer.offset_by_bytes(offset), range, assumptions)
+                }
+                _ => false,
+            }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -304,7 +366,12 @@ impl MemoryDagHopJustification {
                 write_membership,
                 load_membership,
             } => {
-                let CMemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let CMemoryDerivation::Store {
+                    pointer: write,
+                    value,
+                    ..
+                } = derivation
+                else {
                     return false;
                 };
                 let authority_checks = match authority {
@@ -328,12 +395,12 @@ impl MemoryDagHopJustification {
                     )
                     && match orientation {
                         StoreSeparatedRangeOrientation::WriteLeftLoadRight => {
-                            write_membership.checks(write, left, assumptions)
-                                && load_membership.checks(pointer, right, assumptions)
+                            write_membership.checks(write, value.byte_width(), left, assumptions)
+                                && load_membership.checks(pointer, bytes, right, assumptions)
                         }
                         StoreSeparatedRangeOrientation::WriteRightLoadLeft => {
-                            write_membership.checks(write, right, assumptions)
-                                && load_membership.checks(pointer, left, assumptions)
+                            write_membership.checks(write, value.byte_width(), right, assumptions)
+                                && load_membership.checks(pointer, bytes, left, assumptions)
                         }
                     }
             }
@@ -764,23 +831,52 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        Self::for_pointer_direct(pointer, range, assumptions).or_else(|| {
-            assumptions
-                .exact_pointer_aliases(pointer)
-                .find_map(|alias| {
-                    let membership = Self::for_pointer_direct(alias, range, assumptions)?;
-                    let condition = ConditionTerm::pointer_equal(pointer.clone(), alias.clone());
-                    crate::kernel::record_implicit_reasoning_provenance(
-                        assumptions,
-                        &Proposition::ConditionIs(condition.clone(), true),
-                    );
-                    Some(Self::ExactAlias {
-                        alias: alias.clone(),
-                        condition,
-                        membership: Box::new(membership),
+        Self::for_pointer_direct(pointer, range, assumptions)
+            .or_else(|| {
+                assumptions
+                    .exact_pointer_aliases(pointer)
+                    .find_map(|alias| {
+                        let membership = Self::for_pointer_direct(alias, range, assumptions)?;
+                        let condition =
+                            ConditionTerm::pointer_equal(pointer.clone(), alias.clone());
+                        crate::kernel::record_implicit_reasoning_provenance(
+                            assumptions,
+                            &Proposition::ConditionIs(condition.clone(), true),
+                        );
+                        Some(Self::ExactAlias {
+                            alias: alias.clone(),
+                            condition,
+                            membership: Box::new(membership),
+                        })
                     })
-                })
-        })
+            })
+            .or_else(|| {
+                assumptions
+                    .exact_pointer_aliases(range.base())
+                    .find_map(|base| {
+                        let bytes = pointer
+                            .element_index_from_base_with_width(base, 1)?
+                            .as_const()?;
+                        if *pointer != base.offset_by_bytes(bytes) {
+                            return None;
+                        }
+                        let shifted = range.base().offset_by_bytes(bytes);
+                        let membership = Self::for_pointer_direct(&shifted, range, assumptions)?;
+                        crate::kernel::record_implicit_reasoning_provenance(
+                            assumptions,
+                            &Proposition::ConditionIs(
+                                ConditionTerm::pointer_equal(base.clone(), range.base().clone()),
+                                true,
+                            ),
+                        );
+                        Some(Self::ShiftedExactAlias {
+                            base: base.clone(),
+                            alias: range.base().clone(),
+                            bytes,
+                            membership: Box::new(membership),
+                        })
+                    })
+            })
     }
 
     fn for_pointer_direct(
@@ -813,6 +909,21 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Self::ShiftedExactAlias {
+            base,
+            alias,
+            bytes,
+            membership,
+        } = self
+        {
+            return *pointer == base.offset_by_bytes(*bytes)
+                && assumptions.exact_condition_value(&ConditionTerm::pointer_equal(
+                    base.clone(),
+                    alias.clone(),
+                )) == Some(true)
+                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && membership.checks(&alias.offset_by_bytes(*bytes), range, assumptions);
+        }
         if let Self::ExactAlias {
             alias,
             condition,
@@ -821,7 +932,7 @@ impl PointerInRangeEvidence {
         {
             return *condition == ConditionTerm::pointer_equal(pointer.clone(), alias.clone())
                 && assumptions.exact_condition_value(condition) == Some(true)
-                && !matches!(membership.as_ref(), Self::ExactAlias { .. })
+                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
                 && membership.checks(alias, range, assumptions);
         }
         let Self::Indexed {

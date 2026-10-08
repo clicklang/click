@@ -13,7 +13,7 @@ void release(struct object* obj) { obj->refs = 0; }
 authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {
-    contains allocation(obj, sizeof(struct object));
+    owns allocation(obj, sizeof(struct object));
     owns *obj;
     owns authority(reference(obj));
     fact obj->refs == count(reference(obj));

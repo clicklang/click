@@ -10,7 +10,7 @@ int32 recursive_resource_requires_guard(int32* p) {
 
 ```click
 resource endless(p: int32*) {
-    contains endless(p);
+    owns endless(p);
 }
 
 verifying "recursive_resource_requires_guard.c";

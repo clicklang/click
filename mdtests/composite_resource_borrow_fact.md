@@ -13,7 +13,7 @@ int32 inspect_server(int32 fd, int32 state[]) {
 abstract resource socket_open(fd: int32);
 
 resource live_server(fd: int32, state: int32*) {
-    contains socket_open(fd);
+    owns socket_open(fd);
     owns state[0..1];
     fact state[0] == 1;
 }

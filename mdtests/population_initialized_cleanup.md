@@ -30,13 +30,13 @@ int32 cleanup(int32 payload) {
 authorized resource child_ref(obj: struct child*) {}
 
 resource child_storage(obj: struct child*) {
-    contains allocation(obj, sizeof(struct child));
+    owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
 }
 
 resource child_control(obj: struct child*) {
-    contains allocation(obj, sizeof(struct child));
+    owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
     fact defined(obj->refs);

@@ -37,8 +37,8 @@ resource shape(node: struct node*) {
     if node != 0 {
         owns node->left;
         owns node->right;
-        contains shape(node->left);
-        contains shape(node->right);
+        owns shape(node->left);
+        owns shape(node->right);
     }
 }
 

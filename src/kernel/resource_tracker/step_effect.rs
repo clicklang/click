@@ -588,8 +588,13 @@ fn store_cell_effect(
             ))
         }
     } else if explicit_dag_check_active()
-        && let Some(justification) =
-            typed_store_separated_ranges_evidence(write, pointer, assumptions)
+        && let Some(justification) = typed_store_separated_ranges_evidence(
+            write,
+            value.byte_width(),
+            pointer,
+            bytes,
+            assumptions,
+        )
     {
         hop(justification)
     } else if explicit_dag_check_active()
@@ -605,9 +610,13 @@ fn store_cell_effect(
         hop(MemoryDagHopJustification::AssumptionDependent(
             MemoryDagAssumptionKind::StoreGeneralDistinctness,
         ))
-    } else if let Some(justification) =
-        owned_composition_store_separated_evidence(write, pointer, assumptions)
-    {
+    } else if let Some(justification) = owned_composition_store_separated_evidence(
+        write,
+        value.byte_width(),
+        pointer,
+        bytes,
+        assumptions,
+    ) {
         // Last, after every cheaper check: one composition in the
         // context owns the written address and the read address
         // through two different members, so the partition invariant

@@ -23,6 +23,11 @@ model, as `examples/rbtree-insert` does, audits as it verifies. The retained ses
 fixed while checking each rewritten local proof; audit the library path itself
 to select library sites.
 
+The inventory includes smart tactics inside ordinary `have` bodies, including
+nested bodies and checked proof arms. A smart container owns its body: its
+inner aliases count as one site. Audit and profile use the same source table
+as location-based expansion.
+
 ## Checks
 
 A wholly selected claim is expanded once, with all its smart sites together.

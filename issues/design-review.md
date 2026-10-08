@@ -99,22 +99,19 @@ with an inventory of the proofs that rely on it; none has been made.
 Found in the third pass and ruled on 2026-10-07. Each was checked against the
 tool that day unless it says otherwise.
 
-### B1. Child resources are written two ways
+### B1. A named child in a resource without fields
 
-A resource without fields writes a child as `contains inner(p);`. A resource
-with fields writes `owns item: inner(p);`, and that form is refused in a
-resource without fields ("a named child resource requires a field-bearing
-parent resource"). In examples and the standard library there are 18 of the
-first and 53 of the second.
+A resource holds a child resource with `owns inner(p);`, the clause it uses
+for memory; `contains inner(p);` is retired and refused with that spelling.
 
-Decided: one spelling. `owns name: inner(p);` is accepted in any resource and
-`contains` is retired, refused with the spelling to write.
+A child can also be named, `owns item: inner(p);`, so the parent's facts can
+read the child's fields as `item.field`. That is accepted only in a parent
+that declares fields of its own, because the parent's model is where the
+child's model is kept. In a parent without fields it is refused: "this
+resource declares no fields to hold them; write the child without a name".
 
-Regression: a resource without fields that holds a named child, used by a
-contract and unfolded in a proof; `contains inner(p);` refused.
-
-Done when: no `contains` child clause remains in the repository and
-`scripts/check.sh` and `scripts/check.sh --audit` pass.
+Decide whether a parent without fields should be able to name a child. It
+would need a model for a resource that declares none.
 
 ### B2. Labels only on `ensures`
 

@@ -18,7 +18,7 @@ void free_second_without_authority(struct two_buffers* buffers) {
 resource first_buffer_owned(buffers: struct two_buffers*) {
     owns buffers->first;
     owns buffers->second;
-    contains allocation(buffers->first, 4);
+    owns allocation(buffers->first, 4);
     owns buffers->first[0..1];
 }
 
