@@ -3160,6 +3160,33 @@ impl PureFactContext {
         self.register_pointer_read_source(memory, address);
     }
 
+    /// Reconcile a retained, checked pointer read with a cached alias value.
+    /// Only spellings in its checked address class are queried in this exact
+    /// snapshot. Logical term construction does not perform this cell search.
+    pub(in crate::kernel) fn register_checked_pointer_read(
+        &self,
+        value: &Pointer,
+        memory: &SharedCMemory,
+        address: &Pointer,
+    ) {
+        self.register_pointer_read(value, memory, address);
+        self.register_cached_pointer_read_value(memory, address);
+    }
+
+    fn register_cached_pointer_read_value(&self, memory: &SharedCMemory, address: &Pointer) {
+        let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
+            .unwrap_or_else(|| memory.clone());
+        for spelling in self.equality_graph.pointer_spellings(address) {
+            if let Some(CValue::Pointer(value)) = start.known_value(&spelling) {
+                self.equality_graph.add_checked_read_equality(
+                    &Pointer::loaded_value(memory, address),
+                    value.pointer(),
+                );
+                return;
+            }
+        }
+    }
+
     /// This rule relates load applications only. An execution value's bridge
     /// remains scoped to its certified binding, including restricted contexts.
     fn register_pointer_read_source(&self, memory: &SharedCMemory, address: &Pointer) {
@@ -3231,6 +3258,7 @@ impl PureFactContext {
         self.equality_graph
             .add_equality(value, &Pointer::loaded_value(memory, address));
         self.register_pointer_read_source(memory, address);
+        self.register_cached_pointer_read_value(memory, address);
     }
 
     fn typed_pointer_read_fingerprint(
@@ -7408,11 +7436,11 @@ impl ProofObligation {
 }
 
 impl ExecutionPureFact {
-    /// Retain the exact typed producer's unconditional value definition.
+    /// Retain the exact typed producer's definition and checked cached value.
     /// Used when a checked expression's value outlives its temporary fact
-    /// stream (for example, an owned recursive child index). The graph is
-    /// part of the trusted kernel; this records a term definition only, not
-    /// an ambient hypothesis or permission to read the defining cell.
+    /// stream (for example, an owned recursive child index). Definitions are
+    /// unconditional; a cached value reached through an alias stays local to
+    /// this proof context. Neither grants permission to read the cell.
     pub(in crate::kernel) fn retain_pointer_read_definition(&self, context: &PureFactContext) {
         if !self.is_certified() {
             return;
@@ -7432,7 +7460,7 @@ impl ExecutionPureFact {
         if generated_load_binding_matches_proposition(binding, self.proposition())
             && crate::kernel::eval::typed_pointer_read_variable(value) == Some(*variable)
         {
-            context.register_pointer_read(value, memory, address);
+            context.register_checked_pointer_read(value, memory, address);
         }
     }
 

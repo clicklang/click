@@ -5169,6 +5169,105 @@ mod tests {
     }
 
     #[test]
+    fn cached_pointer_reads_retain_their_current_cell_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let alias = Pointer::symbolic(Variable(95_510));
+        let address = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(95_511)), 4),
+        };
+        let stored = Pointer::symbolic(Variable(95_512));
+        let replacement = Pointer::symbolic(Variable(95_513));
+        let empty = PureFactContext::new();
+        let mut samples = Vec::new();
+        for count in [8u64, 32, 128, 512] {
+            let mut memory = CMemory::new().store(
+                alias.clone(),
+                CValue::typed_pointer(stored.clone(), CType::Int64Pointer),
+            );
+            let mut context = empty.clone().assume_condition(
+                ConditionTerm::pointer_equal(alias.clone(), address.clone()),
+                true,
+            );
+            for index in 0..count {
+                memory = memory.store(
+                    Pointer {
+                        block: PointerBlock::Heap(96_000 + index),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    int32(7),
+                );
+                context = context.assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(97_000 + index)),
+                        Bitvector32Term::Constant(7),
+                    ),
+                    true,
+                );
+            }
+            let snapshot = intern_c_memory_ref(&memory);
+            assert_eq!(logical_pointer_read(&memory, &address, &context), stored);
+
+            // A later projection may name the same cell by its scalar load.
+            // The checked C pointer read must still denote the cached value.
+            let name = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+            let projected = memory
+                .clone()
+                .materialize_named_cell(address.clone(), CValue::Int32(name));
+            let paths = evaluate_c_memory_load_paths(
+                &projected,
+                address.clone(),
+                CType::Int64Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &context,
+                true,
+                false,
+                None,
+                None,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one C read expected");
+            };
+            let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    for fact in &path.facts {
+                        fact.retain_pointer_read_definition(&context);
+                    }
+                })
+            });
+            samples.push((work, map_work));
+            let CExpressionOutcome::Value(CValue::Pointer(checked)) = &path.outcome else {
+                panic!("pointer read expected");
+            };
+            assert!(context.pointers_known_equal(&stored, checked.pointer()));
+            assert!(
+                !empty.pointers_known_equal(&stored, checked.pointer()),
+                "a cache alias is scoped to its checked context"
+            );
+            let displaced = logical_pointer_read(&memory, &address.offset_by_bytes(8), &context);
+            assert!(!context.pointers_known_equal(&stored, &displaced));
+            let later = memory.store(
+                alias.clone(),
+                CValue::typed_pointer(replacement.clone(), CType::Int64Pointer),
+            );
+            let changed = logical_pointer_read(&later, &address, &context);
+            assert_eq!(changed, replacement);
+            assert!(!context.pointers_known_equal(&stored, &changed));
+            let later_read = Pointer::symbolic(Variable(98_000 + count));
+            context.register_checked_pointer_read(
+                &later_read,
+                &intern_c_memory_ref(&later),
+                &address,
+            );
+            assert!(context.pointers_known_equal(&replacement, &later_read));
+            assert!(!context.pointers_known_equal(&stored, &later_read));
+        }
+        assert!(samples[3].0 <= samples[0].0 * 3 + 128, "{samples:?}");
+        assert!(samples[3].1 <= samples[0].1 * 6 + 512, "{samples:?}");
+    }
+
+    #[test]
     fn logical_pointer_read_registration_invalidates_an_earlier_memoized_miss() {
         let memory = CMemory::new();
         let a = Pointer::symbolic(Variable(92_210));
