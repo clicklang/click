@@ -76,6 +76,17 @@ cargo test --test examples
 
 ## Compiler import fixtures
 
+Rust proof regressions use locked native artifacts when their purpose is to
+check lowering, claims, authority, or proof scaling. The inputs in
+`design/charon-trial/gate-fixtures/` must match the unchanged test source;
+missing or stale fixtures fail rather than trigger compiler extraction.
+A separate nightly test re-extracts these inputs and compares native artifact
+bytes. Live compiler rejection, crate-input identity, and reproducibility
+checks remain real compiler tests in nightly. Whole-example profiling,
+expansion, certificate rechecks, and audits have separate nightly tests, while
+the positive and negative proof assertions stay in the normal gate.
+
+
 On Linux, the gate runs `tests/compiler_import.rs` against GCC at
 `/usr/bin/gcc`. `scripts/setup-environment.sh` installs GCC on Ubuntu 24.04;
 provision it manually on other Linux distributions. Missing GCC fails the

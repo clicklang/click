@@ -1,0 +1,1 @@
+pub fn read(bytes: &[u8; 4]) -> u8 { bytes[0] }
