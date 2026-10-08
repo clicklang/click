@@ -95,36 +95,45 @@ resource declares no fields to hold them; write the child without a name".
 Decide whether a parent without fields should be able to name a child. It
 would need a model for a resource that declares none.
 
-### B3. Reads go through an owned resource: the loop case
+### B3. Reads through an owned resource with fields, across a loop
 
 Decided 2026-10-08 and built: holding a resource, viewed or owned, lets C
 read the memory it owns directly. A write still needs `unfold`. Depth stays
 at one level: memory a child resource owns is not read through.
-`mdtests/c_reads_through_an_owned_resource.md`,
-`c_does_not_write_through_an_owned_resource.md` and
-`an_owned_resource_unfolds_after_a_read_through_it.md` pin the rule.
 
-What remains is that it is built two ways (`OwnedCores` in
-`src/surface/proof/resources.rs`):
+For a resource without fields this is one mechanism. The views of its memory
+are attached to the owner's occurrence, so they retire when the owner is
+unfolded, consumed, freed or handed to an interface, and a loop head derives
+them again for each owner the loop declares, from the definition over the
+head's memory (`with_owner_read_authority_rederived` in
+`src/kernel/loops.rs`). They are never kept across a loop: at exit the kernel
+restores the frame from before the loop, and a view of an address the
+definition read out of memory then would be stale.
+`mdtests/a_freed_cell_is_not_read_through_another_owner_after_a_loop.md` is
+the use after free that keeping them accepted.
 
-- In a function with no loop, the views of an owned resource's memory are
-  attached to the owner's occurrence, so they retire when the owner is
-  unfolded, consumed, freed or handed to an interface.
-- In a function with a loop, they are free-standing views, as before the
-  decision. A loop head gives the owner a new occurrence, which would retire
-  attached views at the first iteration.
+What remains is a resource with fields in a proof that contains a loop
+(`OwnedCores::InstanceArmsStanding` in `src/surface/proof/resources.rs`).
+Its views are free-standing there, as before the decision, because the arm
+that says which memory it owns is selected by facts that hold at the loop's
+exit, and nothing derives attached views again at that point. Attaching them
+without that step fails 13 mdtests, among them `loop_owns_modeled_instance`,
+`rb_next` and `rb_prev`, with a read after the loop refused.
 
-Free-standing views of owned memory are the form that broke `unfold`, a
-freeing call and an `ensuring` interface when it was tried for every
-function on 2026-10-08 (12 tests). Loop proofs in the corpus do not hit
-those, which is evidence about the corpus and not about the rule.
+Free-standing views of owned memory are not retired with their owner, which
+is what blocks a later `free` of that memory. Whether one can go stale as
+the fieldless case did has not been examined.
 
-Regression: a function with a loop that reads through an owned resource in
-the body, then unfolds it after the loop; the same with a freeing call.
+Regression: `loop_owns_modeled_instance.md` verifying with attached views;
+a resource with fields whose arm owns a cell at an address read from its
+model, saved before a loop that changes the model, not readable through the
+saved pointer afterwards.
 
-Done when: one mode serves both, either by re-attaching the views to the
-owner's occurrence at a loop head or by authorizing the read where it
-happens without leaving a view.
+Done when: read authority for a resource with fields is derived at a loop's
+exit under the exit's facts, `InstanceArmsStanding` is gone, and a `free`
+after a loop of memory one owner held is accepted while another owner stays
+folded (today refused: "resource would remain usable after its allocation
+is freed").
 
 ## C. Tactics
 
