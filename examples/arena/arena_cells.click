@@ -3581,7 +3581,10 @@ int32 arena_pipeline(
         extract(k < at(z1, first->start) or at(z1, first->end) <= k);
         extract(k < at(z2, second->start) or at(z2, second->end) <= k);
         have k < second->arena->capacity by {
-            simp();
+            simp() using {
+                k < arena->capacity;
+                arena->capacity == second->arena->capacity;
+            }
         }
         have second->arena->occupied[k] == at(w2, second->arena->occupied[k]) by {
             instantiate(forall (j: int32) {
@@ -3597,7 +3600,10 @@ int32 arena_pipeline(
             simp();
         }
         have k < at(w2, arena->capacity) by {
-            simp();
+            simp() using {
+                k < arena->capacity;
+                arena->capacity == at(w2, arena->capacity);
+            }
         }
         have at(w2, arena->occupied[k]) == 0 by {
             instantiate(forall (j: int32) {
@@ -3614,7 +3620,12 @@ int32 arena_pipeline(
             }
             simp();
         }
-        simp();
+        simp() using {
+            second->arena->occupied[k] == at(w2, second->arena->occupied[k]);
+            at(w2, second->arena->occupied[k]) == at(w2, arena->occupied[k]);
+            at(w2, arena->occupied[k]) == 0;
+            second->arena == arena;
+        }
     }
     have first->arena == arena by {
         simp();

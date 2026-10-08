@@ -10438,6 +10438,22 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             None,
         )?;
+        // An ordinary family refolded on the outcome is not retained on the
+        // path, which still holds its body. Unfolding it again leaves the
+        // retained path as it is: the exchange is checked above, and the
+        // path never held the folded head it would remove.
+        if before_state.uses_population_authority_semantics()
+            && matches!(selected.resource(), CResource::Composite { name, .. }
+                if function
+                    .composite_resource_definition(name)
+                    .is_some_and(|definition| !definition.reaches_population()))
+            && before_state
+                .resources()
+                .directly_supporting_fact(selected, before_facts.assumptions())
+                .is_none()
+        {
+            return Ok(());
+        }
         let retained_after_state = before_state
             .clone()
             .with_resource_context(after_state.resources().clone());
