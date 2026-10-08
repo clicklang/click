@@ -1578,7 +1578,7 @@ impl ResourceContext {
         Some(common)
     }
 
-    /// Replay a body's direct resource exchange into its enclosing frame.
+    /// Apply a body's direct resource exchange into its enclosing frame.
     /// Only changed keys are visited. Derived projections are not independent
     /// authority: remove affected cached projections and let later reads derive
     /// them again from the surviving supports. Keep direct occurrences so the
@@ -1641,7 +1641,7 @@ impl ResourceContext {
             }
         }
         // Check the new authority against the withheld frame before publishing
-        // it. Replaying an exchange must never duplicate or overlap ownership.
+        // it. Applying an exchange must never duplicate or overlap ownership.
         restored
             .clone()
             .try_compose_into_valid_context_delaying_normalization(
