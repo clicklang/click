@@ -10,7 +10,16 @@ pub(super) fn prepare(
     import: &PreparedCppImport,
     function: &CFunction,
     reachable: &[CFunction],
+    layouts: BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<PreparedExecution, String> {
+    let functions = prepare_functions(import, function, reachable)?;
+    Ok(PreparedExecution { functions, layouts })
+}
+
+/// Materialize checked nominal layouts once for execution and proof metadata.
+pub(super) fn prepare_layouts(
+    import: &PreparedCppImport,
+) -> Result<BTreeMap<String, syntax::C0StructLayout>, String> {
     let mut layouts = BTreeMap::new();
     let records = import
         .export()
@@ -117,7 +126,15 @@ pub(super) fn prepare(
             return Err(format!("duplicate C++ record name `{}`", record.name));
         }
     }
-    let functions = std::iter::once(&import.export().function)
+    Ok(layouts)
+}
+
+fn prepare_functions(
+    import: &PreparedCppImport,
+    function: &CFunction,
+    reachable: &[CFunction],
+) -> Result<Vec<syntax::C0Function>, String> {
+    std::iter::once(&import.export().function)
         .chain(&import.export().reachable_functions)
         .zip(std::iter::once(function).chain(reachable))
         .map(|(source, kernel)| {
@@ -161,8 +178,7 @@ pub(super) fn prepare(
             }
             Ok(function_interface(source, kernel)?.with_local_struct_values(locals))
         })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(PreparedExecution { functions, layouts })
+        .collect::<Result<Vec<_>, String>>()
 }
 
 /// Builds the proof-facing signature for the supported C++ profile from Clang's

@@ -23,6 +23,90 @@ use click::surface::{
 };
 
 const SOURCE: &str = include_str!("../examples/basic-cpp/increment.cpp");
+
+#[test]
+fn trivial_record_copy_assignment_preserves_self_and_projected_values() {
+    let project = Project::with_fixture(
+        "copy.cpp",
+        "probe",
+        "struct Extent { unsigned long size; }; struct View { int* data; Extent extent; }; int probe(View& target, const View& source) { target.extent = source.extent; target = target; return 0; }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_profile("probe", "copy.cpp", true);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[0],
+        CppStatement::TrivialCopy { .. }
+    ));
+    let source = r#"verifying "copy.cpp";
+int32 probe(struct View& target, const struct View& source) {
+ owns target.data;
+ owns target.extent.size;
+ views source.extent.size;
+ ensures target.data == old(target.data);
+ ensures target.extent.size == source.extent.size;
+ ensures source.extent.size == old(source.extent.size);
+ ensures result == 0;
+} by { execute(); simp(); }
+"#;
+    let path = project.directory.join("copy.click");
+    fs::write(&path, source).unwrap();
+    let click_project = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&click_project, &import).unwrap();
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..3 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => {
+                forged["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                    true.into()
+            }
+            1 => forged["function"]["body"][0]["source"]["projections"] = serde_json::json!([]),
+            2 => forged["function"]["body"][0]["span"]["file"] = "unlocked.cpp".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "mutation {mutation}"
+        );
+    }
+}
+
+#[test]
+fn record_assignment_refuses_nontrivial_copy_and_move_bodies() {
+    for source in [
+        "struct View { int value; View& operator=(const View& other) noexcept { value = other.value + 1; return *this; } }; int probe(View& target, const View& source) { target = source; return 0; }",
+        "struct View { int value; View& operator=(View&&) noexcept = default; }; int probe(View& target, View& source) { target = static_cast<View&&>(source); return 0; }",
+    ] {
+        let project = Project::with_fixture("copy.cpp", "probe", source);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_profile("probe", "copy.cpp", true);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("requires a trivial copy assignment")
+                || error.contains("must remain trivially copyable"),
+            "{error}"
+        );
+        assert!(!project.artifact().exists());
+    }
+}
+
 const SIDECAR: &str = include_str!("../examples/basic-cpp/increment.click");
 const BRANCH_SOURCE: &str = include_str!("fixtures/cpp-verification/branch-return/choose.cpp");
 const BRANCH_SIDECAR: &str = include_str!("fixtures/cpp-verification/branch-return/choose.click");
