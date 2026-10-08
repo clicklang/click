@@ -459,14 +459,14 @@ pub(in crate::surface) fn prove_claim_by_tactics(
     );
     initial
         .core
-        .record_checked_function_entry(
+        .record_checked_function_entry_with_facts(
             &function,
             &arguments,
             constants
                 .function_entry_state
                 .as_ref()
                 .expect("a function proof has a checked entry state"),
-            assumptions_from_propositions(&pure_facts),
+            &ProofFacts::from_source(&pure_facts),
         )
         .map_err(|error| {
             ClickError::new(format!(
@@ -739,14 +739,14 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
     );
     initial
         .core
-        .record_checked_function_entry(
+        .record_checked_function_entry_with_facts(
             &function,
             &arguments,
             constants
                 .function_entry_state
                 .as_ref()
                 .expect("a function proof has a checked entry state"),
-            assumptions_from_propositions(&pure_facts),
+            &ProofFacts::from_source(&pure_facts),
         )
         .map_err(|error| {
             ClickError::new(format!(

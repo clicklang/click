@@ -93,10 +93,16 @@ fn canonical_charon_examples_verify_locked_inputs() {
 
 /// Examples the ten-minute gate leaves to the nightly run, with the
 /// measurement that put each one here.
-const NIGHTLY: &[(&str, &str)] = &[(
-    "rbtree-insert",
-    "verifies in about 118 s on 20 cores, most of the gate's budget alone (2026-10-06)",
-)];
+const NIGHTLY: &[(&str, &str)] = &[
+    (
+        "rbtree-insert",
+        "verifies in about 118 s on 20 cores, most of the gate's budget alone (2026-10-06)",
+    ),
+    (
+        "rbtree-erase",
+        "12 sidecars including the deeper successor verify in 158 s (2026-10-08)",
+    ),
+];
 
 #[test]
 fn example_projects() {
@@ -487,6 +493,9 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
                 .message()
                 .contains("selected child does not satisfy the proposed parent model")
             || error.message().contains("contract certification")
+            || error
+                .message()
+                .contains("(close_erase_spine_link precondition)")
             || error
                 .message()
                 .contains("checked outcome `have` search did not retain a complete proof")
@@ -950,6 +959,51 @@ fn rbtree_erase_black_successor_requires_root_replacement() {
         "rbtree_erase_black_successor.click",
         "\t\t__rb_change_child(node, successor, tmp, root);\n",
         "",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_child_refuses_a_skipped_splice() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_spine.click",
+        "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_child_refuses_the_wrong_replacement_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_spine.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "\t\t\trb_set_parent_color(child2, successor, RB_BLACK);\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_child_refuses_a_skipped_right_attachment() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_spine.click",
+        "\t\t\tWRITE_ONCE(successor->rb_right, child);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_child_refuses_a_skipped_right_parent_update() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_spine.click",
+        "\t\t\trb_set_parent(child, successor);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_deep_child_refuses_a_red_replacement() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_spine.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
     );
 }
 

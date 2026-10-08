@@ -2368,6 +2368,33 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
 
 #[test]
 fn outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
+    assert_outcome_operations_do_not_reimport_ambient_facts(|source, sources| {
+        verify_c0_sources(source, sources).map(|_| ())
+    });
+}
+
+/// Under authority semantics an outcome unfold is retained on the completed
+/// path, so the path's completion checks the retained `have` proofs. Facts
+/// the proof held at its checked entry are not checked again.
+#[test]
+fn authority_outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
+    assert_outcome_operations_do_not_reimport_ambient_facts(|source, sources| {
+        let project = ClickProject::new(
+            "identity.click",
+            [ClickModuleSource::new("identity.click", source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        });
+        verify_c0_project(&project, sources).map(|_| ())
+    });
+}
+
+fn assert_outcome_operations_do_not_reimport_ambient_facts(
+    verify: impl Fn(&str, &[(&str, &str)]) -> Result<(), ClickError>,
+) {
     let c_source = "int32 identity(int32 x) { return x; }";
     let mut samples = Vec::new();
     for size in [8_usize, 16, 32, 64] {
@@ -2397,7 +2424,7 @@ fn outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
             "#
             );
             crate::kernel::proof::take_fact_entry_counts();
-            verify_c0_sources(&source, &[("identity.c", c_source)]).unwrap_or_else(|error| {
+            verify(&source, &[("identity.c", c_source)]).unwrap_or_else(|error| {
                 panic!("ambient {size}, operations {operations}: {error:?}")
             });
             let (indexed, materialized) = crate::kernel::proof::take_fact_entry_counts();

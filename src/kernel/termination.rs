@@ -96,6 +96,7 @@ fn substitute_c_expression_variables(
             .cloned()
             .unwrap_or_else(|| expression.clone()),
         AddressOf(body) => AddressOf(unary(body)),
+        CheckedObjectAddress(body) => CheckedObjectAddress(unary(body)),
         PointerOffsetBytes { pointer, bytes } => PointerOffsetBytes {
             pointer: unary(pointer),
             bytes: *bytes,
@@ -1001,7 +1002,7 @@ fn expression_takes_address_of(expression: &CExpression, name: &str) -> bool {
             then_branch,
             else_branch,
         } => inner(condition) || inner(then_branch) || inner(else_branch),
-        AddressOf(body) => {
+        AddressOf(body) | CheckedObjectAddress(body) => {
             matches!(body.as_ref(), Variable(target) if target == name) || inner(body)
         }
         PointerOffsetBytes { pointer, .. } | TypedLoad { pointer, .. } => inner(pointer),
@@ -1038,6 +1039,7 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | AddressOf(expression)
+        | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
             pointer: expression,
             ..
@@ -1987,6 +1989,10 @@ fn termination_measure_display(measure: &CExpression) -> String {
         BitwiseNot(operand) => unary(operand, "~"),
         Not(operand) => unary(operand, "!"),
         AddressOf(operand) => unary(operand, "&"),
+        CheckedObjectAddress(operand) => format!(
+            "checked object address of {}",
+            termination_measure_display(operand)
+        ),
         FunctionAddress(name) => format!("&{name}"),
         // The kernel expression no longer carries a field's name, so a read is
         // shown as the dereference it is, with its byte offset.
@@ -2621,6 +2627,7 @@ fn c_ranking_measure_term_unfolded(
         | FloatClassification { .. }
         | FunctionAddress(_)
         | AddressOf(_)
+        | CheckedObjectAddress(_)
         | PointerOffsetBytes { .. } => Err(
             "termination measures may only use scalar int32 or unsigned integer expressions".into(),
         ),
@@ -3671,6 +3678,7 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
         | AddressOf(expression)
+        | CheckedObjectAddress(expression)
         | PointerOffsetBytes {
             pointer: expression,
             ..

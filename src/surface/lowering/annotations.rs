@@ -4565,7 +4565,9 @@ impl AnnotationLowerer<'_> {
                         pointer: Box::new(value),
                         value_type: self.contract_array_element_type(operand, environment),
                     }),
-                    CExpression::AddressOf(_) => Ok(SpecExpression::CExpression(lowered.clone())),
+                    CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_) => {
+                        Ok(SpecExpression::CExpression(lowered.clone()))
+                    }
                     _ => Err("invalid C unary operation".to_string()),
                 }
             }

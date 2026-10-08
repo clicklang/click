@@ -1938,6 +1938,11 @@ pub fn c_addr_of(name: impl Into<String>) -> CExpression {
     CExpression::AddressOf(Box::new(c_variable(name)))
 }
 
+/// A non-reading check of the storage denoted by an lvalue.
+pub fn c_checked_object_address(lvalue: CExpression) -> CExpression {
+    CExpression::CheckedObjectAddress(Box::new(lvalue))
+}
+
 pub fn c_pointer_offset_bytes(pointer: CExpression, bytes: u32) -> CExpression {
     if bytes == 0 {
         pointer

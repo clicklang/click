@@ -1,25 +1,25 @@
-int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_size) {
-    views self->fee;
-    views self->size;
-    requires -9223372036854775808 <= to_integer(self->fee);
-    requires to_integer(self->fee) <= 9223372036854775807;
-    requires self->size > 0;
-    requires self->size <= 2147483647;
+int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* this, int32 at_size) {
+    views this->fee;
+    views this->size;
+    requires -9223372036854775808 <= to_integer(this->fee);
+    requires to_integer(this->fee) <= 9223372036854775807;
+    requires this->size > 0;
+    requires this->size <= 2147483647;
     requires 0 <= at_size;
-    requires at_size <= self->size;
-    ensures self->fee == old(self->fee);
-    ensures self->size == old(self->size);
+    requires at_size <= this->size;
+    ensures this->fee == old(this->fee);
+    ensures this->size == old(this->size);
     ensures -9223372036854775808 <= to_integer(result);
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
 } by {
-    if self->fee >= 0i64 {
-        if self->fee < 8589934592i64 {
-            apply(int64_greater_equal_to_integer(self->fee, 0i64));
-            have 0 <= to_integer(self->fee) by { arithmetic() using { to_integer(self->fee) >= 0; } }
-            apply(int64_less_than_to_integer(self->fee, 8589934592i64));
-            have to_integer(self->fee) <= 8589934591 by { arithmetic() using { to_integer(self->fee) < 8589934592; } }
+    if this->fee >= 0i64 {
+        if this->fee < 8589934592i64 {
+            apply(int64_greater_equal_to_integer(this->fee, 0i64));
+            have 0 <= to_integer(this->fee) by { arithmetic() using { to_integer(this->fee) >= 0; } }
+            apply(int64_less_than_to_integer(this->fee, 8589934592i64));
+            have to_integer(this->fee) <= 8589934591 by { arithmetic() using { to_integer(this->fee) < 8589934592; } }
 @FAST_PROOF@
             have -9223372036854775808 <= to_integer(result) by { arithmetic() using { 0 <= to_integer(result); } }
             have to_integer(result) <= 9223372036854775807 by { arithmetic() using { to_integer(result) <= 8589934591; } }
@@ -32,17 +32,17 @@ int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_
     }
 }
 
-int64 FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
-    views self->fee;
-    views self->size;
-    requires -9223372036854775808 <= to_integer(self->fee);
-    requires to_integer(self->fee) <= 9223372036854775807;
-    requires self->size > 0;
-    requires self->size <= 2147483647;
+int64 FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
+    views this->fee;
+    views this->size;
+    requires -9223372036854775808 <= to_integer(this->fee);
+    requires to_integer(this->fee) <= 9223372036854775807;
+    requires this->size > 0;
+    requires this->size <= 2147483647;
     requires 0 <= at_size;
-    requires at_size <= self->size;
-    ensures self->fee == old(self->fee);
-    ensures self->size == old(self->size);
+    requires at_size <= this->size;
+    ensures this->fee == old(this->fee);
+    ensures this->size == old(this->size);
     ensures -9223372036854775808 <= to_integer(result);
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;

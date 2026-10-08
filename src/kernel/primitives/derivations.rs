@@ -1724,7 +1724,9 @@ fn c_expression_steps_for_mode(expression: &CExpression, lvalue: bool) -> usize 
             // a safe structural allowance without consulting an execution
             // state during budget construction.
             CExpression::Variable(_) => pending.push((expression, true)),
-            CExpression::AddressOf(target) => pending.push((target, true)),
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+                pending.push((target, true))
+            }
             CExpression::PointerOffsetBytes { pointer, .. }
             | CExpression::Not(pointer)
             | CExpression::BitwiseNot(pointer) => pending.push((pointer, false)),

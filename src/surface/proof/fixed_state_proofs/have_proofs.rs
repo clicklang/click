@@ -1226,11 +1226,13 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
         }
         _ => state.memory().clone(),
     };
+    let element_type = contract_array_ref_element_type(array_refs, expression)
+        .or_else(|| pointer.c_type().pointee_type())
+        .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
     Ok(ClickArrayRef {
         memory,
         pointer: pointer.into_pointer(),
-        element_type: contract_array_ref_element_type(array_refs, expression)
-            .unwrap_or(CType::Int32),
+        element_type,
     })
 }
 

@@ -137,7 +137,9 @@ fn expression_reads(expression: &CExpression) -> bool {
             CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
                 pending.push((pointer, true))
             }
-            CExpression::AddressOf(place) => pending.push((place, false)),
+            CExpression::AddressOf(place) | CExpression::CheckedObjectAddress(place) => {
+                pending.push((place, false))
+            }
             CExpression::Cast { expression, .. }
             | CExpression::FloatNegate(expression)
             | CExpression::FloatClassification { expression, .. }
@@ -969,6 +971,7 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
             collect_c_expression_referenced_names(expression, names);
         }
         CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::Not(expression)
         | CExpression::Load(expression) => {
             collect_c_expression_referenced_names(expression, names);

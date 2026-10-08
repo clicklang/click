@@ -2623,6 +2623,33 @@ impl ResourceContext {
         Some((self.occurrence(entry), self.fact(entry)))
     }
 
+    /// Drops the memory views published from one owned occurrence, leaving
+    /// the owner and every other observation of it. A loop head uses this
+    /// before deriving the owner's read authority again over the head's
+    /// memory. One indexed lookup; the work is the owner's own projections.
+    pub(crate) fn without_memory_views_supported_by_occurrence(
+        mut self,
+        support: ResourceOccurrenceId,
+    ) -> Self {
+        let projections = self
+            .storage
+            .projections_by_support_occurrence
+            .get(&support)
+            .cloned()
+            .unwrap_or_default();
+        for entry in projections.iter().copied() {
+            if self
+                .storage
+                .facts
+                .get(&entry)
+                .is_some_and(|fact| fact.memory_view_range().is_some())
+            {
+                self.remove_entry(entry);
+            }
+        }
+        self
+    }
+
     pub(crate) fn owned_occurrences_for_fact(
         &self,
         required: &CResourceFact,

@@ -50,7 +50,7 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
                     at(statement(5).entry, i) < at(statement(5).entry, n);
                 }
             }
-            close_invariants by { simp(); }
+            close_invariants by simp;
         }
     }
     step();

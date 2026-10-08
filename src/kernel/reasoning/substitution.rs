@@ -1078,6 +1078,7 @@ fn collect_c_expression_bound_variables(
             collect_c_expression_bound_variables(expression, variables);
         }
         CExpression::AddressOf(body)
+        | CExpression::CheckedObjectAddress(body)
         | CExpression::Not(body)
         | CExpression::Load(body)
         | CExpression::BitwiseNot(body) => collect_c_expression_bound_variables(body, variables),
@@ -2959,6 +2960,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             substitute_bitvector_variable_in_c_expression(expression, from, to),
         )),
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
+            substitute_bitvector_variable_in_c_expression(body, from, to),
+        )),
+        CExpression::CheckedObjectAddress(body) => CExpression::CheckedObjectAddress(Box::new(
             substitute_bitvector_variable_in_c_expression(body, from, to),
         )),
         CExpression::PointerOffsetBytes { pointer, bytes } => CExpression::PointerOffsetBytes {
@@ -6208,6 +6212,9 @@ fn substitute_pointer_variable_in_c_expression(
             substitute_pointer_variable_in_c_expression(expression, from, to),
         )),
         CExpression::AddressOf(body) => CExpression::AddressOf(Box::new(
+            substitute_pointer_variable_in_c_expression(body, from, to),
+        )),
+        CExpression::CheckedObjectAddress(body) => CExpression::CheckedObjectAddress(Box::new(
             substitute_pointer_variable_in_c_expression(body, from, to),
         )),
         CExpression::PointerOffsetBytes { pointer, bytes } => CExpression::PointerOffsetBytes {

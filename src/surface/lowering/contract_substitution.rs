@@ -2884,6 +2884,7 @@ pub(in crate::surface) fn c_unary_with_operand(
     match &mut lowered {
         CExpression::Cast { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::Load(expression) => **expression = operand,
         CExpression::PointerOffsetBytes { pointer, .. }
         | CExpression::TypedLoad { pointer, .. } => **pointer = operand,
@@ -3450,6 +3451,9 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             else_branch: Box::new(substitute_c_fragment_in(else_branch, substitutions)?),
         }),
         CExpression::AddressOf(body) => Ok(CExpression::AddressOf(Box::new(
+            substitute_c_fragment_in(body, substitutions)?,
+        ))),
+        CExpression::CheckedObjectAddress(body) => Ok(CExpression::CheckedObjectAddress(Box::new(
             substitute_c_fragment_in(body, substitutions)?,
         ))),
         CExpression::PointerOffsetBytes { pointer, bytes } => Ok(CExpression::PointerOffsetBytes {

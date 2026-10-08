@@ -1980,6 +1980,15 @@ pub(super) fn describe_parameter_relative_range(
     if let (Some(low), Some(high)) = (start.as_const(), end.as_const())
         && low.checked_add(1) == Some(high)
     {
+        // A whole element behind a reference parameter is its referent.
+        // An explicit byte slice keeps its exact extent and cast spelling.
+        if low == 0
+            && name == parameter.name()
+            && parameter.is_reference()
+            && let Some(referent) = syntax::referent_of_carrier(parameter.name())
+        {
+            return Some(referent.to_string());
+        }
         return Some(format!("{}[{low}]", name));
     }
     Some(format!(
@@ -4466,6 +4475,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             describe_c_expression(else_branch)
         ),
         CExpression::AddressOf(target) => format!("&{}", describe_c_expression(target)),
+        CExpression::CheckedObjectAddress(target) => {
+            format!("address of live object `{}`", describe_c_expression(target))
+        }
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             format!("byte_offset({}, {bytes})", describe_c_expression(pointer))
         }
@@ -4569,6 +4581,37 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                 _ => format!("{base}[{index}]"),
             }
         }
+    }
+}
+
+/// A load at `pointer`, as a sidecar would write the value read. A load at
+/// the address of a reference parameter's referent is the referent: `value`
+/// for a scalar, and the field at its start for a struct, `box.first`. Any
+/// other load keeps the explicit `load(...)` form.
+fn describe_load_at(
+    pointer: &Pointer,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    let address = describe_pointer(pointer, parameters, arguments);
+    let referent = parameters.iter().find_map(|parameter| {
+        (parameter.is_reference() && parameter.name() == address)
+            .then(|| syntax::referent_of_carrier(parameter.name()))
+            .flatten()
+            .map(|referent| (parameter, referent))
+    });
+    match referent {
+        Some((parameter, referent)) => match parameter
+            .pointee_struct_layout()
+            .or_else(|| parameter.struct_layout())
+        {
+            None => referent.to_string(),
+            Some(layout) => match layout.leaf_field_offsets().find(|(_, offset)| *offset == 0) {
+                Some((field, _)) => format!("{referent}.{field}"),
+                None => format!("load({address})"),
+            },
+        },
+        None => format!("load({address})"),
     }
 }
 
@@ -5510,10 +5553,7 @@ pub(super) fn describe_bitvector_with_context(
         {
             let (_, pointer) = crate::kernel::registered_load_for_variable(variable)
                 .expect("checked registered above");
-            format!(
-                "load({})",
-                describe_pointer(&pointer, parameters, arguments)
-            )
+            describe_load_at(&pointer, parameters, arguments)
         }
         // And a model-field variable prints as the field it is. The value is
         // stored inside the instance fact, so there is nothing in the term to
@@ -5698,7 +5738,7 @@ pub(super) fn describe_bitvector_with_context(
         }
         Bitvector32Term::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
-            format!("load({})", describe_pointer(pointer, parameters, arguments))
+            describe_load_at(pointer, parameters, arguments)
         }
         Bitvector32Term::PointerAddress(pointer) => {
             format!(

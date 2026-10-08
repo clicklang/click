@@ -6872,10 +6872,23 @@ pub(super) fn prepare_loop_top_state(
     // The loop's declarations are evaluated where the loop starts, over the
     // head's models: the clause arguments are the ones at loop entry, and the
     // models are the fresh ones an arbitrary visit carries.
+    if let Ok((declared, _)) =
+        loop_declared_and_withheld_resources(&head_state, &ordinary_specs, assumptions, budget)?
+    {
+        let refreshed = with_owner_read_authority_rederived(
+            top_state.resources().clone(),
+            declared.facts(),
+            definitions,
+            &top_state,
+            assumptions,
+        );
+        top_state = top_state.with_resource_context(refreshed);
+    }
     let (mut body_state, body_failures) = loop_body_resource_context(
         &head_state,
         &top_state,
         &ordinary_specs,
+        definitions,
         assumptions,
         budget,
     )?;
@@ -7042,10 +7055,74 @@ fn loop_declared_and_withheld_resources(
     Ok(Ok((declared, withheld)))
 }
 
+/// Holding a resource lets C read the memory it owns directly, and that read
+/// authority is an observation attached to the owner's occurrence. A loop
+/// head derives it again for each owner the loop declares, from the owner's
+/// definition over the head's state, as a call does where it returns one.
+/// It is never kept from the state before the loop: an address the
+/// definition reads out of memory or out of a model may differ on an
+/// arbitrary visit, and a view of the old address would outlive the owner's
+/// claim to it.
+///
+/// A resource without fields is expanded one level. A resource with fields
+/// is left as it is: its arm is selected by facts that hold at the loop's
+/// exit, and its read authority is not attached to it in a proof with a
+/// loop. Cost is each declared owner's own clauses.
+fn with_owner_read_authority_rederived(
+    mut resources: ResourceContext,
+    declared: &[CResourceFact],
+    definitions: &[CCompositeResourceDefinition],
+    head: &CState,
+    assumptions: &PureFactContext,
+) -> ResourceContext {
+    for owner in declared.iter().filter(|fact| fact.is_own()) {
+        if matches!(owner.resource(), CResource::Instance(_)) {
+            continue;
+        }
+        let Some((occurrence, _)) = resources.unique_owned_occurrence_for_fact(owner) else {
+            continue;
+        };
+        resources = resources.without_memory_views_supported_by_occurrence(occurrence);
+        let derived: Vec<CResourceFact> =
+            super::functions::expand_composite_resource_fact_with_children(
+                &ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_fact(owner.clone()),
+                owner,
+                definitions,
+                head.memory(),
+                assumptions,
+            )
+            .map(|(_, children, _)| {
+                children
+                    .iter()
+                    .filter_map(CResourceFact::memory_own_range)
+                    .map(|range| CResourceFact::view_memory(range.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let views = derived
+            .into_iter()
+            .filter(|view| view.memory_view_range().is_some())
+            .filter(|view| !resources.contains_exact_representation(view))
+            .collect::<Vec<_>>();
+        if views.is_empty() {
+            continue;
+        }
+        resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
+            occurrence,
+            owner,
+            views,
+            head.memory(),
+        );
+    }
+    resources
+}
+
 fn loop_body_resource_context(
     entry_state: &CState,
     top_state: &CState,
     resource_specs: &[CResourceSpec],
+    definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(CState, Vec<CLoopResourceFailure>)> {
@@ -7081,6 +7158,13 @@ fn loop_body_resource_context(
             }
         }
     }
+    body_resources = with_owner_read_authority_rederived(
+        body_resources,
+        declared.facts(),
+        definitions,
+        top_state,
+        assumptions,
+    );
     // Rebuilding a loop body context can allocate fresh resource occurrences.
     // If one denotes an inherited stable view, carry its exact checked
     // binding to the new occurrence instead of rediscovering it from the
@@ -9123,7 +9207,9 @@ pub(super) fn collect_address_taken_in_expression(
     match expression {
         // `&target`: any local reachable in the target may have its address
         // escape, so conservatively record every variable it mentions.
-        CExpression::AddressOf(target) => collect_variable_names(target, names),
+        CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+            collect_variable_names(target, names)
+        }
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Cast { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
@@ -9199,9 +9285,10 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
             collect_variable_names(expression, names)
         }
         CExpression::PointerOffsetBytes { pointer, .. } => collect_variable_names(pointer, names),
-        CExpression::AddressOf(inner) | CExpression::Not(inner) | CExpression::Load(inner) => {
-            collect_variable_names(inner, names)
-        }
+        CExpression::AddressOf(inner)
+        | CExpression::CheckedObjectAddress(inner)
+        | CExpression::Not(inner)
+        | CExpression::Load(inner) => collect_variable_names(inner, names),
         CExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
         CExpression::LessThan(left, right)
         | CExpression::LessEqual(left, right)

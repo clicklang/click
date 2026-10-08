@@ -1729,6 +1729,27 @@ consumes those children and the parent's immediate memory, checking each
 child's family, arguments, and fields against the proposed model. Replacements
 and reordered children are allowed when those checks hold. Missing, duplicate,
 unfolded, or mismatched children are rejected. A leaf omits the empty child map.
+
+A resource that declares no `field` may still name a child that has fields,
+and state facts about them:
+
+<!-- verified-example: mdtests/a_hidden_record_resource_is_held_without_a_name.md -->
+```click
+resource pair(p: struct pair*) {
+    owns p->a;
+    owns p->n;
+    owns first: counted(p->a);
+    fact p->n == first.v;
+    fact first.v >= 0;
+}
+```
+
+It keeps the child's fields in a record the author does not write, so their
+values survive a fold as a declared field's do. The child must be declared
+before it. Because it has no field a contract could name, it is held without
+a name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
+and folded with `fold(pair(p), { first: c });`, which takes only the child
+map. Holding it by name, `owns x: pair(p);`, is also accepted.
 The new parent need not have existed before; `consumes l: tree(left);` names
 an input child without promising to return it separately.
 
@@ -2166,11 +2187,28 @@ step(increment(state), { first: c });
 
 The first argument is the call as written in the source, so the step still
 selects one call statement: the frontier must be a call to that function with
-that many arguments. The map is required whenever the callee declares any
-`owns`, `consumes`, or `produces` binder, and a callee with none takes no map.
-It is the only source of bindings; nothing is matched by name, by position, or
-by search. Missing, duplicate, unknown, wrong-family, and unowned entries are
-rejected where they are written.
+that many arguments. A callee with no `owns`, `consumes`, or `produces`
+binder takes no map. Duplicate, unknown, wrong-family, and unowned entries
+are rejected where they are written.
+
+A binder the map leaves out, or every binder when the call is run by a bare
+`step()` or `execute()`, is bound when only one binding is possible: the
+callee declares one binder of that resource family, and the caller owns
+exactly one instance of it. Nothing is matched by name or by position, and
+two candidates are never chosen between; the call is then refused with the
+map entry to write. The bound instance still has to satisfy the callee's
+requirement, arguments included.
+
+<!-- verified-example: mdtests/a_hidden_record_resource_is_held_without_a_name.md -->
+```click
+int32 twice(struct pair* p) {
+    owns pair(p);
+    ensures result >= 0;
+} by {
+    execute();
+    simp();
+}
+```
 
 The transition is the one a named contract's proof arguments already take.
 A `consumes` binder removes the caller's instance. An `owns` binder returns

@@ -198,7 +198,15 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   cells of the arm a section selects for a held instance; an unfold exposes
   the same cells one layer deeper and must adopt the same names, so the cell
   layout and element types are the ones already chosen there rather than a
-  second convention. Left unnamed, the unfolded body's facts keep the
+  second convention. Arm selection uses the facts published by the rewrite,
+  but pointer spellings use its entry context: a newly exposed pointer alias
+  must not rename a scalar cell after the kernel has recorded its body facts.
+  Later reads use the indexed footprint coordinates of an existing cell,
+  including reads through a C parameter newly equated with a model pointer.
+  Exact cells retain precedence, and this coordinate choice grants neither
+  read authority nor transport across a write
+  (`mdtests/unfold_child_preserves_scalar_cell_identity.md`).
+  Left unnamed, the unfolded body's facts keep the
   unfold-time epoch while a later C read of one of those cells walks its own
   epoch, and the two differ as soon as a store the assumption-free walk cannot
   cross lies between them — a write to a *separate* object, whose separation is

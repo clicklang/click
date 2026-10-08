@@ -40,7 +40,7 @@ int32 count_to(int32 n) diverges {
                 witness { fuel: Nat::Succ(previous) }
                 normalize();
             }
-            close_invariants by { simp(); }
+            close_invariants by simp;
         }
     }
     execute();

@@ -5200,21 +5200,32 @@ pub(super) fn unique_worker_completion(
     Ok(completions.pop().expect("one completion"))
 }
 
-/// The binder transport the proof selected for a call to `function`, if the
-/// step named this callee. The transported instances are exactly the
-/// function's own `owns`, `consumes`, and `produces` binders.
+/// The binding of a callee's instance binders to the caller's instances for
+/// a call to `function`.
+///
+/// A `step(callee(...), { binder: instance })` map names it. A binder the
+/// map leaves out, or every binder when the step wrote no map, is bound when
+/// only one binding is possible: the callee declares one binder of that
+/// resource family and arity, and the caller owns exactly one instance of
+/// it. Anything else stays unbound and the application engine refuses it,
+/// so two candidates are never chosen between. A wrong but unique candidate
+/// is not accepted either: the bound instance still has to satisfy the
+/// callee's requirement, arguments included, when the contract is applied.
+///
+/// The transported instances are exactly the function's own `owns`,
+/// `consumes`, and `produces` binders. Cost is one indexed bucket lookup
+/// per declared binder.
 fn selected_call_binder_application(
     function_name: &str,
     interface: &CFunctionContractInterface,
     caller_state: &CState,
     environment: &CExecutionEnvironment,
 ) -> Result<Option<ResourceCallApplication>, &'static str> {
-    let Some(transport) = environment.selected_call_binders.as_ref() else {
-        return Ok(None);
-    };
-    if !transport.names_call_to(function_name) {
-        return Ok(None);
-    }
+    let written = environment
+        .selected_call_binders
+        .as_ref()
+        .filter(|transport| transport.names_call_to(function_name))
+        .map(|transport| transport.bindings.clone());
     // Only the binders required at entry are checked here; a `produces`
     // binder has no instance to check until the call returns.
     let parameters = interface
@@ -5223,7 +5234,62 @@ fn selected_call_binder_application(
         .filter(|resource| resource.binding_identity().is_some())
         .cloned()
         .collect::<Vec<_>>();
-    ResourceCallApplication::bind(parameters, transport.bindings.clone(), caller_state).map(Some)
+    let mut inferred = BTreeMap::new();
+    for parameter in &parameters {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(identity) = parameter.instance_identity() else {
+            continue;
+        };
+        if written
+            .as_ref()
+            .is_some_and(|bindings| bindings.contains_key(&identity))
+        {
+            continue;
+        }
+        let Some(shape) = instance_binder_shape(parameter) else {
+            continue;
+        };
+        if parameters
+            .iter()
+            .filter(|other| instance_binder_shape(other) == Some(shape))
+            .count()
+            != 1
+        {
+            continue;
+        }
+        let [only] = caller_state
+            .resources()
+            .owned_instances_of_shape(shape.0, shape.1)[..]
+        else {
+            continue;
+        };
+        inferred.insert(identity, only.identity());
+    }
+    let bindings = match (written, inferred.is_empty()) {
+        (None, true) => return Ok(None),
+        (Some(written), true) => written,
+        (written, false) => {
+            for (binder, instance) in written.iter().flat_map(|written| written.iter()) {
+                inferred.insert(*binder, *instance);
+            }
+            std::sync::Arc::new(inferred)
+        }
+    };
+    ResourceCallApplication::bind(parameters, bindings, caller_state).map(Some)
+}
+
+/// The resource family and arity an instance binder is declared at.
+fn instance_binder_shape(parameter: &CResourceSpec) -> Option<(&str, usize)> {
+    let CResourceTerm::Instance { resource, .. } = parameter.term() else {
+        return None;
+    };
+    let CResourceTerm::Composite {
+        name, arguments, ..
+    } = resource.as_ref()
+    else {
+        return None;
+    };
+    Some((name.as_str(), arguments.len()))
 }
 
 /// One candidate contract application. The interface is the complete input
@@ -13712,6 +13778,7 @@ fn c_expression_supports_stateful_memory_refinement(expression: &CExpression) ->
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -13972,6 +14039,7 @@ pub(super) fn c_expression_is_state_independent(expression: &CExpression) -> boo
             c_expression_is_state_independent(left) && c_expression_is_state_independent(right)
         }
         CExpression::AddressOf(_)
+        | CExpression::CheckedObjectAddress(_)
         | CExpression::Load(_)
         | CExpression::TypedLoad { .. }
         | CExpression::Index(_, _) => false,
@@ -14299,6 +14367,7 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -14346,7 +14415,9 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
 
 fn c_expression_takes_address_of_variable(expression: &CExpression, name: &str) -> bool {
     match expression {
-        CExpression::AddressOf(expression) => c_expression_mentions_variable(expression, name),
+        CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
+            c_expression_mentions_variable(expression, name)
+        }
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => false,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -14489,12 +14560,14 @@ fn c_expression_uses_object_address(expression: &CExpression, name: &str) -> boo
             ..
         } => c_expression_uses_object_address(pointer, name),
         CExpression::Load(_) | CExpression::TypedLoad { .. } => false,
-        CExpression::AddressOf(expression) => match expression.as_ref() {
-            CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
-                c_expression_uses_object_address(pointer, name)
+        CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
+            match expression.as_ref() {
+                CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+                    c_expression_uses_object_address(pointer, name)
+                }
+                expression => c_expression_uses_object_address(expression, name),
             }
-            expression => c_expression_uses_object_address(expression, name),
-        },
+        }
 
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -16773,7 +16846,9 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
                 values(then_branch, reads);
                 values(else_branch, reads);
             }
-            CExpression::AddressOf(target) => lvalue_address(target, reads),
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+                lvalue_address(target, reads)
+            }
             CExpression::Load(pointer) => {
                 reads.push(expression.clone());
                 values(pointer, reads);
@@ -16923,6 +16998,7 @@ fn c_expression_mentions_pointer_parameter(
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -30507,7 +30583,7 @@ fn resolve_retained_aggregate_fields(
     }
     match expression {
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
-        CExpression::AddressOf(inner) => {
+        CExpression::AddressOf(inner) | CExpression::CheckedObjectAddress(inner) => {
             resolve_retained_aggregate_fields(entry, state, inner, false, assumptions, budget)?
         }
         CExpression::Cast {

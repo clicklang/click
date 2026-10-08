@@ -47,7 +47,7 @@ mod cell_store;
 pub(crate) use cell_store::CHECKED_RUN_SLOTS;
 pub use cell_store::CellRun;
 pub(crate) use cell_store::{
-    CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet,
+    CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet, cell_run_value,
     offset_stem_and_constant,
 };
 mod counted_populations;
@@ -1297,6 +1297,10 @@ pub enum CExpression {
         classification: CFloatClassification,
     },
     AddressOf(Box<CExpression>),
+    /// Form an address only after checking that the complete lvalue denotes
+    /// live storage. Unlike C's &* cancellation, this excludes one-past and
+    /// expired addresses. It performs no load and grants no access authority.
+    CheckedObjectAddress(Box<CExpression>),
     PointerOffsetBytes {
         pointer: Box<CExpression>,
         bytes: u32,

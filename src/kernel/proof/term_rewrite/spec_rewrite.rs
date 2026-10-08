@@ -395,6 +395,7 @@ fn collect_spec_c_expression_carriers(expression: &CExpression, variables: &mut 
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::Not(expression)
         | CExpression::Load(expression)
         | CExpression::BitwiseNot(expression) => {
@@ -1586,6 +1587,9 @@ impl<'a> TermRewrite<'a> {
             },
             CExpression::AddressOf(value) => {
                 CExpression::AddressOf(Box::new(self.rewrite_c_expression(value)?))
+            }
+            CExpression::CheckedObjectAddress(value) => {
+                CExpression::CheckedObjectAddress(Box::new(self.rewrite_c_expression(value)?))
             }
             CExpression::PointerOffsetBytes { pointer, bytes } => CExpression::PointerOffsetBytes {
                 pointer: Box::new(self.rewrite_c_expression(pointer)?),

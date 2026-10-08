@@ -25,6 +25,13 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
     ) -> Self {
+        // The proof root is the entry's own fact lineage when the execution
+        // has not left its checked entry, so later facts descend from it.
+        let facts = execution
+            .core
+            .entry_facts_at_entry()
+            .cloned()
+            .unwrap_or_else(|| ProofFacts::from_source(&pure_facts));
         Self {
             site: ProofStepSite::default(),
             context: Arc::new(ProofContext::Execution(ExecutionProofContext {
@@ -45,7 +52,7 @@ impl<'a> Proof<'a> {
             state: KernelProofObject::root(
                 ProofLocals::default(),
                 OpenBranch::frontier(BranchState {
-                    facts: ProofFacts::from_source(&pure_facts),
+                    facts,
                     unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(execution)),
                 }),
@@ -59,6 +66,32 @@ impl<'a> Proof<'a> {
                 split_branches: Vec::new(),
             }),
         }
+    }
+
+    pub(in crate::surface::proof) fn prepare_entry_interface(&self) -> Result<Self, ClickError> {
+        let Some(execution) = self.execution() else {
+            return Ok(self.clone());
+        };
+        if !execution.core.frontier.is_at_function_entry()
+            || execution.core.frontier.entry_member_prefix
+        {
+            return Ok(self.clone());
+        }
+        let mut execution = execution.clone();
+        execution
+            .core
+            .materialize_function_entry()
+            .map_err(|message| self.step_error(message))?;
+        let state = self
+            .state
+            .publish_checked_frontier_transition(
+                self.facts().clone(),
+                execution,
+                Vec::new(),
+                Vec::new(),
+            )
+            .map_err(|_| self.step_error("entry interface lost its execution frontier"))?;
+        Ok(self.with_kernel_state(state))
     }
 
     /// Starts the `source_index`th source tactic on a threaded execution
