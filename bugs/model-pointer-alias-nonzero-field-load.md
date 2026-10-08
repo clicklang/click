@@ -18,7 +18,10 @@ Save these as `probe.c` and `probe.click`, then run `click verify probe.click`.
 The address equality passes. The next `have` fails with
 `could not establish p->next == id->next`. Moving `next` to the first field
 makes the proof verify, which is diagnostic evidence only: the fix must
-verify the original layout.
+verify the original layout. Explicit `rewrite(p == id)` and
+`rewrite(&p->next == &id->next)` at the failing load equality also refuse:
+`rewrite equality does not occur in the current goal`. This is not just a
+missed `simp` search.
 
 ```c
 struct node { unsigned long tag; struct node *other; struct node *next; };
