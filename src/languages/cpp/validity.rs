@@ -308,6 +308,15 @@ impl Metadata<'_> {
         for statement in body {
             crate::instrumentation::record_deterministic_work(1);
             let span = match statement {
+                CppStatement::TrivialCopy {
+                    target,
+                    source,
+                    span,
+                } => {
+                    self.reference(target)?;
+                    self.reference(source)?;
+                    span
+                }
                 CppStatement::Declare {
                     local,
                     initializer,

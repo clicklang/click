@@ -18,13 +18,12 @@ use std::collections::BTreeMap;
 use super::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppCondition, CppConstant,
     CppExceptionBehavior, CppExpression, CppFieldReference, CppFunction, CppFunctionKind,
-    CppInitializer, CppPlace, CppPlaceReference, CppRecord, CppStatement, CppType,
-    PreparedCppImport,
+    CppInitializer, CppPlace, CppPlaceReference, CppStatement, CppType, PreparedCppImport,
 };
 use crate::kernel::{
-    CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
-    LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
-    c_call_assign, c_cast, c_checked_object_address, c_declare, c_declare_aggregate,
+    CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId, LoadSourceOwnerId,
+    c_add, c_and, c_assign, c_begin_aggregate_construction, c_call, c_call_assign, c_cast,
+    c_checked_object_address, c_copy_aggregate, c_declare, c_declare_aggregate,
     c_declare_with_all_qualifiers, c_divide, c_equal, c_function, c_greater_equal, c_greater_than,
     c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply, c_not_equal, c_parameter,
     c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract, c_try_catch_int32,
@@ -107,23 +106,26 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             (constant.declaration_id.as_str(), constant)
         })
         .collect::<BTreeMap<_, _>>();
+    let layouts = super::interface::prepare_layouts(import)?;
     let function = lower_function(
         import,
         &import.export().function,
         &names,
         &records,
         &constants,
+        &layouts,
     )?;
     let reachable_functions = import
         .export()
         .reachable_functions
         .iter()
-        .map(|source| lower_function(import, source, &names, &records, &constants))
+        .map(|source| lower_function(import, source, &names, &records, &constants, &layouts))
         .collect::<Result<Vec<_>, _>>()?;
     let execution = std::sync::Arc::new(super::interface::prepare(
         import,
         &function,
         &reachable_functions,
+        layouts,
     )?);
     Ok(LoweredCppFunction {
         execution,
@@ -140,6 +142,7 @@ fn lower_function(
     names: &ResolvedNames,
     records: &super::schema::RecordIndex<'_>,
     constants: &BTreeMap<&str, &CppConstant>,
+    layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
 ) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
@@ -189,6 +192,7 @@ fn lower_function(
         places,
         records,
         constants,
+        layouts,
         next_load_occurrence: 0,
         return_capture_name: return_capture_name(source),
         nested_capture_name: fresh_internal_name(source, "__click_cpp_nested_value"),
@@ -319,6 +323,7 @@ struct LoweringContext<'a> {
     places: BTreeMap<&'a str, &'a CppPlace>,
     records: &'a super::schema::RecordIndex<'a>,
     constants: &'a BTreeMap<&'a str, &'a CppConstant>,
+    layouts: &'a BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
     next_load_occurrence: u32,
     return_capture_name: String,
     nested_capture_name: String,
@@ -331,6 +336,20 @@ struct LoweringContext<'a> {
 impl LoweringContext<'_> {
     fn lower_statement(&mut self, statement: &CppStatement) -> Result<CStatement, String> {
         match statement {
+            CppStatement::TrivialCopy { target, source, .. } => {
+                let root = self.place(target)?;
+                let (CppType::Record { name, .. }, _) = self
+                    .records
+                    .resolve_path(&root.value_type, &target.projections)?
+                else {
+                    return Err("C++ trivial copy requires a record target".into());
+                };
+                Ok(c_copy_aggregate(
+                    self.lower_place(target)?,
+                    self.lower_place(source)?,
+                    self.record_layout(name)?,
+                ))
+            }
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
@@ -409,7 +428,7 @@ impl LoweringContext<'_> {
                             "C++ aggregate initializer for `{name}` disagrees with its record"
                         ));
                     }
-                    let layout = cpp_record_layout(record)?;
+                    let layout = self.record_layout(&record.name)?;
                     let members = record
                         .fields
                         .iter()
@@ -455,7 +474,7 @@ impl LoweringContext<'_> {
                             "C++ constructor initializer for `{name}` disagrees with its record"
                         ));
                     }
-                    let layout = cpp_record_layout(record)?;
+                    let layout = self.record_layout(&record.name)?;
                     let mut lowered_arguments =
                         vec![c_cast(c_variable(local.name.clone()), CType::Int32Pointer)];
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
@@ -1138,6 +1157,13 @@ impl LoweringContext<'_> {
         }
     }
 
+    fn record_layout(&self, name: &str) -> Result<CAggregateLayout, String> {
+        self.layouts
+            .get(name)
+            .map(crate::languages::c::syntax::C0StructLayout::to_kernel_aggregate_layout)
+            .ok_or_else(|| format!("C++ lowering found no checked layout for `{name}`"))
+    }
+
     fn lower_place(&self, place: &CppPlaceReference) -> Result<CExpression, String> {
         let root = self.place(place)?;
         let (_, offset) = self
@@ -1279,25 +1305,6 @@ fn collect_declared_places<'a>(statements: &'a [CppStatement], places: &mut Vec<
             _ => {}
         }
     }
-}
-
-fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
-    let fields = record
-        .fields
-        .iter()
-        .map(|field| {
-            Ok(CAggregateField::new(
-                field.name.clone(),
-                field.offset_bytes,
-                cpp_scalar_kernel_type(&field.value_type)?,
-            ))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(CAggregateLayout::new(
-        record.size_bytes,
-        record.alignment_bytes,
-        fields,
-    ))
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {

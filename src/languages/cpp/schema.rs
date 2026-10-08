@@ -813,6 +813,12 @@ pub enum CppInitializer {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppStatement {
+    /// A Clang-resolved trivial copy assignment; no user-defined body is erased.
+    TrivialCopy {
+        target: CppPlaceReference,
+        source: CppPlaceReference,
+        span: CppSpan,
+    },
     Declare {
         local: CppPlace,
         initializer: CppInitializer,
@@ -2316,6 +2322,60 @@ impl CppStatement {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
+            Self::TrivialCopy {
+                target,
+                source,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                let target_root = validate_root_reference(target, places, logical_source)?;
+                if matches!(target_root, CppType::Record { is_const: true, .. })
+                    || matches!(target_root, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }))
+                {
+                    return Err("C++ trivial copy cannot write through a const record".into());
+                }
+                let source_root = validate_root_reference(source, places, logical_source)?;
+                let (target_type, _) = records.resolve_path(target_root, &target.projections)?;
+                let (source_type, _) = records.resolve_path(source_root, &source.projections)?;
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } = target_type
+                else {
+                    return Err("C++ trivial copy requires a mutable record target".into());
+                };
+                if !matches!(source_type, CppType::Record { declaration_id: source_id, name: source_name, .. } if source_id == declaration_id && source_name == name)
+                {
+                    return Err(
+                        "C++ trivial copy requires the same nominal source and target record"
+                            .into(),
+                    );
+                }
+                let mut pending = vec![validate_record_reference(records, declaration_id, name)?];
+                let mut checked = BTreeSet::new();
+                while let Some(record) = pending.pop() {
+                    if !checked.insert(&record.declaration_id) {
+                        continue;
+                    }
+                    crate::instrumentation::record_deterministic_work(1);
+                    if record.base.is_some() || record.destructor.is_some() {
+                        return Err("C++ trivial copies require records without base subobjects or nontrivial destruction".into());
+                    }
+                    for field in &record.fields {
+                        crate::instrumentation::record_deterministic_work(1);
+                        if let CppType::Record {
+                            declaration_id,
+                            name,
+                            ..
+                        } = &field.value_type
+                        {
+                            pending.push(validate_record_reference(records, declaration_id, name)?);
+                        }
+                    }
+                }
+                Ok(())
+            }
             Self::Declare { .. } => {
                 Err("automatic C++ locals are currently supported only in the function body".into())
             }
@@ -3384,6 +3444,7 @@ impl CppStatement {
             | Self::Assign { .. }
             | Self::Store { .. }
             | Self::MemberStore { .. }
+            | Self::TrivialCopy { .. }
             | Self::Assume { .. }
             | Self::LibraryAssert { .. }
             | Self::Call { .. } => false,
@@ -3682,7 +3743,8 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
             | CppStatement::Store { .. }
-            | CppStatement::MemberStore { .. } => {}
+            | CppStatement::MemberStore { .. }
+            | CppStatement::TrivialCopy { .. } => {}
         }
     }
 }
@@ -4018,6 +4080,7 @@ fn validate_statement_constant_references(
 ) -> Result<(), String> {
     for statement in statements {
         match statement {
+            CppStatement::TrivialCopy { .. } => {}
             CppStatement::Declare { initializer, .. } => {
                 initializer.validate_constant_references(
                     logical_source,

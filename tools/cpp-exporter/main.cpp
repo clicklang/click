@@ -989,6 +989,28 @@ private:
       return lower_scope(compound, function, false);
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(statement)) {
+      if (const auto *operation = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call);
+          operation != nullptr && operation->getOperator() == clang::OO_Equal) {
+        const auto *method =
+            llvm::dyn_cast_or_null<clang::CXXMethodDecl>(operation->getDirectCallee());
+        if (method != nullptr && method->isCopyAssignmentOperator() &&
+            method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
+            method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
+            operation->getArg(0)->isLValue() && operation->getArg(1)->isLValue()) {
+          auto target = lower_place_reference(operation->getArg(0)->IgnoreParenImpCasts(), function);
+          auto source = lower_place_reference(operation->getArg(1)->IgnoreParenImpCasts(), function);
+          if (!target || !source) return std::nullopt;
+          llvm::json::Object result;
+          result["kind"] = "trivial_copy";
+          result["target"] = std::move(*target);
+          result["source"] = std::move(*source);
+          result["span"] = span(operation->getSourceRange());
+          return Json(std::move(result));
+        }
+        fail(operation->getExprLoc(),
+             "C++ record assignment requires a trivial copy assignment with live record lvalues and trivial destruction");
+        return std::nullopt;
+      }
       const auto *callee = call->getDirectCallee();
       if (callee != nullptr) {
         auto contract = library_assertions_.find(callee->getQualifiedNameAsString());

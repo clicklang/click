@@ -193,7 +193,15 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    mutable/const int32 reference locals now preserve direct aliases and matching
    modular reference call results. Writes target the referent under existing
    authority; ending the local alias does not destroy its backing allocation.
-   Shared aggregate results, construction and copies remain implementation work;
+   Trivial copy assignment between already-live records now reuses shared C
+   aggregate field copies and the same checked layout used by proof metadata.
+   The pinned `std::span<int>` assignment copies its pointer and nested native
+   uint64 extent offline, without backing authority. Const sources, projected
+   record assignment and self-assignment are covered; missing read/write
+   authority, user-defined copy bodies, move assignment, const destination and
+   hostile artifact paths are refused. Ordinary, expanded and retained proofs
+   agree. Shared aggregate results, construction and copy initialization remain
+   implementation work;
    `SpanPopBack` has not been verified. The unchanged pinned `back()` additionally
    needs its constexpr assertion's single-execution loop wrapper and nested
    observer calls in expressions admitted through ordinary source lowering.
