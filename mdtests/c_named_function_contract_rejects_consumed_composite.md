@@ -22,7 +22,7 @@ int32 consumed_bundle_caller(int32 key) {
 abstract resource permit(key: int32);
 
 resource bundle(key: int32) {
-    contains permit(key);
+    owns permit(key);
 }
 
 verifying "consumed_callback_composite.c";

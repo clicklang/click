@@ -13,7 +13,7 @@ int32* calloc_zeroed_int32(int32 count) {
 ```click
 resource maybe_zeroed(data: int32*, count: int32) {
     if data != 0 {
-        contains allocation(data, count * sizeof(int32));
+        owns allocation(data, count * sizeof(int32));
         owns data[0..count];
     }
 }

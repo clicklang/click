@@ -15,7 +15,7 @@ int32 loop_heap_lifetime_join(int32* data) {
 
 ```click
 resource allocated_int32s(data: int32*, count: int32) {
-    contains allocation(data, count * 4);
+    owns allocation(data, count * 4);
     owns data[0..count];
     fact data != 0;
 }

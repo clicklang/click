@@ -26,7 +26,7 @@ int32 framed_bundle_caller(int32 key, int32 spare) {
 abstract resource permit(key: int32);
 
 resource bundle(key: int32) {
-    contains permit(key);
+    owns permit(key);
 }
 
 verifying "framed_callback_composite.c";

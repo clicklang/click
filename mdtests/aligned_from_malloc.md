@@ -25,7 +25,7 @@ struct node* aligned_from_malloc() {
 ```click
 resource owned_node(node: struct node*) {
     if node != 0 {
-        contains allocation(node, sizeof(struct node));
+        owns allocation(node, sizeof(struct node));
         owns *node;
     }
 }

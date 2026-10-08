@@ -369,7 +369,6 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "auto",
     "by",
     "c-fragment",
-    "contains",
     "contains-proposition",
     "contract",
     "decreases",

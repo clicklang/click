@@ -8,7 +8,7 @@ opening the composite or inspecting its body.
 abstract resource atom();
 
 resource bundle() {
-    contains atom();
+    owns atom();
 }
 
 contract void PreserveUsedBundles(int32 available, int32 used) {

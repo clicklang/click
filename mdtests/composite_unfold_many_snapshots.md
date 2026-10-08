@@ -59,7 +59,7 @@ resource allocated_buffer(owner: struct buffer*) {
     owns owner->len;
     owns owner->cap;
     owns owner->data;
-    contains allocation(owner->data, owner->cap * 4);
+    owns allocation(owner->data, owner->cap * 4);
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;

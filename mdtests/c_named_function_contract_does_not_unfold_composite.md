@@ -23,7 +23,7 @@ int32 unfolded_bundle_caller(int32 key) {
 abstract resource permit(key: int32);
 
 resource bundle(key: int32) {
-    contains permit(key);
+    owns permit(key);
 }
 
 verifying "unfolded_callback_composite.c";

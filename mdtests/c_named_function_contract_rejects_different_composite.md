@@ -25,7 +25,7 @@ int32 different_bundle_caller(int32 key, int32 other) {
 abstract resource permit(key: int32);
 
 resource bundle(key: int32) {
-    contains permit(key);
+    owns permit(key);
 }
 
 verifying "different_callback_composite.c";

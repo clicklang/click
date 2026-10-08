@@ -23,7 +23,7 @@ void box_release(struct box* box, struct box* other, int32* q) {
 ```click
 resource boxed(box: struct box*) {
     owns *box;
-    contains allocation(box->data, 4);
+    owns allocation(box->data, 4);
     owns box->data[0..1];
 }
 

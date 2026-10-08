@@ -26,7 +26,7 @@ void box_release(struct box* box) {
 ```click
 resource half_boxed(box: struct box*) {
     owns *box;
-    contains allocation(box->data, 8);
+    owns allocation(box->data, 8);
     owns box->data[0..1];
 }
 

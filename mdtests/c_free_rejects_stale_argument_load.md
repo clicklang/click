@@ -13,7 +13,7 @@ int32 free_then_read(int32 data[], int32 count) {
 
 ```click
 resource allocated_int32s(data: int32*, count: int32) {
-    contains allocation(data, count * 4);
+    owns allocation(data, count * 4);
     owns data[0..count];
     fact data != 0;
 }

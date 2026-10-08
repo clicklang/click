@@ -14,7 +14,7 @@ void dispose_beside(int32* data, int32 n, int32* r) { free(data); }
 verifying "a_cell_beside_a_freed_allocation_is_framed.c";
 
 resource cell(p: int32*, n: int32) {
-    contains allocation(p, n * 4);
+    owns allocation(p, n * 4);
     owns p[0..n];
 }
 

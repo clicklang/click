@@ -33,7 +33,7 @@ int32 package_one_ref(int32 object) {
 abstract resource object_ref(object: int32);
 
 resource held_ref(object: int32) {
-    contains object_ref(object);
+    owns object_ref(object);
 }
 
 verifying "counted_resource_transfer.c";

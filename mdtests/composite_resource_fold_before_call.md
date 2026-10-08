@@ -21,7 +21,7 @@ int32 fold_then_call(int32 x) {
 abstract resource permit(x: int32);
 
 resource bundle(x: int32) {
-    contains permit(x);
+    owns permit(x);
     fact x >= 0;
 }
 

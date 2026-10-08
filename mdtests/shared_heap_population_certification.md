@@ -130,7 +130,7 @@ resource parent(p: struct parent*) {
 authorized resource child_ref(obj: struct child*) {}
 
 resource child_control(obj: struct child*) {
-    contains allocation(obj, sizeof(struct child));
+    owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
     fact defined(obj->refs);
@@ -139,7 +139,7 @@ resource child_control(obj: struct child*) {
 }
 
 resource child_storage(obj: struct child*) {
-    contains allocation(obj, sizeof(struct child));
+    owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
 }

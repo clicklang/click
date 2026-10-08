@@ -19,13 +19,13 @@ int32 conditional_deallocation_join(int32* p, int32 error) {
 
 ```click
 resource allocated(p: int32*) {
-    contains allocation(p, 4);
+    owns allocation(p, 4);
     owns p[0..1];
 }
 
 resource maybe_allocated(p: int32*, error: int32) {
     if error == 0 {
-        contains allocation(p, 4);
+        owns allocation(p, 4);
         owns p[0..1];
     }
 }

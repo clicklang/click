@@ -782,7 +782,7 @@ fn resource_member_project(member_count: usize) -> (String, String) {
     }
     click_source.push_str("\nresource bundle(p: int32*) {\n");
     for index in 0..member_count {
-        click_source.push_str(&format!("    contains member_{index}({index});\n"));
+        click_source.push_str(&format!("    owns member_{index}({index});\n"));
     }
     click_source.push_str(
         "}\n\nverifying \"preserve_bundle.c\";\n\nint32 preserve_bundle(int32 p[]) {\n    views bundle(p);\n    ensures result == 0;\n} by {\n    step();\n    simp();\n}\n",

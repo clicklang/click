@@ -11,11 +11,11 @@ int32 zero(int32 fd) {
 
 ```click
 resource left_token(fd: int32) {
-    contains right_token(fd);
+    owns right_token(fd);
 }
 
 resource right_token(fd: int32) {
-    contains left_token(fd);
+    owns left_token(fd);
 }
 
 verifying "zero.c";

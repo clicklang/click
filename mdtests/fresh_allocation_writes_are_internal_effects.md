@@ -19,7 +19,7 @@ int32* fresh_allocation_writes_are_internal_effects() {
 ```click
 resource maybe_initialized_int32(data: int32*) {
     if data != 0 {
-        contains allocation(data, 4);
+        owns allocation(data, 4);
         owns data[0..1];
         fact data[0] == 7;
     }

@@ -17,7 +17,7 @@ void release_one(struct child* obj) {
 const SOURCE: &str = r#"authorized resource child_ref(obj: struct child*) {}
 
 resource child_control(obj: struct child*) {
-    contains allocation(obj, sizeof(struct child));
+    owns allocation(obj, sizeof(struct child));
     owns *obj;
     owns authority(child_ref(obj));
     fact obj->refs == count(child_ref(obj));

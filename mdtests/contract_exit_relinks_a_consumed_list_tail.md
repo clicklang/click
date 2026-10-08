@@ -17,7 +17,7 @@ resource list(node: struct node*) {
     if node != 0 {
         owns node->value;
         owns node->next;
-        contains list(node->next);
+        owns list(node->next);
     }
 }
 verifying "relink.c";

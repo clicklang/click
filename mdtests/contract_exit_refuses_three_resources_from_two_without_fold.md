@@ -19,7 +19,7 @@ resource cell(p: struct node*) {
 }
 resource pair(p: struct node*) {
     owns p->next;
-    contains cell(p->next);
+    owns cell(p->next);
 }
 verifying "three_from_two_open.c";
 int32 f(struct node* a, struct node* b, struct node* c) {

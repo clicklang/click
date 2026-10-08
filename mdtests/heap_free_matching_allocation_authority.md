@@ -20,8 +20,8 @@ void free_second_then_first(struct two_buffers* buffers) {
 resource two_buffers_owned(buffers: struct two_buffers*) {
     owns buffers->first;
     owns buffers->second;
-    contains allocation(buffers->first, 4);
-    contains allocation(buffers->second, 4);
+    owns allocation(buffers->first, 4);
+    owns allocation(buffers->second, 4);
     owns buffers->first[0..1];
     owns buffers->second[0..1];
     fact separate(

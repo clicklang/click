@@ -9,13 +9,13 @@ resource ring_frame(owner: struct ring_buffer*) {
 
 resource linear_ring(owner: struct ring_buffer*) {
     owns owner->tail;
-    contains ring_frame(owner);
+    owns ring_frame(owner);
     fact owner->tail == 4;
 }
 
 resource wrapped_ring(owner: struct ring_buffer*) {
     owns owner->tail;
-    contains ring_frame(owner);
+    owns ring_frame(owner);
     fact owner->tail == 1;
 }
 

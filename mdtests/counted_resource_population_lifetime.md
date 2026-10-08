@@ -29,7 +29,7 @@ void object_finish(struct object* obj) {
 authorized resource object_ref(obj: struct object*) {}
 
 resource object_control(obj: struct object*) {
-    contains allocation(obj, sizeof(struct object));
+    owns allocation(obj, sizeof(struct object));
     owns *obj;
     owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));

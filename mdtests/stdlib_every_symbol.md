@@ -394,7 +394,7 @@ theorem append_constructor(head: int32, tail: List<int32>, ys: List<int32>) {
 }
 
 resource docs_allocation_wrapper(base: int32*, bytes: int32) {
-    contains allocation(base, bytes);
+    owns allocation(base, bytes);
 }
 
 theorem docs_use_int32_increment_upper_bound(value: int32, upper: int32) {

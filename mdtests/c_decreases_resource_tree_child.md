@@ -26,8 +26,8 @@ resource zero_tree(node: struct node*) {
         owns node->left;
         owns node->right;
         fact node->value == 0;
-        contains zero_tree(node->left);
-        contains zero_tree(node->right);
+        owns zero_tree(node->left);
+        owns zero_tree(node->right);
     }
 }
 
