@@ -771,6 +771,24 @@ impl<'a> ProofScope<'a> {
                 let mut execution = execution;
                 match &obligation {
                     Obligation::FunctionOutcome(outcome) => {
+                        let completion = self.body.completed_proposition()?;
+                        let mut retained = execution
+                            .as_ref()
+                            .ok_or_else(|| {
+                                self.root
+                                    .step_error("return proof lost its execution evidence")
+                            })?
+                            .as_ref()
+                            .clone();
+                        retained
+                            .core
+                            .record_return_proposition(
+                                outcome.path_index,
+                                completion,
+                                self.root.facts(),
+                            )
+                            .map_err(|message| self.root.step_error(message))?;
+                        execution = Some(Arc::new(retained));
                         let mut updated = outcome.clone();
                         let mut data = (*updated.data).clone();
                         data.surface_propositions

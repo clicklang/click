@@ -1,5 +1,10 @@
 # Loops and invariants
 
+A loop that no contract-admitted path reaches needs no ranking measure. Exact
+checked execution retains this fact even when ownership adds an inherited
+frame check to the source loop; reachable summarized loops still require their
+own termination evidence (`mdtests/unreachable_owned_loops_terminate.md`).
+
 Loops require summaries. Click cannot prove a symbolic loop by unrolling it
 forever.
 

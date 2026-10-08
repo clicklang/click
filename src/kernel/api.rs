@@ -5160,6 +5160,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state(
 
     events.iter().find_map(|event| match event {
         CheckedExecutionEvent::ProofCase(_)
+        | CheckedExecutionEvent::ReturnProposition(_)
         | CheckedExecutionEvent::Context(_)
         | CheckedExecutionEvent::StatementEffects(_)
         | CheckedExecutionEvent::Call(_) => None,
@@ -5236,6 +5237,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 CheckedExecutionEvent::Statement(_)
                 | CheckedExecutionEvent::Call(_)
                 | CheckedExecutionEvent::Condition(_)
+                | CheckedExecutionEvent::ReturnProposition(_)
                 | CheckedExecutionEvent::Context(_)
                 | CheckedExecutionEvent::StatementEffects(_)
                 | CheckedExecutionEvent::AutomaticLifetimeEnd(_)

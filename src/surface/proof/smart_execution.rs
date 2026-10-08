@@ -986,7 +986,11 @@ impl<'a> Proof<'a> {
             .zip(&source_requirements)
             .enumerate()
         {
-            if normalizes_context_free(&requirement) {
+            // Omit only the requirements the explicit theorem checker can
+            // discharge without evidence. Broader context-free planning can
+            // prove constructor inequalities, but dropping their written
+            // facts here leaves `apply using` with an unchecked premise.
+            if matches!(normalize_proposition(&requirement), SimpProposition::True) {
                 continue;
             }
             let mut surface = substitute_click_proposition(source_surface, &substitutions)

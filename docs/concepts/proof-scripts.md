@@ -35,6 +35,11 @@ ensures result == x by {
 }
 ```
 
+Inside an `open(resource)` scope, a named resource fold after `execute()`
+uses each returned path's state before the scope closes, just as a fold after
+execution outside the scope does. A proposed field value must still match
+that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
+
 ## Smart and simple tactics
 
 Smart tactics plan or search. The most common are `execute()`,
@@ -65,6 +70,12 @@ tactics are `assumption()`, `normalize()`, `rewrite(...)`, `intro()`, and
 `contradiction(...)`. `assumption()` also closes a conjunction whose sides
 are facts and a disjunction with one side a fact. A successful
 expansion contains only those explicit rules and named theorem applications.
+
+Bare `apply` retains explicitly proved premises in its generated `using`
+list when the simple theorem checker needs them. For example, prove a
+constructor inequality with `have ... by { normalize(); }` before applying
+a theorem that requires it. Recognizing the fact during planning does not
+replace that evidence (`mdtests/theorem_apply_retains_constructor_inequality.md`).
 
 ## Pure, fixed-state, and execution proofs
 

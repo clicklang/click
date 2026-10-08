@@ -364,7 +364,7 @@ pub(super) fn verify_execution_theorem(
             function.clone(),
             arguments,
             environment.clone(),
-            CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
             CFunctionContractExecutionMode::VerifyLoops,
             &artifacts,
             &[],

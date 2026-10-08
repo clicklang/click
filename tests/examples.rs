@@ -439,6 +439,521 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
 }
 
 #[test]
+fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let bytes = fs::read(root.join("examples/rbtree-erase/rb_erase_augmented.c"))
+        .expect("the pinned erase C input exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "f861b937f0cb142104061ccccb9f6247c99ca4f6d0f4d6033b8720a86f967022"
+    );
+}
+
+fn erase_refuses_mutation(before: &str, after: &str) {
+    erase_sidecar_refuses_mutation("rbtree_erase.click", before, after);
+}
+
+fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
+    erase_source_refuses_mutation(sidecar, "rb_erase_augmented.c", before, after);
+}
+
+fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after: &str) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/rbtree-erase").join(sidecar);
+    let source = fs::read_to_string(&path).expect("the erase sidecar exists");
+    let mut c_sources = read_verifying_sources(&path, &source).expect("the erase C bundle loads");
+    let (_, c) = c_sources
+        .iter_mut()
+        .find(|(name, _)| name.ends_with(file))
+        .expect("the bundle contains the selected erase input");
+    assert_eq!(
+        c.matches(before).count(),
+        1,
+        "mutation must identify exactly one statement"
+    );
+    *c = c.replace(before, after);
+    let project = read_click_project_at_root(&path, &source, &root.join("examples"))
+        .expect("the erase proof resolves its shared resources and model");
+    let error = limits::spawn(
+        "erase mutation verifier",
+        "click-erase-mutation".to_string(),
+        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+    )
+    .unwrap_or_else(|error| panic!("{error}"))
+    .expect_err("the erase proof must refuse a missing link or parent/color write");
+    assert!(
+        error.message().contains("fold")
+            || error
+                .message()
+                .contains("selected child does not satisfy the proposed parent model")
+            || error.message().contains("contract certification")
+            || error
+                .message()
+                .contains("checked outcome `have` search did not retain a complete proof")
+            || error.message().contains("unclosed goal: result == 0")
+            || error
+                .message()
+                .contains("unclosed goal: result == old(node->rb_right)"),
+        "unexpected refusal: {}",
+        error.message()
+    );
+}
+
+#[test]
+fn rbtree_erase_refuses_a_skipped_right_child_parent_color() {
+    erase_refuses_mutation("\t\t\tchild->__rb_parent_color = pc;\n", "");
+}
+
+#[test]
+fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
+    erase_refuses_mutation(
+        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
+        "\t\tpc = node->__rb_parent_color;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_refuses_a_skipped_root_replacement() {
+    erase_refuses_mutation("\t\t__rb_change_child(node, child, parent, root);\n", "");
+}
+
+#[test]
+#[ignore = "nightly: 13.42 s to expand and recheck the successor claim (2026-10-08)"]
+fn rbtree_erase_successor_explicit_closers_preserve_ownership() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/rbtree-erase/rbtree_erase_successor.click");
+    let source = fs::read_to_string(&path).unwrap();
+    let c_sources = read_verifying_sources(&path, &source).unwrap();
+    let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+    let (line, text) = source
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.trim() == "simp();")
+        .last()
+        .unwrap();
+    let column = text.find("simp").unwrap() + 1;
+    limits::spawn(
+        "successor closer expansion",
+        "click-successor-expansion".into(),
+        move || {
+            let expanded = click::surface::expand_c0_project_tactic_source_at(
+                &project,
+                &source_refs(&c_sources),
+                line + 1,
+                column,
+            )?;
+            let expanded_project =
+                read_click_project_at_root(&path, &expanded, &root.join("examples"))
+                    .expect("the expanded successor sidecar resolves its imports");
+            click::surface::verify_c0_project(&expanded_project, &source_refs(&c_sources))
+        },
+    )
+    .unwrap()
+    .unwrap();
+}
+
+#[test]
+fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_successor.click",
+        "\t\trb_set_parent(tmp, successor);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_successor.click",
+        "\t\tsuccessor->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_successor_requires_the_fixup_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_successor.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = NULL;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_child_successor_requires_blackening() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_child_successor.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_child_successor_requires_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_child_successor.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_leaf_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_black_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_leaf_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_black_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_leaf.click",
+        "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
+        "\t\t\trebalance = NULL;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_red_leaf_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_red_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_red_leaf_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_red_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_red_leaf_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_red_leaf.click",
+        "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
+        "\t\t\trebalance = parent;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "\t\t\tchild->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_blackening() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "\t\t\tchild->__rb_parent_color = pc;\n",
+        "\t\t\tchild->__rb_parent_color = pc & ~1;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
+        "\t\tpc = node->__rb_parent_color;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_blackening() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
+        "\t\tpc = node->__rb_parent_color;\n\t\ttmp->__rb_parent_color = pc & ~1;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = NULL;",
+        "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = parent;",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = NULL;",
+        "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = parent;",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_left_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_right_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_left_subtree_link() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_left_subtree_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\trb_set_parent(tmp, successor);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_successor_parent_color() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\tsuccessor->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = parent;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_left_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_right_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_left_subtree_link() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_left_subtree_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "\t\trb_set_parent(tmp, successor);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_successor_parent_color() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "\t\tsuccessor->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = NULL;",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = parent;",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_child_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_child_successor_requires_child_blackening() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_child_successor.click",
+        "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
+        "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_black_successor_requires_left_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_black_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_black_successor_requires_right_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_black_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_black_successor_requires_left_subtree_link() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_black_successor.click",
+        "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_black_successor_requires_left_subtree_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_black_successor.click",
+        "\t\trb_set_parent(tmp, successor);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_black_successor_requires_successor_parent_color() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_black_successor.click",
+        "\t\tsuccessor->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_black_successor_requires_fixup_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_black_successor.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = NULL;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_black_successor_requires_successor_as_fixup_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_black_successor.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = rb_is_black(successor) ? tmp : NULL;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_successor_requires_root_replacement() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_successor.click",
+        "\t\t__rb_change_child(node, successor, tmp, root);\n",
+        "",
+    );
+}
+
+#[test]
 fn concurrency_fork_join_source_is_frozen() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples/concurrency-fork-join/fork_join.c");
