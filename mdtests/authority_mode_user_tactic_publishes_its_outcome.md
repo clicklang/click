@@ -1,6 +1,6 @@
 # A user tactic's published outcome matches its trace in authority mode
 
-Replaying the trace up to publication rebuilds an outcome whose creation
+Rechecking the trace up to publication rebuilds an outcome whose creation
 ledger is a different, empty successor. Ledgers that record nothing are
 interchangeable, so the published outcome is the trace's outcome.
 

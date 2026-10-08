@@ -1408,7 +1408,7 @@ definition. Regression: `authority_mode_ordinary_recursive_resource_unfolds.md`.
 
 #### Chunk 1f: published outcomes and unused ledgers
 
-Replaying a proof's trace to its publication point rebuilds an outcome whose
+Rechecking a proof's trace up to its publication point rebuilds an outcome whose
 creation ledger is a different successor than the published one, even when
 neither records anything, so user tactics such as `convert` failed to
 publish. Published outcomes are now compared up to unused creation ledgers.
