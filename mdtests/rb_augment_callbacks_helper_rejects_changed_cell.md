@@ -97,5 +97,5 @@ void erase_changed(struct node* node, struct node* parent,
 ```
 
 ```expect
-fail: missing resource fact
+fail: the verifier cannot yet certify it for these 2 contract claims
 ```

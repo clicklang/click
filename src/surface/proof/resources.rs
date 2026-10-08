@@ -999,7 +999,23 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
         state,
         assumptions,
         false,
+        None,
     )
+}
+
+/// How the entry projection gives read authority for the memory an owned
+/// resource owns directly. Holding a resource, viewed or owned, lets C read
+/// that memory; a write still needs `unfold`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum OwnedCores {
+    /// Views attached to the exact owned occurrence, retired when the owner
+    /// is unfolded, consumed or freed, and limited to memory: a child
+    /// resource stays folded.
+    AttachedToOwner,
+    /// Free-standing views, for a proof that contains a loop. A loop head
+    /// gives the owner a new occurrence, which would retire attached views
+    /// before the body could read through them.
+    Standing,
 }
 
 pub(super) fn project_initial_composite_resource_cores(
@@ -1009,10 +1025,12 @@ pub(super) fn project_initial_composite_resource_cores(
     mut state: CState,
     available_pure_facts: &(impl PropositionSource + ?Sized),
     claim_label: &str,
-    include_owned: bool,
+    owned: Option<OwnedCores>,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<CState, ClickError> {
+    let include_owned = owned.is_some();
+    let attach_to_owner = owned == Some(OwnedCores::AttachedToOwner);
     let assumptions = assumptions_from_propositions(available_pure_facts);
     for resource in state.resources().facts().to_vec() {
         // A matched instance exposes the arm its section selects, and nothing
@@ -1053,6 +1071,7 @@ pub(super) fn project_initial_composite_resource_cores(
                         state,
                         &assumptions,
                         false,
+                        None,
                     );
                 }
                 continue;
@@ -1065,9 +1084,11 @@ pub(super) fn project_initial_composite_resource_cores(
                 state,
                 &assumptions,
                 include_owned,
+                (attach_to_owner && resource.is_own()).then_some(&resource),
             );
             continue;
         }
+        let head = resource.clone();
         let (name, resource_arguments, is_owned) = match resource {
             CResourceFact::View(CResource::Composite { name, arguments }) => {
                 (name, arguments, false)
@@ -1143,19 +1164,50 @@ pub(super) fn project_initial_composite_resource_cores(
             .iter()
             .filter_map(|fact| fact.core_with_assumptions(&assumptions))
             .collect::<Vec<_>>();
-        let resources = state
-            .resources()
-            .clone()
-            .try_compose_with_facts_delaying_normalization(
-                viewed_contained_resources,
-                &assumptions,
-            )
-            .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` setup failed: projecting composite resource core `{name}` produced {}",
-                    describe_resource_context_validity_error(error, parameters, arguments)
-                ))
-            })?;
+        // An owned head's read authority is an observation of that owner: it
+        // stays attached to the exact owned occurrence, so unfolding,
+        // consuming or freeing the owner retires it. A viewed head has no
+        // owner here to attach to and keeps plain views.
+        let owned_support = (is_owned && attach_to_owner)
+            .then(|| state.resources().owned_occurrences_for_fact(&head))
+            .and_then(|occurrences| occurrences.first().copied());
+        if is_owned && attach_to_owner && owned_support.is_none() {
+            continue;
+        }
+        let resources = match owned_support {
+            Some(occurrence) => {
+                // One level: the memory the head owns directly. A child
+                // resource stays folded, so its own memory and facts are not
+                // read through the parent.
+                let fresh = viewed_contained_resources
+                    .into_iter()
+                    .filter(|fact| fact.memory_view_range().is_some())
+                    .filter(|fact| !state.resources().contains_exact_representation(fact))
+                    .collect::<Vec<_>>();
+                state
+                    .resources()
+                    .clone()
+                    .unchecked_with_supported_facts_from_occurrence_with_memory(
+                        occurrence,
+                        &head,
+                        fresh,
+                        &memory,
+                    )
+            }
+            None => state
+                .resources()
+                .clone()
+                .try_compose_with_facts_delaying_normalization(
+                    viewed_contained_resources,
+                    &assumptions,
+                )
+                .map_err(|error| {
+                    ClickError::new(format!(
+                        "`{claim_label}` setup failed: projecting composite resource core `{name}` produced {}",
+                        describe_resource_context_validity_error(error, parameters, arguments)
+                    ))
+                })?,
+        };
         state = state.with_memory(memory).with_resource_context(resources);
     }
     Ok(state)
@@ -1175,6 +1227,7 @@ fn project_selected_instance_arm_cells(
     state: CState,
     assumptions: &PureFactContext,
     include_owned: bool,
+    owner: Option<&CResourceFact>,
 ) -> CState {
     let arm = &selected.arm;
     let Some(body) = arm.composite_body() else {
@@ -1221,6 +1274,32 @@ fn project_selected_instance_arm_cells(
         .iter()
         .filter_map(|fact| fact.core_with_assumptions(assumptions))
         .collect::<Vec<_>>();
+    // An owned instance's read authority stays attached to the owner, as an
+    // owned composite's does in `project_initial_composite_resource_cores`.
+    if let Some(owner) = owner {
+        let Some(occurrence) = state
+            .resources()
+            .owned_occurrences_for_fact(owner)
+            .first()
+            .copied()
+        else {
+            return state;
+        };
+        let fresh = viewed
+            .into_iter()
+            .filter(|fact| !state.resources().contains_exact_representation(fact))
+            .collect::<Vec<_>>();
+        let resources = state
+            .resources()
+            .clone()
+            .unchecked_with_supported_facts_from_occurrence_with_memory(
+                occurrence,
+                owner,
+                fresh,
+                state.memory(),
+            );
+        return state.with_resource_context(resources);
+    }
     match state
         .resources()
         .clone()
