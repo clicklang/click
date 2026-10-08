@@ -931,6 +931,42 @@ pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, 
     value_naming_tables(&values)
 }
 
+/// Name current locals with their source declarations, when available.
+/// Layouts describe the local's type; its address still comes from `state`,
+/// so reassigning a pointer never reuses its function-entry address.
+/// A pointer without a source declaration is named in explicit byte units:
+/// compatible kernel pointer types cannot establish a nominal struct type.
+pub(super) fn local_naming_tables_with_source(
+    state: &CState,
+    function: Option<&syntax::C0Function>,
+) -> (Vec<syntax::C0Parameter>, Vec<CExpression>) {
+    let (mut parameters, arguments) = local_naming_tables(state);
+    let source_parameters = function
+        .into_iter()
+        .flat_map(|function| function.parameters())
+        .map(|parameter| (parameter.name(), parameter))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for parameter in &mut parameters {
+        if let Some(source) = source_parameters.get(parameter.name()) {
+            *parameter = (**source).clone();
+        } else if let Some((name, layout)) = function.and_then(|function| {
+            let name = function.local_struct_pointers().get(parameter.name())?;
+            Some((name, function.structs().get(name)?))
+        }) {
+            *parameter = parameter
+                .clone()
+                .with_pointee_struct_layout(name.clone(), layout.clone());
+        } else if parameter.c_type().is_pointer() {
+            *parameter = syntax::C0Parameter::new(
+                C0Type::CharPointer,
+                format!("((char *){})", parameter.name()),
+                None,
+            );
+        }
+    }
+    (parameters, arguments)
+}
+
 /// A runtime error spelled over `state`'s locals, so an address a loop head
 /// minted a variable for reads as the index the source wrote.
 pub(super) fn describe_runtime_error_over_locals(

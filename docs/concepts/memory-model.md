@@ -64,6 +64,9 @@ its dotted path. A range that cannot be expressed as whole source elements
 uses an explicit byte cast, such as `((char *)p)[4..12]`. A coverage note that
 compares byte offsets says so, and a load in its bounds names the field read,
 such as `load(node->right)`.
+Branch failures retain source layouts for current pointer locals, including
+reassigned parameters and local aliases. A pointer whose source declaration
+is unavailable uses explicitly identified byte units.
 
 Pointer arithmetic stays inside the pointed-to object (C11 6.5.6p8): the
 result must designate an element of the object or the position one past its

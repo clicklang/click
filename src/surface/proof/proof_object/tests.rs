@@ -11096,6 +11096,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
         &branch,
         None,
         "persistent condition split",
+        None,
     )
     .expect("a symbolic comparison should expose both paths");
     assert_eq!(unconstrained.len(), 2);

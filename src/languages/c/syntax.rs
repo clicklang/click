@@ -4113,6 +4113,18 @@ pub fn referent_of_carrier(carrier: &str) -> Option<&str> {
 }
 
 impl C0Parameter {
+    /// Retain a declared pointer's nominal pointee for source presentation.
+    pub(crate) fn with_pointee_struct_layout(
+        mut self,
+        name: String,
+        layout: C0StructLayout,
+    ) -> Self {
+        assert!(self.c_type.is_pointer());
+        self.struct_name = Some(name);
+        self.pointee_struct_layout = Some(layout);
+        self
+    }
+
     pub(crate) fn with_struct_value(mut self, name: String, layout: C0StructLayout) -> Self {
         self.c_type = struct_value_type(&layout);
         self.struct_name = Some(name);

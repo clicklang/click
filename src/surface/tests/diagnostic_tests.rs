@@ -1545,3 +1545,29 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
     );
     assert!(!message.contains("consumed it"), "{message}");
 }
+
+#[test]
+fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
+    use crate::kernel::{
+        Bitvector32Term, CMemoryRange, CPointerValue, CType, Pointer, PointerBlock,
+        PointerOffsetTerm,
+    };
+    let base = Pointer {
+        block: PointerBlock::Concrete("unknown".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let state = CState::new().with_local(
+        "cursor",
+        CValue::Pointer(CPointerValue::new(base.clone(), CType::Int32Pointer)),
+    );
+    let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
+    let range = CMemoryRange::new(
+        base,
+        Bitvector32Term::Constant(1),
+        Bitvector32Term::Constant(2),
+    );
+    assert_eq!(
+        super::diagnostics::describe_memory_range(&range, &parameters, &arguments),
+        "((char *)cursor)[4..8]"
+    );
+}
