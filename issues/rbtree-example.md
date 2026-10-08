@@ -53,6 +53,9 @@ to the new focus with the same model and preserves the old node's tag; three
 mutation checks reject missing link updates in about two seconds each, and all
 ten helper expansion-audit sites pass. Deeper non-root proofs can use
 this verified call instead of duplicating the parent-link cases.
+The next proof exposed a missing 64-bit equality case in explicit pointer-offset
+rewriting. Field facts now rewrite through a loaded pointer alias at both
+32- and 64-bit widths; positive and false-conclusion fixtures cover the fix.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
