@@ -430,14 +430,12 @@ code at that label before closing the contract. Several checked edges to the sam
 the disjunction of their exit facts rather than discarding an edge
 (`mdtests/natural_goto_forward_exit_state.md` and
 `mdtests/natural_goto_forward_exit_multiple_edges_state.md`). A natural
-cycle with one terminal return path and one continuing forward goto path
-can expand a disjunctive postcondition into a post-execution `if` when the
-checker establishes opposite sides of its condition on the two outcomes.
-Each arm retains its own checked closer and cold reverifies
-(`mdtests/natural_goto_forward_exit_and_return.md`). When exit edges assign
-different local values, the join also exports a disjunction of equations for
-the successor values. This lets the proof name the possible values without
-naming forgotten loop-iteration guards
+cycle with both terminal returns and continuing forward goto paths closes
+each returned outcome in its preservation arm; expansion retains those
+arm-local closers (`mdtests/natural_goto_forward_exit_and_return.md`). When
+exit edges assign different local values, the join also exports a disjunction
+of equations for the successor values. This lets the proof name the possible
+values without naming forgotten loop-iteration guards
 (`mdtests/natural_goto_forward_exit_differing_states.md`).
 
 ### `do ... while`
@@ -1102,6 +1100,16 @@ with bare `step()`s instead is
 A tactic outside that grammar is refused by name rather than interpreted, and
 so is a path that stops anywhere but the body's end, a `continue`, a `break`,
 or a function `return`.
+
+A body path that reaches `return` closes the function contract in that
+`preserve` arm. Tactics written after the returning step, such as
+`have result == 7 by simp; simp();`, apply only to that returned outcome.
+The tactics after `loop` apply only to the continuing exit. A returning arm
+with no closing tactics gets an implicit `simp` owned by `loop`, including
+when preservation is automatically generated. Every returned outcome still
+owes the function's postcondition and resource obligations. Expansion writes
+its checked closing steps into the returning `preserve` arm, including for
+natural cycles and nested loops.
 
 A `preserve` script ends by discharging the whole invariant bundle at the loop's
 back edge. `close_invariants()` is the surface tactic for that step. It is

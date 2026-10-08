@@ -2060,6 +2060,7 @@ impl<'a> Proof<'a> {
                     expansion_capture.as_deref_mut(),
                     loop_clause,
                     &proof_locals,
+                    self.facts(),
                     &mut execution,
                     &tactic_context,
                     &mut facts,
