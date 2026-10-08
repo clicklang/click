@@ -1525,7 +1525,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
             fact 0 <= owner->pos;
             fact owner->pos <= owner->len;
             fact separate(
-                memory(owner[0..4]),
+                memory(*owner),
                 memory(owner->data[0..owner->len])
             );
         }
@@ -1558,7 +1558,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
             have 0 <= owner->pos by simp;
             have owner->pos <= owner->len by simp;
             have separate(
-                memory(owner[0..4]),
+                memory(*owner),
                 memory(owner->data[0..owner->len])
             ) by {
                 simp();
@@ -1616,7 +1616,7 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
             fact owner->len < owner->cap;
             fact terminated_at(owner->data, owner->len);
             fact separate(
-                memory(owner[0..4]),
+                memory(*owner),
                 memory(owner->data[0..owner->cap])
             );
         }
@@ -1645,7 +1645,7 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
             have 0 <= owner->len by simp;
             have owner->len < owner->cap by simp;
             have separate(
-                memory(owner[0..4]),
+                memory(*owner),
                 memory(owner->data[0..owner->cap])
             ) by {
                 simp();
@@ -1711,7 +1711,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
             fact owner->len < owner->cap;
             fact terminated_at(owner->data, owner->len);
             fact separate(
-                memory(owner[0..4]),
+                memory(*owner),
                 memory(owner->data[0..owner->cap])
             );
         }
@@ -1738,7 +1738,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
             have 0 <= owner->len by simp;
             have owner->len < owner->cap by simp;
             have separate(
-                memory(owner[0..4]),
+                memory(*owner),
                 memory(owner->data[0..owner->cap])
             ) by {
                 simp();

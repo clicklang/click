@@ -22,7 +22,7 @@ verifying "defined_expression_snapshot_transport.c";
 
 int32 increment_after_other_write(struct pair* pair) {
     requires defined(pair->value + 1);
-    owns pair[0..2];
+    owns *pair;
 
     ensures result == old(pair->value) + 1;
 } by {

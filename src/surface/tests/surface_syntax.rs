@@ -4352,6 +4352,37 @@ fn pointer_storage_views_name_the_field_alone() {
     );
 }
 
+/// A range on a struct pointer counts structs, and `*link` for a
+/// `struct T**` is one pointer slot, not a struct.
+#[test]
+fn a_struct_pointer_range_counts_structs() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        int32 second(struct cell* p) { return p[1].other; } \
+        struct cell* first(struct cell** link) { return *link; }";
+    let contract = |clause: &str| {
+        format!(
+            "verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }} by {{ execute(); simp(); }}"
+        )
+    };
+    verify_c0_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
+    let error = verify_c0_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
+        .expect_err("one struct does not cover the second");
+    assert!(error.message.contains("missing resource fact"), "{error:?}");
+
+    let link = "verifying \"cells.c\"; struct cell* first(struct cell** link) { views *link; }";
+    let file = parse_c0_click_file(link, &[("cells.c", c_source)]).unwrap();
+    let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
+        &file.function_blocks()[0].requires()[0]
+    else {
+        panic!("expected a view of the pointer slot");
+    };
+    assert!(matches!(
+        segment.surface,
+        ContractSegmentSurface::Range { .. }
+    ));
+    assert_eq!(segment.end, CExpression::Value(int32(1)));
+}
+
 /// `*p` is the object behind a pointer, and a place written alone is its own
 /// storage: a global, an element, a field.
 #[test]

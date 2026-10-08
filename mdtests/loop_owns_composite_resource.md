@@ -32,7 +32,7 @@ void loop_owns_composite_resource(struct cell* node, int32 q[], int32 n) {
     requires n <= 2147483647;
     owns cell(node);
     owns q[0..1];
-    requires separate(memory(node[0..1]), memory(q[0..1]));
+    requires separate(memory(*node), memory(q[0..1]));
     ensures q_preserved: q[0] == old(q[0]);
 } by {
     step();

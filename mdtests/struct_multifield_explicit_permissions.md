@@ -21,10 +21,10 @@ int32 write_second(struct pair* p) {
 verifying "write_second.c";
 
 int32 write_second(struct pair* p) {
-    consumes p[0..2];
+    consumes *p;
 
     ensures result == 2 by auto;
-    produces p[0..2] by auto;
+    produces *p by auto;
 }
 ```
 

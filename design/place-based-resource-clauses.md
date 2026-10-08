@@ -226,7 +226,12 @@ an accepted clause.
 - Partly done: step 2. A clause's own spelling prints as a place. Facts the
   kernel reports still print cells: a missing `owns a->n` is still
   `owns a[2..4]`, and a local's storage is `&second[0..1]`.
-- Not started: step 5 and step 6.
+- Done: step 5. A range on a struct pointer counts structs, and the sites
+  that counted cells name the struct (`*p`), its fields, or a struct count.
+  The parser scales the bounds to cells; a symbolic count is weaker for it in
+  one path
+  (`bugs/a-symbolic-struct-count-is-not-viewable-at-contract-entry.md`).
+- Not started: step 6.
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 

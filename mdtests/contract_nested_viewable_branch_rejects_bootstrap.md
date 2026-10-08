@@ -14,7 +14,7 @@ void probe(struct node *node, int32 n) { }
 
 ```click
 resource cell(node: struct node*) {
-    owns node[0..1];
+    owns node->left;
 }
 
 verifying "nested_loadable_branch.c";
