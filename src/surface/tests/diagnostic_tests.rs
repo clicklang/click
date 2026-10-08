@@ -732,7 +732,14 @@ fn negative_mdtest_failures_include_structured_proof_context() {
                 message.contains("missing resource fact"),
                 "{name}: {message}"
             );
-            assert!(message.contains("owns p[0..1]"), "{name}: {message}");
+            assert!(
+                message.contains("missing resource fact `owns p[0]`"),
+                "{name}: {message}"
+            );
+            assert!(
+                message.contains("Requires produces owns p[0]"),
+                "{name}: {message}"
+            );
             assert!(
                 message.contains("available resource facts: []"),
                 "{name}: {message}"

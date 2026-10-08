@@ -37,5 +37,5 @@ void probe(struct node* node) {
 ```
 
 ```expect
-fail: could not address resource clause `node->right->augmented` (resource clause 2 of 2): missing pure fact: viewable(base=node[2], bytes=8)
+fail: could not address resource clause `node->right->augmented` (resource clause 2 of 2): missing pure fact: viewable(base=node->right, bytes=8)
 ```

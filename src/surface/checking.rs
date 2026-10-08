@@ -284,8 +284,16 @@ pub(super) fn prove_ensure_resource<'e>(
                 .satisfies_fact(expected, &assumptions)
         })
         .expect("resource ensure has an unsatisfied fact");
+    let requirement = if borrowed {
+        String::new()
+    } else {
+        format!(
+            "\nRequires produces {}",
+            describe_resource_fact(expected, parameters, arguments)
+        )
+    };
     Err(ClickError::new(format!(
-        "`{claim_label}` failed on path {path_index}: {}",
+        "`{claim_label}` failed on path {path_index}: {}{requirement}",
         describe_missing_resource_fact(
             expected,
             &available_pure_facts

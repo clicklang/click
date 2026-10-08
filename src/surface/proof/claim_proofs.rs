@@ -4134,21 +4134,14 @@ pub(super) fn finish_ordered_proof<'a>(
                                         let CFunctionOutcome::Return { .. } = &outcome else {
                                             unreachable!("gated on a return outcome above");
                                         };
-                                        for (claim_index, resource, borrowed) in
-                                            &direct_resource_claims
-                                        {
+                                        for (claim_index, _, _) in &direct_resource_claims {
                                             let claim_label = function_claim_label(
                                                 function_block.signature().name(),
                                                 &claims[*claim_index],
                                             );
                                             let checked = required_outcome(&outcome_proof)?.check_outcome_resource_claim(&completed_execution, claims[*claim_index]).map_err(|error| {
-                                                let requirement = if *borrowed {
-                                                    String::new()
-                                                } else {
-                                                    format!("\nRequires produces {}", crate::surface::validation::describe_resource_clause(resource))
-                                                };
                                                 ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; use `simp()` after establishing the facts and resources it needs (claim index {claim_index})\nlast closing attempt:\n{}{requirement}", error.raw_summary()
+                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; use `simp()` after establishing the facts and resources it needs (claim index {claim_index})\nlast closing attempt:\n{}", error.raw_summary()
                                                 ))
                                             })?;
                                             direct_resource_evidence.insert(*claim_index, checked);

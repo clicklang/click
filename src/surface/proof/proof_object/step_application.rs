@@ -3127,20 +3127,10 @@ fn trace_resource_fact(fact: &CResourceFact, context: &ExecutionProofContext<'_>
             if let CExpression::Value(CValue::Pointer(base)) = argument
                 && base.pointer() == range.base()
             {
-                let start = crate::surface::diagnostics::describe_bitvector_with_context(
-                    range.start(),
-                    context.parsed_function.parameters(),
-                    context.arguments,
-                );
-                let end = crate::surface::diagnostics::describe_bitvector_with_context(
-                    range.end(),
-                    context.parsed_function.parameters(),
-                    context.arguments,
-                );
-                return format!(
-                    "{} {}[{start}..{end}]",
-                    if fact.is_own() { "owns" } else { "views" },
-                    parameter.name()
+                return crate::surface::diagnostics::describe_resource_fact(
+                    fact,
+                    std::slice::from_ref(parameter),
+                    std::slice::from_ref(argument),
                 );
             }
         }
