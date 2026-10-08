@@ -27,6 +27,28 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// Whether folding `resource` can touch a population, by the kernel's
+    /// propagated reach of its registered definition. An unregistered family
+    /// is treated as reaching one.
+    fn family_reaches_population(&self, resource: &ResourceClause) -> bool {
+        match resource {
+            ResourceClause::Quantified { resource, .. }
+            | ResourceClause::Conditional { resource, .. } => {
+                self.family_reaches_population(resource)
+            }
+            ResourceClause::Declared { name, .. } => {
+                let ProofContext::Execution(context) = self.context.as_ref() else {
+                    return true;
+                };
+                context
+                    .function
+                    .composite_resource_definition(name)
+                    .is_none_or(|definition| definition.reaches_population())
+            }
+            _ => true,
+        }
+    }
+
     fn is_authority_control_resource(&self, resource: &ResourceClause) -> bool {
         let ResourceClause::Declared { name, .. } = resource else {
             return false;
@@ -2082,6 +2104,7 @@ impl<'a> Proof<'a> {
         let pre_state = context
             .old_reference_state(&execution.core.frontier, &execution.core.state)
             .clone();
+        let family_reaches_population = self.family_reaches_population(resource);
         let checked = fold_composite_resource_for_proof(
             context.resource_environment,
             resource,
@@ -2095,6 +2118,7 @@ impl<'a> Proof<'a> {
             context.predicate_environment,
             context.click_function_environment,
             &execution.core.unfolded_predicates,
+            family_reaches_population,
         )?;
         let selected = lower_resource_clause_at_state_with_assumptions(
             resource,
@@ -2303,6 +2327,7 @@ impl<'a> Proof<'a> {
             value: (*goal.data.core.result).clone(),
             state: Box::new((*goal.data.core.state).clone()),
         };
+        let family_reaches_population = self.family_reaches_population(resource);
         let checked = fold_composite_resource_on_outcome_for_proof(
             context.resource_environment,
             resource,
@@ -2318,12 +2343,14 @@ impl<'a> Proof<'a> {
             context.click_function_environment,
             &self.active_unfolded_predicates(),
             closure,
+            family_reaches_population,
         )?;
         let CFunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
         if state.uses_population_authority_semantics()
             && self.is_authority_transfer_wrapper(resource)
+            && family_reaches_population
         {
             let selected = lower_resource_clause_at_state_with_assumptions(
                 resource,

@@ -15369,8 +15369,12 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     )),
                     _ => None,
                 };
+                // A closed premise, such as the constant condition left by
+                // a decided argument comparison, settles without the call
+                // context under either semantics.
                 let available = if authority_semantics {
-                    specialized_assumptions.states_required_goal(&premise)
+                    crate::kernel::reasoning::path_facts::solve_builtin_prop(&premise)
+                        || specialized_assumptions.states_required_goal(&premise)
                         || reversed_order.as_ref().is_some_and(|premise| {
                             specialized_assumptions.states_required_goal(premise)
                         })
@@ -33220,7 +33224,11 @@ pub(super) fn apply_verified_contract_resource_transition(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(CFunctionOutcome, Vec<ProofObligation>), CRuntimeError>> {
+    // As at call sites, the authority helper rules govern only contracts
+    // that reach a population; an ordinary contract's exit transition folds
+    // its produced composites as it does under legacy semantics.
     if caller_state.uses_population_authority_semantics()
+        && contract_reaches_population(function.contract_interface())
         && !authority_mode_supports_resource_contract(function.contract_interface())
     {
         return Ok(Err(CRuntimeError::FunctionContract(

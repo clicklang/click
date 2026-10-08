@@ -6234,6 +6234,28 @@ impl CState {
         renamed == *other
     }
 
+    /// Equality that also identifies two creation ledgers recording the same
+    /// state under different fresh identities. Every other component is
+    /// still compared exactly, so a component naming either identity keeps
+    /// the states apart.
+    pub(crate) fn equal_up_to_creation_ledger_identity(&self, other: &Self) -> bool {
+        if self.equal_up_to_unused_creation_ledgers(other) {
+            return true;
+        }
+        let (Some(left), Some(right)) = (
+            self.population_effects.creation.as_ref(),
+            other.population_effects.creation.as_ref(),
+        ) else {
+            return false;
+        };
+        if left == right || !left.records_same_state_as(right) {
+            return false;
+        }
+        let mut renamed = self.clone();
+        Arc::make_mut(&mut renamed.population_effects).creation = Some(right.clone());
+        renamed == *other
+    }
+
     pub(crate) fn uses_population_authority_semantics(&self) -> bool {
         self.population_effects.creation.is_some()
     }

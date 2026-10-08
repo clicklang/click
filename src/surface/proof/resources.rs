@@ -3782,6 +3782,7 @@ fn fold_composite_resources_on_outcome_with_facts(
     click_function_environment: &ClickFunctionEnvironment,
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
+    family_reaches_population: bool,
 ) -> Result<CFunctionOutcome, ClickError> {
     for resource in resource_folds {
         let definition = composite_resource_law_definition(
@@ -4329,6 +4330,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             }
             lowered_contained.push(lowered);
         }
+        let pre_fold_resources = post_state.resources().clone();
         let mut resources = post_state.resources().clone();
         for lowered in lowered_contained.as_slice() {
             let next = if post_state.uses_population_authority_semantics() {
@@ -4503,8 +4505,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                 ));
             }
         }
+        // A folded head supports views of its contained children. Under
+        // authority semantics a family that reaches a population keeps only
+        // the checked exchange. Any other family keeps exactly the child
+        // views the context already held, now supported by the head: the
+        // fold consumed their owners and invents no new view.
         if closure == ResourceBodyClosure::Initialize
-            && !guard_state.uses_population_authority_semantics()
+            && (!guard_state.uses_population_authority_semantics() || !family_reaches_population)
             && !authority_control_body
             && !lowered_contained.is_empty()
         {
@@ -4542,6 +4549,10 @@ fn fold_composite_resources_on_outcome_with_facts(
                 .iter()
                 .filter_map(|fact| fact.core_with_assumptions(assumptions))
                 .filter(|fact| !post_state.resources().contains_exact_representation(fact))
+                .filter(|fact| {
+                    !guard_state.uses_population_authority_semantics()
+                        || pre_fold_resources.contains_exact_representation(fact)
+                })
                 .collect::<BTreeSet<_>>();
             if !projections.is_empty() {
                 let resources = post_state
@@ -4615,6 +4626,7 @@ pub(super) fn fold_composite_resource_for_proof(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     unfolded_predicates: &[String],
+    family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     fold_composite_resource_for_proof_with_closure(
         resource_environment,
@@ -4630,6 +4642,7 @@ pub(super) fn fold_composite_resource_for_proof(
         click_function_environment,
         unfolded_predicates,
         ResourceBodyClosure::Initialize,
+        family_reaches_population,
     )
 }
 
@@ -4653,6 +4666,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     click_function_environment: &ClickFunctionEnvironment,
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
+    family_reaches_population: bool,
 ) -> Result<CheckedOutcomeResourceFold, ClickError> {
     let mut facts = ProofResourcePureFacts::new(facts);
     let outcome = fold_composite_resources_on_outcome_with_facts(
@@ -4670,6 +4684,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
         click_function_environment,
         unfolded_predicates,
         closure,
+        family_reaches_population,
     )?;
     // A scope close exposes only its restored composite's observations.
     // Unrelated resources and their observation laws are unchanged; do not
@@ -4748,6 +4763,7 @@ pub(super) fn close_open_resource_for_proof(
         ResourceBodyClosure::CloseOpen {
             preserve_exposed_body,
         },
+        true,
     )
 }
 
@@ -4766,6 +4782,7 @@ fn fold_composite_resource_for_proof_with_closure(
     click_function_environment: &ClickFunctionEnvironment,
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
+    family_reaches_population: bool,
 ) -> Result<CheckedResourceFold, ClickError> {
     let facts = ProofResourcePureFacts::new(facts);
     let outcome = CFunctionOutcome::Return {
@@ -4787,6 +4804,7 @@ fn fold_composite_resource_for_proof_with_closure(
         click_function_environment,
         unfolded_predicates,
         closure,
+        family_reaches_population,
     )?;
     let CFunctionOutcome::Return { state, .. } = outcome else {
         unreachable!("folding a synthetic return outcome preserves its outcome kind")

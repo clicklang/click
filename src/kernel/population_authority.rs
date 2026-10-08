@@ -28,7 +28,7 @@ pub(super) struct Anchor(u64);
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct Population(u64);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct AnchorRecord {
     owner: Holder,
     // Creation permission stays with the creating proof environment. Moving
@@ -39,7 +39,7 @@ struct AnchorRecord {
     established: PersistentSet<String>,
     registrations: u32,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct PopulationRecord {
     anchor: Anchor,
     family: String,
@@ -65,7 +65,7 @@ pub(super) enum Refusal {
 /// Every lookup/update touches a bounded number of persistent map paths.
 /// Wildcard scopes, C bindings, symbolic totals, views, and loans are not
 /// admitted by this module; callers cannot simulate them with guessed IDs.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct AuthorityState {
     anchors: PersistentMap<Anchor, AnchorRecord>,
     registrations: PersistentMap<(Anchor, String), Population>,

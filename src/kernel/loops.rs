@@ -2945,9 +2945,19 @@ fn join_loop_exit_paths(
     let own_facts = exits
         .iter()
         .map(|exit| {
+            // A closed true conjunct, such as a guard lowering decided,
+            // says nothing about the path. Counting it would reorder the
+            // disjuncts below and change what narrowing drops.
             exit.disjunct
                 .iter()
-                .filter(|proposition| !shared_propositions.contains(proposition))
+                .filter(|proposition| {
+                    !shared_propositions.contains(proposition)
+                        && !matches!(
+                            proposition,
+                            Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
+                                if actual == expected
+                        )
+                })
                 .cloned()
                 .collect::<Vec<_>>()
         })
@@ -4926,8 +4936,9 @@ fn loop_exit_state_difference(
     right: &CState,
     assumptions: &PureFactContext,
 ) -> Option<String> {
-    // Creation ledgers that record nothing differ only in their fresh names.
-    if left.equal_up_to_unused_creation_ledgers(right) {
+    // Creation ledgers that record the same state differ only in their
+    // fresh names: a local one exit created and retired leaves none behind.
+    if left.equal_up_to_creation_ledger_identity(right) {
         return None;
     }
     let same_memory = left.memory().same_contents_as(right.memory());
@@ -4944,7 +4955,7 @@ fn loop_exit_state_difference(
         if same_resources {
             aligned.resources = left.resources.clone();
         }
-        if left.equal_up_to_unused_creation_ledgers(&aligned) {
+        if left.equal_up_to_creation_ledger_identity(&aligned) {
             return None;
         }
     }
