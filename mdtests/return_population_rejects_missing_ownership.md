@@ -29,5 +29,5 @@ struct object* retain(struct object* obj) {
 ```
 
 ```expect
-fail: missing resource fact `owns obj[0..1]`
+fail: missing resource fact `owns *obj`
 ```

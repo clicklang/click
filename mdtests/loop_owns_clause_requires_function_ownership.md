@@ -42,5 +42,5 @@ void loop_owns_clause_requires_function_ownership(int32 p[], int32 q[], int32 n)
 ```
 
 ```expect
-fail: loop declares a resource the enclosing function does not hold: `owns q[0..1]`
+fail: loop declares a resource the enclosing function does not hold: `owns q[0]`
 ```

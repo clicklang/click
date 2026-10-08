@@ -43,5 +43,5 @@ int32 f(int32* p) {
 ```
 
 ```expect
-fail: produced composite `zz_box3(p)` overlaps a resource the caller already holds: its body `owns p[0..1]` overlaps `owns p[0..1]`
+fail: produced composite `zz_box3(p)` overlaps a resource the caller already holds: its body `owns p[0]` overlaps `owns p[0]`
 ```
