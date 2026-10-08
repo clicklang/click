@@ -241,7 +241,7 @@ Items 1 to 4 are implemented. What building them established:
   must accept for a reference parameter and lower to the carrying pointer.
   The same holds for a struct reference compared with `this`.
 - A member function's receiver arrives from the exporter as a reference
-  named `self`. It stays a pointer until item 5 respells it as `this`.
+  named `self`. The importer names it `this` and keeps it a pointer.
 - Negative tests that make a false contract by replacing a substring of a
   passing sidecar stop testing anything when the substring is respelled. The
   conversion was checked by turning every reference-spelling error into a
@@ -252,8 +252,8 @@ Items 1 to 4 are implemented. What building them established:
   `requires writable == readable`). Each such use was found by comparing the
   old text with the new and is written with `&`.
 
-Still to do: `this`; then reference locals in C++ bodies, which proofs name
-through the lowered program.
+Receivers are spelled `this`. Still to do: reference locals in C++ bodies,
+which proofs name through the lowered program.
 
 Rust is not covered here. Its natural spelling changes the signature syntax
 as well (`bytes: &[u8]`, `&mut self`), a slice carries its length, and

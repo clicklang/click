@@ -1169,23 +1169,23 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     ));
 
     let sidecar_source = r#"verifying "caller.cpp";
-        void Restore_constructor(struct Restore* self, int32* slot) {
-            owns self->pointer;
-            owns self->saved;
+        void Restore_constructor(struct Restore* this, int32* slot) {
+            owns this->pointer;
+            owns this->saved;
             owns slot[0..1];
-            ensures self->pointer == slot;
-            ensures self->saved == old(slot[0]);
+            ensures this->pointer == slot;
+            ensures this->saved == old(slot[0]);
             ensures slot[0] == 9;
-            ensures separate(memory(*self), memory(self->pointer[0..1]));
+            ensures separate(memory(*this), memory(this->pointer[0..1]));
         } by { execute(); simp(); }
-        void Restore_destructor(struct Restore* self) {
-            requires separate(memory(*self), memory(self->pointer[0..1]));
-            owns self->pointer;
-            owns self->saved;
-            owns self->pointer[0..1];
-            ensures self->pointer == old(self->pointer);
-            ensures self->saved == old(self->saved);
-            ensures self->pointer[0] == old(self->saved);
+        void Restore_destructor(struct Restore* this) {
+            requires separate(memory(*this), memory(this->pointer[0..1]));
+            owns this->pointer;
+            owns this->saved;
+            owns this->pointer[0..1];
+            ensures this->pointer == old(this->pointer);
+            ensures this->saved == old(this->saved);
+            ensures this->pointer[0] == old(this->saved);
         } by { execute(); simp(); }
         int32 helper(bool should_throw) throws int32 {
             ensures result == 5;
@@ -3359,15 +3359,15 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded constructor caller proof must reverify");
 
-    let missing_field_ownership = CONSTRUCTOR_LOCAL_SIDECAR.replace("    owns self->saved;\n", "");
+    let missing_field_ownership = CONSTRUCTOR_LOCAL_SIDECAR.replace("    owns this->saved;\n", "");
     fs::write(&sidecar, &missing_field_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_field_ownership).unwrap();
     verify_program_prepared_project(&missing_project, &import)
         .expect_err("constructor member initialization requires field authority");
 
     let false_constructor_contract = CONSTRUCTOR_LOCAL_SIDECAR.replace(
-        "ensures self->saved == old(slot[0]);",
-        "ensures self->saved == old(slot[0]) + 1;",
+        "ensures this->saved == old(slot[0]);",
+        "ensures this->saved == old(slot[0]) + 1;",
     );
     fs::write(&sidecar, &false_constructor_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_constructor_contract).unwrap();
@@ -3500,7 +3500,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         .expect("expanded terminal-cleanup proof must reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
-        "void RestoreState_destructor(struct RestoreState* self) {\n    requires separate(memory(*self), memory(self->pointer[0..1]));\n    owns self->pointer;\n    owns self->saved;\n    owns self->pointer[0..1];\n    ensures self->pointer == old(self->pointer);\n    ensures self->saved == old(self->saved);\n    ensures self->pointer[0] == old(self->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
+        "void RestoreState_destructor(struct RestoreState* this) {\n    requires separate(memory(*this), memory(this->pointer[0..1]));\n    owns this->pointer;\n    owns this->saved;\n    owns this->pointer[0..1];\n    ensures this->pointer == old(this->pointer);\n    ensures this->saved == old(this->saved);\n    ensures this->pointer[0] == old(this->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
         "",
     );
     fs::write(&sidecar, &missing_destructor).unwrap();
@@ -3509,8 +3509,8 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         .expect_err("implicit cleanup requires a checked destructor contract");
 
     let false_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
-        "ensures self->pointer[0] == old(self->saved);",
-        "ensures self->pointer[0] == old(self->saved) + 1;",
+        "ensures this->pointer[0] == old(this->saved);",
+        "ensures this->pointer[0] == old(this->saved) + 1;",
     );
     fs::write(&sidecar, &false_destructor).unwrap();
     let false_project = read_click_project(&sidecar, &false_destructor).unwrap();
@@ -5218,11 +5218,13 @@ fn value_methods_reject_false_claims_missing_authority_and_overflow() {
     let add = include_str!("fixtures/cpp-verification/value-methods/add_disjoint.click");
     let empty = include_str!("fixtures/cpp-verification/value-methods/is_empty.click");
     for (selector, proof, expected) in [
-        ("FeeFrac::IsEmpty", empty.replace("if old(self->size) == 0", "if old(self->size) == 1"), "unclosed goal"),
-        ("FeeFrac::operator+=", add.replace("ensures self->fee == old(self->fee) + old(other.fee);", "ensures self->fee == old(self->fee);"), "unclosed goal"),
-        ("FeeFrac::operator+=", add.replace("    owns self->fee;\n", ""), "missing resource fact"),
-        ("FeeFrac::operator+=", add.replace("    requires -4611686018427387904 <= self->fee;\n    requires self->fee <= 4611686018427387903;\n", ""), "overflow"),
-        ("FeeFrac::operator+=", add.replace("    requires -1073741824 <= self->size;\n    requires self->size <= 1073741823;\n", ""), "overflow"),
+        ("FeeFrac::IsEmpty", empty.replace("if old(this->size) == 0", "if old(this->size) == 1"), "unclosed goal"),
+        // The receiver is the pointer `this`; the older `self` does not match.
+        ("FeeFrac::IsEmpty", empty.replace("this", "self"), ".click has const struct FeeFrac* self, C has const struct FeeFrac* this"),
+        ("FeeFrac::operator+=", add.replace("ensures this->fee == old(this->fee) + old(other.fee);", "ensures this->fee == old(this->fee);"), "unclosed goal"),
+        ("FeeFrac::operator+=", add.replace("    owns this->fee;\n", ""), "missing resource fact"),
+        ("FeeFrac::operator+=", add.replace("    requires -4611686018427387904 <= this->fee;\n    requires this->fee <= 4611686018427387903;\n", ""), "overflow"),
+        ("FeeFrac::operator+=", add.replace("    requires -1073741824 <= this->size;\n    requires this->size <= 1073741823;\n", ""), "overflow"),
     ] {
         let project = Project::with_fixture("value_methods.cpp", selector, source);
         refresh_import(&project.config()).unwrap();
@@ -5550,11 +5552,11 @@ fn subtraction_method_self_aliasing_is_defined_without_bounds_and_frames_caller_
     check_arithmetic_sidecar(&project, &import, proof);
     for (source, expected) in [
         (
-            proof.replace("ensures self->fee == 0i64", "ensures self->fee == 1i64"),
+            proof.replace("ensures this->fee == 0i64", "ensures this->fee == 1i64"),
             "unclosed goal",
         ),
         (
-            proof.replace("    owns self->fee;\n", ""),
+            proof.replace("    owns this->fee;\n", ""),
             "missing resource fact",
         ),
     ] {
@@ -5971,15 +5973,15 @@ fn concrete_member_template_instances_preserve_receiver_authority() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"verifying "instances.cpp";
-int64 Value_select__bool_true(const struct Value* self) {
- views self->fee;
- ensures result == self->fee;
- ensures self->fee == old(self->fee);
+int64 Value_select__bool_true(const struct Value* this) {
+ views this->fee;
+ ensures result == this->fee;
+ ensures this->fee == old(this->fee);
 } by { execute(); simp(); }
-int64 Value_select__bool_false(const struct Value* self) {
- views self->fee;
+int64 Value_select__bool_false(const struct Value* this) {
+ views this->fee;
  ensures result == 0i64;
- ensures self->fee == old(self->fee);
+ ensures this->fee == old(this->fee);
 } by { execute(); simp(); }
 int64 member(const struct Value& value) {
  owns value.fee;
@@ -6290,7 +6292,7 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
             format!("{record}_Read")
         );
         let sidecar = format!(
-            "verifying \"instances.cpp\"; int32 {record}_Read(const struct {record}* self) {{ views self->value; ensures result == self->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
+            "verifying \"instances.cpp\"; int32 {record}_Read(const struct {record}* this) {{ views this->value; ensures result == this->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
         );
         fs::remove_file(&project.exporter).unwrap();
         check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), &sidecar);
@@ -6330,14 +6332,14 @@ fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
         assert_eq!(import.export().records[0].fields[0].size_bytes, 8);
         let sidecar = r#"
         verifying "stored.cpp";
-        void Stored__long_long_constructor(struct Stored__long_long* self, int64 next) {
-            owns self->value; ensures self->value == next;
+        void Stored__long_long_constructor(struct Stored__long_long* this, int64 next) {
+            owns this->value; ensures this->value == next;
         } by { execute(); simp(); }
-        int64 Stored__long_long_Read(const struct Stored__long_long* self) {
-            views self->value; ensures result == self->value;
+        int64 Stored__long_long_Read(const struct Stored__long_long* this) {
+            views this->value; ensures result == this->value;
         } by { execute(); simp(); }
-        void Stored__long_long_destructor(struct Stored__long_long* self) {
-            owns self->value; ensures self->value == 0i64;
+        void Stored__long_long_destructor(struct Stored__long_long* this) {
+            owns this->value; ensures this->value == 0i64;
         } by { execute(); simp(); }
         int64 create(int64 next) {
             ensures result == next;
@@ -6368,8 +6370,8 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
     assert_eq!(records[0].size_bytes, records[1].size_bytes);
     let sidecar = r#"
         verifying "instances.cpp";
-        int32 Box__tag_SizeTag__bool_true_Read(const struct Box__tag_SizeTag__bool_true* self) {
-            views self->value; ensures result == self->value;
+        int32 Box__tag_SizeTag__bool_true_Read(const struct Box__tag_SizeTag__bool_true* this) {
+            views this->value; ensures result == this->value;
         } by { execute(); simp(); }
         int32 both(const struct Box__tag_SizeTag__bool_true& left,
                    const struct Box__tag_WeightTag__bool_true& right) {
@@ -6657,15 +6659,15 @@ fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
         ),
         (
             "Deep::Observe",
-            "int32 Deep_Observe(const struct Deep* self) { views self->base.base.size; ensures result == self->base.base.size; }",
+            "int32 Deep_Observe(const struct Deep* this) { views this->base.base.size; ensures result == this->base.base.size; }",
         ),
         (
             "Envelope::Read",
-            "int32 Envelope_Read(const struct Envelope* self) { views self->left.base.base.size; ensures result == self->left.base.base.size; }",
+            "int32 Envelope_Read(const struct Envelope* this) { views this->left.base.base.size; ensures result == this->left.base.base.size; }",
         ),
         (
             "Envelope::Copy",
-            "void Envelope_Copy(struct Envelope* self) { views self->left.base.base.size; owns self->right.base.size; ensures self->right.base.size == self->left.base.base.size; ensures self->left.base.base.size == old(self->left.base.base.size); }",
+            "void Envelope_Copy(struct Envelope* this) { views this->left.base.base.size; owns this->right.base.size; ensures this->right.base.size == this->left.base.base.size; ensures this->left.base.base.size == old(this->left.base.base.size); }",
         ),
     ] {
         let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
@@ -6684,15 +6686,15 @@ fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
         (
             "Envelope::Via",
             r#"
-        int32 Base_Read(const struct Base* self) { views self->size; ensures result == self->size; } by { execute(); simp(); }
-        int32 Envelope_Via(const struct Envelope* self) { views self->left.base.base.size; views self->right.base.size; ensures result == self->left.base.base.size; ensures self->right.base.size == old(self->right.base.size); } by { execute(); simp(); }
+        int32 Base_Read(const struct Base* this) { views this->size; ensures result == this->size; } by { execute(); simp(); }
+        int32 Envelope_Via(const struct Envelope* this) { views this->left.base.base.size; views this->right.base.size; ensures result == this->left.base.base.size; ensures this->right.base.size == old(this->right.base.size); } by { execute(); simp(); }
         "#,
         ),
         (
             "Envelope::Write",
             r#"
-        void Base_Set(struct Base* self, int32 next) { owns self->size; ensures self->size == next; } by { execute(); simp(); }
-        void Envelope_Write(struct Envelope* self, int32 next) { owns self->right.base.size; views self->left.base.base.size; ensures self->right.base.size == next; ensures self->left.base.base.size == old(self->left.base.base.size); } by { execute(); simp(); }
+        void Base_Set(struct Base* this, int32 next) { owns this->size; ensures this->size == next; } by { execute(); simp(); }
+        void Envelope_Write(struct Envelope* this, int32 next) { owns this->right.base.size; views this->left.base.base.size; ensures this->right.base.size == next; ensures this->left.base.base.size == old(this->left.base.base.size); } by { execute(); simp(); }
         "#,
         ),
         (
@@ -7050,10 +7052,10 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
         let import = load_import(&project.config()).unwrap();
         let proof_name = selected.replace("::", "_");
         let contract = format!(
-            "views self->fee; views self->size; requires self->fee == 7i64; requires self->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures self->fee == old(self->fee); ensures self->size == old(self->size);"
+            "views this->fee; views this->size; requires this->fee == 7i64; requires this->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures this->fee == old(this->fee); ensures this->size == old(this->size);"
         );
         let source = format!(
-            "verifying \"relay.cpp\"; int64 {instance}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }} int64 {proof_name}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}"
+            "verifying \"relay.cpp\"; int64 {instance}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }} int64 {proof_name}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}"
         );
         check_return_call_sidecar(&project, &import, &source);
         let hostile = source.replace(
@@ -7162,16 +7164,16 @@ fn check_return_cleanup_cases(selected_type: &str) {
         };
         let source = format!(
             r#"verifying "cleanup.cpp";
-void Restore_constructor(struct Restore* self, int32* slot) {{
- owns self->p; owns self->saved; owns slot[0..1];
- ensures self->p == slot; ensures self->saved == old(slot[0]); ensures slot[0] == 7;
- ensures separate(memory(*self), memory(self->p[0..1]));
+void Restore_constructor(struct Restore* this, int32* slot) {{
+ owns this->p; owns this->saved; owns slot[0..1];
+ ensures this->p == slot; ensures this->saved == old(slot[0]); ensures slot[0] == 7;
+ ensures separate(memory(*this), memory(this->p[0..1]));
 }} by {{ execute(); simp(); }}
-void Restore_destructor(struct Restore* self) {{
- requires separate(memory(*self), memory(self->p[0..1]));
- owns self->p; owns self->saved; owns self->p[0..1];
- ensures self->p == old(self->p); ensures self->saved == old(self->saved);
- ensures self->p[0] == old(self->saved);
+void Restore_destructor(struct Restore* this) {{
+ requires separate(memory(*this), memory(this->p[0..1]));
+ owns this->p; owns this->saved; owns this->p[0..1];
+ ensures this->p == old(this->p); ensures this->saved == old(this->saved);
+ ensures this->p[0] == old(this->saved);
 }} by {{ execute(); simp(); }}
 {helper_definition}
 {nested_helper}
@@ -7840,16 +7842,16 @@ fn static_helpers_called_from_value_methods_preserve_field_authority() {
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "static.cpp";
 int64 FeeMath_Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; } by { execute(); simp(); }
-int64 FeeValue_Evaluate(const struct FeeValue* self, int32 at_size) {
- owns self->fee;
- requires self->fee == 7i64;
+int64 FeeValue_Evaluate(const struct FeeValue* this, int32 at_size) {
+ owns this->fee;
+ requires this->fee == 7i64;
  requires at_size == 3;
  ensures result == 21i64;
- ensures self->fee == old(self->fee);
+ ensures this->fee == old(this->fee);
 } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
-    let hostile = source.replace(" owns self->fee;\n", "");
+    let hostile = source.replace(" owns this->fee;\n", "");
     fs::write(project.directory.join("bad.click"), &hostile).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
@@ -7947,19 +7949,19 @@ fn normalized_initializer_calls_capture_before_normal_cleanup() {
     let import = load_import(&project.config()).unwrap();
     // Reuse the existing independently checked constructor/destructor contracts.
     let source = r#"verifying "evaluation.cpp";
-void Restore_constructor(struct Restore* self, int32* value) {
- owns self->slot; owns self->saved; owns value[0..1];
- ensures self->slot == value;
- ensures self->saved == old(value[0]);
+void Restore_constructor(struct Restore* this, int32* value) {
+ owns this->slot; owns this->saved; owns value[0..1];
+ ensures this->slot == value;
+ ensures this->saved == old(value[0]);
  ensures value[0] == 7;
- ensures separate(memory(*self), memory(self->slot[0..1]));
+ ensures separate(memory(*this), memory(this->slot[0..1]));
 } by { execute(); simp(); }
-void Restore_destructor(struct Restore* self) {
- requires separate(memory(*self), memory(self->slot[0..1]));
- owns self->slot; owns self->saved; owns self->slot[0..1];
- ensures self->slot == old(self->slot);
- ensures self->saved == old(self->saved);
- ensures self->slot[0] == old(self->saved);
+void Restore_destructor(struct Restore* this) {
+ requires separate(memory(*this), memory(this->slot[0..1]));
+ owns this->slot; owns this->saved; owns this->slot[0..1];
+ ensures this->slot == old(this->slot);
+ ensures this->saved == old(this->saved);
+ ensures this->slot[0] == old(this->saved);
 } by { execute(); simp(); }
 int32 read(int32* slot) { owns slot[0..1]; ensures result == old(slot[0]); ensures slot[0] == old(slot[0]); } by { execute(); simp(); }
 int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
@@ -8533,8 +8535,8 @@ fn check_growing_lifetime_inventory(mode: &str) {
         // exercise complete proofs, rewritten certificates, and audit.
         if size <= 8 {
             let source = r#"verifying "guards.cpp";
-void Guard_constructor(struct Guard* self, int32 initial) { owns self->value; ensures self->value == initial; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+void Guard_constructor(struct Guard* this, int32 initial) { owns this->value; ensures this->value == initial; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 many(bool early, int32 value) { ensures result == value; } by { execute(); simp(); }
 "#;
             check_return_call_sidecar(&project, &import, source);
@@ -8650,8 +8652,8 @@ fn compiler_assumptions_require_proof_and_keep_normal_cleanup() {
         CppStatement::Assume { .. }
     ));
     let contracts = r#"verifying "assume.cpp";
-void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 "#;
     let source = format!(
         "{contracts}\nint32 guarded(int32 n) {{ requires n > 0; ensures result == n; }} by {{ execute(); simp(); }}"
@@ -8850,8 +8852,8 @@ fn check_field_sibling_rounding(direction: &str) {
             r#"verifying "fields.cpp";
 int64 Fee_Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
 int64 Fee_Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == {divisor}; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
-int64 {instance}(const struct Fee* self, int32 at_size) {{ owns self->fee; owns self->size; requires self->fee == {fee}i64; requires self->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
-int64 Fee_{selected}(const struct Fee* self, int32 at_size) {{ owns self->fee; owns self->size; requires self->fee == {fee}i64; requires self->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {instance}(const struct Fee* this, int32 at_size) {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 Fee_{selected}(const struct Fee* this, int32 at_size) {{ owns this->fee; owns this->size; requires this->fee == {fee}i64; requires this->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
 "#
         );
         check_return_call_sidecar(&project, &import, &proof);
@@ -10027,8 +10029,8 @@ fn assumed_library_assertions_require_proof_and_preserve_cleanup() {
     assert_eq!(contract.header, "gate.h");
     assert_eq!(span.file, "library.cpp");
     let source = r#"verifying "library.cpp";
-void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
@@ -10544,8 +10546,8 @@ fn consteval_library_metadata_preserves_normal_cleanup_and_modular_framing() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "library.cpp";
-void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
 int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; } by { execute(); simp(); }
 "#;
@@ -10862,8 +10864,8 @@ int guarded(int& value, int* untouched) noexcept { int n = value; int result = c
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "library.cpp";
-void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
-void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+void Guard_constructor(struct Guard* this, int32 n) { owns this->value; ensures this->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* this) { owns this->value; ensures this->value == 0; } by { execute(); simp(); }
 int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
 int32 guarded(int32& value, int32* untouched) {
     owns value; owns untouched[0..1]; requires value > 0; requires untouched[0] == 7;
@@ -11376,20 +11378,20 @@ fn class_record_proofs_reject_missing_authority_false_frames_and_readonly_writes
             "FeeRateState::ReadFee",
             include_str!("fixtures/cpp-verification/class-record/read_fee.click"),
             vec![
-                ("views self->fee;", ""),
-                ("result == old(self->fee)", "result != old(self->fee)"),
+                ("views this->fee;", ""),
+                ("result == old(this->fee)", "result != old(this->fee)"),
             ],
         ),
         (
             "FeeRateState::SetFee",
             include_str!("fixtures/cpp-verification/class-record/set_fee.click"),
             vec![
-                ("owns self->fee;", ""),
-                ("owns self->fee;", "views self->fee;"),
-                ("self->fee == next", "self->fee == old(self->fee)"),
+                ("owns this->fee;", ""),
+                ("owns this->fee;", "views this->fee;"),
+                ("this->fee == next", "this->fee == old(this->fee)"),
                 (
-                    "self->size == old(self->size)",
-                    "self->size != old(self->size)",
+                    "this->size == old(this->size)",
+                    "this->size != old(this->size)",
                 ),
             ],
         ),
@@ -11687,12 +11689,12 @@ fn nested_record_contracts_reject_missing_authority_false_frames_and_readonly_wr
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     for invalid in [
-        sidecar.replace("    owns self->stamp;\n", ""),
+        sidecar.replace("    owns this->stamp;\n", ""),
         sidecar.replace(
-            "ensures self->state.right.fee == old(self->state.right.fee);",
-            "ensures self->state.right.fee == old(self->state.left.fee);",
+            "ensures this->state.right.fee == old(this->state.right.fee);",
+            "ensures this->state.right.fee == old(this->state.left.fee);",
         ),
-        sidecar.replace("owns self->stamp;", "views self->stamp;"),
+        sidecar.replace("owns this->stamp;", "views this->stamp;"),
     ] {
         let path = project.directory.join("hostile.click");
         fs::write(&path, &invalid).unwrap();
@@ -11818,7 +11820,7 @@ fn nested_record_shared_layout_expansion_has_a_bounded_leaf_budget() {
     let project = Project::with_fixture("nested.cpp", "Envelope::Read", &source);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let sidecar = "verifying \"nested.cpp\"; int Envelope_Read(const struct Envelope* self) { ensures result == 0; } by { execute(); simp(); }";
+    let sidecar = "verifying \"nested.cpp\"; int Envelope_Read(const struct Envelope* this) { ensures result == 0; } by { execute(); simp(); }";
     let path = project.directory.join("budget.click");
     fs::write(&path, sidecar).unwrap();
     let parsed = read_click_project(&path, sidecar).unwrap();
@@ -11927,14 +11929,14 @@ fn nested_source_field_contracts_reject_missing_and_sibling_authority_false_fram
             "FeeEnvelope::ReadLeftFee",
             include_str!("fixtures/cpp-verification/nested-record/read_left_fee.click"),
             vec![
-                ("views self->state.left.fee;", ""),
+                ("views this->state.left.fee;", ""),
                 (
-                    "views self->state.left.fee;",
-                    "views self->state.right.fee;",
+                    "views this->state.left.fee;",
+                    "views this->state.right.fee;",
                 ),
                 (
-                    "result == self->state.left.fee",
-                    "result != self->state.left.fee",
+                    "result == this->state.left.fee",
+                    "result != this->state.left.fee",
                 ),
             ],
         ),
@@ -11943,13 +11945,13 @@ fn nested_source_field_contracts_reject_missing_and_sibling_authority_false_fram
             include_str!("fixtures/cpp-verification/nested-record/set_right_fee.click"),
             vec![
                 (
-                    "owns self->state.right.fee;",
-                    "views self->state.right.fee;",
+                    "owns this->state.right.fee;",
+                    "views this->state.right.fee;",
                 ),
-                ("owns self->state.right.fee;", "owns self->state.left.fee;"),
+                ("owns this->state.right.fee;", "owns this->state.left.fee;"),
                 (
-                    "self->state.left.fee == old(self->state.left.fee)",
-                    "self->state.left.fee == next",
+                    "this->state.left.fee == old(this->state.left.fee)",
+                    "this->state.left.fee == next",
                 ),
             ],
         ),
@@ -11957,10 +11959,10 @@ fn nested_source_field_contracts_reject_missing_and_sibling_authority_false_fram
             "FeeEnvelope::AddLeftSize",
             include_str!("fixtures/cpp-verification/nested-record/add_left_size.click"),
             vec![
-                ("requires self->state.left.size <= 10;", ""),
+                ("requires this->state.left.size <= 10;", ""),
                 (
-                    "self->state.right.size == old(self->state.right.size)",
-                    "self->state.right.size != old(self->state.right.size)",
+                    "this->state.right.size == old(this->state.right.size)",
+                    "this->state.right.size != old(this->state.right.size)",
                 ),
             ],
         ),
@@ -12236,17 +12238,17 @@ fn projected_call_contracts_require_leaf_authority_and_preserve_sibling_frames()
             include_str!("fixtures/cpp-verification/nested-record/projected_write.click"),
             vec![
                 (
-                    "owns self->state.right.fee;",
-                    "views self->state.right.fee;",
+                    "owns this->state.right.fee;",
+                    "views this->state.right.fee;",
                 ),
-                ("owns self->state.right.fee;", "owns self->state.left.size;"),
+                ("owns this->state.right.fee;", "owns this->state.left.size;"),
                 (
-                    "self->state.left.fee == old(self->state.left.fee)",
-                    "self->state.left.fee == next",
+                    "this->state.left.fee == old(this->state.left.fee)",
+                    "this->state.left.fee == next",
                 ),
                 (
-                    "self->state.right.fee == next",
-                    "self->state.right.fee != next",
+                    "this->state.right.fee == next",
+                    "this->state.right.fee != next",
                 ),
             ],
         ),
@@ -12254,14 +12256,14 @@ fn projected_call_contracts_require_leaf_authority_and_preserve_sibling_frames()
             "FeeEnvelope::BumpLeftByReference",
             include_str!("fixtures/cpp-verification/nested-record/reference_bump.click"),
             vec![
-                ("requires self->state.left.size <= 10;", ""),
+                ("requires this->state.left.size <= 10;", ""),
                 (
-                    "owns self->state.left.size;",
-                    "views self->state.left.size;",
+                    "owns this->state.left.size;",
+                    "views this->state.left.size;",
                 ),
                 (
-                    "self->state.right.size == old(self->state.right.size)",
-                    "self->state.right.size != old(self->state.right.size)",
+                    "this->state.right.size == old(this->state.right.size)",
+                    "this->state.right.size != old(this->state.right.size)",
                 ),
                 ("requires value <= 10;", ""),
             ],
@@ -12382,7 +12384,7 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     for (value, expected) in [(0, 1), (3, 2)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool Base_Empty(const struct Base* self) {{ views self->value; ensures result == (if self->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        bool Base_Empty(const struct Base* this) {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
         int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{ execute(); simp(); }}
         "#
         );
@@ -12673,7 +12675,7 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
     for (value, result) in [(0, 1), (3, 3)] {
         let sidecar = format!(
             r#"verifying "graph.cpp";
-        bool Base_Empty(const struct Base* self) {{ views self->value; ensures result == (if self->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        bool Base_Empty(const struct Base* this) {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
         bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
         int32 Read(const struct Base& state) {{ views state.value; ensures result == state.value; }} by {{ execute(); simp(); }}
         int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }} by {{ execute(); simp(); }}
@@ -12700,7 +12702,7 @@ fn locked_header_graph_mutators_verify_offline_and_require_leaf_authority() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "graph.cpp";
-    void Base_Set(struct Base* self, int32 next) { owns self->value; ensures self->value == next; } by { execute(); simp(); }
+    void Base_Set(struct Base* this, int32 next) { owns this->value; ensures this->value == next; } by { execute(); simp(); }
     void Store(struct Base& state, int32 next) { owns state.value; ensures state.value == next; } by { execute(); simp(); }
     void change(struct Box& state, int32 next) { owns state.left.base.value; views state.sibling; ensures state.left.base.value == next; ensures state.sibling == old(state.sibling); } by { execute(); simp(); }
     "#;
@@ -13430,16 +13432,16 @@ int relay(int& value) noexcept { Restore guard(&value); return static_cast<int>(
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let source = r#"verifying "relay.cpp";
-void Restore_constructor(struct Restore* self, int32* slot) {
- owns self->p; owns self->saved; owns slot[0..1];
- ensures self->p == slot; ensures self->saved == old(slot[0]); ensures slot[0] == 7;
- ensures separate(memory(*self), memory(self->p[0..1]));
+void Restore_constructor(struct Restore* this, int32* slot) {
+ owns this->p; owns this->saved; owns slot[0..1];
+ ensures this->p == slot; ensures this->saved == old(slot[0]); ensures slot[0] == 7;
+ ensures separate(memory(*this), memory(this->p[0..1]));
 } by { execute(); simp(); }
-void Restore_destructor(struct Restore* self) {
- requires separate(memory(*self), memory(self->p[0..1]));
- owns self->p; owns self->saved; owns self->p[0..1];
- ensures self->p == old(self->p); ensures self->saved == old(self->saved);
- ensures self->p[0] == old(self->saved);
+void Restore_destructor(struct Restore* this) {
+ requires separate(memory(*this), memory(this->p[0..1]));
+ owns this->p; owns this->saved; owns this->p[0..1];
+ ensures this->p == old(this->p); ensures this->saved == old(this->saved);
+ ensures this->p[0] == old(this->saved);
 } by { execute(); simp(); }
 int64 read(int32* slot) {
  views slot[0..1]; requires slot[0] == 7; ensures result == 4294967303i64;

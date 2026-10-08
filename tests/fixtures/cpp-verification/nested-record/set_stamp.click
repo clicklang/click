@@ -1,16 +1,16 @@
 verifying "nested_record.cpp";
 
-void FeeEnvelope_SetStamp(struct FeeEnvelope* self, int next) {
-    owns self->stamp;
-    views self->state.left.fee;
-    views self->state.left.size;
-    views self->state.right.fee;
-    views self->state.right.size;
-    views self->state.generation;
-    ensures self->stamp == next;
-    ensures self->state.left.fee == old(self->state.left.fee);
-    ensures self->state.left.size == old(self->state.left.size);
-    ensures self->state.right.fee == old(self->state.right.fee);
-    ensures self->state.right.size == old(self->state.right.size);
-    ensures self->state.generation == old(self->state.generation);
+void FeeEnvelope_SetStamp(struct FeeEnvelope* this, int next) {
+    owns this->stamp;
+    views this->state.left.fee;
+    views this->state.left.size;
+    views this->state.right.fee;
+    views this->state.right.size;
+    views this->state.generation;
+    ensures this->stamp == next;
+    ensures this->state.left.fee == old(this->state.left.fee);
+    ensures this->state.left.size == old(this->state.left.size);
+    ensures this->state.right.fee == old(this->state.right.fee);
+    ensures this->state.right.size == old(this->state.right.size);
+    ensures this->state.generation == old(this->state.generation);
 } by { execute(); simp(); }

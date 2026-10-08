@@ -1,11 +1,11 @@
 verifying "subtract_methods.cpp";
 
-void FeeFrac_operator_subtract_assign(struct FeeFrac* self, const struct FeeFrac& other) {
-    requires self == &other;
-    owns self->fee;
-    owns self->size;
-    ensures self->fee == 0i64;
-    ensures self->size == 0;
+void FeeFrac_operator_subtract_assign(struct FeeFrac* this, const struct FeeFrac& other) {
+    requires this == &other;
+    owns this->fee;
+    owns this->size;
+    ensures this->fee == 0i64;
+    ensures this->size == 0;
 } by {
     execute();
     simp();

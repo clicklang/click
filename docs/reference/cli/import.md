@@ -227,7 +227,8 @@ for a contract that says two references alias (`requires &a == &b;`) or that a
 stored pointer points at one. A struct reference names its fields as
 `state.field`. Writing `int32* value` for an `int&` is a signature mismatch
 that names both spellings; a C++ `int*` parameter stays a pointer. A member
-function's receiver is still the pointer `self`.
+function's receiver is the pointer `this`, as in C++: `this->fee`,
+`owns *this`.
 
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
@@ -445,7 +446,7 @@ that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
 `"function": "FeeFrac::operator+="` (or `operator-=`). The proof interface names
 them `FeeFrac_IsEmpty`, `FeeFrac_operator_add_assign`, and
 `FeeFrac_operator_subtract_assign`, with an explicit first
-parameter `self`. Const methods use `const struct FeeFrac* self`; const record
+parameter `this`. Const methods use `const struct FeeFrac* this`; const record
 reference parameters retain the same qualification. This restricts writes
 through that parameter without forbidding an alias through a mutable parameter.
 Unused member functions, constructors, templates, and nested declarations are

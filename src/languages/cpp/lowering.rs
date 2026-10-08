@@ -160,6 +160,11 @@ fn lower_function(
         .iter()
         .enumerate()
         .map(|(index, parameter)| {
+            if is_receiver(index, parameter) {
+                let mut receiver = parameter.clone();
+                receiver.name = RECEIVER_NAME.to_string();
+                return lower_parameter(&receiver);
+            }
             if !is_reference_parameter(index, parameter) {
                 return lower_parameter(parameter);
             }
@@ -169,6 +174,11 @@ fn lower_function(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let mut context = LoweringContext {
+        receiver: source
+            .parameters
+            .first()
+            .filter(|parameter| is_receiver(0, parameter))
+            .map(|parameter| parameter.declaration_id.as_str()),
         reference_parameters,
         source_unit: import.logical_source(),
         function_name: names.require(&source.declaration_id)?,
@@ -209,12 +219,21 @@ fn lower_function(
 
 pub(super) use crate::languages::c::syntax::reference_carrier_name;
 
+/// The name a sidecar gives a member function's receiver: the pointer
+/// `this`, as in C++.
+pub(super) const RECEIVER_NAME: &str = "this";
+
+/// Whether a parameter is a member function's receiver. The exporter
+/// delivers it first, as a reference named `self`.
+pub(super) fn is_receiver(index: usize, parameter: &CppPlace) -> bool {
+    index == 0 && parameter.name == "self"
+}
+
 /// Whether a parameter is a reference the sidecar names by its referent. A
-/// member function's receiver also arrives as a reference; it stays the
-/// pointer `self`.
+/// receiver also arrives as a reference; it is the pointer `this`.
 pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool {
     matches!(parameter.value_type, CppType::LvalueReference { .. })
-        && !(index == 0 && parameter.name == "self")
+        && !is_receiver(index, parameter)
 }
 
 fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, String> {
@@ -289,6 +308,8 @@ struct LoweringContext<'a> {
     /// Declarations of the reference parameters, whose carrying pointers are
     /// named by [`reference_carrier_name`].
     reference_parameters: std::collections::BTreeSet<&'a str>,
+    /// The declaration of the receiver, which is named [`RECEIVER_NAME`].
+    receiver: Option<&'a str>,
     source_unit: &'a str,
     function_name: &'a str,
     names: &'a ResolvedNames,
@@ -1142,7 +1163,9 @@ impl LoweringContext<'_> {
     /// The kernel variable a place reference reads: the place's own name,
     /// or the carrier of a reference parameter.
     fn variable_name(&self, place: &CppPlaceReference) -> String {
-        if self
+        if self.receiver == Some(place.declaration_id.as_str()) {
+            RECEIVER_NAME.to_string()
+        } else if self
             .reference_parameters
             .contains(place.declaration_id.as_str())
         {
