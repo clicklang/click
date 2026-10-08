@@ -30,6 +30,11 @@ Deeper C successors remain. The replacement-child model now covers any
 successor depth: `rb_erase_nonempty_successor_splice` proves balance, exact
 in-order removal, and parent consistency for the complete transplant.
 The C descent loop and its ownership transitions are the remaining chunk 11 work.
+The left-only `EraseSpine` resource and terminating `refold_erase_spine` tactic
+now verify and pass expansion audit. Applying them to the fixed C loop exposed
+[`do-while-resource-exits-lose-binders-and-frame`](../bugs/do-while-resource-exits-lose-binders-and-frame.md):
+its guard-false exit loses resource binders and the withheld caller frame.
+That kernel blocker must be fixed before continuing the C transplant proof.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
