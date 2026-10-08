@@ -454,14 +454,18 @@ fn erase_refuses_mutation(before: &str, after: &str) {
 }
 
 fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
+    erase_source_refuses_mutation(sidecar, "rb_erase_augmented.c", before, after);
+}
+
+fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after: &str) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree-erase").join(sidecar);
     let source = fs::read_to_string(&path).expect("the erase sidecar exists");
     let mut c_sources = read_verifying_sources(&path, &source).expect("the erase C bundle loads");
     let (_, c) = c_sources
         .iter_mut()
-        .find(|(name, _)| name.ends_with("rb_erase_augmented.c"))
-        .expect("the bundle contains the unlink implementation");
+        .find(|(name, _)| name.ends_with(file))
+        .expect("the bundle contains the selected erase input");
     assert_eq!(
         c.matches(before).count(),
         1,
@@ -483,6 +487,9 @@ fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
                 .message()
                 .contains("selected child does not satisfy the proposed parent model")
             || error.message().contains("contract certification")
+            || error
+                .message()
+                .contains("checked outcome `have` search did not retain a complete proof")
             || error
                 .message()
                 .contains("unclosed goal: result == old(node->rb_right)"),
@@ -586,6 +593,35 @@ fn rbtree_erase_child_successor_requires_parent_color_write() {
         "rbtree_erase_child_successor.click",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_leaf_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_black_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_leaf_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_black_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_leaf.click",
+        "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
+        "\t\t\trebalance = NULL;\n",
     );
 }
 

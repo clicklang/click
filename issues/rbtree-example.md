@@ -24,7 +24,9 @@ in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
 successors. Chunk 11 now verifies the unchanged C for a root with zero or
 one child, and for immediate red- and black-leaf successors at the root. The
 red-leaf successor has a no-deficit model theorem, with immediate and deep
-concrete checks. Non-root C unlink and deeper C successors remain. Immediate successors with a nonempty replacement child now
+concrete checks. Non-root black-leaf C unlink now verifies on either parent
+link; other non-root cases and deeper C successors remain. Immediate successors
+with a nonempty replacement child now
 have an exact splice theorem and a C sidecar. The deeper replacement-child
 case has a balance exit theorem and concrete check in `rbtree_erase_child.click`
 and `successor_child_checks.click`; its exact splice sequence and
@@ -78,6 +80,12 @@ local parent consistency, and the exact in-order sequence. The C contract
 returns that model, full root validity and parent consistency, and a null
 fixup parent. Neither the successor's nor its child's color is assumed by the
 contract. Mutation checks cover the required blackening write.
+
+`rbtree_erase_black_leaf.click` verifies non-root black-leaf deletion on both
+parent links. It returns the unchanged context model, an empty hole with a
+one-black-level deficit, parent consistency, and the non-null fixup parent.
+It holds and returns exclusive callback-table ownership. Mutation tests reject
+an unchanged left or right parent link and a null fixup return.
 
 The broader example gate exposed two post-return certification regressions in
 `arena_write` and `arena_region_length`. Exact-width readability of a
@@ -1012,8 +1020,10 @@ black-leaf theorem, whose whole spliced tree still needs fixup.
 **Chunk 11. `__rb_erase_augmented`: root zero/one-child cases written 2026-10-07.**
 The unchanged C now returns a red-black whole tree and the erased node's raw
 ownership for root deletion with at most one child. Its exact model and
-in-order contract drops that root's occurrence. Non-root zero/one-child cases
-and the remaining two-child successor branches remain. The immediate red-leaf
+in-order contract drops that root's occurrence. Non-root black-leaf deletion
+also verifies for both parent links, retaining the deficit context and returning
+the parent for fixup. Non-root red leaves, one-child cases, and the remaining
+two-child successor branches remain. The immediate red-leaf
 successor at the root is now covered, including its exact model, balance,
 parent consistency, and in-order contents. The immediate black-leaf case at
 the root returns the exact deficit context and non-null fixup parent for

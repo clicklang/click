@@ -54,8 +54,8 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
 resource arena_state(arena: struct arena*) {
     field live: int32;
     field capacity: int32;
-    owns &arena->data;
-    owns &arena->occupied;
+    owns arena->data;
+    owns arena->occupied;
     owns arena->capacity;
     owns arena->live_regions;
     contains arena_initialized_storage(
@@ -74,11 +74,11 @@ resource arena_state(arena: struct arena*) {
         memory(arena->data[0..arena->capacity])
     );
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->data[0..arena->capacity])
     );
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
 }
@@ -86,7 +86,7 @@ resource arena_state(arena: struct arena*) {
 resource arena_region(region: struct region*) {
     field start: int32;
     field end: int32;
-    owns object(region);
+    owns *region;
     owns region->arena->data[start..end];
     fact region->start == start;
     fact region->end == end;

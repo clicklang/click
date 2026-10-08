@@ -27,9 +27,17 @@ balance without erase-color fixup. The proof returns the exact remaining
 model, red-black validity, parent consistency, and the remaining in-order
 sequence, with a null fixup parent.
 
+`rbtree_erase_black_leaf.click` covers a black leaf below the root, on either
+parent link. It returns the detached node's fields, an empty hole, the unchanged
+context model with a one-black-level deficit, and the non-null parent to fix up.
+The right-child proof unfolds the sibling so execution can establish that the
+left link does not alias the erased node. This sidecar holds and returns exclusive
+ownership of the callback table; the root sidecars borrow it with explicit
+separation requirements.
+
 These are C increments of chunk 11 in
-[the rbtree issue](../../issues/rbtree-example.md). Non-root deletion and
-deeper successors remain. The C file retains all branches; each sidecar
+[the rbtree issue](../../issues/rbtree-example.md). Non-root red leaves,
+non-root one-child and two-child deletion, and deeper successors remain. The C file retains all branches; each sidecar
 states its current coverage explicitly.
 
 The callback contracts describe the non-augmented case: callbacks cannot
@@ -55,3 +63,6 @@ replacement and incorrectly returning null instead of the fixup parent.
 
 Replacement-child mutations reject a missing parent/color write and a write
 that leaves the child red.
+
+Non-root black-leaf mutations reject an unchanged left or right parent link
+and an incorrectly null fixup return.

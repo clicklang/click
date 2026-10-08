@@ -19,9 +19,9 @@ contract void EraseCopy(struct rb_node* node, struct rb_node* successor) {
 }
 
 resource erase_callbacks(augment: const struct rb_augment_callbacks*) {
-    owns &augment->propagate;
-    owns &augment->copy;
-    owns &augment->rotate;
+    owns augment->propagate;
+    owns augment->copy;
+    owns augment->rotate;
     fact ErasePropagate(augment->propagate);
     fact EraseCopy(augment->copy);
     fact AugmentRotate(augment->rotate);
@@ -44,13 +44,13 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     requires is_rb(tree.model) == 1;
     requires rb_parent_consistent(tree.model, 0) == 1;
     views erase_callbacks(augment);
-    requires separate(memory(object(augment)), memory(object(root)));
-    requires separate(memory(object(augment)), memory(&node->rb_left->__rb_parent_color));
-    requires separate(memory(object(augment)), memory(&node->rb_right->__rb_parent_color));
-    requires separate(memory(object(augment)), memory(&node->rb_right->rb_left));
+    requires separate(memory(*augment), memory(*root));
+    requires separate(memory(*augment), memory(node->rb_left->__rb_parent_color));
+    requires separate(memory(*augment), memory(node->rb_right->__rb_parent_color));
+    requires separate(memory(*augment), memory(node->rb_right->rb_left));
     produces node->__rb_parent_color;
-    produces &node->rb_left;
-    produces &node->rb_right;
+    produces node->rb_left;
+    produces node->rb_right;
     produces hole: rb_at(0);
     produces deficit: ctx_at(0, root);
     ensures hole.model == RbTree::Empty;
