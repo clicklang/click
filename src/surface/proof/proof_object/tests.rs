@@ -15,6 +15,53 @@ fn indexed_fact(index: u32) -> Proposition {
     )
 }
 
+#[test]
+fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
+    for size in [4, 64, 1024] {
+        let memory = CState::new().memory().clone();
+        let source: ExecutionFacts = (0..size)
+            .map(|index| {
+                ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+                    before: memory.clone(),
+                    after: memory.clone(),
+                    writes: vec![(
+                        crate::kernel::Pointer {
+                            block: crate::kernel::PointerBlock::ExternalArgument,
+                            offset: crate::kernel::PointerOffsetTerm::Constant(index as i64 * 4),
+                        },
+                        4,
+                    )],
+                })
+            })
+            .collect();
+        let mut repeated = source.clone();
+        repeated.extend_shared(&source.selected(&[0]));
+        let mut forks = Vec::new();
+        for arm in 0..4 {
+            let mut facts: ExecutionFacts =
+                [ExecutionPureFact::new(indexed_fact(10_000 + arm))].into();
+            crate::surface::proof::cursor_execution::append_execution_effect_facts(
+                &mut facts, &repeated,
+            );
+            assert_eq!(facts.len(), size as usize + 1);
+            for (original, retained) in source.iter().zip(facts.iter().skip(1)) {
+                assert_eq!(original, retained);
+                assert!(std::ptr::eq(original, retained));
+            }
+            forks.push(facts);
+        }
+        let objects = forks
+            .iter()
+            .flat_map(|facts| facts.iter().skip(1))
+            .map(|fact| fact as *const ExecutionPureFact as usize)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(objects.len(), size as usize);
+        drop(source);
+        drop(repeated);
+        assert_eq!(forks[0].len(), size as usize + 1);
+    }
+}
+
 fn fact_node_allocations() -> usize {
     persistent_node_allocations()
 }

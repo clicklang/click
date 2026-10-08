@@ -325,17 +325,21 @@ pub(super) fn append_execution_effect_facts(
     target: &mut ExecutionFacts,
     source: &(impl ExecutionFactSource + ?Sized),
 ) {
-    for fact in source.fact_iter() {
-        // Verified-call rule results are kernel-certified transition facts,
-        // just like memory-effect summaries. Keep them available to later
-        // explicit check without making the surface certificate restate
-        // opaque call identities or intermediate-memory equalities.
-        if (is_memory_effect_proposition(fact.proposition()) || fact.is_certified())
-            && !target.contains(fact)
-        {
-            target.push(fact.clone());
-        }
-    }
+    let source = source.persistent_facts();
+    let mut seen = BTreeSet::new();
+    let accepted = source
+        .iter()
+        .enumerate()
+        .filter_map(|(index, fact)| {
+            // Keep kernel-certified transition facts as well as memory summaries,
+            // without restating opaque call identities in surface certificates.
+            ((is_memory_effect_proposition(fact.proposition()) || fact.is_certified())
+                && !target.contains(fact)
+                && seen.insert(fact))
+            .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    target.extend_shared(&source.selected(&accepted));
 }
 
 pub(super) fn fact_transport_transition_facts(
@@ -353,7 +357,7 @@ pub(super) fn fact_transport_transition_facts(
         source_memories.contains(before)
     });
     let Some(start) = matching_effect else {
-        return facts.persistent_facts().into();
+        return facts.persistent_facts();
     };
     let end = facts
         .fact_iter()

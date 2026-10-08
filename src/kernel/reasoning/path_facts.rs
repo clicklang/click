@@ -1466,9 +1466,9 @@ pub(in crate::kernel) fn merge_facts(
     let suffix = right.persistent_facts();
     let mut facts = prefix.clone();
     let mut share_append = true;
-    let mut appended = std::collections::HashSet::new();
+    let mut appended = Vec::new();
     let mut saw_memory_effect = false;
-    for fact in &suffix {
+    for (source_index, fact) in suffix.iter().enumerate() {
         let before = facts.len();
         add_path_fact_with_visibility_after_effect(
             &mut facts,
@@ -1485,15 +1485,15 @@ pub(in crate::kernel) fn merge_facts(
                     .position(|existing| existing.proposition() == fact.proposition())
             })
             .flatten();
-        if let Some(index) = existing_index {
-            if &facts[index] != fact {
-                *facts.get_mut(index) = fact.clone();
-            }
+        if let Some(index) = existing_index
+            && &facts[index] != fact
+        {
             share_append &= index >= before;
+            *facts.get_mut(index) = fact.clone();
         }
         if facts.len() == before + 1 {
             share_append &= &facts[before] == fact;
-            appended.insert(fact as *const ExecutionPureFact as usize);
+            appended.push(source_index);
         }
         // A verified call emits its effect before its certified
         // postconditions. Entry-state condition facts cannot reject those
@@ -1513,8 +1513,7 @@ pub(in crate::kernel) fn merge_facts(
         // change the prefix or normalize an appended fact. Retain the source
         // objects for the accepted delta instead of validation scratch copies.
         let mut combined = prefix;
-        let accepted =
-            suffix.filtered(|fact| appended.contains(&(fact as *const ExecutionPureFact as usize)));
+        let accepted = suffix.selected(&appended);
         combined.extend_shared(&accepted);
         Some(combined)
     } else {

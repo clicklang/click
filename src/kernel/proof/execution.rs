@@ -10096,7 +10096,7 @@ impl ExecutionProofCore {
         self.evidence_state = Some(joined_state);
         self.evidence_source = source;
         self.evidence_completed = false;
-        Ok(interface_effect_facts.into())
+        Ok(interface_effect_facts)
     }
 
     /// Records a two-arm `branch ensuring` only after the kernel has checked
@@ -10162,7 +10162,7 @@ impl ExecutionProofCore {
         self.evidence_state = Some(joined_state);
         self.evidence_source = source;
         self.evidence_completed = false;
-        Ok(interface_effect_facts.into())
+        Ok(interface_effect_facts)
     }
 
     /// The checked whole-function execution a completed proof yields: one
@@ -10547,7 +10547,7 @@ impl ExecutionProofCore {
                 completion_origin: Some(candidate.outcome().clone()),
                 assumptions: assumptions.clone(),
                 post_assumptions: retain_post_context.then_some(post_assumptions),
-                facts: facts.into(),
+                facts,
                 effect_facts: candidate.effect_facts().clone(),
                 obligations,
                 theorem,

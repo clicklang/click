@@ -354,8 +354,8 @@ charged to visible semantic output rather than hidden ambient state:
   objects, and checked completion shares its context's ordered projection.
   The same whole-verification regression bounds retained fact objects and
   vector chunks at candidate publication and checked completion in both proof
-  forms. At 64 returns, 2,405 logical fact occurrences retain 325 distinct fact
-  objects and 329 vector chunks. The kernel storage regression and context
+  forms. At 64 returns, 2,405 logical fact occurrences retain 197 distinct fact
+  objects and 328 vector chunks. The kernel storage regression and context
   fork tests check order, arm isolation, metadata edits, and owner lifetime.
   Terminal joins still assemble distinct flat outcome containers, and outcome
   processing still traverses each logical fact stream; the bug report records

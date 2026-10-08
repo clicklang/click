@@ -1302,7 +1302,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(value.clone()),
-                facts: facts.into(),
+                facts,
                 obligations: Vec::new(),
             }]
         }

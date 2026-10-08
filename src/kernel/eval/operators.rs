@@ -3096,7 +3096,7 @@ fn owed_guard_paths(
                 .expect("an undecided guard's negation should be consistent");
                 refused.push(CExpressionPath {
                     outcome: CExpressionOutcome::UndefinedBehavior(refusal.clone()),
-                    facts: refused_facts.into(),
+                    facts: refused_facts,
                     obligations: obligations.to_vec(),
                 });
             }

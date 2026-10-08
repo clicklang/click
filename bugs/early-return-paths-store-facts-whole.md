@@ -202,7 +202,10 @@ Execution paths, candidates, effect evidence, and checked completion now use
 an ordered persistent fact stream. Forks share its root, chunks, and immutable
 fact objects; a producer metadata edit copies only the selected fact. Exact
 fragment merges retain accepted source objects after all existing validation,
-including when redundant facts are suppressed. Checked C branches and logical
+including when redundant facts are suppressed. Selection keeps accepted
+occurrences, so repeated references to the same shared object still deduplicate
+correctly. Return publication also retains shared effect fragments instead of
+copying every effect fact into each descendant. Checked C branches and logical
 cases retain their guard prefix before returned descendants are published.
 Terminal joins therefore retain those facts rather than recreate each prefix.
 
@@ -214,13 +217,13 @@ by proposition while retaining an existing fact's full certification and
 transport metadata. Candidates remain untrusted and the trace and contract
 checks are unchanged.
 
-Measured on base `18651a8ea`, with the original C and both proofs unchanged:
+Measured on base `3415dd381`, with the original C and both proofs unchanged:
 
 | metric, identical for grouped and explicit proofs | 4 | 8 | 16 | 32 | 64 |
 | --- | --- | --- | --- | --- | --- |
 | logical fact occurrences | 35 | 81 | 221 | 693 | 2405 |
-| distinct retained fact objects | 25 | 45 | 85 | 165 | 325 |
-| distinct retained vector chunks | 27 | 47 | 87 | 167 | 329 |
+| distinct retained fact objects | 17 | 29 | 53 | 101 | 197 |
+| distinct retained vector chunks | 27 | 47 | 87 | 167 | 328 |
 
 These counts cover both candidate publication and checked completion, including
 private effect evidence and retained context-prefix storage. The existing
@@ -229,12 +232,18 @@ as work and context construction in both proof forms. Its work curves remain
 unchanged, and it still completes in under six seconds locally.
 
 A separate kernel regression executes 8, 16, 32, and 64 early returns. It checks
-prefix storage identity, ordered false guards on the final path, and opposite
+shared prefix objects, ordered false guards on the final path, and opposite
 arm isolation. The original flat representation retains 44, 152, 560, and
 2,144 distinct fact objects; the persistent representation retains 16, 32, 64,
 and 128. Context and fork regressions additionally vary unrelated prefix facts
 through 1,024, check owner lifetime, preserve certification metadata, and
-check that editing one fact leaves the other shared objects unchanged.
+check that editing one fact leaves the other shared objects unchanged. The
+return-publication regression varies shared effect-prefix size through 1,024
+across four returned descendants and checks repeated-entry suppression.
+
+Retained guards follow source order rather than the former terminal joins'
+inner-to-outer append order. One negative fixture updates its expected case
+list to that order; its C, proof, and expected rejection are unchanged.
 
 Remaining: terminal joins rebuild distinct outcome containers, and outcome
 processing still reads each logical path's facts. Shared storage does not

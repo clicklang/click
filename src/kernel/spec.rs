@@ -3685,7 +3685,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                             fields,
                         },
                     },
-                    facts: facts.into(),
+                    facts,
                     obligations,
                 })
                 .collect::<Vec<_>>();
@@ -3754,7 +3754,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                                 arguments,
                             },
                         },
-                        facts: facts.into(),
+                        facts,
                         obligations,
                     }
                 })
@@ -4287,7 +4287,7 @@ fn evaluate_spec_sequence_at_state_in(
                                 element_type,
                                 node: std::sync::Arc::new(SequenceTermNode::Literal(values.into())),
                             },
-                            facts: facts.into(),
+                            facts,
                             obligations,
                         })
                 })
@@ -5419,7 +5419,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
                 name.to_string(),
                 arguments,
             )),
-            facts: facts.into(),
+            facts,
             obligations,
         })
         .collect())
@@ -6286,7 +6286,7 @@ fn evaluate_resource_count_paths(
                 if creation.checked_empty_population(&description) {
                     return Ok(SpecExpressionPath {
                         value: CValue::Int32(Bitvector32Term::Constant(0)),
-                        facts: facts.into(),
+                        facts,
                         obligations,
                     });
                 }
@@ -6422,7 +6422,7 @@ fn evaluate_resource_count_paths(
                     };
                     return Ok(SpecExpressionPath {
                         value: CValue::Int32(count),
-                        facts: facts.into(),
+                        facts,
                         obligations,
                     });
                 }
@@ -6448,7 +6448,7 @@ fn evaluate_resource_count_paths(
                 }
                 return Ok(SpecExpressionPath {
                     value: CValue::Int32(count),
-                    facts: facts.into(),
+                    facts,
                     obligations,
                 });
             }
@@ -6501,7 +6501,7 @@ fn evaluate_resource_count_paths(
             }
             Ok(SpecExpressionPath {
                 value: CValue::Int32(total.unwrap_or(Bitvector32Term::Constant(0))),
-                facts: facts.into(),
+                facts,
                 obligations,
             })
         })
@@ -7266,7 +7266,7 @@ fn evaluate_spec_pure_function_application_paths_in(
         };
         results.push(SpecExpressionPath {
             value,
-            facts: facts.into(),
+            facts,
             obligations,
         });
     }

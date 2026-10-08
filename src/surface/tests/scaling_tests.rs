@@ -6204,8 +6204,8 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
 
 /// Return preparation and contract preparation share checked contexts in both
 /// proof forms. Bound whole-transaction construction, not just one tactic.
-/// Both forms must also keep whole-verification work near linear. Flat stored
-/// path facts remain a separate representation cost tracked in the bug report.
+/// Both forms must also keep whole-verification work and retained fact storage
+/// near linear, at candidate publication and at checked completion.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
     let mut stored = Vec::new();
@@ -6239,7 +6239,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
                 "missing completed storage measurement: {storage:?}"
             );
             assert!(
-                sample.fact_values <= 12 * returns + 32,
+                sample.fact_values <= 4 * returns + 16,
                 "shared path facts, explicit={explicit}: {storage:?}"
             );
         }
@@ -6272,17 +6272,17 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
     }
     eprintln!("stored execution facts, explicit={explicit}: {stored:?}");
     for pair in stored.windows(2).skip(2) {
-        for kind in 0..2 {
+        for (before, after) in pair[0].iter().zip(&pair[1]) {
             assert!(
-                pair[1][kind].fact_values * 100 <= pair[0][kind].fact_values * 240,
+                after.fact_values * 100 <= before.fact_values * 240,
                 "stored fact objects must scale near linearly: {stored:?}"
             );
             assert!(
-                pair[1][kind].vector_chunks * 100 <= pair[0][kind].vector_chunks * 260,
+                after.vector_chunks * 100 <= before.vector_chunks * 260,
                 "stored vector chunks must scale near linearly: {stored:?}"
             );
             assert!(
-                pair[1][kind].logical_facts > pair[1][kind].fact_values,
+                after.logical_facts > after.fact_values,
                 "the fixture must share prefixes between paths: {stored:?}"
             );
         }

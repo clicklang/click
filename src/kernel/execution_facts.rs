@@ -181,6 +181,50 @@ impl ExecutionFacts {
         }
         filtered
     }
+    /// Retain selected occurrences, not selected object addresses: the same
+    /// shared fact can occur more than once in a producer stream.
+    pub(crate) fn selected(&self, indices: &[usize]) -> Self {
+        debug_assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));
+        debug_assert!(indices.last().is_none_or(|index| *index < self.len()));
+        if indices.len() == self.len() {
+            return self.clone();
+        }
+        let mut result = Self::new();
+        let data = Arc::make_mut(&mut result.data);
+        data.propositions_invalid = true;
+        data.len = indices.len();
+        let mut start = 0;
+        let mut selected_start = 0;
+        for block in &self.data.blocks {
+            let end = start + block.iter().count();
+            let selected_end = indices.partition_point(|index| *index < end);
+            let selected = &indices[selected_start..selected_end];
+            if !selected.is_empty() {
+                if selected.len() == end - start {
+                    data.blocks.push_back(block.clone());
+                } else {
+                    let entries: Box<dyn Iterator<Item = &Arc<ExecutionPureFact>> + '_> =
+                        match block {
+                            FactBlock::Facts(facts) => Box::new(facts.iter()),
+                            FactBlock::Context { facts, excluded } => {
+                                Box::new(facts.iter().map(|(_, fact)| fact).filter(|fact| {
+                                    !excluded.contains_proposition(fact.proposition())
+                                }))
+                            }
+                        };
+                    let facts = entries
+                        .enumerate()
+                        .filter(|(index, _)| selected.binary_search(&(start + index)).is_ok())
+                        .map(|(_, fact)| fact.clone())
+                        .collect();
+                    data.blocks.push_back(FactBlock::Facts(Arc::new(facts)));
+                }
+            }
+            selected_start = selected_end;
+            start = end;
+        }
+        result
+    }
     pub(crate) fn retain(&mut self, predicate: impl Fn(&ExecutionPureFact) -> bool) {
         *self = self.filtered(predicate);
     }
@@ -234,8 +278,7 @@ impl ExecutionFacts {
         let FactBlock::Facts(facts) = &mut data.blocks[0] else {
             unreachable!()
         };
-        // Metadata updates retain the proposition. Replacing a proposition
-        // goes through the explicit transport producer, not this index.
+        // Copy only the selected object, including its producer metadata.
         Arc::make_mut(&mut Arc::make_mut(facts)[index])
     }
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
@@ -396,8 +439,20 @@ impl IntoIterator for ExecutionFacts {
     }
 }
 
-/// Read evidence without requiring contiguous storage.
-pub trait ExecutionFactSource {
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::ExecutionFacts {}
+    impl Sealed for [super::ExecutionPureFact] {}
+    impl Sealed for Vec<super::ExecutionPureFact> {}
+    impl<const N: usize> Sealed for [super::ExecutionPureFact; N] {}
+    impl<T: super::ExecutionFactSource + ?Sized> Sealed for &T {}
+    impl<T: super::ExecutionFactSource + ?Sized> Sealed for std::sync::Arc<T> {}
+}
+
+/// Read evidence without requiring contiguous storage. Only the kernel's
+/// storage adapters implement this trait, keeping borrowed traversal and
+/// persistent snapshots consistent.
+pub trait ExecutionFactSource: sealed::Sealed {
     fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator;
     fn persistent_facts(&self) -> ExecutionFacts {
         self.fact_iter().cloned().collect()
@@ -562,6 +617,12 @@ impl ExecutionFacts {
     }
 }
 
+impl<const N: usize> From<[ExecutionPureFact; N]> for ExecutionFacts {
+    fn from(facts: [ExecutionPureFact; N]) -> Self {
+        facts.into_iter().collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,6 +636,48 @@ mod tests {
             ),
             value,
         )
+    }
+
+    #[test]
+    fn fragment_merge_suppresses_repeated_shared_occurrences() {
+        let source: ExecutionFacts = [ExecutionPureFact::new(guard(1, true))].into();
+        let mut repeated = source.clone();
+        repeated.extend_shared(&source);
+        assert!(std::ptr::eq(&repeated[0], &repeated[1]));
+        let merged = crate::kernel::reasoning::path_facts::merge_facts(
+            &ExecutionFacts::new(),
+            &repeated,
+            &PureFactContext::new(),
+        )
+        .expect("a repeated guard is redundant, not contradictory");
+        assert_eq!(merged.len(), 1);
+        assert!(std::ptr::eq(&merged[0], &source[0]));
+        for index in [0, 1] {
+            let selected = repeated.selected(&[index]);
+            assert_eq!(selected.len(), 1);
+            assert!(std::ptr::eq(&selected[0], &source[0]));
+        }
+        let certified: ExecutionFacts = [ExecutionPureFact::certified(guard(1, true))].into();
+        let mut repeated = certified.clone();
+        repeated.extend_shared(&certified);
+        let merged = crate::kernel::reasoning::path_facts::merge_facts(
+            &ExecutionFacts::new(),
+            &repeated,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert_eq!(merged.len(), 1);
+        assert!(merged[0].is_certified());
+        assert!(std::ptr::eq(&merged[0], &certified[0]));
+        let opposite: ExecutionFacts = [ExecutionPureFact::new(guard(1, false))].into();
+        assert!(
+            crate::kernel::reasoning::path_facts::merge_facts(
+                &source,
+                &opposite,
+                &PureFactContext::new(),
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -636,6 +739,11 @@ mod tests {
             drop(root_facts);
             drop(root);
             assert_eq!(forks[0].len(), size as usize + 1);
+            let selected = forks[0].selected(&[1, size as usize]);
+            assert_eq!(selected.len(), 2);
+            assert!(std::ptr::eq(&selected[0], &forks[0][1]));
+            assert!(std::ptr::eq(&selected[1], &forks[0][size as usize]));
+            assert!(!selected.contains_proposition(&guard(0, false)));
             // Mixed-direction traversal must neither repeat nor omit a fact.
             let mut iter = forks[0].iter();
             assert_eq!(iter.next().unwrap().proposition(), &guard(0, false));
@@ -698,11 +806,5 @@ mod tests {
             vec![&guard(2, false), &proposition]
         );
         assert_eq!(facts.filtered(|fact| fact.is_public()), facts);
-    }
-}
-
-impl<const N: usize> From<[ExecutionPureFact; N]> for ExecutionFacts {
-    fn from(facts: [ExecutionPureFact; N]) -> Self {
-        facts.into_iter().collect()
     }
 }
