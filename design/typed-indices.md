@@ -90,14 +90,30 @@ change meaning.
 
 ### Stage 1. Typed bounds, with the 32-bit cap kept
 
-A bound or index of any integer type is accepted and converted by its kind.
-The requirement that the count fits 31 bits stays, checked where it is
-today. Casts disappear from C and Rust contracts alike: `p[0..n]` with a
-`size_t`, `bytes[index + 1]`. Contracts still state
+A bound or index of any integer type is accepted and converted to the
+32-bit index a place takes. The requirement that it fits stays. Casts
+disappear from C and Rust contracts alike. Contracts still state
 `requires n <= 2147483647`.
 
-This is contained: no site has to change at once, and a range that is
-written as it is today behaves as it does today.
+Built 2026-10-08, by a smaller route than the `kind` field above. A 64-bit
+bound or index is converted where it meets the place, as the cast
+`(int32)n` converts it, so every term downstream is the one an explicit cast
+gives and no reader of a range changes:
+
+- a range bound of any form, where the surface lowers a segment
+  (`lower_resource_segment_with_values`) and where the kernel evaluates one
+  (`evaluate_loop_effect_segment` and its sibling in `src/kernel/loops.rs`);
+- an indexed read, for a 64-bit parameter written alone, in the parser
+  (`wide_index_params`). Any other 64-bit index expression still takes the
+  cast, because the parser does not type expressions.
+
+The kernel's cast already owes an "int32 narrowing upper bound" obligation,
+so a contract whose requirements do not show the bound fits is refused at
+setup; the refusal now says which requirement to state.
+
+Left for this stage: a 64-bit index expression that is not a lone parameter,
+which needs the conversion made where a specification's indexed read is
+evaluated. The `kind` field is what stage 2 needs.
 
 ### Stage 2. The extent is `isize::MAX`
 
