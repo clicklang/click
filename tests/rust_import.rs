@@ -3768,6 +3768,7 @@ fn split_gate_fixture_tools_recheck_certificates() {
     let proof =
         include_str!("../examples/rust-split-at/split.click").replace("split.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -3791,6 +3792,7 @@ fn arrays_gate_fixture_tools_recheck_certificates() {
     let proof =
         include_str!("../examples/rust-arrays/arrays.click").replace("arrays.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -3815,6 +3817,7 @@ fn usize_gate_fixture_tools_recheck_certificates() {
     let proof = include_str!("../examples/rust-usize/arithmetic.click")
         .replace("arithmetic.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -3837,6 +3840,7 @@ fn loops_gate_fixture_tools_recheck_certificates() {
     );
     let proof = include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
