@@ -2138,14 +2138,17 @@ private:
     }
     const auto *source = expression->IgnoreParenImpCasts();
     std::optional<Json> address;
-    {
+    if (const auto *dereference = llvm::dyn_cast<clang::UnaryOperator>(source);
+        dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
+      address = lower_expression(dereference->getSubExpr(), function);
+    } else {
       const auto *declaration = llvm::dyn_cast<clang::DeclRefExpr>(source);
       const auto *parameter = declaration == nullptr ? nullptr :
           llvm::dyn_cast<clang::ParmVarDecl>(declaration->getDecl());
       const auto *parameter_reference = parameter == nullptr ? nullptr :
           parameter->getType()->getAs<clang::LValueReferenceType>();
       if (parameter_reference == nullptr || parameter->getDeclContext() != function) {
-        fail(expression->getExprLoc(), "C++ reference results currently bind existing reference parameters; raw-pointer binding needs live-object validation");
+        fail(expression->getExprLoc(), "C++ reference results currently bind existing reference parameters or pointer dereferences");
         return std::nullopt;
       }
       auto place = lower_place_reference(source, function);

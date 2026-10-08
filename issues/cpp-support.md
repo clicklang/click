@@ -185,10 +185,12 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    negative checks for false alias/value claims, missing authority, signature
    and const mismatches, and rehashed artifact mutations.
 
-   New bindings through raw pointers are deliberately refused until shared
-   live-object validation distinguishes real referents from null, expired or
-   one-past addresses without an implicit pointee load. This check is required
-   for `span.back()`. Local reference bindings and shared aggregate results,
+   New integer reference results can bind through pointer dereferences using
+   shared checked object addresses. Formation requires live storage for the
+   complete referent and excludes null, expired and one-past addresses without
+   reading or initializing it. This reuses the shared bounds/lifetime predicate;
+   reading still requires separate authority and defined contents. Local
+   reference bindings and shared aggregate results,
    construction and copies remain implementation work; `SpanPopBack` has not
    been verified.
 3. **Initial bounds profile (accepted).**

@@ -1297,6 +1297,10 @@ pub enum CExpression {
         classification: CFloatClassification,
     },
     AddressOf(Box<CExpression>),
+    /// Form an address only after checking that the complete lvalue denotes
+    /// live storage. Unlike C's &* cancellation, this excludes one-past and
+    /// expired addresses. It performs no load and grants no access authority.
+    CheckedObjectAddress(Box<CExpression>),
     PointerOffsetBytes {
         pointer: Box<CExpression>,
         bytes: u32,

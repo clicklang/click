@@ -2952,9 +2952,6 @@ impl CppExpression {
             } => {
                 span.validate(logical_source)?;
                 address.validate(places, records, logical_source)?;
-                if !matches!(address.as_ref(), Self::AddressOf { .. }) {
-                    return Err("C++ reference binding currently requires an existing reference parameter; raw-pointer binding needs live-object validation".into());
-                }
                 let CppType::LvalueReference { pointee } = value_type else {
                     return Err("C++ reference binding requires a reference result type".into());
                 };

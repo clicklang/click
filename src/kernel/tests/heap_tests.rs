@@ -72,6 +72,35 @@ fn successful_heap_allocation_state() -> CState {
 }
 
 #[test]
+fn checked_object_address_rejects_freed_backing_without_reading_it() {
+    let success = successful_heap_allocation_state();
+    let paths = execute_c_statement_paths(
+        &success,
+        &c_heap_free(c_variable("p")),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let CStatementOutcome::Normal(freed) = &paths[0].outcome else {
+        panic!("free should complete normally");
+    };
+    let theorem = prove_c_expression_evaluation(
+        *freed.clone(),
+        c_checked_object_address(c_typed_load(c_variable("p"), CType::Int32)),
+    )
+    .unwrap();
+    assert!(matches!(
+        theorem.proposition(),
+        Proposition::CExpressionEvaluates {
+            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     let paths = heap_allocation_paths();
     assert_eq!(paths.len(), 1);

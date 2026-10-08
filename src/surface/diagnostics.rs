@@ -4318,6 +4318,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             describe_c_expression(else_branch)
         ),
         CExpression::AddressOf(target) => format!("&{}", describe_c_expression(target)),
+        CExpression::CheckedObjectAddress(target) => {
+            format!("address of live object `{}`", describe_c_expression(target))
+        }
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             format!("byte_offset({}, {bytes})", describe_c_expression(pointer))
         }

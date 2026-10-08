@@ -239,12 +239,13 @@ for that storage. Returning an alias grants no new ownership or write authority.
 Reference and pointer results remain distinct during signature checking, and
 const qualification is preserved through modular calls and result temporaries.
 
-The initial result profile returns existing integer reference parameters,
-including direct call forwarding. Binding a new reference through a raw pointer,
-returning a local object, and reference-valued locals remain unsupported.
-Raw-pointer binding needs a live-object check: ordinary pointer formation also
-permits one-past addresses, which cannot denote reference referents. No implicit
-pointee load stands in for that missing check.
+The result profile returns existing integer reference parameters, including
+direct call forwarding, and binds references through supported integer pointer
+dereferences. New bindings use the shared kernel's checked object address:
+the complete referent must occupy live storage, excluding null, expired and
+one-past addresses. This check neither reads nor initializes the referent and
+grants no access authority. Returning a local object and reference-valued locals
+remain unsupported.
 
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution

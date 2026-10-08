@@ -1399,6 +1399,59 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         CExpression::AddressOf(target) => {
             address_of_lvalue_paths(state, target, assumptions, budget)?
         }
+        CExpression::CheckedObjectAddress(target) => {
+            let width = c_expression_lvalue_type(state, target)
+                .map(|ty| ty.byte_width())
+                .filter(|width| *width > 0);
+            let mut paths = address_of_lvalue_paths(state, target, assumptions, budget)?;
+            for path in &mut paths {
+                if let CExpressionOutcome::Value(CValue::Pointer(pointer)) = &path.outcome {
+                    let Some(width) = width else {
+                        path.outcome =
+                            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch);
+                        continue;
+                    };
+                    let outside_known_block = match (
+                        pointer.pointer().offset.as_const(),
+                        state
+                            .memory()
+                            .block_size(&pointer.pointer().block)
+                            .and_then(|size| size.as_const()),
+                    ) {
+                        (Some(offset), Some(size)) => {
+                            offset < 0
+                                || offset
+                                    .checked_add(i64::from(width))
+                                    .is_none_or(|end| end > i64::from(size))
+                        }
+                        _ => false,
+                    };
+                    if pointer.pointer().is_in_null_block()
+                        || outside_known_block
+                        || state.memory().is_ended_local_address(pointer.pointer())
+                        || state
+                            .memory()
+                            .is_deallocated_heap_address(pointer.pointer(), assumptions)
+                    {
+                        path.outcome = CExpressionOutcome::UndefinedBehavior(
+                            CUndefinedBehavior::InvalidMemory,
+                        );
+                        continue;
+                    }
+                    let _ = add_proof_obligation_with_context(
+                        &mut path.obligations,
+                        assumptions,
+                        Proposition::CMemoryLoadable {
+                            memory: state.memory().clone(),
+                            base: pointer.pointer().clone(),
+                            bytes: Bitvector32Term::Constant(width),
+                        },
+                        Some("reference binding requires live storage for the complete referent"),
+                    );
+                }
+            }
+            paths
+        }
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             evaluate_c_expression_paths(state, pointer, assumptions, budget)?
                 .into_iter()
@@ -2447,7 +2500,9 @@ pub(in crate::kernel) fn c_expression_pointee_type(
             None => None,
         },
         CExpression::Cast { target_type, .. } => target_type.pointee_type(),
-        CExpression::AddressOf(target) => c_expression_lvalue_type(state, target),
+        CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+            c_expression_lvalue_type(state, target)
+        }
         CExpression::PointerOffsetBytes { pointer, .. } => {
             c_expression_pointee_type(state, pointer)
         }

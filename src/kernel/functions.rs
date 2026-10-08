@@ -13712,6 +13712,7 @@ fn c_expression_supports_stateful_memory_refinement(expression: &CExpression) ->
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -13972,6 +13973,7 @@ pub(super) fn c_expression_is_state_independent(expression: &CExpression) -> boo
             c_expression_is_state_independent(left) && c_expression_is_state_independent(right)
         }
         CExpression::AddressOf(_)
+        | CExpression::CheckedObjectAddress(_)
         | CExpression::Load(_)
         | CExpression::TypedLoad { .. }
         | CExpression::Index(_, _) => false,
@@ -14299,6 +14301,7 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -14346,7 +14349,9 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
 
 fn c_expression_takes_address_of_variable(expression: &CExpression, name: &str) -> bool {
     match expression {
-        CExpression::AddressOf(expression) => c_expression_mentions_variable(expression, name),
+        CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
+            c_expression_mentions_variable(expression, name)
+        }
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => false,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -14489,12 +14494,14 @@ fn c_expression_uses_object_address(expression: &CExpression, name: &str) -> boo
             ..
         } => c_expression_uses_object_address(pointer, name),
         CExpression::Load(_) | CExpression::TypedLoad { .. } => false,
-        CExpression::AddressOf(expression) => match expression.as_ref() {
-            CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
-                c_expression_uses_object_address(pointer, name)
+        CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
+            match expression.as_ref() {
+                CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+                    c_expression_uses_object_address(pointer, name)
+                }
+                expression => c_expression_uses_object_address(expression, name),
             }
-            expression => c_expression_uses_object_address(expression, name),
-        },
+        }
 
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -16773,7 +16780,9 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
                 values(then_branch, reads);
                 values(else_branch, reads);
             }
-            CExpression::AddressOf(target) => lvalue_address(target, reads),
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+                lvalue_address(target, reads)
+            }
             CExpression::Load(pointer) => {
                 reads.push(expression.clone());
                 values(pointer, reads);
@@ -16923,6 +16932,7 @@ fn c_expression_mentions_pointer_parameter(
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -30507,7 +30517,7 @@ fn resolve_retained_aggregate_fields(
     }
     match expression {
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
-        CExpression::AddressOf(inner) => {
+        CExpression::AddressOf(inner) | CExpression::CheckedObjectAddress(inner) => {
             resolve_retained_aggregate_fields(entry, state, inner, false, assumptions, budget)?
         }
         CExpression::Cast {
