@@ -1010,11 +1010,16 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
 pub(super) enum OwnedCores {
     /// Views attached to the exact owned occurrence, retired when the owner
     /// is unfolded, consumed or freed, and limited to memory: a child
-    /// resource stays folded.
+    /// resource stays folded. A loop head derives them again for the owners
+    /// it declares (`with_owner_read_authority_rederived` in the kernel).
     AttachedToOwner,
-    /// Free-standing views, for a proof that contains a loop. A loop head
-    /// gives the owner a new occurrence, which would retire attached views
-    /// before the body could read through them.
+    /// As `AttachedToOwner` for a resource without fields. A resource with
+    /// fields gets free-standing views of its selected arm, for a proof that
+    /// contains a loop: the arm is selected by facts that hold at the loop's
+    /// exit, where nothing derives attached views again yet.
+    InstanceArmsStanding,
+    /// Free-standing views for every owner, for a temporary state that is
+    /// only read from.
     Standing,
 }
 
@@ -1030,7 +1035,11 @@ pub(super) fn project_initial_composite_resource_cores(
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<CState, ClickError> {
     let include_owned = owned.is_some();
-    let attach_to_owner = owned == Some(OwnedCores::AttachedToOwner);
+    let attach_to_owner = matches!(
+        owned,
+        Some(OwnedCores::AttachedToOwner | OwnedCores::InstanceArmsStanding)
+    );
+    let attach_instance_arms = owned == Some(OwnedCores::AttachedToOwner);
     let assumptions = assumptions_from_propositions(available_pure_facts);
     for resource in state.resources().facts().to_vec() {
         // A matched instance exposes the arm its section selects, and nothing
@@ -1046,12 +1055,14 @@ pub(super) fn project_initial_composite_resource_cores(
             ) else {
                 // An unconditional, unmatched body is the one arm the
                 // instance always has. Its cells are named here as a
-                // selected arm's are -- read authority is not granted, since
-                // the instance stays folded -- so that a C read of one of
-                // them after a store to a separately owned object is the same
-                // load the body spoke about at entry, and an `unfold` after
-                // that store finds the name it was folded at
-                // (`materialize_unfolded_instance_arm_cells`).
+                // selected arm's are, so that a C read of one of them after
+                // a store to a separately owned object is the same load the
+                // body spoke about at entry, and an `unfold` after that
+                // store finds the name it was folded at
+                // (`materialize_unfolded_instance_arm_cells`). Holding the
+                // instance lets C read them, by views attached to it; in a
+                // proof with a loop no read authority is granted, since
+                // nothing derives it again at the loop's exit.
                 if resource.is_own()
                     && let Some(selected) =
                         resource_environment
@@ -1070,8 +1081,8 @@ pub(super) fn project_initial_composite_resource_cores(
                         arguments,
                         state,
                         &assumptions,
-                        false,
-                        None,
+                        attach_instance_arms,
+                        attach_instance_arms.then_some(&resource),
                     );
                 }
                 continue;
@@ -1084,7 +1095,7 @@ pub(super) fn project_initial_composite_resource_cores(
                 state,
                 &assumptions,
                 include_owned,
-                (attach_to_owner && resource.is_own()).then_some(&resource),
+                (attach_instance_arms && resource.is_own()).then_some(&resource),
             );
             continue;
         }

@@ -1683,7 +1683,7 @@ pub(super) fn initial_claim_context_with_mode(
             .grouped_proof()
             .is_some_and(proof_contains_frontier_loop);
     let include_owned_composite_cores = Some(if has_loop {
-        resources::OwnedCores::Standing
+        resources::OwnedCores::InstanceArmsStanding
     } else {
         resources::OwnedCores::AttachedToOwner
     });
