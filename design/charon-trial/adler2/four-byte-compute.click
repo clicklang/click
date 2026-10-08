@@ -26,7 +26,11 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  # Observe the stored int32 traversal state, not the uint64 slice facade.
  execute_until(loop(2));
  have __rust_mir_62_remaining == 4 by { simp(); }
+ have __rust_mir_62_cursor == old(bytes) by { simp(); }
+ have __rust_mir_62_size == 4u64 by { simp(); }
  mark lane_head;
+ have at(lane_head, __rust_mir_62_cursor) == old(bytes) by { simp() using { __rust_mir_62_cursor == old(bytes); } }
+ have at(lane_head, __rust_mir_62_size) == 4u64 by { simp() using { __rust_mir_62_size == 4u64; } }
  have at(lane_head, __rust_mir_62_remaining) == 4 by { simp() using { __rust_mir_62_remaining == 4; } }
  have adler_lane_vectors_consumed(4, __rust_mir_62_remaining) == 0 by {
   unfold(adler_lane_vectors_consumed(4, __rust_mir_62_remaining));
@@ -80,11 +84,11 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
   simp() using { adler_lane_b_ceiling(0) == 65520; to_integer(b_vec._0[3]) <= 65520; }
  }
  execute_until(assignment(__rust_mir_71, 0));
- have __rust_mir_62_cursor == old(bytes) + 4 by { simp(); }
- have __rust_mir_62_remaining == 0u64 by { simp(); }
+ have __rust_mir_62_cursor == old(bytes) + 4 by { simp() using { at(lane_head, __rust_mir_62_cursor) == old(bytes); at(lane_head, __rust_mir_62_size) == 4u64; at(lane_head, __rust_mir_62_remaining) == 4; } }
+ have __rust_mir_62_remaining == 0 by { simp() using { at(lane_head, __rust_mir_62_remaining) == 4; at(lane_head, __rust_mir_62_size) == 4u64; } }
  # next() consumes four bytes before either original helper call.
  have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4 by {
-  rewrite(at(lane_head, __rust_mir_62_remaining) == 4); simp() using { __rust_mir_62_remaining == 0u64; }
+  rewrite(at(lane_head, __rust_mir_62_remaining) == 4); simp() using { __rust_mir_62_remaining == 0; }
  }
  have 0 <= at(lane_head, __rust_mir_62_remaining) by { arithmetic() using { at(lane_head, __rust_mir_62_remaining) == 4; } }
  have 4 <= at(lane_head, __rust_mir_62_remaining) by { arithmetic() using { at(lane_head, __rust_mir_62_remaining) == 4; } }

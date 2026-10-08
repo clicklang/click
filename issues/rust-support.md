@@ -1320,6 +1320,15 @@ and computation bodies. Regressions reject false stored lengths, initial
 indices, missing initial lane bounds, and altered bounds/steps; proof-tool
 expansion covers both new groups.
 
+The false byte-order regression exposed unaccounted copying while searching
+historical premise spellings. Scalar-name synthesis now checks the recorded
+load address first. Its borrowed, budgeted declared-slot alias search runs
+only in a smart proof producer; explicit certificate validation uses recorded
+loads and memory epochs directly. It never materializes heap ranges. Each
+inspected slot is charged; deterministic size-series regressions cover local
+counts, expression depth, and large seeded storage. Explicit cursor, size,
+and remaining-length observations provide the caller transition's small checked premise set without changing smart budgets.
+
 Next use these initialization and call-site obligations in inductive loop
 proofs that preserve the lane bounds and memory views across arbitrary stored
 iterator steps, including outer-loop reduction and reset. The full caller

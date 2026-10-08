@@ -167,6 +167,17 @@ initial indices are rejected independently. The input extent of that caller
 contract remains four bytes; the conditional lemmas cover arbitrary batches,
 but induction over larger batches remains to be supplied.
 
+A false byte-order contract exposed expensive premise presentation: each
+attempt to name a scalar atom copied every memory-backed local value across
+historical snapshots. Scalar-name lookup now checks the recorded load address
+first. A smart proof producer may then search declared local slots for a
+checked alias, borrowing values and charging every inspected slot. Explicit
+certificate validation skips that search and uses the recorded load and memory
+epoch. The lookup never materializes unrelated heap storage. Scaling
+regressions cover increasing local counts, deep unrelated expressions, and a
+million-element seeded range. The caller names its stored cursor, chunk size,
+and remaining length explicitly at the head, so the four-byte transition uses those few checked facts.
+
 These implications match the adapter's stored remaining-byte state and
 four-byte `next` transition. They do not yet prove that the original nested
 loops establish and maintain the numeric bounds, lane bounds, and memory views.

@@ -763,14 +763,6 @@ fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
         ("requires total <= 22208;", "requires total <= 22212;"),
         ("requires to_integer(a) <= 65520;", ""),
         ("requires to_integer(b) <= 65520;", ""),
-        (
-            "ensures to_integer(a) + to_integer(byte) <= 4294967295",
-            "ensures to_integer(a) + to_integer(byte) <= 1481279",
-        ),
-        (
-            "ensures to_integer(b) + to_integer(a + byte) <= 4294967295",
-            "ensures to_integer(b) + to_integer(a + byte) <= 4294690199",
-        ),
         ("requires remaining <= total;", ""),
         ("requires 0 <= remaining;", ""),
         ("requires 4 <= remaining;", ""),
@@ -789,6 +781,29 @@ fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
     ] {
         let invalid = source.replace(before, after);
         assert_ne!(source, invalid, "missing mutation: {before}");
+        assert!(
+            verify_click_theorems(&invalid).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+    // Mutate only the iterator-facing contracts, leaving their arithmetic
+    // dependencies checked and unchanged.
+    let (dependencies, contracts) = source
+        .split_once("theorem adler_lane_iterator_add_contracts")
+        .unwrap();
+    for (before, after) in [
+        (
+            "ensures to_integer(a) + to_integer(byte) <= 4294967295",
+            "ensures to_integer(a) + to_integer(byte) <= 1481279",
+        ),
+        (
+            "ensures to_integer(b) + to_integer(a + byte) <= 4294967295",
+            "ensures to_integer(b) + to_integer(a + byte) <= 4294690199",
+        ),
+    ] {
+        let changed = contracts.replacen(before, after, 1);
+        assert_ne!(contracts, changed, "missing mutation: {before}");
+        let invalid = format!("{dependencies}theorem adler_lane_iterator_add_contracts{changed}");
         assert!(
             verify_click_theorems(&invalid).is_err(),
             "accepted {before} -> {after}"

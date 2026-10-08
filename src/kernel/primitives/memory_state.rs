@@ -7761,6 +7761,37 @@ impl CState {
         values.into_iter().map(|(_, name, value)| (name, value))
     }
 
+    /// A speculative spelling lookup visits only declared local slots. It
+    /// borrows each atom, never materializing all local values or array runs.
+    /// Slot order retains the same deterministic first name as local_cell_values.
+    pub(crate) fn local_name_holding_bitvector_variable(&self, variable: Variable) -> Option<&str> {
+        for (pointer, name) in self.locals.slots.iter() {
+            if crate::instrumentation::deadline_exceeded() {
+                return None;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if pointer.offset == PointerOffsetTerm::Constant(0)
+                && self.memory.cells.bitvector_variable_at(pointer) == Some(variable)
+            {
+                return Some(name.as_str());
+            }
+        }
+        None
+    }
+
+    /// An atom's recorded load address selects one local slot directly.
+    pub(crate) fn local_name_holding_bitvector_variable_at(
+        &self,
+        variable: Variable,
+        pointer: &Pointer,
+    ) -> Option<&str> {
+        if crate::instrumentation::deadline_exceeded() {
+            return None;
+        }
+        let name = self.locals.name_for_slot(pointer)?;
+        (self.memory.cells.bitvector_variable_at(pointer) == Some(variable)).then_some(name)
+    }
+
     /// Refresh caller scalar bindings after call-site code has modified their
     /// address-backed cells. Ordinary function frames keep their own local
     /// environment, but inline bodies execute with a separate parameter
@@ -8864,5 +8895,108 @@ mod initialization_record_tests {
             works.windows(2).all(|pair| pair[0] == pair[1]),
             "covering queries cost {works:?} work units"
         );
+    }
+}
+
+#[cfg(test)]
+mod local_variable_spelling_tests {
+    use super::*;
+
+    fn scalar(state: CState, name: &str, value: CValue) -> CState {
+        let memory = state
+            .memory()
+            .clone()
+            .store(CMemory::local_pointer(name), value.clone());
+        state.with_local(name, value).with_memory(memory)
+    }
+
+    #[test]
+    fn local_variable_spelling_uses_current_memory_and_stable_slot_order() {
+        let variable = Variable(971_010);
+        let value = CValue::UInt64(Bitvector32Term::Variable(variable));
+        let state = scalar(scalar(CState::new(), "z", value.clone()), "a", value);
+        assert_eq!(
+            state.local_name_holding_bitvector_variable(variable),
+            Some("a")
+        );
+        let pointer = CMemory::local_pointer("a");
+        assert_eq!(
+            state.local_name_holding_bitvector_variable_at(variable, &pointer),
+            Some("a")
+        );
+        let state = state.clone().with_memory(state.memory().clone().store(
+            CMemory::local_pointer("a"),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+        ));
+        assert_eq!(
+            state.local_name_holding_bitvector_variable(variable),
+            Some("z")
+        );
+        assert_eq!(
+            state.local_name_holding_bitvector_variable_at(variable, &pointer),
+            None,
+            "a recorded address must still hold the atom in current memory"
+        );
+        let state = state.clone().with_memory(state.memory().clone().store(
+            CMemory::local_pointer("z"),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+        ));
+        assert_eq!(state.local_name_holding_bitvector_variable(variable), None);
+    }
+
+    #[test]
+    fn local_variable_spelling_work_is_linear_in_declared_slots() {
+        for size in [4usize, 16, 64, 256, 1024] {
+            let state = (0..size).fold(CState::new(), |state, index| {
+                scalar(
+                    state,
+                    &format!("noise_{index:04}"),
+                    CValue::Int32(Bitvector32Term::Constant(0)),
+                )
+            });
+            let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
+                state.local_name_holding_bitvector_variable(Variable(971_011))
+            });
+            assert_eq!(name, None);
+            assert!(
+                work >= size && work <= 3 * size,
+                "size {size}: {work} work must scale with inspected slots"
+            );
+        }
+    }
+
+    #[test]
+    fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_runs() {
+        let variable = Variable(971_012);
+        for depth in [4usize, 16, 64, 256, 1024] {
+            let nested = (0..depth).fold(Bitvector32Term::Variable(variable), |term, _| {
+                Bitvector32Term::Add(Box::new(Bitvector32Term::Constant(0)), Box::new(term))
+            });
+            let state = scalar(CState::new(), "noise", CValue::Int32(nested));
+            let base = Pointer {
+                block: "unrelated-heap".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let memory = state.memory().clone().with_seeded_cells(
+                base,
+                4,
+                CType::Int32,
+                0,
+                1_000_000,
+                CMemory::new().into(),
+            );
+            let state = state.with_memory(memory);
+            let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
+                state.local_name_holding_bitvector_variable(variable)
+            });
+            assert_eq!(
+                name, None,
+                "a variable inside an expression is not the held scalar atom"
+            );
+            assert_eq!(
+                work, 2,
+                "depth {depth}: only the slot inspection and budget check participate"
+            );
+        }
     }
 }
