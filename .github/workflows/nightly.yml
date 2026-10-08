@@ -1,8 +1,10 @@
 name: nightly
 
-# Everything the ten-minute gate leaves out: tests marked
-# `#[ignore = "nightly: ..."]`, the nightly examples, `click audit` in the
-# import tests, and the live Charon re-extraction. It has no time budget.
+# Everything the ten-minute gate leaves out. The `nightly` job runs the tests
+# marked `#[ignore = "nightly: ..."]`, the nightly examples, `click audit` in
+# the import tests, and the live Charon re-extraction. The `audit` job
+# expands and reverifies every smart tactic in the examples and mdtests.
+# Neither has a time budget.
 on:
   schedule:
     - cron: '17 8 * * *'
@@ -47,3 +49,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run the nightly gate
         run: scripts/check.sh --nightly --no-fail-fast
+
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/tools
+          key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/llvm
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
+      - name: Set up full test environment
+        run: scripts/setup-environment.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - name: Audit every smart tactic in the repository
+        run: scripts/check.sh --audit
