@@ -42,6 +42,13 @@ unfolding a resource with ten members costs at least ten operations. The
 violation is touching the other thousand facts, functions, snapshots, or
 resources that the tactic did not name.
 
+Trace source locations follow the same rule. Resolve a claim's written tactic
+locations together and reuse that result for every step, including missing
+indices. Computing their line and character columns uses one source walk;
+reparsing the project or rescanning a long line for each location is not
+acceptable. The CLI cache and batch-position regressions cover 16, 64, and
+256 locations.
+
 ## Proof size and speed targets
 
 The complexity contract says how verification must scale. These working

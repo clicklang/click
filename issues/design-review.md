@@ -54,18 +54,46 @@ reference parameter.
 
 ### A3. Reference locals in C++ bodies
 
-Not actionable today. The C++ importer does not lower a local of reference
-type: `int& r = x;` is refused with "C++ local `r` has an initializer
-outside direct lowering" (`lower_statement` in
-`src/languages/cpp/lowering.rs` lowers scalar locals and records only). So
-no proof can name one yet.
+A local `int& r = x;` should read in a proof as a reference parameter does:
+`r` is the referent and `&r` its address. Design agreed 2026-10-08.
 
-When the importer learns to lower one, it names the carrying pointer `&r`,
-as `reference_carrier_name` does for a parameter, so that a proof reads `r`
-as the referent with no further change.
+On master a reference local is not importable: the exporter refuses it with
+"the supported automatic C++ local must resolve to mutable signed/unsigned
+32/64/128-bit integer or one simple record object", and
+`tests/cpp_import.rs` asserts that. Pull request #440 admits `int&` and
+`const int&` locals bound to an existing reference, a pointer dereference or
+a call that returns a reference. It lowers the local to a pointer named
+plain `r`, so a proof there has to write `r[0]`. This item starts once #440
+has merged.
 
-Regression, for that change: a function with `int& r = x; r = 1;` whose
-proof states `have r == 1;` and whose expansion re-verifies.
+Then:
+
+- Lowering names the pointer with `reference_carrier_name`, as it does a
+  reference parameter (`src/languages/cpp/lowering.rs`).
+- The C++ interface walk that collects a function's local records
+  (`src/languages/cpp/interface.rs`) also collects its reference locals,
+  dropping a name that is ambiguous, and `C0Function` exposes them.
+- The parser merges them into `current_reference_params` for that function,
+  with a parameter winning a shared spelling, so `resolve_reference_parameter`
+  and `at_reference_parameter_address` apply unchanged. `&r` is accepted.
+- `execute_until(assignment(r, N))` on a reference local is refused with a
+  message: binding a reference is not an assignment, and a store through it
+  is a store to its referent.
+- A struct reference local reads `r.field`, when the importer admits one.
+
+The printer needs nothing new for `(&r)[0]` and `(&r)->f`: it prints `r` and
+`r.f` by the carrier's name. The gap in A1 applies to a local as to a
+parameter.
+
+Stay refused: a reference to a temporary with lifetime extension, a
+reference to a local object, an rvalue reference, `auto&`, structured
+bindings and range-for.
+
+Regression: a function with `int& r = x; r = 1;` whose proof states
+`have r == 1;` and whose expansion re-verifies; `assignment(r, 0)` refused.
+
+Done when: no proof or diagnostic writes `r[0]` or `*r` for a C++ reference
+local.
 
 ### A4. Rust sidecars in Rust syntax: the pinned examples and the refusals
 
@@ -101,7 +129,7 @@ Remaining:
   the sidecar writes.
 - A 32-bit index is the memory model's limit, so a slice contract states
   `requires bytes.len() <= 2147483647u64`. Dropping it needs range bounds
-  wider than 32 bits in the kernel.
+  wider than 32 bits in the kernel (A5).
 - An array by value, a reference to a reference, generics and lifetimes in
   a `fn` signature are refused.
 
@@ -109,32 +137,27 @@ Done when: every Rust example and trial sidecar is in Rust syntax, the
 C-shaped form is refused for a Rust source, and no diagnostic for one
 prints a C-shaped place.
 
+### A5. An index keeps its type until it is an offset
+
+Direction accepted 2026-10-08; design, kernel survey and order of work in
+`design/typed-indices.md`. Not started.
+
+An index or range bound of any integer type is accepted and converted to an
+offset in its own way: `int32` by sign extension, `uint64` and `usize` by
+value. Stage 1 keeps the 32-bit cap on a range's extent and removes the
+casts from C and Rust contracts. Stage 2 widens the extent to `isize::MAX`
+and removes `requires n <= 2147483647`. Stage 3 brings order reasoning over
+64-bit terms up to the 32-bit level.
+
+Start stage 1 after the Rust sidecar work in A4 has landed.
+
+Done when: no contract casts an index, and a slice contract states no bound
+on its length.
+
 ## B. Contracts and resource declarations
 
 Found in the third pass and ruled on 2026-10-07. Each was checked against the
 tool that day unless it says otherwise.
-
-### B1. A second fact about a child's field, where the parent has fields
-
-Built: a resource that declares no `field` may name a child that has
-fields and state facts about them. It keeps the child's fields in a record
-the author does not write, is held without a name (`owns pair(p);`), and is
-unfolded and folded with only the child map. A call binds a callee's
-instance binder without a map when only one binding is possible. Reference:
-`docs/reference/language/index.md`.
-
-One asymmetry remains. In a parent that declares fields of its own, the
-one equation `fact first.v == total;` ties a child's field to a parent
-field, and any other fact that mentions `first.v` is refused as "duplicate
-child field equation". A parent without fields has no such limit, because
-`first.v` there reads the hidden field.
-
-Regression: a parent with a declared field, the equation for the child's
-field, and a second fact `fact p->n == first.v;`, accepted and usable after
-an unfold.
-
-Done when: a fact may mention a named child's field in any resource, with
-one of them, or a hidden field, still fixing where the value is kept.
 
 ### B3. Reads through an owned resource with fields, across a loop
 
@@ -190,10 +213,6 @@ by a one-step block uses the brace-less form (`by T(args);`, `by simp;`), and
 `have P by simp;` is `have P;`. No `by { simp(); }` remains in examples or
 the standard library. Left in the long spelling:
 
-- Every expected-failure mdtest, because a failing short `have` reports less
-  than the block form
-  (`bugs/a-failing-short-have-reports-less-than-the-block-form.md`). Respell
-  them when that is fixed.
 - The Rust examples and the sidecars under `design/charon-trial`, which are
   hash-pinned in `design/charon-trial/parity.json`.
 - A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,

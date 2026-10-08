@@ -40,18 +40,18 @@ theorem lift(callback: int32 (*)(int32*, int32))
             have cell[0] == item by { extract(cell[0] == item); assumption(); }
             if item == 0 {
                 if item != 0 {
-                    have cell[0] == 123 by { simp(); }
+                    have cell[0] == 123;
                 } else {
-                    have cell[0] == 0 by { simp(); }
+                    have cell[0] == 0;
                 }
             } else {
-                have cell[0] != 0 by { simp(); }
+                have cell[0] != 0;
             }
-            have item == 0 by { simp(); }
+            have item == 0;
             if item == 1 {
-                have cell[0] == 1 by { simp(); }
+                have cell[0] == 1;
             } else {
-                have cell[0] != 1 by { simp(); }
+                have cell[0] != 1;
             }
             fold(Cell(cell)); simp();
         } else {
@@ -78,7 +78,7 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
         have cell[0] == value by { extract(cell[0] == value); assumption(); }
         execute(); fold(Cell(cell)); simp();
     } else {
-        have cell[0] == c(before) by { simp(); }
+        have cell[0] == c(before);
         execute(); fold(Cell(cell)); simp();
     }
 }

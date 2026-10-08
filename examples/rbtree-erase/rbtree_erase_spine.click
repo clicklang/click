@@ -365,6 +365,13 @@ function erase_minimum_child(minimum: RbMinimum) -> RbTree {
     }
 }
 
+function erase_minimum_color(minimum: RbMinimum) -> Color {
+    match minimum {
+        RbMinimum::Absent => Color::Black,
+        RbMinimum::Found(identity, color, child) => color,
+    }
+}
+
 contract void AugmentRotate(struct rb_node* old, struct rb_node* new) {
     requires new != 0;
     ensures 1 == 1;
@@ -400,7 +407,8 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     requires rb_left(tree.model) != RbTree::Empty;
     requires rb_right(tree.model) != RbTree::Empty;
     requires rb_left(rb_right(tree.model)) != RbTree::Empty;
-    requires erase_minimum_child(rb_minimum(rb_right(tree.model))) != RbTree::Empty;
+    requires not(erase_minimum_child(rb_minimum(rb_right(tree.model))) == RbTree::Empty)
+        or erase_minimum_color(rb_minimum(rb_right(tree.model))) == Color::Red;
     requires rb_parent_consistent(tree.model, 0) == 1;
     requires is_rb(tree.model) == 1;
     owns erase_callbacks(augment);
@@ -429,7 +437,8 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
             }
             have left_model != RbTree::Empty by { rewrite(left_model == rb_left(tree.model)); assumption(); }
             have right_model != RbTree::Empty by { rewrite(right_model == rb_right(tree.model)); assumption(); }
-            have erase_minimum_child(rb_minimum(right_model)) != RbTree::Empty by {
+            have not(erase_minimum_child(rb_minimum(right_model)) == RbTree::Empty)
+                or erase_minimum_color(rb_minimum(right_model)) == Color::Red by {
                 rewrite(right_model == rb_right(tree.model)); assumption();
             }
             have rb_left(right_model) != RbTree::Empty by { rewrite(right_model == rb_right(tree.model)); assumption(); }
@@ -574,15 +583,19 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         rewrite(right_model == RbTree::Node(rid, rp, rc, rl, rr));
                                                         rewrite(rb_minimum(RbTree::Node(rid, rp, rc, rl, rr)) == rb_minimum(rl)); assumption();
                                                     }
-                                                    have mr != RbTree::Empty by {
+                                                    have not(mr == RbTree::Empty) or mc == Color::Red by {
                                                         have erase_minimum_child(rb_minimum(right_model)) == mr by {
                                                             rewrite(rb_minimum(right_model) == RbMinimum::Found(mid, mc, mr));
                                                             unfold(erase_minimum_child(RbMinimum::Found(mid, mc, mr))); normalize();
                                                         }
+                                                        have erase_minimum_color(rb_minimum(right_model)) == mc by {
+                                                            rewrite(rb_minimum(right_model) == RbMinimum::Found(mid, mc, mr));
+                                                            unfold(erase_minimum_color(RbMinimum::Found(mid, mc, mr))); normalize();
+                                                        }
                                                         rewrite(mr == erase_minimum_child(rb_minimum(right_model)));
-                                                        assumption();
+                                                        rewrite(mc == erase_minimum_color(rb_minimum(right_model))); assumption();
                                                     }
-                                                    apply(rb_erase_nonempty_successor_splice(identity, mid, parent_model, color,
+                                                    apply(rb_erase_no_fixup_successor_splice(identity, mid, parent_model, color,
                                                         left_model, right_model, Context::Top, 0, mc, mr));
                                                     apply(rb_remove_min_blackened_nonempty_left(rid, rp, rc, rl, rr));
                                                     have erase_minimum_identity(rb_minimum(right_model)) == mid by {
@@ -603,8 +616,8 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         unfold(rb_remove_min_blackened(RbTree::Node(mid, mp, mc, RbTree::Empty, mr))); normalize();
                                                     }
                                                     let { sibling: min_right, up: path } = unfold(c);
+                                                    have (mid->__rb_parent_color & 1) == color_bit(mc) by { assumption(); }
                                                     unfold(t);
-                                                    have min_right.model != RbTree::Empty by { rewrite(min_right.model == mr); assumption(); }
                                                     have parent == erase_spine_parent(path.model, child) by { simp(); }
                                                     have parent == mp by {
                                                         rewrite(parent == erase_spine_parent(path.model, child));
@@ -619,8 +632,29 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     step(); step(); step(); step();
                                                     have node->rb_left == lid by { simp(); }
                                                     unfold(erase_callbacks(augment));
-                                                    match min_right.model {
-                                                        RbTree::Empty => { contradiction(min_right.model == RbTree::Empty); },
+                                                    match min_right.model ensuring {
+                                                        owns moved_child: rb_at(parent->rb_left);
+                                                        fact moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp);
+                                                    } {
+                                                        RbTree::Empty => {
+                                                            have mr == RbTree::Empty by { rewrite(mr == min_right.model); assumption(); }
+                                                            have mc == Color::Red by {
+                                                                cases {
+                                                                    not(mr == RbTree::Empty) => { contradiction(mr == RbTree::Empty); }
+                                                                    mc == Color::Red => { assumption(); }
+                                                                }
+                                                            }
+                                                            unfold(min_right);
+                                                            have color_bit(mc) == 0 by { rewrite(mc == Color::Red); unfold(color_bit(Color::Red)); normalize(); }
+                                                            have (successor->__rb_parent_color & 1) == 0 by { simp(); }
+                                                            execute_until(statement(62));
+                                                            let moved_child = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
+                                                            have moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp) by {
+                                                                rewrite(mr == RbTree::Empty);
+                                                                unfold(rb_recolor(RbTree::Empty, Color::Black));
+                                                                unfold(rb_reparent(RbTree::Empty, mp)); normalize();
+                                                            }
+                                                        },
                                                         RbTree::Node(cid, cp, cc, cl, cr) => {
                                                             have mr == RbTree::Node(cid, cp, cc, cl, cr) by { rewrite(mr == min_right.model); assumption(); }
                                                             have rb_reparent(rb_recolor(mr, Color::Black), mp) == RbTree::Node(cid, mp, Color::Black, cl, cr) by {
@@ -631,92 +665,92 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             let { left: child_left, right: child_right } = unfold(min_right);
                                                             execute_until(statement(62));
                                                             let moved_child = fold(rb_at(cid), { model: RbTree::Node(cid, mp, Color::Black, cl, cr) }, { left: child_left, right: child_right });
-                                                            mark closing_spine;
-                                                            let { c: path2 } = close_erase_spine_link(cid, parent, child, { frame: link_frame });
-                                                            have path2.model == at(closing_spine, link_frame.model) by { assumption(); }
-                                                            have path2.model == mu by { simp(); }
                                                             have moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp) by {
                                                                 rewrite(rb_reparent(rb_recolor(mr, Color::Black), mp) == RbTree::Node(cid, mp, Color::Black, cl, cr)); normalize();
                                                             }
-                                                            have rb_parent_consistent(plug(erase_context(path2.model), moved_child.model), child) == 1 by {
-                                                                rewrite(path2.model == mu);
-                                                                rewrite(moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp));
-                                                                rewrite(plug(erase_context(mu), rb_reparent(rb_recolor(mr, Color::Black), mp)) == rb_remove_min_blackened(rl));
-                                                                rewrite(child == rid); assumption();
-                                                            }
-                                                            mark rebuilding_spine;
-                                                            let { whole: whole } = refold_erase_spine(cid, child, { c: path2, t: moved_child });
-                                                            have at(rebuilding_spine, path2.model) == mu by { assumption(); }
-                                                            have whole.model == plug(erase_context(at(rebuilding_spine, path2.model)), RbTree::Node(cid, mp, Color::Black, cl, cr)) by { assumption(); }
-                                                            have whole.model == rb_remove_min_blackened(rl) by {
-                                                                rewrite(rb_remove_min_blackened(rl) == plug(erase_context(mu), rb_reparent(rb_recolor(mr, Color::Black), mp)));
-                                                                rewrite(rb_reparent(rb_recolor(mr, Color::Black), mp) == RbTree::Node(cid, mp, Color::Black, cl, cr));
-                                                                rewrite(mu == at(rebuilding_spine, path2.model));
-                                                                assumption();
-                                                            }
-                                                            let { tree: rebuilt_left } = unfold(whole);
-                                                            have rebuilt_left.model == rb_remove_min_blackened(rl) by { simp(); }
-                                                            have right_sibling.model == rr by { simp(); }
-                                                            apply(erase_parent_consistent_parent_is(rb_remove_min_blackened(rl), rid));
-                                                            have child == rid by { simp(); }
-                                                            have child->rb_left == rid->rb_left by { simp(); }
-                                                            have child->rb_right == rid->rb_right by { simp(); }
-                                                            let moved_right = fold(rb_at(rid), {
-                                                                model: RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr)
-                                                            }, { left: rebuilt_left, right: right_sibling });
-                                                            let moved_left = fold(rb_at(lid), {
-                                                                model: RbTree::Node(lid, mid, lc, ll, lr)
-                                                            }, { left: ll_tree, right: lr_tree });
-                                                            have rb_parent_is(RbTree::Node(lid, mid, lc, ll, lr), mid) == 1 by { unfold(rb_parent_is(RbTree::Node(lid, mid, lc, ll, lr), mid)); normalize(); }
-                                                            have rb_parent_is(RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr), mid) == 1 by { unfold(rb_parent_is(RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr), mid)); normalize(); }
-                                                            let result_tree = fold(rb_at(mid), {
-                                                                model: RbTree::Node(mid, 0, Color::Black, RbTree::Node(lid, mid, lc, ll, lr),
-                                                                    RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr))
-                                                            }, { left: moved_left, right: moved_right });
-                                                            let remaining = fold(rb_root_at(root), {
-                                                                model: RbTree::Node(mid, 0, Color::Black, RbTree::Node(lid, mid, lc, ll, lr),
-                                                                    RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr))
-                                                            }, { tree: result_tree });
-                                                            have remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model) by {
-                                                                unfold(rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
-                                                                rewrite(left_model == RbTree::Node(lid, lp, lc, ll, lr));
-                                                                rewrite(right_model == RbTree::Node(rid, rp, rc, rl, rr));
-                                                                rewrite(rb_remove_min_blackened(RbTree::Node(rid, rp, rc, rl, rr)) == RbTree::Node(rid, rp, rc, rb_remove_min_blackened(rl), rr));
-                                                                unfold(rb_reparent(RbTree::Node(lid, lp, lc, ll, lr), mid));
-                                                                unfold(rb_reparent(RbTree::Node(rid, rp, rc, rb_remove_min_blackened(rl), rr), mid));
-                                                                rewrite(parent_model == 0); rewrite(color == Color::Black); normalize();
-                                                            }
-                                                            have remaining.model == rb_successor_child_splice(
-                                                                erase_minimum_identity(rb_minimum(rb_right(old(tree.model)))), 0, Color::Black,
-                                                                rb_left(old(tree.model)), rb_right(old(tree.model))) by {
-                                                                rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
-                                                                rewrite(rb_left(old(tree.model)) == left_model); rewrite(rb_right(old(tree.model)) == right_model);
-                                                                rewrite(erase_minimum_identity(rb_minimum(right_model)) == mid);
-                                                                rewrite(parent_model == 0); rewrite(color == Color::Black); normalize();
-                                                            }
-                                                            have is_rb_root(remaining.model) == 1 by {
-                                                                rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
-                                                                have rb_successor_child_splice(mid, parent_model, color, left_model, right_model)
-                                                                    == plug(Context::Top, rb_successor_child_splice(mid, parent_model, color, left_model, right_model)) by {
-                                                                    unfold(plug(Context::Top, rb_successor_child_splice(mid, parent_model, color, left_model, right_model))); normalize();
-                                                                }
-                                                                rewrite(rb_successor_child_splice(mid, parent_model, color, left_model, right_model)
-                                                                        == plug(Context::Top, rb_successor_child_splice(mid, parent_model, color, left_model, right_model))); assumption();
-                                                            }
-                                                            have rb_parent_consistent(remaining.model, 0) == 1 by {
-                                                                have rb_parent_consistent(rb_successor_child_splice(mid, parent_model, color, left_model, right_model), 0) == 1 by {
-                                                                    apply(ctx_consistent_top(rb_successor_child_splice(mid, parent_model, color, left_model, right_model), 0)); assumption();
-                                                                }
-                                                                rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model)); assumption();
-                                                            }
-                                                            have rb_inorder(remaining.model) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
-                                                                rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
-                                                                rewrite(rb_left(old(tree.model)) == left_model); rewrite(rb_right(old(tree.model)) == right_model); assumption();
-                                                            }
-                                                            execute(); fold(erase_callbacks(augment)); simp();
                                                         },
                                                     }
-
+                                                    mark closing_spine;
+                                                    let { c: path2 } = close_erase_spine_link(parent->rb_left, parent, child, { frame: link_frame });
+                                                    have path2.model == at(closing_spine, link_frame.model) by { assumption(); }
+                                                    have path2.model == mu by { simp(); }
+                                                    have rb_parent_consistent(plug(erase_context(path2.model), moved_child.model), child) == 1 by {
+                                                        rewrite(path2.model == mu);
+                                                        rewrite(moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp));
+                                                        rewrite(plug(erase_context(mu), rb_reparent(rb_recolor(mr, Color::Black), mp)) == rb_remove_min_blackened(rl));
+                                                        rewrite(child == rid); assumption();
+                                                    }
+                                                    mark rebuilding_spine;
+                                                    let { whole: whole } = refold_erase_spine(parent->rb_left, child, { c: path2, t: moved_child });
+                                                    have at(rebuilding_spine, path2.model) == mu by { assumption(); }
+                                                    have whole.model == plug(erase_context(at(rebuilding_spine, path2.model)), at(rebuilding_spine, moved_child.model)) by { assumption(); }
+                                                    have at(rebuilding_spine, moved_child.model) == rb_reparent(rb_recolor(mr, Color::Black), mp) by { assumption(); }
+                                                    have whole.model == rb_remove_min_blackened(rl) by {
+                                                        rewrite(rb_remove_min_blackened(rl) == plug(erase_context(mu), rb_reparent(rb_recolor(mr, Color::Black), mp)));
+                                                        rewrite(rb_reparent(rb_recolor(mr, Color::Black), mp) == at(rebuilding_spine, moved_child.model));
+                                                        rewrite(mu == at(rebuilding_spine, path2.model));
+                                                        assumption();
+                                                    }
+                                                    let { tree: rebuilt_left } = unfold(whole);
+                                                    have rebuilt_left.model == rb_remove_min_blackened(rl) by { simp(); }
+                                                    have right_sibling.model == rr by { simp(); }
+                                                    apply(erase_parent_consistent_parent_is(rb_remove_min_blackened(rl), rid));
+                                                    have child == rid by { simp(); }
+                                                    have child->rb_left == rid->rb_left by { simp(); }
+                                                    have child->rb_right == rid->rb_right by { simp(); }
+                                                    let moved_right = fold(rb_at(rid), {
+                                                        model: RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr)
+                                                    }, { left: rebuilt_left, right: right_sibling });
+                                                    let moved_left = fold(rb_at(lid), {
+                                                        model: RbTree::Node(lid, mid, lc, ll, lr)
+                                                    }, { left: ll_tree, right: lr_tree });
+                                                    have rb_parent_is(RbTree::Node(lid, mid, lc, ll, lr), mid) == 1 by { unfold(rb_parent_is(RbTree::Node(lid, mid, lc, ll, lr), mid)); normalize(); }
+                                                    have rb_parent_is(RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr), mid) == 1 by { unfold(rb_parent_is(RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr), mid)); normalize(); }
+                                                    let result_tree = fold(rb_at(mid), {
+                                                        model: RbTree::Node(mid, 0, Color::Black, RbTree::Node(lid, mid, lc, ll, lr),
+                                                            RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr))
+                                                    }, { left: moved_left, right: moved_right });
+                                                    let remaining = fold(rb_root_at(root), {
+                                                        model: RbTree::Node(mid, 0, Color::Black, RbTree::Node(lid, mid, lc, ll, lr),
+                                                            RbTree::Node(rid, mid, rc, rb_remove_min_blackened(rl), rr))
+                                                    }, { tree: result_tree });
+                                                    have remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model) by {
+                                                        unfold(rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
+                                                        rewrite(left_model == RbTree::Node(lid, lp, lc, ll, lr));
+                                                        rewrite(right_model == RbTree::Node(rid, rp, rc, rl, rr));
+                                                        rewrite(rb_remove_min_blackened(RbTree::Node(rid, rp, rc, rl, rr)) == RbTree::Node(rid, rp, rc, rb_remove_min_blackened(rl), rr));
+                                                        unfold(rb_reparent(RbTree::Node(lid, lp, lc, ll, lr), mid));
+                                                        unfold(rb_reparent(RbTree::Node(rid, rp, rc, rb_remove_min_blackened(rl), rr), mid));
+                                                        rewrite(parent_model == 0); rewrite(color == Color::Black); normalize();
+                                                    }
+                                                    have remaining.model == rb_successor_child_splice(
+                                                        erase_minimum_identity(rb_minimum(rb_right(old(tree.model)))), 0, Color::Black,
+                                                        rb_left(old(tree.model)), rb_right(old(tree.model))) by {
+                                                        rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
+                                                        rewrite(rb_left(old(tree.model)) == left_model); rewrite(rb_right(old(tree.model)) == right_model);
+                                                        rewrite(erase_minimum_identity(rb_minimum(right_model)) == mid);
+                                                        rewrite(parent_model == 0); rewrite(color == Color::Black); normalize();
+                                                    }
+                                                    have is_rb_root(remaining.model) == 1 by {
+                                                        rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
+                                                        have rb_successor_child_splice(mid, parent_model, color, left_model, right_model)
+                                                            == plug(Context::Top, rb_successor_child_splice(mid, parent_model, color, left_model, right_model)) by {
+                                                            unfold(plug(Context::Top, rb_successor_child_splice(mid, parent_model, color, left_model, right_model))); normalize();
+                                                        }
+                                                        rewrite(rb_successor_child_splice(mid, parent_model, color, left_model, right_model)
+                                                                == plug(Context::Top, rb_successor_child_splice(mid, parent_model, color, left_model, right_model))); assumption();
+                                                    }
+                                                    have rb_parent_consistent(remaining.model, 0) == 1 by {
+                                                        have rb_parent_consistent(rb_successor_child_splice(mid, parent_model, color, left_model, right_model), 0) == 1 by {
+                                                            apply(ctx_consistent_top(rb_successor_child_splice(mid, parent_model, color, left_model, right_model), 0)); assumption();
+                                                        }
+                                                        rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model)); assumption();
+                                                    }
+                                                    have rb_inorder(remaining.model) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                        rewrite(remaining.model == rb_successor_child_splice(mid, parent_model, color, left_model, right_model));
+                                                        rewrite(rb_left(old(tree.model)) == left_model); rewrite(rb_right(old(tree.model)) == right_model); assumption();
+                                                    }
+                                                    execute(); fold(erase_callbacks(augment)); simp();
                                                 },
                                             }
                                         },

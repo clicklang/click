@@ -1,7 +1,7 @@
 # A preserved `apply` names the `viewable` premise it is missing
 
 This is `search_terminates_by_unmarked_count.md` with one line removed: the
-`have viewable(visited[0..n]) by { simp(); }` before
+`have viewable(visited[0..n]);` before
 `apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur))`.
 The lemma's fifth requirement, `viewable(a[lo..n])` with `a = at(iter,
 visited)`, reads the memory of the current state, and only the loop head's
@@ -273,7 +273,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 }
             }
             step();
-            have viewable(next[0..n]) by { simp(); }
+            have viewable(next[0..n]);
             apply(walk_frame(at(iter, next), next, n, from, previous));
             have walk(next, from, previous) == at(iter, cur) by {
                 simp() using {

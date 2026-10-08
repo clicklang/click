@@ -282,7 +282,7 @@ impl<'a> Proof<'a> {
                 .expect("checked constructor arm");
             let mut scope = self.state.locals().values.clone();
             let mut integer_scope = self.state.locals().integer_values.clone();
-            for (name, field) in arm.bindings.iter().zip(fields) {
+            for (field_index, (name, field)) in arm.bindings.iter().zip(fields).enumerate() {
                 let expression = match field {
                     AlgebraicValue::C(value) => {
                         let spelling = if concrete_scrutinee {
@@ -296,7 +296,18 @@ impl<'a> Proof<'a> {
                         };
                         ContractExpression::CFragment(CExpression::Value(spelling))
                     }
-                    AlgebraicValue::Algebraic(value) => {
+                    AlgebraicValue::Algebraic(binding) => {
+                        // A concrete scrutinee already carries immutable payload
+                        // identities. Constructor injectivity in the checked arm
+                        // relates the fresh pattern variable to that payload.
+                        // Keep an existing surface variable's spelling, just as
+                        // C payloads above keep their checked program spelling.
+                        let value = crate::kernel::arm_algebraic_payload_spelling(
+                            &value,
+                            &arm.variant,
+                            field_index,
+                        )
+                        .unwrap_or(binding);
                         let AlgebraicTermNode::Variable(variable) = value.node else {
                             unreachable!()
                         };

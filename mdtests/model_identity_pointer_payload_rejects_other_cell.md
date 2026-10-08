@@ -51,7 +51,7 @@ int cell_same(struct cell* p, struct cell* q) {
         CellModel::Missing => { contradiction(c.model == CellModel::Missing); },
         CellModel::Present(identity, value) => {
             unfold(c);
-            have identity == q by { simp(); }
+            have identity == q;
             execute();
             let c = fold(cell_at(p), { model: old(c.model) });
             simp();

@@ -19,7 +19,7 @@ int32 dec(int32 n) {
     ensures result == 0;
 } by {
     step();
-    have old(n) == 0 by { simp(); }
+    have old(n) == 0;
     step();
     simp();
 }

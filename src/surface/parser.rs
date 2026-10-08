@@ -74,6 +74,17 @@ pub(super) fn parse(source: &str) -> Result<ClickFile, ClickError> {
         .parse_file()
 }
 
+/// What a function's proof needs to know about its automatic locals that
+/// only the source language's front end can say.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(in crate::surface) struct FunctionLocals {
+    /// The struct name of each local of struct-pointer type.
+    pub(in crate::surface) struct_pointers: BTreeMap<String, String>,
+    /// The locals of reference type, which a proof names by their referent
+    /// as it names a reference parameter.
+    pub(in crate::surface) references: BTreeSet<String>,
+}
+
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
@@ -82,7 +93,7 @@ pub(super) fn parse_with_layouts_and_aggregate_objects(
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
     global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
     qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers_by_function: BTreeMap<String, BTreeMap<String, String>>,
+    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::new_with_layouts_and_aggregate_objects(
         source,
@@ -168,7 +179,7 @@ pub(super) fn parse_file_items_for_module(
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
     global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
     qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers_by_function: BTreeMap<String, BTreeMap<String, String>>,
+    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::new_with_layouts_and_aggregate_objects(
         source,
@@ -205,6 +216,37 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
                     .next()
                     == Some(name)
         })
+}
+
+/// The C0 type a Rust scalar type name denotes.
+fn rust_scalar_type(name: &str) -> Option<C0Type> {
+    Some(match name {
+        "bool" => C0Type::Bool,
+        "i8" => C0Type::Int8,
+        "i16" => C0Type::Int16,
+        "i32" => C0Type::Int32,
+        "i64" | "isize" => C0Type::Int64,
+        "i128" => C0Type::Int128,
+        "u8" => C0Type::UInt8,
+        "u16" => C0Type::UInt16,
+        "u32" => C0Type::UInt32,
+        "u64" | "usize" => C0Type::UInt64,
+        "u128" => C0Type::UInt128,
+        "f32" => C0Type::Float32,
+        "f64" => C0Type::Float64,
+        _ => return None,
+    })
+}
+
+/// `have P by simp;` as the one-step script `have P by { simp(); }`. Out of
+/// line: its caller's frame is on the recursive proof-parsing path.
+#[inline(never)]
+fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
+    if proof == SourceProof::Tactic(SmartTactic::Simp) {
+        SourceProof::Script(vec![ProofTactic::Simp])
+    } else {
+        proof
+    }
 }
 
 fn is_tactic_name(name: &str) -> bool {
@@ -431,6 +473,19 @@ struct Parser {
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
+    /// Whether a `verifying` source is Rust, which is what admits a Rust
+    /// signature (`fn name(a: T) -> T`).
+    verifies_rust: bool,
+    /// The slice parameters of the Rust signature being parsed. Each is one
+    /// name in the sidecar and a pointer with a `name_len` length underneath.
+    rust_slice_params: BTreeSet<String>,
+    /// The `usize` parameters of the Rust signature being parsed, slice
+    /// lengths included. One written alone as an index is converted to the
+    /// 32-bit index a place takes.
+    rust_usize_params: BTreeSet<String>,
+    /// The type of the `impl` block being parsed: its methods are the
+    /// functions `Type_name`, and `self` is their receiver.
+    rust_impl_type: Option<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -457,7 +512,7 @@ struct Parser {
     /// signature; these are the body's locals, so a `have` or `fact` that
     /// names one has the same layout the parameter would have. A parameter of
     /// the same spelling wins: the contract is written against the signature.
-    local_struct_pointers_by_function: BTreeMap<String, BTreeMap<String, String>>,
+    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
     current_aggregate_objects: BTreeMap<String, String>,
     current_struct_array_params: BTreeSet<String>,
     current_reference_params: BTreeSet<String>,
@@ -744,6 +799,10 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
+            verifies_rust: false,
+            rust_slice_params: BTreeSet::new(),
+            rust_usize_params: BTreeSet::new(),
+            rust_impl_type: None,
             tokens,
             positions,
             matching_parentheses,
@@ -952,6 +1011,8 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(false)?);
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
+            } else if self.verifies_rust && self.peek_ident() == Some("impl") {
+                self.parse_rust_impl_block(&mut function_blocks)?;
             } else {
                 function_blocks.push(self.parse_function_block(false)?);
             }
@@ -1336,6 +1397,9 @@ impl Parser {
             }
         }
         self.expect(Token::Semicolon)?;
+        if source_path.ends_with(".rs") {
+            self.verifies_rust = true;
+        }
         Ok(source_path)
     }
 
@@ -1689,6 +1753,20 @@ impl Parser {
             self.current_arm_binding_types
                 .insert(binding.clone(), field);
         }
+    }
+
+    /// The hidden parent field that holds `owner.field`, as an expression.
+    /// Out of line: the caller is the recursive postfix parser, whose frame
+    /// every temporary enlarges.
+    #[inline(never)]
+    fn hidden_child_field(&self, owner: &str, field: &str) -> Option<ContractExpression> {
+        if self.hidden_child_fields.is_empty() {
+            return None;
+        }
+        self.hidden_child_fields
+            .get(&(owner.to_string(), field.to_string()))
+            .cloned()
+            .map(ContractExpression::ResourceField)
     }
 
     /// Gives a resource that declares no fields one hidden field per field of
@@ -2582,11 +2660,29 @@ impl Parser {
             signature,
             mut struct_params,
             struct_array_params,
-            reference_params,
+            mut reference_params,
             return_struct_name,
         } = self.parse_function_signature()?;
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
+        }
+        // A local of reference type names its referent in this function's
+        // proof, as a reference parameter does. The signature wins a shared
+        // spelling: a parameter of that name that is not a reference keeps
+        // its own reading.
+        for name in self
+            .local_struct_pointers_by_function
+            .get(signature.name())
+            .into_iter()
+            .flat_map(|locals| &locals.references)
+        {
+            if !signature
+                .parameters()
+                .iter()
+                .any(|parameter| parameter.name() == name)
+            {
+                reference_params.insert(name.clone());
+            }
         }
         self.expect(Token::LBrace)?;
 
@@ -2617,7 +2713,7 @@ impl Parser {
             .local_struct_pointers_by_function
             .get(signature.name())
             .into_iter()
-            .flatten()
+            .flat_map(|locals| &locals.struct_pointers)
         {
             struct_params
                 .entry(name.clone())
@@ -3184,6 +3280,11 @@ impl Parser {
                 return_struct_name: None,
             });
         }
+        self.rust_slice_params.clear();
+        self.rust_usize_params.clear();
+        if self.peek_ident() == Some("fn") {
+            return self.parse_rust_function_signature();
+        }
         let parsed_return_type = self.parse_type()?;
         if parsed_return_type.constant {
             return Err(
@@ -3259,6 +3360,397 @@ impl Parser {
             struct_array_params,
             reference_params,
             return_struct_name: parsed_return_type.struct_name,
+        })
+    }
+
+    /// A Rust sidecar states its signature as Rust does:
+    /// `fn name(a: T, b: U) -> R`. It declares the same function the C-shaped
+    /// spelling `R name(T a, U b)` does. References, slices and methods are
+    /// not in this form yet (`design/rust-sidecar-signatures.md`).
+    #[inline(never)]
+    fn parse_rust_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
+        if !self.verifies_rust {
+            return Err(self.error(
+                "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
+            ));
+        }
+        if self.pending_contract_name.is_some() {
+            return Err(self.error(
+                "a named contract does not take a `fn` signature yet; write `contract type Name(type parameter, ...)`",
+            ));
+        }
+        self.expect_ident_spelling("fn")?;
+        let name = self.expect_ident("function name")?;
+        self.expect(Token::LParen)?;
+        let mut parameters = Vec::new();
+        let mut struct_params = BTreeMap::new();
+        // A method is the function `Type_name`, and its receiver is the
+        // first parameter, a pointer to the type named `self`.
+        let name = match self.rust_impl_type.clone() {
+            Some(impl_type) => {
+                if let Some(receiver) = self.parse_rust_receiver(&impl_type)? {
+                    let parsed = self.parse_parameter_array_suffix("self".into(), receiver)?;
+                    if let Some(struct_name) = parsed.struct_name {
+                        struct_params.insert(parsed.parameter.name.clone(), struct_name);
+                    }
+                    parameters.push(parsed.parameter);
+                    if self.peek() == Some(&Token::Comma) {
+                        self.position += 1;
+                    }
+                }
+                format!("{impl_type}_{name}")
+            }
+            None => name,
+        };
+        while self.peek() != Some(&Token::RParen) {
+            let parameter_name = self.expect_ident("parameter name")?;
+            self.expect(Token::Colon)?;
+            if let Some(element) = self.parse_rust_slice_type()? {
+                // `bytes: &[T]` is the pointer and length Rust passes. The
+                // sidecar names the slice once and reads `bytes.len()`.
+                let length = format!("{parameter_name}_len");
+                self.rust_slice_params.insert(parameter_name.clone());
+                self.rust_usize_params.insert(length.clone());
+                parameters.push(
+                    self.parse_parameter_array_suffix(parameter_name, element)?
+                        .parameter,
+                );
+                let length_type = ParsedType {
+                    c_type: C0Type::UInt64,
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                };
+                parameters.push(
+                    self.parse_parameter_array_suffix(length, length_type)?
+                        .parameter,
+                );
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
+            if self.peek_ident() == Some("usize") {
+                self.rust_usize_params.insert(parameter_name.clone());
+            }
+            let parsed_type = self.parse_rust_type()?;
+            let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
+            if let Some(struct_name) = parsed.struct_name {
+                struct_params.insert(parsed.parameter.name.clone(), struct_name);
+            }
+            parameters.push(parsed.parameter);
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::RParen)?;
+        let parsed_return_type = if self.peek() == Some(&Token::Arrow) {
+            self.position += 1;
+            self.parse_rust_type()?
+        } else {
+            ParsedType {
+                c_type: C0Type::Void,
+                struct_name: None,
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: false,
+                reference: false,
+            }
+        };
+        let return_type = match parsed_return_type.struct_name.as_deref() {
+            Some(struct_name) => self.scalar_struct_value_type(struct_name)?,
+            None => parsed_return_type.c_type,
+        };
+        let diverges = if self.peek_ident() == Some("diverges") {
+            self.position += 1;
+            true
+        } else {
+            false
+        };
+        Ok(ParsedFunctionSignature {
+            signature: FunctionSignature {
+                return_type,
+                return_pointee_constant: false,
+                return_reference: false,
+                name,
+                parameters,
+                exceptional_type: None,
+                diverges,
+                declared_loadable_bytes: Vec::new(),
+            },
+            struct_params,
+            struct_array_params: BTreeSet::new(),
+            reference_params: BTreeSet::new(),
+            return_struct_name: parsed_return_type.struct_name,
+        })
+    }
+
+    /// `impl Type { ... }` or `impl Trait for Type { ... }`: each `fn` inside
+    /// is the method's contract and proof. A trait method is named by its
+    /// type, as the imported function is.
+    #[inline(never)]
+    fn parse_rust_impl_block(
+        &mut self,
+        function_blocks: &mut Vec<FunctionBlock>,
+    ) -> Result<(), ClickError> {
+        self.expect_ident_spelling("impl")?;
+        let mut impl_type = self.expect_ident("type name")?;
+        if self.peek_ident() == Some("for") {
+            self.position += 1;
+            impl_type = self.expect_ident("type name")?;
+        }
+        self.expect(Token::LBrace)?;
+        let previous = self.rust_impl_type.replace(impl_type);
+        let mut result = Ok(());
+        while self.peek() != Some(&Token::RBrace) {
+            if self.peek_ident() != Some("fn") {
+                result = Err(self.error("an `impl` block holds `fn` contracts"));
+                break;
+            }
+            match self.parse_function_block(false) {
+                Ok(block) => function_blocks.push(block),
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
+        }
+        self.rust_impl_type = previous;
+        result?;
+        self.expect(Token::RBrace)?;
+        Ok(())
+    }
+
+    /// A method's receiver: `&self`, `&mut self` or `self`, as the type of
+    /// the parameter it is. `None`, with nothing consumed, for an associated
+    /// function that takes no receiver.
+    fn parse_rust_receiver(&mut self, impl_type: &str) -> Result<Option<ParsedType>, ClickError> {
+        let start = self.position;
+        let reference = self.peek() == Some(&Token::Amp);
+        if reference {
+            self.position += 1;
+        }
+        let mutable = reference && self.peek_ident() == Some("mut");
+        if mutable {
+            self.position += 1;
+        }
+        if self.peek_ident() != Some("self") {
+            self.position = start;
+            return Ok(None);
+        }
+        self.position += 1;
+        Ok(Some(ParsedType {
+            c_type: C0Type::Int32Pointer,
+            struct_name: Some(impl_type.to_string()),
+            struct_pointer: reference,
+            constant: false,
+            pointee_constant: reference && !mutable,
+            reference: false,
+        }))
+    }
+
+    /// `&[T]` or `&mut [T]` with a scalar element, as the pointer to its
+    /// first element; `None`, with nothing consumed, for any other type.
+    #[inline(never)]
+    fn parse_rust_slice_type(&mut self) -> Result<Option<ParsedType>, ClickError> {
+        if self.peek() != Some(&Token::Amp) {
+            return Ok(None);
+        }
+        let mutable = self.peek_next() == Some(&Token::Ident("mut".into()));
+        let bracket = self.position + 1 + usize::from(mutable);
+        if self.tokens.get(bracket) != Some(&Token::LBracket) {
+            return Ok(None);
+        }
+        // `&[T; N]` is a reference to an array, not a slice.
+        if self.tokens.get(bracket + 2) == Some(&Token::Semicolon) {
+            return Ok(None);
+        }
+        self.position = bracket + 1;
+        let spelling = self.expect_ident("slice element type")?;
+        let Some(c_type) = rust_scalar_type(&spelling).and_then(C0Type::pointer_type) else {
+            return Err(self.error(format!(
+                "a slice of `{spelling}` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling"
+            )));
+        };
+        self.expect(Token::RBracket)?;
+        Ok(Some(ParsedType {
+            c_type,
+            struct_name: None,
+            struct_pointer: false,
+            constant: false,
+            pointee_constant: !mutable,
+            reference: false,
+        }))
+    }
+
+    /// The index between brackets. Out of line, with the two helpers below:
+    /// their callers are the recursive expression parsers, whose frames every
+    /// temporary enlarges.
+    #[inline(never)]
+    fn parse_place_index(&mut self) -> Result<ContractExpression, ClickError> {
+        let index = self.parse_contract_expression()?;
+        Ok(self.rust_place_index(index))
+    }
+
+    /// The right operand of a binary operator, with any Rust `as` casts.
+    #[inline(never)]
+    fn parse_binary_operand(&mut self) -> Result<ContractExpression, ClickError> {
+        let operand = self.parse_contract_unary()?;
+        self.parse_rust_casts(operand)
+    }
+
+    /// A C variable named in a contract, or the length a slice parameter's
+    /// `name.len()` denotes.
+    #[inline(never)]
+    fn c_variable_expression(&mut self, name: String) -> ContractExpression {
+        let name = self.take_rust_slice_len(&name).unwrap_or(name);
+        ContractExpression::CFragment(CExpression::Variable(name))
+    }
+
+    /// An index or range bound in a Rust sidecar. A place takes a 32-bit
+    /// index, so a `usize` parameter or a slice length written alone is the
+    /// cast the C-shaped spelling writes, `(int32)index`. The contract still
+    /// states the bound that makes the cast exact. Any other expression is
+    /// left as written.
+    #[inline(never)]
+    fn rust_place_index(&self, index: ContractExpression) -> ContractExpression {
+        let ContractExpression::CFragment(CExpression::Variable(name)) = &index else {
+            return index;
+        };
+        if !self.rust_usize_params.contains(name) {
+            return index;
+        }
+        let lowered = CExpression::Cast {
+            expression: Box::new(CExpression::Variable(name.clone())),
+            target_type: CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        };
+        crate::surface::lowering::contract_c_unary(index, lowered)
+    }
+
+    /// `name.len()` where `name` is a slice parameter: consumes `.len()` and
+    /// answers the length's own name.
+    fn take_rust_slice_len(&mut self, name: &str) -> Option<String> {
+        if !self.rust_slice_params.contains(name)
+            || self.peek() != Some(&Token::Dot)
+            || self.peek_next() != Some(&Token::Ident("len".into()))
+            || self.tokens.get(self.position + 2) != Some(&Token::LParen)
+            || self.tokens.get(self.position + 3) != Some(&Token::RParen)
+        {
+            return None;
+        }
+        self.position += 4;
+        Some(format!("{name}_len"))
+    }
+
+    /// `&T` and `&mut T` in a signature. The parameter is the pointer that
+    /// carries the reference, as Rust's own `value` is: the contract names
+    /// the referent `*value` and a field `parent.left`. `&T` is a pointer to
+    /// a constant referent. The contract still states `views` or `owns`.
+    #[inline(never)]
+    fn parse_rust_reference_type(&mut self) -> Result<ParsedType, ClickError> {
+        self.expect(Token::Amp)?;
+        let mutable = if self.peek_ident() == Some("mut") {
+            self.position += 1;
+            true
+        } else {
+            false
+        };
+        if matches!(self.peek(), Some(Token::Amp | Token::LParen)) {
+            return Err(self.error(
+                "a reference to a reference or `()` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+            ));
+        }
+        // `&[T; N]` is the pointer to the array's first element. The length
+        // is the type's, so the contract writes it: `views words[0..N]`.
+        let array = self.peek() == Some(&Token::LBracket);
+        if array {
+            self.position += 1;
+        }
+        let spelling = self.expect_ident("type")?;
+        if array {
+            self.expect(Token::Semicolon)?;
+            // The length is a constant expression; the importer checks it.
+            while !matches!(self.peek(), Some(Token::RBracket) | None) {
+                self.position += 1;
+            }
+            self.expect(Token::RBracket)?;
+            if rust_scalar_type(&spelling).is_none() {
+                return Err(self.error(format!(
+                    "an array of `{spelling}` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling"
+                )));
+            }
+        }
+        Ok(match rust_scalar_type(&spelling) {
+            Some(scalar) => {
+                let Some(c_type) = scalar.pointer_type() else {
+                    return Err(self.error(format!(
+                        "a reference to `{spelling}` is not supported in a `fn` signature"
+                    )));
+                };
+                ParsedType {
+                    c_type,
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: !mutable,
+                    reference: false,
+                }
+            }
+            None => ParsedType {
+                c_type: C0Type::Int32Pointer,
+                struct_name: Some(spelling),
+                struct_pointer: true,
+                constant: false,
+                pointee_constant: !mutable,
+                reference: false,
+            },
+        })
+    }
+
+    /// A Rust type in a signature: an integer or float type, `bool`, `()`,
+    /// or a struct by name.
+    fn parse_rust_type(&mut self) -> Result<ParsedType, ClickError> {
+        let scalar = |c_type| ParsedType {
+            c_type,
+            struct_name: None,
+            struct_pointer: false,
+            constant: false,
+            pointee_constant: false,
+            reference: false,
+        };
+        if self.peek() == Some(&Token::LParen) {
+            self.position += 1;
+            self.expect(Token::RParen)?;
+            return Ok(scalar(C0Type::Void));
+        }
+        if self.peek() == Some(&Token::Amp) {
+            return self.parse_rust_reference_type();
+        }
+        if self.peek() == Some(&Token::LBracket) {
+            return Err(self.error(
+                "an array or slice in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+            ));
+        }
+        let spelling = self.expect_ident("type")?;
+        Ok(match rust_scalar_type(&spelling) {
+            Some(c_type) => scalar(c_type),
+            None => ParsedType {
+                c_type: C0Type::Int32Pointer,
+                struct_name: Some(spelling),
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: false,
+                reference: false,
+            },
         })
     }
 
@@ -6028,41 +6520,54 @@ impl Parser {
         Ok(current.expect("the both tactic chain has a root"))
     }
 
+    /// `have P;`, `have P by simp;` or `have P by { ... }`, after the word
+    /// `have`. Out of line: the tactic dispatcher that calls it is on the
+    /// recursive proof-parsing path and keeps none of this in its frame.
+    #[inline(never)]
+    fn parse_have_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        // A `have` fact has no name: a later step cites it by restating
+        // its proposition. `name:` is never the start of a proposition,
+        // so refuse a label with the spelling to write instead.
+        if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next()) {
+            return Err(self.error(format!(
+                "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
+                 cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
+            )));
+        }
+        let proposition = self.parse_proposition()?;
+        // A `have` states a fact at the current point, so an omitted
+        // proof is `simp` here; it never executes C to reach the fact.
+        if self.peek() == Some(&Token::Semicolon) {
+            self.position += 1;
+            return Ok(ProofTactic::Have(ProofHave {
+                proposition,
+                proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Simp)),
+            }));
+        }
+        let auto_position = self.position;
+        let proof = self.parse_by_clause()?;
+        if proof == SourceProof::Tactic(SmartTactic::Auto) {
+            self.position = auto_position;
+            return Err(self.error(
+                "`auto` executes C to function exit, so it cannot prove a `have`; write `have P;` or `have P by simp;` to prove the fact where it is stated",
+            ));
+        }
+        self.skip_redundant_semicolon();
+        // `have P;`, `have P by simp;` and `have P by { simp(); }` are
+        // one proof step. They are one syntax tree too, so every
+        // consumer proves and reports them the same way.
+        Ok(ProofTactic::Have(ProofHave {
+            proposition,
+            proof: have_proof_as_written_in_full(proof),
+        }))
+    }
+
     // Conjunction spines do not retain the larger frames for loop, resource,
     // and leaf syntax at every child-proof level.
     #[inline(never)]
     fn parse_other_proof_tactic(&mut self, name: String) -> Result<ProofTactic, ClickError> {
         if name == "have" {
-            // A `have` fact has no name: a later step cites it by restating
-            // its proposition. `name:` is never the start of a proposition,
-            // so refuse a label with the spelling to write instead.
-            if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next())
-            {
-                return Err(self.error(format!(
-                    "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
-                     cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
-                )));
-            }
-            let proposition = self.parse_proposition()?;
-            // A `have` states a fact at the current point, so an omitted
-            // proof is `simp` here; it never executes C to reach the fact.
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-                return Ok(ProofTactic::Have(ProofHave {
-                    proposition,
-                    proof: SourceProof::Tactic(SmartTactic::Simp),
-                }));
-            }
-            let auto_position = self.position;
-            let proof = self.parse_by_clause()?;
-            if proof == SourceProof::Tactic(SmartTactic::Auto) {
-                self.position = auto_position;
-                return Err(self.error(
-                    "`auto` executes C to function exit, so it cannot prove a `have`; write `have P;` or `have P by simp;` to prove the fact where it is stated",
-                ));
-            }
-            self.skip_redundant_semicolon();
-            return Ok(ProofTactic::Have(ProofHave { proposition, proof }));
+            return self.parse_have_tactic();
         }
         if name == "mark" {
             let mark = self.expect_ident("mark name")?;
@@ -7969,6 +8474,11 @@ impl Parser {
             Some(Token::Ident(kind)) if kind == "assignment" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let local = self.expect_ident("assignment local")?;
+                if self.current_reference_params.contains(&local) {
+                    return Err(self.error(format!(
+                        "`{local}` is a reference, and binding a reference is not an assignment; a store through `{local}` is a store to what it refers to, so select the statement itself with `statement(N)`"
+                    )));
+                }
                 self.expect(Token::Comma)?;
                 let occurrence = self.expect_index("assignment occurrence")?;
                 self.expect(Token::RParen)?;
@@ -8017,7 +8527,7 @@ impl Parser {
         &mut self,
         first: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        let mut values = vec![first];
+        let mut values = vec![self.parse_rust_casts(first)?];
         let mut operators: Vec<(usize, ContractBinaryConstructor)> = Vec::new();
         // Each precedence level has the same independently enforced chain
         // limit as the former recursive-descent level. A lower-precedence
@@ -8042,7 +8552,7 @@ impl Parser {
             }
             self.position += 1;
             operators.push((precedence, constructor));
-            values.push(self.parse_contract_unary()?);
+            values.push(self.parse_binary_operand()?);
         }
 
         while let Some((_, constructor)) = operators.pop() {
@@ -8225,7 +8735,7 @@ impl Parser {
             postfixes += 1;
             if self.peek() == Some(&Token::LBracket) {
                 self.position += 1;
-                let index = self.parse_contract_expression()?;
+                let index = self.parse_place_index()?;
                 self.expect(Token::RBracket)?;
                 let index = contract_expression_as_c_fragment(&index).ok_or_else(|| {
                     self.error("struct array indices must be current C expressions")
@@ -8630,6 +9140,29 @@ impl Parser {
             if !dereferences_pointer {
                 return Err(self.error("`*` expects a pointer"));
             }
+            // `*bytes` on a slice parameter is the whole slice, as `*value`
+            // is the one object a reference refers to.
+            if let CExpression::Variable(name) = &base
+                && self.rust_slice_params.contains(name)
+            {
+                let length =
+                    ContractExpression::CFragment(CExpression::Variable(format!("{name}_len")));
+                let end_expression = self.rust_place_index(length);
+                let end = contract_expression_as_c_fragment(&end_expression)
+                    .expect("a slice length is a C expression");
+                let start = CExpression::Value(int32(0));
+                return Ok(vec![ContractSegment {
+                    state: ContractSegmentState::Current,
+                    base,
+                    start: start.clone(),
+                    end,
+                    surface: ContractSegmentSurface::Range {
+                        base: surface_base,
+                        start: ContractExpression::CFragment(start),
+                        end: end_expression,
+                    },
+                }]);
+            }
             let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
             let Some(struct_name) = struct_name else {
                 return Ok(vec![ContractSegment {
@@ -8704,6 +9237,7 @@ impl Parser {
             .transpose()?;
         self.expect(Token::LBracket)?;
         let start_expression = self.parse_contract_expression()?;
+        let start_expression = self.rust_place_index(start_expression);
         let mut start = resource_body_c_fragment(&start_expression).ok_or_else(|| {
             self.error(
                 "memory segment start must be a current C expression or a scalar field of the resource being defined",
@@ -8711,6 +9245,7 @@ impl Parser {
         })?;
         self.expect(Token::DotDot)?;
         let end_expression = self.parse_contract_expression()?;
+        let end_expression = self.rust_place_index(end_expression);
         let mut end = resource_body_c_fragment(&end_expression).ok_or_else(|| {
             self.error(
                 "memory segment end must be a current C expression or a scalar field of the resource being defined",
@@ -9452,6 +9987,46 @@ impl Parser {
         self.parse_contract_unary_at_depth(0)
     }
 
+    /// `expr as T` in a Rust sidecar is the scalar cast `(T)expr`. It binds
+    /// tighter than a binary operator and looser than a unary one, as in
+    /// Rust. `as` followed by anything but a scalar type is left for the
+    /// clause that owns it (`intro() as name`).
+    #[inline(never)]
+    fn parse_rust_casts(
+        &mut self,
+        mut operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        while self.verifies_rust
+            && self.peek_ident() == Some("as")
+            && matches!(
+                self.peek_next(),
+                Some(Token::Ident(name)) if rust_scalar_type(name).is_some()
+            )
+        {
+            self.position += 1;
+            let target = self.expect_ident("type")?;
+            let target_type = rust_scalar_type(&target)
+                .expect("checked above")
+                .to_kernel_type();
+            let Some(expression) = contract_expression_as_c_fragment(&operand) else {
+                return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value"));
+            };
+            operand = crate::surface::lowering::contract_c_unary(
+                operand,
+                CExpression::Cast {
+                    expression: Box::new(expression),
+                    target_type,
+                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    pointee_struct: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                },
+            );
+        }
+        Ok(operand)
+    }
+
     fn parse_contract_unary_at_depth(
         &mut self,
         depth: usize,
@@ -9754,7 +10329,7 @@ impl Parser {
             match self.peek() {
                 Some(Token::LBracket) => {
                     self.position += 1;
-                    let index = self.parse_contract_expression()?;
+                    let index = self.parse_place_index()?;
                     self.expect(Token::RBracket)?;
                     if let Some(element_width) = struct_array_element_width.or_else(|| {
                         struct_name
@@ -9999,11 +10574,8 @@ impl Parser {
                         let owner = owner.clone();
                         self.position += 1;
                         let field = self.expect_ident("resource field name")?;
-                        if let Some(hidden) = self
-                            .hidden_child_fields
-                            .get(&(owner.clone(), field.clone()))
-                        {
-                            expression = ContractExpression::ResourceField(hidden.clone());
+                        if let Some(hidden) = self.hidden_child_field(&owner, &field) {
+                            expression = hidden;
                             continue;
                         }
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
@@ -10427,7 +10999,7 @@ impl Parser {
                                 binder_index: *binder_index,
                             })
                         }
-                        None => Ok(ContractExpression::CFragment(CExpression::Variable(name))),
+                        None => Ok(self.c_variable_expression(name)),
                     }
                 }
             }
@@ -10954,7 +11526,10 @@ impl Parser {
                     )
                 })
             }
-            Some(Token::Ident(name)) => Ok(C0Expression::Variable(name)),
+            Some(Token::Ident(name)) => {
+                let name = self.take_rust_slice_len(&name).unwrap_or(name);
+                Ok(C0Expression::Variable(name))
+            }
             Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),
             Some(Token::UInt8Number(value)) => Ok(C0Expression::UInt8Literal(value)),
             Some(Token::UInt32Number(value)) => Ok(C0Expression::UInt32Literal(value)),

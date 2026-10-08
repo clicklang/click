@@ -40,7 +40,7 @@ void caller(int32 a[], int32 n) {
     consumes a[0..n];
     produces a[0..n];
 } by {
-    have 0 <= 0 by { simp(); }
+    have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
@@ -51,7 +51,7 @@ void caller(int32 a[], int32 n) {
         arithmetic() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; }
     }
     step();
-    have icount(a, 0, 1) == 5 by { simp(); }
+    have icount(a, 0, 1) == 5;
     execute();
     simp();
 }

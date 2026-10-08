@@ -4563,6 +4563,111 @@ fn a_hidden_record_needs_its_child_declared_first() {
     );
 }
 
+/// A Rust sidecar states a signature as Rust does. It declares the same
+/// function as the C-shaped spelling, and `expr as T` is the scalar cast.
+#[test]
+fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
+    let c_shaped = "verifying \"arithmetic.rs\"; \
+        uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
+        ensures result == sum + (uint32)byte; } by { execute(); simp(); } \
+        bool touch(uint64 count, bool flag) { ensures result == flag; } by { execute(); simp(); }";
+    let rust = "verifying \"arithmetic.rs\"; \
+        fn add_byte(sum: u32, byte: u8) -> u32 { requires sum <= 4294967040u32; \
+        ensures result == sum + byte as u32; } by { execute(); simp(); } \
+        fn touch(count: usize, flag: bool) -> bool { ensures result == flag; } by { execute(); simp(); }";
+    assert_eq!(
+        parser::parse(rust).expect("the Rust spelling parses"),
+        parser::parse(c_shaped).expect("the C-shaped spelling parses"),
+    );
+    for (source, expected) in [
+        (
+            "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "a `fn` signature is the Rust spelling",
+        ),
+        (
+            "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "a reference to a reference or `()` in a `fn` signature is not supported yet",
+        ),
+        (
+            "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
+            "an array or slice in a `fn` signature is not supported yet",
+        ),
+    ] {
+        let error = parser::parse(source).expect_err("the signature is refused");
+        assert!(error.message.contains(expected), "{source}: {error:?}");
+    }
+    // A reference is the pointer that carries it; `&T` has a constant
+    // referent. The contract names the referent `*value`.
+    assert_eq!(
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             fn set(value: &mut i32, seen: &i32) { owns *value; views *seen; \
+             ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             void set(int32* value, const int32* seen) { owns *value; views *seen; \
+             ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
+    // A slice is one name over the pointer and length Rust passes.
+    assert_eq!(
+        parser::parse(
+            "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
+             ensures result == bytes.len() + out.len(); } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"bytes.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
+             uint32* out, uint64 out_len) { ensures result == bytes_len + out_len; } \
+             by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
+    // `*bytes` is the whole slice, and a `usize` parameter written alone
+    // as an index is the 32-bit index a place takes. The importer test
+    // verifies what these mean; here they parse.
+    parser::parse(
+        "verifying \"bytes.rs\"; fn read(bytes: &[u8], index: usize) -> u8 { \
+         views *bytes; ensures result == bytes[index]; } by { execute(); simp(); }",
+    )
+    .expect("the Rust spelling parses");
+    // An `impl` block holds `fn` contracts and nothing else, and is Rust.
+    for (source, expected) in [
+        (
+            "verifying \"g.rs\"; impl Guard { resource r() { } }",
+            "an `impl` block holds `fn` contracts",
+        ),
+        (
+            "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); simp(); } }",
+            "unknown C type `impl`",
+        ),
+    ] {
+        let error = parser::parse(source).expect_err("the impl block is refused");
+        assert!(error.message.contains(expected), "{source}: {error:?}");
+    }
+    // A reference to an array is the pointer to its first element.
+    assert_eq!(
+        parser::parse(
+            "verifying \"arrays.rs\"; fn first(bytes: &[u8; 4], words: &mut [u32; 1 + 2]) -> u8 { \
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"arrays.rs\"; uint8 first(const uint8* bytes, uint32* words) { \
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
+    // `as` before anything but a scalar type is not a cast.
+    parser::parse(
+        "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",
+    )
+    .expect("a C sidecar is unchanged");
+}
+
 /// A missing memory fact is reported as the place a clause would name.
 #[test]
 fn a_missing_memory_fact_is_reported_as_a_place() {

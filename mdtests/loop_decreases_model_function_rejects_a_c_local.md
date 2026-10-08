@@ -56,7 +56,7 @@ void countdown(int32 n) {
             close_invariants();
         }
     }
-    have n == 0 by { simp(); }
+    have n == 0;
     unfold(c);
     step();
     simp();

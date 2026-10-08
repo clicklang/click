@@ -10,7 +10,16 @@ pub(super) fn prepare(
     import: &PreparedCppImport,
     function: &CFunction,
     reachable: &[CFunction],
+    layouts: BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<PreparedExecution, String> {
+    let functions = prepare_functions(import, function, reachable)?;
+    Ok(PreparedExecution { functions, layouts })
+}
+
+/// Materialize checked nominal layouts once for execution and proof metadata.
+pub(super) fn prepare_layouts(
+    import: &PreparedCppImport,
+) -> Result<BTreeMap<String, syntax::C0StructLayout>, String> {
     let mut layouts = BTreeMap::new();
     let records = import
         .export()
@@ -117,12 +126,22 @@ pub(super) fn prepare(
             return Err(format!("duplicate C++ record name `{}`", record.name));
         }
     }
-    let functions = std::iter::once(&import.export().function)
+    Ok(layouts)
+}
+
+fn prepare_functions(
+    import: &PreparedCppImport,
+    function: &CFunction,
+    reachable: &[CFunction],
+) -> Result<Vec<syntax::C0Function>, String> {
+    std::iter::once(&import.export().function)
         .chain(&import.export().reachable_functions)
         .zip(std::iter::once(function).chain(reachable))
         .map(|(source, kernel)| {
             crate::instrumentation::record_deterministic_work(1);
             let mut locals = BTreeMap::new();
+            let mut references = BTreeSet::new();
+            let mut objects = BTreeSet::new();
             let mut ambiguous = BTreeSet::new();
             let mut pending = vec![source.body.as_slice()];
             while let Some(body) = pending.pop() {
@@ -130,6 +149,13 @@ pub(super) fn prepare(
                     crate::instrumentation::record_deterministic_work(1);
                     match statement {
                         CppStatement::Declare { local, .. } => {
+                            // A name declared both as a reference and as
+                            // an object, in two scopes, is read as written.
+                            if matches!(local.value_type, CppType::LvalueReference { .. }) {
+                                references.insert(local.name.clone());
+                            } else {
+                                objects.insert(local.name.clone());
+                            }
                             if let CppType::Record { name, .. } = &local.value_type {
                                 if locals.get(&local.name).is_some_and(|known| known != name) {
                                     ambiguous.insert(local.name.clone());
@@ -159,10 +185,11 @@ pub(super) fn prepare(
             for name in ambiguous {
                 locals.remove(&name);
             }
-            Ok(function_interface(source, kernel)?.with_local_struct_values(locals))
+            Ok(function_interface(source, kernel)?
+                .with_local_struct_values(locals)
+                .with_local_references(references.difference(&objects).cloned().collect()))
         })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(PreparedExecution { functions, layouts })
+        .collect::<Result<Vec<_>, String>>()
 }
 
 /// Builds the proof-facing signature for the supported C++ profile from Clang's

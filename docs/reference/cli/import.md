@@ -252,6 +252,12 @@ not end the backing object's lifetime. References to local objects, temporary
 lifetime extension, rvalue references and nested reference declarations remain
 unsupported.
 
+A proof names a reference local as it names a reference parameter. For
+`int& r = value;`, `r` is the referent, as in `have r == 1;`, and `&r` is its
+address, as in `have &r == &value;`. `r[0]` is refused with the spelling to
+write. Binding a reference is not an assignment, so `assignment(r, N)` is
+refused; a store through `r` is selected by its statement.
+
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
 uses its direct kernel lowering. `click verify`, `click profile`, `click
@@ -993,7 +999,17 @@ Explicit casts, automatic derived objects and base constructor/destructor
 execution remain unsupported. Multiple or virtual bases, empty bases, own
 derived fields and tail-padding reuse remain outside this profile.
 
-Copies and moves, default or partial aggregate initialization, multiple
+Discarded-result trivial copy assignment between live lvalues of the same
+nominal record lowers to shared C aggregate field copies. Clang must resolve a
+non-deleted, non-virtual trivial copy assignment; the record and embedded
+records require trivial destruction and no base subobjects. Const sources and
+nested record projections are supported. The destination requires write
+authority and the source requires read authority for every scalar leaf. Checked
+Clang layouts preserve native pointer and unsigned extent values; copying a
+descriptor transfers no backing-storage authority. Self-assignment preserves
+the fields. User-defined assignment bodies and move assignment remain refused.
+
+Copy construction and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
 virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.

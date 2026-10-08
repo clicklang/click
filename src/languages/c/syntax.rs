@@ -177,6 +177,10 @@ pub struct C0Function {
     /// Struct type of each unambiguous automatic struct value, indexed by
     /// the spelling a Click sidecar uses.
     local_struct_values: BTreeMap<String, String>,
+    /// The automatic locals of reference type, by the name the source gives
+    /// each. Its carrying pointer is the local [`reference_carrier_name`]
+    /// names.
+    local_references: BTreeSet<String>,
     string_literals: Vec<C0StringLiteral>,
 }
 
@@ -2961,6 +2965,7 @@ impl C0Function {
             static_aggregate_arrays: BTreeMap::new(),
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
+            local_references: BTreeSet::new(),
             string_literals: Vec::new(),
         }
     }
@@ -3058,6 +3063,17 @@ impl C0Function {
 
     pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
         &self.local_struct_values
+    }
+
+    pub(crate) fn with_local_references(mut self, references: BTreeSet<String>) -> Self {
+        self.local_references = references;
+        self
+    }
+
+    /// The automatic locals of reference type, by source name. A proof names
+    /// one as it names a reference parameter: the name is the referent.
+    pub fn local_references(&self) -> &BTreeSet<String> {
+        &self.local_references
     }
 
     pub fn static_arrays(&self) -> &BTreeMap<String, C0StaticArray> {
@@ -8774,6 +8790,7 @@ impl Parser {
             static_aggregate_arrays: std::mem::take(&mut self.static_aggregate_arrays),
             local_struct_pointers,
             local_struct_values,
+            local_references: BTreeSet::new(),
             string_literals,
         })
     }

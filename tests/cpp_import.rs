@@ -23,6 +23,90 @@ use click::surface::{
 };
 
 const SOURCE: &str = include_str!("../examples/basic-cpp/increment.cpp");
+
+#[test]
+fn trivial_record_copy_assignment_preserves_self_and_projected_values() {
+    let project = Project::with_fixture(
+        "copy.cpp",
+        "probe",
+        "struct Extent { unsigned long size; }; struct View { int* data; Extent extent; }; int probe(View& target, const View& source) { target.extent = source.extent; target = target; return 0; }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_profile("probe", "copy.cpp", true);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[0],
+        CppStatement::TrivialCopy { .. }
+    ));
+    let source = r#"verifying "copy.cpp";
+int32 probe(struct View& target, const struct View& source) {
+ owns target.data;
+ owns target.extent.size;
+ views source.extent.size;
+ ensures target.data == old(target.data);
+ ensures target.extent.size == source.extent.size;
+ ensures source.extent.size == old(source.extent.size);
+ ensures result == 0;
+} by { execute(); simp(); }
+"#;
+    let path = project.directory.join("copy.click");
+    fs::write(&path, source).unwrap();
+    let click_project = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&click_project, &import).unwrap();
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..3 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => {
+                forged["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                    true.into()
+            }
+            1 => forged["function"]["body"][0]["source"]["projections"] = serde_json::json!([]),
+            2 => forged["function"]["body"][0]["span"]["file"] = "unlocked.cpp".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "mutation {mutation}"
+        );
+    }
+}
+
+#[test]
+fn record_assignment_refuses_nontrivial_copy_and_move_bodies() {
+    for source in [
+        "struct View { int value; View& operator=(const View& other) noexcept { value = other.value + 1; return *this; } }; int probe(View& target, const View& source) { target = source; return 0; }",
+        "struct View { int value; View& operator=(View&&) noexcept = default; }; int probe(View& target, View& source) { target = static_cast<View&&>(source); return 0; }",
+    ] {
+        let project = Project::with_fixture("copy.cpp", "probe", source);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_profile("probe", "copy.cpp", true);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("requires a trivial copy assignment")
+                || error.contains("must remain trivially copyable"),
+            "{error}"
+        );
+        assert!(!project.artifact().exists());
+    }
+}
+
 const SIDECAR: &str = include_str!("../examples/basic-cpp/increment.click");
 const BRANCH_SOURCE: &str = include_str!("fixtures/cpp-verification/branch-return/choose.cpp");
 const BRANCH_SIDECAR: &str = include_str!("fixtures/cpp-verification/branch-return/choose.click");
@@ -14172,6 +14256,57 @@ int32& run(int32& value) { owns value; ensures &result == &value; ensures result
         assert!(
             verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
                 .is_err()
+        );
+    }
+}
+
+/// A proof names a reference local as it names a reference parameter: the
+/// name is the referent, and `&name` is its address.
+#[test]
+fn cpp_reference_locals_read_as_their_referents_in_a_proof_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "run",
+        "int run(int& value) noexcept { int& r = value; r = 1; return r; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "local.cpp";
+int32 run(int32& value) { owns value; ensures result == 1; ensures value == 1; } by {
+    PROOF
+}
+"#;
+    let proof = |body: &str| sidecar.replace("PROOF", body);
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        &proof("step(); step(); step(); have r == 1; have &r == &value; execute(); simp();"),
+    );
+    for (body, expected) in [
+        (
+            "step(); step(); step(); have r == 2; execute(); simp();",
+            "r == 2",
+        ),
+        (
+            "step(); step(); step(); have r[0] == 1; execute(); simp();",
+            "`r` is a reference and names the value it refers to, so it takes no index",
+        ),
+        (
+            "execute_until(assignment(r, 0)); execute(); simp();",
+            "`r` is a reference, and binding a reference is not an assignment",
+        ),
+    ] {
+        let hostile = proof(body);
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        let error =
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .expect_err("the proof misstates or misnames the reference local");
+        assert!(
+            error.message().contains(expected),
+            "{body}: {}",
+            error.message()
         );
     }
 }

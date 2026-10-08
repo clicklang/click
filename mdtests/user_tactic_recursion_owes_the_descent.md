@@ -76,7 +76,7 @@ tactic convert(p: struct node*) {
         Links::Nil => {
             unfold(x);
             let y = fold(list2_at(p), { model: Links::Nil });
-            have y.model == old(x.model) by { simp(); }
+            have y.model == old(x.model);
         },
         Links::Cons(rest_model) => {
             let { rest: r } = unfold(x);
@@ -91,9 +91,9 @@ tactic convert(p: struct node*) {
                 normalize();
             }
             let { y: r2 } = convert(p->next, { x: r });
-            have r2.model == rest_model by { simp(); }
+            have r2.model == rest_model;
             let y = fold(list2_at(p), { model: Links::Cons(rest_model) }, { rest: r2 });
-            have y.model == old(x.model) by { simp(); }
+            have y.model == old(x.model);
         },
     }
 }
