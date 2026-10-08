@@ -60,6 +60,7 @@ use super::{
     AliasCandidates, CType, CValue, Pointer, PointerBlock, PointerOffsetTerm, SharedCMemory,
     SnapshotMap, SnapshotMapChange, SnapshotSet,
 };
+use crate::kernel::Variable;
 use crate::kernel::primitives::Bitvector32Term;
 use crate::kernel::primitives::LoadKind;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1403,6 +1404,36 @@ impl CellStore {
     /// Dependency selection must not introduce a run's generated load atoms.
     pub(in crate::kernel) fn explicitly_stored_value(&self, pointer: &Pointer) -> Option<&CValue> {
         self.concrete.get(pointer)
+    }
+
+    /// Inspect a scalar atom without copying an unrelated symbolic expression.
+    pub(crate) fn bitvector_variable_at(&self, pointer: &Pointer) -> Option<Variable> {
+        fn variable(value: &CValue) -> Option<Variable> {
+            match value {
+                CValue::Int8(term)
+                | CValue::Int16(term)
+                | CValue::Int32(term)
+                | CValue::UInt8(term)
+                | CValue::UInt16(term)
+                | CValue::UInt32(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term)
+                | CValue::Int128(term)
+                | CValue::UInt128(term) => match term {
+                    Bitvector32Term::Variable(variable) => Some(*variable),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        if let Some(value) = self.concrete.get(pointer) {
+            return variable(value);
+        }
+        let slot = self.live_run_slot(pointer)?;
+        if let RunValueMode::Constant(value) = &slot.run.mode {
+            return variable(value);
+        }
+        variable(&slot.run.value(slot.index))
     }
 
     /// The cell at `pointer`, read from a run slot without building the
