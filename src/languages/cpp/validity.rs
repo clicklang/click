@@ -9,10 +9,6 @@ use super::schema::*;
 use std::collections::BTreeSet;
 
 impl CppType {
-    pub(super) fn validate_aliases(&self, logical_source: &str) -> Result<(), String> {
-        self.check_aliases(&|file| file == logical_source)
-    }
-
     pub(super) fn validate_aliases_in(&self, sources: &BTreeSet<String>) -> Result<(), String> {
         self.check_aliases(&|file| sources.contains(file))
     }
@@ -165,7 +161,7 @@ impl Metadata<'_> {
         crate::instrumentation::record_deterministic_work(1);
         expression
             .value_type()
-            .validate_aliases(self.logical_source)?;
+            .validate_aliases_in(self.alias_sources)?;
         let span = match expression {
             CppExpression::IntegerLiteral { span, .. }
             | CppExpression::CompilerConstant { span, .. } => span,
@@ -225,7 +221,7 @@ impl Metadata<'_> {
                     span,
                 } => {
                     self.callee(callee)?;
-                    value_type.validate_aliases(self.logical_source)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
                     span.validate(self.logical_source)?;
                     self.arguments(arguments)?;
                 }
@@ -365,7 +361,7 @@ impl Metadata<'_> {
                 } => {
                     self.callee(callee)?;
                     self.arguments(arguments)?;
-                    value_type.validate_aliases(self.logical_source)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
                     self.cleanups(cleanups)?;
                     span
                 }
@@ -409,7 +405,7 @@ impl Metadata<'_> {
                         CppCondition::Call { call } => {
                             self.callee(&call.callee)?;
                             self.arguments(&call.arguments)?;
-                            call.value_type.validate_aliases(self.logical_source)?;
+                            call.value_type.validate_aliases_in(self.alias_sources)?;
                             call.span.validate(self.logical_source)?;
                         }
                     }
@@ -622,7 +618,11 @@ mod tests {
         )
         .unwrap();
         value_type.validate_aliases_in(&sources).unwrap();
-        assert!(value_type.validate_aliases("fixture.cpp").is_err());
+        assert!(
+            value_type
+                .validate_aliases_in(&BTreeSet::from(["fixture.cpp".into()]))
+                .is_err()
+        );
         let mut cyclic = ty();
         let duplicate = cyclic["source_aliases"][0].clone();
         cyclic["source_aliases"]

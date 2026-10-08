@@ -12306,3 +12306,370 @@ int choose(bool fail) { predicate(fail); try { if (fail) { Guard guard(0); } } c
     assert!(!project.artifact().exists());
     assert!(!project.lock().exists());
 }
+
+fn header_graph_project(selected: &str) -> Project {
+    let mut project = Project::with_fixture(
+        "graph.cpp",
+        selected,
+        r#"
+#include "helpers.h"
+int choose(const Box& state) noexcept { if (predicate(state.left)) { return 1; } else { return Read(state.left); } }
+void change(Box& state, int next) noexcept { Store(state.left, next); }
+"#,
+    );
+    fs::write(project.directory.join("types.h"), r#"
+#pragma once
+using Word = int;
+struct Base { Word value; bool Empty() const noexcept { return value == 0; } void Set(Word next) noexcept { value = next; } };
+struct Derived : Base {};
+struct Box { Derived left; int sibling; };
+"#).unwrap();
+    fs::write(
+        project.directory.join("helpers.h"),
+        r#"
+#pragma once
+#include "types.h"
+inline Word Read(const Base& state) noexcept { return state.value; }
+inline void Store(Base& state, Word next) noexcept { state.Set(next); }
+inline bool predicate(const Base& state) noexcept { return state.Empty(); }
+"#,
+    )
+    .unwrap();
+    project
+        .dependencies
+        .extend(["helpers.h".into(), "types.h".into()]);
+    project.write_config(selected);
+    project
+}
+
+#[test]
+fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
+    let project = header_graph_project("choose");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().function.span.file, "graph.cpp");
+    for function in &import.export().reachable_functions {
+        let source = if function.name.starts_with("Base_") {
+            "types.h"
+        } else {
+            "helpers.h"
+        };
+        assert_eq!(function.span.file, source);
+        assert!(
+            function
+                .parameters
+                .iter()
+                .all(|parameter| parameter.span.file == source)
+        );
+    }
+    fs::remove_file(&project.exporter).unwrap();
+    for (value, result) in [(0, 1), (3, 3)] {
+        let sidecar = format!(
+            r#"verifying "graph.cpp";
+        bool Base_Empty(const struct Base* self) {{ views self->value; ensures result == (if self->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        bool predicate(const struct Base* state) {{ views state->value; ensures result == (if state->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        int32 Read(const struct Base* state) {{ views state->value; ensures result == state->value; }} by {{ execute(); simp(); }}
+        int32 choose(const struct Box* state) {{ views state->left.base.value; views state->sibling; requires state->left.base.value == {value}; ensures result == {result}; ensures state->sibling == old(state->sibling); }} by {{ execute(); simp(); }}
+        "#
+        );
+        check_return_call_sidecar(&project, &import, &sidecar);
+        let hostile = sidecar.replace(
+            &format!("result == {result}; ensures state->sibling"),
+            "result == 9; ensures state->sibling",
+        );
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn locked_header_graph_mutators_verify_offline_and_require_leaf_authority() {
+    let project = header_graph_project("change");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let sidecar = r#"verifying "graph.cpp";
+    void Base_Set(struct Base* self, int32 next) { owns self->value; ensures self->value == next; } by { execute(); simp(); }
+    void Store(struct Base* state, int32 next) { owns state->value; ensures state->value == next; } by { execute(); simp(); }
+    void change(struct Box* state, int32 next) { owns state->left.base.value; views state->sibling; ensures state->left.base.value == next; ensures state->sibling == old(state->sibling); } by { execute(); simp(); }
+    "#;
+    check_return_call_sidecar(&project, &import, sidecar);
+    for hostile in [
+        sidecar.replace(
+            "owns state->left.base.value;",
+            "views state->left.base.value;",
+        ),
+        sidecar.replace(
+            "ensures state->sibling == old(state->sibling)",
+            "ensures state->sibling == next",
+        ),
+    ] {
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn locked_header_graph_rejects_forged_body_call_and_alias_origins() {
+    use sha2::{Digest, Sha256};
+    let project = header_graph_project("choose");
+    refresh_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let predicate = artifact["reachable_functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|function| function["name"] == "predicate")
+        .unwrap();
+    let read = artifact["reachable_functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|function| function["name"] == "Read")
+        .unwrap();
+    for mutation in 0..8 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => forged["function"]["span"]["file"] = "helpers.h".into(),
+            1 => forged["reachable_functions"][predicate]["span"]["file"] = "types.h".into(),
+            2 => {
+                forged["reachable_functions"][predicate]["parameters"][0]["span"]["file"] =
+                    "graph.cpp".into()
+            }
+            3 => {
+                forged["reachable_functions"][predicate]["body"][0]["callee"]["span"]["file"] =
+                    "types.h".into()
+            }
+            4 => {
+                forged["reachable_functions"][predicate]["body"][0]["span"]["file"] =
+                    "unlocked.h".into()
+            }
+            5 => {
+                forged["reachable_functions"][read]["return_type"]["source_aliases"][0]["span"]["file"] =
+                    "unlocked.h".into()
+            }
+            6 => {
+                forged["reachable_functions"][predicate]["body"][0]["callee"]["declaration_id"] =
+                    "missing".into()
+            }
+            7 => forged["dependencies"] = serde_json::json!(["types.h"]),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&forged_lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{mutation}: {error}");
+    }
+}
+
+#[test]
+fn locked_header_graph_requires_explicit_dependencies_and_fresh_bytes() {
+    let project = header_graph_project("choose");
+    let original = fs::read_to_string(project.directory.join("helpers.h")).unwrap();
+    refresh_import(&project.config()).unwrap();
+    let identity = load_import(&project.config())
+        .unwrap()
+        .identity()
+        .to_string();
+    fs::write(
+        project.directory.join("helpers.h"),
+        format!("{original}\n// changed\n"),
+    )
+    .unwrap();
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("dependencies differ")
+            || error.contains("preprocessor")
+            || error.contains("dependency"),
+        "{error}"
+    );
+    refresh_import(&project.config()).unwrap();
+    assert_ne!(identity, load_import(&project.config()).unwrap().identity());
+
+    let mut missing = header_graph_project("choose");
+    missing.dependencies.retain(|path| path != "helpers.h");
+    missing.write_config("choose");
+    let error = refresh_import(&missing.config()).unwrap_err();
+    assert!(error.contains("configured dependencies"), "{error}");
+    assert!(!missing.artifact().exists());
+    assert!(!missing.lock().exists());
+}
+
+#[test]
+fn locked_header_graph_validates_reachable_bodies_and_refuses_recursion() {
+    for (body, diagnostic) in [
+        (
+            "while (state.value != 0) {} return 0;",
+            "unsupported statement",
+        ),
+        ("return Read(state);", "recursive C++ calls"),
+    ] {
+        let project = header_graph_project("choose");
+        let original = fs::read_to_string(project.directory.join("helpers.h")).unwrap();
+        fs::write(
+            project.directory.join("helpers.h"),
+            original.replace("return state.value;", body),
+        )
+        .unwrap();
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(error.len() < 8000);
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn locked_header_graph_preserves_scalar_exception_contracts_offline() {
+    let mut project = Project::with_fixture(
+        "header-exception.cpp",
+        "choose",
+        "#include \"predicate.h\"\nint choose(bool fail) { if (predicate(fail)) { return 5; } else { return 6; } }",
+    );
+    fs::write(
+        project.directory.join("predicate.h"),
+        "#pragma once\nbool predicate(bool fail) { if (fail) { throw 7; } return true; }\n",
+    )
+    .unwrap();
+    project.dependencies.push("predicate.h".into());
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior(
+        "choose",
+        "header-exception.cpp",
+        true,
+        "scalar_int32",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(
+        import.export().reachable_functions[0].span.file,
+        "predicate.h"
+    );
+    fs::remove_file(&project.exporter).unwrap();
+    let sidecar = r#"verifying "header-exception.cpp";
+    bool predicate(bool fail) throws int32 { ensures result == 1 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+    int32 choose(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+    "#;
+    check_return_call_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace(
+        "exceptional ensures exception == 7 by",
+        "exceptional ensures exception == 8 by",
+    );
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn locked_header_graph_can_call_back_into_the_selected_source() {
+    let mut project = Project::with_fixture(
+        "callback.cpp",
+        "choose",
+        "int callback(int value) noexcept;\n#include \"bridge.h\"\nint callback(int value) noexcept { return value; }\nint choose(int value) noexcept { return bridge(value); }\n",
+    );
+    fs::write(
+        project.directory.join("bridge.h"),
+        "#pragma once\ninline int bridge(int value) noexcept { return callback(value); }\n",
+    )
+    .unwrap();
+    project.dependencies.push("bridge.h".into());
+    project.write_config("choose");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().reachable_functions[0].span.file, "bridge.h");
+    assert_eq!(
+        import.export().reachable_functions[1].span.file,
+        "callback.cpp"
+    );
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "callback.cpp";
+    int32 callback(int32 value) { ensures result == value; } by { execute(); simp(); }
+    int32 bridge(int32 value) { ensures result == value; } by { execute(); simp(); }
+    int32 choose(int32 value) { ensures result == value; } by { execute(); simp(); }
+    "#,
+    );
+}
+
+#[test]
+fn locked_header_graph_verifies_concrete_template_instances_only() {
+    let mut project = Project::with_fixture(
+        "template-graph.cpp",
+        "choose",
+        "#include \"templates.h\"\nint choose(int value) noexcept { return identity<int>(value); }",
+    );
+    fs::write(project.directory.join("templates.h"), "#pragma once\ntemplate<typename T> T identity(T value) noexcept { return value; }\ninline int unused(int value) noexcept { while (value != 0) {} return 0; }\n").unwrap();
+    project.dependencies.push("templates.h".into());
+    project.write_config("choose");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [callee] = import.export().reachable_functions.as_slice() else {
+        panic!("only one instantiated callee is reachable")
+    };
+    assert_eq!(callee.span.file, "templates.h");
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        &format!(
+            r#"verifying "template-graph.cpp";
+    int32 {}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+    int32 choose(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+    "#,
+            callee.name
+        ),
+    );
+}
+
+#[test]
+fn locked_header_graph_retains_object_constant_and_macro_boundaries() {
+    for (header, diagnostic) in [
+        (
+            "inline constexpr int value = 7; inline int read() noexcept { return value; }",
+            "constants must be declared in the selected source",
+        ),
+        (
+            "struct Guard { int value; explicit Guard(int initial) noexcept : value(initial) {} ~Guard() noexcept { value = 0; } }; inline int read() noexcept { Guard guard(0); return 0; }",
+            "selected file",
+        ),
+        (
+            "#include \"macro.h\"\ninline int read() noexcept { return VALUE; }",
+            "executable source locations must stay within their function source",
+        ),
+    ] {
+        let mut project = Project::with_fixture(
+            "bounded-header.cpp",
+            "choose",
+            "#include \"bounded.h\"\nint choose() noexcept { return read(); }",
+        );
+        fs::write(project.directory.join("bounded.h"), header).unwrap();
+        fs::write(project.directory.join("macro.h"), "#define VALUE 7\n").unwrap();
+        project.dependencies.push("bounded.h".into());
+        project.write_config("choose");
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(error.len() < 8000);
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
