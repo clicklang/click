@@ -84,17 +84,23 @@ explicit offset normalization remains available through `are_offsets_equal`.
 This avoids normalization work during unrelated field-separation checks.
 These checks require no alias enumeration or cancellation rule.
 
-When a checked cross-block pointer premise has a symbolic displacement that
-cannot be spelled as an offset term, the graph additionally joins its raw
-`address(block, offset)` applications. Offset-class merges then propagate by
+Checked cross-block pointer premises involving the shared external-argument
+block, concrete storage, or an unspellable displacement also join their raw
+`address(block, offset)` applications. An address class retains one offset
+witness per exact block. Merging classes with a shared block joins those
+offsets: `address(A, x) == p` and `p == address(A, y)` establish `x == y`,
+regardless of the affine representative. This is exact byte-address
+injectivity within one block; addresses from different blocks do not imply
+equal offsets. Only witnesses in the lighter class move, so unrelated
+address classes are never scanned. Offset-class merges then propagate by
 ordinary congruence, so `x == y`, `address(A, y) == z`, and `z == null` establish
 `address(A, x) == null` in any insertion order. Affine block merges translate
 registered applications when that translation is spellable. Query registration
 can use a stated `i64::MIN` translation directly without constructing its
 opposite sign. Unsupported translations otherwise remain unknown.
-Raw applications supplement the affine fragment only where its offset
-spelling loses this connection; derived load merges retain their existing
-indexed closure rather than eagerly duplicating every application.
+Raw applications preserve these exact premises independently of affine
+coordinates; derived load merges retain their existing indexed closure
+without eagerly duplicating every application.
 
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition, unsigned division/remainder and bitwise XOR have

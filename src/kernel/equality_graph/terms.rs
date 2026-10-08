@@ -3,7 +3,8 @@
 //! scaling. Unsigned division/remainder and bitwise XOR have congruence only;
 //! all other scalar operations stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
-//! merges. No arithmetic solving, cancellation, or injectivity runs here.
+//! merges. Equal addresses in one block also equate their byte offsets.
+//! No scalar arithmetic solving, cancellation, or general injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
 use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
@@ -119,6 +120,10 @@ pub(super) struct TermClasses {
     markers: PersistentMap<u64, Arc<()>>,
     address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
     address_nodes: PersistentSet<u64>,
+    // One offset witness per exact block in each address class. When address
+    // classes merge, a shared block proves its two offsets equal. Small-side
+    // class union visits only moved witnesses, never ambient pointer facts.
+    offsets_by_address_block: PersistentMap<u64, PersistentMap<u64, u64>>,
     // Retained concrete address evidence follows typed class merges. This
     // disambiguates parameters sharing the external address-space block.
     storage_addresses: PersistentMap<u64, Option<Pointer>>,
@@ -227,6 +232,27 @@ impl TermClasses {
             .get(&self.root(id))
             .cloned()
             .flatten()
+    }
+
+    fn merge_address_offsets(&mut self, moved: u64, kept: u64, pending: &mut Vec<(u64, u64)>) {
+        let Some(moved_offsets) = self.offsets_by_address_block.get(&moved).cloned() else {
+            return;
+        };
+        let mut kept_offsets = self
+            .offsets_by_address_block
+            .get(&kept)
+            .cloned()
+            .unwrap_or_default();
+        for (block, offset) in moved_offsets.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(previous) = kept_offsets.get(block) {
+                pending.push((*previous, *offset));
+            } else {
+                kept_offsets.insert(*block, *offset);
+            }
+        }
+        self.offsets_by_address_block.remove(&moved);
+        self.offsets_by_address_block.insert(kept, kept_offsets);
     }
 
     fn merge_storage_addresses(&mut self, moved: u64, kept: u64) {
@@ -445,6 +471,8 @@ impl TermClasses {
         let application = match &node {
             Node::Address(block, offset) => {
                 self.address_nodes = self.address_nodes.with_value(id);
+                self.offsets_by_address_block
+                    .insert(id, PersistentMap::default().with_inserted(*block, *offset));
                 Some(Application::Address(*block, *offset))
             }
             Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
@@ -826,6 +854,7 @@ impl TermClasses {
             }
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
+            self.merge_address_offsets(moved, kept, &mut pending);
             self.merge_storage_addresses(moved, kept);
             self.merge_alignment_witnesses(moved, kept);
             self.parents.insert(moved, kept);

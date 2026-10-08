@@ -1157,8 +1157,13 @@ impl EqualityGraph {
             }),
             _ => true,
         };
+        // External C pointers share a block. Preserve their raw addresses
+        // so a transitive chain can equate two offsets in that original
+        // block, independently of the affine representative's coordinates.
         let address_changed = if left.block != right.block
             && (needs_raw_addresses
+                || matches!(left.block, PointerBlock::ExternalArgument)
+                || matches!(right.block, PointerBlock::ExternalArgument)
                 || EqualityGraphState::is_storage_block(&left.block)
                 || EqualityGraphState::is_storage_block(&right.block))
         {
@@ -1984,6 +1989,67 @@ mod tests {
         assert!(unspellable.are_equal(&left, &right));
         assert!(unspellable.are_equal(&right, &left));
         assert!(!unspellable.are_equal(&left, &right.offset_by_bytes(1)));
+    }
+
+    #[test]
+    fn pointer_transitivity_recovers_same_block_offsets() {
+        let offset = |id| PointerOffsetTerm::Int32Scaled {
+            value: Box::new(index(id)),
+            byte_width: 4,
+        };
+        for reverse in [false, true] {
+            let mut samples = Vec::new();
+            for size in [8u64, 32, 128, 512] {
+                let x = at_offset(PointerBlock::ExternalArgument, offset(960_000));
+                let y = at_offset(PointerBlock::ExternalArgument, offset(960_001));
+                let z = at(symbolic(960_002), 0);
+                let mut graph = EqualityGraph::default();
+                for id in 0..size {
+                    graph.add_equality(
+                        &at_offset(
+                            symbolic(961_000 + id),
+                            PointerOffsetTerm::Variable(Variable(963_000 + id)),
+                        ),
+                        &z,
+                    );
+                }
+                if reverse {
+                    graph.add_equality(&z, &y);
+                } else {
+                    graph.add_equality(&x, &z);
+                }
+                let sibling = graph.clone();
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    if reverse {
+                        graph.add_equality(&x, &z);
+                    } else {
+                        graph.add_equality(&z, &y);
+                    }
+                });
+                // A new non-affine offset relation can invalidate affine
+                // completeness for the registered dependent addresses once.
+                assert!(work <= 16 * size as usize + 512, "size={size}, work={work}");
+                let (_, query_work) = crate::instrumentation::measure_deterministic_work(|| {
+                    assert!(graph.are_offsets_equal(&x.offset, &y.offset));
+                    assert!(graph.are_equal(&x, &y));
+                    assert!(!graph.are_equal(&x, &y.offset_by_bytes(1)));
+                });
+                samples.push(query_work);
+                assert!(!sibling.are_offsets_equal(&x.offset, &y.offset));
+                assert!(!sibling.are_equal(&x, &y));
+            }
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 40),
+                "reverse={reverse}, query work={samples:?}"
+            );
+        }
+        // Equal addresses from different blocks do not equate their offsets.
+        let mut graph = EqualityGraph::default();
+        graph.add_equality(&at(symbolic(962_000), 4), &at(symbolic(962_001), 8));
+        assert!(!graph.are_offsets_equal(
+            &PointerOffsetTerm::Constant(4),
+            &PointerOffsetTerm::Constant(8)
+        ));
     }
 
     #[test]
