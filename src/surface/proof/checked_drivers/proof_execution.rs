@@ -1821,7 +1821,8 @@ pub(super) fn solve_nested_have<'a>(
     nested: ProofScope<'a>,
     have: &ProofHave,
 ) -> Result<Option<ProofScope<'a>>, ClickError> {
-    let selected = match &have.proof {
+    let source_proof = have.checking_proof();
+    let selected = match source_proof.as_ref() {
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
             nested.try_simp_closure()?
         }

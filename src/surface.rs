@@ -5082,6 +5082,20 @@ pub struct ProofHave {
     proof: SourceProof,
 }
 
+impl ProofHave {
+    /// Check the short forms as the same single simp step as the block form,
+    /// so a failed step retains its diagnostic. Keep the written source proof
+    /// unchanged for inventory, capture, and source locations.
+    fn checking_proof(&self) -> std::borrow::Cow<'_, SourceProof> {
+        match &self.proof {
+            SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
+                std::borrow::Cow::Owned(SourceProof::Script(vec![ProofTactic::Simp]))
+            }
+            _ => std::borrow::Cow::Borrowed(&self.proof),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofOpen {
     resource: ResourceClause,

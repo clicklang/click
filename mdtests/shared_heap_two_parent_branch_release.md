@@ -222,5 +222,5 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
 ```
 
 ```expect
-fail: `have count(child_ref(kid)) == 2` did not close its checked nested goal
+fail: could not establish `count(child_ref(kid)) == 2`
 ```

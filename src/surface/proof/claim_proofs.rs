@@ -2707,7 +2707,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         let before = prepared.checkpoint();
                                         let scope =
                                             prepared.begin_have(have.proposition.clone())?;
-                                        let selected = match &have.proof {
+                                        let source_proof = have.checking_proof();
+                    let selected = match source_proof.as_ref() {
                                             SourceProof::Default
                                             | SourceProof::Tactic(
                                                 SmartTactic::Auto | SmartTactic::Simp,

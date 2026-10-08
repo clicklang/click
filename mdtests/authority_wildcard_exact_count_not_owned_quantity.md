@@ -17,5 +17,5 @@ void inspect(int32* pool, int32* p) {
 ```
 
 ```expect
-fail: `have count(slot(pool, p)) == 1` did not close
+fail: could not establish `count(slot(pool, p)) == 1`
 ```
