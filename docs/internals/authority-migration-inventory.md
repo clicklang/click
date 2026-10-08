@@ -1432,3 +1432,13 @@ population; any other contract takes the ordinary exit, which returns the
 body's own resources, as without authority semantics. Regressions:
 `authority_mode_ordinary_exit_returns_a_string_literal.md` and
 `authority_mode_ordinary_exit_aggregate_parameter_pointee.md`.
+
+#### Chunk 1h: one entry context per function
+
+Every claim proved by its own proof built its own entry context, with fresh
+creation-ledger and stable-view loan identities, so certification could not
+match a claim's completion to the certified entry state when loans were
+involved. The verification run now builds each function's entry context once
+and shares it across the function's claim proofs (a block that differs from
+the cached one under the same name builds its own). Regression:
+`authority_mode_separate_claim_proofs_share_one_entry.md`.

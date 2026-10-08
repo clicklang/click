@@ -392,6 +392,65 @@ impl FunctionSourceRequirements {
 pub(in crate::surface) struct FunctionSourceRegistry {
     functions: PersistentMap<String, FunctionSourceRequirements>,
     resource_semantics_mode: ResourceSemanticsMode,
+    claim_entries: ClaimEntryCache,
+}
+
+/// One entry context per function, shared by all of that function's claim
+/// proofs. A context built twice would carry distinct fresh ledger and loan
+/// identities, so separately proved claims could not be certified against one
+/// entry state. Building it once gives every claim the same entry.
+#[derive(Clone, Default)]
+pub(in crate::surface) struct ClaimEntryCache(
+    std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::BTreeMap<
+                (String, String),
+                (FunctionBlock, super::proof::InitialClaimContext),
+            >,
+        >,
+    >,
+);
+
+impl std::fmt::Debug for ClaimEntryCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ClaimEntryCache")
+    }
+}
+
+/// A cache of derived values; it never distinguishes two registries.
+impl PartialEq for ClaimEntryCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for ClaimEntryCache {}
+
+impl ClaimEntryCache {
+    pub(in crate::surface) fn get_or_build(
+        &self,
+        source_path: &str,
+        function_block: &FunctionBlock,
+        build: impl FnOnce() -> Result<super::proof::InitialClaimContext, ClickError>,
+    ) -> Result<super::proof::InitialClaimContext, ClickError> {
+        let key = (
+            source_path.to_string(),
+            function_block.signature().name().to_string(),
+        );
+        if let Some((block, context)) = self.0.lock().expect("claim entry cache").get(&key)
+            && block == function_block
+        {
+            return Ok(context.clone());
+        }
+        let context = build()?;
+        // A different block under the same name keeps its own context and is
+        // never shared.
+        self.0
+            .lock()
+            .expect("claim entry cache")
+            .entry(key)
+            .or_insert_with(|| (function_block.clone(), context.clone()));
+        Ok(context)
+    }
 }
 
 impl FunctionSourceRegistry {
@@ -414,6 +473,7 @@ impl FunctionSourceRegistry {
         Ok(Self {
             functions,
             resource_semantics_mode: ResourceSemanticsMode::Legacy,
+            claim_entries: ClaimEntryCache::default(),
         })
     }
 
@@ -422,11 +482,17 @@ impl FunctionSourceRegistry {
         mode: ResourceSemanticsMode,
     ) -> Self {
         self.resource_semantics_mode = mode;
+        // Entry contexts depend on the mode; never share them across modes.
+        self.claim_entries = ClaimEntryCache::default();
         self
     }
 
     pub(in crate::surface) fn resource_semantics_mode(&self) -> ResourceSemanticsMode {
         self.resource_semantics_mode
+    }
+
+    pub(in crate::surface) fn claim_entries(&self) -> &ClaimEntryCache {
+        &self.claim_entries
     }
 
     /// Finds one ordinary function's source requirements by stable function
