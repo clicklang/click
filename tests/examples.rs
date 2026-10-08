@@ -963,7 +963,7 @@ fn rbtree_erase_black_successor_requires_root_replacement() {
 }
 
 #[test]
-fn rbtree_erase_deep_child_refuses_a_skipped_splice() {
+fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
@@ -972,7 +972,7 @@ fn rbtree_erase_deep_child_refuses_a_skipped_splice() {
 }
 
 #[test]
-fn rbtree_erase_deep_child_refuses_the_wrong_replacement_parent() {
+fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
@@ -981,7 +981,8 @@ fn rbtree_erase_deep_child_refuses_the_wrong_replacement_parent() {
 }
 
 #[test]
-fn rbtree_erase_deep_child_refuses_a_skipped_right_attachment() {
+#[ignore = "nightly: deeper successor attachment mutation takes 10.1s"]
+fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\tWRITE_ONCE(successor->rb_right, child);\n",
@@ -990,7 +991,7 @@ fn rbtree_erase_deep_child_refuses_a_skipped_right_attachment() {
 }
 
 #[test]
-fn rbtree_erase_deep_child_refuses_a_skipped_right_parent_update() {
+fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\trb_set_parent(child, successor);\n",
@@ -999,11 +1000,21 @@ fn rbtree_erase_deep_child_refuses_a_skipped_right_parent_update() {
 }
 
 #[test]
-fn rbtree_erase_deep_child_refuses_a_red_replacement() {
+fn rbtree_erase_deep_successor_refuses_a_red_replacement() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
+    );
+}
+
+#[test]
+#[ignore = "nightly: deeper red-leaf fixup mutation takes 11s"]
+fn rbtree_erase_deep_red_leaf_refuses_spurious_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_spine.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = parent;\n",
     );
 }
 
