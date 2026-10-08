@@ -138,20 +138,26 @@ nested case did not confirm it: with `contains inner(p)` in `outer`, both
 `views outer(p)` and `owns outer(p)` needed the `unfold`. Re-check with a
 resource whose body owns memory directly before deciding anything.
 
-### B4. A contract can be accepted and unusable
+### B4. Overlapping places returned by one contract
 
-Recorded in the third pass: a contract that both owns and produces the same
-place, `owns p->value; produces p->value;`, was accepted, and no caller
-could use it. On 2026-10-07 the same contract is refused where the function
-itself is checked, with "claim Ensure(2) on path 0 has mismatched proposition
-completion evidence; the checked path outcome is a runtime error", which
-does not say what is wrong.
+A contract that returns the same place twice, `owns p->value; produces
+p->value;` or `produces X; produces X;`, is refused where it is declared,
+with a message naming the place.
 
-Decided: refuse the contract where it is declared, with a message that names
-the place held twice.
+Two places that overlap without being the same clause are not:
+`owns *p; produces p->value;`, or `owns q[0..n]; produces q[1];`. With a
+proof, the function is refused when its exit state is checked, with "two
+owned memory resource clauses overlap", which does not name them. A
+`contract` declaration with no proof is accepted.
 
-Regression: the contract above, refused at its declaration by that message,
-with and without a proof block.
+The declaration check is by spelling because an `owns` clause is read at
+entry and a `produces` clause at exit. Deciding overlap for different
+spellings needs the two places compared in one state, and a place reached
+through a loaded pointer can differ between the two.
+
+Regression: `owns *p; produces p->value;` refused at its declaration by a
+message naming both places, in a function with a proof and in a `contract`
+with none.
 
 ## C. Tactics
 

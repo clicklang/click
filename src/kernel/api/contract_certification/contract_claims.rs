@@ -65,8 +65,11 @@ pub(crate) fn c_checked_function_proposition_with_reason(
                 "the checked path outcome is a function-contract runtime error: {message}"
             ));
         }
-        CFunctionOutcome::RuntimeError(_) => {
-            return Err("the checked path outcome is a runtime error".to_string());
+        CFunctionOutcome::RuntimeError(error) => {
+            return Err(format!(
+                "the checked path outcome is a runtime error: {}",
+                super::describe_certification_runtime_error(error)
+            ));
         }
     };
     if completed.is_exceptional != exceptional {
