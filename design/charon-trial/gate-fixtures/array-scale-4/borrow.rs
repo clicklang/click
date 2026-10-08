@@ -1,0 +1,1 @@
+pub fn first(bytes: &[u8]) -> u8 { bytes[0] } pub fn run() -> u8 { let bytes = [7u8; 4]; let copied = bytes; first(&copied) }

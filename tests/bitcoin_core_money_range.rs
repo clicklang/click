@@ -110,11 +110,11 @@ fn check_upstream_cpp_rounding_phase(
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
     let evaluation_caller = name.starts_with("FeeFracEvaluate");
-    let fee_rate_boundary = name == "CFeeRateGetFeeBoundary";
+    let fee_rate_import = name == "CFeeRateGetFeeImported";
     let result_fit_div = name.starts_with("FeeFracDivResultFit");
     let bounded_div = name == "FeeFracDivBounded" || result_fit_div;
     if evaluation_caller
-        || fee_rate_boundary
+        || fee_rate_import
         || bounded_div
         || matches!(
             name,
@@ -134,7 +134,7 @@ fn check_upstream_cpp_rounding_phase(
             "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
         }]);
     }
-    if evaluation_caller || fee_rate_boundary || bounded_div || name == "FeeFracDivImported" {
+    if evaluation_caller || fee_rate_import || bounded_div || name == "FeeFracDivImported" {
         const STRING_VIEW_HASH: &str =
             "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c";
         let header = "sysroot/usr/include/c++/12/string_view";
@@ -156,19 +156,53 @@ fn check_upstream_cpp_rounding_phase(
             "function": "std::basic_string_view::basic_string_view", "header": header, "sha256": STRING_VIEW_HASH
         });
     }
+    if fee_rate_import {
+        for header in [
+            "bitcoin-src/src/consensus/amount.h",
+            "bitcoin-src/src/policy/feerate.h",
+            "bitcoin-src/src/util/feefrac.h",
+        ] {
+            config["dependencies"]
+                .as_array_mut()
+                .unwrap()
+                .push(header.into());
+        }
+        config["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+    }
     let config_path = root.join(format!("{name}.click.import.json"));
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
     let refreshed = refresh_import(&config_path);
-    if fee_rate_boundary {
-        let error =
-            refreshed.expect_err("GetFee must retain the unsupported converted-call boundary");
-        assert!(error.contains("unsupported expression"), "{error}");
-        assert!(error.contains("feerate.cpp:24:38"), "{error}");
-        assert!(error.len() < 8000);
-        assert!(!root.join(format!("{name}.click-cpp.json")).exists());
-        assert!(!root.join(format!("{name}.click.import.json.lock")).exists());
+    if fee_rate_import {
+        refreshed.expect("GetFee must import its unchanged converted-call graph");
+        let import = load_import(&config_path).unwrap();
+        assert_eq!(import.export().function.name, "CFeeRate_GetFee");
+        assert!(
+            import
+                .export()
+                .reachable_functions
+                .iter()
+                .any(|callee| callee.span.file == "bitcoin-src/src/util/feefrac.h")
+        );
+        click::languages::cpp::lower_import(&import).unwrap();
+        let artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join(format!("{name}.click-cpp.json"))).unwrap())
+                .unwrap();
+        let initializer = &artifact["function"]["body"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|statement| statement["kind"] == "declare")
+            .unwrap()["initializer"];
+        assert_eq!(initializer["kind"], "call");
+        assert_eq!(initializer["conversions"][0]["cast_kind"], "no_op");
+        assert_eq!(initializer["conversions"][0]["value_type"]["bits"], 64);
+        assert!(root.join(format!("{name}.click-cpp.json")).exists());
+        assert!(root.join(format!("{name}.click.import.json.lock")).exists());
         fs::remove_dir_all(root).unwrap();
         return;
     }
@@ -2122,10 +2156,10 @@ fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_
 }
 
 #[test]
-fn pinned_upstream_fee_rate_getfee_retains_converted_call_boundary() {
+fn pinned_upstream_fee_rate_getfee_imports_converted_call_graph() {
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFee",
-        "CFeeRateGetFeeBoundary",
+        "CFeeRateGetFeeImported",
         "",
         "bitcoin-src/src/policy/feerate.cpp",
         "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",

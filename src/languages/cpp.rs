@@ -23,5 +23,6 @@ pub use schema::{
     CppFieldReference, CppFunction, CppFunctionKind, CppFunctionReference, CppInitializer,
     CppLibraryAssertion, CppLibraryAssertionKind, CppLibraryMetadata, CppLiteralConstructor,
     CppLiteralMetadata, CppLiteralMetadataBinding, CppPlace, CppPlaceReference, CppProfile,
-    CppProjection, CppRecord, CppSpan, CppStatement, CppType, CppTypeAlias,
+    CppProjection, CppRecord, CppScalarCastKind, CppScalarConversion, CppSpan, CppStatement,
+    CppType, CppTypeAlias,
 };

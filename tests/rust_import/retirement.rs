@@ -41,8 +41,7 @@ fn rust_default_is_native_charon_and_legacy_extraction_is_rejected() {
 
 #[test]
 fn rust_default_conditional_simp_expansion_reverifies() {
-    let p = Project::new(SOURCE);
-    refresh_import(&p.config()).unwrap();
+    let p = gate_fixtures::project("basic", SOURCE);
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
     let expanded =
@@ -52,6 +51,7 @@ fn rust_default_conditional_simp_expansion_reverifies() {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_native_aliases_use_the_same_backend_and_unknown_backends_fail_closed() {
     let p = Project::new(SOURCE);
     let original: serde_json::Value =
@@ -94,6 +94,7 @@ fn rust_native_aliases_use_the_same_backend_and_unknown_backends_fail_closed() {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_refresh_is_reproducible_for_configs_sharing_an_artifact() {
     let p = Project::new(SOURCE);
     let second = p.root.join("second.click.import.json");
