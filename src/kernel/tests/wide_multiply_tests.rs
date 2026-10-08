@@ -134,7 +134,7 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         let paths = crate::kernel::eval::apply_c_multiply(
             CValue::Int128(Bitvector32Term::Variable(Variable(150_001))),
             CValue::Int128(Bitvector32Term::Variable(Variable(150_002))),
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             &assumptions,
         );
@@ -347,7 +347,7 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
             crate::kernel::eval::apply_c_multiply(
                 CValue::Int128(Bitvector32Term::Variable(Variable(150_001))),
                 CValue::Int128(Bitvector32Term::Variable(Variable(150_002))),
-                Vec::new(),
+                Vec::new().into(),
                 Vec::new(),
                 &assumptions,
             )
@@ -411,7 +411,7 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
                             .unwrap(),
                         )
                         .unwrap(),
-                    Vec::new(),
+                    Vec::new().into(),
                     Vec::new(),
                     &assumptions,
                 )

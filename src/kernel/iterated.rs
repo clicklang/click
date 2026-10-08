@@ -134,7 +134,7 @@ fn guard_cell_value(
         state.memory(),
         iterated.guard_cell(index),
         iterated.guard().cell_type,
-        Vec::new(),
+        Vec::new().into(),
         Vec::new(),
         assumptions,
     );

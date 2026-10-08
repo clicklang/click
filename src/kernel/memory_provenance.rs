@@ -1,6 +1,7 @@
 use super::primitives::*;
 use super::reasoning::*;
 use super::resource_tracker::cell_source::*;
+use crate::kernel::ExecutionFactSource;
 use std::collections::BTreeSet;
 
 /// Resource indices are logical values. ADT indices can only be exchanged
@@ -3547,10 +3548,10 @@ fn prove_c_condition_fact_transport_with_assumptions(
 /// the stored value.
 pub(crate) fn rewrite_condition_through_certified_stores(
     fact: &Proposition,
-    transitions: &[ExecutionPureFact],
+    transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> Proposition {
     let mut equations = Vec::new();
-    for transition in transitions {
+    for transition in transitions.fact_iter() {
         let Some(store) = &transition.certified_store else {
             continue;
         };
@@ -4940,9 +4941,11 @@ mod condition_fact_graph_equivalence_tests {
 /// Exports each certified store as the condition fact its record proves:
 /// loading the stored pointer from the post-store memory yields the stored
 /// value. These are execution-certified equations usable by check.
-pub(crate) fn certified_store_equations(facts: &[ExecutionPureFact]) -> Vec<Proposition> {
+pub(crate) fn certified_store_equations(
+    facts: &(impl ExecutionFactSource + ?Sized),
+) -> Vec<Proposition> {
     facts
-        .iter()
+        .fact_iter()
         .filter_map(|fact| {
             let store = fact.certified_store_data()?;
             let value = match &store.value {
@@ -4978,9 +4981,11 @@ pub(crate) fn certified_store_equations(facts: &[ExecutionPureFact]) -> Vec<Prop
         .collect()
 }
 
-pub(crate) fn certified_store_loadability_facts(facts: &[ExecutionPureFact]) -> Vec<Proposition> {
+pub(crate) fn certified_store_loadability_facts(
+    facts: &(impl ExecutionFactSource + ?Sized),
+) -> Vec<Proposition> {
     facts
-        .iter()
+        .fact_iter()
         .filter_map(|fact| {
             let store = fact.certified_store_data()?;
             let byte_width = match store.value {

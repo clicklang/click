@@ -3430,7 +3430,7 @@ mod tests {
             let paths = eval::paths_after_scope_exit(
                 vec![CStatementExecutionPath {
                     outcome,
-                    facts: vec![],
+                    facts: vec![].into(),
                     obligations: vec![],
                     loop_invariant_correspondence: Default::default(),
                     loan_evidence: empty_checked_loan_evidence_sequence(),

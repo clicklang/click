@@ -429,7 +429,7 @@ struct ClosureFactCheckFailure {
     after: Option<(u32, u32)>,
     assumptions: u64,
     lookups: u64,
-    transitions: Vec<ExecutionPureFact>,
+    transitions: crate::kernel::ExecutionFacts,
     generation: u64,
     bridging: bool,
     explicit: bool,
@@ -464,7 +464,7 @@ pub(crate) fn closure_memoized_fact_check(
     propositions: &[&Proposition],
     after: Option<&CMemory>,
     assumptions: &PureFactContext,
-    transitions: &[ExecutionPureFact],
+    transitions: &(impl ExecutionFactSource + ?Sized),
     run: impl FnOnce() -> bool,
 ) -> bool {
     let active = CLOSURE_TRANSPORT_FAILURES.with(|failures| failures.borrow().is_some());
@@ -482,7 +482,7 @@ pub(crate) fn closure_memoized_fact_check(
         assumptions: crate::kernel::assumptions::unsalted_assumptions_memo_id(assumptions),
         lookups: crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookups_fingerprint(
         ),
-        transitions: transitions.to_vec(),
+        transitions: transitions.persistent_facts(),
         generation: crate::kernel::primitives::c_memory_derivation_generation(),
         bridging: crate::kernel::api::extended_dag_bridging_active(),
         explicit: crate::kernel::api::explicit_dag_check_active(),
@@ -4244,14 +4244,14 @@ pub(in crate::kernel) fn memory_matches_effect_summary_endpoint(
 }
 
 pub(in crate::kernel) fn collect_memory_effect_write_accesses(
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> BTreeSet<(Pointer, u32)> {
     // Concrete stores certify exact pointer-width pairs. Abstract calls and
     // loops certify ranges separately through CMemoryEffectSummary; comparing
     // endpoint memories would mistake join abstraction and call havoc for
     // writes.
     let mut writes = BTreeSet::new();
-    for fact in facts {
+    for fact in facts.fact_iter() {
         if let Proposition::CMemoryMutatesOnly {
             writes: accesses, ..
         } = fact.proposition()
@@ -4264,7 +4264,7 @@ pub(in crate::kernel) fn collect_memory_effect_write_accesses(
 }
 
 pub(in crate::kernel) fn collect_memory_effect_write_pointers(
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> BTreeSet<Pointer> {
     collect_memory_effect_write_accesses(facts)
         .into_iter()

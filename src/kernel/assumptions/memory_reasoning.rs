@@ -302,7 +302,7 @@ impl PureFactContext {
             memory,
             pointer.clone(),
             value_type,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             self,
         );

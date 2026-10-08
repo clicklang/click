@@ -302,10 +302,10 @@ fn assert_scaled_index_free_of_raw_loads(
 /// defining fact in the path's emitted facts.
 fn assert_load_variables_have_defining_facts(
     load_variables: &BTreeSet<Variable>,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) {
     for load_variable in load_variables {
-        let defined = facts.iter().any(|fact| {
+        let defined = facts.fact_iter().any(|fact| {
             crate::kernel::is_load_variable_defining_fact(&fact.proposition)
                 && matches!(
                     &fact.proposition,

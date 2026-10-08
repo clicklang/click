@@ -3,13 +3,13 @@ use super::{ResourceDescription, ResourceFieldSchema};
 
 pub(in crate::kernel) mod predicate_dependencies;
 
-type EvaluatedSpecResource = (CResource, Vec<ExecutionPureFact>, Vec<ProofObligation>);
+type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
 type SpecResourceBuilder = Box<dyn Fn(Vec<CValue>) -> Option<CResource>>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecPropositionPath {
     pub(super) proposition: Proposition,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     /// The head chain of `proposition`, outermost first, recorded by the
     /// lowering step that built each node. A consumer that introduces the
@@ -22,28 +22,28 @@ pub(super) struct SpecPropositionPath {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecExpressionPath {
     pub(super) value: CValue,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecIntegerPath {
     pub(super) value: IntegerTerm,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecSequencePath {
     value: SequenceTerm,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecAlgebraicPath {
     value: AlgebraicTerm,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
 
@@ -384,7 +384,7 @@ fn locate_spec_integer_capture_condition(
     let SpecIntegerExpression::RangeFold { index, initial, .. } = expression else {
         return SpecCaptureSubterm::Expression;
     };
-    let contributed = |facts: &[ExecutionPureFact], obligations: &[ProofObligation]| {
+    let contributed = |facts: &ExecutionFacts, obligations: &[ProofObligation]| {
         facts.iter().any(|fact| fact.proposition() == proposition)
             || obligations.iter().any(|o| o.proposition() == proposition)
     };
@@ -421,21 +421,21 @@ fn locate_spec_integer_capture_condition(
 struct SpecAlgebraicCasePath {
     variant: String,
     fields: Vec<AlgebraicValue>,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecAlgebraicValuePath {
     value: AlgebraicValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecPureFunctionArgumentPath {
     value: PureFunctionArgument,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
 
@@ -817,7 +817,7 @@ fn lower_spec_universal_chain_in(
     Ok(Some(paths))
 }
 
-fn machine_quantifier_range_facts(sort: &Sort, variable: Variable) -> Vec<ExecutionPureFact> {
+fn machine_quantifier_range_facts(sort: &Sort, variable: Variable) -> ExecutionFacts {
     sort.machine_integer_type()
         .and_then(|ty| super::api::c_narrow_integer_range_facts(&ty.symbolic_value(variable)))
         .unwrap_or_default()
@@ -848,7 +848,7 @@ fn wrap_spec_universal_path(
             sort: binder.sort.clone(),
             body: Box::new(body),
         },
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: path
             .obligations
             .into_iter()
@@ -930,7 +930,7 @@ fn lower_simple_spec_implication_chain_in(
     }
     Ok(Some(vec![SpecPropositionPath {
         proposition: lowered,
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: Vec::new(),
         introductions: {
             let mut introductions = Vec::new();
@@ -1267,7 +1267,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     sort: Sort::Integer,
                     body: Box::new(body),
                 },
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: path
                     .obligations
                     .into_iter()
@@ -1314,7 +1314,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     sort: Sort::Algebraic(algebraic_type.clone()),
                     body: Box::new(body),
                 },
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: path
                     .obligations
                     .into_iter()
@@ -1384,7 +1384,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     // Path facts may mention the bound variable. They are
                     // guards on this quantified path, not facts in the
                     // surrounding context.
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: path
                         .obligations
                         .into_iter()
@@ -1432,7 +1432,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     sort: Sort::CPointer(*c_type),
                     body: Box::new(body),
                 },
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: path
                     .obligations
                     .into_iter()
@@ -1486,7 +1486,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     sort: Sort::Integer,
                     body: Box::new(existential_body),
                 },
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
@@ -1517,7 +1517,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     sort: Sort::Algebraic(algebraic_type.clone()),
                     body: Box::new(existential_body),
                 },
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
@@ -1573,7 +1573,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     // guards on the quantified body, exactly as under a
                     // universal. Publishing them here would leave the binder's
                     // variable free in the surrounding context.
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: path
                         .obligations
                         .into_iter()
@@ -1615,7 +1615,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     sort: Sort::CPointer(*c_type),
                     body: Box::new(guard_quantified_witness(path.proposition, &path.facts)),
                 },
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: path
                     .obligations
                     .into_iter()
@@ -1730,7 +1730,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             Ok(vec![SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition,
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
@@ -1795,7 +1795,7 @@ fn evaluate_spec_integer_expression_paths_in(
             };
             Ok(vec![SpecIntegerPath {
                 value: value.clone(),
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
@@ -1805,7 +1805,7 @@ fn evaluate_spec_integer_expression_paths_in(
             }
             Ok(vec![SpecIntegerPath {
                 value: term.clone(),
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
@@ -2632,13 +2632,7 @@ fn evaluate_spec_integer_range_fold_indices_in(
     assumptions: &PureFactContext,
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
-) -> ExecutionResult<
-    Vec<(
-        IntegerRangeFoldIndex,
-        Vec<ExecutionPureFact>,
-        Vec<ProofObligation>,
-    )>,
-> {
+) -> ExecutionResult<Vec<(IntegerRangeFoldIndex, ExecutionFacts, Vec<ProofObligation>)>> {
     match index {
         SpecIntegerRangeFoldIndex::Int32 { start, end } => {
             let mut result = Vec::new();
@@ -3267,7 +3261,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
         return Ok(vec![SpecPropositionPath {
             introductions: Vec::new(),
             proposition: Proposition::ConditionIs(ConditionTerm::Constant(equal), true),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }]);
     }
@@ -3435,7 +3429,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             }
             Ok(vec![SpecAlgebraicPath {
                 value: value.clone(),
-                facts: vec![],
+                facts: vec![].into(),
                 obligations: vec![],
             }])
         }
@@ -3444,7 +3438,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 algebraic_type: expression.algebraic_type.clone(),
                 node: AlgebraicTermNode::Variable(*variable),
             },
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }]),
         SpecAlgebraicExpressionNode::Binding(name) => {
@@ -3456,7 +3450,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             }
             Ok(vec![SpecAlgebraicPath {
                 value: value.clone(),
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
@@ -3643,7 +3637,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             if schema.fields.len() != fields.len() {
                 return Err(ExecutionLimit::Paths);
             }
-            let mut paths = vec![(Vec::new(), Vec::new(), Vec::new())];
+            let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
             for field in fields {
                 let mut next = Vec::new();
                 for (values, facts, obligations) in paths {
@@ -3699,7 +3693,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             Ok(paths)
         }
         SpecAlgebraicExpressionNode::PureFunctionApplication { name, arguments } => {
-            let mut paths = vec![(Vec::new(), Vec::new(), Vec::new())];
+            let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
             for argument in arguments {
                 let mut next = Vec::new();
                 for (values, facts, obligations) in paths {
@@ -3950,7 +3944,7 @@ fn algebraic_case_paths_in(
         AlgebraicTermNode::Constructor { variant, fields } => Ok(vec![SpecAlgebraicCasePath {
             variant: variant.clone(),
             fields: fields.clone(),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }]),
         AlgebraicTermNode::Variable(_)
@@ -3973,7 +3967,8 @@ fn algebraic_case_paths_in(
                     facts: vec![ExecutionPureFact::new(Proposition::Equal(
                         Term::Algebraic(term.clone()),
                         Term::Algebraic(constructor),
-                    ))],
+                    ))]
+                    .into(),
                     obligations: Vec::new(),
                 });
             }
@@ -4248,7 +4243,7 @@ fn evaluate_spec_sequence_at_state_in(
     budget.consume_expression_step()?;
     match expression {
         SpecSequenceExpression::Literal(elements) => {
-            let mut paths = vec![(Vec::new(), Vec::new(), Vec::new())];
+            let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
             for element in elements {
                 let mut next = Vec::new();
                 for (values, facts, obligations) in paths {
@@ -5006,7 +5001,7 @@ fn lower_spec_float_classification_proposition_at_state_in(
 #[derive(Clone)]
 struct SpecValuesPath {
     values: Vec<CValue>,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
 
@@ -5020,7 +5015,7 @@ fn evaluate_spec_values_at_state_in(
 ) -> ExecutionResult<Vec<SpecValuesPath>> {
     let mut paths = vec![SpecValuesPath {
         values: Vec::new(),
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: Vec::new(),
     }];
     for expression in expressions {
@@ -5261,7 +5256,7 @@ fn lower_spec_memory_loadable_at_state_in(
             // anywhere is one proposition.
             let range_start = start.clone();
             let range_end = end.clone();
-            let mut discarded_facts = Vec::new();
+            let mut discarded_facts = ExecutionFacts::new();
             let start =
                 crate::kernel::canonicalized_offset_index_term(start.clone(), &mut discarded_facts);
             let base = Pointer {
@@ -5348,7 +5343,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
-    let mut paths = vec![(Vec::new(), Vec::new(), Vec::new())];
+    let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
     for argument in arguments {
         let mut next = Vec::new();
         for (values, facts, obligations) in paths {
@@ -5538,7 +5533,7 @@ fn lower_spec_comparison_proposition_at_state_in(
                 ConditionTerm::Constant(operator == CComparisonOperator::Equal),
                 true,
             ),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }]);
     }
@@ -5612,7 +5607,7 @@ fn lower_spec_predicate_proposition_at_state_in(
     if name == MUTEX_HELD_PREDICATE_NAME {
         let [SpecPredicateArgument::Value(mutex)] = arguments else {
             return Ok(vec![invalid_mutex_held_path(
-                Vec::new(),
+                Vec::new().into(),
                 Vec::new(),
                 "held expects one mutex pointer",
             )]);
@@ -5689,7 +5684,7 @@ fn lower_spec_predicate_proposition_at_state_in(
             name: name.to_string(),
             arguments: vec![Term::CState(Box::new(predicate_state))],
         },
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: Vec::new(),
     }];
 
@@ -5778,7 +5773,7 @@ fn lower_spec_predicate_proposition_at_state_in(
 }
 
 fn invalid_mutex_held_path(
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     mut obligations: Vec<ProofObligation>,
     context: &str,
 ) -> SpecPropositionPath {
@@ -6159,7 +6154,11 @@ fn evaluate_resource_count_paths(
     let state = observed_state
         .as_ref()
         .map_or(state, |observed| observed.as_ref());
-    let mut argument_paths = vec![(Vec::<Option<AlgebraicValue>>::new(), Vec::new(), Vec::new())];
+    let mut argument_paths = vec![(
+        Vec::<Option<AlgebraicValue>>::new(),
+        ExecutionFacts::new(),
+        Vec::new(),
+    )];
     for argument in arguments {
         let mut next = Vec::new();
         for (values, facts, obligations) in argument_paths {
@@ -6636,13 +6635,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             }
             vec![SpecExpressionPath {
                 value: value.clone(),
-                facts: vec![],
+                facts: vec![].into(),
                 obligations: vec![],
             }]
         }
         SpecExpression::Value(value) => vec![SpecExpressionPath {
             value: value.clone(),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
@@ -7224,7 +7223,7 @@ fn evaluate_spec_pure_function_application_paths_in(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
-    let mut paths = vec![(Vec::new(), Vec::new(), Vec::new())];
+    let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
     for argument in arguments {
         let mut next = Vec::new();
         for (values, facts, obligations) in paths {
@@ -7686,7 +7685,7 @@ fn evaluate_spec_scalar_binary_paths_in(
     assumptions: &PureFactContext,
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
-    apply: impl Fn(CValue, CValue, Vec<ExecutionPureFact>, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl Fn(CValue, CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for left_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -7737,7 +7736,7 @@ fn evaluate_spec_scalar_unary_paths_in(
     assumptions: &PureFactContext,
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
-    apply: impl Fn(CValue, Vec<ExecutionPureFact>, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl Fn(CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -7969,7 +7968,7 @@ fn evaluate_spec_range_fold_body_path_in(
     accumulator: &str,
     item: &str,
     body: &SpecExpression,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
@@ -9073,7 +9072,7 @@ mod integer_budget_tests {
         let marker = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         let exact_path = SpecPropositionPath {
             proposition: marker.clone(),
-            facts: vec![ExecutionPureFact::certified(exact.clone())],
+            facts: vec![ExecutionPureFact::certified(exact.clone())].into(),
             obligations: vec![ProofObligation::verification_condition(Proposition::And(
                 Box::new(exact.clone()),
                 Box::new(loadable.clone()),
@@ -9095,7 +9094,8 @@ mod integer_budget_tests {
             proposition: marker.clone(),
             facts: vec![ExecutionPureFact::certified(
                 tampered_pointer_definition.clone(),
-            )],
+            )]
+            .into(),
             obligations: vec![ProofObligation::verification_condition(Proposition::And(
                 Box::new(tampered_pointer_definition.clone()),
                 Box::new(loadable.clone()),
@@ -9115,7 +9115,8 @@ mod integer_budget_tests {
             proposition: marker.clone(),
             facts: vec![ExecutionPureFact::certified(
                 tampered_snapshot_definition.clone(),
-            )],
+            )]
+            .into(),
             obligations: vec![ProofObligation::verification_condition(Proposition::And(
                 Box::new(tampered_snapshot_definition.clone()),
                 Box::new(loadable.clone()),
@@ -9132,7 +9133,7 @@ mod integer_budget_tests {
         let unknown_definition = defining(registered_memory, registered_pointer, unknown);
         let unknown_path = SpecPropositionPath {
             proposition: marker.clone(),
-            facts: vec![ExecutionPureFact::certified(unknown_definition.clone())],
+            facts: vec![ExecutionPureFact::certified(unknown_definition.clone())].into(),
             obligations: vec![ProofObligation::verification_condition(Proposition::And(
                 Box::new(unknown_definition.clone()),
                 Box::new(loadable.clone()),
@@ -9147,7 +9148,7 @@ mod integer_budget_tests {
         // CMemoryLoadable evidence and cannot satisfy a missing-guard goal.
         let missing_loadability_path = SpecPropositionPath {
             proposition: marker,
-            facts: vec![ExecutionPureFact::certified(exact.clone())],
+            facts: vec![ExecutionPureFact::certified(exact.clone())].into(),
             obligations: vec![ProofObligation::verification_condition(exact)],
             introductions: LoweringIntroductions::new(),
         };
@@ -9809,7 +9810,7 @@ mod no_value_path_tests {
     fn error_path(error: CRuntimeError) -> CExpressionPath {
         CExpressionPath {
             outcome: CExpressionOutcome::RuntimeError(error),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }
     }
@@ -9817,7 +9818,7 @@ mod no_value_path_tests {
     fn value_path() -> CExpressionPath {
         CExpressionPath {
             outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(1))),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }
     }
