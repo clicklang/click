@@ -24005,18 +24005,25 @@ pub(crate) fn arm_binding_program_spelling(
     let CValue::Pointer(value_pointer) = value else {
         return None;
     };
-    let pointer = value_pointer.pointer();
+    let spelling = arm_pointer_program_spelling(value_pointer.pointer(), assumptions)?;
+    let mut aliased = value_pointer.clone();
+    aliased.replace_pointer(spelling);
+    Some(CValue::Pointer(aliased))
+}
+
+pub(in crate::kernel) fn arm_pointer_program_spelling(
+    pointer: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<Pointer> {
     if !matches!(pointer.block, PointerBlock::Symbolic(_)) {
         return None;
     }
     crate::instrumentation::record_deterministic_work(1);
-    let spelling = assumptions
+    assumptions
         .exact_pointer_aliases(pointer)
         .filter(|alias| pointer_spelling_rank(alias) < pointer_spelling_rank(pointer))
-        .min_by_key(|alias| pointer_spelling_rank(alias))?;
-    let mut aliased = value_pointer.clone();
-    aliased.replace_pointer(spelling.clone());
-    Some(CValue::Pointer(aliased))
+        .min_by_key(|alias| pointer_spelling_rank(alias))
+        .cloned()
 }
 
 /// Reference type checking uses only the declaration and immutable reference

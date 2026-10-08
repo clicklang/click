@@ -116,3 +116,6 @@ deeper-successor branch. Its anchor owns only the original right child's left
 link, leaving that child's parent/color and right link available for transplant.
 The checked, terminating `refold_erase_spine` tactic reconstructs that left
 subtree with the exact `plug` model. The C descent loop is the next consumer.
+The verifier now preserves its resource binders and caller frame on loop exits;
+standalone `do_while_*` regressions cover the reconstructed path, returned
+ownership, and preservation of unrelated fields across subsequent stores.

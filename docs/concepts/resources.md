@@ -1373,6 +1373,12 @@ has the same repair: say what you want kept.
   model a binder carries there is whatever the invariants state about it, never
   the model it held at loop entry. `invariant c.rank == old(c.rank);` is what
   carries a field through.
+  A checked exit keeps the body's final model under the loop binder's name,
+  including a guard-false `do ... while` exit or a `break` after refolding.
+  Ownership withheld from the body is returned with that final resource
+  exchange; it does not become writable inside the loop. See
+  `mdtests/do_while_returns_rebound_resources.md` for returning a reconstructed
+  path and an empty list while retaining a caller-owned cell.
 - **`unfold` and the `fold` that answers it.** `unfold(c)` gives the instance up,
   so at the `fold` below it `c.rank` names no model at all — there is no
   instance of that identity to read. Name the value it had where it still

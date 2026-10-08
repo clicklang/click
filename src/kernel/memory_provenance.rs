@@ -2138,7 +2138,9 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
 
 pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     write: &Pointer,
+    write_bytes: u32,
     pointer: &Pointer,
+    load_bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<MemoryDagHopJustification> {
     if crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
@@ -2175,8 +2177,8 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
             proposition.memory_separation()?;
             let (orientation, write_membership, load_membership) =
                 if let (Some(write_membership), Some(load_membership)) = (
-                    PointerInRangeEvidence::for_pointer(write, left, assumptions),
-                    PointerInRangeEvidence::for_pointer(pointer, right, assumptions),
+                    AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions),
+                    AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions),
                 ) {
                     (
                         StoreSeparatedRangeOrientation::WriteLeftLoadRight,
@@ -2184,8 +2186,8 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
                         load_membership,
                     )
                 } else if let (Some(write_membership), Some(load_membership)) = (
-                    PointerInRangeEvidence::for_pointer(write, right, assumptions),
-                    PointerInRangeEvidence::for_pointer(pointer, left, assumptions),
+                    AccessInRangeEvidence::for_access(write, write_bytes, right, assumptions),
+                    AccessInRangeEvidence::for_access(pointer, load_bytes, left, assumptions),
                 ) {
                     (
                         StoreSeparatedRangeOrientation::WriteRightLoadLeft,
@@ -2216,12 +2218,16 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     let (resources, left, right) = assumptions.composition_separated_members(
         &write.block,
         &pointer.block,
-        |range| PointerInRangeEvidence::for_pointer(write, range, assumptions).is_some(),
-        |range| PointerInRangeEvidence::for_pointer(pointer, range, assumptions).is_some(),
+        |range| AccessInRangeEvidence::for_access(write, write_bytes, range, assumptions).is_some(),
+        |range| {
+            AccessInRangeEvidence::for_access(pointer, load_bytes, range, assumptions).is_some()
+        },
         |left, right| !assumptions.memory_ranges_overlap_after_base_equality(left, right),
     )?;
-    let write_membership = PointerInRangeEvidence::for_pointer(write, left, assumptions)?;
-    let load_membership = PointerInRangeEvidence::for_pointer(pointer, right, assumptions)?;
+    let write_membership =
+        AccessInRangeEvidence::for_access(write, write_bytes, left, assumptions)?;
+    let load_membership =
+        AccessInRangeEvidence::for_access(pointer, load_bytes, right, assumptions)?;
     crate::kernel::record_implicit_reasoning_provenance(
         assumptions,
         &Proposition::CResourceComposition(resources.clone()),
@@ -2274,13 +2280,16 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
 /// the answer is re-derived per query and keyed by the context
 /// (`resolution_query_memo_id`), never stored on an interned edge.
 ///
-/// **Cost.** Two block-bucket lookups per composition held, and no expansion:
+/// **Cost.** Exact bases and their indexed one-hop aliases are tried first,
+/// followed by the existing interior block-bucket lookup. There is no expansion:
 /// `frame_frontier_compositions` is not consulted, so a composite that is
 /// still folded simply does not answer. This runs as the last disjunct of a
 /// load-framing ladder, after every cheaper check has failed.
 pub(in crate::kernel) fn owned_composition_store_separated_evidence(
     write: &Pointer,
+    write_bytes: u32,
     pointer: &Pointer,
+    load_bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<MemoryDagHopJustification> {
     if assumptions.resource_compositions.is_empty()
@@ -2302,18 +2311,54 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
                 .iter()
                 .find_map(|resources| {
                     crate::instrumentation::record_deterministic_work(1);
-                    let (write_entry, left) =
-                        resources.owned_memory_member_containing_pointer(write)?;
-                    let (load_entry, right) =
-                        resources.owned_memory_member_containing_pointer(pointer)?;
+                    let member = |pointer: &Pointer| {
+                        // A reconstructed resource may use a proof pointer for
+                        // the same object that C names through a parameter.
+                        // Probe only syntactic base prefixes and their exact
+                        // aliases; every hit still needs checked membership.
+                        let mut base = pointer.clone();
+                        loop {
+                            let found = std::iter::once(&base)
+                                .chain(assumptions.exact_pointer_aliases(&base))
+                                .find_map(|candidate| {
+                                    resources.owned_memory_members_with_base(candidate).find(
+                                        |(_, range)| {
+                                            PointerInRangeEvidence::for_pointer(
+                                                pointer,
+                                                range,
+                                                assumptions,
+                                            )
+                                            .is_some()
+                                        },
+                                    )
+                                });
+                            if found.is_some() {
+                                return found;
+                            }
+                            base.offset = match &base.offset {
+                                PointerOffsetTerm::Add(left, _) => (**left).clone(),
+                                PointerOffsetTerm::Constant(value) if *value != 0 => {
+                                    PointerOffsetTerm::Constant(0)
+                                }
+                                _ => break,
+                            };
+                        }
+                        resources.owned_memory_member_containing_pointer(pointer)
+                    };
+                    let (write_entry, left) = member(write)?;
+                    let (load_entry, right) = member(pointer)?;
                     if write_entry == load_entry {
                         return None;
                     }
                     let (left, right) = (left.clone(), right.clone());
                     let write_membership =
-                        PointerInRangeEvidence::for_pointer(write, &left, assumptions)?;
-                    let load_membership =
-                        PointerInRangeEvidence::for_pointer(pointer, &right, assumptions)?;
+                        AccessInRangeEvidence::for_access(write, write_bytes, &left, assumptions)?;
+                    let load_membership = AccessInRangeEvidence::for_access(
+                        pointer,
+                        load_bytes,
+                        &right,
+                        assumptions,
+                    )?;
                     if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
                         return None;
                     }
@@ -3291,7 +3336,7 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
                 )
                 // Last: the same composition rule the mutates-only arm above
                 // and the tracker's `Store` arm spend, so the three agree.
-                || owned_composition_store_separated_evidence(&cell, pointer, assumptions).is_some())
+                || owned_composition_store_separated_evidence(&cell, differing_cell_byte_width(left, right, &cell), pointer, load_bytes, assumptions).is_some())
         })
 }
 
@@ -6836,7 +6881,7 @@ mod opaque_pointer_frame_tests {
             pointer: write.clone(),
             value: CValue::Int32(Bitvector32Term::Constant(7)),
         };
-        let proof = typed_store_separated_ranges_evidence(&write, &field, &assumptions)
+        let proof = typed_store_separated_ranges_evidence(&write, 4, &field, 8, &assumptions)
             .expect("one exact alias must select the stated range separation");
         assert!(proof.checks(&step, &field, 8, &assumptions));
         for missing in [alias, separation] {

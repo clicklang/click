@@ -386,6 +386,9 @@ pub fn prove_c_condition_fact_target_transport(
 #[derive(Clone, Debug)]
 pub struct CLoopPreservationContext {
     state: CState,
+    /// Retain the exact frame paired with this persistent body checkpoint.
+    /// Rebuilding an equal loop head gives a different mutation history.
+    exit_frame: Option<ResourceContext>,
     loop_entry_state: CState,
     pure_facts: Vec<Proposition>,
     /// One selected semantic proposition per declared invariant, including
@@ -657,6 +660,45 @@ mod loop_exit_sharing_tests {
 }
 
 impl CLoopPreservationContext {
+    pub(crate) fn restored_exit(
+        &self,
+        state: &CState,
+        facts: &crate::kernel::proof::ProofFacts,
+        assumptions: &PureFactContext,
+    ) -> (CState, Vec<Proposition>) {
+        let rebound = crate::kernel::c_loop_state_with_loop_binders_rebound(
+            &self.state,
+            state,
+            &self.binders,
+            assumptions,
+        )
+        .unwrap_or_else(|_| state.clone());
+        self.restored_return(&rebound, facts, assumptions)
+    }
+
+    // A return has no post-loop scope. Preserve the body's output bindings;
+    // rebinding them to loop names would invalidate named `produces` results.
+    pub(crate) fn restored_return(
+        &self,
+        state: &CState,
+        facts: &crate::kernel::proof::ProofFacts,
+        assumptions: &PureFactContext,
+    ) -> (CState, Vec<Proposition>) {
+        let restored = self.exit_frame.as_ref().map_or_else(
+            || state.clone(),
+            |frame| {
+                crate::kernel::loops::restore_loop_exit_state(
+                    state,
+                    self.state.resources(),
+                    frame,
+                    assumptions,
+                )
+            },
+        );
+        let facts = facts.to_vec();
+        (restored, facts)
+    }
+
     pub fn state(&self) -> &CState {
         &self.state
     }
@@ -840,6 +882,9 @@ fn c_loop_preservation_contexts_with_mode(
         });
     }
     // Preservation runs the body with the loop's declared resources.
+    let exit_frame = head
+        .narrows_resources()
+        .then(|| head.top.resources().clone());
     let top_state = head.body;
     let whole_loop_effect_summaries = head.summaries;
     let whole_loop_effect_facts = whole_loop_effect_summaries
@@ -962,6 +1007,7 @@ fn c_loop_preservation_contexts_with_mode(
             pure_facts.dedup();
             contexts.push(CLoopPreservationContext {
                 state: top_state.clone(),
+                exit_frame: exit_frame.clone(),
                 loop_entry_state: loop_entry_state.clone(),
                 pure_facts,
                 invariant_propositions: invariant_propositions.iter().cloned().collect(),

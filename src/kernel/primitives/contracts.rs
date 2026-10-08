@@ -1080,6 +1080,37 @@ impl CFunction {
         self
     }
 
+    /// Proof-only body annotations do not change a checked function entry.
+    /// Every other part of its semantic identity must still match. The
+    /// exhaustive pattern makes new function metadata opt into this check.
+    pub(in crate::kernel) fn has_same_entry_and_source(&self, other: &Self) -> bool {
+        let Self {
+            program_entry,
+            name,
+            inline_body,
+            body: _,
+            source_body,
+            control_targets,
+            contract_interface,
+            global_variables,
+            global_arrays,
+            static_variables,
+            static_storage,
+            string_literals,
+        } = self;
+        *program_entry == other.program_entry
+            && name == &other.name
+            && *inline_body == other.inline_body
+            && source_body == &other.source_body
+            && control_targets == &other.control_targets
+            && contract_interface == &other.contract_interface
+            && global_variables == &other.global_variables
+            && global_arrays == &other.global_arrays
+            && static_variables == &other.static_variables
+            && static_storage == &other.static_storage
+            && string_literals == &other.string_literals
+    }
+
     pub fn with_resource_summary(
         mut self,
         requires: Vec<CResourceSpec>,

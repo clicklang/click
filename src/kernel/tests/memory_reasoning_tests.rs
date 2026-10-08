@@ -3923,7 +3923,7 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
         CResourceFact::own_memory(acquired_cell.clone()),
     ]);
     assert!(
-        owned_composition_store_separated_evidence(&value, &acquired, &owners).is_some(),
+        owned_composition_store_separated_evidence(&value, 4, &acquired, 4, &owners).is_some(),
         "two owned members of one composition are disjoint by the partition invariant"
     );
 
@@ -3937,14 +3937,15 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
         CResourceFact::view_memory(acquired_cell.clone()),
     ]);
     assert!(
-        owned_composition_store_separated_evidence(&value, &acquired, &owner_and_view).is_none(),
+        owned_composition_store_separated_evidence(&value, 4, &acquired, 4, &owner_and_view)
+            .is_none(),
         "an owner beside a view is not a partition: the view may describe the owner's own bytes"
     );
 
     // A cell one element past the owned range is in no member at all.
     let past_the_end = acquired.offset_by_int32_elements(Bitvector32Term::Constant(1));
     assert!(
-        owned_composition_store_separated_evidence(&value, &past_the_end, &owners).is_none(),
+        owned_composition_store_separated_evidence(&value, 4, &past_the_end, 4, &owners).is_none(),
         "a read outside every owned member inherits nothing from the composition"
     );
 
@@ -3959,7 +3960,7 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
         }),
     ]);
     assert!(
-        owned_composition_store_separated_evidence(&value, &acquired, &folded).is_none(),
+        owned_composition_store_separated_evidence(&value, 4, &acquired, 4, &folded).is_none(),
         "a composite that is still folded owns no range this rule can read"
     );
 
@@ -3977,7 +3978,7 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
         CResourceFact::own_memory(memory_range(back.clone(), 0, 1)),
     ]);
     assert!(
-        owned_composition_store_separated_evidence(&front, &back, &one_block).is_some(),
+        owned_composition_store_separated_evidence(&front, 4, &back, 4, &one_block).is_some(),
         "the partition does not care how the two members are spelled"
     );
 
@@ -3985,14 +3986,14 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
     // question it is asked from.
     let single = compose(vec![CResourceFact::own_memory(value_cell.clone())]);
     assert!(
-        owned_composition_store_separated_evidence(&value, &value, &single).is_none(),
+        owned_composition_store_separated_evidence(&value, 4, &value, 4, &single).is_none(),
         "one member is not two"
     );
 
     // The evidence names its premise. A composition the context no longer
     // holds does not re-check, which is what keeps a hop retained at an
     // earlier program point from being spent in a context that has moved on.
-    let hop = owned_composition_store_separated_evidence(&value, &acquired, &owners)
+    let hop = owned_composition_store_separated_evidence(&value, 4, &acquired, 4, &owners)
         .expect("the two-owner case produced evidence");
     let store = CMemoryDerivation::Store {
         base: crate::kernel::intern_c_memory(CMemory::new()),
@@ -4007,6 +4008,79 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
         !hop.checks(&store, &acquired, 4, &PureFactContext::new()),
         "a retained hop is worthless in a context that does not hold its composition"
     );
+}
+
+#[test]
+fn composition_store_separation_uses_checked_aliases_without_scanning_other_owners() {
+    use crate::kernel::memory_provenance::owned_composition_store_separated_evidence;
+
+    let parameter = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+    };
+    let write_base = parameter(95_001);
+    let read = parameter(95_002);
+    let owner = Pointer::symbolic(Variable(95_003));
+    let alias = ConditionTerm::pointer_equal(write_base.clone(), owner.clone());
+    for offset in [0, 8] {
+        let write = write_base.offset_by_bytes(offset);
+        let mut samples = Vec::new();
+        for size in [8, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let resources = (0..size)
+                .map(|index| own_memory_fact(parameter(96_000 + index), 0, 1))
+                .chain([
+                    own_memory_fact(owner.clone(), offset / 4, offset / 4 + 1),
+                    own_memory_fact(read.clone(), 0, 1),
+                ])
+                .fold(ResourceContext::new(), ResourceContext::unchecked_with_fact);
+            let without_alias = PureFactContext::new()
+                .assume_proposition(Proposition::CResourceComposition(resources));
+            let assumptions = without_alias.clone().assume_condition(alias.clone(), true);
+            let (hop, work) = crate::instrumentation::measure_deterministic_work(|| {
+                owned_composition_store_separated_evidence(&write, 4, &read, 4, &assumptions)
+            });
+            let hop = hop.expect("the store's exact alias names its owned member");
+            let store = CMemoryDerivation::Store {
+                base: crate::kernel::intern_c_memory(CMemory::new()),
+                pointer: write.clone(),
+                value: int32(7),
+            };
+            assert!(hop.checks(&store, &read, 4, &assumptions));
+            assert!(!hop.checks(&store, &read, 4, &without_alias));
+            assert!(!hop.checks(&store, &read, 8, &assumptions));
+            assert!(
+                owned_composition_store_separated_evidence(&write, 4, &read, 4, &without_alias)
+                    .is_none()
+            );
+            assert!(
+                owned_composition_store_separated_evidence(&write, 8, &read, 4, &assumptions)
+                    .is_none()
+            );
+            assert!(
+                owned_composition_store_separated_evidence(&write, 4, &read, 8, &assumptions)
+                    .is_none()
+            );
+            let wider_store = CMemoryDerivation::Store {
+                base: crate::kernel::intern_c_memory(CMemory::new()),
+                pointer: write.clone(),
+                value: int64(7),
+            };
+            assert!(!hop.checks(&wider_store, &read, 4, &assumptions));
+            let equal = assumptions.assume_condition(
+                ConditionTerm::pointer_equal(write.clone(), read.clone()),
+                true,
+            );
+            assert!(
+                owned_composition_store_separated_evidence(&write, 4, &read, 4, &equal).is_none()
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "{samples:?}"
+        );
+    }
 }
 
 /// The entry partition pairs a contract's *transferred* clauses with its
