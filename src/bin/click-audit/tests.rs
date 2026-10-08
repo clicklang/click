@@ -300,6 +300,7 @@ fn resume_command_retries_the_cursor_inclusively() {
         changed_since: Some("HEAD~1".to_string()),
         verbose: true,
         keep_going: false,
+        exclude: vec![PathBuf::from("examples with spaces/skipped")],
         max_sites: Some(1),
     };
     let location = SourceLocation {
@@ -313,9 +314,23 @@ fn resume_command_retries_the_cursor_inclusively() {
              --verification-work-limit 9000 --performance-slack 1000 \
              --session-time-limit 30s --expansion-time-limit 2s \
              --verification-time-limit 3s --time-limit 10m \
+             --exclude 'examples with spaces/skipped' \
              --verbose --claim example.ensures_0 --changed-since 'HEAD~1' --max-sites 1 \
              --start-at /tmp/example.click:12:34 'examples with spaces'"
     );
+}
+
+#[test]
+fn exclude_is_repeatable_and_requires_a_path() {
+    let arguments =
+        parse_arguments(["--exclude", "a", "--exclude", "b/c.md", "examples"].map(str::to_string))
+            .unwrap();
+    assert_eq!(
+        arguments.exclude,
+        [PathBuf::from("a"), PathBuf::from("b/c.md")]
+    );
+    let error = parse_arguments(["examples", "--exclude"].map(str::to_string)).unwrap_err();
+    assert!(error.contains("missing path after `--exclude`"), "{error}");
 }
 
 #[test]
