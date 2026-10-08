@@ -17,5 +17,5 @@ cannot justify multi-byte framing through it.
 Normal tests reject wrong interior lanes and missing shared input authority.
 Kernel tests cover missing/withdrawn alias evidence, overlapping same-object
 accesses, and deterministic scaling. Nightly tests expand and independently
-verify the certificate and check profiling. The next plain local-array copy
-failure is recorded in `bugs/rust-loop-local-array-copy-lacks-backing.md`.
+verify the certificate and check profiling. Loop-local array copies have their own
+[storage regression](../loop-array-copy/README.md).

@@ -699,6 +699,7 @@ fn unmatched_instance_body(
                 function_pointer_signature: None,
                 constant: false,
                 pointee_constant: false,
+                reference: false,
             });
         }
     }

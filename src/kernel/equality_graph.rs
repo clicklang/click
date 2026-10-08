@@ -1224,13 +1224,18 @@ impl EqualityGraph {
         if !self.pointer_is_classed(&pointer.block) {
             return Vec::new();
         }
+        let Some(offset) = AffineOffset::of(&pointer.offset) else {
+            return Vec::new();
+        };
         self.pointer_class_members(&pointer.block)
             .into_iter()
             .filter(|(member, _)| member != &pointer.block)
             .filter_map(|(member, delta)| {
                 Some(Pointer {
                     block: member,
-                    offset: PointerOffsetTerm::add(pointer.offset.clone(), delta.to_offset_term()?),
+                    // Cancel inverse symbolic displacements before querying
+                    // a cell map keyed by the address's structural spelling.
+                    offset: offset.checked_add(&delta)?.to_offset_term()?,
                 })
             })
             .collect()
@@ -2229,6 +2234,12 @@ mod tests {
             assert!(classes.are_equal(spelling, &at(symbolic(1), 4)));
         }
         assert!(spellings.contains(&at(symbolic(3), 20)));
+        assert!(
+            classes
+                .pointer_spellings(&element)
+                .contains(&at(symbolic(1), 0)),
+            "inverse symbolic displacements must cancel before a cell-map lookup"
+        );
     }
 
     #[test]

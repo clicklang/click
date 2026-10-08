@@ -1415,6 +1415,7 @@ fn resource_body_fields_as_parameters(
         function_pointer_signature: None,
         constant: false,
         pointee_constant: false,
+        reference: false,
     }));
     let mut view = body.clone();
     view.fields = other;

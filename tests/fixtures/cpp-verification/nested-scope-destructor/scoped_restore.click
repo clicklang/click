@@ -25,11 +25,11 @@ void Restore_destructor(struct Restore* self) {
     simp();
 }
 
-int32 scoped_restore(bool early, int32* value) {
-    owns value[0..1];
+int32 scoped_restore(bool early, int32& value) {
+    owns value;
     ensures early != 0 implies result == 7;
-    ensures early == 0 implies result == old(value[0]);
-    ensures value[0] == old(value[0]);
+    ensures early == 0 implies result == old(value);
+    ensures value == old(value);
 } by {
     execute();
     simp();

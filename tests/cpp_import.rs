@@ -931,7 +931,7 @@ fn scalar_int32_profile_verifies_a_typed_throw_and_keeps_its_lock_identity() {
     ));
 
     let sidecar_source = "verifying \"increment.cpp\";\n\
-        int32 increment(int32* value) throws int32 {\n\
+        int32 increment(int32& value) throws int32 {\n\
             ensures result == 0;\n\
             exceptional ensures exception == 7;\n\
         }\n";
@@ -943,7 +943,7 @@ fn scalar_int32_profile_verifies_a_typed_throw_and_keeps_its_lock_identity() {
         .expect("a source throw must establish the declared exceptional outcome");
 
     let missing_signature = "verifying \"increment.cpp\";\n\
-        int32 increment(int32* value) { ensures result == 0; }\n";
+        int32 increment(int32& value) { ensures result == 0; }\n";
     let missing_signature_project = read_click_project(&sidecar, missing_signature).unwrap();
     verify_program_prepared_project(&missing_signature_project, &prepared)
         .expect_err("a source throw cannot cross an undeclared exceptional boundary");
@@ -1191,10 +1191,10 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
             ensures result == 5;
             exceptional ensures exception == 7;
         }
-        int32 caller(int32* value, bool construct, bool should_throw) {
-            owns value[0..1];
-            ensures result == old(value[0]);
-            ensures value[0] == old(value[0]);
+        int32 caller(int32& value, bool construct, bool should_throw) {
+            owns value;
+            ensures result == old(value);
+            ensures value == old(value);
         } by {
             branch then {
                 step();
@@ -1265,8 +1265,8 @@ fn graph_place_indices_preserve_reference_calls_with_growing_unrelated_places() 
             .join(", ");
         let source = format!(
             r#"verifying "places.cpp";
-int32 read(int32* value) {{ owns value[0..1]; ensures result == old(value[0]); ensures value[0] == old(value[0]); }} by {{ execute(); simp(); }}
-int32 many({parameters}, int32* value) {{ owns value[0..1]; requires value[0] == 7; ensures result == 7; ensures value[0] == 7; }} by {{ execute(); simp(); }}
+int32 read(int32& value) {{ owns value; ensures result == old(value); ensures value == old(value); }} by {{ execute(); simp(); }}
+int32 many({parameters}, int32& value) {{ owns value; requires value == 7; ensures result == 7; ensures value == 7; }} by {{ execute(); simp(); }}
 "#
         );
         check_return_call_sidecar(&project, &import, &source);
@@ -1275,8 +1275,8 @@ int32 many({parameters}, int32* value) {{ owns value[0..1]; requires value[0] ==
         let hostile = source
             .replace("ensures result == 7;", "ensures result == 8;")
             .replace(
-                "ensures value[0] == 7; } by { execute(); simp(); }",
-                "ensures value[0] == 7; } by { execute(); assumption(); }",
+                "ensures value == 7; } by { execute(); simp(); }",
+                "ensures value == 7; } by { execute(); assumption(); }",
             );
         let sidecar = project.directory.join("bad.click");
         fs::write(&sidecar, &hostile).unwrap();
@@ -1540,8 +1540,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "wrong_cleanup_order",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
-                "            step();\n            step();\n            have first_cell[0] == old(first_cell[0]) by { simp(); }\n            step();\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
+                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
+                "            step();\n            step();\n            have first_cell == old(first_cell) by { simp(); }\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
                 1,
             ),
             "the first guard cannot be restored before the second cleanup",
@@ -1549,8 +1549,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "omitted_cleanup",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
-                "            step();\n            step();\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
+                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
+                "            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
                 1,
             ),
             "a proof cannot omit a required destructor",
@@ -1559,14 +1559,14 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         // once however many steps a proof writes: once both destructors and
         // the return have run, no step is left. One extra step only moves
         // the `have` past the first guard's destructor, where it still holds
-        // and now verifies, since the caller's `second_cell[0]` is kept
+        // and now verifies, since the caller's `second_cell` is kept
         // across that call although its value is not cached
         // (`mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md`).
         (
             "duplicated_cleanup",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
-                "            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
+                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
+                "            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
                 1,
             ),
             "a proof cannot execute a destructor twice",
@@ -1574,8 +1574,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "unconstructed_second_guard",
             sidecar_source.replacen(
-                "        threw => {\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
-                "        threw => {\n            step();\n            step();\n            have second_cell[0] == 9 by { simp(); }",
+                "        threw => {\n            step();\n            have second_cell == old(second_cell) by { simp(); }",
+                "        threw => {\n            step();\n            step();\n            have second_cell == 9 by { simp(); }",
                 1,
             ),
             "the exceptional path cannot destroy the skipped second guard",
@@ -2483,7 +2483,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         .expect("retained audit session must accept the expanded const-reference proof");
 
     let mutable_signature =
-        CONST_REFERENCE_SIDECAR.replace("const int32* readable", "int32* readable");
+        CONST_REFERENCE_SIDECAR.replace("const int32& readable", "int32& readable");
     fs::write(&sidecar, &mutable_signature).unwrap();
     let mismatched_project = read_click_project(&sidecar, &mutable_signature).unwrap();
     let error = verify_program_prepared_project(&mismatched_project, &import).unwrap_err();
@@ -2887,8 +2887,8 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
         .expect("retained audit session must accept the expanded local proof");
 
     let false_contract = SCALAR_LOCAL_SIDECAR.replace(
-        "ensures result == value[0] + 1;",
-        "ensures result == value[0] + 2;",
+        "ensures result == value + 1;",
+        "ensures result == value + 2;",
     );
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
@@ -3025,8 +3025,8 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
         .expect_err("dereferencing without memory authority must not verify");
 
     let false_contract = POINTER_SIDECAR.replace(
-        "ensures value[0] == old(value[0]) + 1;",
-        "ensures value[0] == old(value[0]) + 2;",
+        "ensures value == old(value) + 1;",
+        "ensures value == old(value) + 2;",
     );
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
@@ -3122,14 +3122,14 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded record proof must reverify");
 
-    let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns state->pointer;\n", "");
+    let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns state.pointer;\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
     verify_program_prepared_project(&missing_project, &import)
         .expect_err("writing a field without its memory authority must not verify");
 
     let false_contract =
-        STRUCT_MEMBER_SIDECAR.replace("ensures value[0] == 7;", "ensures value[0] == 8;");
+        STRUCT_MEMBER_SIDECAR.replace("ensures value == 7;", "ensures value == 8;");
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
     verify_program_prepared_project(&false_project, &import)
@@ -3222,14 +3222,14 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded local aggregate proof must reverify");
 
-    let missing_ownership = LOCAL_AGGREGATE_SIDECAR.replace("    owns value[0..1];\n", "");
+    let missing_ownership = LOCAL_AGGREGATE_SIDECAR.replace("    owns value;\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
     verify_program_prepared_project(&missing_project, &import)
         .expect_err("the initializer and later pointer write require input memory authority");
 
     let false_contract =
-        LOCAL_AGGREGATE_SIDECAR.replace("ensures result == old(value[0]);", "ensures result == 7;");
+        LOCAL_AGGREGATE_SIDECAR.replace("ensures result == old(value);", "ensures result == 7;");
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
     verify_program_prepared_project(&false_project, &import)
@@ -3518,7 +3518,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         .expect_err("a false destructor restore effect must be rejected");
 
     let wrong_capture = TERMINAL_DESTRUCTOR_SIDECAR
-        .replace("ensures result == 7;", "ensures result == old(value[0]);");
+        .replace("ensures result == 7;", "ensures result == old(value);");
     fs::write(&sidecar, &wrong_capture).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_capture).unwrap();
     verify_program_prepared_project(&wrong_project, &import)
@@ -3704,7 +3704,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
         .expect("retained audit session must accept the expanded RAII caller proof");
 
     let false_restoration =
-        RESTORE_CALLER_SIDECAR.replace("ensures value[0] == 41;", "ensures value[0] == 42;");
+        RESTORE_CALLER_SIDECAR.replace("ensures value == 41;", "ensures value == 42;");
     fs::write(&sidecar, &false_restoration).unwrap();
     let false_project = read_click_project(&sidecar, &false_restoration).unwrap();
     verify_program_prepared_project(&false_project, &import)
@@ -3903,7 +3903,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
         .expect("the expanded nested-scope proof must reverify");
 
     let wrong_fallthrough = NESTED_SCOPE_DESTRUCTOR_SIDECAR.replace(
-        "ensures early == 0 implies result == old(value[0]);",
+        "ensures early == 0 implies result == old(value);",
         "ensures early == 0 implies result == 9;",
     );
     fs::write(&sidecar, &wrong_fallthrough).unwrap();
@@ -4030,7 +4030,7 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
         .expect("the expanded sibling-scope proof must reverify");
 
     let wrong_final = SIBLING_SCOPE_DESTRUCTORS_SIDECAR.replace(
-        "second_early == 0 implies result == old(value[0])",
+        "second_early == 0 implies result == old(value)",
         "second_early == 0 implies result == 11",
     );
     fs::write(&sidecar, &wrong_final).unwrap();
@@ -4068,13 +4068,13 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
     let proof = r#"step(); step();
     branch then { execute(); simp(); } else { }
     step(); step();
-    have value[0] == old(value[0]) by { simp(); }
+    have value == old(value) by { simp(); }
     step(); step();
     branch then { execute(); simp(); } else { }
     step(); step();
-    have value[0] == old(value[0]) by { simp(); }
+    have value == old(value) by { simp(); }
     step(); step(); step(); step();
-    have value[0] == old(value[0]) by { simp(); }
+    have value == old(value) by { simp(); }
     execute(); simp();"#;
     let source = format!("{contracts}}} by {{\n{proof}\n}}\n");
     check_return_call_sidecar(&growing, &growing_import, &source);
@@ -4712,9 +4712,9 @@ fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
         &project,
         &import,
         r#"verifying "stage_restore.cpp";
-int32 stage_restore(struct First* first, struct Second* second) {
- owns first->value; owns second->value;
- ensures result == old(second->value); ensures first->value == old(second->value);
+int32 stage_restore(struct First& first, struct Second& second) {
+ owns first.value; owns second.value;
+ ensures result == old(second.value); ensures first.value == old(second.value);
 } by { execute(); simp(); }
 "#,
     );
@@ -4792,7 +4792,7 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
         error.message()
     );
 
-    let wrong_signature = SIDECAR.replace("int32* value", "uint32* value");
+    let wrong_signature = SIDECAR.replace("int32& value", "uint32& value");
     fs::write(&sidecar, &wrong_signature).unwrap();
     let click_project = read_click_project(&sidecar, &wrong_signature).unwrap();
     let error = verify_program_prepared_project(&click_project, &import).unwrap_err();
@@ -4803,6 +4803,56 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
         "{}",
         error.message()
     );
+}
+
+/// A reference parameter is declared as a reference and named as its
+/// referent. Each older or mistaken spelling is refused with the one to
+/// write.
+#[test]
+fn cpp_reference_parameters_are_declared_and_named_as_their_referents() {
+    let project = Project::new();
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = project.directory.join("demo.click");
+    let refusal = |source: &str| {
+        assert_ne!(source, SIDECAR, "the mutation must change the sidecar");
+        fs::write(&sidecar, source).unwrap();
+        match read_click_project(&sidecar, source) {
+            Err(error) => format!("{error:?}"),
+            Ok(click_project) => {
+                let error = verify_program_prepared_project(&click_project, &import)
+                    .expect_err("the mutated sidecar must be refused");
+                error.message().to_string()
+            }
+        }
+    };
+
+    let as_pointer = refusal(&SIDECAR.replace("int32& value", "int32* value"));
+    assert!(
+        as_pointer.contains(".click has Int32Pointer value, C has Int32& value"),
+        "{as_pointer}"
+    );
+    let indexed = refusal(&SIDECAR.replace("requires value <", "requires value[0] <"));
+    assert!(
+        indexed.contains("so it takes no index; write `value`"),
+        "{indexed}"
+    );
+    let dereferenced = refusal(&SIDECAR.replace("owns value;", "owns *value;"));
+    assert!(
+        dereferenced.contains("already names what it refers to; write it without `*`"),
+        "{dereferenced}"
+    );
+
+    // The address of the referent is the pointer the function received, so
+    // comparing it with itself holds and adds nothing false.
+    let with_address =
+        SIDECAR.replace("owns value;", "owns value;\n    requires &value == &value;");
+    assert_ne!(with_address, SIDECAR);
+    fs::write(&sidecar, &with_address).unwrap();
+    let click_project = read_click_project(&sidecar, &with_address).unwrap();
+    verify_program_prepared_project(&click_project, &import)
+        .expect("the address of a referent is a pointer value");
 }
 
 #[test]
@@ -4822,7 +4872,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(function.name(), "increment");
     assert_eq!(function.return_type(), CType::Int32);
     assert_eq!(function.parameters().len(), 1);
-    assert_eq!(function.parameters()[0].name(), "value");
+    assert_eq!(function.parameters()[0].name(), "&value");
     assert_eq!(function.parameters()[0].c_type(), CType::Int32Pointer);
     assert!(matches!(
         function.body(),
@@ -4835,7 +4885,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     value_type: CType::Int32,
                     volatile: false,
                     pointee_constant: false,
-                } if pointer == "value"
+                } if pointer == "&value"
                     && matches!(
                         left.as_ref(),
                         CExpression::TypedLoad {
@@ -4843,7 +4893,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                             value_type: CType::Int32,
                             volatile: false,
                             ..
-                        } if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "value")
+                        } if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
                     )
                     && matches!(right.as_ref(), CExpression::Value(value) if value == &int32(1))
             )
@@ -4854,7 +4904,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
                     value_type: CType::Int32,
                     volatile: false,
                     ..
-                }) if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "value")
+                }) if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
             )
     ));
 
@@ -5169,7 +5219,7 @@ fn value_methods_reject_false_claims_missing_authority_and_overflow() {
     let empty = include_str!("fixtures/cpp-verification/value-methods/is_empty.click");
     for (selector, proof, expected) in [
         ("FeeFrac::IsEmpty", empty.replace("if old(self->size) == 0", "if old(self->size) == 1"), "unclosed goal"),
-        ("FeeFrac::operator+=", add.replace("ensures self->fee == old(self->fee) + old(other->fee);", "ensures self->fee == old(self->fee);"), "unclosed goal"),
+        ("FeeFrac::operator+=", add.replace("ensures self->fee == old(self->fee) + old(other.fee);", "ensures self->fee == old(self->fee);"), "unclosed goal"),
         ("FeeFrac::operator+=", add.replace("    owns self->fee;\n", ""), "missing resource fact"),
         ("FeeFrac::operator+=", add.replace("    requires -4611686018427387904 <= self->fee;\n    requires self->fee <= 4611686018427387903;\n", ""), "overflow"),
         ("FeeFrac::operator+=", add.replace("    requires -1073741824 <= self->size;\n    requires self->size <= 1073741823;\n", ""), "overflow"),
@@ -5478,10 +5528,10 @@ int64 quotient(int64 n, int64 d) {
  requires n == 4294967297i64; requires d == 1i64;
  ensures result == 4294967297i64;
 } by { execute(); simp(); }
-int64 relay(int64 n, int64 d, int32* untouched) {
- views untouched[0..1];
+int64 relay(int64 n, int64 d, int32& untouched) {
+ views untouched;
  requires n == 4294967297i64; requires d == 1i64;
- ensures result == 1i64; ensures untouched[0] == old(untouched[0]);
+ ensures result == 1i64; ensures untouched == old(untouched);
 } by { execute(); simp(); }
 "#,
     );
@@ -5685,10 +5735,10 @@ fn unsigned_modular_calls_frame_unrelated_memory_and_reject_false_wrap_claims() 
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "unsigned.cpp";
 uint64 add64(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); simp(); }
-uint64 relay(uint64 a, uint64 b, int32* untouched) {
- owns untouched[0..1];
+uint64 relay(uint64 a, uint64 b, int32& untouched) {
+ owns untouched;
  ensures result == a + b;
- ensures untouched[0] == old(untouched[0]);
+ ensures untouched == old(untouched);
 } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, source);
@@ -5931,14 +5981,14 @@ int64 Value_select__bool_false(const struct Value* self) {
  ensures result == 0i64;
  ensures self->fee == old(self->fee);
 } by { execute(); simp(); }
-int64 member(const struct Value* value) {
- owns value->fee;
- ensures result == value->fee;
- ensures value->fee == old(value->fee);
+int64 member(const struct Value& value) {
+ owns value.fee;
+ ensures result == value.fee;
+ ensures value.fee == old(value.fee);
 } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, sidecar);
-    let hostile = sidecar.replace(" owns value->fee;", "");
+    let hostile = sidecar.replace(" owns value.fee;", "");
     fs::write(project.directory.join("bad.click"), &hostile).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
@@ -6240,7 +6290,7 @@ fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
             format!("{record}_Read")
         );
         let sidecar = format!(
-            "verifying \"instances.cpp\"; int32 {record}_Read(const struct {record}* self) {{ views self->value; ensures result == self->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}* box) {{ views box->value; ensures result == box->value; }} by {{ execute(); simp(); }}"
+            "verifying \"instances.cpp\"; int32 {record}_Read(const struct {record}* self) {{ views self->value; ensures result == self->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}& box) {{ views box.value; ensures result == box.value; }} by {{ execute(); simp(); }}"
         );
         fs::remove_file(&project.exporter).unwrap();
         check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), &sidecar);
@@ -6321,11 +6371,11 @@ fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layou
         int32 Box__tag_SizeTag__bool_true_Read(const struct Box__tag_SizeTag__bool_true* self) {
             views self->value; ensures result == self->value;
         } by { execute(); simp(); }
-        int32 both(const struct Box__tag_SizeTag__bool_true* left,
-                   const struct Box__tag_WeightTag__bool_true* right) {
-            views left->value; views right->value;
-            ensures result == left->value;
-            ensures right->value == old(right->value);
+        int32 both(const struct Box__tag_SizeTag__bool_true& left,
+                   const struct Box__tag_WeightTag__bool_true& right) {
+            views left.value; views right.value;
+            ensures result == left.value;
+            ensures right.value == old(right.value);
         } by { execute(); simp(); }
     "#;
     fs::remove_file(&project.exporter).unwrap();
@@ -6361,7 +6411,7 @@ fn class_template_instances_complete_unused_parameter_types_without_source_edits
         &import,
         r#"
         verifying "unused.cpp";
-        int32 call(const struct Box__int* box) { ensures result == 7; }
+        int32 call(const struct Box__int& box) { ensures result == 7; }
         by { execute(); simp(); }
     "#,
     );
@@ -6454,12 +6504,12 @@ fn single_base_layouts_preserve_nominal_subobjects_and_verify_offline() {
         &import,
         r#"
         verifying "bases.cpp";
-        int32 read(const struct Envelope* state) {
-            views state->left.base.fee; views state->right.base.size;
-            views state->untouched;
-            ensures result == state->untouched;
-            ensures state->left.base.fee == old(state->left.base.fee);
-            ensures state->right.base.size == old(state->right.base.size);
+        int32 read(const struct Envelope& state) {
+            views state.left.base.fee; views state.right.base.size;
+            views state.untouched;
+            ensures result == state.untouched;
+            ensures state.left.base.fee == old(state.left.base.fee);
+            ensures state.right.base.size == old(state.right.base.size);
         } by { execute(); simp(); }
     "#,
     );
@@ -6599,11 +6649,11 @@ fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
     for (selected, contract) in [
         (
             "read",
-            "int32 read(const struct Deep* state) { views state->base.base.size; ensures result == state->base.base.size; }",
+            "int32 read(const struct Deep& state) { views state.base.base.size; ensures result == state.base.base.size; }",
         ),
         (
             "fee",
-            "int64 fee(const struct Deep* state) { views state->base.base.fee; ensures result == state->base.base.fee; }",
+            "int64 fee(const struct Deep& state) { views state.base.base.fee; ensures result == state.base.base.fee; }",
         ),
         (
             "Deep::Observe",
@@ -6648,15 +6698,15 @@ fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
         (
             "call",
             r#"
-        int32 Helper(const struct Base* value) { views value->size; ensures result == value->size; } by { execute(); simp(); }
-        int32 call(const struct Envelope* state) { views state->left.base.base.size; views state->unrelated.size; ensures result == state->left.base.base.size; ensures state->unrelated.size == old(state->unrelated.size); } by { execute(); simp(); }
+        int32 Helper(const struct Base& value) { views value.size; ensures result == value.size; } by { execute(); simp(); }
+        int32 call(const struct Envelope& state) { views state.left.base.base.size; views state.unrelated.size; ensures result == state.left.base.base.size; ensures state.unrelated.size == old(state.unrelated.size); } by { execute(); simp(); }
         "#,
         ),
         (
             "change",
             r#"
-        void SetHelper(struct Base* value, int32 next) { owns value->size; ensures value->size == next; } by { execute(); simp(); }
-        void change(struct Envelope* state, int32 next) { owns state->right.base.size; views state->left.base.base.size; ensures state->right.base.size == next; ensures state->left.base.base.size == old(state->left.base.base.size); } by { execute(); simp(); }
+        void SetHelper(struct Base& value, int32 next) { owns value.size; ensures value.size == next; } by { execute(); simp(); }
+        void change(struct Envelope& state, int32 next) { owns state.right.base.size; views state.left.base.base.size; ensures state.right.base.size == next; ensures state.left.base.base.size == old(state.left.base.base.size); } by { execute(); simp(); }
         "#,
         ),
     ] {
@@ -6739,18 +6789,18 @@ fn inherited_calls_reject_missing_authority_and_false_frames() {
     let import = load_import(&project.config()).unwrap();
     let sidecar = r#"
         verifying "inherited.cpp";
-        int32 Helper(const struct Base* value) { views value->size; ensures result == value->size; } by { execute(); simp(); }
-        int32 call(const struct Envelope* state) { views state->left.base.base.size; views state->unrelated.size; ensures result == state->left.base.base.size; ensures state->unrelated.size == old(state->unrelated.size); } by { execute(); simp(); }
+        int32 Helper(const struct Base& value) { views value.size; ensures result == value.size; } by { execute(); simp(); }
+        int32 call(const struct Envelope& state) { views state.left.base.base.size; views state.unrelated.size; ensures result == state.left.base.base.size; ensures state.unrelated.size == old(state.unrelated.size); } by { execute(); simp(); }
     "#;
     for hostile in [
-        sidecar.replace("views state->left.base.base.size;", ""),
+        sidecar.replace("views state.left.base.base.size;", ""),
         sidecar.replace(
-            "ensures result == state->left.base.base.size;",
-            "ensures result != state->left.base.base.size;",
+            "ensures result == state.left.base.base.size;",
+            "ensures result != state.left.base.base.size;",
         ),
         sidecar.replace(
-            "state->unrelated.size == old(state->unrelated.size)",
-            "state->unrelated.size != old(state->unrelated.size)",
+            "state.unrelated.size == old(state.unrelated.size)",
+            "state.unrelated.size != old(state.unrelated.size)",
         ),
     ] {
         fs::write(project.directory.join("bad.click"), &hostile).unwrap();
@@ -7125,15 +7175,15 @@ void Restore_destructor(struct Restore* self) {{
 }} by {{ execute(); simp(); }}
 {helper_definition}
 {nested_helper}
-{value_type} {selected}(int32* value) {{
- owns value[0..1]; ensures result == {expected}; ensures value[0] == old(value[0]);
+{value_type} {selected}(int32& value) {{
+ owns value; ensures result == {expected}; ensures value == old(value);
 }} by {{ execute(); simp(); }}
 "#
         );
         check_return_call_sidecar(&project, &import, &source);
         let hostile = source.replace(
-            &format!("ensures result == {expected}; ensures value[0]"),
-            "ensures result == 0; ensures value[0]",
+            &format!("ensures result == {expected}; ensures value =="),
+            "ensures result == 0; ensures value ==",
         );
         fs::write(project.directory.join("bad.click"), &hostile).unwrap();
         let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
@@ -7913,7 +7963,7 @@ void Restore_destructor(struct Restore* self) {
 } by { execute(); simp(); }
 int32 read(int32* slot) { owns slot[0..1]; ensures result == old(slot[0]); ensures slot[0] == old(slot[0]); } by { execute(); simp(); }
 int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
-int32 initialized_cleanup(int32* value) { owns value[0..1]; ensures result == 7; ensures value[0] == old(value[0]); } by { execute(); simp(); }
+int32 initialized_cleanup(int32& value) { owns value; ensures result == 7; ensures value == old(value); } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
     let lowered = lower_import(&import).unwrap();
@@ -8086,7 +8136,7 @@ fn lifetime_return_before_any_construction_has_no_cleanup() {
         .replace("restore_twice(", "before_construction(")
         .replace(
             "early != 0 implies result == 7",
-            "early != 0 implies result == old(value[0])",
+            "early != 0 implies result == old(value)",
         )
         .replace(
             "early == 0 implies result == 9",
@@ -8402,9 +8452,9 @@ fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
         ),
         (16, 8, 8)
     );
-    let sidecar = "verifying \"layouts.cpp\"; int64 choose(struct First* first, struct Second* second) { owns first->value; owns second->value; ensures first->value == 7; ensures result == old(second->value); ensures second->value == old(second->value); } by { execute(); simp(); }";
+    let sidecar = "verifying \"layouts.cpp\"; int64 choose(struct First& first, struct Second& second) { owns first.value; owns second.value; ensures first.value == 7; ensures result == old(second.value); ensures second.value == old(second.value); } by { execute(); simp(); }";
     check_return_call_sidecar(&project, &import, sidecar);
-    let missing_authority = sidecar.replace("owns second->value;", "");
+    let missing_authority = sidecar.replace("owns second.value;", "");
     let path = project.directory.join("wrong.click");
     fs::write(&path, &missing_authority).unwrap();
     let parsed = read_click_project(&path, &missing_authority).unwrap();
@@ -8727,11 +8777,11 @@ fn compiler_assumptions_preserve_conditional_execution_and_constant_reachability
 fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
     let cpp = include_str!("fixtures/cpp-verification/return-call/field-siblings.cpp");
     for (selected, outer, slot, claim) in [
-        ("field_first", "first", "a", "box->value"),
-        ("field_second", "second", "b", "box->value"),
-        ("field_third", "third", "c", "box->value"),
-        ("field_initializer", "second", "b", "box->other"),
-        ("field_discarded", "first", "a", "box->other"),
+        ("field_first", "first", "a", "box.value"),
+        ("field_second", "second", "b", "box.value"),
+        ("field_third", "third", "c", "box.value"),
+        ("field_initializer", "second", "b", "box.other"),
+        ("field_discarded", "first", "a", "box.other"),
         ("field_cast", "second", "b", "1"),
     ] {
         let project = Project::with_fixture("fields.cpp", selected, cpp);
@@ -8739,16 +8789,16 @@ fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let requires = if selected == "field_cast" {
-            "requires box->other == 7;"
+            "requires box.other == 7;"
         } else {
             ""
         };
         let proof = format!(
-            "verifying \"fields.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(const struct Box* box) {{ owns box->value; owns box->other; {requires} ensures result == {claim}; }} by {{ execute(); simp(); }}"
+            "verifying \"fields.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(const struct Box& box) {{ owns box.value; owns box.other; {requires} ensures result == {claim}; }} by {{ execute(); simp(); }}"
         );
         check_return_call_sidecar(&project, &import, &proof);
         for hostile in [
-            proof.replace("owns box->other;", ""),
+            proof.replace("owns box.other;", ""),
             proof.replace(
                 &format!("ensures result == {claim};"),
                 &format!("ensures result == {claim} + 1;"),
@@ -8828,7 +8878,7 @@ fn field_sibling_authority_is_checked_even_when_inner_call_throws() {
     let proof = r#"verifying "fields.cpp";
 int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
 int32 outer(int32 a, int32 b) { ensures result == b; } by { execute(); simp(); }
-int32 relay(bool fail, const struct Box* box) throws int32 {
+int32 relay(bool fail, const struct Box& box) throws int32 {
  requires fail == true;
  ensures result == result by { execute(); simp(); }
  exceptional ensures exception == 7 by { execute(); simp(); }
@@ -8837,8 +8887,13 @@ int32 relay(bool fail, const struct Box* box) throws int32 {
     let path = project.directory.join("hostile.click");
     fs::write(&path, proof).unwrap();
     let parsed = read_click_project(&path, proof).unwrap();
-    verify_program_prepared_project(&parsed, &import)
+    let error = verify_program_prepared_project(&parsed, &import)
         .expect_err("a throwing call cannot hide an unchecked sibling read");
+    assert!(
+        !error.message().contains("signature mismatch"),
+        "the refusal must be about the sibling read: {}",
+        error.message()
+    );
 }
 
 #[test]
@@ -9161,10 +9216,10 @@ fn wide_contracts_compose_modular_calls_and_frame_narrow_memory() {
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "wide.cpp";
 int128 identity(int128 value) { ensures to_integer(result) == to_integer(value); } by { execute(); simp(); }
-int128 relay(int128 value, int32* untouched) {
-    owns untouched[0..1];
+int128 relay(int128 value, int32& untouched) {
+    owns untouched;
     ensures to_integer(result) == to_integer(value);
-    ensures untouched[0] == old(untouched[0]);
+    ensures untouched == old(untouched);
 } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
@@ -9865,14 +9920,14 @@ fn scalar_braces_compose_verified_fee_products_and_frame_memory() {
         .replace("bitcoin-src/src/util/feefrac.h", "braces.cpp");
     let source = format!(
         r#"{helper}
-int128 relay(int64 a, int32 b, int32* untouched) {{
+int128 relay(int64 a, int32 b, int32& untouched) {{
     requires -9223372036854775808 <= to_integer(a);
     requires to_integer(a) <= 9223372036854775807;
     requires -2147483648 <= to_integer(b);
     requires to_integer(b) <= 2147483647;
-    owns untouched[0..1];
+    owns untouched;
     ensures to_integer(result) == to_integer(a) * to_integer(b);
-    ensures untouched[0] == old(untouched[0]);
+    ensures untouched == old(untouched);
 }} by {{ execute(); simp(); }}
 "#
     );
@@ -10067,18 +10122,18 @@ fn evaluated_library_assertions_read_fields_with_normal_authority() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "library.cpp";
-int32 guarded(const struct Box* box, int32 n) {
- views box->size;
- requires box->size > 0;
+int32 guarded(const struct Box& box, int32 n) {
+ views box.size;
+ requires box.size > 0;
  requires n >= 0;
  ensures result == n;
- ensures box->size == old(box->size);
+ ensures box.size == old(box.size);
 } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     for bad in [
-        proof.replace("views box->size;", ""),
-        proof.replace("requires box->size > 0;", ""),
+        proof.replace("views box.size;", ""),
+        proof.replace("requires box.size > 0;", ""),
         proof.replace("requires n >= 0;", ""),
         proof.replace("ensures result == n;", "ensures result != n;"),
     ] {
@@ -10294,12 +10349,12 @@ fn assumed_library_assertions_compose_with_modular_callers_and_memory_framing() 
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "library.cpp";
 int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
-int32 guarded(int32* memory, int32 n) { owns memory[0..1]; requires memory[0] == 7; requires n > 0; ensures memory[0] == 7; ensures result == n; } by { execute(); simp(); }
+int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
     for hostile in [
         source.replacen("requires n > 0;", "", 1),
-        source.replace("ensures memory[0] == 7;", "ensures memory[0] == 8;"),
+        source.replace("ensures memory == 7;", "ensures memory == 8;"),
     ] {
         let path = project.directory.join("hostile.click");
         fs::write(&path, &hostile).unwrap();
@@ -10492,7 +10547,7 @@ fn consteval_library_metadata_preserves_normal_cleanup_and_modular_framing() {
 void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
 void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
 int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
-int32 guarded(int32* memory, int32 n) { owns memory[0..1]; requires memory[0] == 7; requires n > 0; ensures memory[0] == 7; ensures result == n; } by { execute(); simp(); }
+int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requires n > 0; ensures memory == 7; ensures result == n; } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, proof);
 }
@@ -10810,9 +10865,9 @@ int guarded(int& value, int* untouched) noexcept { int n = value; int result = c
 void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
 void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
 int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
-int32 guarded(int32* value, int32* untouched) {
-    owns value[0..1]; owns untouched[0..1]; requires value[0] > 0; requires untouched[0] == 7;
-    ensures result == old(value[0]); ensures value[0] == old(value[0]); ensures untouched[0] == 7;
+int32 guarded(int32& value, int32* untouched) {
+    owns value; owns untouched[0..1]; requires value > 0; requires untouched[0] == 7;
+    ensures result == old(value); ensures value == old(value); ensures untouched[0] == 7;
 } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, proof);
@@ -11240,24 +11295,24 @@ fn symbolic_wide_field_branch_paths_keep_their_selector_width() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "wide-field.cpp";
-int32 choose(const struct Box* box) {
- views box->fee;
+int32 choose(const struct Box& box) {
+ views box.fee;
  ensures result == 1 or result == 2;
- ensures box->fee == old(box->fee);
+ ensures box.fee == old(box.fee);
 } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, source);
     for (fee, result) in [("-1i64", 2), ("1i64", 1), ("8589934592i64", 2)] {
         let precise = source
             .replace(
-                "views box->fee;",
-                &format!("views box->fee;\n requires box->fee == {fee};"),
+                "views box.fee;",
+                &format!("views box.fee;\n requires box.fee == {fee};"),
             )
             .replace("result == 1 or result == 2", &format!("result == {result}"));
         check_arithmetic_sidecar(&project, &import, &precise);
     }
     for bad in [
-        source.replace("views box->fee;", ""),
+        source.replace("views box.fee;", ""),
         source.replace("result == 1 or result == 2", "result == 1"),
     ] {
         let path = project.directory.join("bad.click");
@@ -12018,11 +12073,11 @@ fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
     for (selected, sidecar) in [
         (
             "read",
-            "verifying \"pointer_nested.cpp\"; int read(const struct Outer* state, int* value) { views state->child.pointer; views value[0..1]; requires state->child.pointer == value; ensures result == value[0]; } by { execute(); simp(); }",
+            "verifying \"pointer_nested.cpp\"; int read(const struct Outer& state, int* value) { views state.child.pointer; views value[0..1]; requires state.child.pointer == value; ensures result == value[0]; } by { execute(); simp(); }",
         ),
         (
             "write",
-            "verifying \"pointer_nested.cpp\"; void write(const struct Outer* state, int* value, int next) { views state->child.pointer; owns value[0..1]; requires state->child.pointer == value; ensures value[0] == next; ensures state->child.pointer == old(state->child.pointer); } by { execute(); simp(); }",
+            "verifying \"pointer_nested.cpp\"; void write(const struct Outer& state, int* value, int next) { views state.child.pointer; owns value[0..1]; requires state.child.pointer == value; ensures value[0] == next; ensures state.child.pointer == old(state.child.pointer); } by { execute(); simp(); }",
         ),
     ] {
         let project = Project::with_fixture("pointer_nested.cpp", selected, source);
@@ -12208,7 +12263,7 @@ fn projected_call_contracts_require_leaf_authority_and_preserve_sibling_frames()
                     "self->state.right.size == old(self->state.right.size)",
                     "self->state.right.size != old(self->state.right.size)",
                 ),
-                ("requires value[0] <= 10;", ""),
+                ("requires value <= 10;", ""),
             ],
         ),
     ] {
@@ -12310,8 +12365,8 @@ fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
     for (answer, expected) in [(0, 2), (1, 1)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool update(int32* value, bool answer) {{ owns *value; requires *value == 4; ensures *value == 5; ensures result == answer; }} by {{ execute(); simp(); }}
-        int32 choose(struct State* state, bool answer) {{ owns state->sibling; views state->left.base.value; requires answer == {answer}; requires state->sibling == 4; ensures result == {expected}; ensures state->sibling == 5; ensures state->left.base.value == old(state->left.base.value); }} by {{ execute(); simp(); }}
+        bool update(int32& value, bool answer) {{ owns value; requires value == 4; ensures value == 5; ensures result == answer; }} by {{ execute(); simp(); }}
+        int32 choose(struct State& state, bool answer) {{ owns state.sibling; views state.left.base.value; requires answer == {answer}; requires state.sibling == 4; ensures result == {expected}; ensures state.sibling == 5; ensures state.left.base.value == old(state.left.base.value); }} by {{ execute(); simp(); }}
         "#
         );
         check_return_call_sidecar(&project, &import, &sidecar);
@@ -12328,7 +12383,7 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
         let sidecar = format!(
             r#"verifying "condition.cpp";
         bool Base_Empty(const struct Base* self) {{ views self->value; ensures result == (if self->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
-        int32 observe(const struct State* state) {{ views state->left.base.value; views state->sibling; requires state->left.base.value == {value}; ensures result == {expected}; ensures state->sibling == old(state->sibling); }} by {{ execute(); simp(); }}
+        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{ execute(); simp(); }}
         "#
         );
         check_return_call_sidecar(&project, &import, &sidecar);
@@ -12337,7 +12392,7 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
         fs::write(&path, &hostile).unwrap();
         let parsed = read_click_project(&path, &hostile).unwrap();
         assert!(verify_program_prepared_project(&parsed, &import).is_err());
-        let missing = sidecar.replace("views state->left.base.value;", "");
+        let missing = sidecar.replace("views state.left.base.value;", "");
         fs::write(&path, &missing).unwrap();
         let parsed = read_click_project(&path, &missing).unwrap();
         assert!(verify_program_prepared_project(&parsed, &import).is_err());
@@ -12619,15 +12674,15 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
         let sidecar = format!(
             r#"verifying "graph.cpp";
         bool Base_Empty(const struct Base* self) {{ views self->value; ensures result == (if self->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
-        bool predicate(const struct Base* state) {{ views state->value; ensures result == (if state->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
-        int32 Read(const struct Base* state) {{ views state->value; ensures result == state->value; }} by {{ execute(); simp(); }}
-        int32 choose(const struct Box* state) {{ views state->left.base.value; views state->sibling; requires state->left.base.value == {value}; ensures result == {result}; ensures state->sibling == old(state->sibling); }} by {{ execute(); simp(); }}
+        bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        int32 Read(const struct Base& state) {{ views state.value; ensures result == state.value; }} by {{ execute(); simp(); }}
+        int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }} by {{ execute(); simp(); }}
         "#
         );
         check_return_call_sidecar(&project, &import, &sidecar);
         let hostile = sidecar.replace(
-            &format!("result == {result}; ensures state->sibling"),
-            "result == 9; ensures state->sibling",
+            &format!("result == {result}; ensures state.sibling"),
+            "result == 9; ensures state.sibling",
         );
         let path = project.directory.join("hostile.click");
         fs::write(&path, &hostile).unwrap();
@@ -12646,18 +12701,18 @@ fn locked_header_graph_mutators_verify_offline_and_require_leaf_authority() {
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "graph.cpp";
     void Base_Set(struct Base* self, int32 next) { owns self->value; ensures self->value == next; } by { execute(); simp(); }
-    void Store(struct Base* state, int32 next) { owns state->value; ensures state->value == next; } by { execute(); simp(); }
-    void change(struct Box* state, int32 next) { owns state->left.base.value; views state->sibling; ensures state->left.base.value == next; ensures state->sibling == old(state->sibling); } by { execute(); simp(); }
+    void Store(struct Base& state, int32 next) { owns state.value; ensures state.value == next; } by { execute(); simp(); }
+    void change(struct Box& state, int32 next) { owns state.left.base.value; views state.sibling; ensures state.left.base.value == next; ensures state.sibling == old(state.sibling); } by { execute(); simp(); }
     "#;
     check_return_call_sidecar(&project, &import, sidecar);
     for hostile in [
         sidecar.replace(
-            "owns state->left.base.value;",
-            "views state->left.base.value;",
+            "owns state.left.base.value;",
+            "views state.left.base.value;",
         ),
         sidecar.replace(
-            "ensures state->sibling == old(state->sibling)",
-            "ensures state->sibling == next",
+            "ensures state.sibling == old(state.sibling)",
+            "ensures state.sibling == next",
         ),
     ] {
         let path = project.directory.join("hostile.click");
@@ -13044,11 +13099,11 @@ fn converted_call_initializers_evaluate_mutators_once_and_frame_siblings() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "converted.cpp";
-int32 bump(struct Box* box) { owns box->value; requires box->value == 0; ensures box->value == 1; ensures result == 1; } by { execute(); simp(); }
-int64 relay(struct Box* box) { owns box->value; views box->sibling; requires box->value == 0; ensures box->value == 1; ensures result == 1i64; ensures box->sibling == old(box->sibling); } by { execute(); simp(); }
+int32 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1; } by { execute(); simp(); }
+int64 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; ensures box.sibling == old(box.sibling); } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
-    let hostile = source.replace("owns box->value; views", "views box->value; views");
+    let hostile = source.replace("owns box.value; views", "views box.value; views");
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
@@ -13390,17 +13445,14 @@ int64 read(int32* slot) {
  views slot[0..1]; requires slot[0] == 7; ensures result == 4294967303i64;
  ensures slot[0] == old(slot[0]);
 } by { execute(); simp(); }
-int32 relay(int32* value) {
- owns value[0..1]; ensures result == 7; ensures value[0] == old(value[0]);
+int32 relay(int32& value) {
+ owns value; ensures result == 7; ensures value == old(value);
 } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
     for hostile in [
         source.replace("ensures result == 7;", "ensures result == 0;"),
-        source.replace(
-            "ensures value[0] == old(value[0]);",
-            "ensures value[0] == 7;",
-        ),
+        source.replace("ensures value == old(value);", "ensures value == 7;"),
     ] {
         let path = project.directory.join("hostile.click");
         fs::write(&path, &hostile).unwrap();
@@ -13421,11 +13473,11 @@ fn converted_return_calls_evaluate_mutators_once_and_preserve_sibling_authority(
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "relay.cpp";
-int64 bump(struct Box* box) { owns box->value; requires box->value == 0; ensures box->value == 1; ensures result == 1i64; } by { execute(); simp(); }
-int32 relay(struct Box* box) { owns box->value; views box->sibling; requires box->value == 0; ensures box->value == 1; ensures result == 1; ensures box->sibling == old(box->sibling); } by { execute(); simp(); }
+int64 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; } by { execute(); simp(); }
+int32 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1; ensures box.sibling == old(box.sibling); } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
-    let hostile = source.replace("owns box->value; views", "views box->value; views");
+    let hostile = source.replace("owns box.value; views", "views box.value; views");
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
@@ -13620,18 +13672,18 @@ fn execution_theorem_proof_retains_struct_argument_field_metadata() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "read.cpp";
-int32 read(const struct State* state) {
-    views state->child.value;
-    ensures result == state->child.value;
+int32 read(const struct State& state) {
+    views state.child.value;
+    ensures result == state.child.value;
 } by { execute(); simp(); }
-contract int32 PositiveRead(const struct State* state) {
-    views state->child.value;
-    requires state->child.value == 2;
+contract int32 PositiveRead(const struct State& state) {
+    views state.child.value;
+    requires state.child.value == 2;
     ensures result == 2;
 }
-theorem read_application() executes read(const struct State* state) {
+theorem read_application() executes read(const struct State& state) {
     ensures PositiveRead(&read) by {
-        have state->child.value > 0 by { arithmetic() using { state->child.value == 2; } }
+        have state.child.value > 0 by { arithmetic() using { state.child.value == 2; } }
         execute(); simp();
     }
 }
@@ -13674,7 +13726,7 @@ theorem read_application() executes read(const struct State* state) {
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
     let path = project.directory.join("hostile.click");
-    let hostile = source.replace("requires state->child.value == 2;", "");
+    let hostile = source.replace("requires state.child.value == 2;", "");
     fs::write(&path, &hostile).unwrap();
     assert!(
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)

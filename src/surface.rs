@@ -1268,6 +1268,9 @@ pub struct FunctionParameter {
     function_pointer_signature: Option<syntax::C0FunctionPointerSignature>,
     constant: bool,
     pointee_constant: bool,
+    /// Whether the source declares the parameter as a reference. Its name
+    /// then denotes the referent; `click_type` is the pointer that carries it.
+    reference: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7025,6 +7028,10 @@ impl FunctionParameter {
 
     pub fn pointee_is_constant(&self) -> bool {
         self.pointee_constant
+    }
+
+    pub fn is_reference(&self) -> bool {
+        self.reference
     }
 }
 

@@ -182,6 +182,7 @@ pub(super) fn verify_execution_theorem(
                 written.c_type() != declared.c_type()
                     || written.struct_name() != declared.struct_name()
                     || written.pointee_is_constant() != declared.pointee_is_constant()
+                    || written.is_reference() != declared.is_reference()
             })
     {
         return Err(error(

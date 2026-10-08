@@ -262,6 +262,7 @@ fn parses_composite_resource_definition() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
     assert_eq!(

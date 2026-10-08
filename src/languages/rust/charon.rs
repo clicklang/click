@@ -1001,7 +1001,10 @@ impl BodyAdapter<'_, '_> {
             u::StatementKind::StorageDead(id) => Some(S::EndStorage {
                 local: self.local(*id)?,
             }),
-            u::StatementKind::StorageLive(id) if matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Adt(r) if self.adapter.records.contains_key(&r.id)) => {
+            u::StatementKind::StorageLive(id)
+                if (matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Adt(r) if self.adapter.records.contains_key(&r.id))
+                    || matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Array(..))) =>
+            {
                 Some(S::BeginStorage {
                     local: self.local(*id)?,
                 })
@@ -1702,6 +1705,150 @@ mod tests {
             error.message().contains("__rust_owned_live_"),
             "{}",
             error.message()
+        );
+    }
+
+    fn loop_array_copy_export() -> out::RustExport {
+        let source = include_bytes!("../../../design/charon-trial/loop-array-copy/quad.rs");
+        let config: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../../../design/charon-trial/loop-array-copy/quad.click.import.json"
+        ))
+        .unwrap();
+        let config = serde_json::from_value(config["crate"].clone()).unwrap();
+        let sources = BTreeMap::from([("quad.rs".into(), source.to_vec())]);
+        decode_crate(
+            include_bytes!("../../../design/charon-trial/loop-array-copy/quad.ullbc"),
+            "quad.rs",
+            source,
+            Some(&config),
+            Some(&sources),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn charon_loop_array_copy_requires_fresh_initialized_storage() {
+        let export = loop_array_copy_export();
+        let claim = include_str!("../../../design/charon-trial/loop-array-copy/quad.click");
+        for mutation in 0..4 {
+            let mut altered = export.clone();
+            let walk = altered
+                .functions
+                .iter_mut()
+                .find(|f| f.name.ends_with("I4_walk"))
+                .unwrap();
+            let mir = walk.mir.as_mut().unwrap();
+            let mut changed = false;
+            match mutation {
+                0 => {
+                    for block in &mut mir.blocks {
+                        block.statements.retain(|s| {
+                            if matches!(s, S::BeginStorage { local } if local == "array") {
+                                changed = true;
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+                }
+                1 | 2 => {
+                    for block in &mut mir.blocks {
+                        if let Some(index) = block.statements.iter().position(|s|
+                            matches!(s, S::Assign { target: E::Local { name }, .. } if name == "array")) {
+                            if mutation == 1 {
+                                block.statements.remove(index);
+                            } else {
+                                // A second lifetime cannot retain initialized bytes
+                                // or readable snapshots from its predecessor.
+                                block.statements.insert(index + 1, S::BeginStorage { local: "array".into() });
+                            }
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+                3 => {
+                    let array = mir.locals.iter_mut().find(|p| p.name == "array").unwrap();
+                    let Type::Array { length, .. } = &mut array.value_type else {
+                        unreachable!()
+                    };
+                    *length = 3;
+                    changed = true;
+                }
+                _ => unreachable!(),
+            }
+            assert!(changed);
+            let rejected = match super::super::import::prepared_for_test(altered) {
+                Err(_) => true,
+                Ok(prepared) => {
+                    C0VerificationSession::new_program_prepared(claim, &prepared).is_err()
+                }
+            };
+            assert!(rejected, "accepted array storage mutation {mutation}");
+        }
+    }
+
+    #[test]
+    fn charon_array_storage_starts_keep_layout_and_lowering_compact() {
+        let original = loop_array_copy_export();
+        fn shape(s: &crate::kernel::CStatement) -> (usize, usize) {
+            use crate::kernel::CStatement;
+            match s {
+                CStatement::Seq(a, b) => {
+                    let a = shape(a);
+                    let b = shape(b);
+                    (1 + a.0 + b.0, a.1 + b.1)
+                }
+                CStatement::DeclareAggregate { layout, .. } => (1, layout.fields().len()),
+                CStatement::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    let a = shape(then_branch);
+                    let b = shape(else_branch);
+                    (1 + a.0 + b.0, a.1 + b.1)
+                }
+                CStatement::While { body, .. } => {
+                    let a = shape(body);
+                    (1 + a.0, a.1)
+                }
+                _ => (1, 0),
+            }
+        }
+        let mut samples = Vec::new();
+        for length in [4, 1024, 1_000_000] {
+            let mut export = original.clone();
+            let mir = export
+                .functions
+                .iter_mut()
+                .find(|f| f.name.ends_with("I4_walk"))
+                .unwrap()
+                .mir
+                .as_mut()
+                .unwrap();
+            let local = mir.locals.iter_mut().find(|p| p.name == "array").unwrap();
+            let Type::Array { length: count, .. } = &mut local.value_type else {
+                unreachable!()
+            };
+            *count = length;
+            // Only examine storage lowering: remove the four-element copy,
+            // whose type deliberately does not change with the test extent.
+            for block in &mut mir.blocks {
+                block.statements.retain(|s| !matches!(s, S::Assign { target: E::Local { name }, .. } if name == "array"));
+            }
+            let (functions, _) = super::super::lowering::lower(&export).unwrap();
+            let walk = functions
+                .iter()
+                .find(|f| f.name().ends_with("I4_walk"))
+                .unwrap()
+                .to_kernel_function();
+            samples.push(shape(walk.body()));
+        }
+        assert!(
+            samples.iter().all(|sample| *sample == samples[0]),
+            "{samples:?}"
         );
     }
 

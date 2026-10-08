@@ -1500,8 +1500,8 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         .expect("the modular boundary contracts follow MoneyRange")
         .0;
     let false_source = source_contract.replace(
-        "if old(nValue[0]) <= 2100000000000000i64",
-        "if old(nValue[0]) < 2100000000000000i64",
+        "if old(nValue) <= 2100000000000000i64",
+        "if old(nValue) < 2100000000000000i64",
     );
     assert_ne!(false_source, source_contract);
     fs::write(&sidecar, &false_source).unwrap();

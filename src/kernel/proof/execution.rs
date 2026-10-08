@@ -11732,14 +11732,17 @@ mod tests {
             )]
             .into();
             let candidate = crate::kernel::CFunctionExecutionCandidate {
-                outcome: CFunctionOutcome::Return {
-                    value: int32(0),
-                    state: Box::new(state.clone()),
-                },
-                facts: facts.clone(),
-                effect_facts: effects.clone(),
-                obligations: vec![],
-                loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                data: Arc::new(crate::kernel::CFunctionExecutionCandidateData {
+                    outcome: Arc::new(CFunctionOutcome::Return {
+                        value: int32(0),
+                        state: Box::new(state.clone()),
+                    }),
+                    facts: facts.clone(),
+                    effect_facts: effects.clone(),
+                    effects_public_first: true,
+                    obligations: Arc::new(vec![]),
+                    loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                }),
             };
             let context = CheckedReturnContext::from_candidate(
                 CStatementOutcome::Return {
@@ -14983,6 +14986,61 @@ mod automatic_lifetime_tests {
             panic!("missing scope event")
         };
         assert_eq!(event.advance_checked(&destroyed), Some(after));
+    }
+
+    #[test]
+    fn automatic_lifetime_end_consumes_only_local_construction_ownership() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let pointer = CMemory::local_pointer("selected");
+            let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                pointer,
+                0u32.into(),
+                16u32.into(),
+                1,
+            ));
+            let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+            for i in 0..size {
+                resources = resources.unchecked_with_fact(CResourceFact::own_token(
+                    format!("unrelated_{i}"),
+                    vec![],
+                ));
+            }
+            let state = CState::new()
+                .with_local("selected", int32(0))
+                .with_memory(CMemory::new().with_block("local:selected", 16))
+                .with_resource_context(resources);
+            let mut core =
+                ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
+            let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+                core.record_automatic_lifetime_end(&state, &["selected".into()])
+                    .unwrap()
+            });
+            assert!(
+                !after
+                    .resources()
+                    .satisfies_fact(&owner, &PureFactContext::new())
+            );
+            assert!(after.resources().satisfies_fact(
+                &CResourceFact::own_token("unrelated_0".into(), vec![]),
+                &PureFactContext::new()
+            ));
+            assert!(!after.memory().has_block(&"local:selected".into()));
+            let events = core.execution_evidence[0].to_vec();
+            let CheckedExecutionEvent::AutomaticLifetimeEnd(end) = &events[0] else {
+                unreachable!()
+            };
+            assert_eq!(end.advance_checked(&state), Some(after.clone()));
+            let mut forged = end.clone();
+            forged.after_state = after.with_resource_context(state.resources().clone());
+            assert!(forged.advance_checked(&state).is_none());
+            samples.push((size, work));
+        }
+        eprintln!("local construction retirement (N, units): {samples:?}");
+        assert!(
+            samples.iter().all(|(_, work)| *work <= samples[0].1 + 64),
+            "{samples:?}"
+        );
     }
 
     #[test]

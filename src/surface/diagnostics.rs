@@ -1714,7 +1714,7 @@ fn describe_struct_place_range(
         let high = u64::from(offset) + end * width;
         let size = u64::from(layout.size_bytes());
         if low == 0 && high == size {
-            return Some(format!("*{}", parameter.name()));
+            return Some(describe_pointee_place(parameter.name()));
         }
         for (name, field) in layout.fields() {
             let field_low = u64::from(field.offset_bytes());
@@ -1735,7 +1735,7 @@ fn describe_struct_place_range(
                 || high == field_low + u64::from(field.byte_width())
                 || pointer_word
             {
-                return Some(format!("{}->{name}", parameter.name()));
+                return Some(describe_field_place(parameter.name(), name));
             }
         }
         // A leaf of an embedded struct: `o->inner.count`.
@@ -1753,7 +1753,7 @@ fn describe_struct_place_range(
                 && low < high
                 && high <= leaf_high(low)
         }) {
-            return Some(format!("{}->{name}", parameter.name()));
+            return Some(describe_field_place(parameter.name(), name));
         }
     }
     None
@@ -3839,7 +3839,7 @@ fn describe_parameter_struct_field_pointer(
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
         (field_offset == Bitvector32Term::Constant(field.offset_bytes()))
-            .then(|| format!("{}->{name}", parameter.name()))
+            .then(|| describe_field_place(parameter.name(), name))
     })
 }
 
@@ -4205,9 +4205,9 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             ..
         } => match surface_base {
             Some(surface_base) => {
-                format!("{}->{name}", describe_contract_expression(surface_base))
+                describe_field_place(&describe_contract_expression(surface_base), name)
             }
-            None => format!("{base}->{name}"),
+            None => describe_field_place(&base, name),
         },
         // The object at a named object's address is that object.
         ContractSegmentSurface::Object(_)
@@ -4327,6 +4327,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::BitwiseOr(left, right) => describe_binary_c_expression(left, "|", right),
         CExpression::BitwiseXor(left, right) => describe_binary_c_expression(left, "^", right),
         CExpression::BitwiseNot(expression) => format!("~{}", describe_c_expression(expression)),
+        // A load through `&name` keeps its address form. Whether it reads a
+        // scalar referent whole or the first field of a struct referent
+        // depends on a type this printer does not have.
         CExpression::Load(pointer) => format!("*{}", describe_c_expression(pointer)),
         CExpression::TypedLoad {
             pointer,
@@ -4398,12 +4401,39 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             format!("{name}({})", describe_c_expression(pointer))
         }
         CExpression::Index(base, index) => {
-            format!(
-                "{}[{}]",
-                describe_c_expression(base),
-                describe_c_expression(index)
-            )
+            let (base, index) = (describe_c_expression(base), describe_c_expression(index));
+            match object_at_address(&base) {
+                Some(object) if index == "0" => object.to_string(),
+                _ => format!("{base}[{index}]"),
+            }
         }
+    }
+}
+
+/// The object whose address `rendered` spells, when it is `&name`. Reading
+/// through that address is the object itself: `(&value)[0]` and `*&value`
+/// are `value`, and `(&c)->field` is `c.field`. A reference parameter's
+/// carrying pointer is named this way, so its referent prints as the bare
+/// name a sidecar writes.
+pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
+    syntax::referent_of_carrier(rendered)
+}
+
+/// A field of the struct `base` points at: `c.field` through an object's
+/// address, `p->field` through a pointer.
+pub(super) fn describe_field_place(base: &str, field: &str) -> String {
+    match object_at_address(base) {
+        Some(object) => format!("{object}.{field}"),
+        None => format!("{base}->{field}"),
+    }
+}
+
+/// The whole object `base` points at: the object itself through its
+/// address, `*p` through a pointer.
+pub(super) fn describe_pointee_place(base: &str) -> String {
+    match object_at_address(base) {
+        Some(object) => object.to_string(),
+        None => format!("*{base}"),
     }
 }
 
@@ -4718,7 +4748,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         }
         ContractExpression::CFragment(expression) => describe_c_expression(expression),
         ContractExpression::Field { base, field, .. } => {
-            format!("{}->{field}", describe_contract_expression(base))
+            describe_field_place(&describe_contract_expression(base), field)
         }
         ContractExpression::CBinding(name) => format!("c({name})"),
         ContractExpression::ResourceWildcard => "_".to_string(),
@@ -4797,11 +4827,16 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 describe_contract_expression(index)
             )
         }
-        ContractExpression::Index(base, index) => format!(
-            "{}[{}]",
-            describe_contract_expression(base),
-            describe_contract_expression(index)
-        ),
+        ContractExpression::Index(base, index) => {
+            let (base, index) = (
+                describe_contract_expression(base),
+                describe_contract_expression(index),
+            );
+            match object_at_address(&base) {
+                Some(object) if index == "0" => object.to_string(),
+                _ => format!("{base}[{index}]"),
+            }
+        }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
             describe_contract_expression(base),

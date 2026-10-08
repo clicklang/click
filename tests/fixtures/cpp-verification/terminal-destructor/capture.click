@@ -25,10 +25,10 @@ void RestoreState_destructor(struct RestoreState* self) {
     simp();
 }
 
-int32 capture(int32* value) {
-    owns value[0..1];
+int32 capture(int32& value) {
+    owns value;
     ensures result == 7;
-    ensures value[0] == old(value[0]);
+    ensures value == old(value);
 } by {
     execute();
     simp();

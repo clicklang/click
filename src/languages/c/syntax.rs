@@ -1827,6 +1827,9 @@ pub struct C0Parameter {
     pointee_volatile: bool,
     constant: bool,
     pointee_constant: bool,
+    /// Whether the source declares a reference, as C++ `int&` does. The
+    /// parameter's type is the pointer that carries it.
+    reference: bool,
     struct_name: Option<String>,
     union_name: Option<String>,
     struct_layout: Option<C0StructLayout>,
@@ -4090,6 +4093,25 @@ impl C0StructField {
     }
 }
 
+/// The name of the pointer that carries a reference parameter. A reference
+/// names an object, and what the function receives is that object's address,
+/// so the pointer is spelled as the address: `&value` for `int& value`. The
+/// name is not an identifier, which keeps it apart from every source name,
+/// and it prints the way the address is written.
+pub fn reference_carrier_name(referent: &str) -> String {
+    format!("&{referent}")
+}
+
+/// The object a reference carrier refers to: `value` for `&value`.
+pub fn referent_of_carrier(carrier: &str) -> Option<&str> {
+    carrier.strip_prefix('&').filter(|name| {
+        !name.is_empty()
+            && name
+                .chars()
+                .all(|character| character.is_alphanumeric() || character == '_')
+    })
+}
+
 impl C0Parameter {
     pub(crate) fn with_struct_value(mut self, name: String, layout: C0StructLayout) -> Self {
         self.c_type = struct_value_type(&layout);
@@ -4105,6 +4127,7 @@ impl C0Parameter {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            reference: false,
             struct_name,
             union_name: None,
             struct_layout: None,
@@ -4145,6 +4168,15 @@ impl C0Parameter {
 
     pub(crate) fn with_pointee_constant(mut self, pointee_constant: bool) -> Self {
         self.pointee_constant = pointee_constant;
+        self
+    }
+
+    pub fn is_reference(&self) -> bool {
+        self.reference
+    }
+
+    pub(crate) fn with_reference(mut self, reference: bool) -> Self {
+        self.reference = reference;
         self
     }
 
@@ -11003,6 +11035,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant: false,
+                    reference: false,
                     struct_layout: None,
                     pointee_struct_layout: None,
                     function_pointer_signature: Some(signature),
@@ -11101,6 +11134,7 @@ impl Parser {
                         pointee_volatile,
                         constant: object_constant,
                         pointee_constant,
+                        reference: false,
                         struct_layout: struct_value_layout,
                         pointee_struct_layout: (c_type.is_pointer() && !array_parameter)
                             .then(|| {
@@ -11143,6 +11177,7 @@ impl Parser {
                         pointee_volatile,
                         constant: object_constant,
                         pointee_constant,
+                        reference: false,
                         struct_layout: self.structs.get(&struct_name_value).cloned(),
                         pointee_struct_layout: None,
                         function_pointer_signature: None,
@@ -11164,6 +11199,7 @@ impl Parser {
                 pointee_volatile,
                 constant: object_constant,
                 pointee_constant,
+                reference: false,
                 struct_layout: struct_name
                     .as_ref()
                     .and_then(|name| self.structs.get(name))
