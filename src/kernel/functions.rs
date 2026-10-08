@@ -24015,6 +24015,36 @@ pub(crate) fn arm_binding_program_spelling(
     Some(CValue::Pointer(aliased))
 }
 
+/// Reuse an immutable algebraic payload when a constructor is matched again.
+/// The caller must have checked this constructor case; injectivity then makes
+/// its fresh binding equal to this payload. Only variables representable by
+/// Surface's algebraic binder encoding are returned. This reads one field,
+/// never follows model children or searches the premise context.
+pub(crate) fn arm_algebraic_payload_spelling<'a>(
+    scrutinee: &'a AlgebraicTerm,
+    variant: &str,
+    field_index: usize,
+) -> Option<&'a AlgebraicTerm> {
+    crate::instrumentation::record_deterministic_work(1);
+    let AlgebraicTermNode::Constructor {
+        variant: known,
+        fields,
+    } = &scrutinee.node
+    else {
+        return None;
+    };
+    if known != variant {
+        return None;
+    }
+    let AlgebraicValue::Algebraic(payload) = fields.get(field_index)? else {
+        return None;
+    };
+    let AlgebraicTermNode::Variable(variable) = payload.node else {
+        return None;
+    };
+    (variable.0 >= 4_000_000 && (variable.0 - 4_000_000).is_multiple_of(65_536)).then_some(payload)
+}
+
 pub(in crate::kernel) fn arm_pointer_program_spelling(
     pointer: &Pointer,
     assumptions: &PureFactContext,

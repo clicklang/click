@@ -55,6 +55,10 @@ Unfolded scalar cells also retain the pointer spelling used by their checked
 body facts when the unfold itself introduces a new alias. Indexed reads reuse
 that cell through the C parameter without granting read authority or carrying
 facts across a write (`unfold_child_preserves_scalar_cell_identity.md`).
+Matching a rebuilt model now also preserves an existing algebraic payload's
+identity under its new source name. The red-leaf extension exposed this at the
+successor's color check; `proof_match_preserves_algebraic_payload_identity.md`
+and its overwrite negative cover it, alongside indexed constructor checks.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.

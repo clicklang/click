@@ -9613,7 +9613,8 @@ impl ExecutionProofCore {
                     }
                 }
                 // The surface binds pointer payloads at the same checked
-                // program spelling as resource bodies. Retain the constructor
+                // program spelling as resource bodies and preserves existing
+                // algebraic variables carried by a concrete constructor. Retain its
                 // equation in that spelling too, so explicit rewrites of the
                 // written match equation remain exact premises.
                 if matches!(
@@ -9625,7 +9626,8 @@ impl ExecutionProofCore {
                 {
                     let spelled_fields = fields
                         .iter()
-                        .map(|field| match field {
+                        .enumerate()
+                        .map(|(index, field)| match field {
                             crate::kernel::AlgebraicValue::C(value) => {
                                 crate::kernel::AlgebraicValue::C(
                                     crate::kernel::functions::arm_binding_program_spelling(
@@ -9634,6 +9636,13 @@ impl ExecutionProofCore {
                                     )
                                     .unwrap_or_else(|| value.clone()),
                                 )
+                            }
+                            crate::kernel::AlgebraicValue::Algebraic(_) => {
+                                crate::kernel::arm_algebraic_payload_spelling(value, variant, index)
+                                    .map(|payload| {
+                                        crate::kernel::AlgebraicValue::Algebraic(payload.clone())
+                                    })
+                                    .unwrap_or_else(|| field.clone())
                             }
                             _ => field.clone(),
                         })
@@ -11778,6 +11787,106 @@ mod tests {
             )
             .unwrap();
         assert!(fields.iter().flatten().all(|(var, _)| var.0 > 4_065_536));
+    }
+
+    #[test]
+    fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
+        use crate::kernel::{
+            AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
+            AlgebraicValueType, AlgebraicVariantType, Term,
+        };
+        let (core, mut payload) = constructor_partition_fixture(2);
+        payload.node = AlgebraicTermNode::Variable(Variable(4_065_536));
+        let inner_key = AlgebraicValueType::Algebraic {
+            name: "Cases".into(),
+            arguments: vec![],
+        };
+        let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Pair".into(),
+            fields: vec![inner_key.clone(), inner_key.clone()],
+        }]
+        .into();
+        let mut sibling = payload.clone();
+        sibling.node = AlgebraicTermNode::Variable(Variable(4_131_072));
+        let value = AlgebraicTerm {
+            algebraic_type: AlgebraicType {
+                rigid: false,
+                name: "Wrapper".into(),
+                arguments: vec![],
+                variants: variants.clone(),
+                schemas: Arc::new(AlgebraicSchemas::new(BTreeMap::from([
+                    (inner_key, payload.algebraic_type.variants.clone()),
+                    (
+                        AlgebraicValueType::Algebraic {
+                            name: "Wrapper".into(),
+                            arguments: vec![],
+                        },
+                        variants,
+                    ),
+                ]))),
+            },
+            node: AlgebraicTermNode::Constructor {
+                variant: "Pair".into(),
+                fields: vec![
+                    AlgebraicValue::Algebraic(payload.clone()),
+                    AlgebraicValue::Algebraic(sibling.clone()),
+                ],
+            },
+        };
+        assert_eq!(
+            crate::kernel::arm_algebraic_payload_spelling(&value, "Pair", 0),
+            Some(&payload)
+        );
+        assert_eq!(
+            crate::kernel::arm_algebraic_payload_spelling(&value, "Pair", 1),
+            Some(&sibling)
+        );
+        assert!(crate::kernel::arm_algebraic_payload_spelling(&value, "Other", 0).is_none());
+        assert!(crate::kernel::arm_algebraic_payload_spelling(&value, "Pair", 2).is_none());
+        assert!(crate::kernel::arm_algebraic_payload_spelling(&payload, "Pair", 0).is_none());
+        let environment = crate::kernel::CExecutionEnvironment::new();
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let facts = ProofFacts::from_ordered(
+                &(0..size)
+                    .map(|index| Proposition::Predicate {
+                        name: format!("ambient{index}"),
+                        arguments: vec![],
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            let ((partition, witnesses, _), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    core.algebraic_case_partition(
+                        &facts,
+                        &value,
+                        &environment,
+                        &[],
+                        None,
+                        4_000_000,
+                        65_536,
+                    )
+                    .unwrap()
+                });
+            // Reusing the spelling must not reuse existential witness identities.
+            assert!(
+                witnesses
+                    .iter()
+                    .flatten()
+                    .all(|(variable, _)| variable.0 > 4_131_072)
+            );
+            let spelled = Proposition::Equal(
+                Term::Algebraic(value.clone()),
+                Term::Algebraic(value.clone()),
+            );
+            assert!(partition.facts_for_case(0).unwrap().contains(&spelled));
+            samples.push(work);
+        }
+        assert!(samples.iter().all(|work| *work > 0));
+        assert!(
+            samples[2] <= samples[0] * 2,
+            "ambient facts must not cause a scan: {samples:?}"
+        );
     }
 
     #[test]
