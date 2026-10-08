@@ -4502,6 +4502,30 @@ pub enum CFunctionOutcome {
     RuntimeError(CRuntimeError),
 }
 
+impl CFunctionOutcome {
+    /// Equality that identifies end states differing only in creation
+    /// ledgers that record nothing (`CState::equal_up_to_unused_creation_ledgers`).
+    pub(crate) fn equal_up_to_unused_creation_ledgers(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Return { value, state },
+                Self::Return {
+                    value: other_value,
+                    state: other_state,
+                },
+            )
+            | (
+                Self::Throw { value, state },
+                Self::Throw {
+                    value: other_value,
+                    state: other_state,
+                },
+            ) => value == other_value && state.equal_up_to_unused_creation_ledgers(other_state),
+            _ => self == other,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CLocalEnvironment {
     pub(super) bindings: std::sync::Arc<BTreeMap<String, CLocalBinding>>,
