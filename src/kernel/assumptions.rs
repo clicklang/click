@@ -6711,7 +6711,7 @@ pub(in crate::kernel) fn exact_wide_scaled_offset_constant(
     }
 }
 
-fn bitvector_index_in_range_shallow(
+pub(in crate::kernel) fn bitvector_index_in_range_shallow(
     index: &Bitvector32Term,
     start: &Bitvector32Term,
     end: &Bitvector32Term,

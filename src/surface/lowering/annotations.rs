@@ -6238,7 +6238,7 @@ impl AnnotationLowerer<'_> {
                 expression,
                 target_type,
                 ..
-            } if matches!(target_type, CType::Int32 | CType::UInt32)
+            } if matches!(target_type, CType::Int32 | CType::UInt32 | CType::Int64)
                 || target_type.is_pointer() =>
             {
                 Ok(SpecExpression::Cast(

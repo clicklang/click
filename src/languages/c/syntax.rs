@@ -2700,6 +2700,22 @@ pub enum C0FloatClassification {
     Nan,
 }
 
+/// Struct indexing scales an element index as pointer arithmetic, not as a
+/// source int32 multiplication. Widen before generating the byte stride.
+fn struct_byte_stride(index: C0Expression, width: u32) -> C0Expression {
+    C0Expression::Multiply(
+        Box::new(C0Expression::Cast {
+            expression: Box::new(index),
+            c_type: C0Type::Int64,
+            struct_name: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        }),
+        Box::new(C0Expression::Int64Literal(i64::from(width))),
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum C0Expression {
     Void,
@@ -17934,10 +17950,7 @@ impl Parser {
             pointee_constant: false,
             explicit_qualification: false,
         };
-        let byte_offset = C0Expression::Multiply(
-            Box::new(offset),
-            Box::new(C0Expression::Int32Literal(element_width)),
-        );
+        let byte_offset = struct_byte_stride(offset, element_width);
         Ok(constructor(Box::new(byte_pointer), Box::new(byte_offset)))
     }
 
@@ -18497,10 +18510,7 @@ impl Parser {
                             )));
                         }
                         let offset = flatten_array_indices(indexes, &shape, false);
-                        let stride = C0Expression::Multiply(
-                            Box::new(offset),
-                            Box::new(C0Expression::Int32Literal(element_width)),
-                        );
+                        let stride = struct_byte_stride(offset, element_width);
                         expression = C0Expression::AggregateAddress {
                             pointer: Box::new(C0Expression::Add(
                                 Box::new(expression),
@@ -18595,10 +18605,7 @@ impl Parser {
                                 .get(struct_name)
                                 .expect("struct array has a declaration")
                                 .size_bytes;
-                            C0Expression::Multiply(
-                                Box::new(offset),
-                                Box::new(C0Expression::Int32Literal(element_width)),
-                            )
+                            struct_byte_stride(offset, element_width)
                         } else {
                             offset
                         };
@@ -18628,10 +18635,7 @@ impl Parser {
                                 pointee_constant: false,
                                 explicit_qualification: false,
                             };
-                            let offset = C0Expression::Multiply(
-                                Box::new(first_index),
-                                Box::new(C0Expression::Int32Literal(element_width)),
-                            );
+                            let offset = struct_byte_stride(first_index, element_width);
                             expression =
                                 C0Expression::Index(Box::new(byte_pointer), Box::new(offset));
                             if self.peek() != Some(&Token::Dot) {

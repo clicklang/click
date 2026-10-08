@@ -7846,6 +7846,90 @@ pub(in crate::kernel) fn memory_range_covers(
     memory_range_covers_with_separation(available, required, assumptions, true)
 }
 
+/// A field-sized footprint lies in one whole element of an unscaled range.
+/// Keep the exact byte displacement separate from the element index: a
+/// modular byte product cannot justify containment in a symbolic range.
+pub(in crate::kernel) fn memory_range_covers_interior_element(
+    available: &CMemoryRange,
+    required: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    if available.start().as_const() != Some(0) {
+        return false;
+    }
+    fn split_constant(offset: &PointerOffsetTerm) -> Option<(PointerOffsetTerm, i64)> {
+        match offset {
+            PointerOffsetTerm::Constant(value) => Some((PointerOffsetTerm::Constant(0), *value)),
+            PointerOffsetTerm::Add(left, right) => {
+                let (left, a) = split_constant(left)?;
+                let (right, b) = split_constant(right)?;
+                Some((PointerOffsetTerm::add(left, right), a.checked_add(b)?))
+            }
+            _ => Some((offset.clone(), 0)),
+        }
+    }
+    let Some((start, count)) = constant_range_extent(required) else {
+        return false;
+    };
+    if count <= 0 {
+        return false;
+    }
+    let Some(offset) = required.base().offset_from_base(available.base()) else {
+        return false;
+    };
+    let Some((symbolic, constant)) = split_constant(&offset) else {
+        return false;
+    };
+    let width = i64::from(available.element_width());
+    let Some(first_byte) = start
+        .checked_mul(i64::from(required.element_width()))
+        .and_then(|start| start.checked_add(constant))
+    else {
+        return false;
+    };
+    let Some(bytes) = count.checked_mul(i64::from(required.element_width())) else {
+        return false;
+    };
+    // This route only covers a footprint wholly within one owned object.
+    if width == 0
+        || first_byte
+            .rem_euclid(width)
+            .checked_add(bytes)
+            .is_none_or(|end| end > width)
+    {
+        return false;
+    }
+    let Some(mut delta) = crate::kernel::reasoning::path_facts::exact_element_delta_from_offset(
+        &symbolic,
+        available.element_width(),
+    ) else {
+        return false;
+    };
+    let Some(constant) = delta.constant.checked_add(first_byte.div_euclid(width)) else {
+        return false;
+    };
+    delta.constant = constant;
+    let Some(index) = delta.as_index_term() else {
+        return false;
+    };
+    if let Some(index) = index.as_const().map(|index| index as i32)
+        && index >= 0
+        && let Some(next) = index.checked_add(1)
+        && assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
+            Bitvector32Term::Constant(next as u32),
+            available.end().clone(),
+        )) == Some(true)
+    {
+        return true;
+    }
+    crate::kernel::assumptions::bitvector_index_in_range_shallow(
+        &index,
+        available.start(),
+        available.end(),
+        assumptions,
+    )
+}
+
 fn memory_range_covers_with_separation(
     available: &CMemoryRange,
     required: &CMemoryRange,
@@ -7853,6 +7937,15 @@ fn memory_range_covers_with_separation(
     use_separation: bool,
 ) -> bool {
     if available.element_width() != required.element_width() {
+        if memory_range_covers_interior_element(available, required, assumptions)
+            && (!use_separation
+                || !assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        available, required,
+                    ))
+        {
+            return true;
+        }
         // A footprint is bytes and the element width is only how the bytes
         // are spelled (D6), so a mismatch is rewritten into one coordinate
         // system instead of refusing. Neither rewrite adds or drops a byte,
@@ -9228,4 +9321,79 @@ mod support_removal_tests {
 
         assert!(context.storage.facts.is_empty());
     }
+}
+
+#[cfg(test)]
+#[test]
+fn symbolic_struct_coverage_uses_exact_element_indices() {
+    let base = Pointer::symbolic(Variable(99_300));
+    let i = Bitvector32Term::Variable(Variable(99_301));
+    let n = Bitvector32Term::Variable(Variable(99_302));
+    let owned = CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), n.clone(), 16);
+    let required = |pointer: Pointer, bytes| {
+        CMemoryRange::new_with_element_width(pointer, 0u32.into(), bytes, 1)
+    };
+    let lower = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+        true,
+    );
+    let inside = lower
+        .clone()
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+    let at_i = base.offset_by_elements(i.clone(), 16);
+    assert!(memory_range_covers(
+        &owned,
+        &required(at_i.offset_by_bytes(8), 8u32.into()),
+        &inside
+    ));
+    assert!(memory_range_covers(
+        &owned,
+        &required(at_i.clone(), 4u32.into()),
+        &inside
+    ));
+    assert!(!memory_range_covers(
+        &owned,
+        &required(at_i.offset_by_bytes(12), 8u32.into()),
+        &inside
+    ));
+    let inclusive =
+        lower.assume_condition(ConditionTerm::signed_less_equal(i.clone(), n.clone()), true);
+    assert!(!memory_range_covers(
+        &owned,
+        &required(at_i.offset_by_bytes(8), 8u32.into()),
+        &inclusive
+    ));
+    let upper_only = PureFactContext::new()
+        .assume_condition(ConditionTerm::signed_less_than(i, n.clone()), true);
+    assert!(!memory_range_covers(
+        &owned,
+        &required(at_i.offset_by_bytes(8), 8u32.into()),
+        &upper_only
+    ));
+    let first = PureFactContext::new()
+        .assume_condition(ConditionTerm::signed_less_equal(1u32.into(), n), true);
+    assert!(memory_range_covers(
+        &owned,
+        &required(base.offset_by_bytes(8), 8u32.into()),
+        &first
+    ));
+    let negative = base.offset_by_elements(Bitvector32Term::Constant(u32::MAX), 16);
+    assert!(!memory_range_covers(
+        &owned,
+        &required(negative.offset_by_bytes(8), 8u32.into()),
+        &first
+    ));
+    // A displacement of 2^32 elements must never wrap back into element zero.
+    let distant = Pointer {
+        block: base.block.clone(),
+        offset: PointerOffsetTerm::add(
+            base.offset.clone(),
+            PointerOffsetTerm::Constant((1i64 << 32) * 16 + 8),
+        ),
+    };
+    assert!(!memory_range_covers(
+        &owned,
+        &required(distant, 8u32.into()),
+        &first
+    ));
 }

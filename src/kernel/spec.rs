@@ -7543,8 +7543,11 @@ fn evaluate_spec_pointer_offset_paths_in(
             algebraic_bindings,
             budget,
         )? {
-            let CValue::Int32(elements) = element_path.value else {
-                continue;
+            let (elements, unsigned, wide) = match element_path.value {
+                CValue::Int32(elements) => (elements, false, false),
+                CValue::Int64(elements) => (elements, false, true),
+                CValue::UInt64(elements) => (elements, true, true),
+                _ => continue,
             };
             let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations(
                 &pointer_path.facts,
@@ -7555,10 +7558,14 @@ fn evaluate_spec_pointer_offset_paths_in(
             ) else {
                 continue;
             };
-            let elements = canonicalized_offset_index_term(elements, &mut facts);
+            let elements = if wide {
+                elements
+            } else {
+                canonicalized_offset_index_term(elements, &mut facts)
+            };
             paths.push(SpecExpressionPath {
                 value: CValue::typed_pointer(
-                    pointer.offset_by_elements(elements, byte_width),
+                    pointer.offset_by_typed_elements(elements, byte_width, unsigned, wide),
                     pointer_type,
                 ),
                 facts,

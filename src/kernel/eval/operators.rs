@@ -2252,7 +2252,8 @@ fn pointer_offset_by_elements_paths(
 
     // Pointer offsets are exact i64 terms, but the source index is a signed
     // int32. Once a pointer has a known element index, the next addition must
-    // stay in that signed domain. This catches the cumulative case
+    // stay in that signed domain when its next operand is also int32. A
+    // wide operand needs a wide addition guard instead. This catches the cumulative case
     // `data + INT_MAX + 1`, even though each individual source operand is a
     // valid int32.
     if let Some(index) = pointer_index_from_offset(&pointer, byte_width)
@@ -2260,7 +2261,14 @@ fn pointer_offset_by_elements_paths(
         && offset != Bitvector32Term::Constant(0)
     {
         guards.push(PointerFormationGuard {
-            condition: ConditionTerm::signed_add_overflows(index, offset),
+            condition: if wide {
+                ConditionTerm::int64_signed_add_overflows(
+                    Bitvector32Term::int64_from_32(index),
+                    offset,
+                )
+            } else {
+                ConditionTerm::signed_add_overflows(index, offset)
+            },
             value: false,
         });
     }
