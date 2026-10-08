@@ -1,3 +1,4 @@
+use super::ExecutionFacts;
 use super::api::{
     int8, int16, int32, normalize_exact_memory_loads_in_pointer_offset, uint8, uint16, uint32,
 };
@@ -9080,6 +9081,8 @@ pub(super) struct AtomicConnectionFacts {
 
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
+    /// Shared ordered projection used when checked paths publish this context.
+    pub(super) execution_fact_projection: super::execution_facts::ContextFacts,
     /// Persistent syntax adjacency for atomic certificate planning. Unlike
     /// free-variable indexes, this never scans snapshot contents.
     pub(super) atomic_connection_facts:
@@ -10019,8 +10022,8 @@ pub struct SymbolicCExecutionPath {
     /// It is available only after certification has checked the entry under
     /// `assumptions`. Legacy execution producers use the flat-fact fallback.
     pub(super) post_assumptions: Option<PureFactContext>,
-    pub(super) facts: Vec<ExecutionPureFact>,
-    pub(super) effect_facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
+    pub(super) effect_facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) theorem: Theorem,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
@@ -10049,6 +10052,13 @@ impl Eq for SymbolicCExecutionPath {}
 /// same complete path frontier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionExecutionCandidates {
+    pub(super) data: std::sync::Arc<CFunctionExecutionCandidatesData>,
+}
+
+/// Immutable publication of one complete outcome frontier. Proof forks retain
+/// this collection, rather than copying every sibling path and the source body.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct CFunctionExecutionCandidatesData {
     pub(super) state: CState,
     pub(super) function: CFunction,
     pub(super) arguments: Vec<CExpression>,
@@ -10058,8 +10068,8 @@ pub struct CFunctionExecutionCandidates {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionExecutionCandidate {
     pub(super) outcome: CFunctionOutcome,
-    pub(super) facts: Vec<ExecutionPureFact>,
-    pub(super) effect_facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
+    pub(super) effect_facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
@@ -10072,7 +10082,7 @@ pub struct SymbolicCConditionEvaluation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolicCConditionEvaluationPath {
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) theorem: Theorem,
 }
@@ -10080,14 +10090,14 @@ pub struct SymbolicCConditionEvaluationPath {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CExpressionPath {
     pub(super) outcome: CExpressionOutcome,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CLValuePath {
     pub(super) outcome: CLValueOutcome,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
 
@@ -10113,7 +10123,7 @@ pub(super) struct CStatementExecutionPath {
     /// This is presentation metadata, never an additional assumption.
     pub(super) loop_invariant_correspondence: LoopInvariantCorrespondence,
     pub(super) outcome: CStatementOutcome,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
@@ -10121,7 +10131,7 @@ pub(super) struct CStatementExecutionPath {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CFunctionPath {
     pub(super) outcome: CFunctionOutcome,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
 }
@@ -10130,7 +10140,7 @@ pub(super) struct CFunctionPath {
 pub(super) struct CArgumentsPath {
     pub(super) values: Vec<CValue>,
     pub(super) outcome: Option<CFunctionOutcome>,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
 

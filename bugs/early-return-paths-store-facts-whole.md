@@ -1,5 +1,11 @@
 # A function with early returns verifies in work quadratic in their count
 
+
+Current status: shared fact storage is fixed. Terminal joins still assemble
+new flat outcome containers, and individual outcome goals still traverse
+logical fact streams. Those remaining publication and traversal costs keep
+this broader bug open. The measurements below record the successive fixes.
+
 ## Violated invariant
 
 A proof written with explicit simple tactics must verify in work near linear
@@ -152,7 +158,97 @@ Measured on base `0aecf5bd5`, with the original C and both proofs unchanged:
 whole-verification context construction in both forms, plus the named return
 context phase. The explicit total-work curve still violates the near-linear
 contract: terminal joins rebuild flat returned-path containers, and flat path
-facts are still imported per outcome. This bug remains open for those costs.
+facts are still imported per outcome.
+
+Terminal proof-case joins also rebuilt each returned path's branch-decision
+history to insert the outer case before its nested cases. Each nested history
+was copied and indexed again at every enclosing join. Proof cases now retain
+their decision when the checked arm opens, so returned paths inherit the
+correctly ordered persistent prefix and terminal joins keep it unchanged.
+Source-successor splits choose their frozen C spelling before opening the
+arms, while their checked case premises still use the written condition.
+The nested split regression checks source order, opposite-arm isolation, and
+shared sequence identity through both terminal joins, at 16 through 4,096
+unrelated ambient facts.
+
+Measured on base `24e7eb10b`, with the original C and both proofs unchanged:
+
+| proof / metric | 4 | 8 | 16 | 32 | 64 |
+| --- | --- | --- | --- | --- | --- |
+| grouped total work | 6804 | 11732 | 21708 | 42060 | 84300 |
+| explicit total work, history rebuilt | 6281 | 10749 | 19994 | 42968 | 122184 |
+| explicit total work, history shared | 6281 | 10749 | 19394 | 36808 | 74696 |
+
+The context-entry counts remain unchanged. The context-reuse regression now
+bounds whole-verification work to at most 2.25 times per doubling at the
+largest sizes for both proof forms, rather than only the grouped proof.
+Flat path facts and the terminal joins' flat returned-path containers remain
+unshared, even though the counted whole-work curves through 64 returns now
+satisfy that bound. This bug remains open for those representation costs.
+
+Completed execution candidate collections now share an immutable publication
+containing the source function, input state, arguments, and all candidate paths.
+Cloning a completed proof frontier previously copied those fields, including
+every path's facts and obligations. The candidate-fork regression varies path
+count and facts per path independently through 1,024, checks shared storage,
+and checks that a fork survives its original owner. Candidates remain untrusted
+and certification still checks them against the retained execution trace.
+At that point, individual paths still stored flat facts, and building a
+distinct outcome collection still assembled its own path container.
+
+### Persistent fact storage
+
+Execution paths, candidates, effect evidence, and checked completion now use
+an ordered persistent fact stream. Forks share its root, chunks, and immutable
+fact objects; a producer metadata edit copies only the selected fact. Exact
+fragment merges retain accepted source objects after all existing validation,
+including when redundant facts are suppressed. Selection keeps accepted
+occurrences, so repeated references to the same shared object still deduplicate
+correctly. Return publication also retains shared effect fragments instead of
+copying every effect fact into each descendant. Checked C branches and logical
+cases retain their guard prefix before returned descendants are published.
+Terminal joins therefore retain those facts rather than recreate each prefix.
+
+Checked completion also retains the persistent ordered projection of its
+checked context instead of constructing a full fact array for each outcome.
+The projection preserves the former condition-then-proposition order and
+tracks replacements, withdrawals, and restrictions. Publication deduplicates
+by proposition while retaining an existing fact's full certification and
+transport metadata. Candidates remain untrusted and the trace and contract
+checks are unchanged.
+
+Measured on base `3415dd381`, with the original C and both proofs unchanged:
+
+| metric, identical for grouped and explicit proofs | 4 | 8 | 16 | 32 | 64 |
+| --- | --- | --- | --- | --- | --- |
+| logical fact occurrences | 35 | 81 | 221 | 693 | 2405 |
+| distinct retained fact objects | 17 | 29 | 53 | 101 | 197 |
+| distinct retained vector chunks | 27 | 47 | 87 | 167 | 328 |
+
+These counts cover both candidate publication and checked completion, including
+private effect evidence and retained context-prefix storage. The existing
+whole-verification regression now bounds retained objects and chunks as well
+as work and context construction in both proof forms. Its work curves remain
+unchanged, and it still completes in under six seconds locally.
+
+A separate kernel regression executes 8, 16, 32, and 64 early returns. It checks
+shared prefix objects, ordered false guards on the final path, and opposite
+arm isolation. The original flat representation retains 44, 152, 560, and
+2,144 distinct fact objects; the persistent representation retains 16, 32, 64,
+and 128. Context and fork regressions additionally vary unrelated prefix facts
+through 1,024, check owner lifetime, preserve certification metadata, and
+check that editing one fact leaves the other shared objects unchanged. The
+return-publication regression varies shared effect-prefix size through 1,024
+across four returned descendants and checks repeated-entry suppression.
+
+Retained guards follow source order rather than the former terminal joins'
+inner-to-outer append order. One negative fixture updates its expected case
+list to that order; its C, proof, and expected rejection are unchanged.
+
+Remaining: terminal joins rebuild distinct outcome containers, and outcome
+processing still reads each logical path's facts. Shared storage does not
+remove those per-outcome traversals or promise that every publication phase
+has linear CPU work.
 
 ## Intended regression
 

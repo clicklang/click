@@ -1,3 +1,4 @@
+use super::execution_facts::ContextFactKey;
 use super::prelude::*;
 
 #[cfg(test)]
@@ -4025,6 +4026,12 @@ impl PureFactContext {
 
     pub(super) fn clear_proposition_facts(&mut self) {
         self.prop_facts = imbl::OrdSet::new();
+        self.execution_fact_projection = self
+            .execution_fact_projection
+            .iter()
+            .filter(|(key, _)| matches!(key, ContextFactKey::Condition(_)))
+            .map(|(key, fact)| (key.clone(), fact.clone()))
+            .collect();
         self.rebuild_atomic_connection_facts();
         self.rebuild_stated_proposition_index();
         self.function_contract_facts = std::sync::Arc::new(BTreeMap::new());
@@ -4053,6 +4060,15 @@ impl PureFactContext {
             .iter()
             .filter(|proposition| keep(proposition))
             .cloned()
+            .collect();
+        self.execution_fact_projection = self
+            .execution_fact_projection
+            .iter()
+            .filter(|(key, _)| match key {
+                ContextFactKey::Condition(_) => true,
+                ContextFactKey::Proposition(proposition) => self.prop_facts.contains(proposition),
+            })
+            .map(|(key, fact)| (key.clone(), fact.clone()))
             .collect();
         self.rebuild_stated_proposition_index();
         self.disjunction_facts = std::sync::Arc::new(
@@ -4706,6 +4722,10 @@ impl PureFactContext {
             .insert(crate::kernel::clone_proposition_iteratively(&proposition))
             .is_none()
         {
+            self.execution_fact_projection.insert(
+                ContextFactKey::Proposition(proposition.clone()),
+                std::sync::Arc::new(ExecutionPureFact::new(proposition.clone())),
+            );
             self.adjust_atomic_connection_fact(&proposition, true);
             self.adjust_stated_proposition_index(&proposition, true);
             if matches!(proposition, Proposition::Or(_, _)) {
@@ -4726,6 +4746,8 @@ impl PureFactContext {
 
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
+            self.execution_fact_projection
+                .remove(&ContextFactKey::Proposition(proposition.clone()));
             self.adjust_atomic_connection_fact(proposition, false);
             self.adjust_stated_proposition_index(proposition, false);
             if matches!(proposition, Proposition::Or(_, _)) {
@@ -5083,6 +5105,13 @@ impl PureFactContext {
         }
         let old = self.condition_facts.get(&condition).copied();
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
+        self.execution_fact_projection.insert(
+            ContextFactKey::Condition(condition.clone()),
+            std::sync::Arc::new(ExecutionPureFact::new(Proposition::ConditionIs(
+                condition.clone(),
+                value,
+            ))),
+        );
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         self.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
         if let Some(old) = old {
@@ -5495,6 +5524,18 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default(),
             |facts, (condition, value)| facts.with_inserted(condition.clone(), *value),
         );
+        restricted.execution_fact_projection = conditions
+            .iter()
+            .map(|(condition, value)| {
+                (
+                    ContextFactKey::Condition(condition.clone()),
+                    std::sync::Arc::new(ExecutionPureFact::new(Proposition::ConditionIs(
+                        condition.clone(),
+                        *value,
+                    ))),
+                )
+            })
+            .collect();
         restricted.clear_proposition_facts();
         for proposition in propositions {
             restricted.insert_proposition_fact(proposition.clone());
@@ -5553,6 +5594,8 @@ impl PureFactContext {
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
         crate::instrumentation::record_deterministic_work(1);
         self.condition_facts = self.condition_facts.without_key(condition);
+        self.execution_fact_projection
+            .remove(&ContextFactKey::Condition(condition.clone()));
         self.adjust_condition_match_indexes(condition, assumed, false);
         self.adjust_stated_proposition_index(
             &Proposition::ConditionIs(condition.clone(), assumed),
@@ -7623,21 +7666,18 @@ impl SymbolicCExecutionPath {
         &self.assumptions
     }
 
-    pub fn facts(&self) -> &[ExecutionPureFact] {
+    pub fn facts(&self) -> &ExecutionFacts {
         &self.facts
     }
 
-    pub fn effect_facts(&self) -> &[ExecutionPureFact] {
+    pub fn effect_facts(&self) -> &ExecutionFacts {
         &self.effect_facts
     }
 
-    pub fn execution_facts(&self) -> Vec<ExecutionPureFact> {
+    pub fn execution_facts(&self) -> ExecutionFacts {
         let mut facts = self.facts.clone();
-        for fact in &self.effect_facts {
-            if !facts.contains(fact) {
-                facts.push(fact.clone());
-            }
-        }
+        let effects = self.effect_facts.filtered(|fact| !facts.contains(fact));
+        facts.extend_shared(&effects);
         facts
     }
 
@@ -7656,19 +7696,19 @@ impl SymbolicCExecutionPath {
 
 impl CFunctionExecutionCandidates {
     pub fn state(&self) -> &CState {
-        &self.state
+        &self.data.state
     }
 
     pub fn function(&self) -> &CFunction {
-        &self.function
+        &self.data.function
     }
 
     pub fn arguments(&self) -> &[CExpression] {
-        &self.arguments
+        &self.data.arguments
     }
 
     pub fn paths(&self) -> &[CFunctionExecutionCandidate] {
-        &self.paths
+        &self.data.paths
     }
 }
 
@@ -7677,21 +7717,18 @@ impl CFunctionExecutionCandidate {
         &self.outcome
     }
 
-    pub fn facts(&self) -> &[ExecutionPureFact] {
+    pub fn facts(&self) -> &ExecutionFacts {
         &self.facts
     }
 
-    pub fn effect_facts(&self) -> &[ExecutionPureFact] {
+    pub fn effect_facts(&self) -> &ExecutionFacts {
         &self.effect_facts
     }
 
-    pub fn execution_facts(&self) -> Vec<ExecutionPureFact> {
+    pub fn execution_facts(&self) -> ExecutionFacts {
         let mut facts = self.facts.clone();
-        for fact in &self.effect_facts {
-            if !facts.contains(fact) {
-                facts.push(fact.clone());
-            }
-        }
+        let effects = self.effect_facts.filtered(|fact| !facts.contains(fact));
+        facts.extend_shared(&effects);
         facts
     }
 
@@ -7715,7 +7752,7 @@ impl SymbolicCConditionEvaluation {
 }
 
 impl SymbolicCConditionEvaluationPath {
-    pub fn facts(&self) -> &[ExecutionPureFact] {
+    pub fn facts(&self) -> &ExecutionFacts {
         &self.facts
     }
 

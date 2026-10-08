@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedCMemory;
 use crate::kernel::resource_tracker;
 use crate::kernel::{CComparisonOperator, CFloatBinaryOperator, CFloatCondition, CUpdateOperator};
@@ -131,7 +132,7 @@ pub(super) fn diagnostic_item_limit() -> usize {
 
 fn describe_context_pure_and_execution_facts(
     pure_facts: &[Proposition],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
@@ -144,7 +145,7 @@ fn describe_context_pure_and_execution_facts(
         .iter()
         .chain(
             execution_pure_facts
-                .iter()
+                .fact_iter()
                 .map(ExecutionPureFact::proposition),
         )
         .take(item_limit)
@@ -483,14 +484,22 @@ fn describe_unclassified_pure_fact(
     )
 }
 
-pub(super) fn describe_execution_pure_facts(facts: &[ExecutionPureFact]) -> String {
+pub(super) fn describe_execution_pure_facts(facts: &(impl ExecutionFactSource + ?Sized)) -> String {
     if facts.is_empty() {
         return "[]".to_string();
     }
 
-    describe_bounded_list(facts, |fact| {
-        describe_pure_fact(fact.proposition(), &[], &[])
-    })
+    let limit = diagnostic_item_limit();
+    let mut entries = facts
+        .fact_iter()
+        .take(limit)
+        .map(|fact| describe_pure_fact(fact.proposition(), &[], &[]))
+        .collect::<Vec<_>>();
+    compact_unspelled_facts(&mut entries);
+    if facts.len() > limit {
+        entries.push(format!("… {} more omitted", facts.len() - limit));
+    }
+    format!("[{}]", entries.join(", "))
 }
 
 pub(super) fn describe_available_facts(
@@ -498,7 +507,7 @@ pub(super) fn describe_available_facts(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     format!(
         "available pure facts: {}\n  available resource facts: {}",
@@ -538,7 +547,7 @@ pub(super) fn describe_missing_pure_fact(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     format!(
         "missing pure fact: {}\n  {}",
@@ -559,7 +568,7 @@ pub(super) fn describe_missing_resource_fact(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     let mut note = String::new();
     if let CResource::Iterated(required_iterated) = required.resource()
@@ -781,7 +790,7 @@ pub(super) fn describe_proof_context(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     format!(
         "proof context:\n  pure facts: {}\n  resource facts: {}",
@@ -938,7 +947,7 @@ pub(super) fn describe_missing_proof_obligations(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     let item_limit = diagnostic_item_limit();
     let mut required = obligations

@@ -3,7 +3,7 @@ use super::*;
 type ValidShiftCountEvaluator = fn(
     Bitvector32Term,
     Bitvector32Term,
-    Vec<ExecutionPureFact>,
+    ExecutionFacts,
     Vec<ProofObligation>,
     &PureFactContext,
 ) -> Vec<CExpressionPath>;
@@ -11,13 +11,13 @@ type ValidShiftCountEvaluator = fn(
 type ValidInt64ShiftCountEvaluator = fn(
     Bitvector32Term,
     Bitvector32Term,
-    Vec<ExecutionPureFact>,
+    ExecutionFacts,
     Vec<ProofObligation>,
     &PureFactContext,
 ) -> Vec<CExpressionPath>;
 
 fn c_type_mismatch_expression_path(
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> CExpressionPath {
     CExpressionPath {
@@ -118,7 +118,7 @@ fn apply_c_float_binary(
     right: CValue,
     target_type: CType,
     operator: CFloatBinaryOperator,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> Vec<CExpressionPath> {
     let outcome = match (target_type, left, right) {
@@ -146,7 +146,7 @@ fn apply_c_float_comparison(
     right: CValue,
     target_type: CType,
     operator: CComparisonOperator,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -269,7 +269,7 @@ pub(in crate::kernel) fn apply_c_add(
     right: CValue,
     left_step_width: Option<u32>,
     right_step_width: Option<u32>,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -486,7 +486,7 @@ pub(in crate::kernel) fn evaluate_c_value_binary_paths(
     right: &CExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    apply: impl Fn(CValue, CValue, Vec<ExecutionPureFact>, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl Fn(CValue, CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
     let mut paths = Vec::new();
     for left_path in evaluate_c_expression_paths(state, left, assumptions, budget)? {
@@ -592,7 +592,7 @@ fn apply_c_wide_add(
     left: CValue,
     right: CValue,
     width: ScalarWidth,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -616,7 +616,7 @@ fn apply_c_wide_subtract(
     left: CValue,
     right: CValue,
     width: ScalarWidth,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -640,7 +640,7 @@ fn apply_c_wide_multiply(
     left: CValue,
     right: CValue,
     width: ScalarWidth,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -664,7 +664,7 @@ fn apply_c_wide_divide(
     left: CValue,
     right: CValue,
     width: ScalarWidth,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -689,7 +689,7 @@ fn apply_c_wide_remainder(
     left: CValue,
     right: CValue,
     width: ScalarWidth,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -715,7 +715,7 @@ fn apply_c_wide_comparison(
     left: CValue,
     right: CValue,
     width: ScalarWidth,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -770,7 +770,7 @@ fn apply_c_wide_comparison(
 pub(in crate::kernel) fn apply_c_multiply(
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -836,7 +836,7 @@ pub(in crate::kernel) fn apply_c_multiply(
 fn apply_c_int128_multiply(
     left: CValue,
     right: CValue,
-    mut facts: Vec<ExecutionPureFact>,
+    mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -971,7 +971,7 @@ fn apply_c_int128_comparison(
     operator: CComparisonOperator,
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -1029,7 +1029,7 @@ pub(in crate::kernel) fn wide_integer_comparison_condition(
 /// spellings denote the same native guard; query each by exact indexed lookup.
 fn decide_wide_integer_equality(
     assumptions: &PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     left: IntegerTerm,
     right: IntegerTerm,
 ) -> Option<bool> {
@@ -1053,7 +1053,7 @@ fn decide_wide_integer_equality(
 fn apply_c_int128_division_like(
     left: CValue,
     right: CValue,
-    mut facts: Vec<ExecutionPureFact>,
+    mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     remainder: bool,
@@ -1253,7 +1253,7 @@ fn apply_c_int128_division_like(
 pub(in crate::kernel) fn apply_c_divide(
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -1321,7 +1321,7 @@ pub(in crate::kernel) fn apply_c_divide(
 pub(in crate::kernel) fn apply_c_remainder(
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -1377,7 +1377,7 @@ pub(in crate::kernel) fn apply_c_remainder(
 pub(in crate::kernel) fn apply_c_bitwise_binary(
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
     operation: CBitwiseOperation,
@@ -1465,7 +1465,7 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
 
 pub(in crate::kernel) fn apply_c_bitwise_not(
     value: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> Vec<CExpressionPath> {
     match value {
@@ -1618,15 +1618,10 @@ fn apply_same_object_pointer_operation(
     state: &CState,
     left: Pointer,
     right: Pointer,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(
-        Pointer,
-        Pointer,
-        Vec<ExecutionPureFact>,
-        Vec<ProofObligation>,
-    ) -> Vec<CExpressionPath>,
+    apply: impl FnOnce(Pointer, Pointer, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> Vec<CExpressionPath> {
     let left_is_null = pointer_object_is_null_condition(&left);
     apply_pointer_object_nonnull_guard(
@@ -1665,10 +1660,10 @@ fn apply_pointer_object_nonnull_guard(
     state: &CState,
     pointer: &Pointer,
     is_null: ConditionTerm,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(Vec<ExecutionPureFact>, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> Vec<CExpressionPath> {
     if pointer_has_object_provenance_evidence(state, pointer, assumptions, &facts) {
         let mut facts = facts;
@@ -1684,7 +1679,7 @@ fn pointer_has_object_provenance_evidence(
     state: &CState,
     pointer: &Pointer,
     assumptions: &PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
     let decide =
         |condition: ConditionTerm| decide_with_facts(assumptions, facts, &condition) == Some(true);
@@ -1733,10 +1728,10 @@ fn pointer_has_object_provenance_evidence(
 fn apply_pointer_provenance_guard(
     condition: ConditionTerm,
     expected: bool,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(Vec<ExecutionPureFact>, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> Vec<CExpressionPath> {
     match decide_with_facts(assumptions, &facts, &condition) {
         Some(value) if value == expected => apply(facts, obligations),
@@ -1854,7 +1849,7 @@ fn apply_c_comparison(
     right: CValue,
     left_step_width: Option<u32>,
     right_step_width: Option<u32>,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -2001,7 +1996,7 @@ pub(in crate::kernel) fn apply_c_subtract(
     right: CValue,
     left_step_width: Option<u32>,
     right_step_width: Option<u32>,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -2139,7 +2134,7 @@ struct PointerFormationGuard {
 
 fn pointer_index_term(
     value: CValue,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> Option<(Bitvector32Term, bool, bool)> {
     match value {
@@ -2192,7 +2187,7 @@ fn pointer_index_term(
 /// constant-size match per path fact.
 fn uint64_index_has_signed_word_range(
     value: &Bitvector32Term,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
     let sign_bit_clear = Proposition::ConditionIs(
@@ -2208,7 +2203,7 @@ fn uint64_index_has_signed_word_range(
         && matches!(&sign_bit_clear, Proposition::ConditionIs(condition, true) if assumptions.decide(condition) == Some(true));
     assumptions.proves_exact(&sign_bit_clear)
         || range_from_order_chain
-        || facts.iter().any(|fact| match fact.proposition() {
+        || facts.fact_iter().any(|fact| match fact.proposition() {
             Proposition::ConditionIs(condition, held) => {
                 crate::kernel::assumptions::uint64_upper_bound_below_sign_bit(condition, *held)
                     .is_some_and(|(term, _, _)| term == value)
@@ -2224,7 +2219,7 @@ fn pointer_offset_by_elements_paths(
     byte_width: u32,
     unsigned: bool,
     wide: bool,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -2365,7 +2360,7 @@ fn byte_stride_index(
     byte_width: u32,
     unsigned: bool,
     wide: bool,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> Option<(Bitvector32Term, u32)> {
     if byte_width != 1 || unsigned || wide {
@@ -2395,7 +2390,7 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     state: &CState,
     pointer: CPointerValue,
     bytes: u32,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -2812,7 +2807,7 @@ impl HeldRangeSurvey {
     fn consider(
         &mut self,
         assumptions: &PureFactContext,
-        facts: &[ExecutionPureFact],
+        facts: &(impl ExecutionFactSource + ?Sized),
         start: Bitvector32Term,
         index: Bitvector32Term,
         end: Bitvector32Term,
@@ -2890,7 +2885,7 @@ impl HeldRangeSurvey {
 fn held_range_membership(
     state: &CState,
     assumptions: &PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     operand: &Pointer,
     pointer: &Pointer,
     byte_width: u32,
@@ -3000,7 +2995,7 @@ fn apply_pointer_formation_guards(
     pointer_type: CType,
     pointee_volatile: bool,
     guards: Vec<PointerFormationGuard>,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3080,7 +3075,7 @@ fn apply_pointer_formation_guards(
 /// same facts, and only the refused path is new.
 fn owed_guard_paths(
     guards: Vec<PointerFormationGuard>,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
     refusal: &CUndefinedBehavior,
@@ -3091,7 +3086,7 @@ fn owed_guard_paths(
             Some(known) if known == guard.value => {}
             Some(_) => return None,
             None => {
-                let mut refused_facts = facts.to_vec();
+                let mut refused_facts = facts.persistent_facts();
                 add_condition_path_fact(
                     &mut refused_facts,
                     assumptions,
@@ -3113,7 +3108,7 @@ fn owed_guard_paths(
 pub(in crate::kernel) fn apply_c_int32_add(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3168,7 +3163,7 @@ pub(in crate::kernel) fn apply_c_int32_add(
 pub(in crate::kernel) fn apply_c_int32_subtract(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3216,7 +3211,7 @@ pub(in crate::kernel) fn apply_c_int32_subtract(
 pub(in crate::kernel) fn apply_c_int32_multiply(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3267,7 +3262,7 @@ pub(in crate::kernel) fn apply_c_int32_multiply(
 pub(in crate::kernel) fn apply_c_int32_divide(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3284,7 +3279,7 @@ pub(in crate::kernel) fn apply_c_int32_divide(
 pub(in crate::kernel) fn apply_c_int32_remainder(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3301,7 +3296,7 @@ pub(in crate::kernel) fn apply_c_int32_remainder(
 fn apply_c_int32_division_like(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
@@ -3361,7 +3356,7 @@ fn apply_c_int32_division_like(
 fn apply_c_int32_division_nonzero(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
@@ -3410,7 +3405,7 @@ fn apply_c_int32_division_nonzero(
 fn apply_c_int64_overflowing(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     overflow: ConditionTerm,
@@ -3458,7 +3453,7 @@ fn apply_c_int64_overflowing(
 fn apply_c_int64_add(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3477,7 +3472,7 @@ fn apply_c_int64_add(
 fn apply_c_int64_subtract(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3496,7 +3491,7 @@ fn apply_c_int64_subtract(
 fn apply_c_int64_multiply(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3515,7 +3510,7 @@ fn apply_c_int64_multiply(
 fn apply_c_int64_divide(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3532,7 +3527,7 @@ fn apply_c_int64_divide(
 fn apply_c_int64_remainder(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3549,7 +3544,7 @@ fn apply_c_int64_remainder(
 fn apply_c_int64_division_like(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
@@ -3593,7 +3588,7 @@ fn apply_c_int64_division_like(
 fn apply_c_int64_division_nonzero(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
@@ -3613,7 +3608,7 @@ fn apply_c_int64_division_nonzero(
 fn apply_c_uint64_division_like(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
@@ -3658,7 +3653,7 @@ fn apply_c_uint64_division_like(
 fn apply_c_uint32_division_like(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
@@ -3728,7 +3723,7 @@ fn promote_c_shift_count(value: CValue) -> Option<(Bitvector32Term, bool, bool)>
 pub(in crate::kernel) fn apply_c_shift_left(
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3839,7 +3834,7 @@ pub(in crate::kernel) fn apply_c_shift_left(
 pub(in crate::kernel) fn apply_c_shift_right(
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -3990,7 +3985,7 @@ pub(in crate::kernel) fn apply_c_shift_right(
 fn apply_c_int64_with_valid_shift_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     unsigned_count: bool,
@@ -4085,7 +4080,7 @@ fn apply_c_int64_shift_count_upper_bound(
     left: Bitvector32Term,
     count: Bitvector32Term,
     too_large: ConditionTerm,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     apply_valid_count: ValidInt64ShiftCountEvaluator,
@@ -4119,7 +4114,7 @@ fn apply_c_int64_shift_count_upper_bound(
 fn apply_c_int64_shift_left_valid_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4161,7 +4156,7 @@ fn apply_c_int64_shift_left_valid_count(
 fn apply_c_int64_shift_left_nonnegative(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4209,7 +4204,7 @@ fn apply_c_int64_shift_left_nonnegative(
 fn apply_c_uint64_shift_left_valid_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4225,7 +4220,7 @@ fn apply_c_uint64_shift_left_valid_count(
 fn apply_c_int64_shift_right_valid_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4241,7 +4236,7 @@ fn apply_c_int64_shift_right_valid_count(
 fn apply_c_uint64_shift_right_valid_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4257,7 +4252,7 @@ fn apply_c_uint64_shift_right_valid_count(
 fn apply_c_int32_with_valid_shift_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     unsigned_count: bool,
@@ -4343,7 +4338,7 @@ fn apply_c_int32_with_valid_shift_count(
 fn apply_c_int32_with_valid_wide_shift_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     unsigned_count: bool,
@@ -4414,7 +4409,7 @@ fn apply_c_int32_with_valid_wide_shift_count(
 fn apply_c_int32_with_nonnegative_wide_shift_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     unsigned_count: bool,
@@ -4472,7 +4467,7 @@ fn apply_c_int32_with_nonnegative_wide_shift_count(
 fn apply_c_int32_with_nonnegative_shift_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     unsigned_count: bool,
@@ -4519,7 +4514,7 @@ fn apply_c_int32_with_nonnegative_shift_count(
 fn apply_c_int32_shift_left_valid_count(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4570,7 +4565,7 @@ fn apply_c_int32_shift_left_valid_count(
 fn apply_c_int32_shift_left_nonnegative(
     left: Bitvector32Term,
     right: Bitvector32Term,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4638,7 +4633,7 @@ pub(in crate::kernel) fn apply_c_equal(
     state: &CState,
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -4818,7 +4813,7 @@ pub(in crate::kernel) fn apply_c_not_equal(
     state: &CState,
     left: CValue,
     right: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -5220,10 +5215,10 @@ fn apply_pointer_adjacency_guard(
     state: &CState,
     left: &Pointer,
     right: &Pointer,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(Vec<ExecutionPureFact>, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> Vec<CExpressionPath> {
     if !left.blocks_proven_distinct(right) || left.is_in_null_block() || right.is_in_null_block() {
         return apply(facts, obligations);

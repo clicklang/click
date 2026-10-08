@@ -460,7 +460,7 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
             &memory,
             address.clone(),
             CType::Int64Pointer,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             &PureFactContext::new(),
             true,
@@ -1070,7 +1070,7 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
             memory,
             address.clone(),
             CType::Int64Pointer,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             context,
         );

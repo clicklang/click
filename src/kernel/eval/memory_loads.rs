@@ -56,7 +56,7 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
     memory: &CMemory,
     pointer: Pointer,
     value_type: CType,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     has_external_read_resource: bool,
@@ -106,7 +106,7 @@ pub(in crate::kernel) fn evaluate_spec_memory_load_paths(
     memory: &CMemory,
     pointer: Pointer,
     value_type: CType,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -142,7 +142,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     memory: &CMemory,
     pointer: Pointer,
     value_type: CType,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -303,7 +303,7 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
     memory: &CMemory,
     pointer: Pointer,
     value_type: CType,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     has_external_read_resource: bool,
@@ -383,7 +383,7 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
 /// set of its own for the load (otherwise the one the load was read under).
 struct DistinctLoadCase {
     memory: CMemory,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: Option<PureFactContext>,
 }
@@ -399,7 +399,7 @@ fn evaluate_c_memory_load_case(
     written: &CMemory,
     pointer: Pointer,
     value_type: CType,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     has_external_read_resource: bool,
@@ -1232,7 +1232,7 @@ fn cell_value_recorded_on_path(
     memory: &CMemory,
     pointer: &Pointer,
     value_type: CType,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
@@ -1270,7 +1270,7 @@ fn canonicalized_pointer_value_from_int_cell(
     pointer: &Pointer,
     value: &CValue,
     value_type: CType,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
@@ -1377,7 +1377,7 @@ fn symbolic_index_run_load(
     memory: &CMemory,
     pointer: &Pointer,
     value_type: CType,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     use_symbolic_identity: bool,
     source: Option<&LoadSourceId>,
@@ -1447,7 +1447,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     memory: &CMemory,
     pointer: &Pointer,
     value_type: CType,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     use_symbolic_identity: bool,
     source: Option<&LoadSourceId>,
@@ -2408,7 +2408,7 @@ pub(crate) fn canonical_offset_term(offset: &PointerOffsetTerm) -> PointerOffset
 /// two terms that only a proved equality could reconnect.
 pub(crate) fn canonicalized_offset_index_term(
     bits: Bitvector32Term,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
 ) -> Bitvector32Term {
     if !term_mentions_a_memory_load(&bits) {
         return bits;
@@ -2732,7 +2732,7 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
 /// bound variables, which name no load identity.
 fn substitute_load_variables(
     term: &Bitvector32Term,
-    facts: &mut Option<&mut Vec<ExecutionPureFact>>,
+    facts: &mut Option<&mut ExecutionFacts>,
 ) -> Bitvector32Term {
     type BinaryConstructor = fn(Box<Bitvector32Term>, Box<Bitvector32Term>) -> Bitvector32Term;
     type UnaryConstructor = fn(Box<Bitvector32Term>) -> Bitvector32Term;
@@ -3890,7 +3890,7 @@ fn materialized_pointer_cell_load_variable(
 /// downstream.
 fn mint_load_variable(
     bits: &Bitvector32Term,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     _assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
 ) -> Option<Variable> {
@@ -3906,7 +3906,7 @@ fn mint_load_variable(
 pub(crate) fn record_load_variable_defining_fact(
     variable: Variable,
     load: Bitvector32Term,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
 ) {
     record_load_variable_defining_fact_with_source(variable, load, facts, None);
 }
@@ -3914,7 +3914,7 @@ pub(crate) fn record_load_variable_defining_fact(
 pub(crate) fn record_load_variable_defining_fact_with_source(
     variable: Variable,
     load: Bitvector32Term,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     source: Option<&LoadSourceId>,
 ) {
     record_load_variable_defining_fact_with_source_and_pointer(variable, load, facts, source, None);
@@ -3923,7 +3923,7 @@ pub(crate) fn record_load_variable_defining_fact_with_source(
 fn record_load_variable_defining_fact_with_source_and_pointer(
     variable: Variable,
     load: Bitvector32Term,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     source: Option<&LoadSourceId>,
     typed_pointer_value: Option<&Pointer>,
 ) {
@@ -3950,10 +3950,11 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
     };
     let event =
         source.and_then(|source| GeneratedLoadSourceEvent::new(source.clone(), binding.clone()));
-    if let Some(existing) = facts
-        .iter_mut()
-        .find(|fact| fact.proposition == defining_proposition)
-    {
+    let existing_index = facts
+        .iter()
+        .position(|fact| fact.proposition == defining_proposition);
+    if let Some(index) = existing_index {
+        let existing = facts.get_mut(index);
         if existing.generated_load_binding.is_none() || typed_pointer_value.is_some() {
             existing.generated_load_binding = Some(Box::new(binding));
         }
@@ -4224,7 +4225,7 @@ mod tests {
             &memory,
             cell,
             value_type,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             &assumptions,
         );
@@ -4268,7 +4269,7 @@ mod tests {
                             &memory,
                             cell.clone(),
                             value_type,
-                            Vec::new(),
+                            Vec::new().into(),
                             Vec::new(),
                             &assumptions,
                         )
@@ -4277,7 +4278,7 @@ mod tests {
                             &memory,
                             cell.clone(),
                             value_type,
-                            Vec::new(),
+                            Vec::new().into(),
                             Vec::new(),
                             &assumptions,
                         )
@@ -4302,7 +4303,7 @@ mod tests {
                     Box::new(cell.clone()),
                     crate::kernel::LoadKind::Bits32,
                 );
-                let mut facts = Vec::new();
+                let mut facts = crate::kernel::ExecutionFacts::new();
                 let cached = canonicalized_pointer_value_from_int_cell(
                     &cell,
                     &CValue::Int32(bits),
@@ -4329,7 +4330,7 @@ mod tests {
                     &stored,
                     cell,
                     value_type,
-                    Vec::new(),
+                    Vec::new().into(),
                     Vec::new(),
                     &assumptions,
                 );
@@ -4358,7 +4359,7 @@ mod tests {
             &memory,
             pointer,
             CType::Int32,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             &PureFactContext::new(),
         );
@@ -4393,7 +4394,7 @@ mod tests {
                 &memory,
                 pointer,
                 CType::Int32,
-                Vec::new(),
+                Vec::new().into(),
                 Vec::new(),
                 assumptions,
             )
@@ -4494,7 +4495,7 @@ mod tests {
                         &memory,
                         cell.clone(),
                         value_type,
-                        Vec::new(),
+                        Vec::new().into(),
                         Vec::new(),
                         &assumptions,
                     )
@@ -4503,7 +4504,7 @@ mod tests {
                         &memory,
                         cell.clone(),
                         value_type,
-                        Vec::new(),
+                        Vec::new().into(),
                         Vec::new(),
                         &assumptions,
                     )
@@ -4526,7 +4527,7 @@ mod tests {
                 &cell,
                 &CValue::Int32(bits),
                 value_type,
-                &mut Vec::new(),
+                &mut ExecutionFacts::new(),
                 &assumptions,
                 None,
                 LoadPurpose::Validity,
@@ -4571,7 +4572,7 @@ mod tests {
                 &memory,
                 pointer.clone(),
                 CType::Int32,
-                Vec::new(),
+                Vec::new().into(),
                 Vec::new(),
                 &assumptions,
                 false,
@@ -4654,7 +4655,7 @@ mod tests {
             &current,
             read.clone(),
             CType::Int32,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             &distinct,
             true,
@@ -4683,7 +4684,7 @@ mod tests {
             &current,
             read,
             CType::Int32,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             &aliasing,
             true,
@@ -4711,11 +4712,10 @@ mod tests {
             crate::kernel::LoadKind::Bits32,
         );
         let (variable, canonical) = load_variable_for_term(&load).expect("load identity");
-        let mut facts = Vec::new();
+        let mut facts = crate::kernel::ExecutionFacts::new();
         record_load_variable_defining_fact(variable, canonical.clone(), &mut facts);
-        let [fact] = facts.as_slice() else {
-            panic!("expected one defining fact: {facts:?}");
-        };
+        assert_eq!(facts.len(), 1);
+        let fact = &facts[0];
         assert!(matches!(
             fact.generated_load_binding(),
             Some(GeneratedLoadBinding::Exact {
@@ -4741,7 +4741,7 @@ mod tests {
         let load =
             Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Bits32);
         let (variable, canonical) = load_variable_for_term(&load).expect("load identity");
-        let mut facts = Vec::new();
+        let mut facts = crate::kernel::ExecutionFacts::new();
         let first = test_load_source(0);
         let second = test_load_source(1);
         record_load_variable_defining_fact_with_source(
@@ -4756,9 +4756,8 @@ mod tests {
             &mut facts,
             Some(&second),
         );
-        let [fact] = facts.as_slice() else {
-            panic!("repeated producer equation should remain one fact: {facts:?}");
-        };
+        assert_eq!(facts.len(), 1);
+        let fact = &facts[0];
         assert_eq!(fact.generated_load_source_events().len(), 2);
         assert_eq!(fact.generated_load_source_events()[0].source(), &first);
         assert_eq!(fact.generated_load_source_events()[1].source(), &second);
@@ -4776,7 +4775,7 @@ mod tests {
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Bits32,
         );
-        let mut facts = Vec::new();
+        let mut facts = crate::kernel::ExecutionFacts::new();
         let source = test_load_source(0);
         let variable = mint_load_variable(
             &first_load,
@@ -4785,9 +4784,8 @@ mod tests {
             Some(&source),
         )
         .expect("load identity");
-        let [fact] = facts.as_slice() else {
-            panic!("expected one defining fact: {facts:?}");
-        };
+        assert_eq!(facts.len(), 1);
+        let fact = &facts[0];
         assert!(fact.generated_load_binding().is_some());
         assert_eq!(fact.generated_load_source_events().len(), 1);
 
@@ -4850,7 +4848,7 @@ mod tests {
                     &memory,
                     pointer,
                     CType::Int32,
-                    Vec::new(),
+                    Vec::new().into(),
                     Vec::new(),
                     &PureFactContext::new(),
                     false,
@@ -4885,7 +4883,7 @@ mod tests {
             memory,
             address.clone(),
             CType::Int64Pointer,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             context,
         );
@@ -4970,7 +4968,7 @@ mod tests {
                             &memory,
                             alias.offset_by_bytes(offset),
                             CType::Int32,
-                            Vec::new(),
+                            Vec::new().into(),
                             Vec::new(),
                             &context,
                         );
@@ -5040,7 +5038,7 @@ mod tests {
                 &memory,
                 address.clone(),
                 CType::Int64Pointer,
-                Vec::new(),
+                Vec::new().into(),
                 Vec::new(),
                 &context,
                 true,
@@ -5137,7 +5135,7 @@ mod tests {
             crate::kernel::LoadKind::Bits32,
         );
         let (variable, _) = load_variable_for_term(&load).expect("load identity");
-        let mut facts = Vec::new();
+        let mut facts = crate::kernel::ExecutionFacts::new();
         let source = test_load_source(0);
         let CValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
             &address,
@@ -5153,9 +5151,8 @@ mod tests {
         };
         let application = Pointer::loaded_value(&snapshot, &address);
         assert!(!context.pointers_known_equal(value.pointer(), &application));
-        let [fact] = facts.as_slice() else {
-            panic!("one defining fact");
-        };
+        assert_eq!(facts.len(), 1);
+        let fact = &facts[0];
         assert!(
             matches!(fact.generated_load_binding(), Some(GeneratedLoadBinding::Exact {
             typed_pointer_value: Some(recorded), ..
@@ -5201,7 +5198,7 @@ mod tests {
             crate::kernel::LoadKind::Bits32,
         );
         let (variable, _) = load_variable_for_term(&load).expect("load identity");
-        let mut facts = Vec::new();
+        let mut facts = crate::kernel::ExecutionFacts::new();
         let CValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
             &address,
             &CValue::Int32(Bitvector32Term::Variable(variable)),
@@ -5234,7 +5231,7 @@ mod tests {
                 &memory,
                 address.clone(),
                 CType::Int64Pointer,
-                Vec::new(),
+                Vec::new().into(),
                 Vec::new(),
                 &PureFactContext::new(),
                 true,
@@ -5350,7 +5347,7 @@ mod tests {
             &memory,
             a.clone(),
             CType::Int64,
-            Vec::new(),
+            Vec::new().into(),
             Vec::new(),
             &PureFactContext::new(),
             true,

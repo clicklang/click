@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::ExecutionFactSource;
 
 /// Generation-side comparison for recovering a surface spelling of a nested
 /// quantified fact. A match selects only a candidate: the eventual explicit
@@ -112,7 +113,7 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
     recorded_snapshots: &RecordedSnapshots,
     surface_propositions: &SurfacePropositionMap,
     unfolded_predicates: &[String],
-    effect_facts: &[ExecutionPureFact],
+    effect_facts: &(impl ExecutionFactSource + ?Sized),
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<CheckedFixedStateTheoremApplication, ClickError> {

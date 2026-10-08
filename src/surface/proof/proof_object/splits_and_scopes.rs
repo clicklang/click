@@ -699,13 +699,16 @@ impl<'a> Proof<'a> {
             return Ok(None);
         }
 
-        let (split, mut record) = self.split_focused_execution_if(condition.clone())?;
-        record.surface_condition = surface_at_snapshot(
+        let surface_condition = surface_at_snapshot(
             &c_surface,
             &ProgramPointRef {
                 region: CodeRegionRef::Statement(statement_index),
                 kind: ProgramPointKind::Entry,
             },
+        )?;
+        let (split, record) = self.split_focused_execution_if_with_surface_condition(
+            condition.clone(),
+            surface_condition,
         )?;
         let mut advanced = split;
         for (arm_index, take_then) in [(0usize, true), (1usize, false)] {
@@ -725,6 +728,18 @@ impl<'a> Proof<'a> {
         &self,
         condition: ClickProposition,
     ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
+        self.split_focused_execution_if_with_surface_condition(condition.clone(), condition)
+    }
+
+    /// The source-successor adapter has already checked that its written
+    /// condition names the current C branch. Keep that checked logical case
+    /// and its frozen C spelling separate, and retain the spelling before
+    /// either arm executes instead of changing it after history is recorded.
+    fn split_focused_execution_if_with_surface_condition(
+        &self,
+        condition: ClickProposition,
+        surface_condition: ClickProposition,
+    ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
         let parent_execution = branch_state
             .execution
@@ -737,6 +752,7 @@ impl<'a> Proof<'a> {
             unreachable!("an execution frontier has an execution context")
         };
         let at_function_entry = parent_execution.core.frontier.is_at_function_entry();
+        let decision_key = ExecutionBranchDecisions::key(&surface_condition);
         let arm_presentation = |surface_fact: ClickProposition, fact: &Proposition, value: bool| {
             let mut presentation = parent_execution.presentation.clone();
             presentation
@@ -749,6 +765,14 @@ impl<'a> Proof<'a> {
                 fact: Some(fact.clone()),
                 at_function_entry,
                 match_arm: None,
+            });
+            // Record this checked case before its body opens nested cases.
+            // Returned paths then share the already ordered prefix instead
+            // of rebuilding every nested decision at each terminal join.
+            presentation.branch_decisions.push(ExecutionBranchDecision {
+                fingerprint: std::sync::OnceLock::from(decision_key),
+                condition: surface_condition.clone(),
+                value,
             });
             Ok(presentation)
         };
@@ -816,7 +840,7 @@ impl<'a> Proof<'a> {
             marker: successor.checkpoint(),
             split,
             arm_branches: ids,
-            surface_condition: condition,
+            surface_condition,
             base_facts: [then_facts, else_facts],
             base_executions: [then_execution, else_execution],
             path_facts,

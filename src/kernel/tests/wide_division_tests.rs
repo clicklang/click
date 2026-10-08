@@ -50,7 +50,7 @@ fn paths(
         crate::kernel::eval::apply_c_remainder(
             value(ty, LEFT),
             value(ty, RIGHT),
-            vec![],
+            vec![].into(),
             vec![],
             assumptions,
         )
@@ -58,7 +58,7 @@ fn paths(
         crate::kernel::eval::apply_c_divide(
             value(ty, LEFT),
             value(ty, RIGHT),
-            vec![],
+            vec![].into(),
             vec![],
             assumptions,
         )

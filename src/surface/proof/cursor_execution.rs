@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CheckedCallEventScope;
+use crate::kernel::ExecutionFactSource;
 use crate::kernel::abstract_c_state_for_interface_join_across;
 use std::sync::Arc;
 
@@ -321,28 +322,32 @@ pub(super) fn apply_branch_interface_with_proof_facts(
 }
 
 pub(super) fn append_execution_effect_facts(
-    target: &mut Vec<ExecutionPureFact>,
-    source: &[ExecutionPureFact],
+    target: &mut ExecutionFacts,
+    source: &(impl ExecutionFactSource + ?Sized),
 ) {
-    for fact in source {
-        // Verified-call rule results are kernel-certified transition facts,
-        // just like memory-effect summaries. Keep them available to later
-        // explicit check without making the surface certificate restate
-        // opaque call identities or intermediate-memory equalities.
-        if (is_memory_effect_proposition(fact.proposition()) || fact.is_certified())
-            && !target.contains(fact)
-        {
-            target.push(fact.clone());
-        }
-    }
+    let source = source.persistent_facts();
+    let mut seen = BTreeSet::new();
+    let accepted = source
+        .iter()
+        .enumerate()
+        .filter_map(|(index, fact)| {
+            // Keep kernel-certified transition facts as well as memory summaries,
+            // without restating opaque call identities in surface certificates.
+            ((is_memory_effect_proposition(fact.proposition()) || fact.is_certified())
+                && !target.contains(fact)
+                && seen.insert(fact))
+            .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    target.extend_shared(&source.selected(&accepted));
 }
 
 pub(super) fn fact_transport_transition_facts(
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     source: &Proposition,
-) -> Vec<ExecutionPureFact> {
+) -> ExecutionFacts {
     let source_memories = c_condition_fact_memories(source);
-    let matching_effect = facts.iter().position(|fact| {
+    let matching_effect = facts.fact_iter().position(|fact| {
         let before = match fact.proposition() {
             Proposition::CMemoryMutatesOnly { before, .. }
             | Proposition::CMemoryEffectSummary { before, .. }
@@ -352,14 +357,20 @@ pub(super) fn fact_transport_transition_facts(
         source_memories.contains(before)
     });
     let Some(start) = matching_effect else {
-        return facts.to_vec();
+        return facts.persistent_facts();
     };
-    let end = facts[start + 1..]
-        .iter()
+    let end = facts
+        .fact_iter()
+        .skip(start + 1)
         .position(|fact| is_memory_effect_proposition(fact.proposition()))
         .map(|offset| start + 1 + offset)
         .unwrap_or(facts.len());
-    facts[start..end].to_vec()
+    facts
+        .fact_iter()
+        .skip(start)
+        .take(end - start)
+        .cloned()
+        .collect()
 }
 
 fn is_memory_effect_proposition(proposition: &Proposition) -> bool {
@@ -1920,7 +1931,9 @@ pub(super) fn apply_prepared_call_outcome_transition(
                 );
             let mut completed_outcomes = Vec::new();
             for (outcome, obligations, case_facts) in case_outcomes {
-                let mut completed_execution_facts = transition.execution_facts.clone();
+                let mut completed_execution_facts = execution
+                    .core
+                    .completed_path_facts(&transition.execution_facts);
                 append_execution_effect_facts(
                     &mut completed_execution_facts,
                     &execution.core.effect_facts,
@@ -2535,7 +2548,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     .map(|transition| {
                         (
                             transition.theorem.clone(),
-                            transition.execution_facts.as_slice(),
+                            &transition.execution_facts,
                             transition.obligations.as_slice(),
                         )
                     })
@@ -2582,7 +2595,9 @@ fn execute_step_from_frontier_position_selecting_path(
                     &return_assumptions,
                 );
             for (outcome, obligations, case_facts) in case_outcomes {
-                let mut completed_execution_facts = transition.execution_facts.clone();
+                let mut completed_execution_facts = execution
+                    .core
+                    .completed_path_facts(&transition.execution_facts);
                 append_execution_effect_facts(
                     &mut completed_execution_facts,
                     &execution.core.effect_facts,
@@ -2895,7 +2910,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 returned.obligations.clone(),
                 returned_facts.assumptions(),
             );
-            let mut completed_execution_facts = returned.execution_facts.clone();
+            let mut completed_execution_facts =
+                parent.completed_path_facts(&returned.execution_facts);
             append_execution_effect_facts(&mut completed_execution_facts, &parent.effect_facts);
             let loan_evidence = crate::kernel::concat_checked_loan_evidence(
                 parent.loan_evidence(),
@@ -3217,7 +3233,8 @@ fn execute_step_from_frontier_position_selecting_path(
                     );
                 let mut completed_outcomes = Vec::new();
                 for (outcome, obligations, case_facts) in case_outcomes {
-                    let mut completed_execution_facts = execution_pure_facts.clone();
+                    let mut completed_execution_facts =
+                        execution.core.completed_path_facts(&execution_pure_facts);
                     append_execution_effect_facts(
                         &mut completed_execution_facts,
                         &execution.core.effect_facts,
@@ -3345,7 +3362,8 @@ fn execute_step_from_frontier_position_selecting_path(
             execution.core.state = (*next_state).into();
         }
         CStatementOutcome::VerificationDiverges => {
-            let mut completed_execution_facts = execution_pure_facts;
+            let mut completed_execution_facts =
+                execution.core.completed_path_facts(&execution_pure_facts);
             append_execution_effect_facts(
                 &mut completed_execution_facts,
                 &execution.core.effect_facts,
@@ -3701,7 +3719,7 @@ fn append_pending_loop_returns(
     core: &mut crate::kernel::proof::ExecutionProofCore,
     completed_outcomes: &mut Vec<(
         CFunctionOutcome,
-        Vec<ExecutionPureFact>,
+        ExecutionFacts,
         Vec<ProofObligation>,
         crate::kernel::CheckedLoanCallEvidenceSequence,
     )>,

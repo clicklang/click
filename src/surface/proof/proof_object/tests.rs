@@ -15,6 +15,53 @@ fn indexed_fact(index: u32) -> Proposition {
     )
 }
 
+#[test]
+fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
+    for size in [4, 64, 1024] {
+        let memory = CState::new().memory().clone();
+        let source: ExecutionFacts = (0..size)
+            .map(|index| {
+                ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+                    before: memory.clone(),
+                    after: memory.clone(),
+                    writes: vec![(
+                        crate::kernel::Pointer {
+                            block: crate::kernel::PointerBlock::ExternalArgument,
+                            offset: crate::kernel::PointerOffsetTerm::Constant(index as i64 * 4),
+                        },
+                        4,
+                    )],
+                })
+            })
+            .collect();
+        let mut repeated = source.clone();
+        repeated.extend_shared(&source.selected(&[0]));
+        let mut forks = Vec::new();
+        for arm in 0..4 {
+            let mut facts: ExecutionFacts =
+                [ExecutionPureFact::new(indexed_fact(10_000 + arm))].into();
+            crate::surface::proof::cursor_execution::append_execution_effect_facts(
+                &mut facts, &repeated,
+            );
+            assert_eq!(facts.len(), size as usize + 1);
+            for (original, retained) in source.iter().zip(facts.iter().skip(1)) {
+                assert_eq!(original, retained);
+                assert!(std::ptr::eq(original, retained));
+            }
+            forks.push(facts);
+        }
+        let objects = forks
+            .iter()
+            .flat_map(|facts| facts.iter().skip(1))
+            .map(|fact| fact as *const ExecutionPureFact as usize)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(objects.len(), size as usize);
+        drop(source);
+        drop(repeated);
+        assert_eq!(forks[0].len(), size as usize + 1);
+    }
+}
+
 fn fact_node_allocations() -> usize {
     persistent_node_allocations()
 }
@@ -11231,6 +11278,84 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             completed.certificate().steps().last(),
             Some(ProofStep::If { .. })
         ));
+
+        // A nested case must keep outer-before-inner source order and share
+        // the original arm prefix through both terminal joins.
+        let inner_condition = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        };
+        let outer_then = split.focus_execution_if_arm(&record, true).unwrap();
+        let outer_history = outer_then
+            .execution()
+            .unwrap()
+            .presentation
+            .branch_decisions
+            .clone();
+        let (inner, inner_record) = outer_then
+            .split_focused_execution_if(inner_condition.clone())
+            .unwrap();
+        let inner_completed = inner
+            .focus_execution_if_arm(&inner_record, true)
+            .unwrap()
+            .apply_step(ProofStep::Step)
+            .unwrap()
+            .apply_step(ProofStep::Step)
+            .unwrap()
+            .focus_execution_if_arm(&inner_record, false)
+            .unwrap()
+            .apply_step(ProofStep::Step)
+            .unwrap()
+            .apply_step(ProofStep::Step)
+            .unwrap()
+            .join_focused_execution_if_terminal(&inner_record)
+            .unwrap();
+        let inner_provenance = inner_completed
+            .execution()
+            .unwrap()
+            .presentation
+            .outcome_provenance
+            .clone();
+        let nested_completed = inner_completed
+            .focus_execution_if_arm(&record, false)
+            .unwrap()
+            .apply_step(ProofStep::Step)
+            .unwrap()
+            .apply_step(ProofStep::Step)
+            .unwrap()
+            .join_focused_execution_if_terminal(&record)
+            .unwrap();
+        let nested_execution = nested_completed.execution().unwrap();
+        let paths = &nested_execution.presentation.outcome_provenance;
+        assert_eq!(paths.len(), 3);
+        for (index, inner_value) in [true, false].into_iter().enumerate() {
+            let decisions = &paths[index].branch_decisions;
+            assert_eq!(decisions.value(&condition).unwrap(), Some(true));
+            assert_eq!(
+                decisions.value(&inner_condition).unwrap(),
+                Some(inner_value)
+            );
+            assert!(decisions.ordered.tail_parent_is(&outer_history.ordered));
+            assert!(
+                decisions
+                    .ordered
+                    .shares_tail_with(&inner_provenance[index].branch_decisions.ordered)
+            );
+            let ordered = decisions.iter().collect::<Vec<_>>();
+            assert_eq!(ordered.len(), 2);
+            assert_eq!(ordered[0].condition, condition);
+            assert_eq!(ordered[1].condition, inner_condition);
+        }
+        assert_eq!(
+            paths[2].branch_decisions.value(&condition).unwrap(),
+            Some(false)
+        );
+        assert_eq!(
+            paths[2].branch_decisions.value(&inner_condition).unwrap(),
+            None
+        );
+        assert!(nested_execution.presentation.branch_decisions.is_empty());
     }
     let (_, base_height, base_allocations) = samples[0];
     for (size, height, allocations) in samples {
@@ -11591,7 +11716,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
             block: recorded_pointer.block.clone(),
             offset: PointerOffsetTerm::Constant(1),
         };
-        let mut producer_facts = Vec::new();
+        let mut producer_facts = crate::kernel::ExecutionFacts::new();
         crate::kernel::record_load_variable_defining_fact(
             *variable,
             crate::kernel::Bitvector32Term::MemoryLoad(
