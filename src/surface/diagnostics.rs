@@ -2780,6 +2780,16 @@ fn describe_cell_version_stop(
         Some(cell) => format!("`{}`", cell.text()),
         None => "this read".to_string(),
     };
+    if let resource_tracker::Change::CellsSeeded { pointer: recorded } = &stop.change {
+        let recorded = describe_source_cell(recorded, parameters, arguments)
+            .map(|cell| format!("`{}`", cell.text()))
+            .unwrap_or_else(|| "another cell".to_string());
+        return format!(
+            "{named} is not yet related to {recorded}, whose range contents were recorded. \
+             The recording alone does not identify a source write. Establish the index/address \
+             relation or preservation needed to compare these reads."
+        );
+    }
     let certain = stop.reason == resource_tracker::StopReason::Affected;
     let changed = if certain {
         "changed"
@@ -2804,6 +2814,11 @@ fn describe_cell_cause(
     match &stop.change {
         resource_tracker::Change::Store { pointer } => {
             describe_store_cause(cell, pointer, widths, certain, parameters, arguments)
+        }
+        resource_tracker::Change::CellsSeeded { .. } => {
+            "range contents were recorded; establish the index/address relation or preservation needed \
+             to compare these reads."
+                .to_string()
         }
         resource_tracker::Change::Call { ranges } => {
             describe_havoc_cause("the call in between", cell, ranges, parameters, arguments)
@@ -3180,6 +3195,9 @@ fn describe_step(
                 None => "a store".to_string(),
             }
         }
+        resource_tracker::Change::CellsSeeded { .. } => {
+            "the recording of range contents".to_string()
+        }
         resource_tracker::Change::Call { .. } => "the call".to_string(),
         resource_tracker::Change::Loop { .. } => "the loop".to_string(),
         resource_tracker::Change::Free { allocation } => {
@@ -3411,10 +3429,24 @@ fn describe_source_range(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Option<String> {
+    // Inside the struct a parameter points at, the source names a field or
+    // the whole struct, never cells: `j[2..3]` there is one whole struct.
+    if let Some(place) = describe_struct_place_range(range, parameters, arguments) {
+        return Some(place);
+    }
     for (parameter, argument) in parameters.iter().zip(arguments) {
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
         };
+        // A range in a struct that is not exactly one place has no source
+        // spelling; cells counted from a struct pointer would read back as
+        // a count of structs.
+        if parameter.array_element_width().is_none()
+            && !parameter.is_struct_value()
+            && (parameter.pointee_struct_layout().is_some() || parameter.struct_layout().is_some())
+        {
+            continue;
+        }
         let Some(base_index) = diagnostic_pointer_element_index_from_base(
             range.base(),
             base,

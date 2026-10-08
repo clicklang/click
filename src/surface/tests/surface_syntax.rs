@@ -4489,6 +4489,33 @@ fn a_reference_parameter_does_not_match_a_c_pointer() {
     );
 }
 
+/// Two different clauses that return overlapping memory are refused where
+/// the contract is set up, naming both places, with or without a proof.
+#[test]
+fn a_contract_cannot_return_overlapping_places() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        int32 get(struct cell* p) { return p->value; }";
+    for contract in [
+        "int32 get(struct cell* p) { owns *p; produces p->value; ensures result == result; } by { execute(); simp(); }",
+        "contract int32 Whole(struct cell* p) { owns *p; produces p->value; } \
+         int32 get(struct cell* p) { views p->value; ensures result == result; } by { execute(); simp(); }",
+    ] {
+        let source = format!("verifying \"cell.c\"; {contract}");
+        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+            .expect_err("the contract returns overlapping places");
+        assert!(
+            error
+                .message
+                .contains("would return overlapping places: `p->value` and `*p`"),
+            "{contract}: {error:?}"
+        );
+    }
+    // Two fields of one struct do not overlap.
+    let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
+        consumes p->other; produces p->other; ensures result == result; } by { execute(); simp(); }";
+    verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
+}
+
 /// A missing memory fact is reported as the place a clause would name.
 #[test]
 fn a_missing_memory_fact_is_reported_as_a_place() {

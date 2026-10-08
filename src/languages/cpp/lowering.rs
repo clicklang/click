@@ -197,14 +197,7 @@ fn lower_function(
     let return_type = match &source.function_kind {
         CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => CType::Void,
         _ if source.return_type == CppType::Void => CType::Void,
-        _ => Scalar::mutable_kind(&source.return_type)
-            .map(ScalarKind::kernel_type)
-            .ok_or_else(|| {
-                format!(
-                    "C++ function `{}` has a return type outside direct lowering",
-                    source.name
-                )
-            })?,
+        _ => cpp_return_scalar_type(&source.return_type)?,
     };
     Ok(c_function(
         return_type,
@@ -1248,6 +1241,9 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    if is_mutable_int32_pointer(value_type) {
+        return Ok(CType::Int32Pointer);
+    }
     Scalar::mutable_kind(value_type)
         .map(ScalarKind::kernel_type)
         .ok_or_else(|| "unsupported C++ scalar kernel type".into())
