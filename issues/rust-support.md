@@ -39,7 +39,10 @@ chunk-view transport, and all four returned/copied vector lanes across local
 stores. Automatic scope exits retire construction ownership. The original
 Adler four-byte caller now proves a terminating symbolic vector loop, including
 all eight lane values and bounds, input-view preservation and iterator ranking.
-Induction over arbitrary batches remains incomplete.
+A proof from any canonical initial state covers every multiple-of-four length up to
+22,204 bytes, carrying all eight lane ceilings, the shared view, and actual
+iterator ranking through reductions, recombination, scalar sums, and final
+16-bit stores. Full outer batches and short tails remain incomplete. The small-batch postcondition bounds both output fields.
 
 Detailed support boundaries and reproducible commands belong in
 [the Rust reference](../docs/reference/rust.md). Current checksum evidence lives

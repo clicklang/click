@@ -2443,6 +2443,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_add_to_integer"
                 | "uint32_subtract_to_integer"
                 | "uint32_mul_to_integer"
+                | "uint32_mul_guard_by_integer_bound"
                 | "uint32_remainder_less_than_divisor"
                 | "uint32_remainder_of_lt"
                 | "uint32_less_equal_to_integer"
@@ -2535,6 +2536,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint32_add_to_integer"
         | "uint32_subtract_to_integer"
         | "uint32_mul_to_integer"
+        | "uint32_mul_guard_by_integer_bound"
         | "uint32_less_equal_to_integer"
         | "uint32_less_equal_of_to_integer"
         | "uint32_remainder_less_than_divisor"
@@ -2687,6 +2689,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "uint32_mul_to_integer" => {
                 crate::kernel::prove_uint32_mul_to_integer(value, uint32_parameter(1)?)
+            }
+            "uint32_mul_guard_by_integer_bound" => {
+                crate::kernel::prove_uint32_mul_guard_by_integer_bound(value, uint32_parameter(1)?)
             }
             "uint32_positive_predecessor_strictly_decreases" => {
                 prove_uint32_positive_predecessor_strictly_decreases(value)
