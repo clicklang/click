@@ -1389,3 +1389,14 @@ Loop exits that reach the join through different calls carry different
 creation-ledger successors. When neither ledger records anything, the exits
 now join as the certification checks of chunk 1c compare them. Regression:
 `authority_mode_loop_exits_after_calls_join.md`.
+
+#### Chunk 1e: verified helpers that borrow a guard or lifetime
+
+A verified helper whose contract borrows mutex resources whole and returns
+them unchanged now passes the authority-mode helper shape check whether the
+resource is a typed `mutex_use` share, a guard or a lifetime. Its body is
+checked under the same rules; without a share it cannot reacquire a deposited
+control, and returning the same mutex resources leaves the mutex state as it
+was. Assumed external contracts over mutex resources are still refused.
+Regressions: `authority_mode_verified_helper_borrows_guard.md` and
+`authority_mode_verified_helper_guard_requires_held_mutex.md`.
