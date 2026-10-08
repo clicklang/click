@@ -55,6 +55,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn uint32_product_bound_guard_expands_and_rejects_wrapped_or_signed_bounds() {
+        let source = "theorem bounded(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967295; ensures b == 0u32 or a <= 4294967295u32 / b by { apply(uint32_mul_guard_by_integer_bound(a, b)) using { to_integer(a) * to_integer(b) <= 4294967295; } } }";
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        for requirement in [
+            "to_integer(a * b) <= 4294967295",
+            "to_integer((int32)a) * to_integer((int32)b) <= 4294967295",
+            "to_integer(a) * to_integer(b) <= 4294967296",
+        ] {
+            let invalid =
+                source.replace("to_integer(a) * to_integer(b) <= 4294967295", requirement);
+            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+        }
+        let missing = source.replace("requires to_integer(a) * to_integer(b) <= 4294967295;", "");
+        assert!(verify_c0_sources(&missing, &[]).is_err());
+        let forged = "theorem uint32_mul_guard_by_integer_bound(a: uint32, b: uint32) { requires to_integer(a) * to_integer(b) <= 4294967296; ensures b == 0u32 or a <= 4294967295u32 / b; }";
+        assert!(verify_c0_sources(forged, &[]).is_err());
+    }
+
+    #[test]
     fn scalar_casts_keep_byte_read_width_in_definedness() {
         let c = "int32 read(const uint8* p) { return (int32)p[0]; }";
         let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined((int32)p[0]); } by { execute(); simp(); }";

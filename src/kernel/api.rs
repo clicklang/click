@@ -8932,22 +8932,7 @@ pub fn prove_uint32_subtract_to_integer(left: Bitvector32Term, right: Bitvector3
 /// checked-multiplication guard. The zero factor branch does not divide by zero.
 /// Definedness of a wrapping u32 product alone is insufficient.
 pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    let premise = Proposition::Or(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
-            true,
-        )),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_equal(
-                left.clone(),
-                Bitvector32Term::unsigned_divide(
-                    Bitvector32Term::Constant(u32::MAX),
-                    right.clone(),
-                ),
-            ),
-            true,
-        )),
-    );
+    let premise = uint32_mul_guard(left.clone(), right.clone());
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
@@ -8960,6 +8945,48 @@ pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term
             ConditionTerm::IntegerEqual(product.into(), exact.into()),
             true,
         )),
+    ))
+}
+
+fn uint32_mul_guard(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    Proposition::Or(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(
+                left,
+                Bitvector32Term::unsigned_divide(Bitvector32Term::Constant(u32::MAX), right),
+            ),
+            true,
+        )),
+    )
+}
+
+/// A mathematical product that fits u32 establishes Rust's checked native
+/// multiplication guard. Unsigned observations are nonnegative, so the
+/// nonzero branch is exactly left <= floor(u32::MAX / right).
+pub fn prove_uint32_mul_guard_by_integer_bound(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    let product =
+        IntegerTerm::Multiply(observe(left.clone()).into(), observe(right.clone()).into());
+    let premise = Proposition::ConditionIs(
+        ConditionTerm::IntegerLessEqual(
+            product.into(),
+            IntegerTerm::constant_i64(i64::from(u32::MAX)).into(),
+        ),
+        true,
+    );
+    Theorem::new(Proposition::Implies(
+        Box::new(premise),
+        Box::new(uint32_mul_guard(left, right)),
     ))
 }
 
