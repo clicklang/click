@@ -4875,6 +4875,22 @@ fn resource_contains_projects_separation_to_children() {
 }
 
 #[test]
+fn assumed_resource_composition_has_exact_membership() {
+    let resources = ResourceContext::new()
+        .try_compose_with_facts(
+            [own_memory_fact(Pointer::symbolic(Variable(41_001)), 0, 1)],
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    let proposition = Proposition::CResourceComposition(resources);
+    let empty = PureFactContext::new();
+    assert!(!empty.contains_assumed_exact(&proposition));
+    let context = empty.assume_proposition(proposition.clone());
+    assert!(context.contains_assumed_exact(&proposition));
+    assert!(context.proves_exact(&proposition));
+}
+
+#[test]
 fn checked_resource_composition_rejects_invalid_state_before_normalizing() {
     let base = Pointer {
         block: "p".into(),

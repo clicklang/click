@@ -8,10 +8,17 @@ whose root is black, whose parent is null, and whose in-order sequence is the
 concatenation of the old left and right subtrees. The returned fixup parent is
 null: these root cases need no subsequent erase fixup.
 
-This is the first C increment of chunk 11 in
-[the rbtree issue](../../issues/rbtree-example.md). Non-root deletion and both
-successor-splice branches are still unproved. The C file retains all branches;
-the sidecar's preconditions state the current proof coverage explicitly.
+`rbtree_erase_successor.click` additionally verifies two-child root deletion
+when the right child is a red leaf: the immediate-successor branch. It proves
+the exact `rb_successor_splice` model, red-black validity, parent consistency,
+and the old left/right in-order sequence, with a null fixup parent. Its
+contract requires a parent-consistent input tree.
+
+These are C increments of chunk 11 in
+[the rbtree issue](../../issues/rbtree-example.md). Non-root deletion, deeper
+successors, and immediate successors with a replacement child or black-leaf
+deficit remain. The C file retains all branches; each sidecar states its
+current coverage explicitly.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
@@ -28,6 +35,7 @@ integration planned in chunks 21–24. The source is GPL-2.0-or-later.
 
 Run `click verify examples/rbtree-erase` and
 `click verify examples/rbtree-model`. The latter checks the imported pure
-root-deletion theorems in `rbtree_erase_root.click` independently. Example
-regressions pin the source and reject deletion with a skipped parent/color
-write or root replacement.
+root-deletion and successor-splice theorems independently. Example regressions
+pin the source and reject skipped parent/color writes, root replacement, or
+the successor's left-child parent update. The successor's explicit final
+claim closers also re-verify.

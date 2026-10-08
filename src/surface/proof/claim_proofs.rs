@@ -963,19 +963,6 @@ mod exit_claim {
                 _ => false,
             }
         }
-        pub(super) fn checked_resource_claim_has_grouped_transition(&self) -> bool {
-            if matches!(&self.evidence, ClaimEvidence::Resource(checked) if checked.has_inactive_guard())
-            {
-                return true;
-            }
-            matches!(
-                (&self.evidence, &self.certificate),
-                (
-                    ClaimEvidence::Resource(_),
-                    ClaimCertificate::GroupedTransition
-                )
-            )
-        }
         pub(super) fn validate_for(
             &self,
             execution: &CCheckedFunctionExecution,
@@ -5012,17 +4999,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
                     let authority_mode = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if state.uses_population_authority_semantics());
-                    let legacy_grouped_transition = has_returned_resource_claims
-                        && claims.iter().enumerate().all(|(claim_index, claim)| {
-                            !matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                || !closures[claim_index].closed().is_some_and(
-                                    ClosedClaim::contributes_checked_resource_claim_resources,
-                                )
-                                || closures[claim_index].closed().is_some_and(
-                                    ClosedClaim::checked_resource_claim_has_grouped_transition,
-                                )
-                        });
-                    // Authority resource closers carry the same checked claim
+                    // Resource closers carry the same checked claim
                     // evidence, whether written as assumption or selected by
                     // simp. Validate their jointly returned units rather than
                     // relying on the presentation certificate's spelling.
@@ -5052,7 +5029,6 @@ pub(super) fn finish_ordered_proof<'a>(
                     checked_resource_transitions_by_path[path_index] = !deferred_resource_transition
                         && (resource_transition_applied
                             || (all_resource_claims_checked
-                                && (authority_mode || legacy_grouped_transition)
                                 && returned_resources_are_jointly_available));
                     if all_resource_claims_checked {
                         checked_returned_resources_by_path[path_index] =

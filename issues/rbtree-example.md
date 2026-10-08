@@ -22,9 +22,10 @@ tree and produces another cannot state that without an abstract model.
 Insert is finished. The black-successor splice's deficit-start model proof
 in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
 successors. Chunk 11 now verifies the unchanged C for a root with zero or
-one child. The red-leaf successor now has a no-deficit model theorem, with
-immediate and deep concrete checks. Non-root C unlink and both C successor
-branches remain. Nonempty replacement children now have a balance exit theorem
+one child, and for an immediate red-leaf successor at the root. The red-leaf
+successor has a no-deficit model theorem, with immediate and deep concrete
+checks. Non-root C unlink, deeper C successors, and the other immediate
+successor exits remain. Nonempty replacement children now have a balance exit theorem
 and immediate/deep checks in `rbtree_erase_child.click` and
 `successor_child_checks.click`; the exact successor-splice sequence and
 parent-consistency connection for that branch remains.
@@ -43,11 +44,21 @@ removal, proves null as the fixup parent, and establishes a black-rooted
 red-black result with in-order sequence `left ++ right`. The imported
 `rbtree_erase_root.click` proves those model facts separately. Mutation tests
 reject missing root replacement and either missing child parent/color write.
-The C's successor branches remain present but outside this contract's scope. The next
-immediate-successor C prototype reaches the final ownership folds but exposed
-[loss of proved post-return facts during fold certification](../bugs/return-instance-fold-loses-post-return-proofs.md).
-The bug has a small standalone reproduction; fix that evidence path before
-resuming the C successor port.
+`rbtree_erase_successor.click` adds the immediate red-leaf successor case at
+the root (2026-10-08). It proves the exact successor-splice model, red-black
+validity, parent consistency, in-order contents, detached-node ownership,
+and null fixup parent. All five smart sites pass expansion audit. Mutations
+remove the successor's parent/color assignment or its new left child's parent
+assignment and are rejected.
+
+The post-return fold bug is fixed: checked `have` completions are retained on
+the returned path, bound to its program snapshot, with root assumptions
+checked once and subsequent persistent deltas checked incrementally. Kernel
+regressions reject sibling facts and different memory snapshots and check
+scaling; mdtests cover interleaved proofs and folds. Exact fact lookup now
+recognizes retained resource-composition facts. Explicit resource closers use
+the same checked ownership receipts as `simp`, fixing the successor's final
+expansion without changing C.
 
 Two proof-driver fixes support this increment: named folds after return inside
 `open` are deferred to the returned state, and exact checked execution retains
@@ -975,7 +986,9 @@ black-leaf theorem, whose whole spliced tree still needs fixup.
 The unchanged C now returns a red-black whole tree and the erased node's raw
 ownership for root deletion with at most one child. Its exact model and
 in-order contract drops that root's occurrence. Non-root zero/one-child cases
-and the two-child successor splice remain. Depends on 7 and 10.
+and the remaining two-child successor branches remain. The immediate red-leaf
+successor at the root is now covered, including its exact model, balance,
+parent consistency, and in-order contents. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.

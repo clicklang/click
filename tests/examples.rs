@@ -301,8 +301,12 @@ fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
 }
 
 fn erase_refuses_mutation(before: &str, after: &str) {
+    erase_sidecar_refuses_mutation("rbtree_erase.click", before, after);
+}
+
+fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root.join("examples/rbtree-erase/rbtree_erase.click");
+    let path = root.join("examples/rbtree-erase").join(sidecar);
     let source = fs::read_to_string(&path).expect("the erase sidecar exists");
     let mut c_sources = read_verifying_sources(&path, &source).expect("the erase C bundle loads");
     let (_, c) = c_sources
@@ -351,6 +355,59 @@ fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
 #[test]
 fn rbtree_erase_refuses_a_skipped_root_replacement() {
     erase_refuses_mutation("\t\t__rb_change_child(node, child, parent, root);\n", "");
+}
+
+#[test]
+#[ignore = "nightly: 13.42 s to expand and recheck the successor claim (2026-10-08)"]
+fn rbtree_erase_successor_explicit_closers_preserve_ownership() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/rbtree-erase/rbtree_erase_successor.click");
+    let source = fs::read_to_string(&path).unwrap();
+    let c_sources = read_verifying_sources(&path, &source).unwrap();
+    let project = read_click_project_at_root(&path, &source, &root.join("examples")).unwrap();
+    let (line, text) = source
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| line.trim() == "simp();")
+        .last()
+        .unwrap();
+    let column = text.find("simp").unwrap() + 1;
+    limits::spawn(
+        "successor closer expansion",
+        "click-successor-expansion".into(),
+        move || {
+            let expanded = click::surface::expand_c0_project_tactic_source_at(
+                &project,
+                &source_refs(&c_sources),
+                line + 1,
+                column,
+            )?;
+            let expanded_project =
+                read_click_project_at_root(&path, &expanded, &root.join("examples"))
+                    .expect("the expanded successor sidecar resolves its imports");
+            click::surface::verify_c0_project(&expanded_project, &source_refs(&c_sources))
+        },
+    )
+    .unwrap()
+    .unwrap();
+}
+
+#[test]
+fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_successor.click",
+        "\t\trb_set_parent(tmp, successor);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_successor.click",
+        "\t\tsuccessor->__rb_parent_color = pc;\n",
+        "",
+    );
 }
 
 #[test]

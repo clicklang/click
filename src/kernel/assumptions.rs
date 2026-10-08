@@ -5001,6 +5001,9 @@ impl PureFactContext {
             Proposition::And(left, right) => {
                 self.contains_assumed_exact(left) && self.contains_assumed_exact(right)
             }
+            Proposition::CResourceComposition(resources) => {
+                self.resource_compositions.contains(resources)
+            }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
                     self.condition_facts.get(condition) == Some(&!*value)
