@@ -77,6 +77,7 @@ pub(in crate::surface) fn with_synthesis_binder_names<T>(
 pub(in crate::surface) struct SynthesisStructOwners {
     locals: BTreeMap<String, syntax::C0StructLayout>,
     cast_parameters: BTreeMap<String, (String, syntax::C0StructLayout)>,
+    callback_sources: std::sync::Arc<BTreeMap<String, syntax::C0Expression>>,
 }
 
 /// Installs the function's struct owners for synthesis while the guard
@@ -108,9 +109,20 @@ impl LocalStructLayoutScope {
         let owners = SynthesisStructOwners {
             locals,
             cast_parameters,
+            callback_sources: function.callback_statement_sources().clone(),
         };
         Self(SYNTHESIS_STRUCT_OWNERS.with(|slot| slot.replace(Some(std::sync::Arc::new(owners)))))
     }
+}
+
+pub(in crate::surface) fn callback_source_name(name: &str) -> Option<String> {
+    SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+        let owners = slot.borrow();
+        let expression = owners.as_ref()?.callback_sources.get(name)?;
+        Some(crate::surface::diagnostics::describe_callback_source(
+            expression,
+        ))
+    })
 }
 
 impl Drop for LocalStructLayoutScope {

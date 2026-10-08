@@ -6717,3 +6717,47 @@ fn nearest_statement_snapshots_stop_at_an_exhausted_deadline() {
         "a cancelled traversal must stay stopped"
     );
 }
+
+#[test]
+fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/rb_augment_callbacks_helper_owns.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let click = fixture.click_source.unwrap();
+    let baseline_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&click, &baseline_sources).unwrap();
+    let samples = [4, 8, 16, 32].map(|count| {
+        let statements = "    augment->propagate(parent, 0);\n".repeat(count);
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| {
+                (
+                    name.clone(),
+                    source.replace("    augment->propagate(parent, 0);\n", &statements),
+                )
+            })
+            .collect::<Vec<_>>();
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let source = click.replace("execute();", &"step(); ".repeat(3 * (count + 2) + 1));
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&source, &sources)
+        });
+        result.unwrap_or_else(|error| panic!("{count} callback statements: {}", error.message()));
+        work
+    });
+    assert!(samples[0] > 0);
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] * 2 <= pair[0] * 5,
+            "callback source steps must scale with their written calls: {samples:?}"
+        );
+    }
+}

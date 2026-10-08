@@ -1601,3 +1601,118 @@ int32 last(int32* data, uint64 length) {
     );
     verify_c0_sources(&explicit, &[("last.c", source)]).unwrap();
 }
+
+#[test]
+fn unfinished_callback_scripts_report_the_missing_authority_to_continue() {
+    for (fixture_name, expected) in [
+        (
+            "rb_augment_callbacks_helper_rejects_changed_cell.md",
+            Some("no contract fact for the function pointer `augment->copy`"),
+        ),
+        (
+            "rb_augment_callbacks_helper_consumes_suite.md",
+            Some("missing resource fact `views augment->copy`"),
+        ),
+        ("rb_augment_callbacks_helper_owns.md", None),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests")
+            .join(fixture_name);
+        let fixture = crate::cli::read_mdtest(&path).unwrap();
+        let mut source = fixture.click_source.unwrap();
+        if expected.is_none() {
+            // Three lowered operations per callback and the implicit void return.
+            source = source.replace("execute();", &"step(); ".repeat(10));
+        }
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let result = verify_c0_sources(&source, &sources);
+        if let Some(expected) = expected {
+            let error = result.unwrap_err();
+            assert!(
+                error.message().contains(expected),
+                "{fixture_name}: {}",
+                error.message()
+            );
+            assert!(
+                !error.message().contains("cannot yet certify"),
+                "{}",
+                error.message()
+            );
+            let report = error.concise_report();
+            assert!(report.contains(expected), "{fixture_name}: {report}");
+            assert!(
+                report.contains("the proof stops before this callback"),
+                "{fixture_name}: {report}"
+            );
+        } else {
+            result.unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
+            let named = source.replace(
+                &"step(); ".repeat(10),
+                "step(); step(); step(Propagate); step(); step(); step(Copy); step(); step(); step(Rotate); step();",
+            );
+            verify_c0_sources(&named, &sources)
+                .unwrap_or_else(|error| panic!("named callback steps: {}", error.message()));
+            let smart = source.replace(&"step(); ".repeat(10), "execute();");
+            let expanded =
+                expand_c0_claim_source(&smart, &sources, "erase_augmented", CProofClaim::Grouped)
+                    .unwrap();
+            verify_c0_sources(&expanded, &sources)
+                .unwrap_or_else(|error| panic!("expanded callbacks: {}", error.message()));
+        }
+    }
+}
+
+#[test]
+fn unfinished_callback_scripts_keep_a_bounded_diagnostic_preview() {
+    for fixture_name in [
+        "rb_augment_callbacks_helper_owns.md",
+        "rb_augment_callbacks_helper_rejects_changed_cell.md",
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests")
+            .join(fixture_name);
+        let fixture = crate::cli::read_mdtest(&path).unwrap();
+        let source = fixture.click_source.unwrap();
+        let (source, c_sources) = if fixture_name.ends_with("owns.md") {
+            // A successful diagnostic continuation still cannot certify an
+            // exhausted script: these steps stop after the first callback.
+            (
+                source
+                    .replace("execute();", "step(); step(); step();")
+                    .replace("simp();", ""),
+                fixture.c_sources,
+            )
+        } else {
+            // The missing Copy fact lies far beyond the bounded preview.
+            // Keep the written proof and every other C statement unchanged.
+            let c_sources = fixture
+                .c_sources
+                .into_iter()
+                .map(|(name, c)| {
+                    (
+                        name,
+                        c.replace(
+                            "    augment->rotate(node, parent);\n",
+                            &"    augment->rotate(node, parent);\n".repeat(16),
+                        ),
+                    )
+                })
+                .collect();
+            (source, c_sources)
+        };
+        let sources = c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let error = verify_c0_sources(&source, &sources).unwrap_err();
+        assert!(
+            error.message().contains("proof stops before function exit"),
+            "{fixture_name}: {}",
+            error.message()
+        );
+    }
+}

@@ -155,6 +155,10 @@ pub struct C0Function {
     requires_read_only_contract: bool,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
+    /// Compiler-created carriers for statement-form callback calls. Keeping
+    /// their origins explicit distinguishes them from user declarations with
+    /// similar names and lets diagnostics name the written callback pointer.
+    callback_statement_sources: std::sync::Arc<BTreeMap<String, C0Expression>>,
     /// Function-scope C label spellings resolved to kernel identities and
     /// executable statement indices after the complete body is parsed.
     control_targets: BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
@@ -2963,6 +2967,7 @@ impl C0Function {
             prelowered_kernel_function: None,
             parameters,
             body: C0Statement::Skip,
+            callback_statement_sources: std::sync::Arc::default(),
             control_targets: BTreeMap::new(),
             structs: BTreeMap::new(),
             enums: BTreeMap::new(),
@@ -2984,6 +2989,12 @@ impl C0Function {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub(crate) fn callback_statement_sources(
+        &self,
+    ) -> &std::sync::Arc<BTreeMap<String, C0Expression>> {
+        &self.callback_statement_sources
     }
 
     pub fn source_name(&self) -> &str {
@@ -7171,6 +7182,7 @@ struct Parser {
     address_taken_variables: BTreeSet<String>,
     next_scoped_name: u32,
     next_synthesized_call: u32,
+    callback_statement_sources: imbl::OrdMap<String, C0Expression>,
     next_synthesized_aggregate: u32,
     next_string_literal: u32,
     next_field_source_ordinal: u32,
@@ -7479,6 +7491,7 @@ impl Parser {
             address_taken_variables: BTreeSet::new(),
             next_scoped_name: 0,
             next_synthesized_call: 0,
+            callback_statement_sources: imbl::OrdMap::new(),
             next_synthesized_aggregate: 0,
             next_string_literal: 0,
             next_field_source_ordinal: 0,
@@ -8744,7 +8757,12 @@ impl Parser {
             header.return_pointee_constant,
         );
         let previous_address_taken_variables = std::mem::take(&mut self.address_taken_variables);
+        let previous_callback_sources = std::mem::take(&mut self.callback_statement_sources);
         let body_result = self.parse_block_statement();
+        let callback_statement_sources = std::mem::replace(
+            &mut self.callback_statement_sources,
+            previous_callback_sources,
+        );
         self.current_function_source_name = previous_function_source_name;
         self.next_field_source_ordinal = previous_field_source_ordinal;
         self.current_return_struct_name = previous_return_struct_name;
@@ -8789,6 +8807,9 @@ impl Parser {
             prelowered_kernel_function: None,
             parameters: header.parameters,
             body,
+            callback_statement_sources: std::sync::Arc::new(
+                callback_statement_sources.into_iter().collect(),
+            ),
             control_targets,
             structs: self.structs.clone(),
             enums: self.enums.clone(),
@@ -16312,6 +16333,8 @@ impl Parser {
                 prefix.extend(argument_prefix);
                 let (callback_name, callback_type) =
                     self.declare_synthesized_function_pointer(&signature);
+                self.callback_statement_sources
+                    .insert(callback_name.clone(), function.clone());
                 prefix.push(C0Statement::Declare {
                     c_type: callback_type,
                     name: callback_name.clone(),

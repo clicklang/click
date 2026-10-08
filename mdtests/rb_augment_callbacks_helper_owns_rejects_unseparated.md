@@ -98,5 +98,5 @@ void erase_augmented(struct node* node, struct node* parent,
 ```
 
 ```expect
-fail: no matching named contract is available for this value
+fail: no contract fact for the function pointer
 ```
