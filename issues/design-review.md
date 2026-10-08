@@ -32,12 +32,18 @@ it is named `&value` throughout (`reference_carrier_name` in
 `src/languages/c/syntax.rs`; design section "Reference parameters"). A
 member function's receiver is the pointer `this`.
 
-One printing gap remains. A contract expression prints a scalar referent as
-`value`. A kernel term for the same read, as in a "C operation" line or a
-condition `click expand` writes, prints `load_int32(&value)`. That parses
-back correctly, but it is not what a sidecar writes. The printer cannot print
-`value` there without the parameter's type: the same shape through a struct
-reference, `load_int64(&box)`, is the struct's first field, not the struct.
+A fact or a failed goal about a referent prints it as the sidecar writes
+it: `value`, `owns value`, and `box.first` for a read at the start of a
+struct referent.
+
+One printing gap remains. The "C operation" line of a failure, and a
+condition `click expand` writes from a lowered C expression, print
+`load_int32(&value)`. That parses back correctly, but it is not what a
+sidecar writes. The printer there has no parameter list, and the same shape
+through a struct reference, `load_int64(&box)`, is the struct's first field,
+not the struct. Lowering a scalar referent's read as an index of its carrier
+would let the printer tell the two apart; it changes the lowered program and
+the tests that pin its shape.
 
 Regression: `click expand` on a branch over a scalar reference writes the
 condition with the bare name, and on a branch over a struct reference's
@@ -48,9 +54,18 @@ reference parameter.
 
 ### A3. Reference locals in C++ bodies
 
-A local `int& r = x;` is named in a proof through the lowered program, where
-it is a pointer. After A1 it should read as its referent there too. Not
-started; needs a look at how proofs name C++ locals before it is scoped.
+Not actionable today. The C++ importer does not lower a local of reference
+type: `int& r = x;` is refused with "C++ local `r` has an initializer
+outside direct lowering" (`lower_statement` in
+`src/languages/cpp/lowering.rs` lowers scalar locals and records only). So
+no proof can name one yet.
+
+When the importer learns to lower one, it names the carrying pointer `&r`,
+as `reference_carrier_name` does for a parameter, so that a proof reads `r`
+as the referent with no further change.
+
+Regression, for that change: a function with `int& r = x; r = 1;` whose
+proof states `have r == 1;` and whose expansion re-verifies.
 
 ### A4. Rust sidecars in Rust syntax
 

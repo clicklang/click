@@ -4844,6 +4844,20 @@ fn cpp_reference_parameters_are_declared_and_named_as_their_referents() {
         "{dereferenced}"
     );
 
+    // A fact about the referent names it as the sidecar does.
+    let false_claim = refusal(&SIDECAR.replace(
+        "ensures value == old(value) + 1;",
+        "ensures value == old(value) + 2;",
+    ));
+    assert!(
+        false_claim.contains("left side evaluated to (value + 1)"),
+        "{false_claim}"
+    );
+    assert!(
+        false_claim.contains("resource facts: [owns value, views value]"),
+        "{false_claim}"
+    );
+
     // The address of the referent is the pointer the function received, so
     // comparing it with itself holds and adds nothing false.
     let with_address =
