@@ -42,7 +42,8 @@ profile decision before implementation:
   for the pinned `__int128` implementation.
 - **Bounded bytes and serialization.** Select an unchanged span/cursor or
   serialization helper and specify bounds, consumed/produced length, byte meaning,
-  and malformed-input behavior. Returned views must remain tied to live storage.
+  and malformed-input behavior. The proposed first target below isolates span
+  bounds and returned-reference lifetime before byte encoding.
 - **Owning containers.** Select one `prevector` operation with explicit content,
   ownership, allocation, copy/move, destruction, small-buffer transition, and
   invalidation claims.
@@ -51,6 +52,93 @@ profile decision before implementation:
   General inheritance, virtual dispatch, RTTI, arbitrary standard-library
   verification, full exception semantics, concurrency, and cross-target coverage
   remain deferred until a selected proof needs them.
+
+## Proposed next slice: SpanPopBack
+
+Select the unchanged `SpanPopBack<int>` in Bitcoin v31.1
+`src/span.h:75`, commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`.
+The header is already in the pinned input closure, with SHA-256
+`485dc37ba8ed9b0e8d8212061122a5c1cd4e71e6ecc5380ac1a2277de395b0e3`.
+This release uses `std::span`, not a Bitcoin-owned span class. The selected
+instance is a mutable, dynamic-extent `std::span<int>` on the existing LP64
+C++20 target. A fixture translation unit may instantiate the original header
+template; it must identify that harness separately from Bitcoin source and
+retain the pinned compiler profile. No proof is delivered for this target yet.
+
+### Intended contract
+
+This is a semantic draft, not accepted Click syntax. Let the incoming
+descriptor denote pointer `p` and mathematical length `N`:
+
+```text
+requires:
+  authority to update the span descriptor
+  1 <= N <= INT32_MAX                         // proposed first bounded profile
+  p[0..N] is live, initialized and readable
+  descriptor storage is separate from that backing range
+
+ensures:
+  span.data == old(p)
+  span.size == N - 1
+  result refers to old(p)[N - 1] in the same live allocation
+  every original backing element is unchanged
+  caller authority over the original backing range is preserved
+  no backing storage is allocated, freed, or transferred
+```
+
+The stored size remains native `size_t`; the bound does not retag it as int32.
+The returned reference denotes an element outside the shortened span but
+inside the original backing allocation. Destroying or copying the descriptor
+does not end that reference's storage lifetime; freeing or invalidating the
+backing allocation does. The helper grants no new pointee ownership or write
+permission. A caller that already owns the last element can write through the
+returned reference using that existing authority. Empty spans are excluded by
+the contract; do not promise a recoverable error or rely on debug assertions.
+
+### Decisions exposed by the actual source
+
+1. **Library boundary and concrete profile.** Recommend verifying the selected
+   pinned `std::span` operations (`size`, `back`, runtime `first`, construction
+   and trivial assignment) rather than introducing assumed span intrinsics.
+   The pinned libstdc++ header is
+   `sysroot/usr/include/c++/12/span`, SHA-256
+   `f1e67ea2c1e2e0faef697f37d995abb59eeb7fb0c0cf13a586fe2799ed9196bd`.
+   Its descriptor contains `_M_ptr` and nested `_M_extent._M_extent_value`.
+   Source layout and provenance must come from Clang, not these spellings or
+   hard-coded offsets. Dynamic extent also requires admitting a non-Boolean
+   integral template argument and deciding its exact identity encoding.
+2. **Descriptor values and reference returns.** Decide how aggregate results,
+   trivial copy/assignment and their temporary lifetimes fit the shared
+   execution model. Copy only descriptor cells and pointer identity, never
+   pointee ownership. A returned C++ reference must retain its backing pointer
+   and allocation lifetime, without introducing Rust-exclusive borrow rules.
+3. **Initial bounds profile.** Decide whether the first proof explicitly uses
+   the proposed int32-range length or extends specification ranges to full
+   `size_t` immediately. In either case, preserve native unsigned arithmetic
+   and prove nonempty subtraction and pointer formation from the actual range.
+
+Existing typed pointers, array/range authority, stable views, allocation
+identity, and field layouts provide the foundation. Pointer fields to int32
+and embedded record layouts already have C++ support; unsigned size fields,
+local reference binding, pointer arithmetic, reference/aggregate returns and
+automatic embedded descriptor objects still need frontend admission. Some of
+those are implementation work once the profiles above are chosen; they do not
+justify a separate C++ memory model.
+
+Acceptance should include the unchanged helper, a modular caller that reads
+the returned last element, and a caller that mutates it under existing write
+authority. Cover singleton spans, preserved siblings and a reference used after
+descriptor destruction while its backing buffer is still live. Reject missing
+nonempty/bounds/read/write authority, invalid backing lifetime and false pointer,
+length or content claims. Ordinary, expanded and retained checks must agree.
+
+No endian or typed-from-bytes rule is needed here. `ser_readdata32` is a later
+candidate: it reads into a local integer through `std::as_writable_bytes` and
+needs a concrete stream plus a precise raw-byte-to-typed-value rule. The current
+[byte design](../docs/internals/byte-representation.md) explicitly refuses
+assembling separate byte cells into wider typed loads and has no specification
+byte view. `ReadCompactSize` additionally brings stream failure and canonical
+encoding rules; do not bundle those decisions into this span slice.
 
 ## Delivery history
 
