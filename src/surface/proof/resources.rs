@@ -5220,6 +5220,17 @@ fn instantiate_contract_segment(
             start: substitute_contract_expression(start, substitutions)?,
             end: substitute_contract_expression(end, substitutions)?,
         },
+        ContractSegmentSurface::StructRange {
+            base,
+            start,
+            end,
+            layout,
+        } => ContractSegmentSurface::StructRange {
+            base: substitute_contract_expression(base, substitutions)?,
+            start: substitute_contract_expression(start, substitutions)?,
+            end: substitute_contract_expression(end, substitutions)?,
+            layout: layout.clone(),
+        },
         surface => surface.clone(),
     };
     Ok(ContractSegment {

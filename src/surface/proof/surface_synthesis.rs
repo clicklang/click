@@ -193,6 +193,125 @@ struct NamedRangeBase {
     width: u32,
 }
 
+fn range_struct_owners(
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+) -> Vec<StructOwner> {
+    let mut owners: Vec<StructOwner> = Vec::new();
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        if let (Some(layout), CExpression::Value(CValue::Pointer(base))) = (
+            parameter
+                .pointee_struct_layout()
+                .or_else(|| parameter.struct_layout()),
+            argument,
+        ) {
+            owners.push(StructOwner {
+                base: CExpression::Variable(parameter.name().to_string()),
+                pointer: base.clone(),
+                layout: layout.clone(),
+            });
+        }
+    }
+    owners.extend(struct_owners(parameters, arguments, state));
+    owners
+}
+
+/// Spell a byte span inside a declared struct as an exact field slot. A
+/// shorter span excludes the field's padding, so it needs an explicit byte
+/// pointer instead; a range on the struct pointer would count whole structs.
+fn synthesize_struct_loadable_segment(
+    base: &Pointer,
+    bytes: &Bitvector32Term,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+) -> Option<ClickProposition> {
+    let bytes = bytes.as_const()?;
+    for owner in range_struct_owners(parameters, arguments, state) {
+        let Some(start) = base
+            .element_index_from_base_with_width(&owner.pointer, 1)
+            .and_then(|index| index.as_const())
+        else {
+            continue;
+        };
+        let Some(end) = start
+            .checked_add(bytes)
+            .filter(|end| *end <= owner.layout.size_bytes())
+        else {
+            continue;
+        };
+        for (name, field) in owner.layout.fields() {
+            if start != field.offset_bytes() {
+                continue;
+            }
+            let slot_end = owner
+                .layout
+                .fields()
+                .values()
+                .map(syntax::C0StructField::offset_bytes)
+                .filter(|offset| *offset > field.offset_bytes())
+                .min()
+                .unwrap_or_else(|| owner.layout.size_bytes());
+            if end != slot_end
+                || field.array_shape().is_some()
+                || field.struct_name().is_some()
+                || field.union_name().is_some()
+            {
+                continue;
+            }
+            let width = match field.c_type() {
+                C0Type::Char | C0Type::UInt8 | C0Type::Int8 => 1,
+                C0Type::Int16 | C0Type::UInt16 => 2,
+                C0Type::Int64 | C0Type::UInt64 | C0Type::Float64 => 8,
+                _ => 4,
+            };
+            if !start.is_multiple_of(width) || !end.is_multiple_of(width) {
+                continue;
+            }
+            return Some(ClickProposition::Loadable {
+                segment: ContractSegment {
+                    state: ContractSegmentState::Current,
+                    base: owner.base,
+                    start: CExpression::Value(int32(start / width)),
+                    end: CExpression::Value(int32(end / width)),
+                    surface: ContractSegmentSurface::Field {
+                        base: None,
+                        name: name.clone(),
+                        element_width: Some(width),
+                        element_type: Some(field.c_type().to_kernel_type()),
+                    },
+                },
+            });
+        }
+        let cast = CExpression::Cast {
+            expression: Box::new(owner.base),
+            target_type: CType::UInt8Pointer,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        };
+        let start = CExpression::Value(int32(start));
+        let end = CExpression::Value(int32(end));
+        return Some(ClickProposition::Loadable {
+            segment: ContractSegment {
+                state: ContractSegmentState::Current,
+                base: cast.clone(),
+                start: start.clone(),
+                end: end.clone(),
+                surface: ContractSegmentSurface::Range {
+                    base: ContractExpression::CFragment(cast),
+                    start: ContractExpression::CFragment(start),
+                    end: ContractExpression::CFragment(end),
+                },
+            },
+        });
+    }
+    None
+}
+
 /// Pointer-typed fields of struct-pointer parameters and locals whose cell
 /// currently holds a data pointer, spelled as the field read. The struct
 /// layouts come from the parameter declarations and the installed local
@@ -202,19 +321,7 @@ fn field_pointer_bases(
     arguments: &[CExpression],
     state: &CState,
 ) -> Vec<NamedRangeBase> {
-    let mut owners: Vec<StructOwner> = Vec::new();
-    for (parameter, argument) in parameters.iter().zip(arguments) {
-        if let (Some(layout), CExpression::Value(CValue::Pointer(base))) =
-            (parameter.struct_layout(), argument)
-        {
-            owners.push(StructOwner {
-                base: CExpression::Variable(parameter.name().to_string()),
-                pointer: base.clone(),
-                layout: layout.clone(),
-            });
-        }
-    }
-    owners.extend(struct_owners(parameters, arguments, state));
+    let owners = range_struct_owners(parameters, arguments, state);
     let mut bases = Vec::new();
     for owner in owners {
         for (field_name, field) in owner.layout.fields() {
@@ -1200,6 +1307,11 @@ fn synthesize_named_range_loadable_segment(
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
+    if let Some(segment) =
+        synthesize_struct_loadable_segment(base, bytes, parameters, arguments, state)
+    {
+        return Some(segment);
+    }
     // A one-element byte range is either the producer's folded representation
     // of `bytes[index..index + 1]` or its exact constant byte count. Handle it
     // before the historical folded-range paths so the source index comes from

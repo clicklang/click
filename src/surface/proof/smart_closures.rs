@@ -7106,7 +7106,8 @@ impl<'a> Proof<'a> {
                 }
                 ProofTactic::Have(have) => {
                     let scope = proof.begin_have(have.proposition.clone())?;
-                    let selected = match &have.proof {
+                    let source_proof = have.checking_proof();
+                    let selected = match source_proof.as_ref() {
                         SourceProof::Default
                         | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
                             scope.try_simp_closure()?

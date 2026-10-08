@@ -2435,7 +2435,10 @@ fn lower_resource_segment_with_values(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads();
     let (surface_base, surface_start, surface_end) = match &segment.surface {
-        ContractSegmentSurface::Range { base, start, end } => (Some(base), Some(start), Some(end)),
+        ContractSegmentSurface::Range { base, start, end }
+        | ContractSegmentSurface::StructRange {
+            base, start, end, ..
+        } => (Some(base), Some(start), Some(end)),
         _ => (None, None, None),
     };
     let evaluate = |expression: &CExpression, original: Option<&ContractExpression>| match original
@@ -2853,7 +2856,7 @@ pub(in crate::surface) fn loadable_base_and_bytes(
 /// cells take the field types of the layout.
 pub(in crate::surface) fn object_segment_layout<'a>(
     parameters: &'a [syntax::C0Parameter],
-    segment: &ContractSegment,
+    segment: &'a ContractSegment,
 ) -> Option<&'a syntax::C0StructLayout> {
     let ContractSegmentSurface::Object(struct_name) = &segment.surface else {
         return None;
@@ -2970,8 +2973,11 @@ fn contract_expression_struct_layout<'a>(
 
 fn contract_segment_struct_layout<'a>(
     parameters: &'a [syntax::C0Parameter],
-    segment: &ContractSegment,
+    segment: &'a ContractSegment,
 ) -> Option<&'a syntax::C0StructLayout> {
+    if let ContractSegmentSurface::StructRange { layout, .. } = &segment.surface {
+        return Some(&layout.layout);
+    }
     // A field segment already carries the leaf's physical type and width.
     // Treating its base as an aggregate range would expand every struct field
     // at the leaf's address, which can install a different typed cell there.

@@ -455,7 +455,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             }
             ProofTactic::Have(have) => {
                 let scope = phase.begin_have(have.proposition.clone())?;
-                check_initialization_body(&scope, &have.proof, None)?.join()?
+                check_initialization_body(&scope, &have.checking_proof(), None)?.join()?
             }
             _ => unreachable!("only unfold and have steps are phase helpers"),
         };

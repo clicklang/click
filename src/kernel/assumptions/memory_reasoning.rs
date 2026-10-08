@@ -3008,6 +3008,29 @@ impl PureFactContext {
                 .unwrap_or_else(|| pointer.clone())
         };
         let pointer = &resolved;
+        if byte_width > 0 && byte_width < element_width {
+            let available = CMemoryRange::new_with_element_width(
+                base.clone(),
+                start.clone(),
+                end.clone(),
+                element_width,
+            );
+            let required = CMemoryRange::new_with_element_width(
+                pointer.clone(),
+                0u32.into(),
+                byte_width.into(),
+                1,
+            );
+            if crate::kernel::primitives::memory_range_covers_interior_element(
+                &available, &required, self,
+            ) && !self
+                .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                    &available, &required,
+                )
+            {
+                return true;
+            }
+        }
         let proves_order = |left: &Bitvector32Term, right: &Bitvector32Term, strict: bool| {
             let condition = if strict {
                 ConditionTerm::signed_less_than(left.clone(), right.clone())

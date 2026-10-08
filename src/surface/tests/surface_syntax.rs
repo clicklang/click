@@ -4712,6 +4712,90 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
     }
 }
 
+#[test]
+fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
+    use crate::kernel::{
+        Bitvector32Term, CMemoryRange, CPointerValue, CType, Pointer, PointerBlock,
+        PointerOffsetTerm,
+    };
+    let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
+    let functions = syntax::parse_functions(c_source).unwrap();
+    let parameters = functions[0].parameters();
+    let base = Pointer {
+        block: PointerBlock::Concrete("range_base".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let arguments = [CExpression::Value(CValue::Pointer(CPointerValue::new(
+        base.clone(),
+        CType::Int32Pointer,
+    )))];
+    for (low, high, width, expected) in [
+        (0, 2, 4, "{p->head, p->inner.a}"),
+        (1, 3, 4, "{p->inner.a, p->inner.b}"),
+        (1, 4, 4, "p->inner"),
+        (0, 5, 4, "*p"),
+        (5, 6, 4, "p[1].head"),
+        (5, 10, 4, "p[1]"),
+        (1, 6, 4, "((char *)p)[4..24]"),
+        (0, 10, 4, "p[0..2]"),
+        (1, 3, 1, "((char *)p)[1..3]"),
+    ] {
+        let range = CMemoryRange::new_with_element_width(
+            base.clone(),
+            Bitvector32Term::Constant(low),
+            Bitvector32Term::Constant(high),
+            width,
+        );
+        assert_eq!(
+            super::diagnostics::describe_memory_range(&range, parameters, &arguments),
+            expected
+        );
+    }
+}
+
+#[test]
+fn held_recursive_struct_range_and_bound_load_name_their_fields() {
+    let c_source = "struct node { struct node* left; struct node* right; int32 augmented; }; void relink(struct node* node) { node->right = 0; }";
+    let click_source = r#"
+resource pair(node: struct node*) { field weight: int32; owns node->left; owns node->right; }
+verifying "relink.c";
+void relink(struct node* node) { requires node != 0; owns links: pair(node); owns node->right->augmented; } by { execute(); }
+"#;
+    let error = verify_c0_sources(click_source, &[("relink.c", c_source)]).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("missing resource fact `owns node->right`"),
+        "{error:?}"
+    );
+    assert!(
+        error.message.contains("held `owns node->right->augmented`"),
+        "{error:?}"
+    );
+    assert!(error.message.contains("load(node->right)"), "{error:?}");
+    assert!(
+        error.message.contains("byte offsets from `node`"),
+        "{error:?}"
+    );
+    assert!(!error.message.contains("node[2]"), "{error:?}");
+    assert!(!error.message.contains("right[4..6]"), "{error:?}");
+}
+
+#[test]
+fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
+    let c_source = "struct cell { int32 a; int32 b; }; int32 release(struct cell* p) { return 0; }";
+    let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; } by { execute(); simp(); }"#;
+    let error = verify_c0_sources(source, &[("cell.c", c_source)]).unwrap_err();
+    assert!(
+        error.message.contains("missing resource fact `owns *p`"),
+        "{error:?}"
+    );
+    assert!(
+        error.message.contains("Requires produces owns *p"),
+        "{error:?}"
+    );
+}
+
 /// A range on a struct pointer counts structs, and `*link` for a
 /// `struct T**` is one pointer slot, not a struct.
 #[test]

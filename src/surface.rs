@@ -3070,6 +3070,12 @@ enum ContractSegmentSurface {
         start: ContractExpression,
         end: ContractExpression,
     },
+    StructRange {
+        base: ContractExpression,
+        start: ContractExpression,
+        end: ContractExpression,
+        layout: std::sync::Arc<StructRangeLayout>,
+    },
     Field {
         /// How the contract spelled the struct the field belongs to, when the
         /// parse had it. A base reached through a link reads as `old->left`
@@ -3081,6 +3087,22 @@ enum ContractSegmentSurface {
         element_type: Option<CType>,
     },
     Object(String),
+}
+
+/// The imported ABI retained by one range of whole struct objects. Hash the
+/// nominal name and size without walking every field; equality still checks
+/// the complete ABI, so different layouts cannot be conflated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StructRangeLayout {
+    name: String,
+    layout: syntax::C0StructLayout,
+}
+
+impl std::hash::Hash for StructRangeLayout {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.name, state);
+        std::hash::Hash::hash(&self.layout.size_bytes(), state);
+    }
 }
 
 impl ContractSegment {
@@ -3097,7 +3119,10 @@ impl ContractSegment {
         &ContractExpression,
     )> {
         match &self.surface {
-            ContractSegmentSurface::Range { base, start, end } => Some((base, start, end)),
+            ContractSegmentSurface::Range { base, start, end }
+            | ContractSegmentSurface::StructRange {
+                base, start, end, ..
+            } => Some((base, start, end)),
             ContractSegmentSurface::Field { .. } | ContractSegmentSurface::Object(_) => None,
         }
     }
@@ -3105,6 +3130,7 @@ impl ContractSegment {
     pub(crate) fn field_element_width(&self) -> Option<u32> {
         match &self.surface {
             ContractSegmentSurface::Field { element_width, .. } => *element_width,
+            ContractSegmentSurface::StructRange { layout, .. } => Some(layout.layout.size_bytes()),
             ContractSegmentSurface::Range { .. } | ContractSegmentSurface::Object(_) => None,
         }
     }
@@ -3112,7 +3138,9 @@ impl ContractSegment {
     pub(crate) fn field_element_type(&self) -> Option<CType> {
         match &self.surface {
             ContractSegmentSurface::Field { element_type, .. } => *element_type,
-            ContractSegmentSurface::Range { .. } | ContractSegmentSurface::Object(_) => None,
+            ContractSegmentSurface::Range { .. }
+            | ContractSegmentSurface::StructRange { .. }
+            | ContractSegmentSurface::Object(_) => None,
         }
     }
 }
@@ -5083,6 +5111,20 @@ impl SmartTactic {
 pub struct ProofHave {
     proposition: ClickProposition,
     proof: SourceProof,
+}
+
+impl ProofHave {
+    /// Check the short forms as the same single simp step as the block form,
+    /// so a failed step retains its diagnostic. Keep the written source proof
+    /// unchanged for inventory, capture, and source locations.
+    fn checking_proof(&self) -> std::borrow::Cow<'_, SourceProof> {
+        match &self.proof {
+            SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
+                std::borrow::Cow::Owned(SourceProof::Script(vec![ProofTactic::Simp]))
+            }
+            _ => std::borrow::Cow::Borrowed(&self.proof),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

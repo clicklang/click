@@ -8288,12 +8288,26 @@ pub(in crate::surface) fn substitute_contract_segment(
             start: substitute_contract_expression_in(start, substitutions)?,
             end: substitute_contract_expression_in(end, substitutions)?,
         },
+        ContractSegmentSurface::StructRange {
+            base,
+            start,
+            end,
+            layout,
+        } => ContractSegmentSurface::StructRange {
+            base: substitute_contract_expression_in(base, substitutions)?,
+            start: substitute_contract_expression_in(start, substitutions)?,
+            end: substitute_contract_expression_in(end, substitutions)?,
+            layout: layout.clone(),
+        },
         surface => surface.clone(),
     };
     // Preserve resolved C spellings unless a component actually refers to
     // the return name. Its surface form then distinguishes `c(result)`.
     if substitutions.is_contract_result_binding()
-        && let ContractSegmentSurface::Range { base, start, end } = &surface
+        && let ContractSegmentSurface::Range { base, start, end }
+        | ContractSegmentSurface::StructRange {
+            base, start, end, ..
+        } = &surface
     {
         let lower = |original: &CExpression, source: &ContractExpression| {
             let rewritten = substitute_c_fragment_in(original, substitutions)?;

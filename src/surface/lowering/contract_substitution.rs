@@ -964,7 +964,11 @@ fn collect_resource_clause_binding_names(resource: &ResourceClause, names: &mut 
 }
 
 fn collect_contract_segment_binding_names(segment: &ContractSegment, names: &mut BTreeSet<String>) {
-    if let ContractSegmentSurface::Range { base, start, end } = &segment.surface {
+    if let ContractSegmentSurface::Range { base, start, end }
+    | ContractSegmentSurface::StructRange {
+        base, start, end, ..
+    } = &segment.surface
+    {
         collect_contract_expression_binding_names(base, names);
         collect_contract_expression_binding_names(start, names);
         collect_contract_expression_binding_names(end, names);
@@ -1742,6 +1746,17 @@ fn substitute_contract_segment(
             start: substitute_contract_expression_in(start, substitutions)?,
             end: substitute_contract_expression_in(end, substitutions)?,
         },
+        ContractSegmentSurface::StructRange {
+            base,
+            start,
+            end,
+            layout,
+        } => ContractSegmentSurface::StructRange {
+            base: substitute_contract_expression_in(base, substitutions)?,
+            start: substitute_contract_expression_in(start, substitutions)?,
+            end: substitute_contract_expression_in(end, substitutions)?,
+            layout: layout.clone(),
+        },
         surface => surface.clone(),
     };
     Ok(ContractSegment {
@@ -1937,6 +1952,17 @@ pub(in crate::surface) fn apply_contract_lets_to_segment(
             base: substitute_contract_expression(&base, &substitutions)?,
             start: substitute_contract_expression(&start, &substitutions)?,
             end: substitute_contract_expression(&end, &substitutions)?,
+        },
+        ContractSegmentSurface::StructRange {
+            base,
+            start,
+            end,
+            layout,
+        } => ContractSegmentSurface::StructRange {
+            base: substitute_contract_expression(&base, &substitutions)?,
+            start: substitute_contract_expression(&start, &substitutions)?,
+            end: substitute_contract_expression(&end, &substitutions)?,
+            layout: layout.clone(),
         },
         surface => surface,
     };

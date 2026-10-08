@@ -415,6 +415,42 @@ fn expand_c0_prepared_claim_source(
     Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
+/// Use the same claim labels for every source/import route. A selected
+/// exceptional ensure must remain exceptional through lookup; covering_claim
+/// subsequently selects the grouped proof when that is its producer.
+fn function_expansion_claim_by_label(
+    function: &FunctionBlock,
+    claim_label: &str,
+) -> Option<CProofClaim> {
+    let name = function.signature().name();
+    if claim_label == format!("{name}.contract") && function.covering_proof().is_some() {
+        return Some(CProofClaim::Grouped);
+    }
+    for (clauses, prefix, claim) in [
+        (
+            function.ensures(),
+            "ensures",
+            CProofClaim::Ensure as fn(usize) -> CProofClaim,
+        ),
+        (
+            function.exceptional_ensures(),
+            "exceptional_ensures",
+            CProofClaim::ExceptionalEnsure as fn(usize) -> CProofClaim,
+        ),
+    ] {
+        for (index, ensure) in clauses.iter().enumerate() {
+            let label = ensure.name().map_or_else(
+                || format!("{name}.{prefix}_{index}"),
+                |label| format!("{name}.{label}"),
+            );
+            if label == claim_label {
+                return Some(claim(index));
+            }
+        }
+    }
+    None
+}
+
 /// Expands one function claim selected by the same stable label used by
 /// profiling and diagnostics.
 pub fn expand_c0_claim_source_by_label(
@@ -435,29 +471,13 @@ pub fn expand_c0_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_claim_source(
                 click_source,
                 c_sources,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_claim_source(
-                    click_source,
-                    c_sources,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -495,29 +515,13 @@ pub fn expand_c0_project_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_project_claim_source(
                 project,
                 c_sources,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_project_claim_source(
-                    project,
-                    c_sources,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -549,29 +553,13 @@ pub fn expand_c0_prepared_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_prepared_claim_source(
                 click_source,
                 imports,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_prepared_claim_source(
-                    click_source,
-                    imports,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -606,29 +594,13 @@ pub fn expand_c0_prepared_project_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_prepared_project_claim_source(
                 project,
                 imports,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_prepared_project_claim_source(
-                    project,
-                    imports,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -700,46 +672,14 @@ fn expand_program_prepared_claim_source_by_label_context(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_program_prepared_claim_source_context(
                 project,
                 click_source,
                 import,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_program_prepared_claim_source_context(
-                    project,
-                    click_source,
-                    import,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
-        }
-        for (index, ensure) in function.exceptional_ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.exceptional_ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_program_prepared_claim_source_context(
-                    project,
-                    click_source,
-                    import,
-                    function_name,
-                    CProofClaim::ExceptionalEnsure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(

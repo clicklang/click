@@ -104,12 +104,14 @@ fn proof_condition_runtime_error(
     context_label: &str,
     error: &crate::kernel::CRuntimeError,
     state: &CState,
+    function: Option<&syntax::C0Function>,
 ) -> ClickError {
+    let (parameters, arguments) =
+        crate::surface::diagnostics::local_naming_tables_with_source(state, function);
     let (detail, guidance) = match error {
         crate::kernel::CRuntimeError::MissingResource { resource }
             if resource.memory_view_range().is_some() =>
         {
-            let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
             let required = crate::surface::diagnostics::describe_resource_fact(
                 resource,
                 &parameters,
@@ -121,7 +123,7 @@ fn proof_condition_runtime_error(
             )
         }
         _ => (
-            crate::surface::diagnostics::describe_runtime_error_over_locals(error, state),
+            crate::surface::diagnostics::describe_runtime_error(error, &parameters, &arguments),
             "",
         ),
     };
@@ -157,7 +159,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_transitions(
         then_branch: Box::new(CStatement::Skip),
         else_branch: Box::new(CStatement::Skip),
     };
-    certified_proof_condition_split(state, pure_facts, &branch, None, context_label)
+    certified_proof_condition_split(state, pure_facts, &branch, None, context_label, None)
         .map(|(_, transitions)| transitions)
 }
 
@@ -167,6 +169,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
     branch_statement: &CStatement,
     continuation: Option<&CStatement>,
     context_label: &str,
+    function: Option<&syntax::C0Function>,
 ) -> Result<(CheckedBranchSplit, Vec<CertifiedProofConditionTransition>), ClickError> {
     let split = CheckedBranchSplit::check(
         state.clone(),
@@ -232,6 +235,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     context_label,
                     error,
                     state,
+                    function,
                 )),
             }
         })

@@ -6173,6 +6173,8 @@ impl Parser {
         match name.as_str() {
             "let" => self.parse_let_proof_tactic(),
             "both" => self.parse_both_proof_tactic(),
+            "if" => self.parse_if_proof_tactic(),
+            "induct" if !self.tactic_names.contains(&name) => self.parse_induct_proof_tactic(),
             "close_invariants" if self.peek_ident() == Some("by") => {
                 self.position += 1;
                 let body = self.parse_close_invariants_body()?;
@@ -6617,9 +6619,6 @@ impl Parser {
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::Open(ProofOpen { resource, tactics }));
         }
-        if name == "if" {
-            return self.parse_if_proof_tactic();
-        }
         if name == "cases" {
             // One arm per disjunct, each naming the disjunct it assumes:
             // `cases { A => { ... } B => { ... } }`. The arms' disjunction,
@@ -6893,6 +6892,85 @@ impl Parser {
             }));
         }
         self.parse_named_proof_tactic(name)
+    }
+
+    // Structural induction retains a child proof parser. Its syntax
+    // temporaries must not share the large leaf-tactic dispatch frame.
+    #[inline(never)]
+    fn parse_induct_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        let tactic = {
+            self.expect(Token::LParen)?;
+            let parameter = self.expect_ident("induction parameter")?;
+            self.expect(Token::RParen)?;
+            self.expect_ident_spelling("as")?;
+            let hypothesis = self.expect_ident("induction hypothesis name")?;
+            if self.peek() == Some(&Token::LBrace) {
+                self.position += 1;
+                let mut arms = Vec::new();
+                while self.peek() != Some(&Token::RBrace) {
+                    let type_name = self.expect_ident("induction pattern datatype")?;
+                    self.expect(Token::ColonColon)?;
+                    let variant = self.expect_ident("induction pattern variant")?;
+                    let mut bindings = Vec::new();
+                    if self.peek() == Some(&Token::LParen) {
+                        self.position += 1;
+                        if self.peek() != Some(&Token::RParen) {
+                            loop {
+                                bindings.push(self.expect_ident("induction pattern binding")?);
+                                match self.peek() {
+                                    Some(Token::Comma) => self.position += 1,
+                                    Some(Token::RParen) => break,
+                                    Some(token) => {
+                                        return Err(self.error(format!(
+                                            "expected `,` or `)` after induction binding, got {}",
+                                            token.describe()
+                                        )));
+                                    }
+                                    None => {
+                                        return Err(
+                                            self.error("expected `)` after induction bindings")
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        self.expect(Token::RParen)?;
+                    }
+                    self.expect(Token::FatArrow)?;
+                    let newly_bound = bindings
+                        .iter()
+                        .filter(|binding| self.current_contract_bindings.insert((*binding).clone()))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let tactics = self.parse_possibly_empty_tactic_block();
+                    for binding in newly_bound {
+                        self.current_contract_bindings.remove(&binding);
+                    }
+                    arms.push(ProofInductionArm {
+                        type_name,
+                        variant,
+                        bindings,
+                        tactics: tactics?,
+                    });
+                    if self.peek() == Some(&Token::Comma) {
+                        self.position += 1;
+                    }
+                }
+                self.expect(Token::RBrace)?;
+                self.skip_redundant_semicolon();
+                return Ok(ProofTactic::StructuralInduct {
+                    parameter,
+                    hypothesis,
+                    arms,
+                });
+            }
+            ProofTactic::Induct {
+                parameter,
+                hypothesis,
+            }
+        };
+        self.expect(Token::Semicolon)?;
+        Ok(tactic)
     }
 
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
@@ -7261,79 +7339,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 ProofTactic::ConstructResource(resource)
             }
-            "induct" => {
-                self.expect(Token::LParen)?;
-                let parameter = self.expect_ident("induction parameter")?;
-                self.expect(Token::RParen)?;
-                self.expect_ident_spelling("as")?;
-                let hypothesis = self.expect_ident("induction hypothesis name")?;
-                if self.peek() == Some(&Token::LBrace) {
-                    self.position += 1;
-                    let mut arms = Vec::new();
-                    while self.peek() != Some(&Token::RBrace) {
-                        let type_name = self.expect_ident("induction pattern datatype")?;
-                        self.expect(Token::ColonColon)?;
-                        let variant = self.expect_ident("induction pattern variant")?;
-                        let mut bindings = Vec::new();
-                        if self.peek() == Some(&Token::LParen) {
-                            self.position += 1;
-                            if self.peek() != Some(&Token::RParen) {
-                                loop {
-                                    bindings.push(self.expect_ident("induction pattern binding")?);
-                                    match self.peek() {
-                                        Some(Token::Comma) => self.position += 1,
-                                        Some(Token::RParen) => break,
-                                        Some(token) => {
-                                            return Err(self.error(format!(
-                                                "expected `,` or `)` after induction binding, got {}",
-                                                token.describe()
-                                            )));
-                                        }
-                                        None => {
-                                            return Err(
-                                                self.error("expected `)` after induction bindings")
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            self.expect(Token::RParen)?;
-                        }
-                        self.expect(Token::FatArrow)?;
-                        let newly_bound = bindings
-                            .iter()
-                            .filter(|binding| {
-                                self.current_contract_bindings.insert((*binding).clone())
-                            })
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        let tactics = self.parse_possibly_empty_tactic_block();
-                        for binding in newly_bound {
-                            self.current_contract_bindings.remove(&binding);
-                        }
-                        arms.push(ProofInductionArm {
-                            type_name,
-                            variant,
-                            bindings,
-                            tactics: tactics?,
-                        });
-                        if self.peek() == Some(&Token::Comma) {
-                            self.position += 1;
-                        }
-                    }
-                    self.expect(Token::RBrace)?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::StructuralInduct {
-                        parameter,
-                        hypothesis,
-                        arms,
-                    });
-                }
-                ProofTactic::Induct {
-                    parameter,
-                    hypothesis,
-                }
-            }
+            "induct" => return self.parse_induct_proof_tactic(),
             _ if is_tactic_name(&name) => {
                 return Err(self.error(format!(
                     "`{name}` is only available as a standalone smart tactic; use `by {name};`"
@@ -8773,7 +8779,12 @@ impl Parser {
                 })?;
                 let surface_base_before_index = surface_base;
                 dereferences_pointer = false;
-                if let Some(element_width) = struct_array_element_width {
+                if let Some(element_width) = struct_array_element_width.or_else(|| {
+                    struct_name
+                        .as_ref()
+                        .and_then(|name| self.struct_layouts.get(name))
+                        .map(|layout| layout.size_bytes())
+                }) {
                     let mut indexes = vec![index.clone()];
                     let mut surface_indexes = vec![ContractExpression::CFragment(index.clone())];
                     while struct_array_shape.is_some() && self.peek() == Some(&Token::LBracket) {
@@ -8799,11 +8810,8 @@ impl Parser {
                     } else {
                         index
                     };
-                    let stride = CExpression::Multiply(
-                        Box::new(offset),
-                        Box::new(CExpression::Value(int32(element_width))),
-                    );
-                    base = CExpression::Add(Box::new(base), Box::new(stride));
+                    let stride = struct_byte_stride(offset, element_width);
+                    base = CExpression::Add(Box::new(struct_byte_base(base)), Box::new(stride));
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
@@ -9247,26 +9255,23 @@ impl Parser {
                 },
             }]);
         }
-        // A range on a struct pointer counts structs. Memory is held in
-        // four-byte cells, so each bound is scaled by the struct's cell count.
-        // A struct-array parameter already carries its element width.
-        let struct_cells = match &struct_name {
-            Some(name) if struct_array_element_width.is_none() => {
+        // Preserve object counts. Multiplying source int32 bounds by the
+        // struct's word count invents a signed-overflow obligation for a
+        // perfectly valid pointer range; the kernel range carries its stride.
+        let range_layout = struct_name
+            .as_ref()
+            .map(|name| {
                 let layout = self.struct_layouts.get(name).ok_or_else(|| {
                     self.error(format!(
                         "a range of `struct {name}` needs an imported layout for it"
                     ))
                 })?;
-                if layout.size_bytes() % 4 != 0 {
-                    return Err(self.error(format!(
-                        "a range cannot represent the {}-byte `struct {name}` as int32-aligned memory",
-                        layout.size_bytes()
-                    )));
-                }
-                Some(layout.size_bytes() / 4)
-            }
-            _ => None,
-        };
+                Ok::<_, ClickError>(std::sync::Arc::new(StructRangeLayout {
+                    name: name.clone(),
+                    layout: layout.clone(),
+                }))
+            })
+            .transpose()?;
         self.expect(Token::LBracket)?;
         let start_expression = self.parse_contract_expression()?;
         let start_expression = self.rust_place_index(start_expression);
@@ -9284,13 +9289,6 @@ impl Parser {
             )
         })?;
         self.expect(Token::RBracket)?;
-        if let Some(cells) = struct_cells.filter(|cells| *cells != 1) {
-            let scale = |bound: CExpression| {
-                CExpression::Multiply(Box::new(CExpression::Value(int32(cells))), Box::new(bound))
-            };
-            start = scale(start);
-            end = scale(end);
-        }
         if let Some(offset) = scalar_range_offset {
             start = CExpression::Add(Box::new(offset.clone()), Box::new(start));
             end = CExpression::Add(Box::new(offset), Box::new(end));
@@ -9300,10 +9298,18 @@ impl Parser {
             base,
             start,
             end,
-            surface: ContractSegmentSurface::Range {
-                base: surface_base,
-                start: start_expression,
-                end: end_expression,
+            surface: match range_layout {
+                Some(layout) => ContractSegmentSurface::StructRange {
+                    base: surface_base,
+                    start: start_expression,
+                    end: end_expression,
+                    layout,
+                },
+                None => ContractSegmentSurface::Range {
+                    base: surface_base,
+                    start: start_expression,
+                    end: end_expression,
+                },
             },
         }])
     }
@@ -10299,6 +10305,15 @@ impl Parser {
             } => self.contract_expression_struct_name(inner),
             _ => None,
         };
+        // A struct double pointer indexes pointer slots, not struct objects.
+        if let ContractExpression::Binding(name)
+        | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
+            && self
+                .current_struct_params
+                .contains_key(&struct_pointer_pointer_key(name))
+        {
+            struct_name = None;
+        }
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &expression {
             ContractExpression::Binding(name)
@@ -10353,8 +10368,12 @@ impl Parser {
                     self.position += 1;
                     let index = self.parse_place_index()?;
                     self.expect(Token::RBracket)?;
-                    if let Some(element_width) = struct_array_element_width
-                        && let Some(base_struct_name) = &struct_name
+                    if let Some(element_width) = struct_array_element_width.or_else(|| {
+                        struct_name
+                            .as_ref()
+                            .and_then(|name| self.struct_layouts.get(name))
+                            .map(|layout| layout.size_bytes())
+                    }) && let Some(base_struct_name) = &struct_name
                         && self.struct_layouts.contains_key(base_struct_name)
                     {
                         let base = contract_expression_as_c_fragment(&expression)
@@ -10400,10 +10419,7 @@ impl Parser {
                         } else {
                             index
                         };
-                        let stride = CExpression::Multiply(
-                            Box::new(offset),
-                            Box::new(CExpression::Value(int32(element_width))),
-                        );
+                        let stride = struct_byte_stride(offset, element_width);
                         // Keep the subscripts as written beside the element
                         // address, so the access prints back as `a[i]`
                         // rather than as the byte arithmetic it lowers to.
@@ -10411,7 +10427,26 @@ impl Parser {
                             base: Box::new(expression),
                             indexes,
                             dimensions,
-                            lowered: CExpression::Add(Box::new(base), Box::new(stride)),
+                            lowered: {
+                                let address = CExpression::Add(
+                                    Box::new(struct_byte_base(base)),
+                                    Box::new(stride),
+                                );
+                                if matches!(self.peek(), Some(Token::Arrow | Token::Dot)) {
+                                    address
+                                } else {
+                                    // A bare struct subscript retains the legacy
+                                    // first-word read; a following field uses the
+                                    // byte-scaled address of the whole element.
+                                    CExpression::TypedLoad {
+                                        pointer: Box::new(address),
+                                        value_type: crate::kernel::CType::Int32,
+                                        volatile: false,
+                                        pointee_constant: false,
+                                        source: Default::default(),
+                                    }
+                                }
+                            },
                         };
                         struct_array_element_width = None;
                     } else if let Some(shape) = struct_array_shape.take() {
@@ -12462,5 +12497,35 @@ mod integer_quantifier_parser_tests {
             .unwrap()
             .parse_file_items()
             .expect("an expression snapshot must not parse as a proposition snapshot");
+    }
+}
+
+/// Preserve the C parser's exact, widened struct byte stride in sidecars.
+fn struct_byte_stride(index: CExpression, width: u32) -> CExpression {
+    CExpression::Multiply(
+        Box::new(CExpression::Cast {
+            expression: Box::new(index),
+            target_type: crate::kernel::CType::Int64,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        }),
+        Box::new(CExpression::Value(crate::kernel::int64(
+            crate::kernel::Bitvector32Term::Int64Constant(i64::from(width)),
+        ))),
+    )
+}
+
+fn struct_byte_base(base: CExpression) -> CExpression {
+    CExpression::Cast {
+        expression: Box::new(base),
+        target_type: crate::kernel::CType::UInt8Pointer,
+        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
     }
 }
