@@ -139,6 +139,178 @@ complete checksum loop now produces a locked, prepared import, and its
 postcondition remains unproved. General trait dispatch and arbitrary Rust
 crates remain outside the supported subset.
 
+## Signatures in Rust syntax
+
+A sidecar for a Rust source may state a function's signature as Rust does,
+with Rust type names, and cast with `as`:
+
+<!-- verified-example: tests/fixtures/rust-verification/fn_signatures.click -->
+```click
+verifying "borrow.rs";
+
+fn add_byte(sum: u32, byte: u8) -> u32 {
+    requires sum <= 4294967040u32;
+    ensures result == sum + byte as u32;
+} by { execute(); simp(); }
+
+fn times_three(value: u32) -> u32 {
+    requires value <= 1431655765u32;
+    ensures result == value * 3u32;
+} by { execute(); simp(); }
+
+fn reduce(value: u32) -> u32 {
+    ensures result == value % 65521u32;
+} by { execute(); simp(); }
+```
+
+It declares the same function as the C-shaped spelling
+`uint32 add_byte(uint32 sum, uint8 byte)`, and both are accepted. The
+parameter and return types are the integer and float types, `bool`, `()`,
+and a struct by name; `usize` and `isize` are 64 bits. `expr as T` takes a
+scalar type and binds as in Rust, tighter than a binary operator.
+
+A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
+The contract names what it refers to as Rust does: `*value` for the
+referent and `parent.left` for a field. The type does not grant authority;
+the contract still states `views` or `owns`.
+
+<!-- verified-example: tests/fixtures/rust-verification/references.click -->
+```click
+verifying "borrow.rs";
+
+fn choose(x: i32) -> i32 {
+    requires 0 <= x;
+    ensures result == (if x < 7 { x + 1 } else { 7 });
+} by {
+    execute();
+    simp();
+}
+
+fn set_seven(value: &mut i32) {
+    owns *value;
+    ensures *value == 8;
+} by {
+    execute();
+    simp();
+}
+
+fn update(parent: &mut Pair) -> i32 {
+    owns parent.left;
+    owns parent.right;
+    ensures parent.left == 8;
+    ensures parent.right == old(parent.right);
+    ensures result == 8;
+} by {
+    execute();
+    simp();
+}
+
+fn shared_field(parent: &mut Pair) -> i32 {
+    owns parent.left;
+    views parent.right;
+    ensures parent.left == 7;
+    ensures result == old(parent.right);
+} by {
+    execute();
+    simp();
+}
+```
+
+A slice parameter, `&[T]` or `&mut [T]` with a scalar element, is one name.
+`bytes.len()` is its length, `*bytes` is the whole slice, and its elements
+and ranges are indexed as a pointer's are. A place takes a 32-bit index. A
+`usize` parameter or a slice length written alone as an index or bound is
+converted, as the C-shaped `(int32)index` is, and the contract states the
+bound that makes the conversion exact; any other `usize` expression is cast
+where it is used, `bytes[(index + 1) as i32]`:
+
+<!-- verified-example: tests/fixtures/rust-verification/slices.click -->
+```click
+verifying "borrow.rs";
+
+fn length(bytes: &[u8]) -> usize {
+    ensures result == bytes.len();
+} by { execute(); simp(); }
+
+fn read(bytes: &[u8], index: usize) -> u8 {
+    requires bytes.len() <= 2147483647u64;
+    requires index < bytes.len();
+    views *bytes;
+    ensures result == bytes[index];
+} by { execute(); simp(); }
+
+fn write(bytes: &mut [u8], index: usize, value: u8) {
+    requires bytes.len() <= 2147483647u64;
+    requires index < bytes.len();
+    owns *bytes;
+    ensures bytes[index] == value;
+} by { execute(); simp(); }
+
+fn first(bytes: &[u8]) -> u8 {
+    requires bytes.len() == 4u64;
+    views bytes[0..4];
+    ensures result == bytes[0];
+} by { execute(); simp(); }
+
+fn increment_first(bytes: &mut [u8]) {
+    requires bytes.len() == 4u64;
+    requires bytes[0] < 255;
+    owns bytes[0..4];
+    ensures bytes[0] == old(bytes[0]) + 1;
+} by { execute(); simp(); }
+
+fn empty(bytes: &[u8]) -> bool {
+    ensures result == (if bytes.len() == 0u64 { 1 } else { 0 });
+} by {
+    if bytes.len() == 0u64 { execute(); simp(); }
+    else { execute(); simp(); }
+}
+```
+
+A method's contract is written in an `impl` block, `impl Type { ... }` or
+`impl Trait for Type { ... }`, and its receiver is `self`, `&self` or
+`&mut self`. It is the contract of the function the C-shaped spelling calls
+`Type_name`:
+
+<!-- verified-example: tests/fixtures/rust-verification/impl_blocks.click -->
+```click
+verifying "borrow.rs";
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        requires separate(memory(*self), memory(self.slot[0..1]));
+        owns self.slot;
+        owns self.saved;
+        owns *self.slot;
+        ensures self.slot == old(self.slot);
+        ensures self.saved == old(self.saved);
+        ensures *self.slot == old(self.saved);
+    } by {
+        execute();
+        simp();
+    }
+}
+
+fn cleanup(value: &mut i32) {
+    owns *value;
+    ensures *value == 42;
+} by {
+    execute();
+    simp();
+}
+```
+
+A reference to an array, `&[T; N]` or `&mut [T; N]` with a scalar element,
+is the pointer to its first element. The length is the type's, so the
+contract writes it, `views bytes[0..4]`
+([`examples/rust-array-slices`](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click)).
+
+An array by value or a reference to a reference in a `fn` signature is
+refused for now, and so is `fn` in a C or C++ sidecar. Write those contracts
+in the C-shaped spelling the rest of this page uses. Click's own words
+(`requires`, `ensures`, `owns`, `result`, the tactics) are the same in every
+language.
+
 ## Supported semantics
 
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar

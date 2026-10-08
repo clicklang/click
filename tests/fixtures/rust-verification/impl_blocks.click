@@ -1,4 +1,4 @@
-verifying "guard.rs";
+verifying "borrow.rs";
 
 impl Drop for Guard {
     fn drop(&mut self) {

@@ -1989,14 +1989,64 @@ fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBloc
     )
 }
 
+/// The token after a Rust signature's return type, `-> T` or `-> ()`, when
+/// one starts at `index`; `index` itself otherwise.
+fn after_rust_return_type(tokens: &[SourceToken], index: usize) -> usize {
+    let text = |at: usize| tokens.get(at).map(|token| token.text.as_str());
+    if text(index) != Some("-") || text(index + 1) != Some(">") {
+        return index;
+    }
+    if text(index + 2) == Some("(") {
+        index + 4
+    } else {
+        index + 3
+    }
+}
+
+/// The token range of the `impl Type { ... }` or `impl Trait for Type { ... }`
+/// block whose methods are the functions `Type_name`, and the method's own
+/// name, when `name` is such a function.
+fn rust_impl_method<'a>(
+    tokens: &[SourceToken],
+    name: &'a str,
+) -> Result<Option<(Range<usize>, &'a str)>, ClickError> {
+    let mut index = 0;
+    while index < tokens.len() {
+        if tokens[index].text != "impl" {
+            index += 1;
+            continue;
+        }
+        let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") else {
+            return Ok(None);
+        };
+        let close = matching_delimiter(tokens, open, "{", "}")?;
+        let impl_type = tokens[open - 1].text.as_str();
+        if let Some(method) = name
+            .strip_prefix(impl_type)
+            .and_then(|rest| rest.strip_prefix('_'))
+        {
+            return Ok(Some((open + 1..close, method)));
+        }
+        index = close + 1;
+    }
+    Ok(None)
+}
+
 fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
+    if let Some((block, method)) = rust_impl_method(tokens, name)? {
+        let found = find_function(&tokens[block.clone()], method)?;
+        return Ok(FunctionSource {
+            body_open: found.body_open + block.start,
+            body_close: found.body_close + block.start,
+        });
+    }
     for (index, token) in tokens.iter().enumerate() {
         if token.text != name || tokens.get(index + 1).map(|token| token.text.as_str()) != Some("(")
         {
             continue;
         }
         let parameters_close = matching_delimiter(tokens, index + 1, "(", ")")?;
-        let mut body_open = parameters_close + 1;
+        let mut body_open = after_rust_return_type(tokens, parameters_close + 1);
         if tokens.get(body_open).map(|token| token.text.as_str()) == Some("throws") {
             body_open += 2;
         }
@@ -2932,10 +2982,26 @@ fn declaration_source_index(
 ) -> Result<std::collections::HashMap<String, FunctionSource>, ClickError> {
     let mut result = std::collections::HashMap::new();
     let mut candidate = None;
+    // Inside a Rust `impl` block a method `name` is the function `Type_name`.
+    let mut impl_block: Option<(String, usize)> = None;
     let mut index = 0;
     while index < tokens.len() {
         crate::instrumentation::record_deterministic_work(1);
+        if impl_block
+            .as_ref()
+            .is_some_and(|(_, close)| index >= *close)
+        {
+            impl_block = None;
+        }
         match tokens[index].text.as_str() {
+            "impl" if impl_block.is_none() && candidate.is_none() => {
+                if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
+                    let close = matching_delimiter(tokens, open, "{", "}")?;
+                    impl_block = Some((tokens[open - 1].text.clone(), close));
+                    index = open + 1;
+                    continue;
+                }
+            }
             "theorem" | "tactic" => {
                 candidate = tokens.get(index + 1).map(|token| token.text.clone());
             }
@@ -2950,6 +3016,10 @@ fn declaration_source_index(
             "{" => {
                 let body_close = matching_delimiter(tokens, index, "{", "}")?;
                 if let Some(name) = candidate.take() {
+                    let name = match &impl_block {
+                        Some((impl_type, _)) => format!("{impl_type}_{name}"),
+                        None => name,
+                    };
                     result.insert(
                         name,
                         FunctionSource {

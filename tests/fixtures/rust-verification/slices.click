@@ -1,4 +1,4 @@
-verifying "bytes.rs";
+verifying "borrow.rs";
 
 fn length(bytes: &[u8]) -> usize {
     ensures result == bytes.len();
