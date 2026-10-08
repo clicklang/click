@@ -2239,6 +2239,31 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     }
 }
 
+/// A slice parameter in a Rust signature is one name: `bytes.len()` is its
+/// length. These are the contracts `examples/rust-slices` states in C shape,
+/// where the slice is a pointer and a `bytes_len` parameter.
+#[test]
+fn rust_sidecar_slices_in_rust_syntax_verify() {
+    let p = Project::new(SLICES_SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/slices.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    // A read past the stated length is still refused.
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace(
+                "requires index < bytes.len();",
+                "requires index <= bytes.len();"
+            ),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
+}
+
 /// `&mut T` and `&T` parameters in a Rust signature. The contract names a
 /// referent `*value` and a field `parent.left`; these are the contracts
 /// `examples/basic-rust` states in C shape.

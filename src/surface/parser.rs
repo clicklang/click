@@ -454,6 +454,9 @@ struct Parser {
     /// Whether a `verifying` source is Rust, which is what admits a Rust
     /// signature (`fn name(a: T) -> T`).
     verifies_rust: bool,
+    /// The slice parameters of the Rust signature being parsed. Each is one
+    /// name in the sidecar and a pointer with a `name_len` length underneath.
+    rust_slice_params: BTreeSet<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -768,6 +771,7 @@ impl Parser {
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
             verifies_rust: false,
+            rust_slice_params: BTreeSet::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -3212,6 +3216,7 @@ impl Parser {
                 return_struct_name: None,
             });
         }
+        self.rust_slice_params.clear();
         if self.peek_ident() == Some("fn") {
             return self.parse_rust_function_signature();
         }
@@ -3317,6 +3322,33 @@ impl Parser {
         while self.peek() != Some(&Token::RParen) {
             let parameter_name = self.expect_ident("parameter name")?;
             self.expect(Token::Colon)?;
+            if let Some(element) = self.parse_rust_slice_type()? {
+                // `bytes: &[T]` is the pointer and length Rust passes. The
+                // sidecar names the slice once and reads `bytes.len()`.
+                let length = format!("{parameter_name}_len");
+                self.rust_slice_params.insert(parameter_name.clone());
+                parameters.push(
+                    self.parse_parameter_array_suffix(parameter_name, element)?
+                        .parameter,
+                );
+                let length_type = ParsedType {
+                    c_type: C0Type::UInt64,
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                };
+                parameters.push(
+                    self.parse_parameter_array_suffix(length, length_type)?
+                        .parameter,
+                );
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
             let parsed_type = self.parse_rust_type()?;
             let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
             if let Some(struct_name) = parsed.struct_name {
@@ -3369,6 +3401,51 @@ impl Parser {
         })
     }
 
+    /// `&[T]` or `&mut [T]` with a scalar element, as the pointer to its
+    /// first element; `None`, with nothing consumed, for any other type.
+    #[inline(never)]
+    fn parse_rust_slice_type(&mut self) -> Result<Option<ParsedType>, ClickError> {
+        if self.peek() != Some(&Token::Amp) {
+            return Ok(None);
+        }
+        let mutable = self.peek_next() == Some(&Token::Ident("mut".into()));
+        let bracket = self.position + 1 + usize::from(mutable);
+        if self.tokens.get(bracket) != Some(&Token::LBracket) {
+            return Ok(None);
+        }
+        self.position = bracket + 1;
+        let spelling = self.expect_ident("slice element type")?;
+        let Some(c_type) = rust_scalar_type(&spelling).and_then(C0Type::pointer_type) else {
+            return Err(self.error(format!(
+                "a slice of `{spelling}` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling"
+            )));
+        };
+        self.expect(Token::RBracket)?;
+        Ok(Some(ParsedType {
+            c_type,
+            struct_name: None,
+            struct_pointer: false,
+            constant: false,
+            pointee_constant: !mutable,
+            reference: false,
+        }))
+    }
+
+    /// `name.len()` where `name` is a slice parameter: consumes `.len()` and
+    /// answers the length's own name.
+    fn take_rust_slice_len(&mut self, name: &str) -> Option<String> {
+        if !self.rust_slice_params.contains(name)
+            || self.peek() != Some(&Token::Dot)
+            || self.peek_next() != Some(&Token::Ident("len".into()))
+            || self.tokens.get(self.position + 2) != Some(&Token::LParen)
+            || self.tokens.get(self.position + 3) != Some(&Token::RParen)
+        {
+            return None;
+        }
+        self.position += 4;
+        Some(format!("{name}_len"))
+    }
+
     /// `&T` and `&mut T` in a signature. The parameter is the pointer that
     /// carries the reference, as Rust's own `value` is: the contract names
     /// the referent `*value` and a field `parent.left`. `&T` is a pointer to
@@ -3387,7 +3464,7 @@ impl Parser {
             Some(Token::Amp | Token::LBracket | Token::LParen)
         ) {
             return Err(self.error(
-                "a reference to a reference, slice, array or `()` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+                "a reference to a reference, array or `()` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
             ));
         }
         let spelling = self.expect_ident("type")?;
@@ -10550,7 +10627,10 @@ impl Parser {
                                 binder_index: *binder_index,
                             })
                         }
-                        None => Ok(ContractExpression::CFragment(CExpression::Variable(name))),
+                        None => {
+                            let name = self.take_rust_slice_len(&name).unwrap_or(name);
+                            Ok(ContractExpression::CFragment(CExpression::Variable(name)))
+                        }
                     }
                 }
             }
@@ -11077,7 +11157,10 @@ impl Parser {
                     )
                 })
             }
-            Some(Token::Ident(name)) => Ok(C0Expression::Variable(name)),
+            Some(Token::Ident(name)) => {
+                let name = self.take_rust_slice_len(&name).unwrap_or(name);
+                Ok(C0Expression::Variable(name))
+            }
             Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),
             Some(Token::UInt8Number(value)) => Ok(C0Expression::UInt8Literal(value)),
             Some(Token::UInt32Number(value)) => Ok(C0Expression::UInt32Literal(value)),

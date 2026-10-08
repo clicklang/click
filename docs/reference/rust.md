@@ -216,8 +216,57 @@ fn shared_field(parent: &mut Pair) -> i32 {
 }
 ```
 
-A slice, an array or a reference to a reference in a `fn` signature is
-refused for now, and so is `fn` in a C or C++ sidecar. Write those contracts
+A slice parameter, `&[T]` or `&mut [T]` with a scalar element, is one name.
+`bytes.len()` is its length, and its elements and ranges are indexed as a
+pointer's are. An index or bound is still a 32-bit value, so a `usize` is
+cast where it is used and the contract states the bound that makes the cast
+exact:
+
+<!-- verified-example: tests/fixtures/rust-verification/slices.click -->
+```click
+verifying "borrow.rs";
+
+fn length(bytes: &[u8]) -> usize {
+    ensures result == bytes.len();
+} by { execute(); simp(); }
+
+fn read(bytes: &[u8], index: usize) -> u8 {
+    requires bytes.len() <= 2147483647u64;
+    requires index < bytes.len();
+    views bytes[0..bytes.len() as i32];
+    ensures result == bytes[index as i32];
+} by { execute(); simp(); }
+
+fn write(bytes: &mut [u8], index: usize, value: u8) {
+    requires bytes.len() <= 2147483647u64;
+    requires index < bytes.len();
+    owns bytes[0..bytes.len() as i32];
+    ensures bytes[index as i32] == value;
+} by { execute(); simp(); }
+
+fn first(bytes: &[u8]) -> u8 {
+    requires bytes.len() == 4u64;
+    views bytes[0..4];
+    ensures result == bytes[0];
+} by { execute(); simp(); }
+
+fn increment_first(bytes: &mut [u8]) {
+    requires bytes.len() == 4u64;
+    requires bytes[0] < 255;
+    owns bytes[0..4];
+    ensures bytes[0] == old(bytes[0]) + 1;
+} by { execute(); simp(); }
+
+fn empty(bytes: &[u8]) -> bool {
+    ensures result == (if bytes.len() == 0u64 { 1 } else { 0 });
+} by {
+    if bytes.len() == 0u64 { execute(); simp(); }
+    else { execute(); simp(); }
+}
+```
+
+An array or a reference to a reference in a `fn` signature is refused for
+now, and so is `fn` in a C or C++ sidecar. Write those contracts
 in the C-shaped spelling the rest of this page uses. Click's own words
 (`requires`, `ensures`, `owns`, `result`, the tactics) are the same in every
 language.

@@ -4583,8 +4583,8 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "a `fn` signature is the Rust spelling",
         ),
         (
-            "verifying \"add.rs\"; fn read(bytes: &[u8]) -> u8 { ensures result == result; } by { execute(); simp(); }",
-            "a reference to a reference, slice, array or `()` in a `fn` signature is not supported yet",
+            "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "a reference to a reference, array or `()` in a `fn` signature is not supported yet",
         ),
         (
             "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
@@ -4607,6 +4607,20 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "verifying \"borrow.rs\"; \
              void set(int32* value, const int32* seen) { owns *value; views *seen; \
              ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
+    // A slice is one name over the pointer and length Rust passes.
+    assert_eq!(
+        parser::parse(
+            "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
+             ensures result == bytes.len() + out.len(); } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"bytes.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
+             uint32* out, uint64 out_len) { ensures result == bytes_len + out_len; } \
+             by { execute(); simp(); }"
         )
         .expect("the C-shaped spelling parses"),
     );
