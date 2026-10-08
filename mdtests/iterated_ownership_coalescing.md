@@ -85,10 +85,10 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
         initialize by simp;
         preserve by {
             let { next: n } = unfold(w);
-            have n == i by simp;
-            have n <= i by simp;
-            have i < end by simp;
-            have end <= capacity by simp;
+            have n == i;
+            have n <= i;
+            have i < end;
+            have end <= capacity;
             have forall (k: int32) {
                 i + 1 <= k and k < end implies occupied[k] == 0
             } by {
@@ -127,9 +127,9 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 assumption();
             }
             take(data[i..i + 1]);
-            have start <= i by simp;
-            have 0 <= i by simp;
-            have i < capacity by simp;
+            have start <= i;
+            have 0 <= i;
+            have i < capacity;
             mark opened;
             step();
             step();
@@ -148,7 +148,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     }
                     assumption();
                 }
-                have at(opened, i) < end by simp;
+                have at(opened, i) < end;
                 apply(int32_increment_strictly_increases(at(opened, i), end)) using {
                     at(opened, i) < end;
                 }
@@ -156,10 +156,10 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     at(opened, i) < at(opened, i) + 1;
                     at(opened, i) + 1 <= k;
                 }
-                have 0 <= at(opened, i) by { assumption(); }
-                have at(opened, i) < capacity by { assumption(); }
-                have 0 <= k by simp;
-                have k < capacity by simp;
+                have 0 <= at(opened, i) by assumption();
+                have at(opened, i) < capacity by assumption();
+                have 0 <= k;
+                have k < capacity;
                 transport(
                     at(opened, occupied[k]) == 0,
                     occupied[k] == 0
@@ -213,7 +213,7 @@ void recycle_ba(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) 
     produces region(data, a, b + 1);
 } by {
     let { next: n } = unfold(gap);
-    have n == a + 1 by simp;
+    have n == a + 1;
     unfold(region(data, a, a + 1));
     unfold(region(data, b, b + 1));
     mark opened;
@@ -271,7 +271,7 @@ void recycle_ba(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) 
             }
         } else {
             apply(int32_le_and_not_lt_implies_eq(a, k)) using { a <= k; not (a < k); }
-            have k == a by simp;
+            have k == a;
             rewrite(k == a);
             normalize();
         }
@@ -294,7 +294,7 @@ void recycle_ab(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) 
     produces region(data, a, b + 1);
 } by {
     let { next: n } = unfold(gap);
-    have n == a + 1 by simp;
+    have n == a + 1;
     unfold(region(data, a, a + 1));
     unfold(region(data, b, b + 1));
     mark opened;
@@ -352,7 +352,7 @@ void recycle_ab(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) 
             }
         } else {
             apply(int32_le_and_not_lt_implies_eq(a, k)) using { a <= k; not (a < k); }
-            have k == a by simp;
+            have k == a;
             rewrite(k == a);
             normalize();
         }

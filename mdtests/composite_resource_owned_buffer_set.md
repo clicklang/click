@@ -40,10 +40,10 @@ int32 buffer_set_first(struct owner* owner, int32 value) {
 } by {
     unfold(owned_buffer(owner));
     execute();
-    have 1 <= owner->len by simp;
-    have owner->len <= owner->cap by simp;
-    have 1 <= owner->cap by simp;
-    have separate(memory(*owner), memory(owner->data[0..1])) by simp;
+    have 1 <= owner->len;
+    have owner->len <= owner->cap;
+    have 1 <= owner->cap;
+    have separate(memory(*owner), memory(owner->data[0..1]));
     fold(owned_buffer(owner));
     simp();
 }

@@ -1356,11 +1356,11 @@ unsigned meaning.
 ```click
 theorem uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by {
-        have 0u32 <= value by { simp(); }
+        have 0u32 <= value;
         apply(uint32_less_equal_to_integer(0u32, value)) using { 0u32 <= value; }
     }
     ensures to_integer(value) <= 4294967295 by {
-        have value <= 4294967295u32 by { simp(); }
+        have value <= 4294967295u32;
         apply(uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; }
     }
 }
@@ -2757,27 +2757,27 @@ theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
     requires 0 <= r implies value == q;
     ensures value * d <= n by {
         if r < 0 {
-            have value == q + -1 by simp;
+            have value == q + -1;
             apply(integer_multiply_add(q, -1, d));
             rewrite(value == q + -1);
             rewrite((q + -1) * d == q * d + -1 * d);
             arithmetic() using { n == q * d + r; 1 - d <= r; }
         } else {
             have 0 <= r by { arithmetic() using { not (r < 0); } }
-            have value == q by simp;
+            have value == q;
             rewrite(value == q);
             arithmetic() using { n == q * d + r; 0 <= r; }
         }
     }
     ensures n < (value + 1) * d by {
         if r < 0 {
-            have value == q + -1 by simp;
+            have value == q + -1;
             have value + 1 == q by { arithmetic() using { value == q + -1; } }
             rewrite(value + 1 == q);
             arithmetic() using { n == q * d + r; r < 0; }
         } else {
             have 0 <= r by { arithmetic() using { not (r < 0); } }
-            have value == q by simp;
+            have value == q;
             apply(integer_multiply_add(q, 1, d));
             rewrite(value == q);
             rewrite((q + 1) * d == q * d + 1 * d);
@@ -2800,27 +2800,27 @@ theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
     requires r <= 0 implies value == q;
     ensures n <= value * d by {
         if 0 < r {
-            have value == q + 1 by simp;
+            have value == q + 1;
             apply(integer_multiply_add(q, 1, d));
             rewrite(value == q + 1);
             rewrite((q + 1) * d == q * d + 1 * d);
             arithmetic() using { n == q * d + r; r <= d - 1; }
         } else {
             have r <= 0 by { arithmetic() using { not (0 < r); } }
-            have value == q by simp;
+            have value == q;
             rewrite(value == q);
             arithmetic() using { n == q * d + r; r <= 0; }
         }
     }
     ensures (value + -1) * d < n by {
         if 0 < r {
-            have value == q + 1 by simp;
+            have value == q + 1;
             have value + -1 == q by { arithmetic() using { value == q + 1; } }
             rewrite(value + -1 == q);
             arithmetic() using { n == q * d + r; 0 < r; }
         } else {
             have r <= 0 by { arithmetic() using { not (0 < r); } }
-            have value == q by simp;
+            have value == q;
             apply(integer_multiply_add(q, -1, d));
             rewrite(value == q);
             rewrite((q + -1) * d == q * d + -1 * d);

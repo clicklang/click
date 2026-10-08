@@ -2521,7 +2521,11 @@ fn loop_return_closers_do_not_require_distinct_result_values() {
             "ensures result == 5 or result == 7;",
             "ensures result == 7;",
         )
-        .replace("have result == 5 by simp;", "have result == 7 by simp;");
+        .replace("have result == 5;", "have result == 7;");
+    assert!(
+        click.contains("have result == 7;"),
+        "the fixture states the returned value"
+    );
     let sources = sources
         .into_iter()
         .map(|(name, source)| (name, source.replace("return i;", "return 7;")))

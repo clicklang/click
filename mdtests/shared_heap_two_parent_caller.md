@@ -90,7 +90,7 @@ void child_release(struct child* obj) {
 } by {
     unfold(child_control(obj));
     unfold(child_ref(obj));
-    have 1 < obj->refs by simp;
+    have 1 < obj->refs;
     have obj->refs - 1 >= 1 by {
         apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; }
     }
@@ -155,7 +155,7 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            have 2 <= old(count(child_ref(p->kid))) by simp;
+            have 2 <= old(count(child_ref(p->kid)));
             have old(count(child_ref(p->kid))) > 1 by {
                 simp() using { 2 <= old(count(child_ref(p->kid))); }
             }
@@ -183,14 +183,14 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     let first_out = step(parent_detach(first), { link: first_link });
     step();
     step(parent_read_payload(second), { link: second_link });
-    have second->kid == kid by simp;
-    have observed == kid->payload by simp;
+    have second->kid == kid;
+    have observed == kid->payload;
     have observed == second->kid->payload by { rewrite(second->kid == kid); simp(); }
     mark detaching;
     let second_out = step(parent_detach(second), { link: second_link });
-    have at(detaching, second->kid) == kid by { assumption(); }
-    have at(detaching, second->kid)->payload == at(detaching, second->kid->payload) by { simp(); }
-    have observed == at(detaching, second->kid->payload) by { assumption(); }
+    have at(detaching, second->kid) == kid by assumption();
+    have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
+    have observed == at(detaching, second->kid->payload) by assumption();
     have kid == at(detaching, second->kid) by { simp() using { at(detaching, second->kid) == kid; } }
     have kid->payload == at(detaching, second->kid->payload) by {
         rewrite(kid == at(detaching, second->kid));

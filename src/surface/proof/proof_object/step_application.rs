@@ -2477,16 +2477,21 @@ impl<'a> Proof<'a> {
                 "`intro() as {name}` names the variable of a `forall` goal; this goal introduces a fact, which has no name, so write `intro();`"
             )));
         }
-        let Some(ClickProposition::ForAll {
-            click_type,
-            name: binder,
-            body,
-            ..
-        }) = self.surface_goal()
-        else {
-            return Err(self.step_error(format!(
-                "`intro() as {name}` requires a goal written as `forall (x: T) {{ ... }}`; write `intro();` to keep the name this goal's quantifier has"
-            )));
+        // A range quantifier keeps its variable in the lambda:
+        // `(lo..hi).all(|k| { ... })`.
+        let (binder, body, c_typed) = match self.surface_goal() {
+            Some(ClickProposition::ForAll {
+                click_type,
+                name: binder,
+                body,
+                ..
+            }) => (binder, body, matches!(click_type, ClickType::C(_))),
+            Some(ClickProposition::RangeAll { item, body, .. }) => (item, body, false),
+            _ => {
+                return Err(self.step_error(format!(
+                    "`intro() as {name}` requires a goal written as `forall (x: T) {{ ... }}` or `(lo..hi).all(|x| {{ ... }})`; write `intro();` to keep the name this goal's quantifier has"
+                )));
+            }
         };
         if binder == name {
             return Ok(self.surface_goal().expect("matched above").clone());
@@ -2510,7 +2515,7 @@ impl<'a> Proof<'a> {
                 "`intro() as {name}`: `{name}` is already in scope here; choose a name that is not"
             )));
         }
-        let replacement = if matches!(click_type, ClickType::C(_)) {
+        let replacement = if c_typed {
             ContractExpression::CBinding(name.to_string())
         } else {
             ContractExpression::Binding(name.to_string())
@@ -2518,11 +2523,21 @@ impl<'a> Proof<'a> {
         let renaming = BTreeMap::from([(binder.clone(), replacement)]);
         let body = crate::surface::lowering::substitute_click_proposition(body, &renaming)
             .map_err(|message| self.step_error(message))?;
-        Ok(ClickProposition::ForAll {
-            click_type: click_type.clone(),
-            name: name.to_string(),
-            written_name: None,
-            body: Box::new(body),
+        Ok(match self.surface_goal() {
+            Some(ClickProposition::RangeAll { start, end, .. }) => ClickProposition::RangeAll {
+                start: start.clone(),
+                end: end.clone(),
+                item: name.to_string(),
+                written_item: None,
+                body: Box::new(body),
+            },
+            Some(ClickProposition::ForAll { click_type, .. }) => ClickProposition::ForAll {
+                click_type: click_type.clone(),
+                name: name.to_string(),
+                written_name: None,
+                body: Box::new(body),
+            },
+            _ => unreachable!("matched as a quantifier above"),
         })
     }
 

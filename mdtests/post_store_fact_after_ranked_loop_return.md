@@ -38,8 +38,8 @@ int32 scan(int32 *b, int32 n, int32 to) {
                 step();
                 step();
                 step();
-                have b[i] == 1 by { simp(); }
-                have b[i] != 0 by { simp(); }
+                have b[i] == 1;
+                have b[i] != 0;
                 step();
                 close_invariants();
             }

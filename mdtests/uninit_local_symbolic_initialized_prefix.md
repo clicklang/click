@@ -15,13 +15,13 @@ int32 local_prefix(int32 i) {
     requires 0 <= i and i < 2;
     ensures result == 1 or result == 2 by {
         if i < 1 {
-            have i <= 0 by { apply(int32_lt_successor_implies_le(i, 0)); }
-            have i == 0 by simp;
+            have i <= 0 by apply(int32_lt_successor_implies_le(i, 0));
+            have i == 0;
             execute();
             simp();
         } else {
-            have i <= 1 by { apply(int32_lt_successor_implies_le(i, 1)); }
-            have i == 1 by simp;
+            have i <= 1 by apply(int32_lt_successor_implies_le(i, 1));
+            have i == 1;
             execute();
             simp();
         }

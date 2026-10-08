@@ -44,8 +44,8 @@ int32 count_up(int32 n) {
         initialize by simp;
         preserve by {
             mark iteration;
-            have 0 <= at(iteration, i) by { simp(); }
-            have run < n by { simp(); }
+            have 0 <= at(iteration, i);
+            have run < n;
             step();
             step();
             have 0 <= n - at(iteration, i) - 1 by {

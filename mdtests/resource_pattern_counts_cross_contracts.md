@@ -67,10 +67,10 @@ void pool_checkout(struct pool* pool, int32 object) {
     ensures valid_pool(pool);
 } by {
     unfold(valid_pool);
-    have pool->checked_out == count(pool_object(pool, _)) by { simp(); }
+    have pool->checked_out == count(pool_object(pool, _));
     step();
     fold(pool_object(pool, object));
-    have count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1 by { simp(); }
+    have count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1;
     have valid_pool(pool) by {
         unfold(valid_pool);
         simp();

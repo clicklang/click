@@ -19,7 +19,7 @@ int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
     views bytes[0..(int32)(uint32)bytes_len];
     ensures result == old((int32)bytes[remaining - 1]);
 } by {
-    have 0 <= (int32)(uint32)bytes_len by { simp(); }
+    have 0 <= (int32)(uint32)bytes_len;
     have defined(bytes[remaining - 1]) by {
         transport(at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len])), defined(bytes[remaining - 1])) using {
             at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len]));

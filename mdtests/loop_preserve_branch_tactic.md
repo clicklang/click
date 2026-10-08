@@ -141,7 +141,7 @@ void chain_countdown(int32 n) {
             }
         }
     }
-    have n == 0 by { simp(); }
+    have n == 0;
     unfold(c);
     step();
     simp();
@@ -182,7 +182,7 @@ void chain_countdown_decided(int32 n) {
             }
         }
     }
-    have n == 0 by { simp(); }
+    have n == 0;
     unfold(c);
     step();
     simp();

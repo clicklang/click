@@ -12,7 +12,7 @@ the range cites it from the applying theorem's own `views` clause.
 ```click
 theorem stated_byte_range_extent_is_nonnegative(v: uint8[], lo: int32, hi: int32) {
     views v[lo..hi];
-    ensures 0 <= hi - lo by { assumption(); }
+    ensures 0 <= hi - lo by assumption();
 }
 
 theorem apply_cites_the_byte_range_extent(v: uint8[], lo: int32, hi: int32) {

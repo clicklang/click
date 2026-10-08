@@ -30,7 +30,7 @@ theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32
     requires defined(total - amount);
     ensures defined(left + (right - amount)) and
             total - amount == left + (right - amount) by {
-        have defined(left + right) by simp;
+        have defined(left + right);
         have defined(right - amount) by {
             apply(int32_nonnegative_subtract_within_value_is_defined(right, amount)) using {
                 0 <= amount;
@@ -56,12 +56,12 @@ theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32
             apply(int32_less_equal_to_integer(amount, right)) using { amount <= right; }
             assumption();
         }
-        have total <= 2147483647 by simp;
+        have total <= 2147483647;
         have to_integer(total) <= 2147483647 by {
             apply(int32_less_equal_to_integer(total, 2147483647)) using { total <= 2147483647; }
             simp();
         }
-        have to_integer(0) >= -2147483648 by simp;
+        have to_integer(0) >= -2147483648;
         have 0 <= right - amount by {
             arithmetic() using { 0 <= amount; amount <= right; }
         }
@@ -103,7 +103,7 @@ theorem subtract_from_sum(total: int32, left: int32, right: int32, amount: int32
             to_integer(left) + to_integer(right - amount) >= -2147483648;
             to_integer(left) + to_integer(right - amount) <= 2147483647;
         }
-        have defined(left + (right - amount)) by { simp(); }
+        have defined(left + (right - amount));
         apply(int32_subtract_to_integer(total, amount)) using { defined(total - amount); }
         apply(int32_add_to_integer(left, right - amount)) using { defined(left + (right - amount)); }
         have to_integer(total - amount) == to_integer(left + (right - amount)) by {
@@ -156,7 +156,7 @@ void consume_population(struct owner* owner, int32 amount) {
 } by {
     open(accounting(owner)) {
         unfold(valid_capacity);
-        have defined(owner->used + count(slot(owner))) by { simp(); }
+        have defined(owner->used + count(slot(owner)));
         apply(subtract_from_sum(owner->capacity, owner->used, count(slot(owner)), amount)) using {
             0 <= owner->used;
             0 <= amount;
@@ -167,7 +167,7 @@ void consume_population(struct owner* owner, int32 amount) {
         }
         unfold(amount of slot(owner));
         step();
-        have owner->capacity == owner->used + count(slot(owner)) by { simp(); }
+        have owner->capacity == owner->used + count(slot(owner));
     }
     execute();
     unfold(valid_capacity);

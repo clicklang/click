@@ -39,7 +39,7 @@ void lifecycle(int32* counter) {
     fold(3 of member(counter));
     fold(control(counter));
     step();
-    have count(member(counter)) == 2 by simp;
+    have count(member(counter)) == 2;
     unfold(control(counter));
     unfold(2 of member(counter));
     execute(); simp();

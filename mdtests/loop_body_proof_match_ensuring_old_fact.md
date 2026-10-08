@@ -66,7 +66,7 @@ void spin(struct cell* node, int32 n) {
                     }
                     unfold(c);
                     let c = fold(cell(node), { model: Sign::Neg(value) });
-                    have c.model == old(c.model) by { simp(); }
+                    have c.model == old(c.model);
                 },
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
@@ -74,7 +74,7 @@ void spin(struct cell* node, int32 n) {
                     }
                     unfold(c);
                     let c = fold(cell(node), { model: Sign::Pos(value) });
-                    have c.model == old(c.model) by { simp(); }
+                    have c.model == old(c.model);
                 },
             }
             step();

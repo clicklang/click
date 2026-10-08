@@ -20,9 +20,9 @@ int main() {
 } by {
     step();
     mark first;
-    have counter == 8u32 by simp;
+    have counter == 8u32;
     execute();
-    have result == at(first, counter) + 1u32 by simp;
+    have result == at(first, counter) + 1u32;
     rewrite(result == at(first, counter) + 1u32);
     rewrite(at(first, counter) == 8u32);
     simp();

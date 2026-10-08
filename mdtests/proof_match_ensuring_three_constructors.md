@@ -52,22 +52,22 @@ int32 peek(struct cell* node) {
         fact c.model == old(c.model);
     } {
         Sign::Neg(value) => {
-            have Sign::Neg(value) == old(c.model) by { simp(); }
+            have Sign::Neg(value) == old(c.model);
             unfold(c);
             let c = fold(cell(node), { model: Sign::Neg(value) });
-            have c.model == old(c.model) by { simp(); }
+            have c.model == old(c.model);
         },
         Sign::Zero(value) => {
-            have Sign::Zero(value) == old(c.model) by { simp(); }
+            have Sign::Zero(value) == old(c.model);
             unfold(c);
             let c = fold(cell(node), { model: Sign::Zero(value) });
-            have c.model == old(c.model) by { simp(); }
+            have c.model == old(c.model);
         },
         Sign::Pos(value) => {
-            have Sign::Pos(value) == old(c.model) by { simp(); }
+            have Sign::Pos(value) == old(c.model);
             unfold(c);
             let c = fold(cell(node), { model: Sign::Pos(value) });
-            have c.model == old(c.model) by { simp(); }
+            have c.model == old(c.model);
         },
     }
     step();

@@ -80,8 +80,8 @@ void initialize_source(struct pool* source, struct pool* destination) {
 } by {
     step();
     open(pool_storage(destination)) {
-        have count(pool_slot(destination)) == 0 by simp;
-        have count(pool_object(destination, _)) == 0 by simp;
+        have count(pool_slot(destination)) == 0;
+        have count(pool_object(destination, _)) == 0;
     }
     execute(); simp();
 }

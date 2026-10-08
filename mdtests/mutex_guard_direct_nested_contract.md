@@ -42,7 +42,7 @@ verifying "guarded_resource_mutex_flow.c";
 void inner(struct counter *counter) {
     owns mutex_guard(&counter->mu);
 } by {
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     execute();
     simp();
 }
@@ -50,9 +50,9 @@ void inner(struct counter *counter) {
 void keep(struct counter *counter) {
     owns mutex_guard(&counter->mu);
 } by {
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     step(inner(counter), {});
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     step();
     simp();
 }

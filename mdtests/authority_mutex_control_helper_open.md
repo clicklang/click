@@ -50,7 +50,7 @@ void acquire(struct object *obj) {
 } by {
     let { guard: acquired, state: state } = step(pthread_mutex_lock(&obj->mu), { access: access });
     unfold(state);
-    have count(reference(obj)) >= 0 by simp;
+    have count(reference(obj)) >= 0;
     let state = fold(control(obj), { refs: obj->refs });
     step();
     simp();
@@ -84,7 +84,7 @@ int32 run() {
     step(release(obj), { access: lifetime, guard: first, state: retained });
     let { guard: second, state: reentered } = step(acquire(obj), { access: lifetime });
     unfold(reentered);
-    have count(reference(obj)) == 1 by simp;
+    have count(reference(obj)) == 1;
     unfold(reference(obj));
     step();
     let released = fold(control(obj), { refs: 0 });

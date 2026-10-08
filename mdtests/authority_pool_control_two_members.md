@@ -65,7 +65,7 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures pool->capacity == old(pool->capacity);
 } by {
     open(control(pool)) {
-        have 1 <= count(slot(pool)) by simp;
+        have 1 <= count(slot(pool));
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, pool->checked_out, count(slot(pool))
         )) using {
@@ -76,7 +76,7 @@ void checkout(struct pool* pool, struct payload* p) {
         unfold(slot(pool));
         step();
         fold(item(pool, p));
-        have pool->capacity == pool->checked_out + count(slot(pool)) by simp;
+        have pool->capacity == pool->checked_out + count(slot(pool));
     }
     execute(); simp();
 }
@@ -96,12 +96,12 @@ void give_back(struct pool* pool, struct payload* p) {
     ensures p->value == old(p->value);
 } by {
     open(control(pool)) {
-        have 1 <= count(item(pool, _)) by simp;
+        have 1 <= count(item(pool, _));
         have 1 <= pool->checked_out by {
             rewrite(pool->checked_out == count(item(pool, _)));
             assumption();
         }
-        have pool->capacity == count(slot(pool)) + pool->checked_out by simp;
+        have pool->capacity == count(slot(pool)) + pool->checked_out;
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, count(slot(pool)), pool->checked_out
         )) using {
@@ -109,9 +109,9 @@ void give_back(struct pool* pool, struct payload* p) {
             1 <= pool->checked_out;
             pool->capacity == count(slot(pool)) + pool->checked_out;
         }
-        have 0 < pool->checked_out by simp;
-        have 0 < pool->checked_out by simp;
-        have defined(pool->checked_out + count(slot(pool))) by simp;
+        have 0 < pool->checked_out;
+        have 0 < pool->checked_out;
+        have defined(pool->checked_out + count(slot(pool)));
         apply(int32_add_to_integer(pool->checked_out, count(slot(pool)))) using {
             defined(pool->checked_out + count(slot(pool)));
         }
@@ -119,7 +119,7 @@ void give_back(struct pool* pool, struct payload* p) {
             rewrite(pool->capacity == pool->checked_out + count(slot(pool)));
             assumption();
         }
-        have pool->capacity <= 2147483647 by simp;
+        have pool->capacity <= 2147483647;
         have to_integer(pool->capacity) <= 2147483647 by {
             apply(int32_less_equal_to_integer(pool->capacity, 2147483647)) using { pool->capacity <= 2147483647; }
             simp();
@@ -157,21 +157,21 @@ void give_back(struct pool* pool, struct payload* p) {
         unfold(item(pool, p));
         step();
         fold(slot(pool));
-        have pool->capacity == old(pool->capacity) by simp;
-        have pool->checked_out == old(pool->checked_out) - 1 by simp;
-        have count(slot(pool)) == old(count(slot(pool))) + 1 by simp;
+        have pool->capacity == old(pool->capacity);
+        have pool->checked_out == old(pool->checked_out) - 1;
+        have count(slot(pool)) == old(count(slot(pool))) + 1;
         have 0 <= pool->checked_out by {
             rewrite(pool->checked_out == old(pool->checked_out) - 1);
             apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); }
             assumption();
         }
-        have pool->checked_out == count(item(pool, _)) by simp;
+        have pool->checked_out == count(item(pool, _));
         have 0 <= pool->checked_out by {
             rewrite(pool->checked_out == old(pool->checked_out) - 1);
             apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); }
             assumption();
         }
-        have pool->checked_out == count(item(pool, _)) by simp;
+        have pool->checked_out == count(item(pool, _));
         have pool->capacity == pool->checked_out + count(slot(pool)) by {
             rewrite(pool->capacity == old(pool->capacity));
             rewrite(pool->checked_out == old(pool->checked_out) - 1);
@@ -195,17 +195,17 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
  ensures second->value == 22;
 } by {
  step();
- have count(item(pool, _)) == 0 by simp;
- have defined(count(item(pool, _)) + 1) by simp;
+ have count(item(pool, _)) == 0;
+ have defined(count(item(pool, _)) + 1);
  step();
- have count(item(pool, _)) == 1 by simp;
- have defined(count(item(pool, _)) + 1) by simp;
+ have count(item(pool, _)) == 1;
+ have defined(count(item(pool, _)) + 1);
  step();
  open(item(pool, first)) { step(); }
  open(item(pool, second)) { step(); }
- have count(item(pool, second)) == 1 by simp;
+ have count(item(pool, second)) == 1;
  step();
- have count(item(pool, first)) == 1 by simp;
+ have count(item(pool, first)) == 1;
  step();
  execute(); simp();
 }

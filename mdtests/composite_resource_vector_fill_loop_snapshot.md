@@ -56,7 +56,7 @@ int32 composite_resource_vector_fill_loop_snapshot(
         initialize by simp;
         preserve by {
             unfold(vector(owner));
-            have i < owner->cap by simp;
+            have i < owner->cap;
             step();
             step();
             have i >= 0 by {

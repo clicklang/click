@@ -10,7 +10,7 @@ int32 one(void) { return 1; }
 verifying "post_simp.c";
 int32 one() { ensures result == 1; } by {
  execute();
- have result == 1 by { simp(); }
+ have result == 1;
  simp() using { result == 1; }
 }
 ```

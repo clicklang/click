@@ -30,7 +30,7 @@ void lifecycle() { ensures 1 == 1; } by {
     fold(slot(&pool, &first));
     fold(slot(&pool, &second));
     step();
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2;
     unfold(slot(&pool, &first));
     unfold(slot(&pool, &second));
     unfold(authority(slot(&pool, _)));

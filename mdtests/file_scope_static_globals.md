@@ -82,10 +82,10 @@ int32 run() {
     ensures alpha_file::counter == 3;
     ensures beta_file::counter == 11;
 } by {
-    have alpha_file::counter == 1 by simp;
-    have beta_file::counter == 10 by simp;
-    have alpha_file::counter < 1000 by simp;
-    have beta_file::counter < 1000 by simp;
+    have alpha_file::counter == 1;
+    have beta_file::counter == 10;
+    have alpha_file::counter < 1000;
+    have beta_file::counter < 1000;
     execute();
     simp();
 }

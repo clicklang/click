@@ -7,7 +7,7 @@ int32 first(int32 x, int32 y) { return x; }
 ```click
 theorem ordered(x: int32, y: int32) {
     requires x < y;
-    ensures x < y by { assumption(); }
+    ensures x < y by assumption();
 }
 verifying "apply_order.c";
 int32 first(int32 x, int32 y) {

@@ -37,9 +37,9 @@ int32 increment(struct counter* owner) {
     ensures result == owner->value;
 } by {
     unfold(bounded_counter(owner));
-    have owner->value < owner->cap by simp;
-    have 0 <= owner->value by simp;
-    have owner->value < 1 by simp;
+    have owner->value < owner->cap;
+    have 0 <= owner->value;
+    have owner->value < 1;
     execute();
     simp();
 }

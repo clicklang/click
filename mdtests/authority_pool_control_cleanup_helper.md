@@ -58,10 +58,10 @@ void pool_destroy(struct pool* pool) {
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have count(pool_object(pool, _)) == 0 by simp;
-    have pool->capacity == count(pool_slot(pool)) by simp;
+    have count(pool_object(pool, _)) == 0;
+    have pool->capacity == count(pool_slot(pool));
     unfold(pool->capacity of pool_slot(pool));
-    have count(pool_slot(pool)) == 0 by simp;
+    have count(pool_slot(pool)) == 0;
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
@@ -79,8 +79,8 @@ void forward(struct pool* pool) {
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have pool->capacity == count(pool_slot(pool)) by simp;
-    have count(pool_object(pool, _)) == 0 by simp;
+    have pool->capacity == count(pool_slot(pool));
+    have count(pool_object(pool, _)) == 0;
     fold(pool_control(pool));
     execute(); unfold(valid_pool); simp();
 }
@@ -96,8 +96,8 @@ void nested(struct pool* pool) {
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have pool->capacity == count(pool_slot(pool)) by simp;
-    have count(pool_object(pool, _)) == 0 by simp;
+    have pool->capacity == count(pool_slot(pool));
+    have count(pool_object(pool, _)) == 0;
     fold(pool_control(pool));
     execute(); unfold(valid_pool); simp();
 }
@@ -114,8 +114,8 @@ void empty(struct pool* pool) {
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have pool->capacity == count(pool_slot(pool)) by simp;
-    have count(pool_object(pool, _)) == 0 by simp;
+    have pool->capacity == count(pool_slot(pool));
+    have count(pool_object(pool, _)) == 0;
     fold(pool_control(pool));
     execute(); unfold(valid_pool); simp();
 }

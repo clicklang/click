@@ -297,8 +297,8 @@ int32 scan_run(struct arena* arena, int32 count) {
                     }
                     contradiction(k < i);
                 }
-                have 0 <= i by { simp(); }
-                have i <= arena->capacity by { simp(); }
+                have 0 <= i;
+                have i <= arena->capacity;
                 let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), {
                     lo: i, hi: i
                 });

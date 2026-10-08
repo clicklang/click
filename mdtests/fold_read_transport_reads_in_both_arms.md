@@ -24,7 +24,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     ensures weighted(v, 0, i) == old(weighted(v, 0, i));
 } by {
     mark entry;
-    have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by { normalize(); }
+    have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by normalize();
     step();
     have weighted(at(entry, v), 0, i) == weighted(v, 0, i) by {
         transport(

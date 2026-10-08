@@ -108,7 +108,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 rewrite((node->__rb_parent_color & 1) == color_bit(color));
                 rewrite(color == Color::Black); unfold(color_bit(Color::Black)); normalize();
             }
-            have node->__rb_parent_color == 1 by { simp(); }
+            have node->__rb_parent_color == 1;
             match right_model {
                 RbTree::Empty => { contradiction(right_model == RbTree::Empty); },
                 RbTree::Node(sid, sp, sc, sl, sr) => {

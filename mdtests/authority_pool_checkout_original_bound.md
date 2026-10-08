@@ -57,7 +57,7 @@ theorem pool_checkout_increment_bound(capacity: int32, used: int32, available: i
             rewrite(capacity == used + available);
             simp();
         }
-        have capacity <= 2147483647 by simp;
+        have capacity <= 2147483647;
         have to_integer(capacity) <= 2147483647 by {
             apply(int32_less_equal_to_integer(capacity, 2147483647)) using { capacity <= 2147483647; }
             simp();
@@ -97,7 +97,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures valid_pool(pool);
 } by {
     open(pool_control(pool)) {
-        have 1 <= count(pool_slot(pool)) by simp;
+        have 1 <= count(pool_slot(pool));
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, pool->checked_out, count(pool_slot(pool))
         )) using {
@@ -105,7 +105,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
             1 <= count(pool_slot(pool));
             pool->capacity == pool->checked_out + count(pool_slot(pool));
         }
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have defined(pool->checked_out + count(pool_slot(pool)));
         apply(pool_checkout_increment_bound(pool->capacity, pool->checked_out, count(pool_slot(pool)))) using {
             1 <= count(pool_slot(pool));
             0 <= pool->checked_out;
@@ -123,7 +123,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
             to_integer(pool->checked_out) + 1 <= 2147483647;
             to_integer(pool->checked_out) + 1 >= -2147483648;
         }
-        have defined(pool->checked_out + 1) by simp;
+        have defined(pool->checked_out + 1);
         have pool->checked_out >= 0 by {
             arithmetic() using { 0 <= pool->checked_out; }
         }
@@ -134,7 +134,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by simp;
+        have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
     execute(); unfold(valid_pool); simp();
 }
@@ -151,8 +151,8 @@ void forward(struct pool* pool, struct object* object) {
     ensures valid_pool(pool);
 } by {
     open(pool_control(pool)) {
-        have 1 <= count(pool_slot(pool)) by simp;
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have 1 <= count(pool_slot(pool));
+        have defined(pool->checked_out + count(pool_slot(pool)));
         apply(pool_checkout_increment_bound(pool->capacity, pool->checked_out, count(pool_slot(pool)))) using {
             1 <= count(pool_slot(pool));
             0 <= pool->checked_out;
@@ -193,8 +193,8 @@ void caller(struct pool* pool, struct object* object) {
     ensures valid_pool(pool);
 } by {
     open(pool_control(pool)) {
-        have 1 <= count(pool_slot(pool)) by simp;
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have 1 <= count(pool_slot(pool));
+        have defined(pool->checked_out + count(pool_slot(pool)));
         apply(pool_checkout_increment_bound(pool->capacity, pool->checked_out, count(pool_slot(pool)))) using {
             1 <= count(pool_slot(pool));
             0 <= pool->checked_out;

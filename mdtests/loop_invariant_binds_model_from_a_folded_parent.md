@@ -60,7 +60,7 @@ int32 count_down(struct node* p, int32 n) {
                 rewrite(w.model == Wrap::Wrap(old(c.model)));
                 normalize();
             }
-            have entry_model == old(c.model) by { extract(entry_model == old(c.model)); }
+            have entry_model == old(c.model) by extract(entry_model == old(c.model));
             loop {
                 decreases n;
                 owns w: wrap_at(p);

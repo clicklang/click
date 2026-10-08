@@ -29,7 +29,7 @@ int32 libc_contracts(uint8 destination[], uint8 source[]) {
     requires separate(memory(destination[0..2]), memory(source[0..2]));
     ensures result == 0 by {
         execute_until(statement(5));
-        have c(length) == 0 by simp;
+        have c(length) == 0;
         execute();
         simp();
     }

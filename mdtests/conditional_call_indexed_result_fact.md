@@ -32,7 +32,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
     step();
     mark entry;
     have at(entry, next[cur]) == old(next[cur]) by {
-        have old(next[cur]) == old(next[cur]) by { normalize(); }
+        have old(next[cur]) == old(next[cur]) by normalize();
         transport(old(next[cur]) == old(next[cur]), at(entry, next[cur]) == old(next[cur])) using {
             old(next[cur]) == old(next[cur]); 0 <= cur; cur < n;
             separate(memory(next[0..n]), memory(visited[0..n]));

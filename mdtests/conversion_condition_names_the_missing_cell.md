@@ -8,7 +8,7 @@ theorem cell_from_range(p: int32[], lo: int32, hi: int32) {
     requires 0 <= lo;
     requires lo < hi;
     requires hi >= 0 and viewable(p[lo..hi]);
-    ensures to_integer(p[hi - 1]) == to_integer(p[hi - 1]) by { simp(); }
+    ensures to_integer(p[hi - 1]) == to_integer(p[hi - 1]) by simp;
 }
 ```
 

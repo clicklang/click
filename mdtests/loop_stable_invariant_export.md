@@ -44,10 +44,10 @@ int32 fill_tail(int32 p[], int32 n, int32 untouched[]) {
             close_invariants by { simp(); }
         }
     }
-    have at(loop(0).exit, n) <= at(loop(0).exit, 10) by { assumption(); }
+    have at(loop(0).exit, n) <= at(loop(0).exit, 10) by assumption();
     have at(loop(0).exit, i) >= at(loop(0).exit, 1) and
         at(loop(0).exit, i) <= at(loop(0).exit, n) by { assumption(); }
-    have i == n by { simp(); }
+    have i == n;
     step();
     simp();
 }

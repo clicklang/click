@@ -32,7 +32,7 @@ int32 run(void* p) {
     step();
     step();
     branch then { step(); simp(); } else {}
-    have count(ticket(p)) == 1 by { simp(); }
+    have count(ticket(p)) == 1;
     step();
     step();
     simp();

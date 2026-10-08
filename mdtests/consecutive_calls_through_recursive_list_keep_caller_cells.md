@@ -78,7 +78,7 @@ int32 caller(struct cell* p, int32* flag) {
     ensures result == 5;
 } by {
     step();
-    have flag[0] == 5 by simp;
+    have flag[0] == 5;
     mark before;
     step(overwrite(p), { l: l });
     step(overwrite(p), { l: l });

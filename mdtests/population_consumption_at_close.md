@@ -52,7 +52,7 @@ uint32 contribute_early(struct counter* p) {
     ensures count(remaining(p)) == old(count(remaining(p))) - 1;
     ensures p->value == old(p->value) + 1;
 } by {
-    open(control(p)) { have count(remaining(p)) <= 3 by { simp(); } }
+    open(control(p)) { have count(remaining(p)) <= 3; }
     open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {

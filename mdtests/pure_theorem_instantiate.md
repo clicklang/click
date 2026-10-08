@@ -37,7 +37,7 @@ theorem instantiate_bound_caller(x: int32, limit: int32, upper: int32) {
     };
     requires 0 <= x;
     requires x < limit;
-    ensures x <= upper by { apply(instantiate_bound(x, limit, upper)); }
+    ensures x <= upper by apply(instantiate_bound(x, limit, upper));
 }
 
 ```

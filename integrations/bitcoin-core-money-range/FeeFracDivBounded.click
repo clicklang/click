@@ -135,7 +135,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         simp();
     }
 
-    have defined(quot + 0i64) by simp;
+    have defined(quot + 0i64);
     apply(int64_add_to_integer(quot, 0i64));
     have -9223372036854775808 <= to_integer(quot + 0i64) by { arithmetic() using {
         to_integer(quot + 0i64) == to_integer(quot) + 0;
@@ -153,7 +153,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         apply(int32_less_than_to_integer(0, mod));
         apply(integer_upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));
         apply(int64_less_equal_of_to_integer(quot, 9223372036854775806i64));
-        have defined(quot + 1i64) by simp;
+        have defined(quot + 1i64);
         apply(int64_add_to_integer(quot, 1i64));
         have -9223372036854775808 <= to_integer(quot + 1i64) by { arithmetic() using {
             to_integer(quot + 1i64) == to_integer(quot) + 1;
@@ -187,11 +187,11 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         }
         if round_down == 0 {
             execute();
-            have -9223372036854775808 <= to_integer(result) by simp;
-            have to_integer(result) <= 9223372036854775807 by simp;
+            have -9223372036854775808 <= to_integer(result);
+            have to_integer(result) <= 9223372036854775807;
             apply(int64_less_equal_of_to_integer(-9223372036854775808i64, result));
             apply(int64_less_equal_of_to_integer(result, 9223372036854775807i64));
-            have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by simp;
+            have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
             have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                 intro();
                 contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
@@ -236,11 +236,11 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             simp();
         } else {
             execute();
-            have -9223372036854775808 <= to_integer(result) by simp;
-            have to_integer(result) <= 9223372036854775807 by simp;
+            have -9223372036854775808 <= to_integer(result);
+            have to_integer(result) <= 9223372036854775807;
             apply(int64_less_equal_of_to_integer(-9223372036854775808i64, result));
             apply(int64_less_equal_of_to_integer(result, 9223372036854775807i64));
-            have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+            have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
             have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                 intro();
                 contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
@@ -289,7 +289,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             apply(int32_less_than_to_integer(mod, 0));
             apply(integer_lower_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), -9223372036854775808));
             apply(int64_less_equal_of_to_integer(-9223372036854775807i64, quot));
-            have defined(quot + -1i64) by simp;
+            have defined(quot + -1i64);
             apply(int64_add_to_integer(quot, -1i64));
             have -9223372036854775808 <= to_integer(quot + -1i64) by { arithmetic() using {
                 to_integer(quot + -1i64) == to_integer(quot) + -1;
@@ -323,11 +323,11 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             }
             if round_down == 0 {
                 execute();
-                have -9223372036854775808 <= to_integer(result) by simp;
-                have to_integer(result) <= 9223372036854775807 by simp;
+                have -9223372036854775808 <= to_integer(result);
+                have to_integer(result) <= 9223372036854775807;
                 apply(int64_less_equal_of_to_integer(-9223372036854775808i64, result));
                 apply(int64_less_equal_of_to_integer(result, 9223372036854775807i64));
-                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
                 have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                     intro();
                     contradiction(round_down == 0);
@@ -372,11 +372,11 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 simp();
             } else {
                 execute();
-                have -9223372036854775808 <= to_integer(result) by simp;
-                have to_integer(result) <= 9223372036854775807 by simp;
+                have -9223372036854775808 <= to_integer(result);
+                have to_integer(result) <= 9223372036854775807;
                 apply(int64_less_equal_of_to_integer(-9223372036854775808i64, result));
                 apply(int64_less_equal_of_to_integer(result, 9223372036854775807i64));
-                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by simp;
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1;
                 have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                     intro();
                     assumption();
@@ -446,11 +446,11 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             }
             if round_down == 0 {
                 execute();
-                have -9223372036854775808 <= to_integer(result) by simp;
-                have to_integer(result) <= 9223372036854775807 by simp;
+                have -9223372036854775808 <= to_integer(result);
+                have to_integer(result) <= 9223372036854775807;
                 apply(int64_less_equal_of_to_integer(-9223372036854775808i64, result));
                 apply(int64_less_equal_of_to_integer(result, 9223372036854775807i64));
-                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
                 have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                     intro();
                     contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
@@ -495,11 +495,11 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 simp();
             } else {
                 execute();
-                have -9223372036854775808 <= to_integer(result) by simp;
-                have to_integer(result) <= 9223372036854775807 by simp;
+                have -9223372036854775808 <= to_integer(result);
+                have to_integer(result) <= 9223372036854775807;
                 apply(int64_less_equal_of_to_integer(-9223372036854775808i64, result));
                 apply(int64_less_equal_of_to_integer(result, 9223372036854775807i64));
-                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
                 have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
                     intro();
                     contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
