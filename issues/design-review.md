@@ -54,9 +54,18 @@ reference parameter.
 
 ### A3. Reference locals in C++ bodies
 
-A local `int& r = x;` is named in a proof through the lowered program, where
-it is a pointer. After A1 it should read as its referent there too. Not
-started; needs a look at how proofs name C++ locals before it is scoped.
+Not actionable today. The C++ importer does not lower a local of reference
+type: `int& r = x;` is refused with "C++ local `r` has an initializer
+outside direct lowering" (`lower_statement` in
+`src/languages/cpp/lowering.rs` lowers scalar locals and records only). So
+no proof can name one yet.
+
+When the importer learns to lower one, it names the carrying pointer `&r`,
+as `reference_carrier_name` does for a parameter, so that a proof reads `r`
+as the referent with no further change.
+
+Regression, for that change: a function with `int& r = x; r = 1;` whose
+proof states `have r == 1;` and whose expansion re-verifies.
 
 ### A4. Rust sidecars in Rust syntax
 
