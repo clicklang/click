@@ -25,7 +25,7 @@ theorem lift(callback: int32 (*)(int32)) {
         }
         have result == x implies result >= 0 by {
             intro();
-            instantiate(forall (k: int32) { k == x implies k >= 0 }, result) using { result == x; }
+            instantiate(forall (k: int32) { k == x implies k >= 0 }, result);
             assumption();
         }
         simp();

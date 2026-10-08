@@ -74,11 +74,11 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
             }
             Path::Left(rest) => {
                 have 0 <= a[from] and a[from] < n by {
-                    instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= a[k] and a[k] < n }, from) using { 0 <= from; from < n; }
+                    instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= a[k] and a[k] < n }, from);
                     assumption();
                 }
                 have a[from] == c[from] by {
-                    instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] == c[k] }, from) using { 0 <= from; from < n; }
+                    instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] == c[k] }, from);
                     assumption();
                 }
                 apply(ih(a, b, c, d, n, a[from], rest));
@@ -91,11 +91,11 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
             }
             Path::Right(rest) => {
                 have 0 <= b[from] and b[from] < n by {
-                    instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= b[k] and b[k] < n }, from) using { 0 <= from; from < n; }
+                    instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= b[k] and b[k] < n }, from);
                     assumption();
                 }
                 have b[from] == d[from] by {
-                    instantiate(forall (k: int32) { 0 <= k and k < n implies b[k] == d[k] }, from) using { 0 <= from; from < n; }
+                    instantiate(forall (k: int32) { 0 <= k and k < n implies b[k] == d[k] }, from);
                     assumption();
                 }
                 apply(ih(a, b, c, d, n, b[from], rest));
@@ -119,24 +119,24 @@ theorem closed_marks_exclude_target(left: int32[], right: int32[], v: int32[], n
     ensures walk(left, right, from, path) != to by {
         induct(path) as ih {
             Path::Here => {
-                instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from) using { 0 <= from; from < n; v[from] != 0; }
+                instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from);
                 extract(from != to);
                 unfold(walk(left, right, from, Path::Here));
                 assumption();
             }
             Path::Left(rest) => {
-                instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= left[k] and left[k] < n }, from) using { 0 <= from; from < n; }
+                instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= left[k] and left[k] < n }, from);
                 extract(0 <= left[from]); extract(left[from] < n);
-                instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from) using { 0 <= from; from < n; v[from] != 0; }
+                instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from);
                 extract(v[left[from]] != 0);
                 apply(ih(left, right, v, n, left[from], to, rest));
                 unfold(walk(left, right, from, Path::Left(rest)));
                 assumption();
             }
             Path::Right(rest) => {
-                instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= right[k] and right[k] < n }, from) using { 0 <= from; from < n; }
+                instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= right[k] and right[k] < n }, from);
                 extract(0 <= right[from]); extract(right[from] < n);
-                instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from) using { 0 <= from; from < n; v[from] != 0; }
+                instantiate(forall (k: int32) { 0 <= k and k < n and v[k] != 0 implies k != to and (v[left[k]] != 0 and v[right[k]] != 0) }, from);
                 extract(v[right[from]] != 0);
                 apply(ih(left, right, v, n, right[from], to, rest));
                 unfold(walk(left, right, from, Path::Right(rest)));
@@ -159,8 +159,8 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
         have forall (k: int32) { 0 <= k and k < n and after[k] != 0 implies k != to and (after[left[k]] != 0 and after[right[k]] != 0) } by {
             intro(); intro();
             extract(0 <= k); extract(k < n); extract(after[k] != 0);
-            instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, k) using { 0 <= k; k < n; }
-            instantiate(forall (k: int32) { 0 <= k and k < n and before[k] == 0 and after[k] != 0 implies after[left[k]] != 0 and after[right[k]] != 0 }, k) using { 0 <= k; k < n; before[k] == 0; after[k] != 0; }
+            instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, k);
+            instantiate(forall (k: int32) { 0 <= k and k < n and before[k] == 0 and after[k] != 0 implies after[left[k]] != 0 and after[right[k]] != 0 }, k);
             have k != to by {
                 if k == to {
                     have 0 <= to;
@@ -168,7 +168,7 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
                     have 0 <= to and to < n by assumption();
                     extract(after[to] == before[to]);
                     have before[to] == 0 by {
-                        instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to) using { 0 <= to; to < n; }
+                        instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to);
                         assumption();
                     }
                     have after[to] == 0 by { rewrite(after[to] == before[to]); assumption(); }

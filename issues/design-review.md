@@ -146,9 +146,6 @@ the standard library. Left in the long spelling:
 - One-step blocks after `initialize`, `preserve` and `close_invariants`,
   which do not take the brace-less form: `close_invariants by simp;` is a
   syntax error. Decide whether they should.
-- `instantiate(F, v) using { ... }` calls whose list is exactly the guards,
-  which could drop the list. Try the bare form on each and keep the ones
-  that still verify; about 200 calls have a list.
 - The Rust examples and the sidecars under `design/charon-trial`, which are
   hash-pinned in `design/charon-trial/parity.json`.
 - A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,
