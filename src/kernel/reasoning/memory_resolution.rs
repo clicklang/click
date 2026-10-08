@@ -823,8 +823,12 @@ fn never_address_taken_local_versus_pointer_value(
 /// always moves towards a block the structural rule can decide, and the answer
 /// is `false` whenever no such equality is stated.
 ///
-/// Boundedness. One keyed lookup per side, over the equalities stated about
-/// that one pointer, with no transitive closure and no fact-set scan: an alias
+/// Interior pointers may additionally use an exact zero-offset base alias,
+/// but only to establish structural separation of whole objects. This route
+/// never infers byte-span separation from unequal translated addresses.
+///
+/// Boundedness. At most two keyed lookups per side, over equalities stated
+/// about that pointer or its zero-offset base, with no fact-set scan: an alias
 /// of an alias is not reported. The re-ask is the ordinary query, but on a
 /// pointer that is *not* unresolved, so this rule is a no-op inside it and one
 /// hop cannot become a walk; `ResolutionQueryGuard` closes the remaining cycle.
@@ -846,10 +850,25 @@ fn pointers_distinct_through_one_exact_alias(
             return false;
         }
         crate::instrumentation::record_deterministic_work(1);
-        assumptions.exact_pointer_aliases(pointer).any(|alias| {
+        if assumptions.exact_pointer_aliases(pointer).any(|alias| {
             !unresolved(alias)
                 && pointers_proven_distinct_for_memory_resolution(alias, other, assumptions)
-        })
+        }) {
+            return true;
+        }
+        if pointer.offset == PointerOffsetTerm::Constant(0) {
+            return false;
+        }
+        // An exact base alias also identifies the object of q + d. Use
+        // whole-object separation only: unequal translated starting addresses
+        // would not establish that multi-byte accesses cannot overlap.
+        let base = Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        assumptions
+            .exact_pointer_aliases(&base)
+            .any(|alias| !unresolved(alias) && alias.blocks_proven_distinct(other))
     };
     resolved_side_is_distinct(left, right) || resolved_side_is_distinct(right, left)
 }
@@ -4396,4 +4415,87 @@ fn offset_resolution_accepts_exact_index_equalities_at_each_width() {
             "a proven nonwrapping sum should retain offset equality at width {width}"
         );
     }
+}
+
+#[cfg(test)]
+#[test]
+fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
+    let base = Pointer {
+        block: PointerBlock::Heap(920_000),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let alias = Pointer {
+        block: PointerBlock::Symbolic(Variable(920_001)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let local = Pointer {
+        block: "local:interior-alias-store".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let equality = ConditionTerm::pointer_equal(alias.clone(), base.clone());
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer {
+                        block: PointerBlock::Symbolic(Variable(930_000 + index)),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    Pointer {
+                        block: PointerBlock::Heap(940_000 + index),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                ),
+                true,
+            );
+        }
+        let absent = facts.clone();
+        facts = facts.assume_condition(equality.clone(), true);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for offset in [-1i64, 0, 1, 2, 3, 16] {
+                let read = Pointer {
+                    offset: PointerOffsetTerm::Constant(offset),
+                    ..alias.clone()
+                };
+                assert!(pointers_proven_distinct_for_memory_resolution(
+                    &local, &read, &facts
+                ));
+                assert!(
+                    crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+                        &local, 4, &read, 4, &facts
+                    )
+                );
+            }
+        });
+        samples.push((size, work));
+        let interior = Pointer {
+            offset: PointerOffsetTerm::Constant(1),
+            ..alias.clone()
+        };
+        assert!(!pointers_proven_distinct_for_memory_resolution(
+            &local, &interior, &absent
+        ));
+        let withdrawn = facts.without_exact_fact(&Proposition::ConditionIs(equality.clone(), true));
+        assert!(!pointers_proven_distinct_for_memory_resolution(
+            &local, &interior, &withdrawn
+        ));
+        // Different starting addresses in the same object are insufficient
+        // evidence for either an exact interior alias or a multi-byte frame.
+        assert!(!pointers_proven_distinct_for_memory_resolution(
+            &base, &interior, &facts
+        ));
+        assert!(
+            !crate::kernel::memory_provenance::write_access_is_disjoint_from_load(
+                &base, 4, &interior, 4, &facts
+            )
+        );
+    }
+    eprintln!("interior alias frame (N, units): {samples:?}");
+    let baseline = samples[0].1;
+    assert!(
+        samples.iter().all(|(_, work)| *work <= baseline + 256),
+        "interior alias framing scanned unrelated facts: {samples:?}"
+    );
 }

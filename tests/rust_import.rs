@@ -1447,6 +1447,87 @@ fn charon_chunk_view_loop_tools_recheck_expanded_certificate() {
     }
 }
 
+const CHUNK_LANE_SOURCE: &str = include_str!("../design/charon-trial/chunk-lane-results/quad.rs");
+const CHUNK_LANE_PROOF: &str = include_str!("../design/charon-trial/chunk-lane-results/quad.click");
+
+fn chunk_lane_project() -> Project {
+    let p = Project::isolated(CHUNK_LANE_SOURCE);
+    for (name, bytes) in [
+        ("quad.rs", CHUNK_LANE_SOURCE.as_bytes()),
+        ("borrow.click", CHUNK_LANE_PROOF.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/chunk-lane-results/quad.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/chunk-lane-results/quad.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "quad.ullbc",
+            include_bytes!("../design/charon-trial/chunk-lane-results/quad.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+#[test]
+fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
+    let p = chunk_lane_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHUNK_LANE_PROOF, &prepared).unwrap();
+    for (before, after) in [
+        (
+            "have lanes.lanes[1] == chunk[1]",
+            "have lanes.lanes[1] == chunk[0]",
+        ),
+        (
+            "have lanes.lanes[2] == chunk[2]",
+            "have lanes.lanes[2] == chunk[3]",
+        ),
+        (
+            "have lanes.lanes[3] == chunk[3]",
+            "have lanes.lanes[3] == chunk[3] + 1u32",
+        ),
+        ("views bytes[0..16];", ""),
+    ] {
+        let invalid = CHUNK_LANE_PROOF.replace(before, after);
+        assert_ne!(invalid, CHUNK_LANE_PROOF);
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: chunk lane-result proof-tool agreement"]
+fn charon_chunk_lane_results_tools_recheck_expanded_certificate() {
+    let p = chunk_lane_project();
+    for args in [
+        vec!["verify"],
+        vec![
+            "expand",
+            "--claim",
+            "__rust_q_I4_quad_I4_walk.contract",
+            "--in-place",
+        ],
+        vec!["verify"],
+        vec!["profile"],
+    ] {
+        let result = p.cli(&args);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
 const CHARON_LOOP_SIDECAR: &str = include_str!("../design/charon-trial/borrowed-loop/loop.click");
 fn charon_loop_project() -> Project {
     let p = Project::new(CHARON_LOOP_SOURCE);

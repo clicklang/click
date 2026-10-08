@@ -1393,3 +1393,29 @@ reads; broad `simp` reaches its deterministic search budget there. Next provide
 explicit helper-result/snapshot transports and finish lane-invariant
 preservation. The complete Adler caller still covers only the established
 four-byte constructor boundary; arbitrary-batch induction remains open.
+
+
+### Interior byte transport for returned lane records
+
+The frozen `design/charon-trial/chunk-lane-results` crate now proves all four
+returned lane values at a symbolic stored-chunk loop head. A reduced trial
+showed why byte zero worked while interior lanes failed: an exact alias of a
+symbolic base was used to frame its zero-offset read but not its interior
+reads past stores to local temporaries.
+
+The shared kernel now also queries the exact alias of an interior pointer's
+zero-offset base, solely to establish structural separation of whole objects.
+It adds no authority and does not use address inequality to frame overlapping
+byte spans. Negative tests cover missing/withdrawn aliases, wrong lanes,
+missing views, and same-object overlap; indexed lookup work stays constant
+across unrelated frames of sixteen through 1,024 facts. The fixture's loop
+uses the native cursor and remaining count and checks its expanded certificate.
+
+The unchanged Adler arbitrary-head trial now passes the original byte-conversion
+call and all four lane value/bound obligations. It next fails on the snapshot
+copy into temporary array `__rust_mir_72`, whose owned backing is missing from
+the symbolic loop body. A smaller crate trial reproduces the same refusal for
+`let array = lanes.lanes;`; see
+`bugs/rust-loop-local-array-copy-lacks-backing.md`. Next retain and check that
+array's local storage/ownership boundary, then resume invariant preservation.
+Arbitrary batches and the full checksum specification remain unproved.
