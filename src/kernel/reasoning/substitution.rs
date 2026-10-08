@@ -9966,4 +9966,56 @@ mod checked_singleton_substitution_tests {
             }),
         );
     }
+
+    #[test]
+    fn checked_singleton_substitution_bounds_deep_quantifier_setup() {
+        let variable = Variable(70_105);
+        let mut source = proposition(variable);
+        for index in 0..2048 {
+            source = Proposition::ForAll {
+                var: Variable(80_000 + index),
+                sort: Sort::CInt32,
+                body: Box::new(source),
+            };
+        }
+        // Borrow the source so its recursive drop occurs on the parent stack.
+        // Setup must stop at its first checkpoint, before descending the chain.
+        std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .stack_size(192 * 1024)
+                .spawn_scoped(scope, || {
+                    let (result, _) = instrumentation::with_tactic_work_limits(
+                        TacticWorkLimits {
+                            simple: 0,
+                            smart: 0,
+                            control: 0,
+                        },
+                        || {
+                            instrumentation::collect(|| {
+                                let tactic = TacticEvent {
+                                    claim: "deep singleton setup".into(),
+                                    tactic_index: 0,
+                                    tactic_name: "deep_singleton_setup".into(),
+                                    class: "simple".into(),
+                                    statement_index: 0,
+                                    source_index: 0,
+                                };
+                                instrumentation::emit(VerificationEvent::TacticStarted(
+                                    tactic.clone(),
+                                ));
+                                let result = substitute_machine_constant_in_pure_proposition(
+                                    &source, variable, 7,
+                                );
+                                instrumentation::emit(VerificationEvent::TacticFailed(tactic));
+                                result
+                            })
+                        },
+                    );
+                    assert_eq!(result, Err(IntegerPureSubstitutionError::WorkLimitExceeded));
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+        });
+    }
 }
