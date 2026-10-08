@@ -1360,6 +1360,8 @@ pub enum CodeRegion {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructuralItem {
     claim: ClickProposition,
+    /// The label the invariant was written with, `invariant name: P;`.
+    name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3938,6 +3940,7 @@ pub struct CertificateStructuralClause {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CertificateStructuralItem {
     claim: ClickProposition,
+    name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4389,6 +4392,7 @@ impl ProofStep {
                     .iter()
                     .map(|item| CertificateStructuralItem {
                         claim: item.claim.clone(),
+                        name: item.name.clone(),
                     })
                     .collect(),
                 initialize_proof: clause
@@ -4582,6 +4586,7 @@ impl ProofStep {
                     .iter()
                     .map(|item| StructuralItem {
                         claim: item.claim.clone(),
+                        name: item.name.clone(),
                     })
                     .collect(),
                 initialize_proof: clause
@@ -7200,7 +7205,10 @@ impl StructuralClause {
                     &item.claim,
                     substitutions,
                 )?;
-                Ok(StructuralItem { claim })
+                Ok(StructuralItem {
+                    claim,
+                    name: item.name.clone(),
+                })
             })
             .collect::<Result<Vec<_>, String>>()?;
         clause.resources = self
@@ -7325,6 +7333,15 @@ fn substitute_resource_clause_bindings(
 }
 
 impl StructuralItem {
+    /// How a diagnostic names this invariant: by its label when it has one,
+    /// by its position in the loop header otherwise.
+    pub(crate) fn title(&self, index: usize) -> String {
+        match &self.name {
+            Some(name) => format!("invariant `{name}`"),
+            None => format!("invariant {index}"),
+        }
+    }
+
     pub fn proposition(&self) -> &ClickProposition {
         &self.claim
     }

@@ -566,7 +566,11 @@ fn rejects_named_requirement() {
                 ensures result == x by auto;
             }
         "#;
-    parse(source).expect_err("a requirement takes no label");
+    let error = parse(source).expect_err("a requirement takes no label");
+    assert!(
+        error.message.contains("a `requires` clause takes no label"),
+        "{error:?}"
+    );
 }
 
 #[test]
