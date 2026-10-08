@@ -26,9 +26,8 @@ one child, and for immediate red- and black-leaf successors at the root. The
 red-leaf successor has a no-deficit model theorem, with immediate and deep
 concrete checks. Non-root red- and black-leaf C unlink now verify on either parent
 link. Non-root one-child deletion also verifies in both directions; non-root
-two-child cases and deeper C successors remain. Immediate successors
-with a nonempty replacement child now
-have an exact splice theorem and a C sidecar. The deeper replacement-child
+two-child cases and deeper C successors remain. Immediate successors with a
+nonempty replacement child now have an exact splice theorem and a C sidecar. The deeper replacement-child
 case has a balance exit theorem and concrete check in `rbtree_erase_child.click`
 and `successor_child_checks.click`; its exact splice sequence and
 parent-consistency connection remain.
@@ -1034,10 +1033,11 @@ The unchanged C now returns a red-black whole tree and the erased node's raw
 ownership for root deletion with at most one child. Its exact model and
 in-order contract drops that root's occurrence. Non-root black-leaf deletion
 also verifies for both parent links, retaining the deficit context and returning
-the parent for fixup. Non-root red leaves also verify, preserving balance and returning null.
+the parent for fixup. Non-root red leaves also verify, preserving balance and
+returning null.
 Non-root one-child cases now verify in both directions and on both parent
 links, including exact replacement, whole-tree balance, and parent consistency.
-The remaining two-child successor branches remain. The immediate red-leaf
+Non-root two-child deletion and deeper successors remain. The immediate red-leaf
 successor at the root is now covered, including its exact model, balance,
 parent consistency, and in-order contents. The immediate black-leaf case at
 the root returns the exact deficit context and non-null fixup parent for
