@@ -143,6 +143,7 @@ pub struct C0Function {
     prelowered_kernel_function: Option<crate::kernel::CFunction>,
     return_type: C0Type,
     return_pointee_constant: bool,
+    return_reference: bool,
     return_struct_name: Option<String>,
     return_pointer_struct_name: Option<String>,
     /// The C spelling used by a sidecar contract. Header-provided internal
@@ -2915,6 +2916,15 @@ impl C0Function {
         self
     }
 
+    pub(crate) fn with_return_reference(mut self, reference: bool) -> Self {
+        self.return_reference = reference;
+        self
+    }
+
+    pub fn returns_reference(&self) -> bool {
+        self.return_reference
+    }
+
     pub fn return_pointee_is_constant(&self) -> bool {
         self.return_pointee_constant
     }
@@ -2927,6 +2937,7 @@ impl C0Function {
         Self {
             return_type,
             return_pointee_constant: false,
+            return_reference: false,
             return_struct_name: None,
             return_pointer_struct_name: None,
             source_name: name.clone(),
@@ -8739,6 +8750,7 @@ impl Parser {
         Ok(C0Function {
             return_type: header.return_type,
             return_pointee_constant: header.return_pointee_constant,
+            return_reference: false,
             return_struct_name: header.return_struct_name,
             return_pointer_struct_name: header.return_pointer_struct_name,
             source_name: header.source_name,

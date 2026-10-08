@@ -76,12 +76,6 @@ syntax.
 Rust slice. Whether a whole slice gets a spelling, and which, belongs with
 A4.
 
-### A6. Memory at another width (decide)
-
-A range has the element type of its base. Some proofs read memory at another
-width, for example a struct as bytes. That needs its own explicit form. Start
-with an inventory of the proofs that rely on it; none has been made.
-
 ## B. Contracts and resource declarations
 
 Found in the third pass and ruled on 2026-10-07. Each was checked against the
@@ -101,35 +95,36 @@ resource declares no fields to hold them; write the child without a name".
 Decide whether a parent without fields should be able to name a child. It
 would need a model for a resource that declares none.
 
-### B3. Reading through a declared resource (decide)
+### B3. Reads go through an owned resource: the loop case
 
-Checked on 2026-10-08 with `resource flat(p: struct cell*) { owns p->value;
-owns p->other; }` and a function that reads `p->value`:
+Decided 2026-10-08 and built: holding a resource, viewed or owned, lets C
+read the memory it owns directly. A write still needs `unfold`. Depth stays
+at one level: memory a child resource owns is not read through.
+`mdtests/c_reads_through_an_owned_resource.md`,
+`c_does_not_write_through_an_owned_resource.md` and
+`an_owned_resource_unfolds_after_a_read_through_it.md` pin the rule.
 
-- `views flat(p);` verifies with no `unfold`. C reads the memory the
-  resource owns directly.
-- `owns flat(p);` does not. It needs `unfold(flat(p));` before the read and
-  `fold(flat(p));` after.
-- Neither reads through a child. With `resource outer(p) { owns inner(p);
-  owns p->other; }`, a read of memory `inner` owns fails under `views
-  outer(p);`, with and without `unfold(outer(p));`.
+What remains is that it is built two ways (`OwnedCores` in
+`src/surface/proof/resources.rs`):
 
-So a view reads one level through a declared resource and ownership reads
-none. Decide whether the two should agree, and at what depth.
+- In a function with no loop, the views of an owned resource's memory are
+  attached to the owner's occurrence, so they retire when the owner is
+  unfolded, consumed, freed or handed to an interface.
+- In a function with a loop, they are free-standing views, as before the
+  decision. A loop head gives the owner a new occurrence, which would retire
+  attached views at the first iteration.
 
-### B4. Overlap that depends on a symbolic bound
+Free-standing views of owned memory are the form that broke `unfold`, a
+freeing call and an `ensuring` interface when it was tried for every
+function on 2026-10-08 (12 tests). Loop proofs in the corpus do not hit
+those, which is evidence about the corpus and not about the rule.
 
-A contract that returns one place twice, or two places that overlap by
-layout (`owns *p; produces p->value;`), is refused where it is declared or
-set up, with a message naming the places.
+Regression: a function with a loop that reads through an owned resource in
+the body, then unfolds it after the loop; the same with a freeing call.
 
-An overlap that depends on a symbolic bound is not: `requires n >= 2;
-owns q[0..n]; produces q[1];`. With a proof it is refused when the exit state
-is checked, with "two owned memory resource clauses overlap", which does not
-name them. A `contract` declaration with no proof is accepted.
-
-Regression: that contract refused at setup by a message naming `q[0..n]` and
-`q[1]`, in a function with a proof and in a `contract` with none.
+Done when: one mode serves both, either by re-attaching the views to the
+owner's occurrence at a loop head or by authorizing the read where it
+happens without leaving a view.
 
 ## C. Tactics
 
@@ -147,9 +142,6 @@ the standard library. Left in the long spelling:
 - One-step blocks after `initialize`, `preserve` and `close_invariants`,
   which do not take the brace-less form: `close_invariants by simp;` is a
   syntax error. Decide whether they should.
-- `instantiate(F, v) using { ... }` calls whose list is exactly the guards,
-  which could drop the list. Try the bare form on each and keep the ones
-  that still verify; about 200 calls have a list.
 - The Rust examples and the sidecars under `design/charon-trial`, which are
   hash-pinned in `design/charon-trial/parity.json`.
 - A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,
@@ -169,6 +161,13 @@ the standard library. Left in the long spelling:
 - `requires` takes no label. Requirement labels were removed on 2026-09-23
   when proofs began citing a precondition by its proposition, and nothing
   would read one. `invariant` takes a label, which names it in a failure.
+- A range at another width gets no form. Closed 2026-10-08 after an
+  inventory by text search: no Click source names a second width for a
+  range. Reading at another width happens in C (`(unsigned char*)(void*) q`,
+  `memcpy` on a wider object, about 48 files) and the kernel's byte view
+  handles it (`docs/internals/byte-representation.md`). A specification that
+  must state one byte of a wider cell writes the explicit load,
+  `load_uint8(byte_offset(p, n))`.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a
   property of the function, the other a measure with an expression.
 

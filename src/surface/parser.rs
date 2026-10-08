@@ -456,6 +456,7 @@ struct Parser {
     current_aggregate_objects: BTreeMap<String, String>,
     current_struct_array_params: BTreeSet<String>,
     current_reference_params: BTreeSet<String>,
+    current_reference_result: bool,
     current_global_array_shapes: BTreeMap<String, GlobalArrayShape>,
     current_algebraic_params: BTreeMap<String, (AlgebraicTypeApplication, usize)>,
     current_click_type_parameters: BTreeSet<String>,
@@ -758,6 +759,7 @@ impl Parser {
             current_aggregate_objects: BTreeMap::new(),
             current_struct_array_params: BTreeSet::new(),
             current_reference_params: BTreeSet::new(),
+            current_reference_result: false,
             current_global_array_shapes: BTreeMap::new(),
             current_algebraic_params: BTreeMap::new(),
             current_click_type_parameters: BTreeSet::new(),
@@ -2594,6 +2596,10 @@ impl Parser {
         );
         let previous_reference_params =
             std::mem::replace(&mut self.current_reference_params, reference_params);
+        let previous_reference_result = std::mem::replace(
+            &mut self.current_reference_result,
+            signature.returns_reference(),
+        );
         while self.peek() != Some(&Token::RBrace) {
             match self.peek_ident() {
                 Some("let") => {
@@ -2954,6 +2960,7 @@ impl Parser {
         self.current_global_array_shapes = previous_global_array_shapes;
         self.current_struct_array_params = previous_struct_array_params;
         self.current_reference_params = previous_reference_params;
+        self.current_reference_result = previous_reference_result;
         self.current_integer_params = previous_integer_params;
         self.current_integer_lets = previous_integer_lets;
         self.integer_literal_context = previous_integer_literal_context;
@@ -3087,6 +3094,7 @@ impl Parser {
                 signature: FunctionSignature {
                     return_type: C0Type::Void,
                     return_pointee_constant: false,
+                    return_reference: false,
                     name,
                     parameters: parsed_parameters.parameters,
                     exceptional_type: None,
@@ -3163,6 +3171,7 @@ impl Parser {
             signature: FunctionSignature {
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
+                return_reference: parsed_return_type.reference,
                 name,
                 parameters: parsed_parameters.parameters,
                 exceptional_type,
@@ -9331,14 +9340,25 @@ impl Parser {
         self.parse_contract_postfix_suffix(expression)
     }
 
-    /// The address of a reference parameter's referent, `&value`: the
-    /// pointer that carries it.
-    ///
-    /// Kept out of the recursive expression parser's frame, like the postfix
-    /// suffix: deeply nested expressions parse on a small stack.
+    /// Native parameter and result aliases name their referents.
+    fn is_reference_binding(&self, name: &str) -> bool {
+        self.current_reference_params.contains(name)
+            || (self.current_reference_result && name == "result")
+    }
+
+    fn reference_binding_carrier(&self, name: &str) -> String {
+        if self.current_reference_result && name == "result" {
+            "result".to_string()
+        } else {
+            syntax::reference_carrier_name(name)
+        }
+    }
+
+    /// The address of a reference referent (`&value` or `&result`) is its
+    /// existing pointer carrier. Keep this out of the recursive parser frame.
     #[inline(never)]
     fn at_reference_parameter_address(&self) -> bool {
-        matches!(self.peek_next(), Some(Token::Ident(name)) if self.current_reference_params.contains(name))
+        matches!(self.peek_next(), Some(Token::Ident(name)) if self.is_reference_binding(name))
             && !matches!(
                 self.tokens.get(self.position + 2),
                 Some(Token::Arrow | Token::Dot | Token::LBracket)
@@ -9349,9 +9369,9 @@ impl Parser {
     #[inline(never)]
     fn parse_reference_parameter_address(&mut self) -> Result<ContractExpression, ClickError> {
         let Some(Token::Ident(name)) = self.peek_next() else {
-            return Err(self.error("expected a reference parameter after `&`"));
+            return Err(self.error("expected a reference binding after `&`"));
         };
-        let carrier = syntax::reference_carrier_name(name);
+        let carrier = self.reference_binding_carrier(name);
         self.position += 2;
         Ok(ContractExpression::CFragment(CExpression::Variable(
             carrier,
@@ -9370,10 +9390,10 @@ impl Parser {
     ) -> Result<ContractExpression, ClickError> {
         if let ContractExpression::Binding(name)
         | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
-            && self.current_reference_params.contains(name)
+            && self.is_reference_binding(name)
         {
             let name = name.clone();
-            let carrier = syntax::reference_carrier_name(&name);
+            let carrier = self.reference_binding_carrier(&name);
             let is_struct = self.current_struct_params.contains_key(&carrier);
             if is_struct && !matches!(self.peek(), Some(Token::Arrow | Token::Dot)) {
                 return Err(self.error(format!(
@@ -9384,7 +9404,7 @@ impl Parser {
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
-                        "`{name}` is a reference parameter and names the value it refers to, so it takes no index; write `{name}`"
+                        "`{name}` is a reference and names the value it refers to, so it takes no index; write `{name}`"
                     )));
                 }
                 expression = ContractExpression::Index(
@@ -10597,6 +10617,14 @@ impl Parser {
                 self.parse_ensure_unary_at_depth(depth + 1)?,
             )));
         }
+        if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
+            let Some(Token::Ident(name)) = self.peek_next() else {
+                unreachable!()
+            };
+            let carrier = self.reference_binding_carrier(name);
+            self.position += 2;
+            return Ok(C0Expression::Variable(carrier));
+        }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
@@ -10645,8 +10673,8 @@ impl Parser {
             Some(Token::Ident(name)) if name == "by" => {
                 Err(self.error("expected result expression, got `by`"))
             }
-            Some(Token::Ident(name)) if self.current_reference_params.contains(&name) => {
-                let carrier = syntax::reference_carrier_name(&name);
+            Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
+                let carrier = self.reference_binding_carrier(&name);
                 let is_struct = self.current_struct_params.contains_key(&carrier);
                 let carrier = C0Expression::Variable(carrier);
                 Ok(if is_struct {

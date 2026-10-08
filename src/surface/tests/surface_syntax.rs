@@ -4510,6 +4510,32 @@ fn a_contract_cannot_return_overlapping_places() {
             "{contract}: {error:?}"
         );
     }
+    // An overlap the requirements prove from a symbolic bound is refused the
+    // same way; one they leave open is not.
+    let range_source = "int32 keep(int32* q, int32 n) { return 0; }";
+    for contract in [
+        "int32 keep(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } by { execute(); simp(); }",
+        "contract int32 Range(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } \
+         int32 keep(int32* q, int32 n) { ensures result == 0; } by { execute(); simp(); }",
+    ] {
+        let source = format!("verifying \"range.c\"; {contract}");
+        let error = verify_c0_sources(&source, &[("range.c", range_source)])
+            .expect_err("the contract returns overlapping places");
+        assert!(
+            error
+                .message
+                .contains("would return overlapping places: `q[0..n]` and `q[1]`"),
+            "{contract}: {error:?}"
+        );
+    }
+    let open = "verifying \"range.c\"; int32 keep(int32* q, int32 n) { requires n >= 0; \
+        owns q[0..n]; produces q[1]; } by { execute(); simp(); }";
+    let error = verify_c0_sources(open, &[("range.c", range_source)])
+        .expect_err("the exit state still refuses what the entry could not decide");
+    assert!(
+        !error.message.contains("would return overlapping places"),
+        "{error:?}"
+    );
     // Two fields of one struct do not overlap.
     let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
         consumes p->other; produces p->other; ensures result == result; } by { execute(); simp(); }";

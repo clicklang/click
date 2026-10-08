@@ -1638,6 +1638,17 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_subtract(left: Self, right: Self) -> Self {
+        if matches!(right, Self::UInt64Constant(0)) {
+            return left;
+        }
+        // Atomic identities avoid comparing arbitrary operand trees on this
+        // constructor's hot path. Compound operands can use the checked lemma
+        // for a symbolic variable through ordinary substitution.
+        if let (Self::Variable(a), Self::Variable(b)) = (&left, &right)
+            && a == b
+        {
+            return Self::UInt64Constant(0);
+        }
         Self::uint64_binary(
             left,
             right,

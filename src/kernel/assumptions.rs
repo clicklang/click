@@ -5854,11 +5854,15 @@ impl PropositionDerivation {
             } => {
                 let variable_term = Bitvector32Term::Variable(*variable);
                 let constant = signed_i64_bitvector_constant(*value);
-                let expected = substitute_bitvector_variable_in_proposition(
-                    &self.conclusion,
-                    *variable,
-                    &constant,
-                );
+                let Ok(expected) =
+                    crate::kernel::reasoning::substitute_machine_constant_in_pure_proposition(
+                        &self.conclusion,
+                        *variable,
+                        *value,
+                    )
+                else {
+                    return false;
+                };
                 expected != self.conclusion
                     && body.conclusion == expected
                     && equality.checks(&variable_term, &constant, available)

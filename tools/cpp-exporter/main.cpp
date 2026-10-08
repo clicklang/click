@@ -1101,20 +1101,23 @@ private:
         return std::nullopt;
       }
       llvm::json::Object result;
+      const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
       auto scalar_call = lower_scalar_call_source(returned->getRetValue());
       if (!scalar_call) return std::nullopt;
       const auto *call = scalar_call->call;
       if (call != nullptr) {
         const auto *callee = call->getDirectCallee();
         if (callee == nullptr ||
-            !context_.hasSameType(returned->getRetValue()->getType(),
-                                  function->getReturnType())) {
+            !(reference_return != nullptr
+                ? context_.hasSameType(callee->getReturnType(), function->getReturnType()) &&
+                  returned->getRetValue()->isLValue() && scalar_call->conversions.empty()
+                : context_.hasSameType(returned->getRetValue()->getType(), function->getReturnType()))) {
           fail(call->getExprLoc(), "C++ return call requires matching final value "
                                    "and caller return types");
           return std::nullopt;
         }
         auto lowered = lower_call_operation(call, function, true);
-        auto value_type = lower_type(returned->getRetValue()->getType(),
+        auto value_type = lower_type(reference_return != nullptr ? function->getReturnType() : returned->getRetValue()->getType(),
                                      returned->getRetValue()->getExprLoc(),
                                      direct_source_alias(function->getTypeSourceInfo()));
         if (!lowered || !value_type) {
@@ -1127,7 +1130,9 @@ private:
         result["arguments"] = std::move(lowered->arguments);
         result["value_type"] = std::move(*value_type);
       } else {
-        auto value = lower_expression(returned->getRetValue(), function);
+        auto value = reference_return != nullptr
+            ? lower_reference_binding(returned->getRetValue(), function->getReturnType(), function)
+            : lower_expression(returned->getRetValue(), function);
         if (!value) {
           return std::nullopt;
         }
@@ -2123,6 +2128,47 @@ private:
   }
 
   std::optional<Json>
+  lower_reference_binding(const clang::Expr *expression, clang::QualType reference_type,
+                          const clang::FunctionDecl *function) {
+    const auto *reference = reference_type->getAs<clang::LValueReferenceType>();
+    if (reference == nullptr || !expression->isLValue() ||
+        !context_.hasSameType(reference->getPointeeType().getUnqualifiedType(), context_.IntTy)) {
+      fail(expression->getExprLoc(), "C++ reference results require an int lvalue");
+      return std::nullopt;
+    }
+    const auto *source = expression->IgnoreParenImpCasts();
+    std::optional<Json> address;
+    {
+      const auto *declaration = llvm::dyn_cast<clang::DeclRefExpr>(source);
+      const auto *parameter = declaration == nullptr ? nullptr :
+          llvm::dyn_cast<clang::ParmVarDecl>(declaration->getDecl());
+      const auto *parameter_reference = parameter == nullptr ? nullptr :
+          parameter->getType()->getAs<clang::LValueReferenceType>();
+      if (parameter_reference == nullptr || parameter->getDeclContext() != function) {
+        fail(expression->getExprLoc(), "C++ reference results currently bind existing reference parameters; raw-pointer binding needs live-object validation");
+        return std::nullopt;
+      }
+      auto place = lower_place_reference(source, function);
+      auto pointer_type = lower_type(context_.getPointerType(parameter_reference->getPointeeType()), source->getExprLoc());
+      if (!place || !pointer_type) return std::nullopt;
+      llvm::json::Object value;
+      value["kind"] = "address_of";
+      value["place"] = std::move(*place);
+      value["value_type"] = std::move(*pointer_type);
+      value["span"] = span(source->getSourceRange());
+      address = Json(std::move(value));
+    }
+    auto value_type = lower_type(reference_type, expression->getExprLoc());
+    if (!address || !value_type) return std::nullopt;
+    llvm::json::Object binding;
+    binding["kind"] = "reference_binding";
+    binding["address"] = std::move(*address);
+    binding["value_type"] = std::move(*value_type);
+    binding["span"] = span(expression->getSourceRange());
+    return Json(std::move(binding));
+  }
+
+  std::optional<Json>
   lower_call_argument(const clang::Expr *argument,
                       const clang::ParmVarDecl *parameter,
                       const clang::FunctionDecl *caller) {
@@ -2588,12 +2634,11 @@ private:
               : parameter->getType()->getAs<clang::LValueReferenceType>();
       if (parameter == nullptr || parameter->getDeclContext() != function ||
           reference_type == nullptr ||
-          reference_type->getPointeeType().isConstQualified() ||
           !context_.hasSameType(
               reference_type->getPointeeType().getUnqualifiedType(),
               context_.IntTy)) {
         fail(address->getOperatorLoc(),
-             "supported C++ address-of must name a mutable int& parameter");
+             "supported C++ address-of must name an int reference parameter");
         return std::nullopt;
       }
       auto place = lower_place_reference(operand, function);

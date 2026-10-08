@@ -16572,3 +16572,38 @@ fn padded_struct_field_loop_expansion_reverifies() {
         expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
     verify_c0_sources(&expanded, &sources).unwrap();
 }
+#[test]
+fn smart_inventory_positions_are_compatible_and_scale() {
+    use crate::surface::{c0_smart_tactic_source_sites, c0_tactic_source_position};
+    let source = "# Unicode: λ\ntheorem named() { ensures 0 == 0 by { have 1 == 1 by { simp(); } simp(); } }\ntheorem implicit() { ensures 0 == 0; }\ntheorem short() { ensures 0 == 0 by simp; }\n";
+    for site in c0_smart_tactic_source_sites(source, &[]).unwrap() {
+        assert_eq!(
+            site.position,
+            c0_tactic_source_position(source, &[], &site.claim_label, site.source_index).unwrap()
+        );
+    }
+    for separate_claims in [false, true] {
+        let mut measurements = Vec::new();
+        for count in [8, 16, 32, 64] {
+            let source = if separate_claims {
+                (0..count)
+                    .map(|i| format!("theorem item_{i}() {{ ensures 0 == 0 by {{ simp(); }} }}\n"))
+                    .collect::<String>()
+            } else {
+                format!(
+                    "theorem item() {{ ensures 0 == 0 by {{ {} }} }}",
+                    "simp(); ".repeat(count)
+                )
+            };
+            let (sites, work) = crate::instrumentation::measure_deterministic_work(|| {
+                c0_smart_tactic_source_sites(&source, &[]).unwrap()
+            });
+            assert_eq!(sites.len(), count);
+            measurements.push(work);
+        }
+        assert!(
+            measurements[3] <= 10 * measurements[0],
+            "separate claims: {separate_claims}, work: {measurements:?}"
+        );
+    }
+}

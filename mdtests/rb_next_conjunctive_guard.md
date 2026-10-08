@@ -11,9 +11,11 @@ head. That prefix is re-executed on every iteration, including after
 `continue`, and the existing logical `&&` keeps the parent-link read lazy.
 
 Because a C function verifies as a whole, the descent cannot land ahead of the
-ascent. This fixture keeps the guard's own regression: a bare `execute()` first
-reaches `if (node->rb_right)` with `t: rb_at(node)` still folded, so the branch
-cannot obtain the required view of that link, and the refusal says so. The
+ascent. This fixture keeps the guard's own regression: a bare `execute()`
+reads `node->rb_right` through the folded `t: rb_at(node)`, which owns that
+link, and descends. The descent's guard `while (node->rb_left)` then reads a
+link of the child, which the folded resource does not own directly, so the
+loop condition cannot obtain its view and the refusal says so. The
 proof that opens the entry node, runs both walks, and carries their structural
 measures is [`rb_next.md`](rb_next.md), on the unchanged body with
 `RB_EMPTY_NODE` and the complete successor contract.

@@ -184,6 +184,24 @@ fn constant_element_count(element_count: &Bitvector32Term) -> Option<i64> {
     (end_base == start_base).then_some(end_shift - start_shift)
 }
 
+/// A constant byte extent still written as an endpoint difference, possibly
+/// scaled once by an element width. Read only this expression, without facts
+/// or rewriting away the endpoints other range rules need. The cast and
+/// product use the extent's own modular 32-bit arithmetic.
+fn structural_constant_byte_extent(bytes: &Bitvector32Term) -> Option<u32> {
+    crate::instrumentation::record_deterministic_work(1);
+    match bytes {
+        Bitvector32Term::Multiply(left, right) => match (left.as_ref(), right.as_ref()) {
+            (count, Bitvector32Term::Constant(width))
+            | (Bitvector32Term::Constant(width), count) => {
+                constant_element_count(count).map(|count| (count as u32).wrapping_mul(*width))
+            }
+            _ => None,
+        },
+        _ => constant_element_count(bytes).map(|count| count as u32),
+    }
+}
+
 /// Checks the ordering facts needed to interpret a 32-bit byte sum with
 /// signed comparisons. The caller supplies the modular sum term; these bounds
 /// require both addends to be nonnegative and the sum to stay no smaller than
@@ -703,11 +721,14 @@ impl PureFactContext {
         bytes: &Bitvector32Term,
     ) -> bool {
         range_base == base
-            && crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
-                range_bytes,
-                bytes,
-                self,
-            )
+            && (structural_constant_byte_extent(range_bytes)
+                .zip(structural_constant_byte_extent(bytes))
+                .is_some_and(|(left, right)| left == right)
+                || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
+                    range_bytes,
+                    bytes,
+                    self,
+                ))
     }
 
     fn proves_loadable_region_from_structural_range(
