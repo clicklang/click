@@ -272,7 +272,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 43;
+    artifact["schema"] = 44;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1470,6 +1470,61 @@ private:
     const clang::Expr *source_initializer = local->getInit();
     const clang::Expr *semantic_initializer =
         source_initializer->IgnoreParenImpCasts();
+    const clang::Expr *call_candidate = source_initializer->IgnoreParens();
+    llvm::json::Array call_conversions;
+    std::vector<const clang::CastExpr *> casts;
+    while (const auto *cast = llvm::dyn_cast<clang::CastExpr>(call_candidate)) {
+      casts.push_back(cast);
+      call_candidate = cast->getSubExpr()->IgnoreParens();
+    }
+    const auto *initializer_call = llvm::dyn_cast<clang::CallExpr>(call_candidate);
+    if (initializer_call != nullptr && !is_numeric_limits_max_call(initializer_call)) {
+      if (!casts.empty() && initializer_call->getType()->isIntegerType() &&
+          context_.getTypeSize(initializer_call->getType()) == 128) {
+        fail(initializer_call->getExprLoc(),
+             "wide C++ call-result conversions require native observer normalization");
+        return std::nullopt;
+      }
+      for (auto it = casts.rbegin(); it != casts.rend(); ++it) {
+        const clang::CastExpr *cast = *it;
+        std::string kind;
+        switch (cast->getCastKind()) {
+        case clang::CK_NoOp:
+          if (!context_.hasSameType(cast->getType(), cast->getSubExpr()->getType())) {
+            fail(cast->getExprLoc(), "unsupported C++ call-result no-op conversion");
+            return std::nullopt;
+          }
+          kind = "no_op";
+          break;
+        case clang::CK_IntegralCast: kind = "integral_cast"; break;
+        case clang::CK_IntegralToBoolean: kind = "integral_to_boolean"; break;
+        case clang::CK_BooleanToSignedIntegral: kind = "boolean_to_signed_integral"; break;
+        default:
+          fail(cast->getExprLoc(), "unsupported C++ call-result conversion");
+          return std::nullopt;
+        }
+        auto source_alias = [this](const clang::Expr *value) {
+          value = value->IgnoreParens();
+          if (const auto *explicit_cast = llvm::dyn_cast<clang::ExplicitCastExpr>(value))
+            return direct_source_alias(explicit_cast->getTypeInfoAsWritten());
+          if (const auto *call = llvm::dyn_cast<clang::CallExpr>(value);
+              call != nullptr && call->getDirectCallee() != nullptr)
+            return direct_source_alias(call->getDirectCallee()->getTypeSourceInfo());
+          return static_cast<const clang::TypedefNameDecl *>(nullptr);
+        };
+        auto source_type = lower_type(cast->getSubExpr()->getType(), cast->getExprLoc(),
+                                      source_alias(cast->getSubExpr()));
+        auto value_type = lower_type(cast->getType(), cast->getExprLoc(), source_alias(cast));
+        if (!source_type || !value_type) return std::nullopt;
+        llvm::json::Object conversion;
+        conversion["cast_kind"] = kind;
+        conversion["explicit"] = llvm::isa<clang::ExplicitCastExpr>(cast);
+        conversion["source_type"] = std::move(*source_type);
+        conversion["value_type"] = std::move(*value_type);
+        conversion["span"] = span(cast->getSourceRange());
+        call_conversions.push_back(std::move(conversion));
+      }
+    }
     if (record_object && record->isAggregate()) {
       const auto *semantic_list =
           llvm::dyn_cast<clang::InitListExpr>(source_initializer);
@@ -1549,14 +1604,12 @@ private:
       initializer["callee"] = std::move(reference);
       initializer["arguments"] = std::move(arguments);
       initializer["span"] = span(source_initializer->getSourceRange());
-    } else if (const auto *call =
-            llvm::dyn_cast<clang::CallExpr>(semantic_initializer);
+    } else if (const auto *call = initializer_call;
                call != nullptr && !is_numeric_limits_max_call(call)) {
       if (call->getDirectCallee() == nullptr ||
-          !context_.hasSameType(call->getDirectCallee()->getReturnType(),
-                                local->getType())) {
+          !context_.hasSameType(source_initializer->getType(), local->getType())) {
         fail(call->getExprLoc(),
-             "C++ call capture requires matching return and local types");
+             "C++ call capture requires matching final initializer and local types");
         return std::nullopt;
       }
       auto lowered = lower_call_operation(call, function, true);
@@ -1564,6 +1617,8 @@ private:
         return std::nullopt;
       }
       initializer["kind"] = "call";
+      if (!call_conversions.empty())
+        initializer["conversions"] = std::move(call_conversions);
       initializer["callee"] = std::move(lowered->callee);
       initializer["arguments"] = std::move(lowered->arguments);
       initializer["span"] = std::move(lowered->span);

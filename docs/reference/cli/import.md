@@ -359,8 +359,9 @@ and argument lowering have deterministic scaling coverage. Artifact validation
 checks every nested callee, capture type, and sibling storage type and rejects
 recursive graphs. Nested calls in integer-local initializers and discarded calls use the same
 normalization and ordering checks as return calls. Calls in general value
-expressions, converted call results, and returned references or objects remain
-unsupported.
+expressions, converted returns/arguments, and returned references or objects
+remain unsupported. Converted integer-local initializers use the ordered
+conversion chain described below.
 
 Scalar evaluation is normalized within the C++ frontend into explicit
 statements followed by a typed value. Initializer and return artifact wrappers
@@ -551,9 +552,21 @@ conversion and signed reinterpretation. Boolean conversion preserves the
 nonzero meaning of all 64 bits. Division truncates towards zero, and remainder
 has the dividend's sign. Zero divisors and the `MIN / -1` and `MIN % -1`
 overflow pair fail verification. Addition, subtraction, multiplication, and
-negation retain their signed-overflow obligations. Scalar local call captures
-require the same return width as the declaration; casts around calls remain
-outside this slice.
+negation retain their signed-overflow obligations. Scalar local call initializers
+also accept an ordered chain of Clang-resolved integral and Boolean conversions,
+including explicit same-type alias casts. Each conversion retains its exact
+cast kind, explicit/implicit origin, source and result types, alias provenance,
+and executable source span. The shared scalar normalizer calls the helper once
+into a temporary of its original return type, then converts that captured value
+into the declared local. Direct matching-type calls keep their existing lowering.
+C++20 narrowing uses the same modulo policy as pure casts; it does not establish
+a mathematical result-fit claim or remove overflow obligations in the callee.
+Modular contracts, memory authority and exception cleanup still apply.
+Converted returns, converted arguments, arithmetic around calls and call-based
+brace initializers remain outside this slice. Converting an original 128-bit
+callee result requires native observer normalization and is explicitly refused;
+modular wide observer bounds alone do not establish a native cast observation. Schema 44 requires refreshing
+earlier locks.
 
 The fixture preserves Bitcoin's quotient/remainder correction expression with
 a signed 64-bit dividend. It checks both rounding directions for positive and
@@ -1300,7 +1313,7 @@ functions are pure at runtime.
 The artifact retains the resolved specialization and each metadata factory's
 qualified name and canonical declaration file. Offline validation checks the
 contract kind, bounded metadata inventory, and declaration-file membership in
-the locked preprocessor closure. Artifact schema 43 requires an explicit refresh
+the locked preprocessor closure. Artifact schema 44 requires an explicit refresh
 of earlier locks.
 
 The separate `checked_boolean_statement_with_literal_metadata` kind adds a

@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Current schema 43
+arrangement restrictions remain semantic-profile limitations. Current schema 44
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -399,7 +399,7 @@ mutable locals, full-width compiler constants, C++20 integral casts, Boolean
 conversion of all bits, and checked signed multiplication. The existing scalar
 interpretation maps directly to shared formats and kernel types; no C++ numeric
 carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
-Exporter and schema both reject unsupported wide operations. Current schema 43
+Exporter and schema both reject unsupported wide operations. Current schema 44
 requires refreshing older artifacts. High-bit products and modulo casts verify
 through execute/simp, expansion, and retained audit; narrow and wide overflow
 remain obligations even under a trivial postcondition. Shared wide-to-Boolean
@@ -417,7 +417,7 @@ both destination bounds. Negative full-range literals retain their Integer
 context through reverse conversions. Regressions cover extrema, hostile
 high-bit claims, cast round trips, modular calls with framed narrow memory,
 expansion/reverification, audit, and deterministic signature scaling at
-2/8/32/128 parameters. Current schema 43 requires refreshing earlier locks.
+2/8/32/128 parameters. Current schema 44 requires refreshing earlier locks.
 
 The nested-call regression records a bounded search limitation: `simp` closes
 a direct observer equality but does not chain two Integer equalities. Keep
@@ -534,7 +534,7 @@ pin, and canonical declaration file. Offline checks bind that file to the exact
 pinned dependency and closure; diagnostics expose both assumptions. Proofs,
 expansion/reverification, retained audit, cleanup, caller framing, hostile pins
 and artifacts, and 4/16/64/256-statement scaling have coverage. This slice uses
-artifact schema 43; previous locks require an explicit refresh.
+artifact schema 44; previous locks require an explicit refresh.
 
 The unchanged `FeeFrac::Div` now imports and lowers its complete body under the
 explicit assertion and standard-library constructor assumptions. The real
@@ -908,10 +908,9 @@ place consumers are refused. Deterministic regressions cover increasing path
 depth and sibling populations.
 
 The pinned unchanged `CFeeRate::GetFee` regression now passes the `FeePerVSize`
-record-layout, direct Boolean condition-call and locked-header executable
-boundaries and stops at the converted `EvaluateFeeUp()` call in
-`policy/feerate.cpp:24:38`, with a bounded diagnostic and no partial artifact.
-The wrapper is not verified yet.
+record-layout, direct Boolean condition-call, locked-header executable and
+converted `EvaluateFeeUp()` initializer boundaries. Its complete graph imports
+and lowers with explicit header dependencies; the wrapper is not verified yet.
 
 Projected method receivers and record/scalar reference arguments now use the
 same ordered field paths. Call validation resolves the projected nominal type
@@ -997,19 +996,37 @@ header bytes, forged mixed-source metadata, unsupported bodies and recursion
 fail without partial artifacts. Deterministic multi-size graph tests preserve
 linear work and check caller/callee span ownership.
 
-Next normalize scalar call results through explicit conversions. Unchanged
-`GetFee` now resolves the header-defined `IsEmpty()` call and stops at
-`CAmount(m_feerate.EvaluateFeeUp(virtual_bytes))` in `policy/feerate.cpp:24:38`.
-Retain Clang's exact cast kind, source/result widths and qualifiers, evaluate
-the call once, and share initializer/return scalar normalization. Preserve
-modular contracts, conversion/definedness obligations, memory authority,
-cleanup and ordinary/expanded/retained proof agreement; do not erase narrowing
-or infer result bounds. Include same-type alias casts and hostile out-of-range
-or false-result claims. Keep broader composed calls separate.
+Converted scalar-call initializers now retain an inner-to-outer chain of
+Clang's exact cast kinds, explicit/implicit origins, source/result widths and
+qualifiers, alias provenance and executable spans. The shared scalar normalizer
+captures the callee's original result once before applying the existing C++20
+modulo/Boolean conversion policy. Offline ordinary/expanded/retained proofs
+cover header alias casts, implicit widening, Boolean chains, narrowing and
+mutating helpers with sibling frames. Hostile type/kind/origin, false-fit,
+authority and source-overflow claims fail. Scalar exception contracts still
+verify offline; active-guard rethrow cleanup has structural coverage. No new
+kernel conversion policy or inferred fit bounds were added. Schema 44 requires
+refreshing earlier locks.
+
+Unchanged `CFeeRate::GetFee` now imports its complete reachable executable graph
+with explicit dependencies on `consensus/amount.h`, `policy/feerate.h` and
+`util/feefrac.h`. This is an import regression, not a proof of `GetFee`.
+Next reuse this conversion-chain representation for converted scalar returns,
+capturing the converted result before destruction. Preserve callee-typed
+contracts, definedness/fit obligations and normal/exceptional evaluation order;
+add ordinary/expanded/retained and hostile tests. Converted call arguments,
+call-based brace initialization and broader composed expressions remain separate.
+Converted original 128-bit call results remain explicitly refused until native
+observer normalization connects modular wide-result bounds to the captured
+value used by cast certificates. Keep that prerequisite explicit rather than
+claiming result-fit from mathematical observers alone.
+Then select and prove the unchanged `GetFee` composition contract using
+`IsEmpty` and the unified Up contract, with explicit empty-rate and minimum-fee
+correction cases and caller-stated result-fit assumptions.
 Automatic objects with embedded records, nontrivial embedded destruction,
 header constructor/destructor bodies, header constant definitions and mixed-source
-executable macro spans remain separate prerequisites.
-Compose `IsEmpty` and the unified Up contract only after those prerequisites.
+executable macro spans remain separate work.
+The `GetFee` proof should reuse the individual observer and arithmetic contracts.
 State empty-rate behavior separately from the positive-size result-fit profile.
 Its negative-fee, nonzero-amount case changes a zero rounded result to `-1`, so
 specify that minimum correction explicitly. Keep object construction and the
