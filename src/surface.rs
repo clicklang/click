@@ -7584,6 +7584,9 @@ impl VerifiedCTheorem {
     }
 
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
+            self.function_block.signature().returns_reference(),
+        );
         Ok(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))

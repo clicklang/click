@@ -460,6 +460,13 @@ pub enum CppBinaryOperator {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppExpression {
+    /// The compiler primitive evaluated in a selected runtime function body.
+    RuntimeConstantEvaluation { value_type: CppType, span: CppSpan },
+    LogicalNot {
+        value: Box<CppExpression>,
+        value_type: CppType,
+        span: CppSpan,
+    },
     /// A modular call whose contract must provide only read-only authority.
     ObserverCall {
         callee: CppFunctionReference,
@@ -863,6 +870,9 @@ pub enum CppStatement {
     },
     Throw {
         value: CppExpression,
+        span: CppSpan,
+    },
+    Unreachable {
         span: CppSpan,
     },
     Assume {
@@ -2345,6 +2355,7 @@ impl CppStatement {
             _ => {}
         }
         match self {
+            Self::Unreachable { span } => span.validate(logical_source),
             Self::TrivialCopy {
                 target,
                 source,
@@ -2796,7 +2807,9 @@ pub(super) fn field_scalar_argument(expression: &CppExpression) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match expression {
         CppExpression::MemberLoad { value_type, .. } => Scalar::of(value_type).is_some(),
-        CppExpression::IntegralCast { value, .. } => field_scalar_argument(value),
+        CppExpression::LogicalNot { value, .. } | CppExpression::IntegralCast { value, .. } => {
+            field_scalar_argument(value)
+        }
         _ => false,
     }
 }
@@ -2808,13 +2821,16 @@ pub(super) fn field_scalar_argument(expression: &CppExpression) -> bool {
 fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<'_>) -> bool {
     match expression {
         CppExpression::IntegerLiteral { .. }
+        | CppExpression::RuntimeConstantEvaluation { .. }
         | CppExpression::CompilerConstant { .. }
         | CppExpression::ConstantReference { .. } => true,
         CppExpression::Load { place, .. } => matches!(
             places.get(&place.declaration_id),
             Some((_, CppType::Integer { .. } | CppType::Boolean { .. }))
         ),
-        CppExpression::IntegralCast { value, .. } => stable_scalar_argument(value, places),
+        CppExpression::LogicalNot { value, .. } | CppExpression::IntegralCast { value, .. } => {
+            stable_scalar_argument(value, places)
+        }
         _ => false,
     }
 }
@@ -2826,6 +2842,9 @@ fn checked_boolean_condition(
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match expression {
+        CppExpression::LogicalNot { value, .. } => {
+            checked_boolean_condition(value, places, field_reads)
+        }
         CppExpression::Binary {
             operator: CppBinaryOperator::LogicalAnd,
             left,
@@ -2917,7 +2936,8 @@ impl CppExpression {
         crate::instrumentation::record_deterministic_work(1);
         match self {
             Self::ObserverCall { .. } => true,
-            Self::IntegralCast { value, .. }
+            Self::LogicalNot { value, .. }
+            | Self::IntegralCast { value, .. }
             | Self::ReferenceBinding { address: value, .. }
             | Self::Dereference { pointer: value, .. } => value.contains_observer(),
             Self::Binary { left, right, .. } => {
@@ -2963,6 +2983,8 @@ impl CppExpression {
         match self {
             Self::ObserverCall { value_type, .. }
             | Self::IntegerLiteral { value_type, .. }
+            | Self::RuntimeConstantEvaluation { value_type, .. }
+            | Self::LogicalNot { value_type, .. }
             | Self::CompilerConstant { value_type, .. }
             | Self::ConstantReference { value_type, .. }
             | Self::Load { value_type, .. }
@@ -2981,6 +3003,7 @@ impl CppExpression {
                 .iter()
                 .any(|argument| argument.references_place(declaration_id)),
             Self::IntegerLiteral { .. }
+            | Self::RuntimeConstantEvaluation { .. }
             | Self::CompilerConstant { .. }
             | Self::ConstantReference { .. } => false,
             Self::Load { place, .. } | Self::AddressOf { place, .. } => {
@@ -2990,6 +3013,7 @@ impl CppExpression {
             | Self::ReferenceBinding {
                 address: pointer, ..
             }
+            | Self::LogicalNot { value: pointer, .. }
             | Self::IntegralCast { value: pointer, .. } => pointer.references_place(declaration_id),
             Self::MemberLoad { object, .. } => object.declaration_id == declaration_id,
             Self::Binary { left, right, .. } => {
@@ -3005,6 +3029,20 @@ impl CppExpression {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
+            Self::RuntimeConstantEvaluation { value_type, span } => {
+                require_bool(value_type, false, "runtime constant-evaluation result")?;
+                span.validate(logical_source)
+            }
+            Self::LogicalNot {
+                value,
+                value_type,
+                span,
+            } => {
+                require_bool(value_type, false, "logical-not result")?;
+                require_integral_scalar(value.value_type(), "logical-not operand")?;
+                span.validate(logical_source)?;
+                value.validate(places, records, logical_source)
+            }
             Self::ObserverCall {
                 callee,
                 arguments,
@@ -3497,7 +3535,10 @@ fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
 impl CppStatement {
     fn always_returns(&self) -> bool {
         match self {
-            Self::Return { .. } | Self::ReturnCall { .. } | Self::Throw { .. } => true,
+            Self::Return { .. }
+            | Self::ReturnCall { .. }
+            | Self::Throw { .. }
+            | Self::Unreachable { .. } => true,
             Self::If {
                 condition,
                 then_branch,
@@ -3821,7 +3862,8 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                     calls.push(CollectedCall::Destructor { object, callee });
                 }
             }
-            CppStatement::Throw { .. }
+            CppStatement::Unreachable { .. }
+            | CppStatement::Throw { .. }
             | CppStatement::Assume { .. }
             | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
@@ -3896,6 +3938,7 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
         }
         CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. }
+        | CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. } => collect_expression_calls(value, calls),
         CppExpression::Binary { left, right, .. } => {
             collect_expression_calls(left, calls);
@@ -4262,7 +4305,7 @@ fn validate_statement_constant_references(
 ) -> Result<(), String> {
     for statement in statements {
         match statement {
-            CppStatement::TrivialCopy { .. } => {}
+            CppStatement::Unreachable { .. } | CppStatement::TrivialCopy { .. } => {}
             CppStatement::Declare { initializer, .. } => {
                 initializer.validate_constant_references(
                     logical_source,
@@ -4483,7 +4526,7 @@ impl CppExpression {
                 constants,
                 referenced_constants,
             ),
-            Self::IntegralCast { value, .. } => {
+            Self::LogicalNot { value, .. } | Self::IntegralCast { value, .. } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
             Self::Binary { left, right, .. } => {
@@ -4491,6 +4534,7 @@ impl CppExpression {
                 right.validate_constant_references(logical_source, constants, referenced_constants)
             }
             Self::IntegerLiteral { .. }
+            | Self::RuntimeConstantEvaluation { .. }
             | Self::CompilerConstant { .. }
             | Self::Load { .. }
             | Self::AddressOf { .. }

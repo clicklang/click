@@ -202,9 +202,11 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    hostile artifact paths are refused. Ordinary, expanded and retained proofs
    agree. Shared aggregate results, construction and copy initialization remain
    implementation work;
-   `SpanPopBack` has not been verified. The unchanged pinned `back()` additionally
-   needs its constexpr assertion's single-execution loop wrapper and nested
-   observer calls in expressions admitted through ordinary source lowering.
+   `SpanPopBack` has not been verified. The unchanged pinned `back()` now
+   verifies for a one-element backing range through its actual constexpr
+   assertion and nested observer calls, with ordinary, expanded and retained
+   offline proofs of alias identity and referent value. Missing backing views,
+   empty size and false aliases are refused. Symbolic lengths remain to prove.
    **Expression observers (accepted).** Admit nested calls in unsequenced
    operands only when verified read-only observer contracts establish operand
    independence. General interfering calls remain deferred. For example,
@@ -225,7 +227,15 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    Shared storage checks now transport live-range evidence across verified
    pointer equalities, without granting read or initialization authority;
    missing, expired and one-past storage still fails.
-   The constexpr assertion condition still needs admission;
+   Integral logical negation, runtime `__builtin_is_constant_evaluated()` and
+   checked-unreachable statements now admit the constexpr assertion condition.
+   Clang's manifestly constant branch selection remains distinct from runtime
+   execution. Declared macros keep locked definitions and executable expansion
+   locations; undeclared macro dependencies are refused. Reference typedefs
+   retain resolved widths/qualification, and generated reference-result proofs
+   use the native address/referent spellings. Aggregate results, construction,
+   copy initialization and symbolic backing bounds are the next implementation
+   work;
    interfering expressions remain
    refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
