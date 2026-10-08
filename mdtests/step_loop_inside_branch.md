@@ -39,7 +39,7 @@ int32 branch_count_to_one(int32 flag, int32 i) {
     loop as count {
         invariant i == 1;
     }
-    have at(count.exit, i) == 1 by simp;
+    have at(count.exit, i) == 1;
     step();
     simp();
 }

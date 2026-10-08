@@ -17,7 +17,7 @@ theorem rb_erase_root_child_nonempty_left(node: struct rb_node*, parent: struct 
     ensures rb_erase_root_child(RbTree::Node(node, parent, color, left, right)) == left by {
         induct(left) as ih {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(a, b, c, l, r) => {

@@ -27,9 +27,9 @@ int32 run() { ensures result == 0; } by {
     let first = fold(ticket(&pool, 7), { serial: 1 });
     let second = fold(ticket(&pool, 7), { serial: 2 });
     step(nested(&pool), { member: first });
-    have second.serial == 2 by simp;
-    have count(ticket(&pool, _)) == 1 by simp;
-    have count(ticket(&pool, 7)) == 1 by simp;
+    have second.serial == 2;
+    have count(ticket(&pool, _)) == 1;
+    have count(ticket(&pool, 7)) == 1;
     unfold(second); unfold(authority(ticket(&pool, _)));
     execute(); simp();
 }

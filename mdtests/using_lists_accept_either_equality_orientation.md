@@ -10,7 +10,7 @@ This used to be a local rule in the two fixed-state checkers only.
 ```click
 theorem value_symmetric(a: int32, b: int32) {
     requires a == b;
-    ensures b == a by { simp(); }
+    ensures b == a by simp;
 }
 
 theorem pure_apply_mirrored(x: int32, y: int32) {

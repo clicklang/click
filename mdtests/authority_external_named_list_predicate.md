@@ -25,11 +25,11 @@ int32 run() { ensures result == 0; } by {
     fold(authority(ticket(&pool)));
     let first = fold(ticket(&pool), { model: List<int32>::Cons(7, List<int32>::Nil) });
     unfold(population(&pool));
-    have count(ticket(&pool)) == 1 by simp;
-    have population(&pool) == List<int32>::Cons(1, List<int32>::Nil) by simp;
+    have count(ticket(&pool)) == 1;
+    have population(&pool) == List<int32>::Cons(1, List<int32>::Nil);
     step(preserve(&pool), { member: first });
-    have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp;
-    have count(ticket(&pool)) == 1 by simp;
+    have first.model == List<int32>::Cons(7, List<int32>::Nil);
+    have count(ticket(&pool)) == 1;
     unfold(first);
     unfold(authority(ticket(&pool)));
     execute(); simp();

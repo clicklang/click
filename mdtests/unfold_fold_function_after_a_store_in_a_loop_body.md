@@ -37,8 +37,8 @@ void mark_prefix(int32 a[], int32 n) {
         owns a[0..n];
         initialize by { simp(); }
         preserve by {
-            have 0 <= i by { simp(); }
-            have i < n by { simp(); }
+            have 0 <= i;
+            have i < n;
             have i < 1073741823 by {
                 arithmetic() using { i < n; n <= 1073741823; }
             }

@@ -23,7 +23,7 @@ theorem lift(callback: int32 (*)(int32*)) executes callback(int32* data) {
     ensures Buffered(callback) by {
         unfold(Buffer(data));
         step(Raw);
-        have result == data[0] by { assumption(); }
+        have result == data[0] by assumption();
         fold(Buffer(data)); simp();
     }
 }

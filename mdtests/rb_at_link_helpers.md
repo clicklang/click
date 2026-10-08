@@ -262,7 +262,7 @@ struct rb_node* node_parent(struct rb_node* node) {
                 normalize();
             }
             execute();
-            have result == parent by { simp(); }
+            have result == parent;
             have rb_parent_is(old(t.model), result) == 1 by {
                 rewrite(result == parent);
                 assumption();
@@ -487,7 +487,7 @@ struct rb_node* red_parent_of(struct rb_node* node) {
                 normalize();
             }
             execute();
-            have result == parent by { simp(); }
+            have result == parent;
             have rb_parent_is(old(t.model), result) == 1 by {
                 rewrite(result == parent);
                 assumption();

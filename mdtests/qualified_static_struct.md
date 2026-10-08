@@ -33,7 +33,7 @@ unsigned long current() {
     ensures result == 7u64;
 } by {
     unfold(counter_state());
-    have old(counter::state.value) == 7u64 by simp;
+    have old(counter::state.value) == 7u64;
     execute();
     fold(counter_state());
     rewrite(result == old(counter::state.value));
@@ -43,7 +43,7 @@ unsigned long current() {
 int main() {
     ensures result == 1;
 } by {
-    have counter::state.value == 7u64 by simp;
+    have counter::state.value == 7u64;
     fold(counter_state());
     execute();
     simp();

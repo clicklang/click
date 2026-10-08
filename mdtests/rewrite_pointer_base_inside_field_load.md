@@ -35,7 +35,7 @@ void inspect(struct holder* p) {
     match h.link {
         Link::Linked(kid) => {
             unfold(h);
-            have p->kid == kid by { simp(); }
+            have p->kid == kid;
             have kid->payload == p->kid->payload by {
                 rewrite(p->kid == kid);
                 normalize();

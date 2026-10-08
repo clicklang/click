@@ -34,7 +34,7 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     fold(slot(&pool, p));
     fold(slot(&pool, p + 1));
     step();
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2;
     open(slot(&pool, p)) {
         open(slot(&pool, p + 1)) { step(); step(); }
     }

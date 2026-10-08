@@ -752,7 +752,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
         RbTree::Node(entry_identity, entry_parent, entry_color,
                      entry_left, entry_right) => {
             let { left: entry_l, right: entry_r } = unfold(t);
-            have root->rb_node != 0 by { simp(); }
+            have root->rb_node != 0;
             let t = fold(rb_at(n), { model: old(t.model) },
                          { left: entry_l, right: entry_r });
             let ctx = fold(ctx_at(n, root), { model: Context::Top });
@@ -766,8 +766,8 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 unfold(plug(Context::Top, t.model));
                 normalize();
             }
-            have t.model != RbTree::Empty by { simp(); }
-            have n != 0 by { simp(); }
+            have t.model != RbTree::Empty;
+            have n != 0;
             branch then { contradiction(n == 0); } else {}
             loop {
                 owns ctx: ctx_at(n, root);
@@ -869,7 +869,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                         apply(plug_keeps_first(ctx.model, sub.model, n));
                         assumption();
                     }
-                    have old(t.model) == plug(ctx.model, sub.model) by { simp(); }
+                    have old(t.model) == plug(ctx.model, sub.model);
                     have rb_list_starts_with(rb_inorder(old(t.model)), n) == 1 by {
                         rewrite(old(t.model) == plug(ctx.model, sub.model));
                         assumption();
@@ -917,7 +917,7 @@ struct rb_node* rb_last(const struct rb_root* root) {
         RbTree::Node(entry_identity, entry_parent, entry_color,
                      entry_left, entry_right) => {
             let { left: entry_l, right: entry_r } = unfold(t);
-            have root->rb_node != 0 by { simp(); }
+            have root->rb_node != 0;
             let t = fold(rb_at(n), { model: old(t.model) },
                          { left: entry_l, right: entry_r });
             let ctx = fold(ctx_at(n, root), { model: Context::Top });
@@ -931,8 +931,8 @@ struct rb_node* rb_last(const struct rb_root* root) {
                 unfold(plug(Context::Top, t.model));
                 normalize();
             }
-            have t.model != RbTree::Empty by { simp(); }
-            have n != 0 by { simp(); }
+            have t.model != RbTree::Empty;
+            have n != 0;
             branch then { contradiction(n == 0); } else {}
             loop {
                 owns ctx: ctx_at(n, root);
@@ -1034,7 +1034,7 @@ struct rb_node* rb_last(const struct rb_root* root) {
                         apply(plug_keeps_last(ctx.model, sub.model, n));
                         assumption();
                     }
-                    have old(t.model) == plug(ctx.model, sub.model) by { simp(); }
+                    have old(t.model) == plug(ctx.model, sub.model);
                     have rb_list_ends_with(rb_inorder(old(t.model)), n) == 1 by {
                         rewrite(old(t.model) == plug(ctx.model, sub.model));
                         assumption();

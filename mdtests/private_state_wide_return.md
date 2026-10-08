@@ -48,11 +48,11 @@ unsigned long right() {
 
 int main() { ensures result == 41; }
 by {
-    have right_file::state.value == 40u64 by simp;
+    have right_file::state.value == 40u64;
     step();
-    have right_file::state.value == 40u64 by simp;
+    have right_file::state.value == 40u64;
     step();
-    have right_file::state.value == 41u64 by simp;
+    have right_file::state.value == 41u64;
     step();
     simp();
 }

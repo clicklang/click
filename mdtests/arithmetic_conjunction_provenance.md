@@ -24,7 +24,7 @@ int32 drain(int32 n) {
         decreases n;
         invariant n >= 0;
         initialize by {
-            have n >= 0 by { extract(n >= 0); }
+            have n >= 0 by extract(n >= 0);
             assumption();
         }
         preserve by {

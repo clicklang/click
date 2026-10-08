@@ -19,7 +19,7 @@ verifying "leaf_conjuncts_are_available_facts.c";
 
 theorem leaf(x: int32, y: int32) {
     requires (x >= 0 and x <= 5) and y == 1;
-    ensures x <= 5 by { assumption(); }
+    ensures x <= 5 by assumption();
 }
 
 theorem sub_extracted(x: int32, y: int32) {

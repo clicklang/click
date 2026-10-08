@@ -25,9 +25,9 @@ int32 bump(int32 x) {
     if x <= 0 ensuring {
         fact a == 0;
     } then {
-        have x <= 0 or x > 0 by { simp(); }
+        have x <= 0 or x > 0;
     } else {
-        have x <= 0 or x > 0 by { simp(); }
+        have x <= 0 or x > 0;
     }
     step();
     step();

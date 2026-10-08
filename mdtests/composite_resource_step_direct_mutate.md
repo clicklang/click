@@ -44,10 +44,10 @@ int32 len_then_clear_step(struct owner* owner) {
         unfold(owned_buffer(owner));
         step();
         step();
-        have 0 <= owner->len by simp;
-        have owner->len <= owner->cap by simp;
-        have 0 <= owner->cap by simp;
-        have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
+        have 0 <= owner->len;
+        have owner->len <= owner->cap;
+        have 0 <= owner->cap;
+        have separate(memory(*owner), memory(owner->data[0..owner->cap]));
         fold(owned_buffer(owner));
     }
 }

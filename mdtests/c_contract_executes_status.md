@@ -63,7 +63,7 @@ int32 check_update(int32 (*callback)(int32*, int32), int32* cell, int32 value) {
         have cell[0] == value by { extract(cell[0] == value); assumption(); }
         execute(); fold(Cell(cell)); simp();
     } else {
-        have cell[0] == c(before) by { simp(); }
+        have cell[0] == c(before);
         execute(); fold(Cell(cell)); simp();
     }
 }

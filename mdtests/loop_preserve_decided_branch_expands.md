@@ -67,8 +67,8 @@ int32 count_zero_run(int32* a, int32 n) {
                 step();
             }
             step();
-            have 0 <= i and i <= n by { simp(); }
-            have c == 0 by { simp(); }
+            have 0 <= i and i <= n;
+            have c == 0;
             have 0 <= 0 - at(iteration, i) + n - 1 by {
                 arithmetic() using {
                     0 <= at(iteration, i);

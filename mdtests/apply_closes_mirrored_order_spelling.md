@@ -8,19 +8,19 @@ spelling of every pair matches the theorem's own, the second is mirrored.
 
 ```click
 theorem observed_range(value: uint32) {
-    ensures 0 <= to_integer(value) by { apply(uint32_to_integer_bounds(value)); }
-    ensures to_integer(value) >= 0 by { apply(uint32_to_integer_bounds(value)); }
-    ensures to_integer(value) <= 4294967295 by { apply(uint32_to_integer_bounds(value)); }
-    ensures 4294967295 >= to_integer(value) by { apply(uint32_to_integer_bounds(value)); }
+    ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
+    ensures to_integer(value) >= 0 by apply(uint32_to_integer_bounds(value));
+    ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
+    ensures 4294967295 >= to_integer(value) by apply(uint32_to_integer_bounds(value));
 }
 
 theorem integer_successor_is_greater(value: Integer) {
-    ensures value < value + 1 by { simp(); }
+    ensures value < value + 1 by simp;
 }
 
 theorem strict_integer_order(value: Integer) {
-    ensures value < value + 1 by { apply(integer_successor_is_greater(value)); }
-    ensures value + 1 > value by { apply(integer_successor_is_greater(value)); }
+    ensures value < value + 1 by apply(integer_successor_is_greater(value));
+    ensures value + 1 > value by apply(integer_successor_is_greater(value));
 }
 
 theorem strict_signed_order(value: int32) {

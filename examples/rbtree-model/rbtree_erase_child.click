@@ -94,7 +94,7 @@ theorem nonempty_zero_height_is_red(tree: RbTree) {
     ensures rb_color(tree) == Color::Red by {
         induct(tree) as ih {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(node, parent, color, left, right) => {
@@ -393,7 +393,7 @@ theorem rb_remove_min_blackened_nonempty_left(node: struct rb_node*, parent: str
         color, rb_remove_min_blackened(left), right) by {
         induct(left) as ih {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(a, b, c, l, r) => {

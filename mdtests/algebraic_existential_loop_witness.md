@@ -18,7 +18,7 @@ int32 count_to(int32 n) {
 verifying "algebraic_existential_loop_witness.c";
 
 theorem nat_reflexive(value: Nat) {
-    ensures value == value by { normalize(); }
+    ensures value == value by normalize();
 }
 
 int32 count_to(int32 n) diverges {

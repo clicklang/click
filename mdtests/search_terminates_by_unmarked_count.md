@@ -201,7 +201,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k]) },
                 forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == visited[k] }
             ) using { forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k]) }; }
-            have viewable(visited[0..n]) by { simp(); }
+            have viewable(visited[0..n]);
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));
             apply(unmarked_nonnegative(visited, 0, n, n));
             have unmarked(visited, 0, n) < unmarked(at(iter, visited), 0, n) by {
@@ -210,7 +210,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 }
             }
             step();
-            have viewable(next[0..n]) by { simp(); }
+            have viewable(next[0..n]);
             apply(walk_frame(at(iter, next), next, n, from, previous));
             have walk(next, from, previous) == at(iter, cur) by {
                 simp() using {

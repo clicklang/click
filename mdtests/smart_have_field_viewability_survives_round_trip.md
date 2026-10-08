@@ -48,7 +48,7 @@ int32 smart_have_field_loadability_survives_round_trip(struct buffer* owner) {
 } by {
     unfold(owned_buffer(owner));
     execute_until(statement(6));
-    have owner->len <= owner->cap by simp;
+    have owner->len <= owner->cap;
     if fresh == 0 {
         execute();
         have forall (k: int32) {

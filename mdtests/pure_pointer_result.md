@@ -52,7 +52,7 @@ theorem applied_identity(p: int32*) {
 }
 theorem opaque_assumption(p: int32*, q: int32*) {
     requires identity(p) == q;
-    ensures identity(p) == q by { simp(); }
+    ensures identity(p) == q by simp;
 }
 ```
 

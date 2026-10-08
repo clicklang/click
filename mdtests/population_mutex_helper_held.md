@@ -49,7 +49,7 @@ uint32 run(struct counter* p) {
 } by {
     step();
     fold(3 of member(p));
-    have count(member(p)) == 3 by simp;
+    have count(member(p)) == 3;
     let state = fold(control(p), { value: p->value });
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mutex, 0), { state: state });
     branch then { unfold(state); unfold(3 of member(p)); step(); simp(); } else {}

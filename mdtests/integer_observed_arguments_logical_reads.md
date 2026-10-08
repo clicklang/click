@@ -5,7 +5,7 @@ does not execute a C load or grant read authority.
 
 ```click
 theorem identity(n: Integer) {
-    ensures n == n by { simp(); }
+    ensures n == n by simp;
 }
 
 theorem logical_read(p: uint32*) {

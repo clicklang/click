@@ -26,7 +26,7 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
         if hi <= 0 {
             assumption();
         } else {
-            have 0 < hi by { simp(); }
+            have 0 < hi;
             have 0 <= hi - 1 by { arithmetic() using { 0 < hi; } }
             have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
             have hi - 1 <= n by { arithmetic() using { 0 < hi; hi <= n; } }
@@ -44,7 +44,7 @@ theorem hypothesis_cites_the_range_extent(v: int32[], lo: int32, n: int32, hi: i
 
 theorem stated_range_extent_is_nonnegative(v: int32[], lo: int32, n: int32) {
     views v[lo..n];
-    ensures 0 <= n - lo by { assumption(); }
+    ensures 0 <= n - lo by assumption();
 }
 
 theorem apply_cites_the_range_extent(v: int32[], lo: int32, n: int32) {

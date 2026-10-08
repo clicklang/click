@@ -71,8 +71,8 @@ int32 push_one(struct owner* owner, int32 value) {
                 contains(owned_buffer_with_room(owner), memory(owner->data[0..owner->cap]));
             }
         }
-        have owner->len <= owner->cap by simp;
-        have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
+        have owner->len <= owner->cap;
+        have separate(memory(*owner), memory(owner->data[0..owner->cap]));
         fold(owned_buffer(owner));
     }
 
@@ -96,8 +96,8 @@ int32 push_one(struct owner* owner, int32 value) {
                 contains(owned_buffer_with_room(owner), memory(owner->data[0..owner->cap]));
             }
         }
-        have owner->len <= owner->cap by simp;
-        have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
+        have owner->len <= owner->cap;
+        have separate(memory(*owner), memory(owner->data[0..owner->cap]));
         fold(owned_buffer(owner));
         simp();
     }

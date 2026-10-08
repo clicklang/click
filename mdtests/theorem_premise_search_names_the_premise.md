@@ -37,7 +37,7 @@ function parent_is(tree: Tree, q: struct node*) -> int32 {
 theorem parent_is_holds(tree: Tree, q: struct node*) {
     requires parent_is(tree, q) == 1;
 
-    ensures parent_is(tree, q) == 1 by { assumption(); }
+    ensures parent_is(tree, q) == 1 by assumption();
 }
 
 resource tree_at(p: struct node*) {

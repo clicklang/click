@@ -26,8 +26,8 @@ int32 established(int32 x, int32 y) {
     requires 1 <= y and y <= 100;
     ensures result == x / y;
 } by {
-    have y != 0 by { simp(); }
-    have x != -2147483647 - 1 or y != -1 by { simp(); }
+    have y != 0;
+    have x != -2147483647 - 1 or y != -1;
     execute();
     simp();
 }

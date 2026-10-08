@@ -67,13 +67,13 @@ void walk(struct Node* p, int32* marker) {
             }
         }
     }
-    have c.model != Path::Top by { normalize(); }
+    have c.model != Path::Top by normalize();
     match c.model {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => {
             let { up: above } = unfold(c);
-            have p == 0 by { assumption(); }
-            have identity != 0 by { simp(); }
+            have p == 0 by assumption();
+            have identity != 0;
             let whole = fold(path(p), { model: Path::Step(identity, before) }, { up: above });
             match t.model {
                 Chain::Empty => {

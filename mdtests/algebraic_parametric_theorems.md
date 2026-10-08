@@ -2,16 +2,16 @@
 
 ```click
 theorem reflexive<T>(x: T) {
-    ensures x == x by { normalize(); }
+    ensures x == x by normalize();
 }
 
 theorem via_generic<T>(x: T) {
-    ensures x == x by { apply(reflexive(x)); }
+    ensures x == x by apply(reflexive(x));
 }
 
 theorem independent<T, U>(x: T, y: U) {
-    ensures x == x by { apply(reflexive(x)); }
-    ensures y == y by { apply(reflexive(y)); }
+    ensures x == x by apply(reflexive(x));
+    ensures y == y by apply(reflexive(y));
 }
 
 theorem list_law<T>(xs: List<T>, ys: List<T>, value: T) {

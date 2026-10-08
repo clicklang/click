@@ -36,7 +36,7 @@ int64 readi64(int64* p) {
 } by { step(); simp(); }
 
 theorem reversed_orientation() {
-    ensures 4 == sizeof(int32) by { normalize(); }
+    ensures 4 == sizeof(int32) by normalize();
 }
 ```
 

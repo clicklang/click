@@ -19,7 +19,7 @@ theorem quotient_remainder_order(n: Integer, d: Integer) {
     }
 }
 theorem distribute(a: Integer, b: Integer, c: Integer) {
-    ensures (a + b) * c == a * c + b * c by { apply(integer_multiply_add(a, b, c)); }
+    ensures (a + b) * c == a * c + b * c by apply(integer_multiply_add(a, b, c));
 }
 theorem observed_distribution(x: int64, y: int64) {
     requires defined(x + 1i64);

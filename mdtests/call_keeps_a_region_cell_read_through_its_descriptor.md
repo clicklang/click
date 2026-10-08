@@ -194,23 +194,23 @@ int32 two_puts(struct pool* pool, struct slot* first, struct slot* second) {
 } by {
     let { a: a, b: b } = step(attach(pool, first, second), { st: st });
     step(put(first, 11), { st: st, r: a });
-    have first->pool == pool by simp;
-    have second->pool == pool by simp;
+    have first->pool == pool;
+    have second->pool == pool;
     mark m1;
     step(put(second, 22), { st: st, r: b });
-    have first->pool == at(m1, first->pool) by simp;
-    have first->at == at(m1, first->at) by simp;
-    have second->pool == pool by simp;
-    have first->pool == pool by simp;
+    have first->pool == at(m1, first->pool);
+    have first->at == at(m1, first->at);
+    have second->pool == pool;
+    have first->pool == pool;
     have first->pool->data == second->pool->data by {
         rewrite(first->pool == pool);
         rewrite(second->pool == pool);
         normalize();
     }
-    have second->pool->data == at(m1, second->pool->data) by simp;
-    have at(m1, second->pool->data) == at(m1, first->pool->data) by simp;
-    have first->pool->data == at(m1, first->pool->data) by simp;
-    have at(m1, first->pool->data[first->at]) == 11 by simp;
+    have second->pool->data == at(m1, second->pool->data);
+    have at(m1, second->pool->data) == at(m1, first->pool->data);
+    have first->pool->data == at(m1, first->pool->data);
+    have at(m1, first->pool->data[first->at]) == 11;
     have first->pool->data[first->at] == 11 by {
         transport(at(m1, first->pool->data[first->at]) == 11, first->pool->data[first->at] == 11) using {
             at(m1, first->pool->data[first->at]) == 11;

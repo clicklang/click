@@ -112,10 +112,10 @@ void mark(int32 *next, int32 *visited) {
     ensures walk(next, 0, Nat::Succ(Nat::Zero)) == 0;
 } by {
     mark entry;
-    have at(entry, next[0]) == 0 by { simp(); }
+    have at(entry, next[0]) == 0;
     step();
     have at(entry, next[0]) == next[0] by {
-        have at(entry, next[0]) == at(entry, next[0]) by { normalize(); }
+        have at(entry, next[0]) == at(entry, next[0]) by normalize();
         transport(
             at(entry, next[0]) == at(entry, next[0]),
             at(entry, next[0]) == next[0]
@@ -152,13 +152,13 @@ void mark(int32 *next, int32 *visited) {
         }
         assumption();
     }
-    have at(entry, viewable(next[0..1])) by { simp(); }
-    have viewable(next[0..1]) by { simp(); }
-    have 0 <= 0 by { simp(); }
-    have 0 < 1 by { simp(); }
-    have 1 <= 1073741823 by { simp(); }
-    have 0 <= 1 - 0 by { simp(); }
-    have 1 - 0 <= 1073741823 by { simp(); }
+    have at(entry, viewable(next[0..1]));
+    have viewable(next[0..1]);
+    have 0 <= 0;
+    have 0 < 1;
+    have 1 <= 1073741823;
+    have 0 <= 1 - 0;
+    have 1 - 0 <= 1073741823;
     apply(walk_frame(at(entry, next), next, 1, 0, Nat::Succ(Nat::Zero))) using {
         0 <= 0;
         0 < 1;
@@ -175,7 +175,7 @@ void mark(int32 *next, int32 *visited) {
         0 <= 1 - 0;
         1 - 0 <= 1073741823;
     }
-    have at(entry, walk(next, 0, Nat::Succ(Nat::Zero))) == 0 by { simp(); }
+    have at(entry, walk(next, 0, Nat::Succ(Nat::Zero))) == 0;
     have walk(next, 0, Nat::Succ(Nat::Zero)) == 0 by {
         simp() using {
             at(entry, walk(next, 0, Nat::Succ(Nat::Zero))) == 0;

@@ -13,11 +13,11 @@ int32 run() { ensures result == 0; } by {
     fold(0 of token(&pool));
     unfold(0 of token(&pool));
     fold(3 of token(&pool));
-    have count(token(&pool)) == 3 by simp;
+    have count(token(&pool)) == 3;
     unfold(token(&pool));
-    have count(token(&pool)) == 2 by simp;
+    have count(token(&pool)) == 2;
     unfold(2 of token(&pool));
-    have count(token(&pool)) == 0 by simp;
+    have count(token(&pool)) == 0;
     unfold(authority(token(&pool)));
     execute(); simp();
 }

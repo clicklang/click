@@ -42,12 +42,12 @@ int32 call_twice() {
     requires static_local::increment_twice::values[0] == 5 and static_local::increment_twice::values[1] == 7 and static_local::increment_twice::values[2] == 0;
     ensures result == 16;
 } by {
-    have static_local::increment_twice::values[0] > -1000 by simp;
-    have static_local::increment_twice::values[0] < 1000 by simp;
-    have static_local::increment_twice::values[1] > -1000 by simp;
-    have static_local::increment_twice::values[1] < 1000 by simp;
-    have static_local::increment_twice::values[2] > -1000 by simp;
-    have static_local::increment_twice::values[2] < 1000 by simp;
+    have static_local::increment_twice::values[0] > -1000;
+    have static_local::increment_twice::values[0] < 1000;
+    have static_local::increment_twice::values[1] > -1000;
+    have static_local::increment_twice::values[1] < 1000;
+    have static_local::increment_twice::values[2] > -1000;
+    have static_local::increment_twice::values[2] < 1000;
     execute();
     simp();
 }

@@ -19,7 +19,7 @@ theorem int32_binder(n: int32) {
 theorem integer_binder() {
     ensures forall (m: Integer) { m + 0 == m } by {
         intro() as value;
-        have value + 0 == value by { arithmetic(); }
+        have value + 0 == value by arithmetic();
         assumption();
     }
 }
@@ -27,7 +27,7 @@ theorem integer_binder() {
 theorem pointer_binder(q: int32*) {
     ensures forall (p: int32*) { p == p } by {
         intro() as cell;
-        have cell == cell by { normalize(); }
+        have cell == cell by normalize();
         assumption();
     }
 }
@@ -37,7 +37,7 @@ theorem nested_binders(n: int32) {
         intro() as x;
         intro() as y;
         intro();
-        have x < y by { assumption(); }
+        have x < y by assumption();
         assumption();
     }
 }

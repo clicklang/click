@@ -20,12 +20,12 @@ int32 run() { ensures result == 0; } by {
     let second = fold(ticket(&pool, 7), { serial: 2 });
     let framed = fold(ticket(&pool, 8), { serial: 3 });
     step(preserve(&pool), {});
-    have first.serial == 1 by simp;
-    have second.serial == 2 by simp;
-    have count(ticket(&pool, _)) == 3 by simp;
-    have count(ticket(&pool, 7)) == 2 by simp;
-    have count(ticket(&pool, 8)) == 1 by simp;
-    have framed.serial == 3 by simp;
+    have first.serial == 1;
+    have second.serial == 2;
+    have count(ticket(&pool, _)) == 3;
+    have count(ticket(&pool, 7)) == 2;
+    have count(ticket(&pool, 8)) == 1;
+    have framed.serial == 3;
     unfold(first); unfold(second); unfold(framed);
     unfold(authority(ticket(&pool, _)));
     execute(); simp();

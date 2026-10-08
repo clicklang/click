@@ -132,37 +132,28 @@ with none.
 
 ## C. Tactics
 
-### C1. Use the short proof forms in the existing proofs
+### C1. Short proof forms where they are not yet used
 
-The examples, standard library and mdtests are what a reader learns Click
-from. Three short forms landed after most were written, and the corpus still
-spells the long ones:
+Proofs that pass were rewritten on 2026-10-08: a `have` or `ensures` proved
+by a one-step block uses the brace-less form (`by T(args);`, `by simp;`), and
+`have P by simp;` is `have P;`. No `by { simp(); }` remains in examples or
+the standard library. Left in the long spelling:
 
-- `by T(args);` for a one-step proof, where the corpus writes
-  `by { T(args); }` (#332). `by simp;` already existed for `by { simp(); }`.
-- `have P;`, which is `have P by simp;` (#313).
-- `instantiate(F, value);` without a `using` list, which looks each
-  instantiated guard up as an exact fact (#307).
-
-Counted on 2026-10-07 in mdtests, examples, stdlib and integrations: 700
-`by { simp(); }`, 147 `by { assumption(); }`, 70 `by { normalize(); }`, and
-about 200 `instantiate` calls with a `using` list. How many of those lists
-are exactly the guards has not been counted; trying the bare form on each
-and keeping the ones that still verify gives the number.
-
-A mechanical rewrite with no change to what any proof proves. Leave a
-multi-step block, a block form such as `both { ... } and { ... }`, and any
-`instantiate` whose list derives a guard from other facts. Do not touch the
-hash-pinned sidecars under `design/charon-trial` without updating
-`parity.json`, and do not change an mdtest whose point is the long spelling
-(`empty_using_list_is_accepted.md`,
-`by_takes_one_tactic_without_braces.md`).
-
-Regression: none new; the rewritten proofs are the regression.
-
-Done when: `scripts/check.sh` and `scripts/check.sh --audit` pass, no
-`by { simp(); }` remains in examples or stdlib, and the pull request reports
-how many `instantiate` calls were rewritten and how many were left.
+- Every expected-failure mdtest, because a failing short `have` reports less
+  than the block form
+  (`bugs/a-failing-short-have-reports-less-than-the-block-form.md`). Respell
+  them when that is fixed.
+- One-step blocks after `initialize`, `preserve` and `close_invariants`,
+  which do not take the brace-less form: `close_invariants by simp;` is a
+  syntax error. Decide whether they should.
+- `instantiate(F, v) using { ... }` calls whose list is exactly the guards,
+  which could drop the list. Try the bare form on each and keep the ones
+  that still verify; about 200 calls have a list.
+- The Rust examples and the sidecars under `design/charon-trial`, which are
+  hash-pinned in `design/charon-trial/parity.json`.
+- A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,
+  `cpp_guard_unwind_before_second.md`,
+  `post_execution_have_checks_each_path.md`).
 
 ### C2. `intro() as name` on a range quantifier
 

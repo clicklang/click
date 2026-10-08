@@ -106,10 +106,10 @@ int32 read_after_calls(struct buffer* owner) {
     step();
     step();
     unfold(buffer_storage(owner));
-    have 0 <= owner->len by simp;
-    have owner->len <= owner->cap by simp;
-    have 1 <= owner->cap by simp;
-    have owner->cap <= 536870911 by simp;
+    have 0 <= owner->len;
+    have owner->len <= owner->cap;
+    have 1 <= owner->cap;
+    have owner->cap <= 536870911;
     execute();
     fold(allocated_buffer(owner));
     simp();

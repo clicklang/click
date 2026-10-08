@@ -83,17 +83,17 @@ void clear_span(struct span* span, int32* flags, int32* data, int32 n) {
         initialize by simp;
         preserve by {
             let { next: m } = unfold(w);
-            have m == i by simp;
-            have i < span->end by simp;
-            have 0 <= span->start by simp;
-            have span->start <= i by simp;
+            have m == i;
+            have i < span->end;
+            have 0 <= span->start;
+            have span->start <= i;
             have 0 <= i by {
                 apply(int32_le_transitive(0, span->start, i)) using {
                     0 <= span->start;
                     span->start <= i;
                 }
             }
-            have span->end <= n by simp;
+            have span->end <= n;
             have i < n by {
                 apply(int32_lt_le_transitive(i, span->end, n)) using {
                     i < span->end;

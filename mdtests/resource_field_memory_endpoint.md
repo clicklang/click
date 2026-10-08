@@ -75,8 +75,8 @@ void claim(int32* data, int32 capacity, int32 start) {
     ensures data[start] == 7;
 } by {
     unfold(before);
-    have old(before.start) == start by { simp(); }
-    have old(before.start) < capacity by { simp(); }
+    have old(before.start) == start;
+    have old(before.start) < capacity;
     have forall (k: int32) {
         old(before.start) + 1 <= k and k < capacity implies data[k] == 0
     } by {

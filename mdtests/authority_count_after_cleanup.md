@@ -36,9 +36,9 @@ int32 spent_count() {
     fold(control(obj));
     unfold(control(obj));
     unfold(authority(reference(obj)));
-    have count(reference(obj)) == 0 by simp;
+    have count(reference(obj)) == 0;
     step();
-    have count(reference(obj)) == 0 by simp;
+    have count(reference(obj)) == 0;
     execute();
     simp();
 }

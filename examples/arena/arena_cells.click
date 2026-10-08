@@ -460,30 +460,30 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
         }
         assumption();
-        have result == 0 or result == 1 by simp;
+        have result == 0 or result == 1;
         assumption();
-        have st.live == old(st.live) + result by simp;
+        have st.live == old(st.live) + result;
         assumption();
-        have arena->capacity == old(arena->capacity) by simp;
+        have arena->capacity == old(arena->capacity);
         assumption();
-        have arena->capacity <= 536870911 by simp;
+        have arena->capacity <= 536870911;
         assumption();
-        have st.capacity == arena->capacity by simp;
+        have st.capacity == arena->capacity;
         assumption();
-        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
+        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
         assumption();
         have result == 1 implies outcome.model ==
             ArenaAllocOutcome::Success(region->start, region->end) by simp;
         assumption();
-        have result == 1 implies region->arena == arena by simp;
+        have result == 1 implies region->arena == arena;
         assumption();
-        have result == 1 implies region->end == region->start + count by simp;
+        have result == 1 implies region->end == region->start + count;
         assumption();
-        have result == 1 implies region->end <= arena->capacity by simp;
+        have result == 1 implies region->end <= arena->capacity;
         assumption();
-        have result == 1 implies 0 <= region->start by simp;
+        have result == 1 implies 0 <= region->start;
         assumption();
-        have result == 1 implies region->start < region->end by simp;
+        have result == 1 implies region->start < region->end;
         assumption();
         have forall (k: int32) {
             result == 1 and region->start <= k and k < region->end implies
@@ -566,30 +566,30 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
         }
         assumption();
-        have result == 0 or result == 1 by simp;
+        have result == 0 or result == 1;
         assumption();
-        have st.live == old(st.live) + result by simp;
+        have st.live == old(st.live) + result;
         assumption();
-        have arena->capacity == old(arena->capacity) by simp;
+        have arena->capacity == old(arena->capacity);
         assumption();
-        have arena->capacity <= 536870911 by simp;
+        have arena->capacity <= 536870911;
         assumption();
-        have st.capacity == arena->capacity by simp;
+        have st.capacity == arena->capacity;
         assumption();
-        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
+        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
         assumption();
         have result == 1 implies outcome.model ==
             ArenaAllocOutcome::Success(region->start, region->end) by simp;
         assumption();
-        have result == 1 implies region->arena == arena by simp;
+        have result == 1 implies region->arena == arena;
         assumption();
-        have result == 1 implies region->end == region->start + count by simp;
+        have result == 1 implies region->end == region->start + count;
         assumption();
-        have result == 1 implies region->end <= arena->capacity by simp;
+        have result == 1 implies region->end <= arena->capacity;
         assumption();
-        have result == 1 implies 0 <= region->start by simp;
+        have result == 1 implies 0 <= region->start;
         assumption();
-        have result == 1 implies region->start < region->end by simp;
+        have result == 1 implies region->start < region->end;
         assumption();
         have forall (k: int32) {
             result == 1 and region->start <= k and k < region->end implies
@@ -686,7 +686,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             k < arena->capacity;
         }
     }
-    have viewable(arena->occupied[0..arena->capacity]) by simp;
+    have viewable(arena->occupied[0..arena->capacity]);
     let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), {
         lo: 0, hi: 0
     });
@@ -839,7 +839,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 have 0 <= run_length and run_length <= count by {
                     simp();
                 }
-                have viewable(arena->occupied[0..arena->capacity]) by simp;
+                have viewable(arena->occupied[0..arena->capacity]);
                 let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), {
                     lo: lo, hi: i
                 });
@@ -927,9 +927,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                     contradiction(k < i);
                 }
-                have 0 <= i by { simp(); }
-                have i <= arena->capacity by { simp(); }
-                have viewable(arena->occupied[0..arena->capacity]) by simp;
+                have 0 <= i;
+                have i <= arena->capacity;
+                have viewable(arena->occupied[0..arena->capacity]);
                 let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), {
                     lo: i, hi: i
                 });
@@ -1051,30 +1051,30 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
         }
         assumption();
-        have result == 0 or result == 1 by simp;
+        have result == 0 or result == 1;
         assumption();
-        have st.live == old(st.live) + result by simp;
+        have st.live == old(st.live) + result;
         assumption();
-        have arena->capacity == old(arena->capacity) by simp;
+        have arena->capacity == old(arena->capacity);
         assumption();
-        have arena->capacity <= 536870911 by simp;
+        have arena->capacity <= 536870911;
         assumption();
-        have st.capacity == arena->capacity by simp;
+        have st.capacity == arena->capacity;
         assumption();
-        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
+        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
         assumption();
         have result == 1 implies outcome.model ==
             ArenaAllocOutcome::Success(region->start, region->end) by simp;
         assumption();
-        have result == 1 implies region->arena == arena by simp;
+        have result == 1 implies region->arena == arena;
         assumption();
-        have result == 1 implies region->end == region->start + count by simp;
+        have result == 1 implies region->end == region->start + count;
         assumption();
-        have result == 1 implies region->end <= arena->capacity by simp;
+        have result == 1 implies region->end <= arena->capacity;
         assumption();
-        have result == 1 implies 0 <= region->start by simp;
+        have result == 1 implies 0 <= region->start;
         assumption();
-        have result == 1 implies region->start < region->end by simp;
+        have result == 1 implies region->start < region->end;
         assumption();
         have forall (k: int32) {
             result == 1 and region->start <= k and k < region->end implies
@@ -1288,7 +1288,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             arena->occupied[k] == old(arena->occupied[k]);
         }
     }
-    have viewable(arena->occupied[0..arena->capacity]) by simp;
+    have viewable(arena->occupied[0..arena->capacity]);
     let w = fold(arena_window(
         arena->data,
         arena->occupied,
@@ -1320,10 +1320,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         initialize by simp;
         preserve by {
             let { next: m } = unfold(w);
-            have m == i by simp;
-            have m <= i by simp;
-            have i < end by simp;
-            have end <= arena->capacity by simp;
+            have m == i;
+            have m <= i;
+            have i < end;
+            have end <= arena->capacity;
             have arena->occupied[i] == 0 by {
                 instantiate(forall (k: int32) {
                     m <= k and k < end implies arena->occupied[k] == 0
@@ -1334,9 +1334,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 assumption();
             }
             take(arena->data[i..i + 1]);
-            have start <= i by simp;
-            have 0 <= i by simp;
-            have i < arena->capacity by simp;
+            have start <= i;
+            have 0 <= i;
+            have i < arena->capacity;
             mark opened;
             step();
             have forall (k: int32) {
@@ -1420,7 +1420,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         }
                         assumption();
                     }
-                    have 0 <= k by simp;
+                    have 0 <= k;
                     transport(
                         at(opened, arena->occupied[k]) == 1,
                         arena->occupied[k] == 1
@@ -1539,7 +1539,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     k < arena->capacity;
                 }
             }
-            have viewable(arena->occupied[0..arena->capacity]) by simp;
+            have viewable(arena->occupied[0..arena->capacity]);
             let w = fold(arena_window(
                 arena->data,
                 arena->occupied,
@@ -1886,30 +1886,30 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         contradiction(result == 0);
     }
     assumption();
-    have result == 0 or result == 1 by simp;
+    have result == 0 or result == 1;
     assumption();
-    have st.live == old(st.live) + result by simp;
+    have st.live == old(st.live) + result;
     assumption();
-    have arena->capacity == old(arena->capacity) by simp;
+    have arena->capacity == old(arena->capacity);
     assumption();
-    have arena->capacity <= 536870911 by simp;
+    have arena->capacity <= 536870911;
     assumption();
-    have st.capacity == arena->capacity by simp;
+    have st.capacity == arena->capacity;
     assumption();
-    have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
+    have result == 0 implies outcome.model == ArenaAllocOutcome::Failure;
     assumption();
     have result == 1 implies outcome.model ==
         ArenaAllocOutcome::Success(region->start, region->end) by simp;
     assumption();
-    have result == 1 implies region->arena == arena by simp;
+    have result == 1 implies region->arena == arena;
     assumption();
-    have result == 1 implies region->end == region->start + count by simp;
+    have result == 1 implies region->end == region->start + count;
     assumption();
-    have result == 1 implies region->end <= arena->capacity by simp;
+    have result == 1 implies region->end <= arena->capacity;
     assumption();
-    have result == 1 implies 0 <= region->start by simp;
+    have result == 1 implies 0 <= region->start;
     assumption();
-    have result == 1 implies region->start < region->end by simp;
+    have result == 1 implies region->start < region->end;
     assumption();
     have forall (k: int32) {
         result == 1 and region->start <= k and k < region->end implies
@@ -2033,7 +2033,7 @@ void arena_free(struct region* region) {
     let { live: n, capacity: c } = unfold(st);
     let { start: s, end: e } = unfold(r);
     unfold(arena_cells(region->arena->data, region->arena->occupied, region->arena->capacity));
-    have viewable(region->arena->occupied[0..region->arena->capacity]) by simp;
+    have viewable(region->arena->occupied[0..region->arena->capacity]);
     have separate(
         memory(*region),
         memory(region->arena->occupied[0..region->arena->capacity])
@@ -2043,8 +2043,8 @@ void arena_free(struct region* region) {
     step();
     step();
     step();
-    have e <= c by simp;
-    have arena->capacity == c by simp;
+    have e <= c;
+    have arena->capacity == c;
     have e <= arena->capacity by {
         rewrite(arena->capacity == c);
         assumption();
@@ -2109,25 +2109,25 @@ void arena_free(struct region* region) {
         initialize by simp;
         preserve by {
             let { next: m } = unfold(w);
-            have m == i by simp;
-            have i < region->end by simp;
-            have 0 <= region->start by simp;
-            have region->start <= m by simp;
-            have region->start <= i by simp;
+            have m == i;
+            have i < region->end;
+            have 0 <= region->start;
+            have region->start <= m;
+            have region->start <= i;
             have 0 <= i by {
                 apply(int32_le_transitive(0, region->start, i)) using {
                     0 <= region->start;
                     region->start <= i;
                 }
             }
-            have region->end <= arena->capacity by simp;
+            have region->end <= arena->capacity;
             have i < arena->capacity by {
                 apply(int32_lt_le_transitive(i, region->end, arena->capacity)) using {
                     i < region->end;
                     region->end <= arena->capacity;
                 }
             }
-            have viewable(arena->occupied[0..arena->capacity]) by simp;
+            have viewable(arena->occupied[0..arena->capacity]);
             mark opened;
             step();
             give(arena->data[i..i + 1]);
@@ -2151,7 +2151,7 @@ void arena_free(struct region* region) {
                 extract(region->start <= k);
                 extract(k < at(opened, i) + 1);
                 if k < at(opened, i) {
-                    have k < m by simp;
+                    have k < m;
                     have at(opened, arena->occupied[k]) == 0 by {
                         instantiate(forall (j: int32) {
                             at(opened, region->start) <= at(opened, j) and
@@ -2323,9 +2323,9 @@ void arena_free(struct region* region) {
         }
     }
     let { next: m } = unfold(w);
-    have m <= region->end by simp;
-    have m == i by simp;
-    have not (i < region->end) by simp;
+    have m <= region->end;
+    have m == i;
+    have not (i < region->end);
     have not (m < region->end) by {
         rewrite(m == i);
         assumption();
@@ -2348,7 +2348,7 @@ void arena_free(struct region* region) {
             region->start <= region->end;
         }
     }
-    have region->end <= arena->capacity by simp;
+    have region->end <= arena->capacity;
     have forall (k: int32) {
         region->start <= k and k < region->end implies arena->occupied[k] == 0
     } by {
@@ -2441,8 +2441,8 @@ void arena_free(struct region* region) {
         }
     }
     mark cleared;
-    have 1 <= n by simp;
-    have arena->live_regions == n by simp;
+    have 1 <= n;
+    have arena->live_regions == n;
     step();
     have forall (k: int32) {
         region->start <= k and k < region->end implies
@@ -2804,8 +2804,8 @@ int32 arena_region_length(struct region* region) {
 } by {
     let { live: n } = unfold(st);
     let { start: s, end: e } = unfold(r);
-    have region->start == s by { assumption(); }
-    have region->end == e by { assumption(); }
+    have region->start == s by assumption();
+    have region->end == e by assumption();
     execute();
     have result == e - s by {
         simp() using { result == region->end - region->start; region->start == s; region->end == e; }

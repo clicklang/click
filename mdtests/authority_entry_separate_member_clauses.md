@@ -20,7 +20,7 @@ int32 run(void* p) {
 } by {
     unfold(ticket(p));
     unfold(ticket(p));
-    have count(ticket(p)) == 1 by { simp(); }
+    have count(ticket(p)) == 1;
     step();
     simp();
 }

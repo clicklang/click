@@ -56,12 +56,12 @@ int32 count_run(int32 n) {
             if i < 2 {
                 branch then { step(); } else { contradiction(not (i < 2)); }
                 step();
-                have 0 <= i and i <= n by { simp(); }
-                have 0 <= run and run <= i by { simp(); }
-                have i <= 2 and run == 0 by { simp(); }
-                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by { assumption(); }
-                have 0 <= at(iteration, i) by { simp(); }
-                have 0 <= n by { simp(); }
+                have 0 <= i and i <= n;
+                have 0 <= run and run <= i;
+                have i <= 2 and run == 0;
+                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by assumption();
+                have 0 <= at(iteration, i);
+                have 0 <= n;
                 have 0 <= n - at(iteration, i) - 1 by {
                     arithmetic() using {
                         0 <= at(iteration, i);
@@ -107,12 +107,12 @@ int32 count_run(int32 n) {
                 }
                 branch then { contradiction(i < 2); } else { step(); }
                 step();
-                have 0 <= i and i <= n by { simp(); }
-                have 0 <= run and run <= i by { simp(); }
-                have 2 <= i and 2 + run == i by { simp(); }
-                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by { assumption(); }
-                have 0 <= at(iteration, i) by { simp(); }
-                have 0 <= n by { simp(); }
+                have 0 <= i and i <= n;
+                have 0 <= run and run <= i;
+                have 2 <= i and 2 + run == i;
+                have (i <= 2 and run == 0) or (2 <= i and 2 + run == i) by assumption();
+                have 0 <= at(iteration, i);
+                have 0 <= n;
                 have 0 <= n - at(iteration, i) - 1 by {
                     arithmetic() using {
                         0 <= at(iteration, i);
