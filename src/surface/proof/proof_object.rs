@@ -164,7 +164,7 @@ struct CheckedExecutionJoinArm<'v> {
     execution: &'v ExecutionProofState,
     condition_theorem: Option<&'v Theorem>,
     introduced_facts: Vec<Proposition>,
-    introduced_effect_facts: Vec<ExecutionPureFact>,
+    introduced_effect_facts: crate::kernel::ExecutionFacts,
     introduced_derivations: Vec<Theorem>,
     introduced_unfolds: Vec<String>,
     /// Frontier-local loops the arm proved inside its region. They are
@@ -1485,7 +1485,7 @@ pub(in crate::surface::proof) enum OutcomeEffectContext {
 pub(in crate::surface::proof) struct FixedStateOperationView<'p> {
     pub(in crate::surface::proof) claim_label: &'p str,
     pub(in crate::surface::proof) tactic_index: usize,
-    pub(in crate::surface::proof) effect_facts: &'p [ExecutionPureFact],
+    pub(in crate::surface::proof) effect_facts: &'p ExecutionFacts,
     pub(in crate::surface::proof) parameters: &'p [syntax::C0Parameter],
     pub(in crate::surface::proof) arguments: &'p [CExpression],
     pub(in crate::surface::proof) pre_state: &'p CState,
@@ -1507,7 +1507,7 @@ impl<'p> FixedStateOperationView<'p> {
         Self {
             claim_label: context.claim_label,
             tactic_index: context.tactic_index,
-            effect_facts: context.effect_facts,
+            effect_facts: &context.effect_facts,
             parameters: context.parameters,
             arguments: context.arguments,
             pre_state: context.pre_state,

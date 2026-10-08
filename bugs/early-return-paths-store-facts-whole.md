@@ -1,5 +1,11 @@
 # A function with early returns verifies in work quadratic in their count
 
+
+Current status: shared fact storage is fixed. Terminal joins still assemble
+new flat outcome containers, and individual outcome goals still traverse
+logical fact streams. Those remaining publication and traversal costs keep
+this broader bug open. The measurements below record the successive fixes.
+
 ## Violated invariant
 
 A proof written with explicit simple tactics must verify in work near linear
@@ -187,8 +193,53 @@ every path's facts and obligations. The candidate-fork regression varies path
 count and facts per path independently through 1,024, checks shared storage,
 and checks that a fork survives its original owner. Candidates remain untrusted
 and certification still checks them against the retained execution trace.
-Individual paths still store flat facts, and building a distinct outcome
-collection still assembles its own path container; those costs remain open.
+At that point, individual paths still stored flat facts, and building a
+distinct outcome collection still assembled its own path container.
+
+### Persistent fact storage
+
+Execution paths, candidates, effect evidence, and checked completion now use
+an ordered persistent fact stream. Forks share its root, chunks, and immutable
+fact objects; a producer metadata edit copies only the selected fact. Exact
+fragment merges retain accepted source objects after all existing validation,
+including when redundant facts are suppressed. Checked C branches and logical
+cases retain their guard prefix before returned descendants are published.
+Terminal joins therefore retain those facts rather than recreate each prefix.
+
+Checked completion also retains the persistent ordered projection of its
+checked context instead of constructing a full fact array for each outcome.
+The projection preserves the former condition-then-proposition order and
+tracks replacements, withdrawals, and restrictions. Publication deduplicates
+by proposition while retaining an existing fact's full certification and
+transport metadata. Candidates remain untrusted and the trace and contract
+checks are unchanged.
+
+Measured on base `18651a8ea`, with the original C and both proofs unchanged:
+
+| metric, identical for grouped and explicit proofs | 4 | 8 | 16 | 32 | 64 |
+| --- | --- | --- | --- | --- | --- |
+| logical fact occurrences | 35 | 81 | 221 | 693 | 2405 |
+| distinct retained fact objects | 25 | 45 | 85 | 165 | 325 |
+| distinct retained vector chunks | 27 | 47 | 87 | 167 | 329 |
+
+These counts cover both candidate publication and checked completion, including
+private effect evidence and retained context-prefix storage. The existing
+whole-verification regression now bounds retained objects and chunks as well
+as work and context construction in both proof forms. Its work curves remain
+unchanged, and it still completes in under six seconds locally.
+
+A separate kernel regression executes 8, 16, 32, and 64 early returns. It checks
+prefix storage identity, ordered false guards on the final path, and opposite
+arm isolation. The original flat representation retains 44, 152, 560, and
+2,144 distinct fact objects; the persistent representation retains 16, 32, 64,
+and 128. Context and fork regressions additionally vary unrelated prefix facts
+through 1,024, check owner lifetime, preserve certification metadata, and
+check that editing one fact leaves the other shared objects unchanged.
+
+Remaining: terminal joins rebuild distinct outcome containers, and outcome
+processing still reads each logical path's facts. Shared storage does not
+remove those per-outcome traversals or promise that every publication phase
+has linear CPU work.
 
 ## Intended regression
 

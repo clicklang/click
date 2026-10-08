@@ -156,7 +156,7 @@ pub(super) fn prove_ensure_resource<'e>(
     claim_label: &str,
     path_index: usize,
     _allocation_lifetime: &crate::kernel::proof::AllocationLifetimeObligation,
-    execution_pure_facts: &[crate::kernel::ExecutionPureFact],
+    execution_pure_facts: &(impl crate::kernel::ExecutionFactSource + ?Sized),
     available_pure_facts: &(impl PropositionSource + ?Sized),
     resource: &ResourceClause,
     borrowed: bool,

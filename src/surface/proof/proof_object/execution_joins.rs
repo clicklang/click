@@ -1172,7 +1172,7 @@ impl<'a> Proof<'a> {
         }
 
         let joined_state = (*execution.core.state).clone();
-        let arm_effect_facts: [&[ExecutionPureFact]; 2] = [
+        let arm_effect_facts: [&ExecutionFacts; 2] = [
             &arms[0].introduced_effect_facts,
             &arms[1].introduced_effect_facts,
         ];
@@ -2822,7 +2822,7 @@ impl<'a> Proof<'a> {
             execution,
             condition_theorem,
             introduced_facts,
-            introduced_effect_facts,
+            introduced_effect_facts: introduced_effect_facts.into(),
             introduced_derivations,
             introduced_unfolds,
             introduced_loop_clauses,

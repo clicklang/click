@@ -71,6 +71,78 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
     }
 }
 
+/// Each returned path reads its guards, but stores only its own suffix.
+#[test]
+fn early_return_paths_share_guard_fact_storage() {
+    let mut samples = Vec::new();
+    for returns in [8, 16, 32, 64] {
+        let mut body = c_return(c_int32_literal(u32::MAX));
+        for value in (0..returns).rev() {
+            body = c_seq(
+                c_if(
+                    c_equal(c_variable("x"), c_int32_literal(value)),
+                    c_return(c_int32_literal(value)),
+                    c_skip(),
+                ),
+                body,
+            );
+        }
+        let function = c_function(
+            CType::Int32,
+            "shared_guards",
+            vec![c_parameter("x", CType::Int32)],
+            body,
+        );
+        let execution = prove_symbolic_c_function_execution_paths(
+            CState::new(),
+            function,
+            vec![CExpression::Value(int32(Bitvector32Term::Variable(
+                Variable(960_000),
+            )))],
+            PureFactContext::new(),
+        );
+        assert!(
+            execution.limit().is_none(),
+            "{returns} returns: {:?}",
+            execution.limit()
+        );
+        assert_eq!(execution.paths().len(), returns as usize + 1);
+        let unique = execution
+            .paths()
+            .iter()
+            .flat_map(|path| path.facts().iter())
+            .map(|fact| fact as *const ExecutionPureFact as usize)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        let occurrences: usize = execution
+            .paths()
+            .iter()
+            .map(|path| path.facts().len())
+            .sum();
+        samples.push((returns, unique, occurrences));
+        // The later path retains every earlier false guard, never an earlier
+        // arm's true guard. Equality and order remain observable to callers.
+        let last = execution.paths().last().unwrap();
+        assert_eq!(last.facts().len(), returns as usize);
+        assert!(
+            last.facts()
+                .iter()
+                .all(|fact| matches!(fact.proposition(), Proposition::ConditionIs(_, false)))
+        );
+    }
+    eprintln!("early-return stored facts: {samples:?}");
+    for (returns, unique, occurrences) in &samples {
+        assert!(
+            *unique <= 3 * *returns as usize,
+            "path facts must share their guard prefixes: {samples:?}"
+        );
+        assert!(
+            occurrences > unique,
+            "the fixture must actually exercise shared prefixes"
+        );
+    }
+}
+
 fn borrowed_input_view_function(name: &str) -> CFunction {
     c_function(CType::Void, name, vec![], c_return(c_void_value())).with_resource_summary(
         vec![CResourceSpec::token(
@@ -2036,7 +2108,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     }
     let normal = normal.expect("normal successor");
     let exceptional = exceptional.expect("exceptional successor");
-    let path_facts = |facts: &[ExecutionPureFact]| {
+    let path_facts = |facts: &ExecutionFacts| {
         facts
             .iter()
             .map(|fact| fact.proposition().clone())
@@ -3181,8 +3253,8 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         completion_origin: None,
         assumptions: PureFactContext::new(),
         post_assumptions: None,
-        facts: Vec::new(),
-        effect_facts: Vec::new(),
+        facts: Vec::new().into(),
+        effect_facts: Vec::new().into(),
         obligations: vec![obligation.clone()],
         theorem: Theorem::new(wrap_proof_facts(
             proposition,
@@ -3263,8 +3335,8 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         completion_origin: None,
         assumptions: PureFactContext::new(),
         post_assumptions: Some(PureFactContext::new()),
-        facts: Vec::new(),
-        effect_facts: Vec::new(),
+        facts: Vec::new().into(),
+        effect_facts: Vec::new().into(),
         obligations: vec![unproved.clone()],
         theorem: Theorem::new(wrap_proof_facts(
             proposition.clone(),
@@ -3279,8 +3351,8 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         completion_origin: None,
         assumptions: PureFactContext::new(),
         post_assumptions: Some(PureFactContext::new()),
-        facts: Vec::new(),
-        effect_facts: Vec::new(),
+        facts: Vec::new().into(),
+        effect_facts: Vec::new().into(),
         obligations: Vec::new(),
         theorem: Theorem::new(wrap_proof_facts(
             proposition,
@@ -3372,8 +3444,8 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
         completion_origin: None,
         assumptions: PureFactContext::new(),
         post_assumptions: None,
-        facts: vec![fact.clone()],
-        effect_facts: Vec::new(),
+        facts: vec![fact.clone()].into(),
+        effect_facts: Vec::new().into(),
         obligations: vec![obligation.clone()],
         theorem: Theorem::new(wrap_proof_facts(
             proposition,

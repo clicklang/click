@@ -1,6 +1,7 @@
 use super::diagnostics::*;
 use super::validation::{collect_called_predicates, collect_resource_count_families, tactic_name};
 use super::*;
+use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use std::sync::Arc;
 
 mod attempt;
@@ -321,7 +322,7 @@ mod certificate_tests {
         let error = checked_surface_comparison_fact_in_state(
             ExecutionView::new(
                 &ExecutionFrontier::default(),
-                &[],
+                &ExecutionFacts::new(),
                 &RecordedSnapshots::new(),
                 &SurfacePropositionMap::default(),
                 None,

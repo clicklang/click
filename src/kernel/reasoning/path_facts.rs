@@ -31,7 +31,7 @@ pub(in crate::kernel) fn forall_int32(var: Variable, body: Proposition) -> Propo
 pub(in crate::kernel) fn wrap_proof_facts(
     proposition: Proposition,
     assumptions: &PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
 ) -> Proposition {
     let proposition = obligations
@@ -42,7 +42,7 @@ pub(in crate::kernel) fn wrap_proof_facts(
         });
 
     let proposition = facts
-        .iter()
+        .fact_iter()
         .filter(|fact| fact.is_public())
         .filter(|fact| !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition()))
         .rev()
@@ -116,7 +116,7 @@ pub type LoweringIntroductions = Vec<LoweringIntroduction>;
 
 pub(in crate::kernel) fn wrap_path_context(
     proposition: Proposition,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
 ) -> Proposition {
     wrap_path_context_with_introductions(proposition, facts, obligations).0
@@ -137,10 +137,10 @@ pub(in crate::kernel) fn wrap_path_context(
 /// uses, so the two cannot disagree about which facts are retained.
 pub(in crate::kernel) fn guard_quantified_witness(
     proposition: Proposition,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> Proposition {
     facts
-        .iter()
+        .fact_iter()
         .filter(|fact| !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition()))
         .rev()
         .fold(proposition, |body, fact| {
@@ -154,7 +154,7 @@ pub(in crate::kernel) fn guard_quantified_witness(
 /// proposition it describes.
 pub(in crate::kernel) fn wrap_path_context_with_introductions(
     proposition: Proposition,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
 ) -> (Proposition, LoweringIntroductions) {
     let proposition = obligations
@@ -169,7 +169,7 @@ pub(in crate::kernel) fn wrap_path_context_with_introductions(
     // antecedent every prover then has to discharge.
     let retained = || {
         facts
-            .iter()
+            .fact_iter()
             .filter(|fact| !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition()))
     };
 
@@ -190,35 +190,27 @@ pub(in crate::kernel) fn wrap_path_context_with_introductions(
 }
 
 pub(in crate::kernel) fn public_execution_pure_facts(
-    facts: &[ExecutionPureFact],
-) -> Vec<ExecutionPureFact> {
-    facts
-        .iter()
-        .filter(|fact| fact.is_public())
-        .cloned()
-        .collect()
+    facts: &(impl ExecutionFactSource + ?Sized),
+) -> ExecutionFacts {
+    facts.persistent_facts().filtered(|fact| fact.is_public())
 }
 
 pub(in crate::kernel) fn memory_effect_execution_facts(
-    facts: &[ExecutionPureFact],
-) -> Vec<ExecutionPureFact> {
+    facts: &(impl ExecutionFactSource + ?Sized),
+) -> ExecutionFacts {
     // Internal memory effects and their theorem-backed provenance must
     // survive the public-fact projection. The latter is planning metadata,
     // not an additional path premise, and is consumed when Click constructs
     // the corresponding explicit transport step.
-    facts
-        .iter()
-        .filter(|fact| {
-            fact.transport_theorem().is_some()
-                || matches!(
-                    fact.proposition(),
-                    Proposition::CMemoryMutatesOnly { .. }
-                        | Proposition::CMemoryEffectSummary { .. }
-                        | Proposition::CHeapAllocationFreed { .. }
-                )
-        })
-        .cloned()
-        .collect()
+    facts.persistent_facts().filtered(|fact| {
+        fact.transport_theorem().is_some()
+            || matches!(
+                fact.proposition(),
+                Proposition::CMemoryMutatesOnly { .. }
+                    | Proposition::CMemoryEffectSummary { .. }
+                    | Proposition::CHeapAllocationFreed { .. }
+            )
+    })
 }
 
 pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
@@ -870,7 +862,7 @@ pub(in crate::kernel) fn signed_const_add(
 }
 
 pub(in crate::kernel) fn add_path_fact(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     proposition: Proposition,
 ) -> Option<()> {
@@ -878,7 +870,7 @@ pub(in crate::kernel) fn add_path_fact(
 }
 
 pub(in crate::kernel) fn add_path_fact_with_visibility(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     proposition: Proposition,
     public: bool,
@@ -887,7 +879,7 @@ pub(in crate::kernel) fn add_path_fact_with_visibility(
 }
 
 fn add_path_fact_with_visibility_after_effect(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     proposition: Proposition,
     public: bool,
@@ -923,7 +915,7 @@ fn add_path_fact_with_visibility_after_effect(
 }
 
 pub(in crate::kernel) fn add_condition_path_fact(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     condition: ConditionTerm,
     value: bool,
@@ -932,7 +924,7 @@ pub(in crate::kernel) fn add_condition_path_fact(
 }
 
 pub(in crate::kernel) fn add_internal_condition_path_fact(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     condition: ConditionTerm,
     value: bool,
@@ -941,7 +933,7 @@ pub(in crate::kernel) fn add_internal_condition_path_fact(
 }
 
 fn add_condition_path_fact_with_visibility(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     condition: ConditionTerm,
     value: bool,
@@ -999,7 +991,7 @@ fn add_condition_path_fact_with_visibility(
 }
 
 pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     left: PointerOffsetTerm,
     right: PointerOffsetTerm,
@@ -1327,7 +1319,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_under_path_context(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
     new_obligations: &[ProofObligation],
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     context_obligations: &[ProofObligation],
 ) {
     for obligation in new_obligations {
@@ -1466,13 +1458,18 @@ pub(in crate::kernel) fn merge_obligations(
 }
 
 pub(in crate::kernel) fn merge_facts(
-    left: &[ExecutionPureFact],
-    right: &[ExecutionPureFact],
+    left: &(impl ExecutionFactSource + ?Sized),
+    right: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
-) -> Option<Vec<ExecutionPureFact>> {
-    let mut facts = left.to_vec();
+) -> Option<ExecutionFacts> {
+    let prefix = left.persistent_facts();
+    let suffix = right.persistent_facts();
+    let mut facts = prefix.clone();
+    let mut share_append = true;
+    let mut appended = std::collections::HashSet::new();
     let mut saw_memory_effect = false;
-    for fact in right {
+    for fact in &suffix {
+        let before = facts.len();
         add_path_fact_with_visibility_after_effect(
             &mut facts,
             assumptions,
@@ -1480,12 +1477,23 @@ pub(in crate::kernel) fn merge_facts(
             fact.is_public(),
             saw_memory_effect && fact.is_certified(),
         )?;
-        if fact.is_certified()
-            && let Some(existing) = facts
-                .iter_mut()
-                .find(|existing| existing.proposition() == fact.proposition())
-        {
-            *existing = fact.clone();
+        let existing_index = fact
+            .is_certified()
+            .then(|| {
+                facts
+                    .iter()
+                    .position(|existing| existing.proposition() == fact.proposition())
+            })
+            .flatten();
+        if let Some(index) = existing_index {
+            if &facts[index] != fact {
+                *facts.get_mut(index) = fact.clone();
+            }
+            share_append &= index >= before;
+        }
+        if facts.len() == before + 1 {
+            share_append &= &facts[before] == fact;
+            appended.insert(fact as *const ExecutionPureFact as usize);
         }
         // A verified call emits its effect before its certified
         // postconditions. Entry-state condition facts cannot reject those
@@ -1500,16 +1508,27 @@ pub(in crate::kernel) fn merge_facts(
             saw_memory_effect = true;
         }
     }
-    Some(facts)
+    if share_append {
+        // Validation may suppress redundant right facts, but it did not
+        // change the prefix or normalize an appended fact. Retain the source
+        // objects for the accepted delta instead of validation scratch copies.
+        let mut combined = prefix;
+        let accepted =
+            suffix.filtered(|fact| appended.contains(&(fact as *const ExecutionPureFact as usize)));
+        combined.extend_shared(&accepted);
+        Some(combined)
+    } else {
+        Some(facts)
+    }
 }
 
 pub(in crate::kernel) fn merge_execution_pure_facts_and_obligations(
-    left_facts: &[ExecutionPureFact],
+    left_facts: &(impl ExecutionFactSource + ?Sized),
     left_obligations: &[ProofObligation],
-    right_facts: &[ExecutionPureFact],
+    right_facts: &(impl ExecutionFactSource + ?Sized),
     right_obligations: &[ProofObligation],
     assumptions: &PureFactContext,
-) -> Option<(Vec<ExecutionPureFact>, Vec<ProofObligation>)> {
+) -> Option<(ExecutionFacts, Vec<ProofObligation>)> {
     let facts = merge_facts(left_facts, right_facts, assumptions)?;
     // The right fragment was executed under the left fragment's path
     // context. Recheck its assumable obligations against that same context,
@@ -1525,7 +1544,7 @@ pub(in crate::kernel) fn merge_execution_pure_facts_and_obligations(
 
 pub(in crate::kernel) fn decide_with_facts(
     assumptions: &PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     condition: &ConditionTerm,
 ) -> Option<bool> {
     [true, false]
@@ -1540,7 +1559,7 @@ pub(in crate::kernel) fn decide_with_facts(
                 .flatten()
         })
         .or_else(|| {
-            facts.iter().find_map(|fact| match fact.proposition() {
+            facts.fact_iter().find_map(|fact| match fact.proposition() {
                 Proposition::ConditionIs(existing_condition, value)
                     if existing_condition == condition =>
                 {
@@ -1551,7 +1570,7 @@ pub(in crate::kernel) fn decide_with_facts(
         })
         .or_else(|| {
             facts
-                .iter()
+                .fact_iter()
                 .fold(
                     if assumptions.should_defer_non_exact_condition_reasoning() {
                         PureFactContext::new()
@@ -1616,12 +1635,12 @@ pub(crate) fn context_rebuild_entries() -> usize {
 
 pub(in crate::kernel) fn assumptions_with_path_context(
     assumptions: &PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
 ) -> PureFactContext {
     count_context_rebuild_entries(facts.len() + obligations.len());
     let mut assumptions = assumptions.clone();
-    for fact in facts {
+    for fact in facts.fact_iter() {
         assumptions = assumptions.assume_execution_pure_fact(fact);
     }
     for obligation in obligations {

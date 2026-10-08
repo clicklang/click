@@ -46,7 +46,7 @@ pub(super) struct WorkerCompletion {
     outputs: ResourceContext,
     memory: CMemory,
     effects: Vec<CMemoryRange>,
-    facts: Vec<ExecutionPureFact>,
+    facts: crate::kernel::ExecutionFacts,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
     population_counts: Vec<WorkerPopulationCount>,
     creation: Option<WorkerCreation>,
@@ -175,7 +175,7 @@ impl WorkerCompletion {
         outputs: ResourceContext,
         memory: CMemory,
         effects: Vec<CMemoryRange>,
-        facts: Vec<ExecutionPureFact>,
+        facts: crate::kernel::ExecutionFacts,
         mutex_ledger: Option<super::mutexes::MutexLedger>,
         population_counts: Vec<WorkerPopulationCount>,
         creation: Option<WorkerCreation>,
@@ -1084,7 +1084,7 @@ impl ThreadContext {
         handle: ThreadHandle,
         _runtime: JoinRuntimeAssumption,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, Vec<ExecutionPureFact>), &'static str> {
+    ) -> Result<(Self, crate::kernel::ExecutionFacts), &'static str> {
         let right = self
             .parent
             .thread_ledger

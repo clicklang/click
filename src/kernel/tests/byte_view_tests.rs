@@ -21,7 +21,7 @@ fn load_byte(
         memory,
         word(offset),
         value_type,
-        Vec::new(),
+        Vec::new().into(),
         Vec::new(),
         &PureFactContext::new(),
         false,

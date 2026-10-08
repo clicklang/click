@@ -537,7 +537,7 @@ impl Drop for SpecificationReadScope {
 /// left to the proof, the owned-footprint check of a store. A range the
 /// context already holds or decides is not refiled.
 pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     value: &CValue,
 ) {
@@ -1292,17 +1292,17 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
     let mut paths = match expression {
         CExpression::Value(CValue::Void) => vec![CExpressionPath {
             outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
         CExpression::Value(value) => {
             // A value the kernel substituted into an expression is introduced
             // to it here, as a read introduces a stored one.
-            let mut facts = Vec::new();
+            let mut facts = ExecutionFacts::new();
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(value.clone()),
-                facts,
+                facts: facts.into(),
                 obligations: Vec::new(),
             }]
         }
@@ -1337,7 +1337,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                 } else {
                     CExpressionOutcome::RuntimeError(CRuntimeError::UnboundVariable(name.clone()))
                 },
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }]
         }
@@ -1349,7 +1349,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                 Pointer::function(name.clone()),
                 CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
             )),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
         CExpression::Cast {
@@ -1972,14 +1972,14 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
                 ),
                 None => CLValueOutcome::RuntimeError(CRuntimeError::UnboundVariable(name.clone())),
             },
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
         CExpression::Load(pointer_expression) => {
             let Some(value_type) = c_expression_pointee_type(state, pointer_expression) else {
                 return Ok(vec![CLValuePath {
                     outcome: CLValueOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: Vec::new(),
                 }]);
             };
@@ -2067,7 +2067,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
             let Some(value_type) = c_expression_pointee_type(state, base) else {
                 return Ok(vec![CLValuePath {
                     outcome: CLValueOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: Vec::new(),
                 }]);
             };
@@ -2107,7 +2107,7 @@ pub(in crate::kernel) fn evaluate_c_lvalue_paths(
         }
         _ => vec![CLValuePath {
             outcome: CLValueOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
     };
@@ -2155,7 +2155,7 @@ pub(in crate::kernel) fn read_c_lvalue_expression_paths(
 pub(in crate::kernel) fn read_c_lvalue_paths(
     state: &CState,
     outcome: CLValueOutcome,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     source: Option<&LoadSourceId>,
     assumptions: &PureFactContext,
@@ -2182,7 +2182,7 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
 fn read_c_lvalue_paths_without_ranges(
     state: &CState,
     outcome: CLValueOutcome,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     source: Option<&LoadSourceId>,
     assumptions: &PureFactContext,
@@ -2500,7 +2500,7 @@ pub(in crate::kernel) fn c_expression_pointer_step_width(
 
 pub(in crate::kernel) fn condition_as_c_int32_paths(
     condition: ConditionTerm,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -2542,7 +2542,7 @@ pub(in crate::kernel) fn condition_as_c_int32_paths(
 
 pub(in crate::kernel) fn condition_as_c_int32_not_paths(
     condition: ConditionTerm,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
@@ -2585,13 +2585,13 @@ pub(in crate::kernel) fn condition_as_c_int32_not_paths(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct CTruthinessPath {
     pub(in crate::kernel) is_true: bool,
-    pub(in crate::kernel) facts: Vec<ExecutionPureFact>,
+    pub(in crate::kernel) facts: ExecutionFacts,
     pub(in crate::kernel) obligations: Vec<ProofObligation>,
 }
 
 pub(in crate::kernel) fn c_truthiness_paths(
     value: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CTruthinessPath> {
@@ -2860,7 +2860,7 @@ pub(in crate::kernel) fn c_truthiness_paths(
 
 fn c_float_truthiness_paths(
     is_zero: ConditionTerm,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CTruthinessPath> {
@@ -2895,7 +2895,7 @@ fn c_float_truthiness_paths(
 
 pub(in crate::kernel) fn c_truthiness_as_c_int32_paths(
     value: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {

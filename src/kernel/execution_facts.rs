@@ -1,0 +1,708 @@
+//! Ordered execution evidence with persistent storage across path forks.
+use super::{ConditionTerm, ExecutionPureFact, Proposition};
+use std::sync::Arc;
+
+type FactVector = imbl::Vector<Arc<ExecutionPureFact>>;
+type BlockIter<'a> = imbl::vector::Iter<'a, FactBlock, imbl::shared_ptr::DefaultSharedPtr>;
+type BorrowedFacts<'a> = Box<dyn DoubleEndedIterator<Item = &'a ExecutionPureFact> + 'a>;
+
+/// The order used by PureFactContext::pure_facts: conditions, then propositions.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(super) enum ContextFactKey {
+    Condition(ConditionTerm),
+    Proposition(Proposition),
+}
+pub(super) type ContextFacts = imbl::OrdMap<ContextFactKey, Arc<ExecutionPureFact>>;
+
+#[derive(Clone, Debug)]
+enum FactBlock {
+    Facts(Arc<FactVector>),
+    Context {
+        facts: ContextFacts,
+        // The exact ordered prefix, retained rather than copied into an
+        // exclusion array. This is publication metadata, not proof authority.
+        excluded: Arc<ExecutionFacts>,
+    },
+}
+impl FactBlock {
+    fn iter(&self) -> BorrowedFacts<'_> {
+        match self {
+            Self::Facts(facts) => Box::new(facts.iter().map(Arc::as_ref)),
+            Self::Context { facts, excluded } => Box::new(
+                facts
+                    .iter()
+                    .map(|(_, fact)| fact.as_ref())
+                    .filter(|fact| !excluded.contains_proposition(fact.proposition())),
+            ),
+        }
+    }
+}
+
+/// An ordered fact stream whose forks share unchanged chunks and fact objects.
+/// Checked context publications retain their persistent ordered map as a block;
+/// they do not copy one array of all context facts into every returned path.
+#[derive(Clone, Debug, Default)]
+pub struct ExecutionFacts {
+    data: Arc<ExecutionFactsData>,
+}
+#[derive(Clone, Debug, Default)]
+struct ExecutionFactsData {
+    blocks: imbl::Vector<FactBlock>,
+    propositions: imbl::OrdSet<Arc<Proposition>>,
+    len: usize,
+    propositions_invalid: bool,
+}
+impl ExecutionFacts {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn len(&self) -> usize {
+        self.data.len
+    }
+    pub fn is_empty(&self) -> bool {
+        self.data.len == 0
+    }
+    pub fn iter(&self) -> ExecutionFactsIter<'_> {
+        ExecutionFactsIter {
+            blocks: self.data.blocks.iter(),
+            front: None,
+            back: None,
+            remaining: self.data.len,
+        }
+    }
+    pub fn contains(&self, fact: &ExecutionPureFact) -> bool {
+        self.iter().any(|item| item == fact)
+    }
+    pub fn to_vec(&self) -> Vec<ExecutionPureFact> {
+        self.iter().cloned().collect()
+    }
+    pub(crate) fn contains_proposition(&self, proposition: &Proposition) -> bool {
+        if self.data.propositions_invalid {
+            return self.iter().any(|fact| fact.proposition() == proposition);
+        }
+        if self.data.propositions.contains(proposition) {
+            return true;
+        }
+        let key = match proposition {
+            Proposition::ConditionIs(condition, _) => ContextFactKey::Condition(condition.clone()),
+            _ => ContextFactKey::Proposition(proposition.clone()),
+        };
+        self.data.blocks.iter().any(|block| match block {
+            FactBlock::Context { facts, excluded } => facts.get(&key).is_some_and(|fact| {
+                fact.proposition() == proposition && !excluded.contains_proposition(proposition)
+            }),
+            FactBlock::Facts(_) => false,
+        })
+    }
+    fn push_shared(&mut self, fact: Arc<ExecutionPureFact>) {
+        let data = Arc::make_mut(&mut self.data);
+        data.propositions
+            .insert(Arc::new(fact.proposition().clone()));
+        if let Some(FactBlock::Facts(facts)) = data.blocks.back_mut() {
+            Arc::make_mut(facts).push_back(fact);
+        } else {
+            data.blocks
+                .push_back(FactBlock::Facts(Arc::new(imbl::vector![fact])));
+        }
+        data.len += 1;
+    }
+    pub(crate) fn push(&mut self, fact: ExecutionPureFact) {
+        self.push_shared(Arc::new(fact));
+    }
+    pub(crate) fn append(&mut self, other: &mut Self) {
+        if other.is_empty() {
+            return;
+        }
+        let data = Arc::make_mut(&mut self.data);
+        let other = Arc::make_mut(&mut other.data);
+        data.len += other.len;
+        data.propositions_invalid |= other.propositions_invalid;
+        data.propositions = data
+            .propositions
+            .clone()
+            .union(std::mem::take(&mut other.propositions));
+        data.blocks.append(std::mem::take(&mut other.blocks));
+        other.len = 0;
+    }
+    pub(crate) fn extend_shared(&mut self, other: &Self) {
+        self.append(&mut other.clone());
+    }
+    pub(super) fn append_context(&mut self, facts: &ContextFacts) {
+        let count = facts
+            .iter()
+            .filter(|(_, fact)| !self.contains_proposition(fact.proposition()))
+            .count();
+        if count == 0 {
+            return;
+        }
+        let excluded = Arc::new(self.clone());
+        let data = Arc::make_mut(&mut self.data);
+        data.blocks.push_back(FactBlock::Context {
+            facts: facts.clone(),
+            excluded,
+        });
+        data.len += count;
+    }
+    pub(crate) fn filtered(&self, predicate: impl Fn(&ExecutionPureFact) -> bool) -> Self {
+        if self.iter().all(&predicate) {
+            return self.clone();
+        }
+        let mut filtered = Self::new();
+        // Keep each unchanged block, including context maps, by identity.
+        // Partial producer blocks retain their original fact objects.
+        let data = Arc::make_mut(&mut filtered.data);
+        data.propositions_invalid = true;
+        for block in &self.data.blocks {
+            let count = block.iter().filter(|fact| predicate(fact)).count();
+            if count == 0 {
+                continue;
+            }
+            if block.iter().all(&predicate) {
+                data.blocks.push_back(block.clone());
+                data.len += count;
+            } else {
+                let entries = match block {
+                    FactBlock::Facts(facts) => facts
+                        .iter()
+                        .filter(|fact| predicate(fact))
+                        .cloned()
+                        .collect(),
+                    FactBlock::Context { facts, excluded } => facts
+                        .iter()
+                        .filter(|(_, fact)| {
+                            predicate(fact) && !excluded.contains_proposition(fact.proposition())
+                        })
+                        .map(|(_, fact)| fact.clone())
+                        .collect(),
+                };
+                data.blocks.push_back(FactBlock::Facts(Arc::new(entries)));
+                data.len += count;
+            }
+        }
+        filtered
+    }
+    pub(crate) fn retain(&mut self, predicate: impl Fn(&ExecutionPureFact) -> bool) {
+        *self = self.filtered(predicate);
+    }
+    // Mutating producer metadata is explicit: make only the selected fact
+    // unique. A context block is materialized only if a caller edits it.
+    fn make_explicit(&mut self) {
+        if self.data.blocks.len() == 1
+            && matches!(self.data.blocks.front(), Some(FactBlock::Facts(_)))
+        {
+            return;
+        }
+        let mut facts = FactVector::new();
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(entries) => facts.append((**entries).clone()),
+                FactBlock::Context {
+                    facts: entries,
+                    excluded,
+                } => facts.extend(
+                    entries
+                        .iter()
+                        .filter(|(_, fact)| !excluded.contains_proposition(fact.proposition()))
+                        .map(|(_, fact)| fact.clone()),
+                ),
+            }
+        }
+        let data = Arc::make_mut(&mut self.data);
+        data.blocks = imbl::vector![FactBlock::Facts(Arc::new(facts))];
+        data.propositions_invalid = true;
+    }
+    #[cfg(test)]
+    pub(crate) fn pop(&mut self) -> Option<ExecutionPureFact> {
+        if self.is_empty() {
+            return None;
+        }
+        self.make_explicit();
+        let data = Arc::make_mut(&mut self.data);
+        data.len -= 1;
+        data.propositions_invalid = true;
+        let FactBlock::Facts(facts) = &mut data.blocks[0] else {
+            unreachable!()
+        };
+        Arc::make_mut(facts)
+            .pop_back()
+            .map(|fact| Arc::try_unwrap(fact).unwrap_or_else(|fact| (*fact).clone()))
+    }
+    pub(crate) fn get_mut(&mut self, index: usize) -> &mut ExecutionPureFact {
+        self.make_explicit();
+        let data = Arc::make_mut(&mut self.data);
+        data.propositions_invalid = true;
+        let FactBlock::Facts(facts) = &mut data.blocks[0] else {
+            unreachable!()
+        };
+        // Metadata updates retain the proposition. Replacing a proposition
+        // goes through the explicit transport producer, not this index.
+        Arc::make_mut(&mut Arc::make_mut(facts)[index])
+    }
+    pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.data, &other.data)
+    }
+    pub(crate) fn suffix_since(&self, ancestor: &Self) -> Option<Self> {
+        if self.shares_storage_with(ancestor) {
+            return Some(Self::new());
+        }
+        if self.len() < ancestor.len() || !self.iter().zip(ancestor).all(|(a, b)| a == b) {
+            return None;
+        }
+        // This operation publishes the local effect delta, not the complete
+        // prefix. Keep its original fact objects.
+        let mut suffix = Self::new();
+        let mut skip = ancestor.len();
+        for block in &self.data.blocks {
+            match block {
+                FactBlock::Facts(facts) => {
+                    for fact in facts.iter() {
+                        if skip > 0 {
+                            skip -= 1;
+                        } else {
+                            suffix.push_shared(fact.clone());
+                        }
+                    }
+                }
+                FactBlock::Context { .. } => {
+                    for fact in block.iter() {
+                        if skip > 0 {
+                            skip -= 1;
+                        } else {
+                            suffix.push(fact.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Some(suffix)
+    }
+}
+impl From<Vec<ExecutionPureFact>> for ExecutionFacts {
+    fn from(facts: Vec<ExecutionPureFact>) -> Self {
+        facts.into_iter().collect()
+    }
+}
+impl FromIterator<ExecutionPureFact> for ExecutionFacts {
+    fn from_iter<T: IntoIterator<Item = ExecutionPureFact>>(facts: T) -> Self {
+        let mut result = Self::new();
+        result.extend(facts);
+        result
+    }
+}
+impl Extend<ExecutionPureFact> for ExecutionFacts {
+    fn extend<T: IntoIterator<Item = ExecutionPureFact>>(&mut self, facts: T) {
+        for fact in facts {
+            self.push(fact);
+        }
+    }
+}
+impl std::ops::Index<usize> for ExecutionFacts {
+    type Output = ExecutionPureFact;
+    fn index(&self, index: usize) -> &Self::Output {
+        self.iter().nth(index).expect("fact index out of bounds")
+    }
+}
+impl PartialEq for ExecutionFacts {
+    fn eq(&self, other: &Self) -> bool {
+        self.data.len == other.data.len && self.iter().eq(other)
+    }
+}
+impl Eq for ExecutionFacts {}
+impl Ord for ExecutionFacts {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.iter().cmp(other)
+    }
+}
+impl PartialOrd for ExecutionFacts {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl PartialEq<&ExecutionFacts> for ExecutionFacts {
+    fn eq(&self, other: &&ExecutionFacts) -> bool {
+        self == *other
+    }
+}
+impl PartialEq<Vec<ExecutionPureFact>> for ExecutionFacts {
+    fn eq(&self, other: &Vec<ExecutionPureFact>) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+/// Borrowed insertion-order traversal without a flat fact array.
+pub struct ExecutionFactsIter<'a> {
+    blocks: BlockIter<'a>,
+    front: Option<BorrowedFacts<'a>>,
+    back: Option<BorrowedFacts<'a>>,
+    remaining: usize,
+}
+impl<'a> Iterator for ExecutionFactsIter<'a> {
+    type Item = &'a ExecutionPureFact;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(fact) = self.front.as_mut().and_then(|iter| iter.next()) {
+                self.remaining -= 1;
+                return Some(fact);
+            }
+            self.front = None;
+            if let Some(block) = self.blocks.next() {
+                self.front = Some(block.iter());
+                continue;
+            }
+            let fact = self.back.as_mut().and_then(|iter| iter.next());
+            if fact.is_some() {
+                self.remaining -= 1;
+            }
+            return fact;
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+impl DoubleEndedIterator for ExecutionFactsIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(fact) = self.back.as_mut().and_then(|iter| iter.next_back()) {
+                self.remaining -= 1;
+                return Some(fact);
+            }
+            self.back = None;
+            if let Some(block) = self.blocks.next_back() {
+                self.back = Some(block.iter());
+                continue;
+            }
+            let fact = self.front.as_mut().and_then(|iter| iter.next_back());
+            if fact.is_some() {
+                self.remaining -= 1;
+            }
+            return fact;
+        }
+    }
+}
+impl ExactSizeIterator for ExecutionFactsIter<'_> {}
+impl<'a> IntoIterator for &'a ExecutionFacts {
+    type Item = &'a ExecutionPureFact;
+    type IntoIter = ExecutionFactsIter<'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+impl IntoIterator for ExecutionFacts {
+    type Item = ExecutionPureFact;
+    type IntoIter = std::vec::IntoIter<ExecutionPureFact>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.to_vec().into_iter()
+    }
+}
+
+/// Read evidence without requiring contiguous storage.
+pub trait ExecutionFactSource {
+    fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator;
+    fn persistent_facts(&self) -> ExecutionFacts {
+        self.fact_iter().cloned().collect()
+    }
+    fn len(&self) -> usize {
+        self.fact_iter().len()
+    }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+impl ExecutionFactSource for ExecutionFacts {
+    fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator {
+        self.iter()
+    }
+    fn persistent_facts(&self) -> ExecutionFacts {
+        self.clone()
+    }
+}
+impl ExecutionFactSource for [ExecutionPureFact] {
+    fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator {
+        self.iter()
+    }
+}
+impl ExecutionFactSource for Vec<ExecutionPureFact> {
+    fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator {
+        self.as_slice().iter()
+    }
+}
+impl<const N: usize> ExecutionFactSource for [ExecutionPureFact; N] {
+    fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator {
+        self.as_slice().iter()
+    }
+}
+impl<T: ExecutionFactSource + ?Sized> ExecutionFactSource for &T {
+    fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator {
+        (**self).fact_iter()
+    }
+    fn persistent_facts(&self) -> ExecutionFacts {
+        (**self).persistent_facts()
+    }
+}
+impl<T: ExecutionFactSource + ?Sized> ExecutionFactSource for Arc<T> {
+    fn fact_iter(&self) -> impl DoubleEndedIterator<Item = &ExecutionPureFact> + ExactSizeIterator {
+        (**self).fact_iter()
+    }
+    fn persistent_facts(&self) -> ExecutionFacts {
+        (**self).persistent_facts()
+    }
+}
+
+impl<const N: usize> PartialEq<[ExecutionPureFact; N]> for ExecutionFacts {
+    fn eq(&self, other: &[ExecutionPureFact; N]) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+impl PartialEq<[ExecutionPureFact]> for ExecutionFacts {
+    fn eq(&self, other: &[ExecutionPureFact]) -> bool {
+        self.iter().eq(other.iter())
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct StorageSample {
+    pub(crate) paths: usize,
+    pub(crate) logical_facts: usize,
+    pub(crate) fact_values: usize,
+    pub(crate) vector_chunks: usize,
+}
+#[cfg(test)]
+thread_local! {
+    static STORAGE_SAMPLES: std::cell::RefCell<Option<[StorageSample; 2]>> = const { std::cell::RefCell::new(None) };
+}
+#[cfg(test)]
+impl ExecutionFacts {
+    pub(crate) fn measure_published_storage<T>(run: impl FnOnce() -> T) -> (T, [StorageSample; 2]) {
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                STORAGE_SAMPLES.with(|samples| *samples.borrow_mut() = None);
+            }
+        }
+        STORAGE_SAMPLES.with(|samples| *samples.borrow_mut() = Some([StorageSample::default(); 2]));
+        let _reset = Reset;
+        let result = run();
+        let samples = STORAGE_SAMPLES.with(|samples| samples.borrow().unwrap());
+        (result, samples)
+    }
+    pub(crate) fn record_published_storage<'a>(
+        checked: bool,
+        paths: usize,
+        streams: impl Iterator<Item = &'a Self>,
+    ) {
+        STORAGE_SAMPLES.with(|samples| {
+            let mut samples = samples.borrow_mut();
+            let Some(samples) = samples.as_mut() else {
+                return;
+            };
+            let sample = &mut samples[usize::from(checked)];
+            if paths < sample.paths {
+                return;
+            }
+            let mut values = std::collections::BTreeSet::new();
+            let mut chunks = std::collections::BTreeSet::new();
+            let mut excluded = std::collections::BTreeSet::new();
+            let mut bytes = 0;
+            let mut logical = 0;
+            for stream in streams {
+                logical += stream.len();
+                stream.visit_storage(&mut values, &mut chunks, &mut excluded, &mut bytes);
+            }
+            let measured = StorageSample {
+                paths,
+                logical_facts: logical,
+                fact_values: values.len(),
+                vector_chunks: bytes,
+            };
+            if paths > sample.paths
+                || measured.fact_values > sample.fact_values
+                || measured.vector_chunks > sample.vector_chunks
+            {
+                *sample = measured;
+            }
+        });
+    }
+    fn visit_storage(
+        &self,
+        values: &mut std::collections::BTreeSet<usize>,
+        chunks: &mut std::collections::BTreeSet<usize>,
+        excluded: &mut std::collections::BTreeSet<usize>,
+        bytes: &mut usize,
+    ) {
+        for chunk in self.data.blocks.leaves() {
+            if !chunks.insert(chunk.as_ptr() as usize) {
+                continue;
+            }
+            *bytes += 1;
+            for block in chunk {
+                match block {
+                    FactBlock::Facts(facts) => {
+                        for chunk in facts.leaves() {
+                            if !chunks.insert(chunk.as_ptr() as usize) {
+                                continue;
+                            }
+                            *bytes += 1;
+                            values.extend(chunk.iter().map(|fact| Arc::as_ptr(fact) as usize));
+                        }
+                    }
+                    FactBlock::Context {
+                        facts,
+                        excluded: prefix,
+                    } => {
+                        values.extend(facts.iter().map(|(_, fact)| Arc::as_ptr(fact) as usize));
+                        if excluded.insert(Arc::as_ptr(prefix) as usize) {
+                            prefix.visit_storage(values, chunks, excluded, bytes);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::{Bitvector32Term, PureFactContext, Variable};
+
+    fn guard(index: u32, value: bool) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(index as u64)),
+                Bitvector32Term::Constant(0),
+            ),
+            value,
+        )
+    }
+
+    #[test]
+    fn forks_share_roots_and_isolate_metadata_edits() {
+        for size in [4, 64, 1024] {
+            let root: ExecutionFacts = (0..size)
+                .map(|index| ExecutionPureFact::certified(guard(index, false)))
+                .collect();
+            let mut fork = root.clone();
+            assert!(root.shares_storage_with(&fork));
+            fork.push(ExecutionPureFact::new(guard(size, true)));
+            assert_eq!(root.len(), size as usize);
+            assert!(!root.contains_proposition(&guard(size, true)));
+            for (a, b) in root.iter().zip(&fork) {
+                assert!(std::ptr::eq(a, b));
+            }
+            *fork.get_mut(0) = ExecutionPureFact::new(guard(0, true));
+            assert!(root[0].is_certified());
+            assert!(!fork[0].is_certified());
+            assert!(!fork.contains_proposition(&guard(0, false)));
+            assert!(fork.contains_proposition(&guard(0, true)));
+            for (a, b) in root.iter().skip(1).zip(fork.iter().skip(1)) {
+                assert!(std::ptr::eq(a, b));
+            }
+            assert_ne!(root, fork);
+            drop(root);
+            assert_eq!(fork.len(), size as usize + 1);
+        }
+    }
+
+    #[test]
+    fn context_blocks_preserve_order_isolation_and_share_fact_objects() {
+        for size in [16, 64, 256, 1024] {
+            let root = (0..size).fold(PureFactContext::new(), |context, index| {
+                context.assume_proposition(guard(index, false))
+            });
+            let mut root_facts = ExecutionFacts::new();
+            root_facts.append_context(&root.execution_fact_projection);
+            let expected = root.pure_facts();
+            assert_eq!(
+                root_facts
+                    .iter()
+                    .map(|fact| fact.proposition().clone())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            let mut forks = Vec::new();
+            for arm in 0..4 {
+                let context = root.clone().assume_proposition(guard(size + arm, true));
+                let mut facts = ExecutionFacts::new();
+                facts.append_context(&context.execution_fact_projection);
+                assert_eq!(facts.len(), size as usize + 1);
+                for (before, after) in root_facts.iter().zip(&facts) {
+                    assert!(std::ptr::eq(before, after));
+                }
+                assert!(!facts.contains_proposition(&guard(size + (arm + 1) % 4, true)));
+                forks.push(facts);
+            }
+            drop(root_facts);
+            drop(root);
+            assert_eq!(forks[0].len(), size as usize + 1);
+            // Mixed-direction traversal must neither repeat nor omit a fact.
+            let mut iter = forks[0].iter();
+            assert_eq!(iter.next().unwrap().proposition(), &guard(0, false));
+            assert_eq!(iter.next_back().unwrap().proposition(), &guard(size, true));
+            assert_eq!(iter.len(), size as usize - 1);
+            assert_eq!(iter.count(), size as usize - 1);
+        }
+    }
+
+    #[test]
+    fn context_projection_tracks_replacements_and_withdrawals() {
+        let first = guard(1, true);
+        let second = Proposition::Predicate {
+            name: "projection_test".into(),
+            arguments: vec![],
+        };
+        let context = PureFactContext::new()
+            .assume_proposition(first.clone())
+            .assume_proposition(second.clone());
+        let changed = context
+            .clone()
+            .assume_proposition(guard(1, false))
+            .without_exact_fact(&second);
+        for context in [
+            &context,
+            &changed,
+            &context.with_only_proposition_facts(&[]),
+        ] {
+            let mut facts = ExecutionFacts::new();
+            facts.append_context(&context.execution_fact_projection);
+            assert_eq!(
+                facts
+                    .iter()
+                    .map(|fact| fact.proposition().clone())
+                    .collect::<Vec<_>>(),
+                context.pure_facts()
+            );
+        }
+    }
+
+    #[test]
+    fn context_publication_deduplicates_by_proposition_and_preserves_metadata() {
+        let proposition = guard(1, true);
+        let mut facts: ExecutionFacts =
+            vec![ExecutionPureFact::certified(proposition.clone())].into();
+        let before = facts.clone();
+        let context = PureFactContext::new()
+            .assume_proposition(proposition.clone())
+            .assume_proposition(guard(2, false));
+        facts.append_context(&context.execution_fact_projection);
+        assert_eq!(facts.len(), 2);
+        assert!(facts[0].is_certified());
+        assert!(std::ptr::eq(&facts[0], &before[0]));
+        assert_eq!(
+            facts
+                .iter()
+                .rev()
+                .map(|fact| fact.proposition())
+                .collect::<Vec<_>>(),
+            vec![&guard(2, false), &proposition]
+        );
+        assert_eq!(facts.filtered(|fact| fact.is_public()), facts);
+    }
+}
+
+impl<const N: usize> From<[ExecutionPureFact; N]> for ExecutionFacts {
+    fn from(facts: [ExecutionPureFact; N]) -> Self {
+        facts.into_iter().collect()
+    }
+}

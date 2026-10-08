@@ -6208,6 +6208,7 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
 /// path facts remain a separate representation cost tracked in the bug report.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
+    let mut stored = Vec::new();
     let mut entries = Vec::new();
     let mut contract_entries = Vec::new();
     let mut allocation_resolution = Vec::new();
@@ -6226,9 +6227,23 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         };
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         let contract_before = crate::kernel::reasoning::path_facts::contract_path_context_entries();
-        let (verified, sample) = scaling_sample(returns, || {
-            verify_c0_sources(&click, &[("fan_out.c", c.as_str())])
-        });
+        let ((verified, sample), storage) =
+            crate::kernel::ExecutionFacts::measure_published_storage(|| {
+                scaling_sample(returns, || {
+                    verify_c0_sources(&click, &[("fan_out.c", c.as_str())])
+                })
+            });
+        for sample in &storage {
+            assert!(
+                sample.paths >= returns,
+                "missing completed storage measurement: {storage:?}"
+            );
+            assert!(
+                sample.fact_values <= 12 * returns + 32,
+                "shared path facts, explicit={explicit}: {storage:?}"
+            );
+        }
+        stored.push(storage);
         verified.unwrap_or_else(|error| {
             panic!(
                 "{returns} returns, explicit={explicit}: {}",
@@ -6254,6 +6269,23 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
                 .unwrap_or(0),
         );
         samples.push(sample);
+    }
+    eprintln!("stored execution facts, explicit={explicit}: {stored:?}");
+    for pair in stored.windows(2).skip(2) {
+        for kind in 0..2 {
+            assert!(
+                pair[1][kind].fact_values * 100 <= pair[0][kind].fact_values * 240,
+                "stored fact objects must scale near linearly: {stored:?}"
+            );
+            assert!(
+                pair[1][kind].vector_chunks * 100 <= pair[0][kind].vector_chunks * 260,
+                "stored vector chunks must scale near linearly: {stored:?}"
+            );
+            assert!(
+                pair[1][kind].logical_facts > pair[1][kind].fact_values,
+                "the fixture must share prefixes between paths: {stored:?}"
+            );
+        }
     }
     eprintln!(
         "context reuse explicit={explicit}: {samples:?}; entries: {entries:?}; contract entries: {contract_entries:?}"

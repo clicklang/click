@@ -561,7 +561,7 @@ fn c_expression_mentions_variable(expression: &CExpression, variable: &str) -> b
 /// discharged by a general proof search.
 fn assume_structural_path(
     assumptions: &mut PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
 ) -> Option<()> {
     for obligation in obligations {
@@ -578,7 +578,7 @@ fn assume_structural_path(
         }
         *assumptions = assumptions.clone().assume_proposition(proposition.clone());
     }
-    for fact in facts {
+    for fact in facts.fact_iter() {
         *assumptions = assumptions
             .clone()
             .assume_proposition(fact.proposition().clone());
@@ -2013,7 +2013,7 @@ fn termination_measure_display(measure: &CExpression) -> String {
 /// itself, which are the reads' loadability.
 #[derive(Default)]
 pub(super) struct CRankingMeasureReads {
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: crate::kernel::ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
 
@@ -2196,7 +2196,7 @@ fn pure_integer_ranking_measure_term(
         ));
     };
     reader.reads.obligations.extend(path.obligations.clone());
-    reader.reads.facts.extend(path.facts.clone());
+    reader.reads.facts.extend_shared(&path.facts);
     Ok(path.value.clone())
 }
 
@@ -2242,7 +2242,7 @@ fn pure_ranking_measure_term(
         return Err(RANKING_MEASURE_TYPE_MESSAGE.into());
     };
     reader.reads.obligations.extend(path.obligations.clone());
-    reader.reads.facts.extend(path.facts.clone());
+    reader.reads.facts.extend_shared(&path.facts);
     Ok(value.folded_measure_value())
 }
 
@@ -2364,7 +2364,7 @@ fn c_ranking_measure_read(
     let Some(value) = RankingMachineTerm::from_value(value) else {
         return Err(RANKING_MEASURE_TYPE_MESSAGE.into());
     };
-    reader.reads.facts.extend(path.facts.iter().cloned());
+    reader.reads.facts.extend_shared(&path.facts);
     reader
         .reads
         .obligations

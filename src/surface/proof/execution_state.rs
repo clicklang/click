@@ -1618,7 +1618,7 @@ pub(super) struct ExecutionView<'a> {
     pub(super) frontier: &'a ExecutionFrontier,
     pub(super) recorded_snapshots: &'a RecordedSnapshots,
     pub(super) surface_propositions: &'a SurfacePropositionMap,
-    pub(super) effect_facts: &'a [ExecutionPureFact],
+    pub(super) effect_facts: &'a ExecutionFacts,
     function_entry_state: Option<&'a CState>,
     /// Lexical names available where this certificate is emitted. They are
     /// presentation hints, never proof authority.
@@ -1654,7 +1654,7 @@ impl<'a> ExecutionView<'a> {
 impl<'a> ExecutionView<'a> {
     pub(super) fn new(
         frontier: &'a ExecutionFrontier,
-        effect_facts: &'a [ExecutionPureFact],
+        effect_facts: &'a ExecutionFacts,
         recorded_snapshots: &'a RecordedSnapshots,
         surface_propositions: &'a SurfacePropositionMap,
         function_entry_state: Option<&'a CState>,

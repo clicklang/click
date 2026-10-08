@@ -3158,7 +3158,7 @@ pub struct CertifiedStatementTransition {
     /// the theorem so the proof object checks its premises against exactly that.
     pub(crate) context: PureFactContext,
     pub(crate) outcome: CStatementOutcome,
-    pub(crate) execution_facts: Vec<ExecutionPureFact>,
+    pub(crate) execution_facts: crate::kernel::ExecutionFacts,
     pub(crate) path_facts: Vec<Proposition>,
     pub(crate) obligations: Vec<ProofObligation>,
     pub(crate) pure_facts: PureFactList,

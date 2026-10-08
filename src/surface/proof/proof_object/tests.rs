@@ -11669,7 +11669,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
             block: recorded_pointer.block.clone(),
             offset: PointerOffsetTerm::Constant(1),
         };
-        let mut producer_facts = Vec::new();
+        let mut producer_facts = crate::kernel::ExecutionFacts::new();
         crate::kernel::record_load_variable_defining_fact(
             *variable,
             crate::kernel::Bitvector32Term::MemoryLoad(

@@ -317,10 +317,10 @@ pub fn resolve_load_variables_from_registry(proposition: &Proposition) -> Propos
 
 pub fn resolve_minted_load_variables(
     proposition: &Proposition,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> Proposition {
     let mut resolved = proposition.clone();
-    for fact in facts {
+    for fact in facts.fact_iter() {
         if !fact.certified {
             continue;
         }

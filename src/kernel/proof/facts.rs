@@ -882,7 +882,7 @@ impl ProofFacts {
     pub(crate) fn available_across_effects(
         &self,
         required: &Proposition,
-        framing: &[ExecutionPureFact],
+        framing: &(impl ExecutionFactSource + ?Sized),
     ) -> bool {
         if self.exact_available_across_effects(required, framing) {
             return true;
@@ -898,7 +898,7 @@ impl ProofFacts {
     pub(crate) fn matching_fact_across_effects(
         &self,
         required: &Proposition,
-        framing: &[ExecutionPureFact],
+        framing: &(impl ExecutionFactSource + ?Sized),
     ) -> Option<Proposition> {
         let keys = [snapshot_blind_proposition_key(required)];
         let mut indexed_candidates = Vec::new();
@@ -1056,7 +1056,7 @@ impl ProofFacts {
     pub(crate) fn listed_premise_available(
         &self,
         premise: &Proposition,
-        framing: &[ExecutionPureFact],
+        framing: &(impl ExecutionFactSource + ?Sized),
         across_quantifiers: bool,
     ) -> bool {
         crate::kernel::listed_premise_holds(premise, |premise| {
@@ -1071,7 +1071,7 @@ impl ProofFacts {
     pub(crate) fn exact_available_across_effects(
         &self,
         required: &Proposition,
-        framing: &[ExecutionPureFact],
+        framing: &(impl ExecutionFactSource + ?Sized),
     ) -> bool {
         if self.contains(required)
             || condition_polarity_forms(required)

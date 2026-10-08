@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -23,7 +24,7 @@ trait ResourcePureFacts {
     fn exact_available_across_effects(
         &self,
         required: &Proposition,
-        _framing: &[ExecutionPureFact],
+        _framing: &(impl ExecutionFactSource + ?Sized),
     ) -> bool;
     fn insert(&mut self, fact: Proposition) -> bool;
     fn materialize(&self) -> Vec<Proposition>;
@@ -51,7 +52,7 @@ impl ResourcePureFacts for ProofResourcePureFacts {
     fn exact_available_across_effects(
         &self,
         required: &Proposition,
-        framing: &[ExecutionPureFact],
+        framing: &(impl ExecutionFactSource + ?Sized),
     ) -> bool {
         self.facts.exact_available_across_effects(required, framing)
     }
@@ -3771,7 +3772,7 @@ fn fold_composite_resources_on_outcome_with_facts(
     resource_folds: &[ResourceClause],
     claim_label: &str,
     path_index: usize,
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     pure_facts: &impl ResourcePureFacts,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
@@ -4642,7 +4643,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     resource: &ResourceClause,
     claim_label: &str,
     path_index: usize,
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     facts: ProofFacts,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],

@@ -4983,7 +4983,7 @@ pub(in crate::kernel) fn proof_evidence_unretained_premise(
     theorem: &Theorem,
     assumptions: &PureFactContext,
     executed_under: Option<&PureFactContext>,
-    execution_facts: &[ExecutionPureFact],
+    execution_facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
     state: &CState,
     function_entry_resource_facts: Option<&PureFactContext>,
@@ -5003,7 +5003,7 @@ pub(in crate::kernel) fn proof_evidence_unretained_premise(
             .get_or_insert_with(|| {
                 let mut set = BTreeSet::new();
                 let mut pending = execution_facts
-                    .iter()
+                    .fact_iter()
                     .map(ExecutionPureFact::proposition)
                     .collect::<Vec<_>>();
                 // Uncharged, as the scan it replaces was. The set is still

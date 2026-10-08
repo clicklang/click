@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::ExecutionFactSource;
 use crate::kernel::proof::{CheckedBranchSplit, CheckedBranchSplitError};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -1045,7 +1046,11 @@ fn certified_transitions_from_execution(
                             &transport.target,
                         );
                     }
-                    for fact in &mut execution_facts {
+                    let matching = execution_facts.iter().enumerate()
+                        .filter_map(|(index, fact)| (fact.proposition() == &transport.source).then_some(index))
+                        .collect::<Vec<_>>();
+                    for index in matching {
+                        let fact = execution_facts.get_mut(index);
                         if fact.proposition() == &transport.source {
                             if fact.is_certified() {
                                 // Preserve the certified producer-side fact:
@@ -1174,11 +1179,11 @@ fn certified_transitions_from_execution(
 /// transition owns this small output-sized vector; no proof-state or memory
 /// scan is involved.
 fn generated_load_bindings_from_facts(
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> Vec<crate::kernel::GeneratedLoadBinding> {
     let mut bindings =
         std::collections::BTreeMap::<Variable, crate::kernel::GeneratedLoadBinding>::new();
-    for fact in facts {
+    for fact in facts.fact_iter() {
         let Some(binding) = fact.generated_load_binding() else {
             continue;
         };
@@ -1212,10 +1217,10 @@ fn generated_load_bindings_from_facts(
 }
 
 fn generated_load_source_events_from_facts(
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> Vec<crate::kernel::GeneratedLoadSourceEvent> {
     facts
-        .iter()
+        .fact_iter()
         .flat_map(ExecutionPureFact::generated_load_source_events)
         .cloned()
         .collect()
@@ -1343,7 +1348,7 @@ mod condition_transition_tests {
         };
         let variable = Variable(0xfeed);
         let producer_fact = |pointer: Pointer| {
-            let mut facts = Vec::new();
+            let mut facts = crate::kernel::ExecutionFacts::new();
             crate::kernel::record_load_variable_defining_fact(variable, load(pointer), &mut facts);
             facts.pop().expect("producer emits defining fact")
         };

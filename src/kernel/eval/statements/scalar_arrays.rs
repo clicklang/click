@@ -18,7 +18,7 @@ pub(super) fn execute(
     if !matches!(element_type, CType::Int32 | CType::UInt8 | CType::UInt32) {
         return Ok(vec![path(
             CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            vec![],
+            vec![].into(),
             vec![],
         )]);
     }
@@ -28,7 +28,7 @@ pub(super) fn execute(
     else {
         return Ok(vec![path(
             CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            vec![],
+            vec![].into(),
             vec![],
         )]);
     };
@@ -196,7 +196,7 @@ pub(super) fn execute(
 
 fn path(
     outcome: CStatementOutcome,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> CStatementExecutionPath {
     CStatementExecutionPath {

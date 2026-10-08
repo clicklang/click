@@ -1810,7 +1810,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         let paths = crate::kernel::eval::paths_after_scope_exit(
             vec![CStatementExecutionPath {
                 outcome,
-                facts: vec![],
+                facts: vec![].into(),
                 obligations: vec![],
                 loop_invariant_correspondence: Default::default(),
                 loan_evidence: crate::kernel::empty_checked_loan_evidence_sequence(),

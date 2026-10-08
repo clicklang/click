@@ -349,9 +349,17 @@ charged to visible semantic output rather than hidden ambient state:
   across frontier clones. The candidate-fork regression varies path counts and
   facts per path independently through 1,024, without a timing threshold.
   Certification still checks these untrusted candidates against execution.
-  Flat path facts and terminal
-  joins' flat returned-path containers still need sharing; the bug report
-  records the remaining representation costs and the whole-work curves.
+  Individual paths now retain ordered persistent fact streams, including
+  guard prefixes and effect metadata. Exact merges keep accepted source fact
+  objects, and checked completion shares its context's ordered projection.
+  The same whole-verification regression bounds retained fact objects and
+  vector chunks at candidate publication and checked completion in both proof
+  forms. At 64 returns, 2,405 logical fact occurrences retain 325 distinct fact
+  objects and 329 vector chunks. The kernel storage regression and context
+  fork tests check order, arm isolation, metadata edits, and owner lifetime.
+  Terminal joins still assemble distinct flat outcome containers, and outcome
+  processing still traverses each logical fact stream; the bug report records
+  those remaining costs and the whole-work curves.
 
 ## Execution capacity follows selected syntax
 

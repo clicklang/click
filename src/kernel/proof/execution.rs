@@ -16,6 +16,7 @@ use crate::kernel::{
     CVerifiedLoopRule, ExecutionBudget, ExecutionLimit, ExecutionPureFact, Pointer, Proposition,
     PureFactContext, ResourceContext, SpecProposition, Theorem, Variable,
 };
+use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::persistent::PersistentSet;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
@@ -3762,8 +3763,8 @@ pub(crate) struct CheckedProofCaseJoin {
 /// same record a `branch ensuring` keeps.
 #[derive(Clone)]
 struct CheckedProofCaseJoinInterface {
-    execution_facts: Vec<ExecutionPureFact>,
-    effect_facts: Vec<ExecutionPureFact>,
+    execution_facts: crate::kernel::ExecutionFacts,
+    effect_facts: crate::kernel::ExecutionFacts,
     resource_definitions: Vec<crate::kernel::CCompositeResourceDefinition>,
     lowerings: Arc<Vec<[CheckedInterfaceLowering; 3]>>,
     next_kernel_variable: u64,
@@ -3966,7 +3967,7 @@ impl CheckedProofCaseJoin {
         stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
-        arm_effect_facts: [&[ExecutionPureFact]; 2],
+        arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
         old_reference: Option<&CState>,
@@ -4053,10 +4054,15 @@ impl CheckedProofCaseJoin {
 
     /// The facts an interface join certified for the successor, in the form
     /// trace completion retains them.
-    pub(crate) fn interface_execution_facts(&self) -> &[ExecutionPureFact] {
-        self.interface
-            .as_ref()
-            .map_or(&[], |interface| interface.execution_facts.as_slice())
+    pub(crate) fn interface_execution_facts(&self) -> &crate::kernel::ExecutionFacts {
+        self.interface.as_ref().map_or_else(
+            || {
+                static EMPTY: std::sync::LazyLock<ExecutionFacts> =
+                    std::sync::LazyLock::new(ExecutionFacts::new);
+                &*EMPTY
+            },
+            |interface| &interface.execution_facts,
+        )
     }
 
     /// The facts the proof holds after an interface join, when this is one.
@@ -4493,8 +4499,8 @@ pub(crate) struct CheckedExecutionBranch {
     arms: [CheckedExecutionBranchArm; 2],
     joined_state: CState,
     interface_successor_facts: Option<ProofFacts>,
-    interface_execution_facts: Vec<ExecutionPureFact>,
-    interface_effect_facts: Vec<ExecutionPureFact>,
+    interface_execution_facts: crate::kernel::ExecutionFacts,
+    interface_effect_facts: crate::kernel::ExecutionFacts,
     interface_resource_definitions: Option<Vec<crate::kernel::CCompositeResourceDefinition>>,
     // Keep the actual selected lowering results, not just their boolean verdicts.
     // Every retained judgment has a completed local proof.
@@ -4560,7 +4566,7 @@ impl CheckedExecutionBranch {
         arms: [&ExecutionProofCore; 2],
         function: &CFunction,
         arguments: &[CExpression],
-        arm_effect_facts: [&[ExecutionPureFact]; 2],
+        arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
     ) -> Result<Self, &'static str> {
         let condition = &split.condition;
         if !branch_split_starts_at_parent(parent, &split.state, function, arguments, root_facts) {
@@ -4641,7 +4647,7 @@ impl CheckedExecutionBranch {
             arms: [then_arm, else_arm],
             joined_state: arms[0].reached_state().clone(),
             interface_successor_facts: None,
-            interface_execution_facts: Vec::new(),
+            interface_execution_facts: Vec::new().into(),
             interface_effect_facts,
             interface_resource_definitions: None,
             interface_lowerings: Arc::new(Vec::new()),
@@ -4662,7 +4668,7 @@ impl CheckedExecutionBranch {
         stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
-        arm_effect_facts: [&[ExecutionPureFact]; 2],
+        arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
         old_reference: Option<&CState>,
@@ -4840,11 +4846,11 @@ impl CheckedExecutionBranch {
         self.interface_successor_facts.as_ref()
     }
 
-    pub(crate) fn interface_execution_facts(&self) -> &[ExecutionPureFact] {
+    pub(crate) fn interface_execution_facts(&self) -> &crate::kernel::ExecutionFacts {
         &self.interface_execution_facts
     }
 
-    pub(crate) fn interface_effect_facts(&self) -> &[ExecutionPureFact] {
+    pub(crate) fn interface_effect_facts(&self) -> &crate::kernel::ExecutionFacts {
         &self.interface_effect_facts
     }
 
@@ -4910,12 +4916,12 @@ fn interface_successor_loans_are_inherited(successor: &CState, arms: [&CState; 2
 fn arm_effect_deltas_are_exact(
     parent: &ExecutionProofCore,
     arms: [&ExecutionProofCore; 2],
-    supplied: [&[ExecutionPureFact]; 2],
+    supplied: [&(impl ExecutionFactSource + ?Sized); 2],
 ) -> bool {
     arms.iter().zip(supplied).all(|(arm, supplied)| {
         arm.effect_facts
             .suffix_since(&parent.effect_facts)
-            .is_some_and(|expected| expected == supplied)
+            .is_some_and(|expected| expected.iter().eq(supplied.fact_iter()))
     })
 }
 
@@ -5037,8 +5043,8 @@ fn checked_interface_effect_facts(
     joined_state: &CState,
     arms: [&ExecutionProofCore; 2],
     arm_facts: [&ProofFacts; 2],
-    arm_effect_facts: [&[ExecutionPureFact]; 2],
-) -> Result<Vec<ExecutionPureFact>, &'static str> {
+    arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
+) -> Result<crate::kernel::ExecutionFacts, &'static str> {
     checked_interface_effect_facts_along(
         split_state,
         joined_state,
@@ -5075,12 +5081,12 @@ fn is_memory_effect(proposition: &Proposition) -> bool {
 /// with the proof before the split rather than with the arm.
 fn arm_effects_follow_memory_steps(
     steps: &[CheckedMemoryStep],
-    effects: &[ExecutionPureFact],
+    effects: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
     use crate::kernel::api::contract_certification::c_memories_definitionally_equal;
     let mut effects = effects
-        .iter()
+        .fact_iter()
         .filter_map(|fact| match fact.proposition() {
             Proposition::CMemoryMutatesOnly { before, after, .. }
             | Proposition::CMemoryEffectSummary { before, after, .. }
@@ -5120,9 +5126,9 @@ fn checked_interface_effect_facts_along(
     joined_state: &CState,
     arms: [&ExecutionProofCore; 2],
     arm_facts: [&ProofFacts; 2],
-    arm_effect_facts: [&[ExecutionPureFact]; 2],
+    arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
     arm_memory_steps: Option<[&[CheckedMemoryStep]; 2]>,
-) -> Result<Vec<ExecutionPureFact>, &'static str> {
+) -> Result<crate::kernel::ExecutionFacts, &'static str> {
     let mut writes = Vec::new();
     let mut ranges = Vec::new();
     let mut heap_frees = [Vec::new(), Vec::new()];
@@ -5138,7 +5144,7 @@ fn checked_interface_effect_facts_along(
             )
         });
         let mut memory = split_state.memory().clone();
-        for fact in arm_effect_facts[arm_index] {
+        for fact in arm_effect_facts[arm_index].fact_iter() {
             match fact.proposition() {
                 Proposition::CMemoryMutatesOnly {
                     before,
@@ -5247,7 +5253,7 @@ fn checked_interface_effect_facts_along(
                     })
                 })
                 .collect::<Vec<_>>();
-            return Ok(facts);
+            return Ok(facts.into());
         }
         return Ok(common_non_memory_effect_facts(arm_effect_facts));
     }
@@ -5277,15 +5283,15 @@ fn checked_interface_effect_facts_along(
     };
     let mut facts = vec![ExecutionPureFact::certified_join_summary(proposition)];
     facts.extend(common_non_memory_effect_facts(arm_effect_facts));
-    Ok(facts)
+    Ok(facts.into())
 }
 
 fn conditional_heap_frees(
-    arm_effect_facts: [&[ExecutionPureFact]; 2],
+    arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
 ) -> [Vec<(Pointer, Bitvector32Term)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
-            .iter()
+            .fact_iter()
             .filter_map(|fact| match fact.proposition() {
                 Proposition::CHeapAllocationFreed {
                     allocation_base,
@@ -5350,10 +5356,10 @@ fn interface_resources_guard_heap_frees(
 }
 
 fn common_non_memory_effect_facts(
-    arm_effect_facts: [&[ExecutionPureFact]; 2],
-) -> Vec<ExecutionPureFact> {
+    arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
+) -> crate::kernel::ExecutionFacts {
     arm_effect_facts[0]
-        .iter()
+        .fact_iter()
         .filter(|fact| {
             fact.is_certified()
                 && !matches!(
@@ -5362,7 +5368,7 @@ fn common_non_memory_effect_facts(
                         | Proposition::CMemoryEffectSummary { .. }
                         | Proposition::CHeapAllocationFreed { .. }
                 )
-                && arm_effect_facts[1].contains(fact)
+                && arm_effect_facts[1].fact_iter().any(|other| other == *fact)
         })
         .cloned()
         .collect()
@@ -5662,7 +5668,7 @@ impl CheckedInterfaceLoadDefinition {
 #[derive(Clone)]
 pub(crate) struct CheckedBranchPath {
     outcome: CConditionOutcome,
-    facts: Vec<ExecutionPureFact>,
+    facts: crate::kernel::ExecutionFacts,
     obligations: Vec<crate::kernel::ProofObligation>,
     theorem: Theorem,
 }
@@ -5672,7 +5678,7 @@ impl CheckedBranchPath {
         &self.outcome
     }
 
-    pub(crate) fn facts(&self) -> &[ExecutionPureFact] {
+    pub(crate) fn facts(&self) -> &crate::kernel::ExecutionFacts {
         &self.facts
     }
 
@@ -5884,7 +5890,7 @@ impl CheckedBranchSplit {
                 }
                 Some(CheckedBranchPath {
                     outcome: outcome.clone(),
-                    facts: path.facts().to_vec(),
+                    facts: path.facts().clone(),
                     obligations: path.obligations().to_vec(),
                     theorem: path.theorem().clone(),
                 })
@@ -6071,7 +6077,7 @@ pub(crate) struct PendingLoopReturnPath {
     /// premises are read at.
     pub(crate) loop_index: Option<usize>,
     pub(crate) outcome: CFunctionOutcome,
-    pub(crate) execution_facts: Vec<ExecutionPureFact>,
+    pub(crate) execution_facts: ExecutionFacts,
     pub(crate) obligations: Vec<crate::kernel::ProofObligation>,
     pub(crate) pure_facts: ProofFacts,
     pub(crate) loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -6090,6 +6096,9 @@ pub(crate) struct ExecutionProofCore {
     /// split order. Forks share the prefix; a join restores the parent's.
     /// Other case producers use the ordinary local-context construction.
     checked_step_cases: (usize, PureFactContext),
+    /// The admitted case delta, shared by every returned descendant. Retain
+    /// it at the split, before terminal joins could copy it into every path.
+    publication_case_facts: ExecutionFacts,
     /// Every variable `initial_match_scope` mentions, built once and shared by
     /// every branch forked from this region. A constructor witness introduced
     /// anywhere in the region must avoid these; everything the kernel has
@@ -6122,7 +6131,7 @@ pub(crate) struct ExecutionProofCore {
     /// source, never from driver-provided pushes.
     pub(crate) evidence_try_stack: Vec<EvidenceTryFrame>,
     pub(crate) frontier: ExecutionFrontier,
-    pub(crate) effect_facts: SharedVec<ExecutionPureFact>,
+    pub(crate) effect_facts: ExecutionFacts,
     /// One append-only evidence trace per operational outcome represented by
     /// this frontier. Ordinary in-flight execution has one trace; a single C
     /// operation with several return outcomes can complete several traces at
@@ -6188,7 +6197,7 @@ pub(crate) struct CheckedLoopInvariantLowerings {
     /// body checked before a `decreases` clause existed cannot be reused.
     pub(super) ranking_measures: Vec<crate::kernel::CRankingComponent>,
     pub(super) facts: super::ProofFacts,
-    pub(super) effects: SharedVec<ExecutionPureFact>,
+    pub(super) effects: crate::kernel::ExecutionFacts,
 }
 
 #[cfg(test)]
@@ -7169,13 +7178,20 @@ fn trace_completion(
     events: &[CheckedExecutionEvent],
     assumptions: &PureFactContext,
     checked_void_fallthrough: bool,
-) -> Result<(CStatementOutcome, PureFactContext, Vec<ExecutionPureFact>), &'static str> {
+) -> Result<
+    (
+        CStatementOutcome,
+        PureFactContext,
+        crate::kernel::ExecutionFacts,
+    ),
+    &'static str,
+> {
     if !events_use_the_function_definitions(function, events) {
         return Err("a retained resource event was checked under other composite definitions");
     }
     let mut completed: Option<(CStatementOutcome, PureFactContext)> = None;
     let mut fallthrough = None;
-    let mut interface_execution_facts: Vec<ExecutionPureFact> = Vec::new();
+    let mut interface_execution_facts: crate::kernel::ExecutionFacts = Vec::new().into();
     for (index, event) in events.iter().enumerate() {
         match event {
             CheckedExecutionEvent::Statement(theorem) => {
@@ -7633,6 +7649,7 @@ impl ExecutionProofCore {
         Self {
             initial_match_scope: state.clone(),
             checked_step_cases: (0, PureFactContext::new()),
+            publication_case_facts: ExecutionFacts::new(),
             initial_match_reserved: Arc::new(std::sync::OnceLock::new()),
             state,
             evidence_state: None,
@@ -7692,9 +7709,12 @@ impl ExecutionProofCore {
     /// Appends a checked statement's effects to the proof's effect list and
     /// returns how many of them are memory effects. A fact the list already
     /// holds is not appended and not counted.
-    fn append_statement_effects(&mut self, execution_facts: &[ExecutionPureFact]) -> usize {
+    fn append_statement_effects(
+        &mut self,
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
+    ) -> usize {
         let mut memory_effects = 0;
-        for fact in execution_facts {
+        for fact in execution_facts.fact_iter() {
             let memory_effect = is_memory_effect(fact.proposition());
             if (memory_effect || fact.is_certified()) && !self.effect_facts.contains(fact) {
                 self.effect_facts.push(fact.clone());
@@ -7714,7 +7734,7 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         theorem: Theorem,
         context: PureFactContext,
-        execution_facts: &[ExecutionPureFact],
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
         obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(), EvidenceRefusal> {
         self.record_statement_transition_with_loan_evidence(
@@ -7736,7 +7756,7 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         theorem: Theorem,
         context: PureFactContext,
-        execution_facts: &[ExecutionPureFact],
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
         obligations: &[crate::kernel::ProofObligation],
         loan_evidence: &crate::kernel::loans::CheckedLoanCallEvidenceSequence,
     ) -> Result<(), EvidenceRefusal> {
@@ -7965,7 +7985,7 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         outcomes: &[(
             Theorem,
-            &[ExecutionPureFact],
+            &(impl ExecutionFactSource + ?Sized),
             &[crate::kernel::ProofObligation],
         )],
         context: PureFactContext,
@@ -8021,10 +8041,10 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         theorem: &Theorem,
         context: &PureFactContext,
-        execution_facts: &[ExecutionPureFact],
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
         obligations: &[crate::kernel::ProofObligation],
         outcome: CFunctionOutcome,
-        completed_execution_facts: Vec<ExecutionPureFact>,
+        completed_execution_facts: ExecutionFacts,
         completed_obligations: Vec<crate::kernel::ProofObligation>,
         pure_facts: ProofFacts,
         loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -8225,7 +8245,18 @@ impl ExecutionProofCore {
     pub(in crate::kernel::proof) fn retain_step_case(&mut self, fact: Proposition) {
         self.checked_step_cases.0 += 1;
         crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+        self.publication_case_facts
+            .push(ExecutionPureFact::new(fact.clone()));
         self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
+    }
+
+    /// Candidate publication retains the admitted case prefix and appends
+    /// only this statement's own evidence. This carries no theorem authority.
+    pub(crate) fn completed_path_facts(&self, delta: &ExecutionFacts) -> ExecutionFacts {
+        let mut facts = self.publication_case_facts.clone();
+        let delta = delta.filtered(|fact| !facts.contains(fact));
+        facts.extend_shared(&delta);
+        facts
     }
 
     /// A local context for a presentation containing exactly these admitted
@@ -8441,7 +8472,7 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         theorem: &Theorem,
         context: &PureFactContext,
-        execution_facts: &[ExecutionPureFact],
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
         obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(CStatementOutcome, Option<Arc<CStatement>>), EvidenceRefusal> {
         // Owned (not borrowed) so try-evidence advancement below can take
@@ -8808,7 +8839,7 @@ impl ExecutionProofCore {
         theorem: &Theorem,
         context: &PureFactContext,
         proved_state: &CState,
-        execution_facts: &[ExecutionPureFact],
+        execution_facts: &(impl ExecutionFactSource + ?Sized),
         obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(), EvidenceRefusal> {
         let no_assumptions = PureFactContext::new();
@@ -8857,7 +8888,7 @@ impl ExecutionProofCore {
         if !states_match {
             return Err("evidence does not start from the running state".into());
         }
-        let mut retained_execution_facts = execution_facts.to_vec();
+        let mut retained_execution_facts = execution_facts.persistent_facts();
         for fact in self.effect_facts.iter() {
             if !retained_execution_facts.contains(fact) {
                 retained_execution_facts.push(fact.clone());
@@ -8923,6 +8954,12 @@ impl ExecutionProofCore {
         for trace in &mut *self.execution_evidence {
             trace.push(CheckedExecutionEvent::Condition(theorem.clone()));
             trace.push(CheckedExecutionEvent::Context(context.clone()));
+        }
+        for fact in path_facts {
+            let fact = ExecutionPureFact::new(fact.clone());
+            if !self.publication_case_facts.contains(&fact) {
+                self.publication_case_facts.push(fact);
+            }
         }
         self.evidence_state = Some(reached);
         self.evidence_source = source_after;
@@ -9007,11 +9044,11 @@ impl ExecutionProofCore {
         stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
-        arm_effect_facts: [&[ExecutionPureFact]; 2],
+        arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
         old_reference: Option<&CState>,
-    ) -> Result<Vec<ExecutionPureFact>, &'static str> {
+    ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
         let join = CheckedProofCaseJoin::check_interface(
             parent,
             root_facts,
@@ -10019,8 +10056,8 @@ impl ExecutionProofCore {
         arms: [&ExecutionProofCore; 2],
         function: &CFunction,
         arguments: &[CExpression],
-        arm_effect_facts: [&[ExecutionPureFact]; 2],
-    ) -> Result<Vec<ExecutionPureFact>, &'static str> {
+        arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
+    ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
         let parent_trace = match parent.execution_evidence.as_slice() {
             [trace] => trace,
             _ => return Err("the branch parent does not have one execution trace"),
@@ -10036,7 +10073,7 @@ impl ExecutionProofCore {
             arguments,
             arm_effect_facts,
         )?;
-        let interface_effect_facts = branch.interface_effect_facts().to_vec();
+        let interface_effect_facts = branch.interface_effect_facts().clone();
         let joined_state = branch.joined_state().clone();
         let source = parent.source_after_branch(function, &branch)?;
         let mut trace = parent_trace.clone();
@@ -10046,7 +10083,7 @@ impl ExecutionProofCore {
         self.evidence_state = Some(joined_state);
         self.evidence_source = source;
         self.evidence_completed = false;
-        Ok(interface_effect_facts)
+        Ok(interface_effect_facts.into())
     }
 
     /// Records a two-arm `branch ensuring` only after the kernel has checked
@@ -10066,11 +10103,11 @@ impl ExecutionProofCore {
         stable_join_locals: &BTreeMap<String, CValue>,
         interface_specs: &[SpecProposition],
         interface_resource_specs: &[CResourceSpec],
-        arm_effect_facts: [&[ExecutionPureFact]; 2],
+        arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
         old_reference: Option<&CState>,
-    ) -> Result<Vec<ExecutionPureFact>, &'static str> {
+    ) -> Result<crate::kernel::ExecutionFacts, &'static str> {
         let parent_trace = match parent.execution_evidence.as_slice() {
             [trace] => trace,
             _ => return Err("the interface parent does not have one execution trace"),
@@ -10092,7 +10129,7 @@ impl ExecutionProofCore {
             successor_facts,
             old_reference,
         )?;
-        let interface_effect_facts = branch.interface_effect_facts().to_vec();
+        let interface_effect_facts = branch.interface_effect_facts().clone();
         let joined_state = branch.joined_state().clone();
         // The kernel recomputed the abstraction, so it also knows where the
         // abstraction left the counter. Installing that mark here is what
@@ -10112,7 +10149,7 @@ impl ExecutionProofCore {
         self.evidence_state = Some(joined_state);
         self.evidence_source = source;
         self.evidence_completed = false;
-        Ok(interface_effect_facts)
+        Ok(interface_effect_facts.into())
     }
 
     /// The checked whole-function execution a completed proof yields: one
@@ -10463,7 +10500,7 @@ impl ExecutionProofCore {
             // candidate's execution facts, the interface facts of joined
             // branches, and the facts of the context its final theorem was
             // proved under (a `have` in one arm that both arms share, say).
-            let mut facts = candidate.facts().to_vec();
+            let mut facts = candidate.facts().clone();
             let mut post_assumptions = boundary_assumptions;
             for fact in interface_execution_facts {
                 if retain_post_context {
@@ -10476,18 +10513,7 @@ impl ExecutionProofCore {
                     facts.push(fact);
                 }
             }
-            for fact in statement_assumptions
-                .pure_facts()
-                .into_iter()
-                .map(ExecutionPureFact::new)
-            {
-                if !facts
-                    .iter()
-                    .any(|retained| retained.proposition() == fact.proposition())
-                {
-                    facts.push(fact);
-                }
-            }
+            facts.append_context(&statement_assumptions.execution_fact_projection);
             // Preserve the typed-load bridges that the former certification
             // import installed, including private memory-effect evidence.
             if retain_post_context {
@@ -10508,8 +10534,8 @@ impl ExecutionProofCore {
                 completion_origin: Some(candidate.outcome().clone()),
                 assumptions: assumptions.clone(),
                 post_assumptions: retain_post_context.then_some(post_assumptions),
-                facts,
-                effect_facts: candidate.effect_facts().to_vec(),
+                facts: facts.into(),
+                effect_facts: candidate.effect_facts().clone(),
                 obligations,
                 theorem,
                 loan_evidence,
@@ -10517,6 +10543,14 @@ impl ExecutionProofCore {
             deferred_contract_exits.push(deferred_contract_exit);
             deferred_contract_exit_errors.push(deferred_contract_exit_error);
         }
+        #[cfg(test)]
+        ExecutionFacts::record_published_storage(
+            true,
+            paths.len(),
+            paths
+                .iter()
+                .flat_map(|path| [&path.facts, &path.effect_facts]),
+        );
         Ok((
             paths,
             has_checked_entry,
@@ -12493,7 +12527,7 @@ mod tests {
         )
         .expect("the two exact alternative stores should summarize");
         assert!(matches!(
-            summaries.as_slice(),
+            summaries.to_vec().as_slice(),
             [fact] if matches!(
                 fact.proposition(),
                 Proposition::CMemoryMutatesOnly { before: effect_before, after, writes }
@@ -12968,13 +13002,13 @@ mod tests {
             paths: vec![
                 CheckedBranchPath {
                     outcome: CConditionOutcome::Value(true),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: Vec::new(),
                     theorem: then_theorem.clone(),
                 },
                 CheckedBranchPath {
                     outcome: CConditionOutcome::Value(false),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: Vec::new(),
                     theorem: else_theorem.clone(),
                 },
@@ -13137,7 +13171,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, value)| CheckedBranchPath {
                     outcome: CConditionOutcome::Value(value),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: vec![ProofObligation::new(required.clone())],
                     theorem: theorems[index].clone(),
                 })
@@ -13470,13 +13504,13 @@ mod tests {
             paths: vec![
                 CheckedBranchPath {
                     outcome: CConditionOutcome::Value(true),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: Vec::new(),
                     theorem: then_theorem.clone(),
                 },
                 CheckedBranchPath {
                     outcome: CConditionOutcome::Value(false),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: Vec::new(),
                     theorem: else_theorem.clone(),
                 },
