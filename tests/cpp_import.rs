@@ -2506,7 +2506,9 @@ fn contains_if(statement: &CStatement) -> bool {
 
 fn contains_call(statement: &CStatement, expected: &str) -> bool {
     match statement {
-        CStatement::Call { function_name, .. } => function_name == expected,
+        CStatement::Call { function_name, .. } | CStatement::CallAssign { function_name, .. } => {
+            function_name == expected
+        }
         CStatement::Seq(first, second) => {
             contains_call(first, expected) || contains_call(second, expected)
         }
@@ -4035,7 +4037,10 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     let wrong_project = read_click_project(&sidecar, &wrong_final).unwrap();
     verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the second scope must clean up before the final outer return");
+}
 
+#[test]
+fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
     let growing = Project::sibling_scope_destructors();
     fs::write(
         growing.source(),
@@ -5711,7 +5716,11 @@ fn concrete_template_instances_have_distinct_identities_and_modular_contracts() 
         assert_eq!(span.start_line, 4);
         assert_eq!(then_branch.is_empty(), !chosen_then);
         assert_eq!(else_branch.is_empty(), chosen_then);
-        let CppExpression::IntegralCast { value, .. } = condition else {
+        let click::languages::cpp::CppCondition::Expression(CppExpression::IntegralCast {
+            value,
+            ..
+        }) = condition
+        else {
             panic!("typed Boolean selection")
         };
         assert!(matches!(
@@ -6780,6 +6789,20 @@ fn direct_return_calls_reject_unsupported_expression_positions_and_recursive_gra
 
 #[test]
 fn direct_return_calls_capture_typed_results_before_destructors() {
+    check_return_cleanup_cases("int32");
+}
+
+#[test]
+fn direct_return_calls_capture_boolean_results_before_destructors() {
+    check_return_cleanup_cases("bool");
+}
+
+#[test]
+fn direct_return_calls_capture_wide_results_before_destructors() {
+    check_return_cleanup_cases("int64");
+}
+
+fn check_return_cleanup_cases(selected_type: &str) {
     let cpp = include_str!("fixtures/cpp-verification/return-call/cleanup.cpp");
     for (selected, helper, value_type, helper_parameters, helper_contract, expected) in [
         (
@@ -6817,6 +6840,9 @@ fn direct_return_calls_capture_typed_results_before_destructors() {
         ("ordinary_wide", "", "int64", "", "", "4294967303i64"),
         ("ordinary_bool", "", "bool", "", "", "1"),
     ] {
+        if value_type != selected_type {
+            continue;
+        }
         let project = Project::with_fixture("cleanup.cpp", selected, cpp);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
@@ -8137,83 +8163,92 @@ const GROWING_GUARD_SOURCE: &str = "struct Guard { int value; explicit Guard(int
 
 #[test]
 fn growing_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
-    for mode in ["top", "siblings", "block"] {
-        for size in [3usize, 8, 32, 128] {
-            let mut body = String::new();
-            if mode == "block" {
-                body.push_str("{\n");
+    check_growing_lifetime_inventory("top");
+}
+
+#[test]
+fn growing_sibling_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
+    check_growing_lifetime_inventory("siblings");
+}
+
+#[test]
+fn growing_block_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
+    check_growing_lifetime_inventory("block");
+}
+
+fn check_growing_lifetime_inventory(mode: &str) {
+    for size in [3usize, 8, 32, 128] {
+        let mut body = String::new();
+        if mode == "block" {
+            body.push_str("{\n");
+        }
+        for index in 0..size {
+            if mode == "siblings" {
+                body.push_str("{ Guard guard(value);\n");
+            } else {
+                body.push_str(&format!("Guard g{index}(value);\n"));
             }
-            for index in 0..size {
-                if mode == "siblings" {
-                    body.push_str("{ Guard guard(value);\n");
-                } else {
-                    body.push_str(&format!("Guard g{index}(value);\n"));
-                }
-                if index == 0 {
-                    body.push_str("if (early) { return value; }\n");
-                }
-                if mode == "siblings" {
-                    body.push_str("}\n");
-                }
+            if index == 0 {
+                body.push_str("if (early) { return value; }\n");
             }
-            if mode == "block" {
+            if mode == "siblings" {
                 body.push_str("}\n");
             }
-            let cpp = format!(
-                "{GROWING_GUARD_SOURCE}int many(bool early, int value) noexcept {{ {body} return value; }}"
-            );
-            let project = Project::with_fixture("guards.cpp", "many", &cpp);
-            refresh_import(&project.config()).unwrap();
-            let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
-            let (import, validation_work) =
-                click::instrumentation::measure_deterministic_work(|| {
-                    load_import(&project.config())
-                });
-            let import = import.unwrap();
-            assert!(
-                validation_work <= bytes + 64 * size + 256,
-                "{mode}, {size}: {validation_work} validation work for {bytes} bytes"
-            );
-            let (lowered, work) =
-                click::instrumentation::measure_deterministic_work(|| lower_import(&import));
-            let lowered = lowered.unwrap();
-            assert!(
-                work <= 32 * size + 128,
-                "{mode}, {size}: {work} lowering work"
-            );
-            let order =
-                destructor_object_order(lowered.kernel_function().body(), "Guard_destructor");
-            let expected = if mode == "siblings" {
-                vec!["guard".to_string(); size + 1]
-            } else {
-                std::iter::once("g0".to_string())
-                    .chain((0..size).rev().map(|index| format!("g{index}")))
-                    .collect()
-            };
-            assert_eq!(order, expected);
-            // Larger inventories check importer/lowering work; small ones also
-            // exercise complete proofs, rewritten certificates, and audit.
-            if size <= 8 {
-                let source = r#"verifying "guards.cpp";
+        }
+        if mode == "block" {
+            body.push_str("}\n");
+        }
+        let cpp = format!(
+            "{GROWING_GUARD_SOURCE}int many(bool early, int value) noexcept {{ {body} return value; }}"
+        );
+        let project = Project::with_fixture("guards.cpp", "many", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let (import, validation_work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert!(
+            validation_work <= bytes + 64 * size + 256,
+            "{mode}, {size}: {validation_work} validation work for {bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        let lowered = lowered.unwrap();
+        assert!(
+            work <= 32 * size + 128,
+            "{mode}, {size}: {work} lowering work"
+        );
+        let order = destructor_object_order(lowered.kernel_function().body(), "Guard_destructor");
+        let expected = if mode == "siblings" {
+            vec!["guard".to_string(); size + 1]
+        } else {
+            std::iter::once("g0".to_string())
+                .chain((0..size).rev().map(|index| format!("g{index}")))
+                .collect()
+        };
+        assert_eq!(order, expected);
+        // Larger inventories check importer/lowering work; small ones also
+        // exercise complete proofs, rewritten certificates, and audit.
+        if size <= 8 {
+            let source = r#"verifying "guards.cpp";
 void Guard_constructor(struct Guard* self, int32 initial) { owns self->value; ensures self->value == initial; } by { execute(); simp(); }
 void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
 int32 many(bool early, int32 value) { ensures result == value; } by { execute(); simp(); }
 "#;
-                check_return_call_sidecar(&project, &import, source);
-                let hostile = source.replace(
-                    "ensures result == value; } by { execute(); simp(); }",
-                    "requires value == 5; ensures result == 6; } by { execute(); assumption(); }",
-                );
-                let sidecar = project.directory.join("bad.click");
-                fs::write(&sidecar, &hostile).unwrap();
-                let parsed = read_click_project(&sidecar, &hostile).unwrap();
-                let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
-                assert!(
-                    !error.message().contains("budget exhausted"),
-                    "{}",
-                    error.message()
-                );
-            }
+            check_return_call_sidecar(&project, &import, source);
+            let hostile = source.replace(
+                "ensures result == value; } by { execute(); simp(); }",
+                "requires value == 5; ensures result == 6; } by { execute(); assumption(); }",
+            );
+            let sidecar = project.directory.join("bad.click");
+            fs::write(&sidecar, &hostile).unwrap();
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            assert!(
+                !error.message().contains("budget exhausted"),
+                "{}",
+                error.message()
+            );
         }
     }
 }
@@ -8478,6 +8513,15 @@ fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
 
 #[test]
 fn field_siblings_preserve_fee_template_rounding_and_static_helper_shape() {
+    check_field_sibling_rounding("Down");
+}
+
+#[test]
+fn field_siblings_preserve_upward_fee_template_rounding_and_static_helper_shape() {
+    check_field_sibling_rounding("Up");
+}
+
+fn check_field_sibling_rounding(direction: &str) {
     let cpp = include_str!("fixtures/cpp-verification/return-call/field-fee-rounding.cpp");
     for (selected, down, fee, divisor, expected) in [
         ("Down", 1, 7, 5, 4),
@@ -8487,6 +8531,9 @@ fn field_siblings_preserve_fee_template_rounding_and_static_helper_shape() {
         ("Down", 1, 7, 3, 7),
         ("Up", 0, -7, 3, -7),
     ] {
+        if selected != direction {
+            continue;
+        }
         let project = Project::with_fixture("fields.cpp", &format!("Fee::{selected}"), cpp);
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
@@ -11980,4 +12027,282 @@ fn projected_calls_require_certified_callee_contracts_and_true_results() {
             assert!(error.message().len() < 8000);
         }
     }
+}
+
+const CONDITION_CALL_SOURCE: &str = r#"
+struct Base { int value; bool Empty() const noexcept { return value == 0; } };
+struct Derived : Base {};
+struct State { Derived left; int sibling; };
+bool update(int& value, bool answer) noexcept { value = value + 1; return answer; }
+int choose(State& state, bool answer) noexcept {
+    if (update(state.sibling, answer)) { return 1; } else { return 2; }
+}
+int observe(const State& state) noexcept {
+    if (state.left.Empty()) { return 1; } else { return 2; }
+}
+"#;
+
+#[test]
+fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
+    let project = Project::with_fixture("condition.cpp", "choose", CONDITION_CALL_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[0],
+        click::languages::cpp::CppStatement::If {
+            condition: click::languages::cpp::CppCondition::Call { .. },
+            ..
+        }
+    ));
+    fs::remove_file(&project.exporter).unwrap();
+    for (answer, expected) in [(0, 2), (1, 1)] {
+        let sidecar = format!(
+            r#"verifying "condition.cpp";
+        bool update(int32* value, bool answer) {{ owns *value; requires *value == 4; ensures *value == 5; ensures result == answer; }} by {{ execute(); simp(); }}
+        int32 choose(struct State* state, bool answer) {{ owns state->sibling; views state->left.base.value; requires answer == {answer}; requires state->sibling == 4; ensures result == {expected}; ensures state->sibling == 5; ensures state->left.base.value == old(state->left.base.value); }} by {{ execute(); simp(); }}
+        "#
+        );
+        check_return_call_sidecar(&project, &import, &sidecar);
+    }
+}
+
+#[test]
+fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
+    let project = Project::with_fixture("condition.cpp", "observe", CONDITION_CALL_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    for (value, expected) in [(0, 1), (3, 2)] {
+        let sidecar = format!(
+            r#"verifying "condition.cpp";
+        bool Base_Empty(const struct Base* self) {{ views self->value; ensures result == (if self->value == 0 {{ 1 }} else {{ 0 }}); }} by {{ execute(); simp(); }}
+        int32 observe(const struct State* state) {{ views state->left.base.value; views state->sibling; requires state->left.base.value == {value}; ensures result == {expected}; ensures state->sibling == old(state->sibling); }} by {{ execute(); simp(); }}
+        "#
+        );
+        check_return_call_sidecar(&project, &import, &sidecar);
+        let hostile = sidecar.replace(&format!("result == {expected}"), "result == 9");
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        let missing = sidecar.replace("views state->left.base.value;", "");
+        fs::write(&path, &missing).unwrap();
+        let parsed = read_click_project(&path, &missing).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn condition_calls_validate_target_result_arguments_and_metadata() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture("condition.cpp", "choose", CONDITION_CALL_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..8 {
+        let mut forged = artifact.clone();
+        let call = &mut forged["function"]["body"][0]["condition"]["call"];
+        match mutation {
+            0 => call["callee"]["declaration_id"] = "missing".into(),
+            1 => {
+                call["value_type"] = serde_json::json!({"kind":"integer","bits":32,"signed":true,"is_const":false,"source_aliases":[]})
+            }
+            2 => call["arguments"] = serde_json::json!([]),
+            3 => call["span"]["file"] = "unlocked.h".into(),
+            4 => call["value_type"]["bits"] = 32.into(),
+            5 => call["arguments"][0]["place"]["projections"] = serde_json::json!([]),
+            6 => {
+                forged["reachable_functions"][0]["return_type"] = serde_json::json!({"kind":"integer","bits":32,"signed":true,"is_const":false,"source_aliases":[]})
+            }
+            7 => call["callee"]["name"] = "wrong".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{error}");
+    }
+}
+
+#[test]
+fn condition_calls_refuse_composed_and_non_boolean_effects() {
+    for condition in [
+        "!predicate()",
+        "predicate() && predicate()",
+        "predicate() == true",
+        "number()",
+    ] {
+        let source = format!(
+            "bool predicate() noexcept {{ return true; }} int number() noexcept {{ return 1; }} int choose() noexcept {{ if ({condition}) {{ return 1; }} else {{ return 2; }} }}"
+        );
+        let project = Project::with_fixture("condition.cpp", "choose", &source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{error}");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn condition_calls_propagate_scalar_exception_contracts() {
+    let project = Project::with_fixture(
+        "condition.cpp",
+        "choose",
+        "bool predicate(bool fail) { if (fail) { throw 7; } return true; } int choose(bool fail) { if (predicate(fail)) { return 5; } else { return 6; } }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("choose", "condition.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let source = r#"verifying "condition.cpp";
+    bool predicate(bool fail) throws int32 { ensures result == 1 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+    int32 choose(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+    "#;
+    check_return_call_sidecar(&project, &import, source);
+}
+
+#[test]
+fn condition_calls_unwind_active_objects_before_rethrow() {
+    let source = r#"
+struct Guard { int* slot; explicit Guard(int* value) noexcept : slot(value) { *slot = 1; } ~Guard() noexcept { *slot = 2; } };
+bool predicate(bool fail) { if (fail) { throw 7; } return true; }
+int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *slot = 3; } else { *slot = 4; } return 5; }
+"#;
+    let project = Project::with_fixture("condition.cpp", "choose", source);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("choose", "condition.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
+    fn guarded_condition(statement: &CStatement) -> bool {
+        match statement {
+            CStatement::Seq(first, second) => guarded_condition(first) || guarded_condition(second),
+            CStatement::TryCatchInt32 {
+                try_body,
+                handler,
+                cleanup_unwind: true,
+                ..
+            } => {
+                contains_call(try_body, "predicate")
+                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Guard_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+            }
+            _ => false,
+        }
+    }
+    assert!(guarded_condition(lowered.kernel_function().body()));
+}
+
+#[test]
+fn condition_calls_share_fresh_captures_with_nested_arguments_and_returns() {
+    let project = Project::with_fixture(
+        "condition.cpp",
+        "choose",
+        r#"
+bool predicate(int value) noexcept { return value == 7; }
+int echo(int value) noexcept { return value; }
+int choose(int value) noexcept {
+    int __click_cpp_nested_value_0 = 9;
+    if (predicate(echo(value))) { if (predicate(value)) { return echo(__click_cpp_nested_value_0); } return 8; }
+    return 0;
+}
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "condition.cpp";
+    bool predicate(int32 value) { requires value == 7; ensures result == 1; } by { execute(); simp(); }
+    int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+    int32 choose(int32 value) { requires value == 7; ensures result == 9; } by { execute(); simp(); }
+    "#,
+    );
+}
+
+#[test]
+fn condition_calls_preserve_the_enclosing_catch_scope() {
+    let project = Project::with_fixture(
+        "condition.cpp",
+        "choose",
+        "bool predicate(bool fail) { if (fail) { throw 7; } return true; } int choose(bool fail) { try { if (predicate(fail)) { return 5; } } catch (int caught) { return caught; } return 6; }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("choose", "condition.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let sidecar = r#"verifying "condition.cpp";
+        bool predicate(bool fail) throws int32 { ensures result == 1 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+        int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
+            step();
+            outcomes {
+                returned => { step(); execute(); simp(); }
+                threw => { step(); execute(); simp(); }
+            }
+        }
+    "#;
+    check_return_call_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace("result == 5 or result == 7", "result == 6");
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn condition_calls_refuse_guarded_try_condition_hoisting() {
+    use sha2::{Digest, Sha256};
+    let source = r#"
+struct Guard { int value; explicit Guard(int initial) noexcept : value(initial) {} ~Guard() noexcept { value = 0; } };
+bool predicate(bool fail) { if (fail) { throw 7; } return true; }
+int choose(bool fail) { predicate(fail); try { if (fail) { Guard guard(0); } } catch (int caught) { return caught; } return 5; }
+"#;
+    let project = Project::with_fixture("condition.cpp", "choose", source);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("choose", "condition.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let mut lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let operation = artifact["function"]["body"][0].clone();
+    let span = artifact["function"]["body"][1]["condition"]["span"].clone();
+    artifact["function"]["body"][1]["condition"] = serde_json::json!({"call": {
+        "callee": operation["callee"], "arguments": operation["arguments"],
+        "value_type": {"kind":"boolean","bits":8,"is_const":false}, "span":span
+    }});
+    let bytes = serde_json::to_vec(&artifact).unwrap();
+    lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+    lock["artifact_bytes"] = bytes.len().into();
+    fs::write(project.artifact(), bytes).unwrap();
+    fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("pure condition to preserve catch scope"),
+        "{error}"
+    );
+
+    let project = Project::with_fixture(
+        "condition.cpp",
+        "choose",
+        &source.replace("if (fail) { Guard", "if (predicate(fail)) { Guard"),
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("choose", "condition.cpp", true, "scalar_int32");
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.len() < 8000, "{error}");
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
 }

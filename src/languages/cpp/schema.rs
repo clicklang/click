@@ -622,6 +622,91 @@ pub enum CppCallArgument {
     },
 }
 
+/// A pure condition retains its existing expression encoding. A call is a
+/// separate effectful operation, evaluated exactly once before either arm.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum CppCondition {
+    Expression(CppExpression),
+    Call { call: CppConditionCall },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppConditionCall {
+    pub callee: CppFunctionReference,
+    pub arguments: Vec<CppCallArgument>,
+    pub value_type: CppType,
+    pub span: CppSpan,
+}
+
+impl From<CppExpression> for CppCondition {
+    fn from(value: CppExpression) -> Self {
+        Self::Expression(value)
+    }
+}
+
+impl CppCondition {
+    pub(crate) fn value_type(&self) -> &CppType {
+        match self {
+            Self::Expression(value) => value.value_type(),
+            Self::Call { call } => &call.value_type,
+        }
+    }
+
+    fn constant_boolean(&self) -> Option<bool> {
+        match self {
+            Self::Expression(value) => value.constant_boolean(),
+            Self::Call { .. } => None,
+        }
+    }
+
+    fn validate(
+        &self,
+        places: &ValidationPlaces<'_>,
+        records: &RecordIndex<'_>,
+        logical_source: &str,
+    ) -> Result<(), String> {
+        match self {
+            Self::Expression(value) => value.validate(places, records, logical_source),
+            Self::Call { call } => {
+                require_bool(&call.value_type, false, "if condition call")?;
+                validate_call(
+                    &call.callee,
+                    &call.arguments,
+                    &call.span,
+                    places,
+                    records,
+                    logical_source,
+                )
+            }
+        }
+    }
+
+    fn validate_constant_references(
+        &self,
+        logical_source: &str,
+        constants: &BTreeMap<String, &CppConstant>,
+        referenced_constants: &mut BTreeSet<String>,
+    ) -> Result<(), String> {
+        match self {
+            Self::Expression(value) => {
+                value.validate_constant_references(logical_source, constants, referenced_constants)
+            }
+            Self::Call { call } => {
+                for argument in &call.arguments {
+                    argument.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppInitializer {
@@ -708,7 +793,7 @@ pub enum CppStatement {
         span: CppSpan,
     },
     If {
-        condition: CppExpression,
+        condition: CppCondition,
         then_branch: Vec<CppStatement>,
         else_branch: Vec<CppStatement>,
         span: CppSpan,
@@ -1946,6 +2031,12 @@ impl CppFunction {
                 {
                     return Err(
                         "conditional guarded try requires one guard, a returning int32 handler, and no outer cleanup lifetime".into(),
+                    );
+                }
+                if matches!(condition, CppCondition::Call { .. }) {
+                    return Err(
+                        "conditional guarded try requires a pure condition to preserve catch scope"
+                            .into(),
                     );
                 }
                 span.validate(logical_source)?;
@@ -3335,10 +3426,19 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 callee, arguments, ..
             } => collect_scalar_call(callee, arguments, None, calls),
             CppStatement::If {
+                condition,
                 then_branch,
                 else_branch,
                 ..
             } => {
+                if let CppCondition::Call { call } = condition {
+                    collect_scalar_call(
+                        &call.callee,
+                        &call.arguments,
+                        Some(&call.value_type),
+                        calls,
+                    );
+                }
                 collect_calls(then_branch, calls);
                 collect_calls(else_branch, calls);
             }
@@ -4285,14 +4385,14 @@ mod tests {
             declared_noexcept: true,
             span: span.clone(),
             body: vec![CppStatement::If {
-                condition: CppExpression::IntegralCast {
+                condition: CppCondition::Expression(CppExpression::IntegralCast {
                     value: Box::new(literal.clone()),
                     value_type: CppType::Boolean {
                         bits: 8,
                         is_const: false,
                     },
                     span: span.clone(),
-                },
+                }),
                 then_branch: vec![CppStatement::Scope {
                     body: vec![CppStatement::Return {
                         value: literal,
@@ -5755,11 +5855,11 @@ mod tests {
             body: vec![
                 scope("first"),
                 CppStatement::If {
-                    condition: CppExpression::IntegerLiteral {
+                    condition: CppCondition::Expression(CppExpression::IntegerLiteral {
                         value: "1".into(),
                         value_type: signed_integer(32, false),
                         span: cleanup_span(),
-                    },
+                    }),
                     then_branch: vec![scope("then")],
                     else_branch: vec![scope("else")],
                     span: cleanup_span(),
@@ -6190,8 +6290,8 @@ mod tests {
             cleanups: vec![],
             span: cleanup_span(),
         };
-        let branch = |condition, then_branch, else_branch| CppStatement::If {
-            condition,
+        let branch = |condition: CppExpression, then_branch, else_branch| CppStatement::If {
+            condition: condition.into(),
             then_branch,
             else_branch,
             span: cleanup_span(),

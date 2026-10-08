@@ -1170,7 +1170,7 @@ private:
         result["span"] = span(conditional->getSourceRange());
         return Json(std::move(result));
       }
-      auto condition = lower_expression(conditional->getCond(), function);
+      auto condition = lower_if_condition(conditional->getCond(), function);
       auto branch_scope = allow_nested_scope
                               ? CleanupScopeKind::Conditional
                               : CleanupScopeKind::None;
@@ -1271,6 +1271,8 @@ private:
         const auto *destructor =
             record == nullptr ? nullptr : record->getDestructor();
         if (destructor != nullptr && !destructor->isImplicit()) {
+          // Moving an effectful predicate outside the catch would change
+          // which handler catches its exception. Keep this shape pure.
           auto condition = lower_expression(conditional->getCond(), function);
           auto live_try_body = lower_branch(conditional->getThen(), function,
                                             CleanupScopeKind::Conditional);
@@ -1839,6 +1841,29 @@ private:
     }
     return stable_scalar_argument(expression, caller) ||
            (field_reads && field_scalar_argument(expression));
+  }
+
+  std::optional<Json> lower_if_condition(const clang::Expr *expression,
+                                        const clang::FunctionDecl *function) {
+    const auto *call = llvm::dyn_cast<clang::CallExpr>(expression->IgnoreParens());
+    if (call == nullptr)
+      return lower_expression(expression, function);
+    if (!call->getType()->isBooleanType()) {
+      fail(call->getExprLoc(), "C++ condition calls require a Boolean result");
+      return std::nullopt;
+    }
+    auto operation = lower_call_operation(call, function, true);
+    auto value_type = lower_type(call->getType(), call->getExprLoc());
+    if (!operation || !value_type)
+      return std::nullopt;
+    llvm::json::Object predicate;
+    predicate["callee"] = std::move(operation->callee);
+    predicate["arguments"] = std::move(operation->arguments);
+    predicate["value_type"] = std::move(*value_type);
+    predicate["span"] = std::move(operation->span);
+    llvm::json::Object condition;
+    condition["call"] = std::move(predicate);
+    return Json(std::move(condition));
   }
 
   std::optional<LoweredCall>

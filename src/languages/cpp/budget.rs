@@ -202,7 +202,7 @@ mod tests {
             assert_eq!(work, 2 * size);
         }
         let both_arms = CppStatement::If {
-            condition: value,
+            condition: value.into(),
             then_branch: vec![scope.clone(); MAX_CLEANUP_SCOPES / 2],
             else_branch: vec![scope; MAX_CLEANUP_SCOPES / 2 + 1],
             span: span.clone(),
