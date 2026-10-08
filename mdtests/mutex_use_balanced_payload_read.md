@@ -26,5 +26,5 @@ int32 helper(struct holder *holder) {
 ```
 
 ```expect
-fail: missing resource fact `views holder[10..11]`
+fail: missing resource fact `views holder->value`
 ```

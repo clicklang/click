@@ -18,5 +18,5 @@ int32 read_second(int32* p) {
 ```
 
 ```expect
-fail: missing resource fact `views p[1..2]`
+fail: missing resource fact `views p[1]`
 ```

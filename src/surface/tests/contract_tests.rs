@@ -2336,12 +2336,12 @@ fn owned_segment_rejects_write_outside_owned_memory() {
     assert!(
         error
             .message()
-            .contains("missing resource fact `owns p[1..2]`"),
+            .contains("missing resource fact `owns p[1]`"),
         "{}",
         error.message()
     );
     assert!(
-        error.message().contains("resource facts: [owns p[0..1]]"),
+        error.message().contains("resource facts: [owns p[0]]"),
         "{}",
         error.message()
     );

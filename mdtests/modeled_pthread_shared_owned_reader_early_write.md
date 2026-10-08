@@ -51,5 +51,5 @@ int32 run(struct cell *task) {
 ```
 
 ```expect
-fail: missing resource fact `owns task[0..1]`
+fail: missing resource fact `owns *task`
 ```

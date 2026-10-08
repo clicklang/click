@@ -4352,6 +4352,50 @@ fn pointer_storage_views_name_the_field_alone() {
     );
 }
 
+/// A missing memory fact is reported as the place a clause would name.
+#[test]
+fn a_missing_memory_fact_is_reported_as_a_place() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        struct pad { int32* data; int32 n; }; \
+        struct outer { int32 head; struct cell inner; }; \
+        int32 read_n(struct pad* a) { return a->n; } \
+        int32 read_data(struct pad* a) { return a->data[0]; } \
+        int32 write_other(struct cell* p) { p->other = 1; return 0; } \
+        int32 read_inner(struct outer* o) { return o->inner.other; } \
+        int32 read_q(int32* q) { return q[1]; }";
+    for (contract, expected) in [
+        (
+            "int32 read_n(struct pad* a) { owns a->data; }",
+            "missing resource fact `views a->n`",
+        ),
+        (
+            "int32 read_data(struct pad* a) { views a->n; }",
+            "missing resource fact `views a->data`",
+        ),
+        (
+            "int32 read_data(struct pad* a) { views a->data; }",
+            "missing resource fact `views a->data[0..1]`",
+        ),
+        (
+            "int32 write_other(struct cell* p) { views *p; }",
+            "missing resource fact `owns p->other`",
+        ),
+        (
+            "int32 read_inner(struct outer* o) { views o->head; }",
+            "missing resource fact `views o->inner.other`",
+        ),
+        (
+            "int32 read_q(int32* q) { views q[0]; }",
+            "held `views q[0]` does not cover `q[1]`",
+        ),
+    ] {
+        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
+        let error = verify_c0_sources(&source, &[("place.c", c_source)])
+            .expect_err("the access is not authorized");
+        assert!(error.message.contains(expected), "{contract}: {error:?}");
+    }
+}
+
 /// A range on a struct pointer counts structs, and `*link` for a
 /// `struct T**` is one pointer slot, not a struct.
 #[test]

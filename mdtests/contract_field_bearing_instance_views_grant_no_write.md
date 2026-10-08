@@ -42,5 +42,5 @@ void relink(struct node* node) {
 ```
 
 ```expect
-fail: missing resource fact `owns node[2..3]`
+fail: missing resource fact `owns node->right`
 ```

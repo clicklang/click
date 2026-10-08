@@ -37,5 +37,5 @@ void poke(int32* data, int32 capacity) {
 ```
 
 ```expect
-fail: missing resource fact `owns data[0..1]`
+fail: missing resource fact `owns data[0]`
 ```

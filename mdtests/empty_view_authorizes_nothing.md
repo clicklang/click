@@ -34,5 +34,5 @@ int32 empty_view_authorizes_nothing() {
 ```
 
 ```expect
-fail: missing resource fact `views p[0..1]`
+fail: missing resource fact `views p[0]`
 ```

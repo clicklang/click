@@ -89,5 +89,5 @@ int32 zero_pipeline(struct box* box) {
 ```
 
 ```expect
-fail: missing resource fact `owns box[0..1]`
+fail: missing resource fact `owns *box`
 ```
