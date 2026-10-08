@@ -98,8 +98,10 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (18)
+## P2: after launch (20)
 
+- [Use the short proof forms in the existing proofs](short-proof-forms-in-existing-proofs.md)
+- [Let `intro() as name` name a range quantifier's variable](intro-as-on-range-quantifiers.md)
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
 
