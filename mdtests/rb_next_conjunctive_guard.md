@@ -176,5 +176,5 @@ struct rb_node* rb_next(struct rb_node* node) {
 ```
 
 ```expect
-fail: the read requires `views node->rb_right`, which is not available
+fail: `execute()` could not verify the C condition: missing resource fact
 ```
