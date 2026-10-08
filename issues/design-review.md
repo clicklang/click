@@ -183,26 +183,54 @@ body, or the arm the requirements select, gives views attached to the owner
 What remains is a resource with fields in a proof that contains a loop
 (`OwnedCores::InstanceArmsStanding` in `src/surface/proof/resources.rs`).
 A selected arm's views are free-standing there, as before the decision, and
-a plain body gives no read authority at all, because the facts that say
-which memory the resource owns hold at the loop's exit, and nothing derives
-attached views again at that point. Attaching them
-without that step fails 13 mdtests, among them `loop_owns_modeled_instance`,
-`rb_next` and `rb_prev`, with a read after the loop refused.
+a plain body gives no read authority at all.
+
+An attempt on 2026-10-08 switched such proofs to attached views and got 9
+of the 11 affected mdtests to pass. It was not landed, because `rb_next.md`
+and `rb_prev.md` still fail. What it found:
+
+- **A loop's natural exit state is the head's `top` frame**
+  (`prepare_loop_top_state` in `src/kernel/loops.rs`), not a state
+  `restored_exit_state` builds; that function serves `break` and `return`
+  exits and was never reached by these tests. The head already publishes
+  the selected arm's cells into its `guard` and `body` states as
+  free-standing views (`with_selected_arm_views`) and keeps them out of
+  `top` on purpose. Publishing them into `top` attached to the owned
+  instance, under the invariants, makes a read after the loop verify
+  (`loop_owns_modeled_instance`, `loop_clause_reads_arm_bindings` and six
+  more).
+- **A fold has to publish too.** A proof that unfolds and folds the
+  instance before the loop reads through the new instance afterwards.
+  Attaching views at the surface after the fold is recorded diverges from
+  the proof object's running state ("evidence does not start from the
+  running state"); attaching them before it is recorded fails the rewrite's
+  own check. Publishing inside
+  `rewrite_resource_instance_selecting_children` works once
+  `ResourceContext::same_exchange_from` stops comparing the support
+  occurrence id of a view an owned instance supports: the checker derives
+  the rewrite again and allocates a different id, and an instance is unique
+  by identity, so its fact names the support.
+- **Still failing:** in `rb_next` and `rb_prev`, the read `node =
+  node->rb_right` (and `rb_left`) two steps after
+  `let t = fold(rb_at(node->rb_right), { model: entry_right }, { ... })` is
+  refused with "missing resource fact `views node->rb_right`". The model
+  there is a variable and the fold names children. Whether the cell is one
+  the free-standing entry views were authorizing by accident has not been
+  established.
 
 Free-standing views of owned memory are not retired with their owner, which
 is what blocks a later `free` of that memory. Whether one can go stale as
 the fieldless case did has not been examined.
 
 Regression: `loop_owns_modeled_instance.md` verifying with attached views;
-a resource with fields whose arm owns a cell at an address read from its
-model, saved before a loop that changes the model, not readable through the
-saved pointer afterwards.
+`rb_next.md` and `rb_prev.md` unchanged; a resource with fields whose arm
+owns a cell at an address read from its model, saved before a loop that
+changes the model, not readable through the saved pointer afterwards.
 
-Done when: read authority for a resource with fields is derived at a loop's
-exit under the exit's facts, `InstanceArmsStanding` is gone, and a `free`
-after a loop of memory one owner held is accepted while another owner stays
-folded (today refused: "resource would remain usable after its allocation
-is freed").
+Done when: `InstanceArmsStanding` is gone, a plain-bodied resource with
+fields is readable in a proof with a loop, and a `free` after a loop of
+memory one owner held is accepted while another owner stays folded (today
+refused: "resource would remain usable after its allocation is freed").
 
 ## C. Tactics
 
