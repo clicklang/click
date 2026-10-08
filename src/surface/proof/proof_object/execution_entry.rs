@@ -25,6 +25,13 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
     ) -> Self {
+        // The proof root is the entry's own fact lineage when the execution
+        // has not left its checked entry, so later facts descend from it.
+        let facts = execution
+            .core
+            .entry_facts_at_entry()
+            .cloned()
+            .unwrap_or_else(|| ProofFacts::from_source(&pure_facts));
         Self {
             site: ProofStepSite::default(),
             context: Arc::new(ProofContext::Execution(ExecutionProofContext {
@@ -45,7 +52,7 @@ impl<'a> Proof<'a> {
             state: KernelProofObject::root(
                 ProofLocals::default(),
                 OpenBranch::frontier(BranchState {
-                    facts: ProofFacts::from_source(&pure_facts),
+                    facts,
                     unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(execution)),
                 }),
