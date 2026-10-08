@@ -6233,6 +6233,10 @@ pub(crate) struct ExecutionProofCore {
     /// the output trace once.
     checked_call_events: CheckedCallEvents,
     pub(crate) function_entry: Option<Arc<CheckedFunctionEntry>>,
+    /// The proof's facts at the checked entry, whose context the entry was
+    /// checked under. A retained return proof's facts descend from it, so
+    /// completion checks only what the proof introduced since.
+    entry_facts: Option<ProofFacts>,
     pub(crate) frontier_loop_rules: PersistentSequence<CVerifiedLoopRule>,
     pub(crate) execution_abstraction: bool,
     pub(crate) concrete_loop_execution: bool,
@@ -7263,6 +7267,33 @@ fn trace_completion(
     ),
     &'static str,
 > {
+    trace_completion_from_entry(
+        function,
+        events,
+        assumptions,
+        checked_void_fallthrough,
+        None,
+    )
+}
+
+/// As [`trace_completion`], where `entry_facts` are the facts the checked
+/// entry was checked under. A return proof's facts that the entry already
+/// held are the proof's assumptions, not path facts, so only the facts it
+/// introduced since are checked against the path.
+fn trace_completion_from_entry(
+    function: &CFunction,
+    events: &[CheckedExecutionEvent],
+    assumptions: &PureFactContext,
+    checked_void_fallthrough: bool,
+    entry_facts: Option<&ProofFacts>,
+) -> Result<
+    (
+        CStatementOutcome,
+        PureFactContext,
+        crate::kernel::ExecutionFacts,
+    ),
+    &'static str,
+> {
     if !events_use_the_function_definitions(function, events) {
         return Err("a retained resource event was checked under other composite definitions");
     }
@@ -7457,7 +7488,12 @@ fn trace_completion(
                         .base
                         .introduced_since(base)
                         .ok_or("return proof belongs to a different fact lineage")?,
-                    None => retained.base.to_vec(),
+                    None => {
+                        match entry_facts.and_then(|entry| retained.base.introduced_since(entry)) {
+                            Some(delta) => delta,
+                            None => retained.base.to_vec(),
+                        }
+                    }
                 };
                 let extra = proof
                     .root_assumptions()
@@ -7871,6 +7907,7 @@ impl ExecutionProofCore {
             return_pending_propositions: Default::default(),
             checked_call_events: CheckedCallEvents::new(),
             function_entry: None,
+            entry_facts: None,
             frontier_loop_rules: Default::default(),
             execution_abstraction: false,
             concrete_loop_execution: false,
@@ -7883,6 +7920,34 @@ impl ExecutionProofCore {
             has_structured_branch_history: false,
             unfolded_predicates: Default::default(),
         }
+    }
+
+    /// Checks the function entry under `facts` and keeps them as the lineage
+    /// the proof's later facts descend from.
+    pub(crate) fn record_checked_function_entry_with_facts(
+        &mut self,
+        function: &CFunction,
+        arguments: &[CExpression],
+        expected_entry_state: &CState,
+        facts: &ProofFacts,
+    ) -> Result<(), CRuntimeError> {
+        self.record_checked_function_entry(
+            function,
+            arguments,
+            expected_entry_state,
+            facts.assumptions().clone(),
+        )?;
+        self.entry_facts = Some(facts.clone());
+        Ok(())
+    }
+
+    /// The entry facts while the proof has not left its checked entry.
+    pub(crate) fn entry_facts_at_entry(&self) -> Option<&ProofFacts> {
+        (self.frontier.is_at_function_entry()
+            && self.execution_evidence.len() == 1
+            && self.execution_evidence[0].is_empty())
+        .then_some(self.entry_facts.as_ref())
+        .flatten()
     }
 
     pub(crate) fn record_checked_function_entry(
@@ -10751,14 +10816,16 @@ impl ExecutionProofCore {
                 .get(&path_index)
                 .unwrap_or(&self.execution_evidence[path_index]);
             let events = trace.to_vec();
-            let (completed, statement_assumptions, interface_execution_facts) = trace_completion(
-                function,
-                &events,
-                assumptions,
-                function.return_type() == crate::kernel::CType::Void
-                    && self.evidence_source.is_none()
-                    && self.frontier.region == ExecutionRegionKind::Function,
-            )?;
+            let (completed, statement_assumptions, interface_execution_facts) =
+                trace_completion_from_entry(
+                    function,
+                    &events,
+                    assumptions,
+                    function.return_type() == crate::kernel::CType::Void
+                        && self.evidence_source.is_none()
+                        && self.frontier.region == ExecutionRegionKind::Function,
+                    self.entry_facts.as_ref(),
+                )?;
             // Publication precedes post-return logical folds. Check its
             // original C outcome against the trace before those exchanges;
             // the final exit rule below still checks the folded ownership.

@@ -1608,6 +1608,14 @@ the failures it found beyond the planned switch-time fixtures.
   same function uses 2.07M units under authority semantics and 1.46M under
   legacy.
 
-Still open before the switch: the authority return-proof recheck scans the
-ambient context, as `bugs/authority-return-proof-recheck-scans-the-ambient-context.md`
-describes, so a library scaling test fails under authority semantics.
+#### Chunk 1r: return proofs recheck only their own facts
+
+Under authority semantics an outcome unfold is retained on the completed
+path, which also retains the outcome's earlier `have` proofs. Completing the
+path checked every fact of the first such proof's context against the path,
+so the work grew with unrelated entry facts. The execution now keeps the
+facts its checked entry was checked under, and the proof root starts from
+them. Completion checks only the facts a return proof introduced since entry.
+Facts the entry held are the proof's assumptions, which certification
+already authorizes against the contract. Regression:
+`authority_outcome_haves_and_resource_folds_do_not_reimport_ambient_facts`.
