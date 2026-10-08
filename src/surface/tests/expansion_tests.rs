@@ -16510,3 +16510,36 @@ fn smart_inventory_positions_are_compatible_and_scale() {
         );
     }
 }
+
+#[test]
+fn c_style_click_comments_preserve_loading_and_expansion_offsets() {
+    let c_source = "int32 identity(int32 x) { return x; }";
+    for (leading, inner, trailing) in [
+        (
+            "// ü } verifying \"fake.c\"\n",
+            "// unmatched ' } \"\n",
+            "// trailing '",
+        ),
+        (
+            "/* ü } verifying \"fake.c\" */\n",
+            "/* unmatched ' } \" */\n",
+            "/* trailing ' */",
+        ),
+    ] {
+        let source = format!(
+            "{leading}verifying \"identity.c\";\nint32 identity(int32 x) {{\n ensures result == x;\n}} by {{\n execute(); {inner} simp();\n}}\n{trailing}"
+        );
+        assert_eq!(verifying_source_paths(&source).unwrap(), vec!["identity.c"]);
+        let sources = [("identity.c", c_source)];
+        verify_c0_sources(&source, &sources).unwrap();
+        let offset = source.find("simp();").unwrap();
+        let position = expansion::position_at_offset(&source, offset);
+        let expanded =
+            expand_c0_tactic_source_at(&source, &sources, position.line, position.column).unwrap();
+        assert_eq!(&expanded[..offset], &source[..offset]);
+        assert!(expanded.ends_with(trailing));
+        verify_c0_sources(&expanded, &sources).unwrap();
+    }
+    let error = verifying_source_paths("\n /* missing close").unwrap_err();
+    assert!(error.message().contains("unterminated block comment"));
+}
