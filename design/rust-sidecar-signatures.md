@@ -60,6 +60,7 @@ referent). This proposal does the same for Rust.
 
 ```click
 fn read(bytes: &[u8], index: usize) -> u8 {
+    requires bytes.len() <= 2147483647u64;
     requires index < bytes.len();
     views *bytes;
     ensures result == bytes[index];
@@ -69,7 +70,7 @@ fn read(bytes: &[u8], index: usize) -> u8 {
 A Rust sidecar declares a function with `fn name(params) -> T`. Parameter
 types are Rust types: the integer types, `bool`, `()`, a declared struct by
 name, `&T`, `&mut T`, `&[T]`, `&mut [T]`, `[T; N]`. Lifetimes may be written
-and are ignored. The signature is checked against the imported function the
+and are ignored. (Arrays and lifetimes are not built yet.) The signature is checked against the imported function the
 way a C sidecar's is checked against the C source, including mutability.
 
 A C or C++ sidecar is unchanged. Which grammar applies is decided by the
@@ -114,26 +115,30 @@ carried by a pointer named `&value`.
 
 ### 4. Indices are `usize`
 
-`bytes[index]` and `bytes[a..b]` take `usize` in a Rust sidecar, and the
-casts go away. The range `0..bytes.len()` of a slice is always in bounds for
-the memory model because a Rust slice is at most `isize::MAX` bytes; that
-fact is supplied by the slice type and no longer written as
-`requires bytes_len <= 2147483647u64`.
+`bytes[index]` and `bytes[a..b]` take a `usize` in a Rust sidecar without a
+cast.
 
-This is the part with real kernel work. A range bound is a 32-bit term
-today. Two ways to do it:
+A place takes a 32-bit index today, and the contract has to say the length
+fits one: `requires bytes.len() <= 2147483647u64`. An earlier version of
+this section said the slice type could supply that bound, because a Rust
+slice is at most `isize::MAX` bytes. That was wrong. `isize::MAX` is far
+above what a 32-bit index reaches, so the bound is a limit of Click's memory
+model that the contract states, not a fact about slices.
 
-- **Surface only.** The sidecar writes `usize`; lowering inserts the checked
-  conversion and the bound fact. Proof steps that mention the bound still
-  see the converted term, so a `have` about `bytes.len()` may need the
-  conversion spelled once. Small, and removes the casts from contracts.
+Two ways to remove the casts:
+
+- **Surface only.** A `usize` parameter or a slice length written alone as
+  an index or bound is converted, as the C-shaped `(int32)index` is. The
+  bound stays a written `requires`, and any other `usize` expression is
+  still cast where it is used. Small, and removes the casts from ordinary
+  contracts.
 - **Kernel.** Range bounds become mathematical integers or 64-bit terms.
-  Removes the conversion everywhere and changes a hot representation; it
-  needs the scaling regressions `docs/internals/verification-efficiency.md`
-  asks for.
+  Removes the conversion and the bound everywhere and changes a hot
+  representation; it needs the scaling regressions
+  `docs/internals/verification-efficiency.md` asks for.
 
-Proposed: surface only first, measured against the existing Rust examples,
-and the kernel change only if the proofs still carry conversions.
+Decided: surface only first. It is built. The kernel change is what would
+let a contract drop the bound, and is not scheduled.
 
 ### 5. Methods and receivers
 
@@ -161,19 +166,21 @@ types, and a cast is `expr as T`. Literals take Rust suffixes (`4usize`).
 
 Each step is a pull request that leaves every example verifying.
 
-1. `fn` signatures with scalar and struct parameters, Rust type names, `as`
-   casts and literals. Both grammars accepted for Rust sources during the
-   migration.
-2. References: `*value`, `p.value`, `->` refused.
-3. Slices: one parameter, `.len()`, `*bytes`, `usize` indices by the
+1. Done. `fn` signatures with scalar and struct parameters, Rust type names,
+   `as` casts and literals. Both grammars are accepted for Rust sources
+   during the migration.
+2. Done, except the refusal. References: `*value`, `p.value`. `->` is still
+   accepted, because the C-shaped sidecars use it; it is refused in step 5.
+3. Done. Slices: one parameter, `.len()`, `*bytes`, `usize` indices by the
    surface-only route.
 4. `impl` blocks and `self`.
 5. Convert the 16 Rust examples under `examples/` and the sidecars under
-   `design/charon-trial`, regenerate `design/charon-trial/parity.json`, and
-   refuse the C-shaped grammar for Rust sources.
+   `design/charon-trial`, regenerate `design/charon-trial/parity.json`,
+   refuse `->` and the C-shaped grammar for Rust sources, and print Rust
+   spellings in diagnostics and `click expand`.
 
-Diagnostics and `click expand` print Rust spellings from step 2 on, by the
-same printer route the place-based work used for C.
+Steps 1 to 3 are in pull request #435 and documented in `docs/reference/rust.md`, "Signatures in Rust syntax", with
+fixtures under `tests/fixtures/rust-verification`.
 
 ## Decided
 
