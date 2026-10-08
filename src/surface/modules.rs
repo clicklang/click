@@ -50,7 +50,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
     aggregate_array_objects: BTreeMap<String, BTreeSet<String>>,
     global_array_shapes: BTreeMap<String, BTreeMap<String, parser::GlobalArrayShape>>,
     qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers: BTreeMap<String, BTreeMap<String, String>>,
+    local_struct_pointers: BTreeMap<String, parser::FunctionLocals>,
 ) -> Result<ClickFile, ClickError> {
     let modules = project
         .modules()

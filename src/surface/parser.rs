@@ -74,6 +74,17 @@ pub(super) fn parse(source: &str) -> Result<ClickFile, ClickError> {
         .parse_file()
 }
 
+/// What a function's proof needs to know about its automatic locals that
+/// only the source language's front end can say.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(in crate::surface) struct FunctionLocals {
+    /// The struct name of each local of struct-pointer type.
+    pub(in crate::surface) struct_pointers: BTreeMap<String, String>,
+    /// The locals of reference type, which a proof names by their referent
+    /// as it names a reference parameter.
+    pub(in crate::surface) references: BTreeSet<String>,
+}
+
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
@@ -82,7 +93,7 @@ pub(super) fn parse_with_layouts_and_aggregate_objects(
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
     global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
     qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers_by_function: BTreeMap<String, BTreeMap<String, String>>,
+    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::new_with_layouts_and_aggregate_objects(
         source,
@@ -168,7 +179,7 @@ pub(super) fn parse_file_items_for_module(
     aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
     global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
     qualified_objects: BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-    local_struct_pointers_by_function: BTreeMap<String, BTreeMap<String, String>>,
+    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
 ) -> Result<ClickFile, ClickError> {
     let mut parser = Parser::new_with_layouts_and_aggregate_objects(
         source,
@@ -490,7 +501,7 @@ struct Parser {
     /// signature; these are the body's locals, so a `have` or `fact` that
     /// names one has the same layout the parameter would have. A parameter of
     /// the same spelling wins: the contract is written against the signature.
-    local_struct_pointers_by_function: BTreeMap<String, BTreeMap<String, String>>,
+    local_struct_pointers_by_function: BTreeMap<String, FunctionLocals>,
     current_aggregate_objects: BTreeMap<String, String>,
     current_struct_array_params: BTreeSet<String>,
     current_reference_params: BTreeSet<String>,
@@ -2638,11 +2649,29 @@ impl Parser {
             signature,
             mut struct_params,
             struct_array_params,
-            reference_params,
+            mut reference_params,
             return_struct_name,
         } = self.parse_function_signature()?;
         if let Some(struct_name) = return_struct_name {
             struct_params.insert("result".to_string(), struct_name);
+        }
+        // A local of reference type names its referent in this function's
+        // proof, as a reference parameter does. The signature wins a shared
+        // spelling: a parameter of that name that is not a reference keeps
+        // its own reading.
+        for name in self
+            .local_struct_pointers_by_function
+            .get(signature.name())
+            .into_iter()
+            .flat_map(|locals| &locals.references)
+        {
+            if !signature
+                .parameters()
+                .iter()
+                .any(|parameter| parameter.name() == name)
+            {
+                reference_params.insert(name.clone());
+            }
         }
         self.expect(Token::LBrace)?;
 
@@ -2673,7 +2702,7 @@ impl Parser {
             .local_struct_pointers_by_function
             .get(signature.name())
             .into_iter()
-            .flatten()
+            .flat_map(|locals| &locals.struct_pointers)
         {
             struct_params
                 .entry(name.clone())
@@ -8415,6 +8444,11 @@ impl Parser {
             Some(Token::Ident(kind)) if kind == "assignment" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let local = self.expect_ident("assignment local")?;
+                if self.current_reference_params.contains(&local) {
+                    return Err(self.error(format!(
+                        "`{local}` is a reference, and binding a reference is not an assignment; a store through `{local}` is a store to what it refers to, so select the statement itself with `statement(N)`"
+                    )));
+                }
                 self.expect(Token::Comma)?;
                 let occurrence = self.expect_index("assignment occurrence")?;
                 self.expect(Token::RParen)?;

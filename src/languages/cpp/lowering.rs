@@ -155,6 +155,15 @@ fn lower_function(
         .enumerate()
         .filter(|(index, parameter)| is_reference_parameter(*index, parameter))
         .map(|(_, parameter)| parameter.declaration_id.as_str())
+        // A local of reference type is carried the same way: the pointer is
+        // named for the address it holds, and the local's own name is the
+        // referent a proof reads.
+        .chain(
+            places
+                .values()
+                .filter(|place| is_reference_local(place))
+                .map(|place| place.declaration_id.as_str()),
+        )
         .collect::<std::collections::BTreeSet<_>>();
     let parameters = source
         .parameters
@@ -230,6 +239,12 @@ pub(super) const RECEIVER_NAME: &str = "this";
 /// delivers it first, as a reference named `self`.
 pub(super) fn is_receiver(index: usize, parameter: &CppPlace) -> bool {
     index == 0 && parameter.name == "self"
+}
+
+/// Whether a declared local is a reference, which a proof names by its
+/// referent as it names a reference parameter.
+pub(super) fn is_reference_local(local: &CppPlace) -> bool {
+    matches!(local.value_type, CppType::LvalueReference { .. })
 }
 
 /// Whether a parameter is a reference the sidecar names by its referent. A
@@ -336,16 +351,17 @@ impl LoweringContext<'_> {
             } => match (&local.value_type, initializer) {
                 (CppType::LvalueReference { pointee }, CppInitializer::Value { value }) => {
                     let address = self.lower_expression(value)?;
+                    let carrier = reference_carrier_name(&local.name);
                     Ok(c_seq(
                         c_declare_with_all_qualifiers(
-                            local.name.clone(),
+                            carrier.clone(),
                             CType::Int32Pointer,
                             false,
                             false,
                             false,
                             is_const_int32(pointee),
                         ),
-                        c_assign(local.name.clone(), address),
+                        c_assign(carrier, address),
                     ))
                 }
                 (CppType::Integer { .. }, CppInitializer::Value { value }) => {
@@ -370,6 +386,13 @@ impl LoweringContext<'_> {
                     let raw_type = conversions
                         .first()
                         .map_or(&local.value_type, |cast| &cast.source_type);
+                    // A reference bound to a call's result is carried by a
+                    // pointer named for the address it holds.
+                    let name = if is_reference_local(local) {
+                        reference_carrier_name(&local.name)
+                    } else {
+                        local.name.clone()
+                    };
                     let evaluation = self.normalize_scalar_into(
                         ScalarInput::Call {
                             callee,
@@ -377,20 +400,14 @@ impl LoweringContext<'_> {
                             value_type: raw_type,
                             conversions,
                         },
-                        conversions.is_empty().then_some(local.name.as_str()),
+                        conversions.is_empty().then_some(name.as_str()),
                     )?;
                     if conversions.is_empty() {
                         return Ok(evaluation.prefix);
                     }
                     Ok(c_seq(
-                        c_declare(
-                            local.name.clone(),
-                            cpp_return_scalar_type(&local.value_type)?,
-                        ),
-                        evaluate_then(
-                            evaluation.prefix,
-                            c_assign(local.name.clone(), evaluation.value),
-                        ),
+                        c_declare(name.clone(), cpp_return_scalar_type(&local.value_type)?),
+                        evaluate_then(evaluation.prefix, c_assign(name, evaluation.value)),
                     ))
                 }
                 (
