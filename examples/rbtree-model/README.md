@@ -321,8 +321,8 @@ height zero and is red, and that the removed minimum is black. Its
 `rb_minimum_child_blackens_without_deficit` theorem plugs the blackened,
 reparented child into the descent context and establishes a valid black-rooted
 whole tree. `successor_child_checks.click` checks immediate and deep examples.
-This is the balance exit fact; connecting that replacement to the complete
-successor-splice in-order and parent-consistency equations remains to do.
+The complete transplant’s balance, in-order contents, and parent consistency
+follow from `rb_erase_nonempty_successor_splice` below.
 
 `rbtree_erase_one_child.click` applies the minimum-child theorem to a node
 with only a right child. Local child-swap symmetry supplies the left-child
@@ -727,3 +727,9 @@ blackening a nonempty child is a separate balance step.
 corresponding exact model when the replacement child is blackened.
 `rb_remove_min_blackened_preserves_balance` connects it to the no-deficit
 balance theorem for a nonempty minimum child at arbitrary depth.
+
+`rb_erase_nonempty_successor_splice` connects that removal to the complete
+successor transplant at any depth. It preserves the exact in-order contents,
+whole-tree red-black balance, and parent consistency in the original context.
+The supporting lemmas preserve parents and in-order contents while blackening
+and commute removal with reparenting the right-subtree root.
