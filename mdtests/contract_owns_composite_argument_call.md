@@ -25,8 +25,8 @@ void call_probe(struct node *node) { probe(node); }
 
 ```click
 resource pair(node: struct node*) {
-    owns node[0..1];
-    owns node->left[0..1];
+    owns node->left;
+    owns node->left->left;
 }
 
 verifying "dependent_pair_call.c";

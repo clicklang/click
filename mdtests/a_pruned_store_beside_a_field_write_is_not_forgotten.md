@@ -23,7 +23,7 @@ verifying "a_pruned_store_beside_a_field_write_is_not_forgotten.c";
 
 int32 read_after_a_field_write(struct Node* n, int32* a, int32 i, int32 j, int32 m) {
     owns a[0..8];
-    owns n[0..1];
+    owns n->head;
     requires 0 <= i;
     requires i < 8;
     requires 0 <= j;

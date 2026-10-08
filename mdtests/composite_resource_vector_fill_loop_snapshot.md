@@ -34,7 +34,7 @@ resource vector(owner: struct vector*) {
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
-    fact separate(memory(owner[0..4]), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 verifying "composite_resource_vector_fill_loop_snapshot.c";

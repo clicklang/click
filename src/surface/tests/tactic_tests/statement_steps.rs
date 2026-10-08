@@ -196,7 +196,7 @@ fn clone_field_stores_with_observed_source_resource_verify() {
             fact 0 <= owner->pos;
             fact owner->pos <= owner->len;
             fact separate(
-                memory(owner[0..4]),
+                memory(*owner),
                 memory(owner->data[0..owner->len])
             );
         }
@@ -204,12 +204,12 @@ fn clone_field_stores_with_observed_source_resource_verify() {
         verifying "clone_cursor.c";
 
         int32 clone_cursor(struct cursor* target, struct cursor* source) {
-            requires separate(memory(target[0..4]), memory(source[0..4]));
+            requires separate(memory(*target), memory(*source));
             requires separate(
-                memory(target[0..4]),
+                memory(*target),
                 memory(source->data[0..source->len])
             );
-            consumes target[0..4];
+            consumes *target;
             views cursor(source);
             ensures result == source->pos;
         } by {
