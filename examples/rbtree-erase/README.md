@@ -110,3 +110,9 @@ returning the erased node's parent instead of the successor.
 
 Non-root replacement-child mutations also reject a missing child parent/color
 write and a write that leaves the child red.
+
+`rbtree_erase_spine.click` defines the left-only ownership path needed by the
+deeper-successor branch. Its anchor owns only the original right child's left
+link, leaving that child's parent/color and right link available for transplant.
+The checked, terminating `refold_erase_spine` tactic reconstructs that left
+subtree with the exact `plug` model. The C descent loop is the next consumer.
