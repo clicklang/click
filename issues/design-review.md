@@ -101,13 +101,21 @@ resource declares no fields to hold them; write the child without a name".
 Decide whether a parent without fields should be able to name a child. It
 would need a model for a resource that declares none.
 
-### B3. Reading through a declared resource
+### B3. Reading through a declared resource (decide)
 
-Recorded in the third pass: `views outer(p)` let C read the resource's
-memory without an `unfold`, while `owns outer(p)` did not. On 2026-10-07 a
-nested case did not confirm it: with `contains inner(p)` in `outer`, both
-`views outer(p)` and `owns outer(p)` needed the `unfold`. Re-check with a
-resource whose body owns memory directly before deciding anything.
+Checked on 2026-10-08 with `resource flat(p: struct cell*) { owns p->value;
+owns p->other; }` and a function that reads `p->value`:
+
+- `views flat(p);` verifies with no `unfold`. C reads the memory the
+  resource owns directly.
+- `owns flat(p);` does not. It needs `unfold(flat(p));` before the read and
+  `fold(flat(p));` after.
+- Neither reads through a child. With `resource outer(p) { owns inner(p);
+  owns p->other; }`, a read of memory `inner` owns fails under `views
+  outer(p);`, with and without `unfold(outer(p));`.
+
+So a view reads one level through a declared resource and ownership reads
+none. Decide whether the two should agree, and at what depth.
 
 ### B4. Overlapping places returned by one contract
 
@@ -163,39 +171,6 @@ Regression: none new; the rewritten proofs are the regression.
 Done when: `scripts/check.sh` and `scripts/check.sh --audit` pass, no
 `by { simp(); }` remains in examples or stdlib, and the pull request reports
 how many `instantiate` calls were rewritten and how many were left.
-
-### C2. `intro() as name` on a range quantifier
-
-`intro() as name` chooses the name of the variable a proof introduces. It is
-refused on a range quantifier: for a goal `(lo..hi).all(|k| { ... })`,
-`intro() as i;` fails with "`intro() as i` requires a goal written as
-`forall (x: T) { ... }`". Bare `intro()` works on the same goal. It is also
-untested on a `forall` over an algebraic type.
-
-```click
-theorem range_goal(n: int32) {
-    ensures (0..n).all(|k| { k == k }) by {
-        intro() as i;
-        intro();
-        normalize();
-    }
-}
-```
-
-A range quantifier keeps its binder in the lambda, so
-`universal_goal_renamed_for_intro` in
-`src/surface/proof/proof_object/step_application.rs` has no binder to
-respell. Rename the lambda parameter and its uses the way the `forall` case
-renames its binder, with the same rule that the new name is not in scope.
-
-Regression: an mdtest with the theorem above expecting `pass`, a theorem
-whose later step reads the variable under its new name, and a case for a
-`forall` over a `spec enum` type.
-
-Done when: those pass, a name already in scope is refused with the existing
-message, the `intro() as name` row in `docs/reference/tactics/index.md` no
-longer lists the range quantifier as refused, and `click expand` on a tactic
-after such an `intro() as` re-verifies.
 
 ## Decided and closed, for the record
 
