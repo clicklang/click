@@ -22,10 +22,10 @@ use click::surface::verify_c0_sources;
 use click::surface::{
     ClickError, ClickErrorKind, ClickProject, VerifiedCTheorem, accepted_proof_trace,
     c0_incremental_selection, c0_prepared_project_selected_proof_names,
-    c0_prepared_project_summary, c0_prepared_project_tactic_source_position,
-    c0_project_selected_proof_names, c0_project_summary, c0_project_tactic_source_position,
+    c0_prepared_project_summary, c0_prepared_project_tactic_source_positions,
+    c0_project_selected_proof_names, c0_project_summary, c0_project_tactic_source_positions,
     nested_tactic_source_position, program_prepared_project_summary,
-    program_prepared_project_tactic_source_position, selected_c_target,
+    program_prepared_project_tactic_source_positions, selected_c_target,
     tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
     verify_c0_prepared_project, verify_c0_prepared_project_at,
@@ -934,13 +934,13 @@ fn proof_source_position_for_path(
     ProofSourceLocations::new(project, inputs).position(claim, path, source)
 }
 
-/// Resolving an enclosing tactic parses and resolves the project. A trace
-/// walks many nested tactics under the same enclosing step, so share that
-/// resolution across all of its location callbacks.
+/// Resolve a claim's enclosing tactic locations together. A trace walks
+/// many distinct steps in the same proof; neither valid nor missing indices
+/// should parse and resolve the project again.
 struct ProofSourceLocations<'a> {
     project: &'a ClickProject,
     inputs: &'a CInput,
-    outer: RefCell<HashMap<(String, usize), Option<click::surface::SourcePosition>>>,
+    outer: RefCell<HashMap<String, Option<Vec<click::surface::SourcePosition>>>>,
 }
 
 impl<'a> ProofSourceLocations<'a> {
@@ -959,35 +959,29 @@ impl<'a> ProofSourceLocations<'a> {
         source: &str,
     ) -> Option<click::surface::SourcePosition> {
         let source_index = *path.first()?;
-        let key = (claim.to_owned(), source_index);
-        let cached = self.outer.borrow().get(&key).cloned();
-        let outer = if let Some(cached) = cached {
-            cached
-        } else {
+        let key = claim.to_owned();
+        if !self.outer.borrow().contains_key(&key) {
             let outer = match self.inputs {
-                CInput::Bundle(sources) => c0_project_tactic_source_position(
-                    self.project,
-                    &source_refs(sources),
-                    claim,
-                    source_index,
-                ),
-                CInput::Prepared(imports) => c0_prepared_project_tactic_source_position(
-                    self.project,
-                    imports,
-                    claim,
-                    source_index,
-                ),
-                CInput::PreparedProgram(import) => program_prepared_project_tactic_source_position(
-                    self.project,
-                    import,
-                    claim,
-                    source_index,
-                ),
+                CInput::Bundle(sources) => {
+                    c0_project_tactic_source_positions(self.project, &source_refs(sources), claim)
+                }
+                CInput::Prepared(imports) => {
+                    c0_prepared_project_tactic_source_positions(self.project, imports, claim)
+                }
+                CInput::PreparedProgram(import) => {
+                    program_prepared_project_tactic_source_positions(self.project, import, claim)
+                }
             }
             .ok();
-            self.outer.borrow_mut().insert(key, outer.clone());
-            outer
-        }?;
+            self.outer.borrow_mut().insert(key.clone(), outer);
+        }
+        let outer = self
+            .outer
+            .borrow()
+            .get(&key)?
+            .as_ref()?
+            .get(source_index)?
+            .clone();
         if path.len() == 1 {
             Some(outer)
         } else {
@@ -1737,6 +1731,53 @@ mod directory_tests;
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn trace_source_locations_resolve_each_claim_once() {
+        let mut cold_work = Vec::new();
+        for size in [16, 64, 256] {
+            let source = format!(
+                "verifying \"program.c\";\nvoid sample() {{ ensures 1 == 1; }} by {{\n{}\nexecute(); simp();\n}}",
+                "have 1 == 1 by { normalize(); }\n".repeat(size)
+            );
+            let (root, path) = temporary_project("trace-source-cache", "void sample() {}", &source);
+            let target = load_target_inputs(&path, Some(&root)).unwrap();
+            let locations = ProofSourceLocations::new(&target.project, &target.inputs);
+            let (first, work) = click::instrumentation::measure_deterministic_work(|| {
+                locations.position("sample.contract", &[0], &source)
+            });
+            assert!(first.is_some());
+            cold_work.push(work);
+            let (_, repeated_work) = click::instrumentation::measure_deterministic_work(|| {
+                for index in 0..size {
+                    assert!(
+                        locations
+                            .position("sample.contract", &[index], &source)
+                            .is_some()
+                    );
+                }
+                for index in [size + 100, usize::MAX] {
+                    assert!(
+                        locations
+                            .position("sample.contract", &[index], &source)
+                            .is_none()
+                    );
+                }
+            });
+            assert_eq!(locations.outer.borrow().len(), 1);
+            assert_eq!(
+                repeated_work, 0,
+                "cached valid and missing indices must not resolve again"
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+        for pair in cold_work.windows(2) {
+            assert!(
+                pair[1] <= pair[0] * 5,
+                "source preparation should scale linearly: {cold_work:?}"
+            );
+        }
+    }
 
     fn assert_source_diagnostic(report: &str) {
         for internal in ["snapshot#", "snapshot<", "load A=", "pointer(pointer "] {
