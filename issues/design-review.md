@@ -76,12 +76,6 @@ syntax.
 Rust slice. Whether a whole slice gets a spelling, and which, belongs with
 A4.
 
-### A6. Memory at another width (decide)
-
-A range has the element type of its base. Some proofs read memory at another
-width, for example a struct as bytes. That needs its own explicit form. Start
-with an inventory of the proofs that rely on it; none has been made.
-
 ## B. Contracts and resource declarations
 
 Found in the third pass and ruled on 2026-10-07. Each was checked against the
@@ -132,20 +126,6 @@ Done when: one mode serves both, either by re-attaching the views to the
 owner's occurrence at a loop head or by authorizing the read where it
 happens without leaving a view.
 
-### B4. Overlap that depends on a symbolic bound
-
-A contract that returns one place twice, or two places that overlap by
-layout (`owns *p; produces p->value;`), is refused where it is declared or
-set up, with a message naming the places.
-
-An overlap that depends on a symbolic bound is not: `requires n >= 2;
-owns q[0..n]; produces q[1];`. With a proof it is refused when the exit state
-is checked, with "two owned memory resource clauses overlap", which does not
-name them. A `contract` declaration with no proof is accepted.
-
-Regression: that contract refused at setup by a message naming `q[0..n]` and
-`q[1]`, in a function with a proof and in a `contract` with none.
-
 ## C. Tactics
 
 ### C1. Short proof forms where they are not yet used
@@ -181,6 +161,13 @@ the standard library. Left in the long spelling:
 - `requires` takes no label. Requirement labels were removed on 2026-09-23
   when proofs began citing a precondition by its proposition, and nothing
   would read one. `invariant` takes a label, which names it in a failure.
+- A range at another width gets no form. Closed 2026-10-08 after an
+  inventory by text search: no Click source names a second width for a
+  range. Reading at another width happens in C (`(unsigned char*)(void*) q`,
+  `memcpy` on a wider object, about 48 files) and the kernel's byte view
+  handles it (`docs/internals/byte-representation.md`). A specification that
+  must state one byte of a wider cell writes the explicit load,
+  `load_uint8(byte_offset(p, n))`.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a
   property of the function, the other a measure with an expression.
 
