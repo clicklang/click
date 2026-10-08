@@ -324,11 +324,18 @@ whole tree. `successor_child_checks.click` checks immediate and deep examples.
 This is the balance exit fact; connecting that replacement to the complete
 successor-splice in-order and parent-consistency equations remains to do.
 
+`rbtree_erase_one_child.click` applies the minimum-child theorem to a node
+with only a right child. Local child-swap symmetry supplies the left-child
+case. Both derive the removed node's black color and whole-tree balance after
+blackening its child. A shared theorem preserves context parent consistency
+and child in-order contents. `rb_erase_one_child_model` specifies the exact
+replacement, including its new parent, for both C sidecars.
+
 `successor_splice_checks.click` verifies immediate and deep black successors
 (including a red right-subtree root), their context shapes, the missing black
 level, and excluded successor states. It also checks immediate and deep red
 leaf successors against the no-deficit theorem. These are model proofs; the
-C successor branches are not yet verified.
+deeper C successor branches are not yet verified.
 
 ## Context and `plug`
 

@@ -656,6 +656,100 @@ fn rbtree_erase_red_leaf_requires_no_fixup() {
 }
 
 #[test]
+fn rbtree_erase_right_child_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "\t\t\tchild->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_blackening() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "\t\t\tchild->__rb_parent_color = pc;\n",
+        "\t\t\tchild->__rb_parent_color = pc & ~1;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_parent_color_write() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
+        "\t\tpc = node->__rb_parent_color;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_blackening() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
+        "\t\tpc = node->__rb_parent_color;\n\t\ttmp->__rb_parent_color = pc & ~1;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_right_child_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_right_child.click",
+        "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = NULL;",
+        "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = parent;",
+    );
+}
+
+#[test]
+fn rbtree_erase_left_child_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_left_child.click",
+        "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = NULL;",
+        "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = parent;",
+    );
+}
+
+#[test]
 fn rbtree_erase_black_successor_requires_root_replacement() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_successor.click",

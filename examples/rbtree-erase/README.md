@@ -40,9 +40,17 @@ link. Its unchanged context accepts an empty black hole at the same black
 height, so balance is preserved and the fixup return is null. It uses the same
 exclusive callback-table contract as the black-leaf sidecar.
 
+`rbtree_erase_right_child.click` and `rbtree_erase_left_child.click` cover
+non-root deletion with one nonempty child, for either child direction and either
+parent link. Neither contract assumes the erased node's or child's color.
+Validity implies that copying the erased node's parent/color word blackens the
+child. The proofs return that exact replacement model and the unchanged context,
+with whole-tree red-black validity, parent consistency, preserved child in-order
+contents, and a null fixup parent. Both use exclusive callback-table ownership.
+
 These are C increments of chunk 11 in
-[the rbtree issue](../../issues/rbtree-example.md). Non-root one-child and two-child
-deletion, and deeper successors remain. The C file retains all branches; each sidecar
+[the rbtree issue](../../issues/rbtree-example.md). Non-root two-child deletion
+and deeper successors remain. The C file retains all branches; each sidecar
 states its current coverage explicitly.
 
 The callback contracts describe the non-augmented case: callbacks cannot
@@ -71,3 +79,6 @@ that leaves the child red.
 
 Non-root leaf mutations reject an unchanged left or right parent link, a null
 fixup return for black leaves, and a non-null fixup return for red leaves.
+
+One-child mutations reject unchanged parent links, missing parent/color writes,
+leaving the replacement red, and a non-null fixup return.
