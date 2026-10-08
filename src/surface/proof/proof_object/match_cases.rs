@@ -265,6 +265,7 @@ impl<'a> Proof<'a> {
                     "proof `match` requires a supported ADT scrutinee at this execution frontier",
                 )
             })?;
+        let concrete_scrutinee = matches!(value.node, AlgebraicTermNode::Constructor { .. });
         let mut bindings = Vec::with_capacity(source.arms.len());
         let mut integer_bindings = Vec::with_capacity(source.arms.len());
         for (arm, &index) in source.arms.iter().zip(&case_indices) {
@@ -276,12 +277,24 @@ impl<'a> Proof<'a> {
             let AlgebraicTermNode::Constructor { fields, .. } = &constructor.node else {
                 unreachable!()
             };
+            let arm_facts = partition
+                .facts_for_case(index)
+                .expect("checked constructor arm");
             let mut scope = self.state.locals().values.clone();
             let mut integer_scope = self.state.locals().integer_values.clone();
             for (name, field) in arm.bindings.iter().zip(fields) {
                 let expression = match field {
                     AlgebraicValue::C(value) => {
-                        ContractExpression::CFragment(CExpression::Value(value.clone()))
+                        let spelling = if concrete_scrutinee {
+                            crate::kernel::arm_binding_program_spelling(
+                                value,
+                                arm_facts.assumptions(),
+                            )
+                            .unwrap_or_else(|| value.clone())
+                        } else {
+                            value.clone()
+                        };
+                        ContractExpression::CFragment(CExpression::Value(spelling))
                     }
                     AlgebraicValue::Algebraic(value) => {
                         let AlgebraicTermNode::Variable(variable) = value.node else {

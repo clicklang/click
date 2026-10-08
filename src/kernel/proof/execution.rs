@@ -9450,6 +9450,39 @@ impl ExecutionProofCore {
             .iter()
             .map(|case| {
                 let mut arm_facts = facts.with_fact(case.clone());
+                // A concrete scrutinee already names its payload. Relate each
+                // fresh pattern binding to that payload by checked constructor
+                // injectivity, so resource unfolds and the written arm refer
+                // to the same pointers and models.
+                if let Some(fields) =
+                    crate::kernel::assumptions::algebraic_constructor_field_equalities(case)
+                {
+                    for field in fields {
+                        // Resource arms interpret pointer payloads at a proved
+                        // program spelling. Publish that same one-hop transport
+                        // here: constructor injectivity gives left = right and
+                        // the existing exact alias gives left = spelling.
+                        if let Proposition::ConditionIs(
+                            crate::kernel::ConditionTerm::PointerEqual(left, right),
+                            true,
+                        ) = &field
+                            && let Some(spelling) =
+                                crate::kernel::functions::arm_pointer_program_spelling(
+                                    left,
+                                    facts.assumptions(),
+                                )
+                        {
+                            arm_facts = arm_facts.with_fact(Proposition::ConditionIs(
+                                crate::kernel::ConditionTerm::pointer_equal(
+                                    spelling,
+                                    (**right).clone(),
+                                ),
+                                true,
+                            ));
+                        }
+                        arm_facts = arm_facts.with_fact(field);
+                    }
+                }
                 let mut body_clauses = Vec::new();
                 if let (
                     Some(projection),
@@ -9466,6 +9499,44 @@ impl ExecutionProofCore {
                     );
                     for clause in &body_clauses {
                         arm_facts = arm_facts.with_fact(clause.proposition.clone());
+                    }
+                }
+                // The surface binds pointer payloads at the same checked
+                // program spelling as resource bodies. Retain the constructor
+                // equation in that spelling too, so explicit rewrites of the
+                // written match equation remain exact premises.
+                if matches!(
+                    value.node,
+                    crate::kernel::AlgebraicTermNode::Constructor { .. }
+                ) && let Proposition::Equal(left, Term::Algebraic(constructor)) = case
+                    && let crate::kernel::AlgebraicTermNode::Constructor { variant, fields } =
+                        &constructor.node
+                {
+                    let spelled_fields = fields
+                        .iter()
+                        .map(|field| match field {
+                            crate::kernel::AlgebraicValue::C(value) => {
+                                crate::kernel::AlgebraicValue::C(
+                                    crate::kernel::functions::arm_binding_program_spelling(
+                                        value,
+                                        arm_facts.assumptions(),
+                                    )
+                                    .unwrap_or_else(|| value.clone()),
+                                )
+                            }
+                            _ => field.clone(),
+                        })
+                        .collect::<Vec<_>>();
+                    if spelled_fields != *fields {
+                        let spelled = crate::kernel::AlgebraicTerm {
+                            algebraic_type: constructor.algebraic_type.clone(),
+                            node: crate::kernel::AlgebraicTermNode::Constructor {
+                                variant: variant.clone(),
+                                fields: spelled_fields,
+                            },
+                        };
+                        arm_facts = arm_facts
+                            .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled)));
                     }
                 }
                 (
@@ -11144,6 +11215,29 @@ mod tests {
         (state, binding)
     }
 
+    #[test]
+    fn frame_exchange_retains_the_exits_exact_stable_view_dependency() {
+        let (state, binding) = arm_holding_a_view("loop_exit");
+        let body = state.resources();
+        let original = body.occurrences_for_fact(&binding.viewed)[0];
+        let (exit, inserted) = body
+            .clone()
+            .without_bound_view_occurrence(original, &binding)
+            .unwrap()
+            .unchecked_with_facts_and_occurrences([binding.viewed.clone()]);
+        let final_occurrence = inserted[0].1;
+        let exit = exit.with_loan_dependency(final_occurrence, binding.clone());
+        let outside = CResourceFact::own_composite("outside".into(), Vec::new());
+        let frame = body.clone().unchecked_with_fact(outside.clone());
+        let restored = exit
+            .restore_frame_after_exchange(body, &frame, &PureFactContext::new())
+            .unwrap();
+        assert!(restored.contains_exact_representation(&outside));
+        assert_eq!(restored.loan_dependency(final_occurrence), Some(&binding));
+        assert!(restored.loan_dependency(original).is_none());
+        assert!(restored.view_fact_at_occurrence(original).is_none());
+    }
+
     fn successor_carrying(binding: &crate::kernel::loans::LoanViewBinding) -> CState {
         let resources =
             crate::kernel::ResourceContext::new().unchecked_with_facts([binding.viewed.clone()]);
@@ -11189,6 +11283,13 @@ mod tests {
     fn constructor_partition_fixture(
         width: usize,
     ) -> (ExecutionProofCore, crate::kernel::AlgebraicTerm) {
+        constructor_partition_fixture_with_type(width, CType::Int32)
+    }
+
+    fn constructor_partition_fixture_with_type(
+        width: usize,
+        payload_type: CType,
+    ) -> (ExecutionProofCore, crate::kernel::AlgebraicTerm) {
         use crate::kernel::{
             AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
             AlgebraicVariantType,
@@ -11196,7 +11297,7 @@ mod tests {
         let variants: Arc<[AlgebraicVariantType]> = (0..width)
             .map(|index| AlgebraicVariantType {
                 name: format!("C{index}"),
-                fields: vec![AlgebraicValueType::C(CType::Int32)],
+                fields: vec![AlgebraicValueType::C(payload_type)],
             })
             .collect::<Vec<_>>()
             .into();
@@ -11229,6 +11330,73 @@ mod tests {
                 .is_ok()
         );
         (core, value)
+    }
+
+    #[test]
+    fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_facts() {
+        let (core, mut value) = constructor_partition_fixture_with_type(2, CType::Int32Pointer);
+        let payload = Pointer::symbolic(Variable(7_000_000));
+        let program = Pointer::symbolic(Variable(1_000_001));
+        value.node = crate::kernel::AlgebraicTermNode::Constructor {
+            variant: "C0".into(),
+            fields: vec![crate::kernel::AlgebraicValue::C(CValue::typed_pointer(
+                payload.clone(),
+                CType::Int32Pointer,
+            ))],
+        };
+        let alias = Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::pointer_equal(payload.clone(), program.clone()),
+            true,
+        );
+        let env = crate::kernel::CExecutionEnvironment::new();
+        let mut samples = Vec::new();
+        for size in [8, 32, 128] {
+            let mut facts = ProofFacts::default().with_fact(alias.clone());
+            for index in 0..size {
+                facts = facts.with_fact(Proposition::Predicate {
+                    name: format!("unrelated_{index}"),
+                    arguments: vec![],
+                });
+            }
+            let ((partition, fields, _), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    core.algebraic_case_partition(
+                        &facts,
+                        &value,
+                        &env,
+                        &[],
+                        None,
+                        4_000_000,
+                        65_536,
+                    )
+                    .unwrap()
+                });
+            let witness = Pointer::symbolic(fields[0][0].0);
+            let transported = Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::pointer_equal(program.clone(), witness),
+                true,
+            );
+            assert!(partition.facts_for_case(0).unwrap().contains(&transported));
+            assert!(!partition.facts_for_case(1).unwrap().contains(&transported));
+            assert!(!facts.contains(&transported));
+            let (unrelated, _, _) = core
+                .algebraic_case_partition(
+                    &ProofFacts::default(),
+                    &value,
+                    &env,
+                    &[],
+                    None,
+                    4_000_000,
+                    65_536,
+                )
+                .unwrap();
+            assert!(!unrelated.facts_for_case(0).unwrap().contains(&transported));
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
+            "{samples:?}"
+        );
     }
 
     #[test]
@@ -11336,12 +11504,14 @@ mod tests {
         let excluded = partition.excluding_constructor_case(1, dead).unwrap();
         assert!(!Arc::ptr_eq(&partition.identity, &excluded.identity));
         let mut old_arm = core.clone();
-        assert!(old_arm.record_proof_case_arm(partition, 0, root.with_fact(live.clone())));
+        let live_facts = partition.facts_for_case(0).unwrap();
+        assert!(old_arm.record_proof_case_arm(partition, 0, live_facts));
         assert!(!crate::kernel::api::proof_case_partitions_are_exhaustive(
             &old_arm.execution_evidence
         ));
         let mut live_arm = core;
-        assert!(live_arm.record_proof_case_arm(excluded, 0, root.with_fact(live)));
+        let live_facts = excluded.facts_for_case(0).unwrap();
+        assert!(live_arm.record_proof_case_arm(excluded, 0, live_facts));
         assert!(crate::kernel::api::proof_case_partitions_are_exhaustive(
             &live_arm.execution_evidence
         ));

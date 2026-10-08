@@ -1578,6 +1578,100 @@ impl ResourceContext {
         Some(common)
     }
 
+    /// Replay a body's direct resource exchange into its enclosing frame.
+    /// Only changed keys are visited. Derived projections are not independent
+    /// authority: remove affected cached projections and let later reads derive
+    /// them again from the surviving supports. Keep direct occurrences so the
+    /// exit's checked loan bindings still name exactly the same authority.
+    pub(crate) fn restore_frame_after_exchange(
+        &self,
+        body: &Self,
+        frame: &Self,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let changed = self.changed_facts_since(body)?;
+        let mut restored = frame.clone();
+        let mut additions = Vec::new();
+        for fact in changed {
+            crate::instrumentation::record_deterministic_work(1);
+            let body_direct = body
+                .storage
+                .index
+                .exact
+                .get(&fact)
+                .into_iter()
+                .flat_map(ResourceEntryIds::iter)
+                .filter(|entry| !body.storage.supported_by.contains_key(entry))
+                .count();
+            let entries = restored
+                .storage
+                .index
+                .exact
+                .get(&fact)
+                .cloned()
+                .unwrap_or_default();
+            let mut removed = 0;
+            for entry in entries.iter().copied() {
+                if !restored.storage.facts.contains_key(&entry) {
+                    continue;
+                }
+                if restored.storage.supported_by.contains_key(&entry) {
+                    restored.remove_entry(entry);
+                } else if removed < body_direct {
+                    restored.remove_entry(entry);
+                    removed += 1;
+                }
+            }
+            // A borrowed view may have been supplied only to the body. An
+            // owned input, however, must have come from the enclosing frame.
+            if fact.is_own() && removed != body_direct {
+                return None;
+            }
+            for entry in self
+                .storage
+                .index
+                .exact
+                .get(&fact)
+                .into_iter()
+                .flat_map(ResourceEntryIds::iter)
+            {
+                if !self.storage.supported_by.contains_key(entry) {
+                    additions.push((fact.clone(), self.occurrence(*entry)));
+                }
+            }
+        }
+        // Check the new authority against the withheld frame before publishing
+        // it. Replaying an exchange must never duplicate or overlap ownership.
+        restored
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization(
+                additions.iter().map(|(fact, _)| fact.clone()),
+                assumptions,
+            )
+            .ok()?;
+        for (fact, occurrence) in additions {
+            if restored
+                .storage
+                .entry_by_occurrence
+                .contains_key(&occurrence)
+            {
+                return None;
+            }
+            restored.insert_fact_with_support_occurrence_and_metadata_at(
+                fact,
+                None,
+                None,
+                None,
+                Some(occurrence),
+            );
+            if let Some(binding) = self.loan_dependency(occurrence) {
+                restored = restored.with_loan_dependency(occurrence, binding.clone());
+            }
+        }
+        restored.advance_prepared_memory_equalities(assumptions);
+        Some(restored)
+    }
+
     /// Visit an explicitly supplied context at publication or composition.
     /// Supplier lookups must use retained indexes rather than this iterator.
     pub(in crate::kernel) fn iter(
@@ -8804,6 +8898,87 @@ fn bitvector_terms_proven_equal(
 #[cfg(test)]
 mod support_removal_tests {
     use super::*;
+
+    #[test]
+    fn frame_exchange_preserves_occurrences_and_does_not_scan_unrelated_frame() {
+        let assumptions = PureFactContext::new();
+        let before = CResourceFact::own_composite("before".into(), Vec::new());
+        let after = CResourceFact::own_composite("after".into(), Vec::new());
+        let body = ResourceContext::new().unchecked_with_fact(before.clone());
+        let exit = body
+            .clone()
+            .without_exact_representation(&before)
+            .unwrap()
+            .unchecked_with_fact(after.clone());
+        let occurrence = exit.unique_owned_occurrence_for_fact(&after).unwrap();
+        let mut measurements = Vec::new();
+        for size in [8, 32, 128] {
+            let mut frame = body.clone();
+            for index in 0..size {
+                frame = frame.unchecked_with_fact(CResourceFact::own_composite(
+                    format!("frame_{index}"),
+                    Vec::new(),
+                ));
+            }
+            let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
+                exit.restore_frame_after_exchange(&body, &frame, &assumptions)
+                    .unwrap()
+            });
+            assert!(!restored.contains_exact_representation(&before));
+            assert_eq!(
+                restored.unique_owned_occurrence_for_fact(&after),
+                Some(occurrence)
+            );
+            assert_eq!(restored.facts().len(), size + 1);
+            measurements.push(work);
+        }
+        assert!(
+            measurements.iter().all(|work| *work == measurements[0]),
+            "{measurements:?}"
+        );
+    }
+
+    #[test]
+    fn frame_exchange_refuses_duplicate_authority_and_unrelated_histories() {
+        let assumptions = PureFactContext::new();
+        let authority = CResourceFact::own_memory(CMemoryRange::new(
+            Pointer {
+                block: "frame".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(4),
+        ));
+        let body = ResourceContext::new();
+        let frame = body.clone().unchecked_with_fact(authority.clone());
+        let exit = body.clone().unchecked_with_fact(authority.clone());
+        assert!(
+            exit.restore_frame_after_exchange(&body, &frame, &assumptions)
+                .is_none()
+        );
+        let unrelated = ResourceContext::new().unchecked_with_fact(authority);
+        assert!(
+            unrelated
+                .restore_frame_after_exchange(&body, &frame, &assumptions)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn frame_exchange_does_not_turn_derived_projections_into_authority() {
+        let assumptions = PureFactContext::new();
+        let owner = CResourceFact::own_composite("owner".into(), Vec::new());
+        let projection = CResourceFact::view_token("projection".into(), Vec::new());
+        let body = ResourceContext::new().unchecked_with_fact(owner.clone());
+        let exit = body
+            .clone()
+            .unchecked_with_supported_facts(&owner, vec![projection.clone()]);
+        let restored = exit
+            .restore_frame_after_exchange(&body, &body, &assumptions)
+            .unwrap();
+        assert!(restored.contains_exact_representation(&owner));
+        assert!(!restored.contains_exact_representation(&projection));
+    }
 
     #[test]
     fn selected_range_join_uses_graph_endpoint_decision_without_fact_path_fallback() {

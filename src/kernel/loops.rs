@@ -5126,7 +5126,7 @@ fn execute_c_while_exit_paths(
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::Return {
                 value: exit.value().clone(),
-                state: Box::new(head.restored_exit_state(exit.state())),
+                state: Box::new(head.restored_exit_state(exit.state(), assumptions)),
             },
             facts: exit
                 .pure_facts()
@@ -5154,7 +5154,7 @@ fn execute_c_while_exit_paths(
                 // successor is the named label, independent of the synthetic
                 // loop guard, which never becomes false in a natural cycle.
                 jump_exit_entries.entry(target).or_default().push((
-                    head.restored_exit_state(candidate.state()),
+                    head.restored_exit_state(candidate.state(), assumptions),
                     candidate
                         .pure_facts()
                         .iter()
@@ -5224,7 +5224,7 @@ fn execute_c_while_exit_paths(
                 // exported no exit state at all and made every post-loop
                 // claim vacuous.
                 candidate_exit_entries.push((
-                    head.restored_exit_state(candidate.state()),
+                    head.restored_exit_state(candidate.state(), assumptions),
                     facts,
                     obligations,
                     loan_evidence,
@@ -5270,7 +5270,7 @@ fn execute_c_while_exit_paths(
         .chain(body_break_exits.iter())
         .map(|exit| {
             (
-                head.restored_exit_state(exit.state()),
+                head.restored_exit_state(exit.state(), assumptions),
                 exit.pure_facts()
                     .iter()
                     .cloned()
@@ -6119,7 +6119,7 @@ pub(super) fn collect_loop_preservation_summary(
                             final_exit_paths.push(CStatementExecutionPath {
                                 loop_invariant_correspondence: Default::default(),
                                 outcome: CStatementOutcome::Normal(Box::new(
-                                    head.restored_exit_state(&next_state),
+                                    head.restored_exit_state(&next_state, assumptions),
                                 )),
                                 facts: final_path_facts,
                                 obligations: final_obligations,
@@ -6195,7 +6195,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 loop_invariant_correspondence: Default::default(),
                                 outcome: CStatementOutcome::Return {
                                     value,
-                                    state: Box::new(head.restored_exit_state(&state)),
+                                    state: Box::new(head.restored_exit_state(&state, assumptions)),
                                 },
                                 facts: exit_facts,
                                 obligations: final_obligations,
@@ -6228,7 +6228,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 loop_invariant_correspondence: Default::default(),
                                 outcome: CStatementOutcome::Jump {
                                     target,
-                                    state: Box::new(head.restored_exit_state(&state)),
+                                    state: Box::new(head.restored_exit_state(&state, assumptions)),
                                 },
                                 facts: exit_facts,
                                 obligations: final_obligations,
@@ -6418,18 +6418,42 @@ impl CLoopHead {
         self.body.resources() != self.top.resources()
     }
 
-    /// The enclosing frame's resource context, restored onto a state the body
-    /// left with the loop's declared resources intact. A body that changed
-    /// that context keeps its own: the withheld resources are returned only
-    /// against an unchanged loop-level exchange.
-    pub(super) fn restored_exit_state(&self, state: &CState) -> CState {
-        if !self.narrows_resources() || state.resources() != self.body.resources() {
+    /// Return the withheld frame while retaining the body's final exchange.
+    pub(super) fn restored_exit_state(
+        &self,
+        state: &CState,
+        assumptions: &PureFactContext,
+    ) -> CState {
+        if !self.narrows_resources() {
             return state.clone();
         }
-        state
-            .clone()
-            .with_resource_context(self.top.resources().clone())
+        restore_loop_exit_state(
+            state,
+            self.body.resources(),
+            self.top.resources(),
+            assumptions,
+        )
     }
+}
+
+pub(crate) fn restore_loop_exit_state(
+    state: &CState,
+    body: &ResourceContext,
+    frame: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> CState {
+    if state.resources() == body {
+        return state.clone().with_resource_context(frame.clone());
+    }
+    let Some(resources) = state
+        .resources()
+        .restore_frame_after_exchange(body, frame, assumptions)
+    else {
+        // No additional authority is granted for an unrepresentable or
+        // conflicting exchange. Exit obligations still see the actual state.
+        return state.clone();
+    };
+    state.clone().with_resource_context(resources)
 }
 
 /// Every composite resource definition this environment's functions declare,

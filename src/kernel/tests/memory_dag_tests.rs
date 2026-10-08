@@ -814,7 +814,9 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     let entry_assumptions = PureFactContext::new().assume_proposition(separation);
     let retained = crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
         &left,
+        4,
         &right,
+        4,
         &entry_assumptions,
     )
     .expect("the entry-time partition initially supplies the hop");
@@ -848,7 +850,9 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     assert!(
         crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
             &left,
+            4,
             &right,
+            4,
             &assumptions,
         )
         .is_none(),
@@ -937,6 +941,10 @@ fn separated_range_store_hop_retains_symbolic_membership_bounds() {
     let after = base
         .clone()
         .store(write, CValue::Int32(Bitvector32Term::Constant(7)));
+    // Bits32 also encodes LP64 pointers. These terms represent int32 reads,
+    // so use the typed producer to record their four-byte access width.
+    crate::kernel::eval::symbolic_load_value(&base, &load, CType::Int32).unwrap();
+    crate::kernel::eval::symbolic_load_value(&after, &load, CType::Int32).unwrap();
     let left = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after),
         Box::new(load.clone()),

@@ -1,0 +1,74 @@
+# A do-while exports its rebound resource-model fields
+```c filename=walk.c
+struct Node { struct Node *next; };
+void walk(struct Node *p) {
+    do { p = p->next; } while (p);
+}
+```
+```click
+verifying "walk.c";
+spec enum Chain { Empty, Node(struct Node*, Chain), }
+spec enum Path { Top, Step(struct Node*, Path), }
+resource list(p: struct Node*) {
+    field model: Chain;
+    match model {
+        Chain::Empty => { fact p == 0; },
+        Chain::Node(identity, rest) => {
+            owns p->next;
+            owns tail: list(p->next);
+            fact p != 0;
+            fact p == identity;
+            fact tail.model == rest;
+        },
+    }
+}
+resource path(p: struct Node*) {
+    field model: Path;
+    match model {
+        Path::Top => { },
+        Path::Step(identity, before) => {
+            owns identity->next;
+            owns up: path(identity);
+            fact identity != 0;
+            fact identity->next == p;
+            fact up.model == before;
+        },
+    }
+}
+void walk(struct Node* p) {
+    consumes t: list(p);
+    requires p != 0;
+    ensures 1 == 1;
+} by {
+    let c = fold(path(p), { model: Path::Top });
+    loop {
+        owns t: list(p);
+        owns c: path(p);
+        decreases t;
+        invariant p != 0;
+        initialize by simp;
+        preserve by {
+            match t.model {
+                Chain::Empty => { unfold(t); contradiction(p == 0); },
+                Chain::Node(identity, rest) => {
+                    let { tail: next } = unfold(t);
+                    let frame = fold(path(p->next), { model: Path::Step(identity, c.model) }, { up: c });
+                    step();
+                    if p == 0 {
+                    } else {
+                        close_invariants();
+                    }
+                },
+            }
+        }
+    }
+    have c.model != Path::Top by { normalize(); }
+    match c.model {
+        Path::Top => { contradiction(c.model == Path::Top); },
+        Path::Step(identity, before) => { execute(); simp(); },
+    }
+}
+```
+```expect
+pass
+```

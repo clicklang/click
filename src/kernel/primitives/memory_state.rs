@@ -5576,7 +5576,9 @@ impl CMemory {
                 // question is only decidable while the cell is still there.
                 || crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
                     &normalized_pointer,
+                    bytes,
                     &normalized_cell_pointer,
+                    crate::kernel::reasoning::cell_access_byte_width(cell_value),
                     assumptions,
                 )
                 .is_some();
@@ -5637,7 +5639,9 @@ impl CMemory {
                 )
                 || crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
                     &normalized_pointer,
+                    bytes,
                     &normalized_cell_pointer,
+                    cell_type.byte_width().max(1),
                     assumptions,
                 )
                 .is_some();
