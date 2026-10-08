@@ -234,3 +234,23 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
         assert!(pair[1] <= 3 * pair[0] + 32, "work: {measurements:?}");
     }
 }
+
+#[test]
+fn pure_pointer_projection_does_not_replace_a_program_spelling() {
+    let program = Pointer::symbolic(Variable(410));
+    let binding = Pointer::symbolic(Variable(411));
+    let projection = call("select", vec![argument(binding.clone())]);
+    let equality = |a, b| Proposition::ConditionIs(ConditionTerm::pointer_equal(a, b), true);
+    let projection_only =
+        PureFactContext::new().assume_proposition(equality(binding.clone(), projection));
+    let value = CValue::typed_pointer(binding.clone(), CType::Int32Pointer);
+    assert_eq!(
+        crate::kernel::arm_binding_program_spelling(&value, &projection_only),
+        None
+    );
+    let with_program = projection_only.assume_proposition(equality(binding, program.clone()));
+    assert_eq!(
+        crate::kernel::arm_binding_program_spelling(&value, &with_program),
+        Some(CValue::typed_pointer(program, CType::Int32Pointer)),
+    );
+}

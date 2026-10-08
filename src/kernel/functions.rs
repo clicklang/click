@@ -23944,9 +23944,17 @@ pub(in crate::kernel) fn child_composite_definition<'a>(
 /// with. The order is total and the choice is always the smaller element, so
 /// two spellings collapse to the same one whichever side the query starts
 /// from, and a spelling the program already uses is never traded away for a
-/// proof name.
+/// proof name. An opaque pure call is also a logical spelling, even when
+/// unfolding proves it equal to a program pointer. The block order puts it
+/// after symbolic variables, so it cannot displace a havocked C local.
 fn pointer_spelling_rank(pointer: &Pointer) -> (bool, &Pointer) {
-    (matches!(pointer.block, PointerBlock::Symbolic(_)), pointer)
+    (
+        matches!(
+            pointer.block,
+            PointerBlock::Symbolic(_) | PointerBlock::PureFunctionApplication(_)
+        ),
+        pointer,
+    )
 }
 
 /// The spelling a matched arm's pointer binding denotes.
