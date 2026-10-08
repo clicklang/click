@@ -14,8 +14,8 @@ Compiler rejection, crate-input identity, and extraction reproducibility tests
 also run nightly; they still invoke the real pinned compiler.
 
 `gate_fixtures::frozen_gate_fixtures_match_live_charon_extraction` re-extracts
-all twelve inputs in temporary projects and requires byte-identical native
-artifacts. It runs in `scripts/check.sh --nightly`. To deliberately refresh a
+all twelve inputs in temporary projects and requires identical native
+artifacts after relocating the one absolute source-path metadata field. It runs in `scripts/check.sh --nightly`. To deliberately refresh a
 fixture after a compiler/model update, build the pinned Charon exporter and
 run `click import lock design/charon-trial/gate-fixtures/<name>/borrow.click`.
 The configuration determines the compiler input; proof sidecars remain in the

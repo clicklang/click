@@ -24,6 +24,28 @@ pub(super) fn project(name: &str, source: &str) -> Project {
     p
 }
 
+// Charon retains the compiler input's absolute path. Relocation changes that
+// one metadata value; no function, type, span position, or compiler option is
+// removed from the comparison.
+fn relocated_artifact(bytes: &[u8], source_suffix: &std::path::Path) -> serde_json::Value {
+    let mut artifact: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    let files = artifact["data"]["translated"]["files"]
+        .as_array_mut()
+        .unwrap();
+    let mut relocated = 0;
+    for file in files {
+        if file["name"]["Local"]
+            .as_str()
+            .is_some_and(|name| std::path::Path::new(name).ends_with(source_suffix))
+        {
+            file["name"]["Local"] = "borrow.rs".into();
+            relocated += 1;
+        }
+    }
+    assert_eq!(relocated, 1, "expected exactly one matching source file");
+    artifact
+}
+
 #[test]
 #[ignore = "nightly: re-extract every frozen Rust gate fixture with the pinned compiler"]
 fn frozen_gate_fixtures_match_live_charon_extraction() {
@@ -46,10 +68,17 @@ fn frozen_gate_fixtures_match_live_charon_extraction() {
         fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
         refresh_import(&p.config()).unwrap();
         load_import(&p.config()).unwrap();
-        assert_eq!(
-            fs::read(p.root.join("borrow.ullbc")).unwrap(),
-            artifact,
-            "{name}"
+        let frozen_suffix = PathBuf::from("design/charon-trial/gate-fixtures")
+            .join(name)
+            .join("borrow.rs");
+        let expected = relocated_artifact(&artifact, &frozen_suffix);
+        let actual = relocated_artifact(
+            &fs::read(p.root.join("borrow.ullbc")).unwrap(),
+            &p.root.join("borrow.rs"),
+        );
+        assert!(
+            actual == expected,
+            "{name}: native artifact changed after source-path relocation"
         );
     }
 }

@@ -80,8 +80,8 @@ Rust proof regressions use locked native artifacts when their purpose is to
 check lowering, claims, authority, or proof scaling. The inputs in
 `design/charon-trial/gate-fixtures/` must match the unchanged test source;
 missing or stale fixtures fail rather than trigger compiler extraction.
-A separate nightly test re-extracts these inputs and compares native artifact
-bytes. Live compiler rejection, crate-input identity, and reproducibility
+A separate nightly test re-extracts these inputs and compares native artifacts
+after relocating the one absolute source-path metadata field. Live compiler rejection, crate-input identity, and reproducibility
 checks remain real compiler tests in nightly. Whole-example profiling,
 expansion, certificate rechecks, and audits have separate nightly tests, while
 the positive and negative proof assertions stay in the normal gate.
