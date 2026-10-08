@@ -426,6 +426,11 @@ struct Parser {
     current_resource_fields: BTreeMap<String, ResourceFieldAccess>,
     current_resource_targets: BTreeMap<String, ResourceClause>,
     in_resource_definition: bool,
+    /// The fields of each resource declared so far, hidden ones included.
+    declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
+    /// In a resource that declares no fields and names a child: the hidden
+    /// parent field that holds each `child.field`.
+    hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -736,6 +741,8 @@ impl Parser {
             current_resource_fields: BTreeMap::new(),
             current_resource_targets: BTreeMap::new(),
             in_resource_definition: false,
+            declared_resource_fields: BTreeMap::new(),
+            hidden_child_fields: BTreeMap::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -1605,6 +1612,7 @@ impl Parser {
         );
         let previous_contract_bindings = std::mem::take(&mut self.current_contract_bindings);
         let previous_definition = std::mem::replace(&mut self.in_resource_definition, true);
+        let previous_hidden = std::mem::take(&mut self.hidden_child_fields);
         let composite_body = match self.peek() {
             Some(Token::Semicolon) if is_abstract => {
                 self.position += 1;
@@ -1626,6 +1634,11 @@ impl Parser {
             }
         };
         self.in_resource_definition = previous_definition;
+        self.hidden_child_fields = previous_hidden;
+        if let Some(body) = &composite_body {
+            self.declared_resource_fields
+                .insert(name.clone(), body.fields.clone());
+        }
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
         self.current_reference_params = previous_reference_params;
@@ -1674,6 +1687,65 @@ impl Parser {
             self.current_arm_binding_types
                 .insert(binding.clone(), field);
         }
+    }
+
+    /// Gives a resource that declares no fields one hidden field per field of
+    /// the child it names, with the equation that ties the two. A later
+    /// `child.field` in the body reads the hidden field, so the body may
+    /// state any number of facts about it. The child's fields then survive a
+    /// fold of the parent exactly as a declared field's value does.
+    #[inline(never)]
+    fn hold_child_fields_in_a_hidden_record(
+        &mut self,
+        resource_name: &str,
+        clause: &ResourceClause,
+        fields: &mut Vec<ResourceFieldDefinition>,
+        facts: &mut Vec<ClickProposition>,
+    ) -> Result<(), ClickError> {
+        let ResourceClause::Named { binding, resource } = clause else {
+            return Ok(());
+        };
+        let ResourceClause::Declared { name: child, .. } = resource.as_ref() else {
+            return Ok(());
+        };
+        let Some(child_fields) = self.declared_resource_fields.get(child).cloned() else {
+            return Err(self.error(format!(
+                "resource `{child}` must be declared before `{resource_name}` names it as the child `{}`",
+                binding.name
+            )));
+        };
+        for child_field in child_fields {
+            let hidden_name = format!("{}.{}", binding.name, child_field.name);
+            let hidden = ResourceFieldAccess {
+                owner: "__body".into(),
+                resource_name: resource_name.into(),
+                identity: Variable(u64::MAX),
+                children: vec![],
+                field: hidden_name.clone(),
+                field_index: fields.len(),
+                click_type: Some(child_field.click_type.clone()),
+            };
+            fields.push(ResourceFieldDefinition {
+                name: hidden_name,
+                click_type: child_field.click_type.clone(),
+            });
+            facts.push(ClickProposition::Comparison {
+                left: ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner: binding.name.clone(),
+                    resource_name: child.clone(),
+                    identity: binding.identity,
+                    children: vec![],
+                    field: child_field.name.clone(),
+                    field_index: 0,
+                    click_type: None,
+                }),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::ResourceField(hidden.clone()),
+            });
+            self.hidden_child_fields
+                .insert((binding.name.clone(), child_field.name), hidden);
+        }
+        Ok(())
     }
 
     fn parse_composite_resource_body(
@@ -1827,6 +1899,9 @@ impl Parser {
         let mut contains = Vec::new();
         let mut facts = Vec::new();
         let mut witnesses: Vec<ResourceWitness> = Vec::new();
+        // A resource that declares no fields keeps a named child's fields in
+        // a record of its own that the author does not write.
+        let hidden_record = fields.is_empty() && self.match_nesting == 0;
         while self.peek() != Some(&Token::RBrace) {
             match self.peek_ident() {
                 Some("guarded_by") => return Err(self.error("`guarded_by` must appear once before the resource body clauses")),
@@ -1871,14 +1946,17 @@ impl Parser {
                 }
                 Some("owns") => {
                     self.position += 1;
-                    if self.current_resource_fields.is_empty()
-                        && self.peek_next() == Some(&Token::Colon)
-                    {
-                        return Err(self.error(
-                            "a child resource is named so its fields can be read, and this resource declares no fields to hold them; write the child without a name, as in `owns inner(p);`",
-                        ));
+                    let named = self.peek_next() == Some(&Token::Colon);
+                    let clause = self.parse_owned_resource_binding()?;
+                    if named && hidden_record {
+                        self.hold_child_fields_in_a_hidden_record(
+                            resource_name,
+                            &clause,
+                            &mut fields,
+                            &mut facts,
+                        )?;
                     }
-                    contains.push(self.parse_owned_resource_binding()?);
+                    contains.push(clause);
                     self.expect(Token::Semicolon)?;
                 }
                 Some("views") => {
@@ -5611,25 +5689,39 @@ impl Parser {
             identity
         };
         self.expect(Token::Comma)?;
-        self.expect(Token::LBrace)?;
+        // A resource whose every field is hidden has no field the proof
+        // could write, so its one brace is the child map.
+        let declared = self
+            .declared_resource_fields
+            .get(resource_name)
+            .cloned()
+            .unwrap_or_default();
+        let only_hidden =
+            !declared.is_empty() && declared.iter().all(|field| field.name.contains('.'));
         let mut fields = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let field = self.expect_ident("resource field name")?;
-            self.expect(Token::Colon)?;
-            let value = self.parse_contract_expression()?;
-            fields.push((field, value));
-            if self.peek() != Some(&Token::Comma) {
-                break;
+        if !only_hidden {
+            self.expect(Token::LBrace)?;
+            while self.peek() != Some(&Token::RBrace) {
+                let field = self.expect_ident("resource field name")?;
+                self.expect(Token::Colon)?;
+                let value = self.parse_contract_expression()?;
+                fields.push((field, value));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
             }
-            self.position += 1;
+            self.expect(Token::RBrace)?;
         }
-        self.expect(Token::RBrace)?;
-        let child_bindings = if self.peek() == Some(&Token::Comma) {
+        let child_bindings = if only_hidden {
+            self.parse_resource_child_bindings(&resource, false)?
+        } else if self.peek() == Some(&Token::Comma) {
             self.position += 1;
             self.parse_resource_child_bindings(&resource, false)?
         } else {
             Vec::new()
         };
+        self.fill_hidden_fold_fields(&declared, &child_bindings, &mut fields);
         self.expect(Token::RParen)?;
         self.expect(Token::Semicolon)?;
         let binding = ResourceInstanceBinding {
@@ -5658,6 +5750,46 @@ impl Parser {
             },
             resource: Box::new(resource),
         }))
+    }
+
+    /// A hidden field `slot.field` is the field of the child bound to
+    /// `slot`, so a fold supplies it from that child and the proof never
+    /// writes it.
+    #[inline(never)]
+    fn fill_hidden_fold_fields(
+        &self,
+        declared: &[ResourceFieldDefinition],
+        child_bindings: &[(String, String, Variable)],
+        fields: &mut Vec<(String, ContractExpression)>,
+    ) {
+        for field in declared {
+            let Some((slot, child_field)) = field.name.split_once('.') else {
+                continue;
+            };
+            if fields.iter().any(|(name, _)| name == &field.name) {
+                continue;
+            }
+            let Some((_, child, identity)) =
+                child_bindings.iter().find(|(bound, _, _)| bound == slot)
+            else {
+                continue;
+            };
+            let Some((_, family)) = self.current_resource_bindings.get(child) else {
+                continue;
+            };
+            fields.push((
+                field.name.clone(),
+                ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner: child.clone(),
+                    resource_name: family.clone(),
+                    identity: *identity,
+                    children: vec![],
+                    field: child_field.to_string(),
+                    field_index: 0,
+                    click_type: None,
+                }),
+            ));
+        }
     }
 
     /// `obtain (name: Type, ...) { P }` opens an available
@@ -9705,6 +9837,13 @@ impl Parser {
                         let owner = owner.clone();
                         self.position += 1;
                         let field = self.expect_ident("resource field name")?;
+                        if let Some(hidden) = self
+                            .hidden_child_fields
+                            .get(&(owner.clone(), field.clone()))
+                        {
+                            expression = ContractExpression::ResourceField(hidden.clone());
+                            continue;
+                        }
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
                             owner,
                             resource_name,
