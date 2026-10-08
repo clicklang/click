@@ -1453,7 +1453,11 @@ fn canonicalized_symbolic_load_value_with_identity(
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
 ) -> Option<CValue> {
-    let value = symbolic_load_value(memory, pointer, value_type)?;
+    // C and logical reads must name the same typed value through a checked
+    // opaque address alias. Only the symbolic value's coordinates change:
+    // C access validity still checks the original pointer and its provenance.
+    let address = logical_memory_load_address(pointer.clone(), assumptions);
+    let value = symbolic_load_value(memory, &address, value_type)?;
     // Terms are canonical at creation: an int or byte load evaluates to its
     // load variable, with the defining fact beside it, so every fact,
     // offset, and range built from the value is canonical.
@@ -4902,6 +4906,90 @@ mod tests {
             panic!("pointer value expected");
         };
         value.pointer().clone()
+    }
+
+    #[test]
+    fn program_and_logical_reads_share_an_opaque_alias_load_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let alias = Pointer::symbolic(Variable(95_001));
+        let memory = CMemory::new();
+        let empty = PureFactContext::new();
+        let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                owner.clone(),
+                0u32.into(),
+                1u32.into(),
+                8,
+            )),
+        );
+        let without_alias = empty
+            .assume_proposition(Proposition::CResourceComposition(resources))
+            .assume_proposition(Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: alias.clone(),
+                value_type: CType::UInt64,
+            })
+            .assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: alias.clone(),
+                bytes: 8u32.into(),
+            });
+        let context = without_alias.clone().assume_condition(
+            ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+            true,
+        );
+        let logical = evaluate_logical_memory_load_paths(
+            &memory,
+            alias.clone(),
+            CType::UInt64,
+            Vec::new().into(),
+            Vec::new(),
+            &context,
+        );
+        let program = evaluate_c_memory_load_paths(
+            &memory,
+            alias.clone(),
+            CType::UInt64,
+            Vec::new().into(),
+            Vec::new(),
+            &context,
+            true,
+            false,
+            None,
+            None,
+        );
+        assert_eq!(logical.len(), 1);
+        assert_eq!(program.len(), 1);
+        assert!(matches!(logical[0].outcome, CExpressionOutcome::Value(_)));
+        assert_eq!(program[0].outcome, logical[0].outcome);
+        let unrelated = evaluate_logical_memory_load_paths(
+            &memory,
+            alias,
+            CType::UInt64,
+            Vec::new().into(),
+            Vec::new(),
+            &without_alias,
+        );
+        assert_ne!(
+            unrelated[0].outcome, logical[0].outcome,
+            "an unpublished address equality must not merge different reads"
+        );
+        let displaced = evaluate_logical_memory_load_paths(
+            &memory,
+            owner.offset_by_bytes(8),
+            CType::UInt64,
+            Vec::new().into(),
+            Vec::new(),
+            &context,
+        );
+        assert_ne!(
+            displaced[0].outcome, logical[0].outcome,
+            "different field offsets must retain different load identities"
+        );
     }
 
     #[test]
