@@ -1225,59 +1225,7 @@ fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {
             )
         })?;
         for syntactic in syntactic_sites {
-            let position = match &inputs {
-                CInput::Bundle(sources) => match &project {
-                    Some(project) => c0_project_tactic_source_position(
-                        project,
-                        &source_refs(sources),
-                        &syntactic.claim_label,
-                        syntactic.source_index,
-                    ),
-                    None => c0_tactic_source_position(
-                        &click_source,
-                        &source_refs(sources),
-                        &syntactic.claim_label,
-                        syntactic.source_index,
-                    ),
-                },
-                CInput::Prepared(imports) => match &project {
-                    Some(project) => c0_prepared_project_tactic_source_position(
-                        project,
-                        imports,
-                        &syntactic.claim_label,
-                        syntactic.source_index,
-                    ),
-                    None => c0_prepared_tactic_source_position(
-                        &click_source,
-                        imports,
-                        &syntactic.claim_label,
-                        syntactic.source_index,
-                    ),
-                },
-                CInput::PreparedProgram(import) => match &project {
-                    Some(project) => program_prepared_project_tactic_source_position(
-                        project,
-                        import,
-                        &syntactic.claim_label,
-                        syntactic.source_index,
-                    ),
-                    None => program_prepared_tactic_source_position(
-                        &click_source,
-                        import,
-                        &syntactic.claim_label,
-                        syntactic.source_index,
-                    ),
-                },
-            }
-            .map_err(|error| {
-                format!(
-                    "could not resolve {} source {} in `{}`: {}",
-                    syntactic.claim_label,
-                    syntactic.source_index,
-                    canonical_path.display(),
-                    error.report()
-                )
-            })?;
+            let position = syntactic.position;
             let container_position = SourcePosition {
                 line: position.line + line_offset,
                 column: position.column,

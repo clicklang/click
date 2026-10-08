@@ -14296,6 +14296,30 @@ fn a_generated_tactic_is_not_addressed_as_a_source_tactic() {
 }
 
 #[test]
+fn generated_scripts_inside_have_bodies_never_capture_written_tactics() {
+    let written = ProofStepSite::default().at_source_tactic(3).in_have_body(0);
+    assert_eq!(written.written_source_tactic_path(), Some(vec![3, 0]));
+    let generated = written.at_source_tactic(usize::MAX);
+    assert_eq!(generated.written_source_tactic_path(), None);
+    // Traces can still attribute generated checking operations to the body
+    // whose smart tactic requested them.
+    assert_eq!(
+        generated.at_block_position(0).source_tactic_path(),
+        Some(vec![3, 0])
+    );
+    assert_eq!(
+        generated.at_block_position(0).written_source_tactic_path(),
+        None
+    );
+    assert_eq!(generated.in_have_body(0).written_source_tactic_path(), None);
+    assert_eq!(
+        generated.in_arm(0, "then", 0).written_source_tactic_path(),
+        None
+    );
+    assert_eq!(written.written_source_tactic_path(), Some(vec![3, 0]));
+}
+
+#[test]
 fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);

@@ -481,11 +481,13 @@ theorem reflexive(xs: TestList<int32>) {
                 claim_label: "reflexive.ensures_0".to_string(),
                 source_index: 1,
                 tactic_name: "simp".to_string(),
+                position: position_at_offset(click_source, click_source.find("simp();").unwrap()),
             },
             SmartTacticSourceSite {
                 claim_label: "reflexive.ensures_0".to_string(),
                 source_index: 2,
                 tactic_name: "simp".to_string(),
+                position: position_at_offset(click_source, click_source.rfind("simp();").unwrap()),
             },
         ]
     );
