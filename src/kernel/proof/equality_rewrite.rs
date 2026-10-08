@@ -1368,6 +1368,36 @@ fn rewrite_atomic_proposition_by_exact_equality(
         {
             return to.clone();
         }
+        // Widening a literal folds away the cast node. Recover only a
+        // matching, checked 32-to-64-bit cast of the cited constant; the
+        // replacement keeps that cast, including its signedness. Never
+        // identify a full-width literal by truncating it to 32 bits.
+        if let Bitvector32Term::Constant(source) = from {
+            // Unsigned 32-bit order is encoded by signed order after XOR
+            // with the sign bit. The constant side of that bias is folded.
+            if matches!(term, Bitvector32Term::Constant(value) if *value == source ^ 0x8000_0000) {
+                return Bitvector32Term::bitwise_xor(
+                    to.clone(),
+                    Bitvector32Term::Constant(0x8000_0000),
+                );
+            }
+            let casts: &[fn(Bitvector32Term) -> Bitvector32Term] = match term {
+                Bitvector32Term::Int64Constant(_) => &[
+                    Bitvector32Term::int64_from_32,
+                    Bitvector32Term::int64_from_uint32,
+                ],
+                Bitvector32Term::UInt64Constant(_) => &[
+                    Bitvector32Term::uint64_from_32,
+                    Bitvector32Term::uint64_from_int32,
+                ],
+                _ => &[],
+            };
+            for cast in casts {
+                if cast(from.clone()) == *term {
+                    return cast(to.clone());
+                }
+            }
+        }
         let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
             (
                 Box::new(rewrite_term(left, from, to)),
@@ -1676,9 +1706,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     // A mathematical observation of a machine value is still congruent under
     // a checked equality for that machine value.  Keep this bridge narrow:
-    // only root machine observations, scalar application arguments, and
-    // Int32 range-fold endpoints are exposed, so Integer arithmetic has no new
-    // rewrite/search path. Re-interning through `from_machine` also folds a
+    // root machine observations, scalar application arguments, and
+    // Int32 range-fold endpoints retain their direct substitutions. Arithmetic
+    // uses the shared checked, scope-aware walker; a refusal keeps the original
+    // term, never a partial result. Re-interning through `from_machine` folds a
     // rewritten constant to the ordinary mathematical constant while
     // retaining the carrier when it remains symbolic.
     fn rewrite_integer_observation(
@@ -1753,7 +1784,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 }
                 .into()
             }
-            _ => term.clone(),
+            _ => {
+                let mut rewrite = super::term_rewrite::TermRewrite::for_bits_checked(from, to);
+                let rewritten = rewrite.integer(term.as_ref());
+                if rewrite.refusal().is_some() {
+                    term.clone()
+                } else {
+                    rewritten.into()
+                }
+            }
         }
     }
 
@@ -1805,6 +1844,54 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 }
                 ConditionTerm::Bitvector32Equal(goal_left, goal_right) => {
                     ConditionTerm::Bitvector32Equal(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64SignedLessThan(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64SignedLessThan(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64SignedLessEqual(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64SignedLessEqual(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64SignedGreaterThan(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64SignedGreaterThan(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64SignedGreaterEqual(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64SignedGreaterEqual(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64UnsignedLessThan(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64UnsignedLessThan(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64UnsignedLessEqual(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64UnsignedLessEqual(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64UnsignedGreaterThan(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64UnsignedGreaterThan(
+                        Box::new(rewrite_term(goal_left, left, right)),
+                        Box::new(rewrite_term(goal_right, left, right)),
+                    )
+                }
+                ConditionTerm::Bitvector64UnsignedGreaterEqual(goal_left, goal_right) => {
+                    ConditionTerm::Bitvector64UnsignedGreaterEqual(
                         Box::new(rewrite_term(goal_left, left, right)),
                         Box::new(rewrite_term(goal_right, left, right)),
                     )
@@ -1883,6 +1970,36 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewrite_integer_observation(goal_left, left, right),
                     rewrite_integer_observation(goal_right, left, right),
                 ),
+                ConditionTerm::IntegerLessThan(goal_left, goal_right) => {
+                    ConditionTerm::IntegerLessThan(
+                        rewrite_integer_observation(goal_left, left, right),
+                        rewrite_integer_observation(goal_right, left, right),
+                    )
+                }
+                ConditionTerm::IntegerLessEqual(goal_left, goal_right) => {
+                    ConditionTerm::IntegerLessEqual(
+                        rewrite_integer_observation(goal_left, left, right),
+                        rewrite_integer_observation(goal_right, left, right),
+                    )
+                }
+                ConditionTerm::IntegerGreaterThan(goal_left, goal_right) => {
+                    ConditionTerm::IntegerGreaterThan(
+                        rewrite_integer_observation(goal_left, left, right),
+                        rewrite_integer_observation(goal_right, left, right),
+                    )
+                }
+                ConditionTerm::IntegerGreaterEqual(goal_left, goal_right) => {
+                    ConditionTerm::IntegerGreaterEqual(
+                        rewrite_integer_observation(goal_left, left, right),
+                        rewrite_integer_observation(goal_right, left, right),
+                    )
+                }
+                ConditionTerm::IntegerNotEqual(goal_left, goal_right) => {
+                    ConditionTerm::IntegerNotEqual(
+                        rewrite_integer_observation(goal_left, left, right),
+                        rewrite_integer_observation(goal_right, left, right),
+                    )
+                }
                 // Pointer goals contain the same int32 terms inside their
                 // offsets; substituting the proven equality there is the same
                 // exact term congruence, with work bounded by the goal.
@@ -1903,7 +2020,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     )
                 }
                 _ => {
-                    return Err("`rewrite` currently expects an int32 comparison goal".to_string());
+                    return Err("`rewrite` cannot substitute this native equality in the selected condition".to_string());
                 }
             };
             Proposition::ConditionIs(rewritten_condition, *expected)
@@ -1982,6 +2099,280 @@ mod tests {
 
     fn integer_equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
         Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+    }
+
+    #[test]
+    fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
+        let x = Bitvector32Term::Variable(Variable(193_020));
+        let y = Bitvector32Term::Variable(Variable(193_021));
+        let cited = Proposition::ConditionIs(
+            ConditionTerm::Bitvector64Equal(Box::new(x.clone()), Box::new(y.clone())),
+            true,
+        );
+        let comparisons = [
+            ConditionTerm::Bitvector64SignedLessThan
+                as fn(Box<Bitvector32Term>, Box<Bitvector32Term>) -> ConditionTerm,
+            ConditionTerm::Bitvector64SignedLessEqual,
+            ConditionTerm::Bitvector64SignedGreaterThan,
+            ConditionTerm::Bitvector64SignedGreaterEqual,
+            ConditionTerm::Bitvector64UnsignedLessThan,
+            ConditionTerm::Bitvector64UnsignedLessEqual,
+            ConditionTerm::Bitvector64UnsignedGreaterThan,
+            ConditionTerm::Bitvector64UnsignedGreaterEqual,
+        ];
+        for make in comparisons {
+            for bound in [
+                Bitvector32Term::Int64Constant(i64::MIN),
+                Bitvector32Term::UInt64Constant(u64::MAX),
+            ] {
+                for truth in [false, true] {
+                    let goal = Proposition::ConditionIs(
+                        make(Box::new(x.clone()), Box::new(bound.clone())),
+                        truth,
+                    );
+                    let expected = Proposition::ConditionIs(
+                        make(Box::new(y.clone()), Box::new(bound.clone())),
+                        truth,
+                    );
+                    assert!(
+                        ProofFacts::default()
+                            .check_equality_rewrite(&goal, &cited)
+                            .is_err()
+                    );
+                    let mut costs = Vec::new();
+                    for ambient in [0, 16, 64, 256, 1024] {
+                        let mut facts = ProofFacts::default().with_fact(cited.clone());
+                        for i in 0..ambient {
+                            facts = facts.with_fact(equality(
+                                Bitvector32Term::Variable(Variable(194_000 + i)),
+                                Bitvector32Term::Constant(i as u32),
+                            ));
+                        }
+                        let (result, work) =
+                            crate::instrumentation::measure_deterministic_work(|| {
+                                facts.check_equality_rewrite(&goal, &cited)
+                            });
+                        let mut checked = result.unwrap();
+                        assert_eq!(checked.proposition(), &expected);
+                        let forged = Proposition::ConditionIs(
+                            make(Box::new(y.clone()), Box::new(bound.clone())),
+                            !truth,
+                        );
+                        assert!(!checked.try_present_as(&forged));
+                        assert_eq!(checked.proposition(), &expected);
+                        costs.push(work);
+                    }
+                    assert!(
+                        costs[0] > 0 && costs.iter().all(|cost| *cost == costs[0]),
+                        "{costs:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn native_equality_rewrite_retains_folded_literal_widening() {
+        let source = Bitvector32Term::Constant(u32::MAX);
+        let replacement = Bitvector32Term::Variable(Variable(193_024));
+        let value = Bitvector32Term::Variable(Variable(193_025));
+        let cited = equality(source.clone(), replacement.clone());
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        for (folded, lifted) in [
+            (
+                Bitvector32Term::Int64Constant(-1),
+                Bitvector32Term::int64_from_32(replacement.clone()),
+            ),
+            (
+                Bitvector32Term::Int64Constant(i64::from(u32::MAX)),
+                Bitvector32Term::int64_from_uint32(replacement.clone()),
+            ),
+            (
+                Bitvector32Term::UInt64Constant(u64::MAX),
+                Bitvector32Term::uint64_from_int32(replacement.clone()),
+            ),
+            (
+                Bitvector32Term::UInt64Constant(u64::from(u32::MAX)),
+                Bitvector32Term::uint64_from_32(replacement.clone()),
+            ),
+        ] {
+            let condition = |bound| {
+                Proposition::ConditionIs(
+                    ConditionTerm::Bitvector64UnsignedLessThan(
+                        Box::new(value.clone()),
+                        Box::new(bound),
+                    ),
+                    true,
+                )
+            };
+            assert_eq!(
+                facts
+                    .check_equality_rewrite(&condition(folded), &cited)
+                    .unwrap()
+                    .proposition(),
+                &condition(lifted)
+            );
+        }
+        // These full-width values have the same low bits as the source, but
+        // no matching widening of it. The equality grants no substitution.
+        for bound in [
+            Bitvector32Term::UInt64Constant(0x1_ffff_ffff),
+            Bitvector32Term::Int64Constant(0x1_ffff_ffff),
+            Bitvector32Term::Int64Constant(-0x1_0000_0001),
+        ] {
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::Bitvector64UnsignedLessThan(
+                    Box::new(value.clone()),
+                    Box::new(bound),
+                ),
+                true,
+            );
+            assert!(facts.check_equality_rewrite(&goal, &cited).is_err());
+        }
+    }
+
+    #[test]
+    fn native_equality_rewrite_recovers_unsigned_32_bit_order_bias() {
+        let value = Bitvector32Term::Variable(Variable(193_026));
+        let divisor = Bitvector32Term::Variable(Variable(193_027));
+        for source in [65521, 0x8000_0001, u32::MAX] {
+            let source = Bitvector32Term::Constant(source);
+            let cited = equality(source.clone(), divisor.clone());
+            let facts = ProofFacts::default().with_fact(cited.clone());
+            for make in [
+                ConditionTerm::unsigned_less_than
+                    as fn(Bitvector32Term, Bitvector32Term) -> ConditionTerm,
+                ConditionTerm::unsigned_less_equal,
+            ] {
+                for truth in [false, true] {
+                    let condition = make(value.clone(), source.clone());
+                    if matches!(condition, ConditionTerm::Constant(_)) {
+                        continue; // A fully folded bound contains no operand to rewrite.
+                    }
+                    let goal = Proposition::ConditionIs(condition, truth);
+                    let expected =
+                        Proposition::ConditionIs(make(value.clone(), divisor.clone()), truth);
+                    assert_eq!(
+                        facts
+                            .check_equality_rewrite(&goal, &cited)
+                            .unwrap()
+                            .proposition(),
+                        &expected
+                    );
+                    assert!(
+                        ProofFacts::default()
+                            .check_equality_rewrite(&goal, &cited)
+                            .is_err()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn native_equality_rewrite_enters_integer_observation_bounds() {
+        let x = Bitvector32Term::Variable(Variable(193_022));
+        let y = Bitvector32Term::Variable(Variable(193_023));
+        let cited = equality(x.clone(), y.clone());
+        let observe = |value| IntegerTerm::from_machine(MachineIntegerType::UInt32, value).unwrap();
+        let comparisons = [
+            ConditionTerm::IntegerLessThan
+                as fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
+            ConditionTerm::IntegerLessEqual,
+            ConditionTerm::IntegerGreaterThan,
+            ConditionTerm::IntegerGreaterEqual,
+            ConditionTerm::IntegerNotEqual,
+        ];
+        for make in comparisons {
+            let term =
+                |value| IntegerTerm::add(observe(value), IntegerTerm::constant_i64(4294967295i64));
+            for truth in [false, true] {
+                let goal = Proposition::ConditionIs(
+                    make(
+                        term(x.clone()).into(),
+                        IntegerTerm::constant_i64(8589934590i64).into(),
+                    ),
+                    truth,
+                );
+                let expected = Proposition::ConditionIs(
+                    make(
+                        term(y.clone()).into(),
+                        IntegerTerm::constant_i64(8589934590i64).into(),
+                    ),
+                    truth,
+                );
+                let facts = ProofFacts::default().with_fact(cited.clone());
+                assert_eq!(
+                    facts
+                        .check_equality_rewrite(&goal, &cited)
+                        .unwrap()
+                        .proposition(),
+                    &expected
+                );
+                assert!(
+                    ProofFacts::default()
+                        .check_equality_rewrite(&goal, &cited)
+                        .is_err()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
+        let x = Bitvector32Term::Variable(Variable(193_028));
+        let y = Bitvector32Term::Variable(Variable(193_029));
+        let cited = equality(x.clone(), y.clone());
+        let make_term = |value, depth| {
+            let mut term: SharedIntegerTerm =
+                IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+                    .unwrap()
+                    .into();
+            for _ in 0..depth {
+                term = IntegerTerm::add(term.as_ref().clone(), term.as_ref().clone()).into();
+            }
+            term
+        };
+        let condition = |term| {
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(term, IntegerTerm::constant_i64(4294967295).into()),
+                true,
+            )
+        };
+        let mut depth_costs = Vec::new();
+        for depth in [4, 8, 16, 32] {
+            let goal = condition(make_term(x.clone(), depth));
+            let expected = condition(make_term(y.clone(), depth));
+            let mut ambient_costs = Vec::new();
+            for ambient in [0, 16, 64, 256, 1024] {
+                let mut facts = ProofFacts::default().with_fact(cited.clone());
+                for i in 0..ambient {
+                    facts = facts.with_fact(equality(
+                        Bitvector32Term::Variable(Variable(195_000 + i)),
+                        Bitvector32Term::Constant(i as u32),
+                    ));
+                }
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    facts.check_equality_rewrite(&goal, &cited)
+                });
+                assert_eq!(result.unwrap().proposition(), &expected);
+                ambient_costs.push(work);
+            }
+            assert!(
+                ambient_costs[0] > 0 && ambient_costs.iter().all(|cost| *cost == ambient_costs[0]),
+                "{ambient_costs:?}"
+            );
+            depth_costs.push(ambient_costs[0]);
+        }
+        assert!(depth_costs[3] <= depth_costs[0] * 10, "{depth_costs:?}");
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        let result = crate::instrumentation::with_run_work_limit(0, || {
+            facts.check_equality_rewrite(&condition(make_term(x, 32)), &cited)
+        });
+        assert!(
+            result.is_err(),
+            "an exhausted rewrite must not emit a partial refinement"
+        );
     }
 
     #[test]

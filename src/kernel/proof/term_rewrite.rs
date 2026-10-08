@@ -2437,7 +2437,7 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
-    fn integer(&mut self, v: &IntegerTerm) -> IntegerTerm {
+    pub(crate) fn integer(&mut self, v: &IntegerTerm) -> IntegerTerm {
         self.reserve_integer_variables_once(v);
         if self.checked_work_exhausted() {
             return exhausted_integer(v);
