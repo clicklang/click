@@ -6206,6 +6206,27 @@ impl CState {
         self
     }
 
+    /// Equality that also identifies two creation ledgers recording nothing.
+    /// Separately built entry states for one contract differ only in their
+    /// fresh ledger names, which nothing else in the state refers to.
+    pub(crate) fn equal_up_to_unused_creation_ledgers(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+        let (Some(left), Some(right)) = (
+            self.population_effects.creation.as_ref(),
+            other.population_effects.creation.as_ref(),
+        ) else {
+            return false;
+        };
+        if !left.records_nothing() || !right.records_nothing() {
+            return false;
+        }
+        let mut renamed = self.clone();
+        Arc::make_mut(&mut renamed.population_effects).creation = Some(right.clone());
+        renamed == *other
+    }
+
     pub(crate) fn uses_population_authority_semantics(&self) -> bool {
         self.population_effects.creation.is_some()
     }

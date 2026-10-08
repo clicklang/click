@@ -1343,3 +1343,35 @@ without switching the default.
   Regression: `authority_mode_loop_contract_certifies.md`.
 
 With these, the trial switch changes 253 outcomes.
+
+#### Chunk 1b: ordinary abstract tokens
+
+Abstract families have no kernel definition, so the call gate of chunk 1a
+treated every abstract token as a possible population member. Each kernel
+function now carries the sorted names of the project's abstract families
+declared without `authorized`, set beside its definitions. A token on that
+list, or the built-in allocation token, reaches no population; any other
+abstract token, including one from an interface built without the list, is
+still refused. Regressions: `authority_mode_ordinary_abstract_token_call.md`
+and `authority_mode_external_abstract_member_birth_refused.md`.
+
+The kernel's authority-mode body checks (population authority wrappers,
+transfer wrappers and member body access) now apply only to a composite that
+reaches a population; any other composite folds and unfolds by its
+definition. Regression: `authority_mode_ordinary_composite_of_tokens_folds.md`.
+
+`observe` records a count witness, and keeps member bodies folded, only for
+an authorized family; observing any other resource under authority semantics
+exposes its body views as it does without them. Regression:
+`authority_mode_ordinary_observe.md`.
+
+#### Chunk 1c: certification across separately built entries
+
+Creation ledgers compare by identity, and every entry state built for a
+contract gets a fresh one. Certification therefore rejected a claim proved by
+its own proof, and a checked execution from a separately built entry, even
+when the two entry states differed only in that empty ledger. States now
+compare equal when they differ only in creation ledgers that record nothing:
+no storage, member, authority, import, scope or batch. Regressions:
+`authority_mode_separate_claim_proofs_certify.md`,
+`authority_mode_rebased_execution_certifies.md` and a kernel unit test.

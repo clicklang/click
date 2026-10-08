@@ -75,6 +75,14 @@ pub(super) struct AuthorityState {
 }
 
 impl AuthorityState {
+    pub(super) fn is_empty(&self) -> bool {
+        self.anchors.is_empty()
+            && self.registrations.is_empty()
+            && self.populations.is_empty()
+            && self.members.is_empty()
+            && self.obligations.is_empty()
+    }
+
     fn shares_roots_with(&self, other: &Self) -> bool {
         self.anchors.shares_root_with(&other.anchors)
             && self.registrations.shares_root_with(&other.registrations)
