@@ -180,6 +180,16 @@ Flat path facts and the terminal joins' flat returned-path containers remain
 unshared, even though the counted whole-work curves through 64 returns now
 satisfy that bound. This bug remains open for those representation costs.
 
+Completed execution candidate collections now share an immutable publication
+containing the source function, input state, arguments, and all candidate paths.
+Cloning a completed proof frontier previously copied those fields, including
+every path's facts and obligations. The candidate-fork regression varies path
+count and facts per path independently through 1,024, checks shared storage,
+and checks that a fork survives its original owner. Candidates remain untrusted
+and certification still checks them against the retained execution trace.
+Individual paths still store flat facts, and building a distinct outcome
+collection still assembles its own path container; those costs remain open.
+
 ## Intended regression
 
 A scaling test over `early_return_fan_out` at 4, 8, 16, and 32 returns that

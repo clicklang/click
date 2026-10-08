@@ -344,7 +344,12 @@ charged to visible semantic output rather than hidden ambient state:
   spelling for a source-successor split. Returned paths share that prefix,
   and terminal joins keep the nested history instead of copying
   and indexing it again. The same regression now bounds whole-verification
-  work in both proof forms through 64 returns. Flat path facts and terminal
+  work in both proof forms through 64 returns. Completed candidate collections
+  also share their immutable source, input state, arguments, and path storage
+  across frontier clones. The candidate-fork regression varies path counts and
+  facts per path independently through 1,024, without a timing threshold.
+  Certification still checks these untrusted candidates against execution.
+  Flat path facts and terminal
   joins' flat returned-path containers still need sharing; the bug report
   records the remaining representation costs and the whole-work curves.
 

@@ -10049,6 +10049,13 @@ impl Eq for SymbolicCExecutionPath {}
 /// same complete path frontier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionExecutionCandidates {
+    pub(super) data: std::sync::Arc<CFunctionExecutionCandidatesData>,
+}
+
+/// Immutable publication of one complete outcome frontier. Proof forks retain
+/// this collection, rather than copying every sibling path and the source body.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct CFunctionExecutionCandidatesData {
     pub(super) state: CState,
     pub(super) function: CFunction,
     pub(super) arguments: Vec<CExpression>,

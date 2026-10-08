@@ -2071,10 +2071,12 @@ pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
         .collect();
 
     CFunctionExecutionCandidates {
-        state,
-        function,
-        arguments,
-        paths,
+        data: std::sync::Arc::new(CFunctionExecutionCandidatesData {
+            state,
+            function,
+            arguments,
+            paths,
+        }),
     }
 }
 

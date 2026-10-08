@@ -7653,19 +7653,19 @@ impl SymbolicCExecutionPath {
 
 impl CFunctionExecutionCandidates {
     pub fn state(&self) -> &CState {
-        &self.state
+        &self.data.state
     }
 
     pub fn function(&self) -> &CFunction {
-        &self.function
+        &self.data.function
     }
 
     pub fn arguments(&self) -> &[CExpression] {
-        &self.arguments
+        &self.data.arguments
     }
 
     pub fn paths(&self) -> &[CFunctionExecutionCandidate] {
-        &self.paths
+        &self.data.paths
     }
 }
 

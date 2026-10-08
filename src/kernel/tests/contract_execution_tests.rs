@@ -5,6 +5,72 @@ use super::*;
 use crate::kernel::LoanRefusalCategory;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+/// A completed frontier fork must share all sibling data, independently of
+/// the number of paths or facts stored on each path.
+#[test]
+fn completed_candidate_forks_share_source_state_and_all_path_storage() {
+    for (path_count, fact_count) in [(4, 4), (64, 4), (1024, 4), (4, 64), (4, 1024)] {
+        let function = c_function(
+            CType::Int32,
+            "candidate_storage",
+            vec![c_parameter("x", CType::Int32)],
+            c_return(c_int32_literal(0)),
+        );
+        let paths = (0..path_count)
+            .map(|_| {
+                let facts = (0..fact_count)
+                    .map(|index| {
+                        ExecutionPureFact::new(Proposition::ConditionIs(
+                            ConditionTerm::signed_less_than(
+                                Bitvector32Term::Variable(Variable(950_000 + index)),
+                                Bitvector32Term::Constant(0),
+                            ),
+                            true,
+                        ))
+                    })
+                    .collect();
+                (
+                    CFunctionOutcome::Return {
+                        value: int32(0),
+                        state: Box::new(CState::new()),
+                    },
+                    facts,
+                    Vec::new(),
+                )
+            })
+            .collect();
+        let original = c_function_execution_candidates_from_outcomes(
+            CState::new(),
+            function,
+            vec![c_int32_literal(0)],
+            paths,
+        );
+        let fork = original.clone();
+        assert!(std::ptr::eq(original.state(), fork.state()));
+        assert!(std::ptr::eq(original.function(), fork.function()));
+        assert!(std::ptr::eq(original.arguments(), fork.arguments()));
+        assert!(std::ptr::eq(original.paths(), fork.paths()));
+        for (original_path, fork_path) in original.paths().iter().zip(fork.paths()) {
+            assert_eq!(original_path.facts().len(), fact_count as usize);
+            assert!(std::ptr::eq(original_path.facts(), fork_path.facts()));
+        }
+        assert_eq!(original, fork);
+        drop(original);
+        assert_eq!(fork.paths().len(), path_count);
+        assert_eq!(fork.paths()[0].facts().len(), fact_count as usize);
+        let different = c_function_execution_candidates_from_outcomes(
+            CState::new(),
+            fork.function().clone(),
+            vec![c_int32_literal(0)],
+            Vec::new(),
+        );
+        assert_ne!(
+            fork, different,
+            "sharing must preserve complete candidate equality"
+        );
+    }
+}
+
 fn borrowed_input_view_function(name: &str) -> CFunction {
     c_function(CType::Void, name, vec![], c_return(c_void_value())).with_resource_summary(
         vec![CResourceSpec::token(
