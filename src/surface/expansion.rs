@@ -866,6 +866,7 @@ fn c0_smart_tactic_source_sites_file(
     file: &ClickFile,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
     let mut sites = Vec::new();
+    let mut ordered = Vec::new();
     let mut seen = BTreeSet::new();
     for entry in source_tactic_entries(click_source, file)? {
         if !entry.smart {
@@ -881,13 +882,46 @@ fn c0_smart_tactic_source_sites_file(
             located.source_index,
             located.nested,
         )) {
+            ordered.push((entry.anchor, sites.len()));
             sites.push(SmartTacticSourceSite {
                 claim_label: entry.claim_label,
                 source_index: located.source_index,
                 tactic_name: entry.tactic_name,
-                position: position_at_offset(click_source, entry.anchor),
+                position: SourcePosition::new(1, 1),
             });
         }
+    }
+    ordered.sort_unstable();
+    // Walk characters once, including Unicode columns. Rescanning the whole
+    // prefix at every anchor would make a one-line certificate quadratic.
+    let mut next = 0;
+    let mut line = 1;
+    let mut column = 1;
+    for (offset, character) in click_source
+        .char_indices()
+        .chain(std::iter::once((click_source.len(), '\0')))
+    {
+        while ordered
+            .get(next)
+            .is_some_and(|(wanted, _)| *wanted == offset)
+        {
+            sites[ordered[next].1].position = SourcePosition::new(line, column);
+            next += 1;
+        }
+        if next == ordered.len() {
+            break;
+        }
+        if character == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    if next != ordered.len() {
+        return Err(ClickError::new(
+            "smart tactic anchor is not a source character boundary",
+        ));
     }
     Ok(sites)
 }
@@ -2891,6 +2925,51 @@ fn locate_source_tactic_file(
     }
 }
 
+/// Index top-level declaration bodies once. Proof bodies are skipped as a
+/// whole, so a use of a name inside a proof never shadows its declaration.
+fn declaration_source_index(
+    tokens: &[SourceToken],
+) -> Result<std::collections::HashMap<String, FunctionSource>, ClickError> {
+    let mut result = std::collections::HashMap::new();
+    let mut candidate = None;
+    let mut index = 0;
+    while index < tokens.len() {
+        crate::instrumentation::record_deterministic_work(1);
+        match tokens[index].text.as_str() {
+            "theorem" | "tactic" => {
+                candidate = tokens.get(index + 1).map(|token| token.text.clone());
+            }
+            "(" => {
+                if candidate.is_none() {
+                    candidate = index
+                        .checked_sub(1)
+                        .map(|before| tokens[before].text.clone());
+                }
+                index = matching_delimiter(tokens, index, "(", ")")?;
+            }
+            "{" => {
+                let body_close = matching_delimiter(tokens, index, "{", "}")?;
+                if let Some(name) = candidate.take() {
+                    result.insert(
+                        name,
+                        FunctionSource {
+                            body_open: index,
+                            body_close,
+                        },
+                    );
+                }
+                index = body_close;
+            }
+            ";" => {
+                candidate = None;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    Ok(result)
+}
+
 /// Records every written tactic of every selected proof, keyed by span.
 fn source_tactic_entries(
     click_source: &str,
@@ -2898,11 +2977,17 @@ fn source_tactic_entries(
 ) -> Result<Vec<SourceTacticEntry>, ClickError> {
     let tokens = scan_source_tokens(click_source)?;
     let mut entries = Vec::new();
+    let declarations = declaration_source_index(&tokens)?;
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
             continue;
         }
-        let source = find_theorem(&tokens, theorem.name())?;
+        let source = declarations.get(theorem.name()).copied().ok_or_else(|| {
+            ClickError::new(format!(
+                "could not locate Click theorem `{}`",
+                theorem.name()
+            ))
+        })?;
         let kernel_axiom_name = proof::is_kernel_standard_theorem_name(theorem.name())
             && theorem
                 .parameters()
@@ -2935,7 +3020,11 @@ fn source_tactic_entries(
             continue;
         }
         let function_name = function_block.signature().name();
-        let function = find_function(&tokens, function_name)?;
+        let function = declarations.get(function_name).copied().ok_or_else(|| {
+            ClickError::new(format!(
+                "could not locate Click function block `{function_name}`"
+            ))
+        })?;
         for clause in function_block.structural_clauses() {
             if let CodeRegion::Loop(loop_index) = clause.region() {
                 for (phase, proof) in [
@@ -3153,10 +3242,9 @@ fn proof_tactic_entries(
             match edit {
                 ProofSourceEdit::Explicit(proof_span) => {
                     let by = tokens
-                        .iter()
-                        .position(|token| {
-                            token.span.start == proof_span.start && token.text == "by"
-                        })
+                        .binary_search_by_key(&proof_span.start, |token| token.span.start)
+                        .ok()
+                        .filter(|index| tokens[*index].text == "by")
                         .ok_or_else(|| ClickError::new("could not locate source `by` clause"))?;
                     let anchor = tokens
                         .get(by + 1)
@@ -3811,8 +3899,9 @@ fn proof_source_position(
     }
     if let Some(proof_span) = proof_span {
         let by = tokens
-            .iter()
-            .position(|token| token.span.start == proof_span.start && token.text == "by")
+            .binary_search_by_key(&proof_span.start, |token| token.span.start)
+            .ok()
+            .filter(|index| tokens[*index].text == "by")
             .ok_or_else(|| ClickError::new("could not locate source `by` clause"))?;
         if let Some(tactic) = tokens.get(by + 1) {
             return Ok(position_at_offset(click_source, tactic.span.start));
@@ -4454,8 +4543,9 @@ fn collect_source_tactics<'t>(
     tactics: &'t [ProofTactic],
 ) -> Result<Vec<FlatSourceTactic<'t>>, ClickError> {
     let by = tokens
-        .iter()
-        .position(|token| token.span.start == proof_span.start && token.text == "by")
+        .binary_search_by_key(&proof_span.start, |token| token.span.start)
+        .ok()
+        .filter(|index| tokens[*index].text == "by")
         .ok_or_else(|| ClickError::new("could not locate selected source proof"))?;
     let open = by + 1;
     if tokens.get(open).map(|token| token.text.as_str()) != Some("{") {
@@ -4983,8 +5073,9 @@ fn find_tactic_span(
     wanted: usize,
 ) -> Result<Range<usize>, ClickError> {
     let by = tokens
-        .iter()
-        .position(|token| token.span.start == proof_span.start && token.text == "by")
+        .binary_search_by_key(&proof_span.start, |token| token.span.start)
+        .ok()
+        .filter(|index| tokens[*index].text == "by")
         .ok_or_else(|| ClickError::new("could not locate selected source proof"))?;
     let open = by + 1;
     if tokens.get(open).map(|token| token.text.as_str()) != Some("{") {

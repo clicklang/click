@@ -4568,6 +4568,39 @@ fn singleton_substitution_derivation_records_only_its_bound_premises() {
     assert!(!derivation.check(&PureFactContext::new()));
     let context = derivation.context_premises();
     assert_eq!(context, vec![lower, upper]);
+
+    // The planner and checker both refuse an exhausted substitution; a
+    // transient refusal must not become a proof or poison later checks.
+    use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
+    let ((planned, checked), _) = instrumentation::with_tactic_work_limits(
+        TacticWorkLimits {
+            simple: 0,
+            smart: 0,
+            control: 0,
+        },
+        || {
+            instrumentation::collect(|| {
+                let tactic = TacticEvent {
+                    claim: "singleton certificate budget".into(),
+                    tactic_index: 0,
+                    tactic_name: "singleton_certificate_budget".into(),
+                    class: "simple".into(),
+                    statement_index: 0,
+                    source_index: 0,
+                };
+                instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
+                let result = (
+                    assumptions.derive_by_singleton_substitution(&goal, true),
+                    derivation.check(&assumptions),
+                );
+                instrumentation::emit(VerificationEvent::TacticFailed(tactic));
+                result
+            })
+        },
+    );
+    assert!(planned.is_none());
+    assert!(!checked);
+    assert!(derivation.check(&assumptions));
 }
 
 #[test]

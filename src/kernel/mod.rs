@@ -246,6 +246,7 @@ pub(crate) mod planning_api {
     };
     pub(crate) use super::reasoning::path_facts::solve_builtin_prop;
     pub(crate) use super::reasoning::substitute_bitvector_variable_in_proposition;
+    pub(crate) use super::reasoning::substitute_machine_constant_in_pure_proposition;
     #[cfg(test)]
     pub(crate) use super::reasoning::variable_collection::collect_condition_bitvector_variables;
     pub(crate) use super::reasoning::variable_collection::{

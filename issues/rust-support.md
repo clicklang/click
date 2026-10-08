@@ -37,8 +37,9 @@ establish arbitrary-batch induction or the complete checksum specification.
 Symbolic-loop regressions cover record and scalar-array storage starts, shared
 chunk-view transport, and all four returned/copied vector lanes across local
 stores. Automatic scope exits retire construction ownership. The original
-Adler arbitrary-head trial passes its temporary-array snapshot copy and reaches
-invariant closing; the induction proof remains incomplete.
+Adler four-byte caller now proves a terminating symbolic vector loop, including
+all eight lane values and bounds, input-view preservation and iterator ranking.
+Induction over arbitrary batches remains incomplete.
 
 Detailed support boundaries and reproducible commands belong in
 [the Rust reference](../docs/reference/rust.md). Current checksum evidence lives

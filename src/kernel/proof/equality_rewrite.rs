@@ -1221,6 +1221,19 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         let rewritten = match goal {
+            Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
+            } => {
+                Proposition::CMemoryLoadable {
+                    // Clone only shared snapshot roots. Equality changes the
+                    // selected address, never the memory or view extent.
+                    memory: memory.clone(),
+                    base: rewrite_pointer(base),
+                    bytes: bytes.clone(),
+                }
+            }
             Proposition::ConditionIs(
                 ConditionTerm::PointerEqual(goal_left, goal_right),
                 expected,
@@ -2495,6 +2508,55 @@ mod tests {
                 .check_equality_rewrite(&goal, &premise)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn pointer_view_rewrite_preserves_snapshot_extent_and_ambient_scaling() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Pointer::symbolic(Variable(192_910));
+        let target = Pointer::symbolic(Variable(192_911));
+        let cited = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(source.clone(), target.clone()),
+            true,
+        );
+        let memory = CMemory::new().with_block("pointer-view-rewrite", 8);
+        let extent = Bitvector32Term::Variable(Variable(192_912));
+        let goal = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: source,
+            bytes: extent.clone(),
+        };
+        assert!(
+            ProofFacts::default()
+                .check_equality_rewrite(&goal, &cited)
+                .is_err()
+        );
+        let mut costs = Vec::new();
+        for size in [0, 16, 64, 256, 1024] {
+            let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+            for index in 0..size {
+                facts = facts.with_fact(equality(
+                    Bitvector32Term::Variable(Variable(200_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ));
+            }
+            let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &cited).unwrap()
+            });
+            let Proposition::CMemoryLoadable {
+                memory: snapshot,
+                base,
+                bytes,
+            } = rewritten.proposition()
+            else {
+                panic!("viewability changed kind")
+            };
+            assert_eq!(snapshot.diagnostic_identity(), memory.diagnostic_identity());
+            assert_eq!(base, &target);
+            assert_eq!(bytes, &extent);
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
     }
 
     #[test]
