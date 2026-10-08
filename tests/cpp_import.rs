@@ -13971,6 +13971,15 @@ int32* run(int32* data) { ensures result == data; } by { execute(); simp(); }
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
             .is_err()
     );
+    let reference_sidecar = sidecar.replace("int32* identity", "int32& identity");
+    fs::write(&path, &reference_sidecar).unwrap();
+    assert!(
+        verify_program_prepared_project(
+            &read_click_project(&path, &reference_sidecar).unwrap(),
+            &import
+        )
+        .is_err()
+    );
     // Recompute the lock so these exercise semantic validation, not only hashes.
     use sha2::{Digest, Sha256};
     let artifact: serde_json::Value =
@@ -13999,4 +14008,133 @@ int32* run(int32* data) { ensures result == data; } by { execute(); simp(); }
         let error = load_import(&project.config()).unwrap_err();
         assert!(error.contains("C++"), "{error}");
     }
+}
+
+#[test]
+fn cpp_native_reference_results_preserve_aliases_and_require_backing_authority_offline() {
+    let project = Project::with_fixture(
+        "return.cpp",
+        "run",
+        "int& identity(int& value) noexcept { return value; }\nint& run(int& value) noexcept { return identity(value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let aliases = r#"verifying "return.cpp";
+int32& identity(int32& value) { ensures &result == &value; } by { execute(); simp(); }
+int32& run(int32& value) { ensures &result == &value; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, aliases);
+    let values = aliases.replace(
+        "{ ensures &result == &value; }",
+        "{ owns value; ensures &result == &value; ensures result == old(value); }",
+    );
+    check_arithmetic_sidecar(&project, &import, &values);
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        &values.replace("owns value;", "views value;"),
+    );
+    for hostile in [
+        aliases.replace(
+            "ensures &result == &value;",
+            "ensures &result == &value + 1;",
+        ),
+        aliases.replace("ensures &result == &value;", "ensures result == 0;"),
+        aliases.replace("int32& identity", "int32* identity"),
+        aliases.replace(
+            "ensures &result == &value;",
+            "ensures old(&result) == &value;",
+        ),
+        values.replace(
+            "ensures result == old(value);",
+            "ensures result != old(value);",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&parsed, &import).is_err(),
+            "{hostile}"
+        );
+    }
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..5 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => forged["function"]["return_type"]["kind"] = "pointer".into(),
+            1 => forged["function"]["body"][0]["value_type"]["pointee"]["bits"] = 64.into(),
+            2 => {
+                forged["reachable_functions"][0]["body"][0]["value"]["address"]["kind"] =
+                    "load".into()
+            }
+            3 => {
+                forged["reachable_functions"][0]["body"][0]["value"]["value_type"]["pointee"]["bits"] =
+                    64.into()
+            }
+            4 => {
+                forged["reachable_functions"][0]["return_type"]["pointee"]["is_const"] = true.into()
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "accepted mutation {mutation}"
+        );
+    }
+}
+
+#[test]
+fn cpp_reference_results_refuse_raw_pointer_binding_until_live_object_validation() {
+    let project = Project::with_fixture(
+        "return.cpp",
+        "run",
+        "int& run(int* data) noexcept { return *data; }",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("live-object validation"), "{error}");
+}
+
+#[test]
+fn cpp_const_reference_results_preserve_native_qualification_offline() {
+    let project = Project::with_fixture(
+        "return.cpp",
+        "run",
+        "const int& identity(const int& value) noexcept { return value; }\nconst int& run(const int& value) noexcept { return identity(value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let aliases = r#"verifying "return.cpp";
+const int32& identity(const int32& value) { ensures &result == &value; } by { execute(); simp(); }
+const int32& run(const int32& value) { ensures &result == &value; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, aliases);
+    let values = aliases.replace(
+        "{ ensures &result == &value; }",
+        "{ views value; ensures &result == &value; ensures result == old(value); }",
+    );
+    check_arithmetic_sidecar(&project, &import, &values);
+    let hostile = aliases.replace("const int32& identity(", "int32& identity(");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
 }

@@ -24,11 +24,11 @@ use super::{
 use crate::kernel::{
     CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
     LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
-    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_divide, c_equal, c_function,
-    c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply,
-    c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip,
-    c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load_with_source,
-    c_typed_store, c_variable,
+    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_declare_with_all_qualifiers, c_divide,
+    c_equal, c_function, c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal,
+    c_less_than, c_multiply, c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder,
+    c_return, c_seq, c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup,
+    c_typed_load_with_source, c_typed_store, c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -199,12 +199,14 @@ fn lower_function(
         _ if source.return_type == CppType::Void => CType::Void,
         _ => cpp_return_scalar_type(&source.return_type)?,
     };
+    let return_constant = matches!(&source.return_type, CppType::LvalueReference { pointee } if is_const_int32(pointee));
     Ok(c_function(
         return_type,
         names.require(&source.declaration_id)?.to_owned(),
         parameters,
         body,
-    ))
+    )
+    .with_return_pointee_constant(return_constant))
 }
 
 pub(super) use crate::languages::c::syntax::reference_carrier_name;
@@ -742,7 +744,14 @@ impl LoweringContext<'_> {
                     prefix: evaluate_then(
                         prefix,
                         c_seq(
-                            c_declare(capture.clone(), capture_type),
+                            c_declare_with_all_qualifiers(
+                                capture.clone(),
+                                capture_type,
+                                false,
+                                false,
+                                false,
+                                matches!(value_type, CppType::LvalueReference { pointee } if is_const_int32(pointee)),
+                            ),
                             c_call_assign(
                                 capture.clone(),
                                 self.names.require(&callee.declaration_id)?.to_owned(),
@@ -1004,12 +1013,14 @@ impl LoweringContext<'_> {
                 place, value_type, ..
             } => match (&self.place(place)?.value_type, value_type) {
                 (CppType::LvalueReference { pointee }, CppType::Pointer { pointee: result })
-                    if is_mutable_int32(pointee) && is_mutable_int32(result) =>
+                    if (is_mutable_int32(pointee) || is_const_int32(pointee))
+                        && scalar::same_scalar_type(pointee, result) =>
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
-                _ => Err("C++ address-of is outside mutable `int&` lowering".into()),
+                _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
+            CppExpression::ReferenceBinding { address, .. } => self.lower_expression(address),
             CppExpression::Dereference {
                 pointer,
                 value_type,
@@ -1241,7 +1252,9 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
-    if is_mutable_int32_pointer(value_type) {
+    if is_mutable_int32_pointer(value_type)
+        || matches!(value_type, CppType::LvalueReference { pointee } if is_mutable_int32(pointee) || is_const_int32(pointee))
+    {
         return Ok(CType::Int32Pointer);
     }
     Scalar::mutable_kind(value_type)
