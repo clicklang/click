@@ -23,7 +23,7 @@ verifying "an_entry_view_names_the_entry_address.c";
 void f(struct holder* p, int32* other, int32 n) {
     requires 0 < n;
     requires p->buf[0] == 5;
-    owns object(p);
+    owns *p;
     views p->buf[0..n];
     ensures p->buf[0] == 5;
 } by { execute(); simp(); }

@@ -101,7 +101,7 @@ Two `views` clauses are not disjoint: lending the same range twice is exactly
 what a shared borrow permits. Two `owns` clauses are disjoint, for the older
 reason that a context cannot own one byte twice.
 
-A clause that is not a plain range contributes nothing here. `owns object(r)`
+A clause that is not a plain range contributes nothing here. `owns *r`
 is a plain range — the whole struct — and does separate from a `views` clause,
 but a folded composite's footprint has no spelling as a range, so pairing it
 with a view yields nothing and a `separate(...)` requirement is still the way

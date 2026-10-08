@@ -10,47 +10,47 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
 resource empty_vector(owner: struct vector*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact owner->len == 0;
     fact 1 <= owner->cap;
     fact owner->cap <= 1073741823;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 resource nonempty_vector(owner: struct vector*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 1 <= owner->len;
     fact owner->len <= owner->cap;
     fact owner->cap <= 1073741823;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 resource vector_storage(owner: struct vector*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
     fact owner->cap <= 1073741823;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 resource allocated_vector(owner: struct vector*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     contains allocation(owner->data, owner->cap * 4);
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
     fact 1 <= owner->cap;
     fact owner->cap <= 536870911;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 verifying "vector_init.c";
@@ -367,7 +367,7 @@ int32 vector_grow(struct vector* owner) {
         have owner->cap <= 536870911 by {
             assumption();
         }
-        have separate(memory(object(owner)), memory(owner->data[0..owner->cap])) by {
+        have separate(memory(*owner), memory(owner->data[0..owner->cap])) by {
             assumption();
         }
         have owner->len == old(owner->len) by {
@@ -851,7 +851,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
 int32 vector_init(struct vector* owner, int32 data[], int32 capacity) {
     requires 1 <= capacity;
     requires capacity <= 1073741823;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..capacity];
     produces empty_vector(owner);
     ensures result == 0;
@@ -1140,7 +1140,7 @@ int32 vector_clear(struct vector* owner) {
         at(statement(0).entry, 1) <= at(statement(0).entry, owner->cap);
     }
     assumption();
-    have separate(memory(object(owner)), memory(owner->data[0..owner->cap])) by {
+    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by {
         assumption();
     }
     fold(empty_vector(owner));
@@ -1160,7 +1160,7 @@ int32 vector_pipeline(
 ) {
     requires 1 <= capacity;
     requires capacity <= 1073741823;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..capacity];
 
     produces empty_vector(owner);

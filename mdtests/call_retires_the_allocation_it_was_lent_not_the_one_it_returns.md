@@ -36,7 +36,7 @@ void box_release(struct box* box, int32* other) {
 
 ```click
 resource boxed(box: struct box*) {
-    owns object(box);
+    owns *box;
     contains allocation(box->data, 4);
     owns box->data[0..1];
 }
@@ -45,7 +45,7 @@ verifying "box.c";
 
 void box_repoint(struct box* box, int32* other) {
     consumes boxed(box);
-    produces object(box);
+    produces *box;
     ensures box->data == other;
 } by {
     unfold(boxed(box));
@@ -55,7 +55,7 @@ void box_repoint(struct box* box, int32* other) {
 
 void box_release(struct box* box, int32* other) {
     consumes boxed(box);
-    produces object(box);
+    produces *box;
     consumes allocation(other, 4);
     consumes other[0..1];
 } by {

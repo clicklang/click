@@ -18,7 +18,7 @@ resource cell(p: struct node*) {
     field model: Cell;
     match model {
         Cell::At(id) => {
-            owns &p->next;
+            owns p->next;
             fact p != 0;
             fact p == id;
         },

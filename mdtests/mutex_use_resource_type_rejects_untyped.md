@@ -44,7 +44,7 @@ void outer(struct counter *counter) {
     simp();
 }
 void run(struct counter *counter) {
-    owns &counter->mu;
+    owns counter->mu;
     requires aligned(&counter->mu, 8);
     owns initial: counter_state(counter);
 } by {

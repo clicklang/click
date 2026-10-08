@@ -1,6 +1,6 @@
 # a complete-object clause carries its alignment
 
-`object(p)` for a struct type states that a live object of that type is at
+`*p` for a struct type states that a live object of that type is at
 `p`, and such an object is placed at the type's alignment. The clause
 therefore carries `aligned(p, alignof(struct))`: a caller proves it for a
 required object, the function proves it for a produced one, and the
@@ -25,7 +25,7 @@ struct pair *pass_through(struct pair *p) {
 verifying "aligned_from_object_resource.c";
 
 resource pair_storage(p: struct pair*) {
-    views object(p);
+    views *p;
     fact aligned(p, 8);
 }
 
@@ -40,8 +40,8 @@ int32 object_is_aligned(struct pair* p) {
 }
 
 struct pair* pass_through(struct pair* p) {
-    consumes object(p);
-    produces object(result);
+    consumes *p;
+    produces *result;
     ensures result == p;
 } by {
     execute();

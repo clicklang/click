@@ -21,7 +21,7 @@ resource counter_state(counter: struct counter*) {
 }
 verifying "mutex_lifetime_named_stale_runtime.c";
 void reset(struct counter *counter) {
-    owns &counter->mu;
+    owns counter->mu;
     requires aligned(&counter->mu, 8);
     owns state: counter_state(counter);
 } by {

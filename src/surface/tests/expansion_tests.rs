@@ -2964,7 +2964,7 @@ fn selected_post_execution_simp_keeps_the_surviving_execution_branch() {
             resource allocated_list(node: struct node*) {
                 if node != 0 {
                     contains allocation(node, sizeof(struct node));
-                    owns object(node);
+                    owns *node;
                     contains allocated_list(node->next);
                 }
             }
@@ -3088,7 +3088,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
         "#;
     let click_source = r#"
             resource allocated_cell(owner: struct cell_owner*) {
-                owns &owner->data;
+                owns owner->data;
                 contains allocation(owner->data, 4);
                 owns owner->data[0..1];
             }
@@ -4207,7 +4207,7 @@ fn marked_constant_store_transport_retains_load_identity() {
         }
 
         int32 pipeline(struct cell* owner) {
-            owns object(owner);
+            owns *owner;
             ensures result == 11;
         } by {
             step();
@@ -7062,13 +7062,13 @@ fn restricted_simp_certifies_unchanged_prefix_after_indexed_store() {
         resource vector_storage(owner: struct vector*) {
             owns owner->len;
             owns owner->cap;
-            owns &owner->data;
+            owns owner->data;
             owns owner->data[0..owner->cap];
             fact 0 <= owner->len;
             fact owner->len <= owner->cap;
             fact owner->cap <= 1073741823;
             fact viewable(owner->data[0..owner->len]);
-            fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+            fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
         }
 
         verifying "vector_push.c";
@@ -11163,7 +11163,7 @@ fn outcome_simp_with_no_open_claims_is_an_empty_proof_transition() {
     "#;
     let click_source = r#"
         authorized resource object_ref(obj: struct object*) {
-            owns object(obj);
+            owns *obj;
             fact obj->refs == count(object_ref(obj));
         }
 
@@ -11207,7 +11207,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         authorized resource pool_object(pool: struct pool*) {}
 
         authorized resource pool_slot(pool: struct pool*) {
-            views object(pool);
+            views *pool;
         }
 
         predicate valid_pool(pool: struct pool*) {
@@ -11220,7 +11220,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
 
         void init(struct pool* pool, int32 capacity) {
             requires 0 < capacity;
-            owns object(pool);
+            owns *pool;
             produces capacity of pool_slot(pool);
             ensures valid_pool(pool);
         } by {
@@ -11258,7 +11258,7 @@ fn outcome_predicate_unfold_uses_the_checked_frame_population_transition() {
     "#;
     let click_source = r#"
         authorized resource pool_object(pool: struct pool*, object: struct object*) {
-            owns object(object);
+            owns *object;
         }
 
         predicate valid_pool(pool: struct pool*) {
@@ -11271,9 +11271,9 @@ fn outcome_predicate_unfold_uses_the_checked_frame_population_transition() {
         void give_back(struct pool* pool, struct object* object) {
             requires valid_pool(pool);
             requires count(pool_object(pool, object)) == 1;
-            owns object(pool);
+            owns *pool;
             consumes pool_object(pool, object);
-            produces object(object);
+            produces *object;
             ensures valid_pool(pool);
         } by {
             unfold(valid_pool);
@@ -12331,7 +12331,7 @@ fn outcome_simp_materializes_selected_composite_separation_on_the_checked_proof(
         resource nested_owned_buffer(owner: struct owner*) {
             owns owner->len;
             owns owner->cap;
-            owns &owner->data;
+            owns owner->data;
             contains backing_buffer(owner);
             fact 0 <= owner->len;
             fact owner->len <= owner->cap;
@@ -12628,7 +12628,7 @@ fn source_expander_preserves_pointer_field_form_inside_smart_have() {
             verifying "holder.c";
 
             resource holder_storage(p: struct holder*) {
-                owns object(p);
+                owns *p;
             }
 
             int32 holder_zero(struct holder* owner, int32 data[]) {
@@ -12683,7 +12683,7 @@ fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
             verifying "holder.c";
 
             resource holder_storage(p: struct holder*) {
-                owns object(p);
+                owns *p;
             }
 
             predicate second_is(owner: struct holder*, value: int32) {
@@ -12696,7 +12696,7 @@ fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
                 int32 value
             ) {
                 requires owner->data == data;
-                requires separate(memory(object(owner)), memory(data[1..2]));
+                requires separate(memory(*owner), memory(data[1..2]));
                 requires second_is(owner, value);
                 views holder_storage(owner);
                 views data[1..2];
@@ -13142,7 +13142,7 @@ fn qualified_function_statics_reject_invalid_declarations() {
         "f::stored::extra",
     ] {
         let source = format!(
-            "verifying \"storage.c\" as storage; void f(int parameter) {{ owns &storage::{name}[0..1]; }}"
+            "verifying \"storage.c\" as storage; void f(int parameter) {{ owns storage::{name}[0..1]; }}"
         );
         assert!(
             verify_c0_sources(&source, &[("storage.c", c_source)]).is_err(),
@@ -13162,13 +13162,13 @@ fn qualified_function_statics_do_not_grant_ownership() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let original = "uint32 twice() {\n    owns &counter_file::increment::calls[0..1];";
+    let original = "uint32 twice() {\n    owns counter_file::increment::calls;";
     assert!(source.contains(original));
     for replacement in [
         "uint32 twice() {",
-        "uint32 twice() { views &counter_file::increment::calls[0..1];",
-        "uint32 twice() { owns &counter_file::other::calls[0..1];",
-        "uint32 twice() { owns &counter_file::calls[0..1];",
+        "uint32 twice() { views counter_file::increment::calls;",
+        "uint32 twice() { owns counter_file::other::calls;",
+        "uint32 twice() { owns counter_file::calls;",
     ] {
         let invalid = source.replace(original, replacement);
         let error = verify_c0_sources(&invalid, &sources)
@@ -13208,19 +13208,19 @@ void write_zero(int *p) {
     ensures p[0] == 0;
 } by { execute(); simp(); }
 void clear() {
-    owns &left::count[0..1];
+    owns left::count;
     ensures left::count == 0;
 } by { execute(); simp(); }
 int main() { ensures result == 0; } by { execute(); simp(); }
 "#;
     verify_c0_sources(source, &sources).unwrap();
     for invalid in [
-        source.replace("owns &left::count[0..1];", ""),
-        source.replace("owns &left::count", "owns &right::count"),
-        source.replace("owns &left::count", "owns &missing::count"),
-        source.replace("owns &left::count", "owns &left::missing"),
+        source.replace("owns left::count;", ""),
+        source.replace("owns left::count", "owns right::count"),
+        source.replace("owns left::count", "owns missing::count"),
+        source.replace("owns left::count", "owns left::missing"),
         source.replace("as right", "as left"),
-        source.replace("owns &left::count[0..1];", "owns &left::count[0..2];"),
+        source.replace("owns left::count;", "owns left::count[0..2];"),
     ] {
         assert!(
             verify_c0_sources(&invalid, &sources).is_err(),
@@ -13260,11 +13260,11 @@ void write_zero(int *p) {
     ensures p[0] == 0;
 } by { execute(); simp(); }
 void clear() {
-    owns &counter::count[0..1];
+    owns counter::count;
     ensures counter::count == 0;
 } by { execute(); simp(); }"#;
     verify_c0_sources(source, &sources).unwrap();
-    let missing = source.replace("owns &counter::count[0..1];", "");
+    let missing = source.replace("owns counter::count;", "");
     assert!(
         verify_c0_sources(&missing, &sources).is_err(),
         "a helper call cannot manufacture ownership"
@@ -13675,7 +13675,7 @@ fn unfolded_conjunction_have_simp_expands_to_both_scopes() {
 
             void set_pair(struct pair* pair, int32 bound) {
                 requires 0 <= bound;
-                owns object(pair);
+                owns *pair;
 
                 ensures ordered_pair(pair);
             } by {
@@ -13735,7 +13735,7 @@ fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
             void drop_one(struct pair* pair) {
                 requires ordered_pair(pair);
                 requires pair->low == 1;
-                owns object(pair);
+                owns *pair;
 
                 ensures ordered_pair(pair);
             } by {
@@ -13770,7 +13770,7 @@ fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
 /// A statement transition sees the complete proof context while checking its
 /// frame.
 /// `borrowed_slice_buffer_pipeline` carries `data[start] == replacement`
-/// across the `return` call's `object(owner)` effect: the frame check locates
+/// across the `return` call's `*owner` effect: the frame check locates
 /// `data + start` inside the composite buffer's owned range through the
 /// contract bounds without encoding them in the emitted statement step.
 #[test]
@@ -14132,7 +14132,7 @@ int32 span_length(struct span* span) {
 
 const OPEN_SCOPE_RETURN_CLICK: &str = r#"
 resource span_bounds(span: struct span*) {
-    owns object(span);
+    owns *span;
 }
 
 verifying "span.c";
@@ -14207,7 +14207,7 @@ void object_retain_many(struct object* obj, int32 amount) {
 const PRODUCED_RESOURCE_CLICK: &str = r#"
 authorized resource object_ref(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
-    owns object(obj);
+    owns *obj;
     fact obj->refs == count(object_ref(obj));
 }
 
@@ -14435,7 +14435,7 @@ struct node* unpack(struct node* node) {
 
 const WITNESS_RESOURCE_CLICK: &str = r#"
 resource packed(node: struct node*) {
-    owns object(node);
+    owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
 }
 
@@ -15548,7 +15548,7 @@ resource parent(p: struct parent*) {
     match link {
         ParentLink::Empty => {},
         ParentLink::Linked(kid) => {
-            owns &p->kid;
+            owns p->kid;
             fact defined(p->kid);
             fact p->kid == kid;
             fact kid != 0;
@@ -15558,7 +15558,7 @@ resource parent(p: struct parent*) {
 verifying "named.c";
 void attach(struct parent* p, struct child* kid) {
     requires kid != 0;
-    consumes &p->kid;
+    consumes p->kid;
     produces link: parent(p);
     ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;
@@ -15568,7 +15568,7 @@ void attach(struct parent* p, struct child* kid) {
     simp();
 }
 void clear_payload(struct child* kid) {
-    owns &kid->payload;
+    owns kid->payload;
     ensures kid->payload == 0;
 } by {
     execute();
@@ -15576,8 +15576,8 @@ void clear_payload(struct child* kid) {
 }
 void caller(struct parent* p, struct child* kid) {
     requires kid != 0;
-    consumes &p->kid;
-    owns &kid->payload;
+    consumes p->kid;
+    owns kid->payload;
     produces link: parent(p);
     ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;

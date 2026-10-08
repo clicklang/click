@@ -23,7 +23,7 @@ int32 box_destroy(struct box *box) {
 resource owned_box(box: struct box*) {
     if box != 0 {
         contains allocation(box, sizeof(struct box));
-        owns object(box);
+        owns *box;
     }
 }
 

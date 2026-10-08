@@ -44,8 +44,8 @@ uint32 run(struct counter* p) {
     owns authority(member(p));
     requires count(member(p)) == 0;
     owns p->value;
-    owns &p->mutex;
-    owns &p->other;
+    owns p->mutex;
+    owns p->other;
     requires aligned(&p->other, 8);
     requires aligned(&p->mutex, 8);
     ensures result == 0 or result == 3;

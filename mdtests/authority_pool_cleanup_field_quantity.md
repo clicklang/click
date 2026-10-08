@@ -28,9 +28,9 @@ void fixed(struct pool* pool) { pool_destroy(pool); }
 
 ```click resource_semantics=authority
 authorized resource pool_slot(pool: struct pool*) {}
-authorized resource pool_object(pool: struct pool*, object: struct object*) { owns object(object); }
+authorized resource pool_object(pool: struct pool*, object: struct object*) { owns *object; }
 resource pool_control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
     fact 0 <= pool->checked_out;
@@ -49,7 +49,7 @@ void pool_destroy(struct pool* pool) {
     consumes pool_control(pool);
     consumes pool->capacity of pool_slot(pool);
     requires pool->checked_out == 0;
-    produces object(pool);
+    produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
     ensures count(pool_slot(pool)) == 0;
@@ -71,7 +71,7 @@ void fixed(struct pool* pool) {
     consumes 2 of pool_slot(pool);
     requires pool->checked_out == 0;
     requires pool->capacity == 2;
-    produces object(pool);
+    produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
     ensures count(pool_slot(pool)) == 0;

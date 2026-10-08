@@ -48,7 +48,7 @@ void write_through_wrapper(struct object* obj) {
 
 ```click
 resource wrapper(obj: struct object*) {
-    owns object(obj);
+    owns *obj;
     fact obj->field == 7;
 }
 
@@ -59,7 +59,7 @@ verifying "invariant_population_body_access.c";
 
 void wrap_object(struct object* obj) {
     requires obj->field == 7;
-    consumes object(obj);
+    consumes *obj;
     produces wrapper(obj);
 } by {
     execute();
@@ -69,7 +69,7 @@ void wrap_object(struct object* obj) {
 
 void unwrap_object(struct object* obj) {
     consumes wrapper(obj);
-    produces object(obj);
+    produces *obj;
 } by {
     unfold(wrapper(obj));
     execute();
@@ -87,7 +87,7 @@ void restore_wrapper_invariant(struct object* obj) {
 
 void write_through_wrapper(struct object* obj) {
     requires obj->field == 7;
-    owns object(obj);
+    owns *obj;
 } by {
     step();
     step();

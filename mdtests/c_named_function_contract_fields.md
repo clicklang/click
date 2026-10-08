@@ -24,7 +24,7 @@ int32 use_callbacks(struct callback_table* table, int32 left, int32 right) {
 verifying "use_callbacks.c";
 
 resource callback_table_storage(p: struct callback_table*) {
-    owns object(p);
+    owns *p;
 }
 
 contract int32 Addition(int32 left, int32 right) {

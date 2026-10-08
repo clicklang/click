@@ -21,7 +21,7 @@ int32 increment_and_clear(struct pair *pair) {
 
 ```click
 resource owned_pair(pair: struct pair*) {
-    owns object(pair);
+    owns *pair;
 }
 
 verifying "certified_store_return_survives_later_fold.c";

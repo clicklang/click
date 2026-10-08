@@ -454,9 +454,9 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     let click_source = r#"
 resource owned_box(owner: struct box*) {
     owns owner->value;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..1];
-    fact separate(memory(object(owner)), memory(owner->data[0..1]));
+    fact separate(memory(*owner), memory(owner->data[0..1]));
 }
 
 verifying "box_init.c";
@@ -465,15 +465,15 @@ verifying "box_read.c";
 verifying "box_pipeline.c";
 
 int32 box_init(struct box* owner, int32 data[], int32 value) {
-    requires separate(memory(object(owner)), memory(data[0..1]));
-    consumes object(owner);
+    requires separate(memory(*owner), memory(data[0..1]));
+    consumes *owner;
     consumes data[0..1];
     produces owned_box(owner);
     ensures owner->data == data;
     ensures owner->value == 0;
 } by {
     execute();
-    have separate(memory(object(owner)), memory(owner->data[0..1])) by simp;
+    have separate(memory(*owner), memory(owner->data[0..1])) by simp;
     fold(owned_box(owner));
     simp();
 }
@@ -493,14 +493,14 @@ int32 box_set(struct box* owner, int32 value) {
     unfold(owned_box(owner));
     have owner->value < 2147483647 by simp;
     execute();
-    have separate(memory(object(owner)), memory(owner->data[0..1])) by simp;
+    have separate(memory(*owner), memory(owner->data[0..1])) by simp;
     fold(owned_box(owner));
     simp();
 }
 
 int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
-    requires separate(memory(object(owner)), memory(data[0..1]));
-    consumes object(owner);
+    requires separate(memory(*owner), memory(data[0..1]));
+    consumes *owner;
     consumes data[0..1];
     produces owned_box(owner);
     ensures result == value;
@@ -578,7 +578,7 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
     let click_source = r#"
 resource owned_box(owner: struct box*) {
     owns owner->value;
-    owns &owner->data;
+    owns owner->data;
 }
 
 verifying "box_init.c";
@@ -586,7 +586,7 @@ verifying "box_touch.c";
 verifying "box_pipeline.c";
 
 int32 box_init(struct box* owner, int32 data[], int32 value) {
-    consumes object(owner);
+    consumes *owner;
     produces owned_box(owner);
     ensures owner->data == data;
     ensures owner->value == value;
@@ -607,7 +607,7 @@ int32 box_touch(struct box* owner) {
 }
 
 int32 box_pipeline(struct box* owner, int32 data[]) {
-    consumes object(owner);
+    consumes *owner;
     produces owned_box(owner);
     ensures owner->data == data;
 } by {
@@ -704,7 +704,7 @@ verifying "increment.c";
 verifying "pipeline.c";
 
 int32 zero(struct counter* owner) {
-    consumes object(owner);
+    consumes *owner;
     produces counter(owner);
     ensures result == 0;
     ensures owner->value == 0;
@@ -727,7 +727,7 @@ int32 increment(struct counter* owner) {
 }
 
 int32 pipeline(struct counter* owner) {
-    consumes object(owner);
+    consumes *owner;
     produces counter(owner);
     ensures result == 1;
     ensures owner->value == 1;
@@ -829,35 +829,35 @@ int32 buffer_pipeline(
 resource empty_buffer(owner: struct buffer*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact owner->len == 0;
     fact 1 <= owner->cap;
     fact owner->cap <= 1073741823;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 resource buffer_storage(owner: struct buffer*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
     fact owner->cap <= 1073741823;
     fact viewable(owner->data[0..owner->len]);
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 resource nonempty_buffer(owner: struct buffer*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 1 <= owner->len;
     fact owner->len <= owner->cap;
     fact owner->cap <= 1073741823;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 verifying "buffer_init.c";
@@ -867,7 +867,7 @@ verifying "buffer_pipeline.c";
 int32 buffer_init(struct buffer* owner, int32 data[], int32 capacity) {
     requires 1 <= capacity;
     requires capacity <= 1073741823;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..capacity];
     produces empty_buffer(owner);
     ensures result == 0;
@@ -903,7 +903,7 @@ int32 buffer_pipeline(
 ) {
     requires 1 <= capacity;
     requires capacity <= 1073741823;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..capacity];
     produces nonempty_buffer(owner) by {
         execute_until(statement(2));

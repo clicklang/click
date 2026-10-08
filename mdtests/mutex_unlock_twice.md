@@ -16,7 +16,7 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_unlock_twice.c";
 void wrong(struct holder *holder) {
-    owns &holder->mu;
+    owns holder->mu;
     requires aligned(&holder->mu, 8);
     ensures 0 == 0;
 } by {

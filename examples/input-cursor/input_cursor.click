@@ -26,12 +26,12 @@ resource readable_input(data: int32*, length: int32) {
 resource input_cursor(owner: struct input_cursor*) {
     owns owner->pos;
     owns owner->len;
-    owns &owner->data;
+    owns owner->data;
     views readable_input(owner->data, owner->len);
     fact 0 <= owner->pos;
     fact owner->pos <= owner->len;
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->len])
     );
 }
@@ -49,8 +49,8 @@ int32 input_cursor_init(
     int32 length
 ) {
     requires 0 <= length;
-    requires separate(memory(object(owner)), memory(data[0..length]));
-    consumes object(owner);
+    requires separate(memory(*owner), memory(data[0..length]));
+    consumes *owner;
     views readable_input(data, length);
 
     produces input_cursor(owner);
@@ -113,12 +113,12 @@ int32 input_cursor_clone(
     struct input_cursor* target,
     struct input_cursor* source
 ) {
-    requires separate(memory(object(target)), memory(object(source)));
+    requires separate(memory(*target), memory(*source));
     requires separate(
-        memory(object(target)),
+        memory(*target),
         memory(source->data[0..source->len])
     );
-    consumes object(target);
+    consumes *target;
     views input_cursor(source);
 
     produces input_cursor(target);
@@ -143,10 +143,10 @@ int32 input_cursor_shared_pipeline(
     int32 length
 ) {
     requires 1 <= length;
-    requires separate(memory(object(left)), memory(data[0..length]));
-    requires separate(memory(object(right)), memory(data[0..length]));
-    consumes object(left);
-    consumes object(right);
+    requires separate(memory(*left), memory(data[0..length]));
+    requires separate(memory(*right), memory(data[0..length]));
+    consumes *left;
+    consumes *right;
     views readable_input(data, length);
     produces input_cursor(left);
     produces input_cursor(right);
@@ -155,11 +155,11 @@ int32 input_cursor_shared_pipeline(
     ensures result == data[0];
 } by {
     execute_until(statement(4));
-    have separate(memory(object(right)), memory(left->data[0..left->len])) by {
+    have separate(memory(*right), memory(left->data[0..left->len])) by {
         simp() using {
             left->len == length;
             left->data == data;
-            separate(memory(object(right)), memory(data[0..length]));
+            separate(memory(*right), memory(data[0..length]));
         }
     }
     have left->pos == 0 by simp;

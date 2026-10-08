@@ -22,14 +22,14 @@ verifying "call_without_ownership_true_caller.c";
 
 int32 bump() {
     requires g < 100;
-    owns &g[0..1];
+    owns g;
     ensures result == 0;
     ensures g == old(g) + 1;
 }
 
 int32 caller() {
     requires g < 100;
-    owns &g[0..1];
+    owns g;
     ensures result == old(g) + 1;
 } by {
     step();

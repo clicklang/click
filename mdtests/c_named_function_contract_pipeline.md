@@ -86,9 +86,9 @@ contract int32 Store(
 }
 
 resource callback_suite(table: struct callback_table*) {
-    owns &table->add;
-    owns &table->subtract;
-    owns &table->store;
+    owns table->add;
+    owns table->subtract;
+    owns table->store;
     fact Addition(table->add);
     fact Difference(table->subtract);
     fact Store(table->store);
@@ -131,7 +131,7 @@ int32 store_accumulator(
 ) {
     views callback_suite(table);
     owns accumulator->value;
-    requires separate(memory(object(table)), memory(object(accumulator)));
+    requires separate(memory(*table), memory(*accumulator));
     ensures result == 0;
     ensures accumulator->value == value;
 } by {
@@ -149,7 +149,7 @@ int32 run_pipeline(
 ) {
     views callback_suite(table);
     owns accumulator->value;
-    requires separate(memory(object(table)), memory(object(accumulator)));
+    requires separate(memory(*table), memory(*accumulator));
     requires defined(left + right);
     requires defined(left - right);
     requires defined((left + right) + (left - right));

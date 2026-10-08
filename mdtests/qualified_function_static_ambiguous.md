@@ -10,7 +10,7 @@ void f(int flag) {
 
 ```click
 verifying "ambiguous.c" as source;
-void f(int flag) { owns &source::f::cell[0..1]; }
+void f(int flag) { owns source::f::cell; }
 ```
 
 ```expect

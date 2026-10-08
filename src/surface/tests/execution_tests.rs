@@ -1520,7 +1520,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
         resource input_cursor(owner: struct input_cursor*) {
             owns owner->pos;
             owns owner->len;
-            owns &owner->data;
+            owns owner->data;
             views readable_input(owner->data, owner->len);
             fact 0 <= owner->pos;
             fact owner->pos <= owner->len;
@@ -1610,7 +1610,7 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
         resource owned_string(owner: struct owned_string*) {
             owns owner->len;
             owns owner->cap;
-            owns &owner->data;
+            owns owner->data;
             owns owner->data[0..owner->cap];
             fact 0 <= owner->len;
             fact owner->len < owner->cap;
@@ -1705,7 +1705,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
         resource owned_string(owner: struct owned_string*) {
             owns owner->len;
             owns owner->cap;
-            owns &owner->data;
+            owns owner->data;
             owns owner->data[0..owner->cap];
             fact 0 <= owner->len;
             fact owner->len < owner->cap;

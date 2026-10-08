@@ -1,7 +1,7 @@
 resource allocated_list(node: struct node*) {
     if node != 0 {
         contains allocation(node, sizeof(struct node));
-        owns object(node);
+        owns *node;
         contains allocated_list(node->next);
     }
 }

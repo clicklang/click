@@ -52,7 +52,7 @@ int32 unavailable_call() {
 
 int32 increment_counter() {
     requires counter < 100;
-    owns &counter[0..1];
+    owns counter;
     ensures result == 1;
     ensures counter == old(counter) + 1;
 } by {
@@ -62,7 +62,7 @@ int32 increment_counter() {
 
 int32 skip_and(int32 condition) {
     requires condition == 0;
-    owns &counter[0..1];
+    owns counter;
     ensures result == 0;
     ensures counter == old(counter);
 } by {
@@ -72,7 +72,7 @@ int32 skip_and(int32 condition) {
 
 int32 skip_or(int32 condition) {
     requires condition != 0;
-    owns &counter[0..1];
+    owns counter;
     ensures result == 1;
     ensures counter == old(counter);
 } by {
@@ -82,7 +82,7 @@ int32 skip_or(int32 condition) {
 
 int32 skip_in_loop(int32 condition) {
     requires condition == 0;
-    owns &counter[0..1];
+    owns counter;
     ensures result == 0;
     ensures counter == old(counter);
 } by {
@@ -92,7 +92,7 @@ int32 skip_in_loop(int32 condition) {
 
 int32 selected_and(int32 condition) {
     requires condition != 0 and counter < 100;
-    owns &counter[0..1];
+    owns counter;
     ensures result == 1;
     ensures counter == old(counter) + 1;
 } by {
@@ -102,7 +102,7 @@ int32 selected_and(int32 condition) {
 
 int32 selected_or(int32 condition) {
     requires condition == 0 and counter < 100;
-    owns &counter[0..1];
+    owns counter;
     ensures result == 1;
     ensures counter == old(counter) + 1;
 } by {

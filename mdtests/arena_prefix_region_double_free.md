@@ -52,7 +52,7 @@ resource arena_prefix_region(
 ) {
     field start: int32;
     field end: int32;
-    owns object(region);
+    owns *region;
     owns arena->data[start..end];
     fact region->arena == arena;
     fact region->start == start;

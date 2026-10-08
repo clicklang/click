@@ -9,7 +9,7 @@ predicate range_filled(job: struct range_job*) {
 }
 
 void *fill_range(void *argument) {
-    views &((struct range_job *)argument)->output;
+    views ((struct range_job *)argument)->output;
     views ((struct range_job *)argument)->begin;
     views ((struct range_job *)argument)->end;
     views ((struct range_job *)argument)->value;
@@ -28,7 +28,7 @@ void *fill_range(void *argument) {
     step();
     loop as fill {
         decreases job->end - index;
-        views &job->output;
+        views job->output;
         views job->begin;
         views job->end;
         views job->value;

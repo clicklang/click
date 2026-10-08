@@ -1,6 +1,6 @@
 # requiring a complete object needs alignment evidence at the call
 
-A required `object(p)` carries `aligned(p, alignof(struct))`, so a caller
+A required `*p` carries `aligned(p, alignof(struct))`, so a caller
 that holds the object's bytes without knowing the pointer's alignment cannot
 pass it.
 
@@ -23,7 +23,7 @@ int32 forward(struct pair *p) {
 verifying "aligned_object_requires_evidence.c";
 
 resource pair_storage(p: struct pair*) {
-    views object(p);
+    views *p;
     fact aligned(p, 8);
 }
 

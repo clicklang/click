@@ -43,7 +43,7 @@ resource counter_state(counter: struct counter*) {
 verifying "guarded_resource_mutex_flow.c";
 
 void keep(struct counter *counter) {
-    owns &counter->mu;
+    owns counter->mu;
     requires aligned(&counter->mu, 8);
     owns h: holding(counter);
 } by {
@@ -52,7 +52,7 @@ void keep(struct counter *counter) {
 }
 
 int32 read_counter(struct counter *counter) {
-    owns &counter->mu;
+    owns counter->mu;
     requires aligned(&counter->mu, 8);
     owns state: counter_state(counter);
     ensures result == state.value;

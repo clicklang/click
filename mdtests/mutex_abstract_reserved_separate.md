@@ -19,7 +19,7 @@ resource lifetime(holder: struct holder*) {
 verifying "mutex_abstract_reserved_separate.c";
 void write_value(struct holder *holder, int *data) {
     owns mutex_live(&holder->mu);
-    requires separate(memory(data[0..1]), memory(&holder->mu));
+    requires separate(memory(data[0..1]), memory(holder->mu));
     owns data[0..1];
 } by { execute(); simp(); }
 ```
