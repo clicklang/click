@@ -556,7 +556,7 @@ the spellings and verifies again; regressions check hostile constants, erased
 guards, full-width signs, native operand obligations, shared aliases, and
 lookup with unrelated facts. The proof notation has mathematical Integer
 semantics; C++ source division/remainder separately retains native guards and
-uses artifact schema 44.
+uses artifact schema 45.
 
 
 The shared library now exposes `integer_truncation_identity` under `d != 0`,
@@ -639,7 +639,7 @@ Regressions compare all six operations against a full-width ordering oracle,
 including signed MIN/MAX, unsigned MAX, and values above 64 bits. They cover
 true/false and complementary premises, explicit conversions, hostile operand
 arithmetic, constant work over growing ambient fact populations, and linear
-work over growing explicit operation counts. C++ schema 44 admits these
+work over growing explicit operation counts. C++ schema 45 admits these
 comparisons and requires refreshing older source locks; ordinary C and Rust
 frontend admission remains separate. Source verification, expansion, offline
 artifacts, and retained audit use the shared kernel behavior.
@@ -833,7 +833,7 @@ and signed overflow guards.
 C++ regressions cover signed/unsigned 128-bit values narrowed to signed/unsigned
 32/64-bit values, explicit casts and implicit returns, guarded native quotient
 and remainder narrowing, modular caller framing, offline artifacts, expansion,
-and retained audit. The source profile remains unchanged; the current artifact schema is 44.
+and retained audit. The source profile remains unchanged; the current artifact schema is 45.
 
 
 ## Bounded polynomial identities and quotient shifts
