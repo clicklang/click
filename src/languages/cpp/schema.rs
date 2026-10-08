@@ -300,7 +300,19 @@ pub struct CppRecord {
     pub size_bytes: u32,
     pub alignment_bytes: u32,
     pub fields: Vec<CppField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<CppBase>,
     pub destructor: Option<CppFunctionReference>,
+    pub span: CppSpan,
+}
+
+/// A distinct public, non-virtual base subobject, never a copied field list.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppBase {
+    pub value_type: CppType,
+    pub offset_bytes: u32,
+    pub size_bytes: u32,
     pub span: CppSpan,
 }
 
@@ -1060,13 +1072,18 @@ pub(super) fn record_layout_order<'a>(
     for (id, record) in records {
         crate::instrumentation::record_deterministic_work(1);
         let mut count = 0;
-        for field in &record.fields {
+        for value_type in record
+            .fields
+            .iter()
+            .map(|field| &field.value_type)
+            .chain(record.base.iter().map(|base| &base.value_type))
+        {
             crate::instrumentation::record_deterministic_work(1);
             if let CppType::Record {
                 declaration_id,
                 name,
                 is_const,
-            } = &field.value_type
+            } = value_type
             {
                 let child = validate_record_reference(records, declaration_id, name)?;
                 if *is_const || child.destructor.is_some() {
@@ -1174,9 +1191,14 @@ fn validate_reachable_records(
         let record = records
             .get(id)
             .ok_or_else(|| format!("unknown C++ record declaration `{id}`"))?;
-        for field in &record.fields {
+        for value_type in record
+            .fields
+            .iter()
+            .map(|field| &field.value_type)
+            .chain(record.base.iter().map(|base| &base.value_type))
+        {
             crate::instrumentation::record_deterministic_work(1);
-            if let CppType::Record { declaration_id, .. } = &field.value_type
+            if let CppType::Record { declaration_id, .. } = value_type
                 && referenced.insert(declaration_id.as_str())
             {
                 pending.push(declaration_id.as_str());
@@ -1191,6 +1213,9 @@ fn validate_reachable_records(
 
 impl CppRecord {
     fn require_flat_local_layout(&self) -> Result<(), String> {
+        if self.base.is_some() {
+            return Err("automatic C++ objects with base subobjects remain unsupported".into());
+        }
         if self
             .fields
             .iter()
@@ -1222,13 +1247,41 @@ impl CppRecord {
             }
             destructor.span.validate(logical_source)?;
         }
-        if self.fields.is_empty()
+        if (self.fields.is_empty() && self.base.is_none())
             || self.alignment_bytes == 0
             || !self.alignment_bytes.is_power_of_two()
             || self.size_bytes == 0
             || !self.size_bytes.is_multiple_of(self.alignment_bytes)
         {
             return Err(format!("C++ record `{}` has an invalid layout", self.name));
+        }
+        if let Some(base) = &self.base {
+            base.span.validate_in(sources)?;
+            let CppType::Record {
+                declaration_id,
+                name,
+                is_const: false,
+            } = &base.value_type
+            else {
+                return Err("C++ base subobject requires a mutable nominal record type".into());
+            };
+            let child = validate_record_reference(records, declaration_id, name)?;
+            // This first profile models data-free tagged wrappers: one complete
+            // base, no own fields, overlap, tail-padding reuse or base cleanup.
+            if base.span.file != self.span.file
+                || !self.fields.is_empty()
+                || self.destructor.is_some()
+                || child.destructor.is_some()
+                || base.offset_bytes != 0
+                || base.size_bytes != child.size_bytes
+                || self.size_bytes != child.size_bytes
+                || self.alignment_bytes != child.alignment_bytes
+            {
+                return Err(format!(
+                    "C++ record `{}` has an invalid single-base layout",
+                    self.name
+                ));
+            }
         }
         let mut identities = std::collections::BTreeSet::new();
         let mut names = std::collections::BTreeSet::new();
@@ -1511,6 +1564,9 @@ impl CppFunction {
         {
             let self_parameter = &self.parameters[0];
             let record = validate_record_reference(records, record_declaration_id, record_name)?;
+            if record.base.is_some() {
+                return Err("C++ constructors with base subobjects remain unsupported".into());
+            }
             if self.body.len() < record.fields.len() {
                 return Err(format!(
                     "C++ constructor `{}` does not initialize every field",
@@ -4445,6 +4501,7 @@ mod tests {
             alignment_bytes: 4,
             destructor: None,
             span: cleanup_span(),
+            base: None,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "value".into(),
@@ -4882,6 +4939,7 @@ mod tests {
             alignment_bytes: 8,
             destructor: None,
             span: cleanup_span(),
+            base: None,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "fee".into(),
@@ -5754,6 +5812,7 @@ mod tests {
             alignment_bytes: 4,
             destructor: None,
             span: cleanup_span(),
+            base: None,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "value".into(),
@@ -5856,6 +5915,7 @@ mod tests {
                     alignment_bytes: 4,
                     destructor: None,
                     span: cleanup_span(),
+                    base: None,
                     fields: vec![CppField {
                         declaration_id: format!("f{index}"),
                         name: "value".into(),
@@ -5943,6 +6003,7 @@ mod tests {
                 alignment_bytes: 4,
                 destructor: None,
                 span: cleanup_span(),
+                base: None,
                 fields: (0..size)
                     .map(|index| CppField {
                         declaration_id: format!("f{index}"),
@@ -6070,5 +6131,71 @@ mod tests {
             span: cleanup_span(),
         };
         assert!(!branch(unknown, vec![returned], vec![]).always_returns());
+    }
+    #[test]
+    fn single_base_inventory_walks_have_linear_work_and_reject_cycles() {
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        for size in [8, 32, 128] {
+            let mut inventory = (0..size)
+                .map(|index| CppRecord {
+                    declaration_id: format!("r{index}"),
+                    name: format!("R{index}"),
+                    size_bytes: 4,
+                    alignment_bytes: 4,
+                    destructor: None,
+                    span: cleanup_span(),
+                    base: (index + 1 < size).then(|| CppBase {
+                        value_type: CppType::Record {
+                            declaration_id: format!("r{}", index + 1),
+                            name: format!("R{}", index + 1),
+                            is_const: false,
+                        },
+                        offset_bytes: 0,
+                        size_bytes: 4,
+                        span: cleanup_span(),
+                    }),
+                    fields: if index + 1 == size {
+                        vec![CppField {
+                            declaration_id: "leaf".into(),
+                            name: "value".into(),
+                            value_type: signed_integer(32, false),
+                            offset_bytes: 0,
+                            size_bytes: 4,
+                            span: cleanup_span(),
+                        }]
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .collect::<Vec<_>>();
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+            });
+            let checked = checked.unwrap();
+            assert!(
+                work >= size && work <= 8 * size,
+                "{size} base declarations: {work} work"
+            );
+            assert_eq!(
+                record_layout_order(&checked).unwrap().first().unwrap().name,
+                format!("R{}", size - 1)
+            );
+            inventory[size - 1].fields.clear();
+            inventory[size - 1].base = Some(CppBase {
+                value_type: CppType::Record {
+                    declaration_id: "r0".into(),
+                    name: "R0".into(),
+                    is_const: false,
+                },
+                offset_bytes: 0,
+                size_bytes: 4,
+                span: cleanup_span(),
+            });
+            assert!(
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+                    .unwrap_err()
+                    .contains("by-value cycle")
+            );
+        }
     }
 }

@@ -75,10 +75,17 @@ raising its time limit.
 The audit now expands a wholly selected claim once, with all its sites, so a
 claim costs a fixed number of runs however many sites it has
 (`examples/bounded-pool`, 99 sites in 16 claims: 131 s before, 35 s after, on
-a debug build). What remains of this bug is a partial selection (`--start-at`
-inside a claim, `--max-sites`, `--changed-since`): it is still audited a site
-at a time and still runs the claim once per site. A wholly selected claim
-whose expansion fails now fails the audit directly.
+a debug build). A `--max-sites` limit also keeps that batching for every
+complete claim covered by its remaining site allowance; merely setting a
+limit no longer forces all claims through per-site expansion. Exact and
+larger limits retain whole-claim failure reporting, while a limit cutting
+through a claim still audits only the permitted sites.
+
+What remains of this bug is a partial selection (`--start-at` inside a claim,
+`--max-sites` cutting through a claim, `--changed-since` selecting only some
+sites): it is still audited a site at a time and still runs the claim once
+per site. A wholly selected claim whose expansion fails now fails the audit
+directly.
 
 ## Intended regression
 

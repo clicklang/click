@@ -4565,7 +4565,7 @@ fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("stage_restore.cpp:2"), "{error}");
-    assert!(error.contains("have no bases"), "{error}");
+    assert!(error.contains("no own fields"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -4835,10 +4835,7 @@ fn cpp_frontend_rejects_unsupported_source_without_a_c_fallback() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("increment.cpp:1"), "{error}");
-    assert!(
-        error.contains("standard-layout and trivially-copyable"),
-        "{error}"
-    );
+    assert!(error.contains("record must be standard-layout"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -6128,7 +6125,7 @@ fn class_template_instances_retain_argument_and_layout_boundaries() {
         ),
         (
             "struct Base { int value; }; template<class T> struct Box : Base {}; int call(const Box<int>& box) noexcept { return box.value; }",
-            "have no bases",
+            "base-subobject projections",
         ),
         (
             "template<class T> struct Box { int value; }; int call(const Box<int*>& box) noexcept { return box.value; }",
@@ -6152,6 +6149,162 @@ fn class_template_instances_retain_argument_and_layout_boundaries() {
         assert!(error.contains(diagnostic), "{error}");
         assert!(!project.artifact().exists());
     }
+}
+
+const BASE_LAYOUT_SOURCE: &str = r#"
+struct Base { long long fee; int size; };
+struct SizeTag {}; struct WeightTag {};
+template<class Tag> struct Rate : public Base {};
+struct Envelope { Rate<SizeTag> left; Rate<WeightTag> right; int untouched; };
+int read(const Envelope& state) noexcept { return state.untouched; }
+"#;
+
+#[test]
+fn single_base_layouts_preserve_nominal_subobjects_and_verify_offline() {
+    let project = Project::with_fixture("bases.cpp", "read", BASE_LAYOUT_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().records.len(), 4);
+    let base = import
+        .export()
+        .records
+        .iter()
+        .find(|record| record.name == "Base")
+        .unwrap();
+    let mut identities = std::collections::BTreeSet::new();
+    for record in import
+        .export()
+        .records
+        .iter()
+        .filter(|record| record.base.is_some())
+    {
+        assert!(record.fields.is_empty());
+        assert!(identities.insert(record.declaration_id.clone()));
+        let subobject = record.base.as_ref().unwrap();
+        assert_eq!(
+            subobject.value_type,
+            CppType::Record {
+                declaration_id: base.declaration_id.clone(),
+                name: "Base".into(),
+                is_const: false,
+            }
+        );
+        assert_eq!(subobject.offset_bytes, 0);
+        assert_eq!(subobject.size_bytes, base.size_bytes);
+    }
+    assert_eq!(identities.len(), 2);
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"
+        verifying "bases.cpp";
+        int32 read(const struct Envelope* state) {
+            views state->left.base.fee; views state->right.base.size;
+            views state->untouched;
+            ensures result == state->untouched;
+            ensures state->left.base.fee == old(state->left.base.fee);
+            ensures state->right.base.size == old(state->right.base.size);
+        } by { execute(); simp(); }
+    "#,
+    );
+}
+
+#[test]
+fn single_base_layouts_reject_forged_edges_layouts_and_flattened_fields() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture("bases.cpp", "read", BASE_LAYOUT_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let original_lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let index = artifact["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|record| record.get("base").is_some())
+        .unwrap();
+    for mutation in 0..8 {
+        let mut hostile = artifact.clone();
+        let record = &mut hostile["records"][index];
+        match mutation {
+            0 => record["base"]["value_type"]["declaration_id"] = "unknown".into(),
+            1 => record["base"]["value_type"]["name"] = "Other".into(),
+            2 => record["base"]["offset_bytes"] = 4.into(),
+            3 => record["base"]["size_bytes"] = 8.into(),
+            4 => record["size_bytes"] = 32.into(),
+            5 => record["base"]["value_type"]["is_const"] = true.into(),
+            6 => {
+                record["base"]["value_type"]["declaration_id"] = record["declaration_id"].clone();
+                record["base"]["value_type"]["name"] = record["name"].clone();
+            }
+            7 => {
+                let fields = artifact["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["name"] == "Base")
+                    .unwrap()["fields"]
+                    .clone();
+                record["fields"] = fields;
+                record.as_object_mut().unwrap().remove("base");
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&hostile).unwrap();
+        let mut lock = original_lock.clone();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "accepted base mutation {mutation}"
+        );
+    }
+}
+
+#[test]
+fn single_base_layouts_retain_source_and_execution_boundaries() {
+    for (declaration, diagnostic) in [
+        ("struct Rate : private Base {};", "public non-virtual"),
+        ("struct Rate : virtual Base {};", "public non-virtual"),
+        (
+            "struct Other { int value; }; struct Rate : Base, Other {};",
+            "one public non-virtual base",
+        ),
+        ("struct Rate : Base { int extra; };", "no own fields"),
+        (
+            "struct Empty {}; struct Rate : Empty {};",
+            "at least one field",
+        ),
+        (
+            "struct Rate : Base { ~Rate() noexcept { } };",
+            "trivial copying/destruction",
+        ),
+    ] {
+        let source = format!(
+            "struct Base {{ int value; }}; {declaration} int read(const Rate& state) noexcept {{ return 7; }}"
+        );
+        let project = Project::with_fixture("unsupported_base.cpp", "read", &source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+    let source = "struct Base { int value; }; struct Rate : Base {}; int read(const Rate& state) noexcept { return state.value; }";
+    let project = Project::with_fixture("inherited.cpp", "read", source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("base-subobject projections"), "{error}");
+    assert!(!project.artifact().exists());
+    let source = "struct Base { int value; }; struct Rate : Base { explicit Rate(int next) noexcept : Base{next} {} }; int read(int next) noexcept { Rate state(next); return 7; }";
+    let project = Project::with_fixture("constructed_base.cpp", "read", source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("constructors with base subobjects"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
 }
 
 const SIGNED_CONVERSION_SOURCE: &str =
@@ -10741,7 +10894,7 @@ fn class_record_import_keeps_cpp_access_control_and_layout_restrictions() {
                 "class FeeRateState {",
                 "struct Base { int value; };\nclass FeeRateState : public Base {",
             ),
-            "have no bases",
+            "no own fields",
         ),
         (
             source.replace("    int size;", "    int size : 4;"),

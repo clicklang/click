@@ -1506,7 +1506,7 @@ fn function_claim_holds_on_prepared_path(
                 // proof ran at certifies a path rebased from it.
                 let completion_state = proof.specification.state();
                 if proof.function != *function
-                    || (completion_state != caller_state
+                    || (!completion_state.equal_up_to_unused_creation_ledgers(caller_state)
                         && Some(completion_state) != completion_origin_state)
                     || proof.specification.arguments() != arguments
                     || !c_function_outcomes_definitionally_equal(

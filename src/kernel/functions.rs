@@ -2238,8 +2238,8 @@ pub(super) fn execute_c_function_verification_paths(
 }
 
 /// Whether any resource the contract moves can touch a population: a
-/// population authority, a mutex protocol resource, an abstract token, or a
-/// family that reaches an authorized family. A contract over ordinary
+/// population authority, a mutex protocol resource, an abstract token not
+/// known to be ordinary, or a family that reaches an authorized family. A contract over ordinary
 /// families and memory alone has no population effect.
 pub(super) fn contract_reaches_population(interface: &CFunctionContractInterface) -> bool {
     interface
@@ -2257,6 +2257,12 @@ fn spec_reaches_population(interface: &CFunctionContractInterface, spec: &CResou
     ) || matches!(spec.term(), CResourceTerm::PopulationAuthority { .. })
     {
         return true;
+    }
+    if let CResourceTerm::Token { name, .. } = spec.term()
+        && (name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            || interface.is_ordinary_abstract_family(name))
+    {
+        return false;
     }
     match spec.contained_definition_name() {
         Some(name) => interface
@@ -33622,6 +33628,25 @@ mod population_creation_frame_tests {
             );
         assert!(contract_reaches_population(minting.contract_interface()));
         assert!(refused(&call(&minting)));
+    }
+
+    #[test]
+    fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
+        let left = CState::new().with_population_creation_tracking();
+        let right = CState::new().with_population_creation_tracking();
+        assert_ne!(left, right, "fresh ledgers have distinct identities");
+        assert!(left.equal_up_to_unused_creation_ledgers(&right));
+        assert!(!left.equal_up_to_unused_creation_ledgers(&CState::new()));
+
+        let mut base = CState::new().with_local("frame:holder", int32(0));
+        let block = base.locals.slot("frame:holder").unwrap().block.clone();
+        base.set_memory(CMemory::new().with_block(block.clone(), 4));
+        let unused = base.clone().with_population_creation_tracking();
+        let mut used = base.with_population_creation_tracking();
+        assert!(used.equal_up_to_unused_creation_ledgers(&unused));
+        used.record_population_storage_creation(block);
+        assert!(!used.equal_up_to_unused_creation_ledgers(&unused));
+        assert!(!unused.equal_up_to_unused_creation_ledgers(&used));
     }
 
     #[test]

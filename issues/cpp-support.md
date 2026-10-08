@@ -861,8 +861,8 @@ remain necessary, with no runtime access-control assumption or kernel change.
 Synthetic const readers and mutable methods cover ordinary, expanded and
 retained verification, false frames/values, missing authority and read-only
 writes. Illegal source access, unions, mixed-access non-standard layouts,
-inheritance and bit-fields remain refused. Exporter refusal diagnostics now
-use the actual source/header path instead of attributing a header line to the
+general inheritance and bit-fields remain refused. Exporter refusal diagnostics
+now use the actual source/header path instead of attributing a header line to the
 selected translation unit.
 
 Reachable record declarations now retain spans in explicitly locked project
@@ -907,9 +907,10 @@ spans, read-only roots, missing/wrong sibling authority and unsupported projecte
 place consumers are refused. Deterministic regressions cover increasing path
 depth and sibling populations.
 
-The pinned unchanged `CFeeRate::GetFee` regression now reaches the inherited
-base-subobject boundary of `FeePerVSize` in `util/feefrac.h`, with a bounded
-diagnostic and no partial artifact. The wrapper is not verified yet.
+The pinned unchanged `CFeeRate::GetFee` regression now passes the `FeePerVSize`
+record-layout boundary and stops at the method call in its `IsEmpty()` condition
+in `policy/feerate.cpp:23`, with a bounded diagnostic and no partial artifact.
+The wrapper is not verified yet.
 
 Projected method receivers and record/scalar reference arguments now use the
 same ordered field paths. Call validation resolves the projected nominal type
@@ -949,13 +950,23 @@ receiver binding. Instantiated storage, constructor/method/destructor calls and
 automatic-object reference representation are covered alongside ordinary records.
 Clang completes reachable unused parameter specializations before exporting
 layout. Unsupported arguments, incomplete declarations, colliding record names
-and inheritance fail without an artifact.
+and unsupported inheritance fail without an artifact.
 
-Next support a precise base-subobject representation for the inherited
-`FeePerVSize` field.
-Preserve declaration identity, layout and field authority instead of flattening
-inheritance into matching field names. Automatic objects with embedded records,
-nontrivial embedded destruction and cross-header executable graphs remain
+Single public non-virtual base layouts now retain a distinct nominal base edge,
+Clang's offset/size/alignment and the base-specifier source span. Data-free,
+standard-layout, trivially copied/destructed wrappers preserve the complete
+base layout at offset zero. Sidecars use `base` as a separate nested layout;
+ordinary/expanded/retained offline proofs preserve base-field sibling frames
+through containing records and distinct tagged instances. Recomputed artifacts
+reject forged base identities/names/layouts, cycles and copied field lists.
+Deterministic multi-size checks cover the shared declaration graph walk.
+
+Next add ordered base-subobject projections for inherited field accesses and
+derived-to-base method/reference receivers. Method calls in conditions (the
+current unchanged `GetFee` refusal) also need explicit evaluation normalization.
+Preserve root constness, exact nominal identities, byte offsets and field
+authority through mixed field/base paths. Keep base edges distinct from actual field declarations.
+Automatic objects with embedded records, nontrivial embedded destruction and cross-header executable graphs remain
 separate prerequisites, rather than being inferred from declaration support.
 Compose `IsEmpty` and the unified Up contract only after those prerequisites.
 State empty-rate behavior separately from the positive-size result-fit profile.

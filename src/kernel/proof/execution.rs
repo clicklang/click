@@ -1763,6 +1763,14 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
+        // A family that reaches no population keeps its ordinary definition
+        // law; only population-reaching bodies take the checks below.
+        let reaches_population = match selected.resource() {
+            CResource::Composite { name, .. } => function
+                .composite_resource_definition(name)
+                .is_none_or(|definition| definition.reaches_population()),
+            _ => true,
+        };
         if before_state.uses_population_authority_semantics()
             && !matches!(selected.resource(), CResource::Instance(_))
         {
@@ -1804,7 +1812,7 @@ impl CheckedResourceRewrite {
                     )
                 })
             {
-                return Self::check_transfer_wrapper(
+                let checked = Self::check_transfer_wrapper(
                     before_state,
                     before_facts,
                     selected,
@@ -1812,8 +1820,13 @@ impl CheckedResourceRewrite {
                     after_facts,
                     call_events,
                     definition,
-                    selected_children,
+                    selected_children.clone(),
                 );
+                // A wrapper that reaches no population and has a body this
+                // delta check does not model keeps its ordinary definition law.
+                if checked.is_ok() || reaches_population {
+                    return checked;
+                }
             }
             // Population accounting covers only `authorized resource`
             // families; any other family keeps its ordinary definition law.
@@ -3026,7 +3039,18 @@ impl CheckedResourceObservation {
         derivations: &PersistentOrderedSet<Theorem>,
         call_events: &CheckedCallEvents,
     ) -> Result<Self, &'static str> {
-        if before_state.uses_population_authority_semantics() {
+        // Only an authorized family has a population count to observe; any
+        // other observation is an ordinary resource observation.
+        let counted = match observed.resource() {
+            crate::kernel::CResource::Composite { name, .. } => function
+                .composite_resource_definition(name)
+                .is_none_or(|definition| definition.is_authorized()),
+            crate::kernel::CResource::Token { name, .. } => !function
+                .contract_interface()
+                .is_ordinary_abstract_family(name),
+            _ => true,
+        };
+        if before_state.uses_population_authority_semantics() && counted {
             let unchanged = before_state.memory.diagnostic_identity()
                 == after_state.memory.diagnostic_identity()
                 && before_state.shares_non_memory_storage_with(after_state)
@@ -14880,7 +14904,8 @@ mod population_authority_rewrite_tests {
                 false,
                 vec![],
                 vec![],
-            );
+            )
+            .with_authorized(true);
             let (mut state, _) = state
                 .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
                 .unwrap();
