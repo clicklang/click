@@ -1,8 +1,8 @@
 verifying "class_record.cpp";
 
-void FeeRateState_SetFee(struct FeeRateState* self, int64 next) {
-    owns self->fee;
-    views self->size;
-    ensures self->fee == next;
-    ensures self->size == old(self->size);
+void FeeRateState_SetFee(struct FeeRateState* this, int64 next) {
+    owns this->fee;
+    views this->size;
+    ensures this->fee == next;
+    ensures this->size == old(this->size);
 } by { execute(); simp(); }

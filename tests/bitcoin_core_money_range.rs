@@ -363,42 +363,42 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             }
         } else if phase == Some(RoundingPhase::Rejections) {
             let (from, to) = match name {
-                "CFeeRateGetFeeMissingFeeAuthority" => ("views self->m_feerate.base.fee;", ""),
-                "CFeeRateGetFeeMissingSizeAuthority" => ("views self->m_feerate.base.size;", ""),
+                "CFeeRateGetFeeMissingFeeAuthority" => ("views this->m_feerate.base.fee;", ""),
+                "CFeeRateGetFeeMissingSizeAuthority" => ("views this->m_feerate.base.size;", ""),
                 "CFeeRateGetFeeMissingAmountGuard" => ("requires 0 <= virtual_bytes;", ""),
                 "CFeeRateGetFeeMissingSizeGuard" => {
-                    ("requires self->m_feerate.base.size >= 0;", "")
+                    ("requires this->m_feerate.base.size >= 0;", "")
                 }
                 "CFeeRateGetFeeMissingLowerFit" => (
-                    "requires self->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes);",
+                    "requires this->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);",
                     "",
                 ),
                 "CFeeRateGetFeeMissingUpperFit" => (
-                    "requires self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size);",
+                    "requires this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(this->m_feerate.base.size);",
                     "",
                 ),
                 "CFeeRateGetFeeInclusiveLowerFit" => (
-                    "-9223372036854775809 * to_integer(self->m_feerate.base.size) <",
-                    "-9223372036854775809 * to_integer(self->m_feerate.base.size) <=",
+                    "-9223372036854775809 * to_integer(this->m_feerate.base.size) <",
+                    "-9223372036854775809 * to_integer(this->m_feerate.base.size) <=",
                 ),
                 "CFeeRateGetFeeFalseEmpty" => (
-                    "self->m_feerate.base.size == 0 implies result == 0i64",
-                    "self->m_feerate.base.size == 0 implies result == 1i64",
+                    "this->m_feerate.base.size == 0 implies result == 0i64",
+                    "this->m_feerate.base.size == 0 implies result == 1i64",
                 ),
                 "CFeeRateGetFeeFalseCorrection" => (
                     "or (result == -1i64 and virtual_bytes",
                     "or (result == 0i64 and virtual_bytes",
                 ),
                 "CFeeRateGetFeeMissingFeeBounds" => (
-                    "requires self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) <= 9223372036854775807;",
+                    "requires this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807;",
                     "",
                 ),
                 "CFeeRateGetFeePerKMissingSizeGuard" => {
-                    ("requires self->m_feerate.base.size > 0;", "")
+                    ("requires this->m_feerate.base.size > 0;", "")
                 }
-                "CFeeRateGetFeePerKMissingFeeAuthority" => ("views self->m_feerate.base.fee;", ""),
+                "CFeeRateGetFeePerKMissingFeeAuthority" => ("views this->m_feerate.base.fee;", ""),
                 "CFeeRateGetFeePerKMissingLowerFit" => (
-                    "requires -9223372036854775808 * to_integer(self->m_feerate.base.size) <= to_integer(self->m_feerate.base.fee) * 1000;",
+                    "requires -9223372036854775808 * to_integer(this->m_feerate.base.size) <= to_integer(this->m_feerate.base.fee) * 1000;",
                     "",
                 ),
                 "CFeeRateGetFeePerKInclusiveUpperFit" => (
@@ -555,14 +555,14 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let hostile = if name.contains("ResultFit") && name.ends_with("SymbolicFast") {
             let down = selected.ends_with("Down");
             let fit = if down {
-                "requires to_integer(self->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(self->size);"
+                "requires to_integer(this->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(this->size);"
             } else {
-                "requires to_integer(self->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(self->size);"
+                "requires to_integer(this->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(this->size);"
             };
             if phase == Some(RoundingPhase::Rejections) {
                 vec![
-                    source.replace("views self->size;", ""),
-                    source.replace("requires self->size > 0;", ""),
+                    source.replace("views this->size;", ""),
+                    source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
                     source.replace("requires at_size <= 2147483647;", ""),
                     source.replace(fit, ""),
@@ -580,22 +580,22 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 ]
             } else if phase == Some(RoundingPhase::NumeratorRejections) {
                 let mut cases = vec![
-                    source.replace("apply(uint64_multiply_to_integer((uint64)self->fee, (uint64)at_size));", ""),
-                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)(uint32)self->size));" } else { "apply(uint64_divide_to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64), (uint64)(uint32)self->size));" }, ""),
+                    source.replace("apply(uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
+                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
                 ];
                 if !down {
                     cases.extend([
-                        source.replace("apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));", ""),
-                        source.replace("apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));", ""),
-                        source.replace("== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1", "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 2"),
+                        source.replace("apply(uint64_add_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)this->size));", ""),
+                        source.replace("apply(uint64_subtract_to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size), 1u64));", ""),
+                        source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]);
                 }
                 cases
             } else if phase == Some(RoundingPhase::TransportRejections) {
                 vec![
-                    source.replace("requires self->fee < 8589934592i64;", ""),
-                    source.replace("requires to_integer(self->fee) <= 8589934591;", ""),
-                    source.replace("requires 0 <= to_integer(self->fee);", ""),
+                    source.replace("requires this->fee < 8589934592i64;", ""),
+                    source.replace("requires to_integer(this->fee) <= 8589934591;", ""),
+                    source.replace("requires 0 <= to_integer(this->fee);", ""),
                 ]
             } else {
                 assert!(phase == Some(RoundingPhase::RoundingRejections));
@@ -606,33 +606,33 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                     ),
                     source.replace(
                         if down {
-                            "(to_integer(result) + 1) * to_integer(self->size)"
+                            "(to_integer(result) + 1) * to_integer(this->size)"
                         } else {
-                            "(to_integer(result) + -1) * to_integer(self->size)"
+                            "(to_integer(result) + -1) * to_integer(this->size)"
                         },
-                        "to_integer(result) * to_integer(self->size)",
+                        "to_integer(result) * to_integer(this->size)",
                     ),
                 ]
             }
         } else if name.contains("ResultFit") && name.ends_with("Unified") {
             let down = selected.ends_with("Down");
             let lower = if down {
-                "requires -9223372036854775808 * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size);"
+                "requires -9223372036854775808 * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size);"
             } else {
-                "requires -9223372036854775809 * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size);"
+                "requires -9223372036854775809 * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size);"
             };
             let upper = if down {
-                "requires to_integer(self->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(self->size);"
+                "requires to_integer(this->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(this->size);"
             } else {
-                "requires to_integer(self->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(self->size);"
+                "requires to_integer(this->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(this->size);"
             };
             match phase.unwrap() {
                 RoundingPhase::AuthorityRejections => vec![
-                    source.replace("views self->fee;", ""),
-                    source.replace("views self->size;", ""),
+                    source.replace("views this->fee;", ""),
+                    source.replace("views this->size;", ""),
                 ],
                 RoundingPhase::Rejections => vec![
-                    source.replace("requires self->size > 0;", ""),
+                    source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
                     source.replace("requires at_size <= 2147483647;", ""),
                 ],
@@ -641,27 +641,27 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                     vec![source.replace(lower, ""), source.replace(upper, ""), source.replace(strict, &strict.replace(" < ", " <= "))]
                 }
                 RoundingPhase::TransportRejections => vec![
-                    source.replace("requires -9223372036854775808 <= to_integer(self->fee);", ""),
-                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
-                    source.replace("apply(int64_greater_equal_to_integer(self->fee, 0i64));", ""),
-                    source.replace("apply(int64_less_than_to_integer(self->fee, 8589934592i64));", ""),
+                    source.replace("requires -9223372036854775808 <= to_integer(this->fee);", ""),
+                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
+                    source.replace("apply(int64_greater_equal_to_integer(this->fee, 0i64));", ""),
+                    source.replace("apply(int64_less_than_to_integer(this->fee, 8589934592i64));", ""),
                 ],
                 RoundingPhase::RoundingRejections => vec![
-                    source.replace(if down { "(to_integer(result) + 1) * to_integer(self->size)" } else { "(to_integer(result) + -1) * to_integer(self->size)" }, "to_integer(result) * to_integer(self->size)"),
-                    source.replace(if down { "to_integer(result) * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size)" } else { "to_integer(self->fee) * to_integer(at_size) <= to_integer(result) * to_integer(self->size)" }, if down { "to_integer(result) * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size)" } else { "to_integer(self->fee) * to_integer(at_size) < to_integer(result) * to_integer(self->size)" }),
+                    source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
+                    source.replace(if down { "to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) <= to_integer(result) * to_integer(this->size)" }, if down { "to_integer(result) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) < to_integer(result) * to_integer(this->size)" }),
                 ],
                 RoundingPhase::NumeratorRejections => vec![
-                    source.replace("apply(uint64_multiply_to_integer((uint64)self->fee, (uint64)at_size));", ""),
-                    source.replace("to_integer(product) == to_integer(self->fee) * to_integer(at_size)", "to_integer(product) == to_integer(self->fee) * to_integer(at_size) + 1"),
-                    source.replace("to_integer(negative_product) == to_integer(self->fee) * to_integer(at_size)", "to_integer(negative_product) == to_integer(self->fee) * to_integer(at_size) + 1"),
-                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)(uint32)self->size));" } else { "apply(uint64_divide_to_integer(((((uint64)self->fee * (uint64)at_size) + (uint64)self->size) - 1u64), (uint64)(uint32)self->size));" }, ""),
+                    source.replace("apply(uint64_multiply_to_integer((uint64)this->fee, (uint64)at_size));", ""),
+                    source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
+                    source.replace("to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(negative_product) == to_integer(this->fee) * to_integer(at_size) + 1"),
+                    source.replace(if down { "apply(uint64_divide_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)(uint32)this->size));" } else { "apply(uint64_divide_to_integer(((((uint64)this->fee * (uint64)at_size) + (uint64)this->size) - 1u64), (uint64)(uint32)this->size));" }, ""),
                 ],
                 RoundingPhase::AdjustedNumeratorRejections => {
                     assert!(!down);
                     vec![
-                        source.replace("apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));", ""),
-                        source.replace("apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));", ""),
-                        source.replace("== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1", "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 2"),
+                        source.replace("apply(uint64_add_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)this->size));", ""),
+                        source.replace("apply(uint64_subtract_to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size), 1u64));", ""),
+                        source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]
                 }
                 _ => unreachable!(),
@@ -669,20 +669,20 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         } else if name.contains("ResultFit") {
             let down = selected.ends_with("Down");
             let lower = if down {
-                "requires -9223372036854775808 * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size);"
+                "requires -9223372036854775808 * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size);"
             } else {
-                "requires -9223372036854775809 * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size);"
+                "requires -9223372036854775809 * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size);"
             };
             let upper = if down {
-                "requires to_integer(self->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(self->size);"
+                "requires to_integer(this->fee) * to_integer(at_size) < 9223372036854775808 * to_integer(this->size);"
             } else {
-                "requires to_integer(self->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(self->size);"
+                "requires to_integer(this->fee) * to_integer(at_size) <= 9223372036854775807 * to_integer(this->size);"
             };
             if phase == Some(RoundingPhase::Rejections) {
                 let strict = if down { upper } else { lower };
                 vec![
-                    source.replace("views self->size;", ""),
-                    source.replace("requires self->size > 0;", ""),
+                    source.replace("views this->size;", ""),
+                    source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
                     source.replace("requires at_size <= 2147483647;", ""),
                     source.replace(lower, ""),
@@ -691,34 +691,34 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 ]
             } else {
                 vec![
-                    source.replace(if name.ends_with("Negative") { "requires not (self->fee >= 0i64);" } else { "requires self->fee >= 0i64 and not (self->fee < 8589934592i64);" }, ""),
-                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
-                    source.replace("to_integer(product) == to_integer(self->fee) * to_integer(at_size)", "to_integer(product) == to_integer(self->fee) * to_integer(at_size) + 1"),
-                    source.replace(if down { "(to_integer(result) + 1) * to_integer(self->size)" } else { "(to_integer(result) + -1) * to_integer(self->size)" }, "to_integer(result) * to_integer(self->size)"),
-                    source.replace(if down { "to_integer(result) * to_integer(self->size) <= to_integer(self->fee) * to_integer(at_size)" } else { "to_integer(self->fee) * to_integer(at_size) <= to_integer(result) * to_integer(self->size)" }, if down { "to_integer(result) * to_integer(self->size) < to_integer(self->fee) * to_integer(at_size)" } else { "to_integer(self->fee) * to_integer(at_size) < to_integer(result) * to_integer(self->size)" }),
+                    source.replace(if name.ends_with("Negative") { "requires not (this->fee >= 0i64);" } else { "requires this->fee >= 0i64 and not (this->fee < 8589934592i64);" }, ""),
+                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
+                    source.replace("to_integer(product) == to_integer(this->fee) * to_integer(at_size)", "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1"),
+                    source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
+                    source.replace(if down { "to_integer(result) * to_integer(this->size) <= to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) <= to_integer(result) * to_integer(this->size)" }, if down { "to_integer(result) * to_integer(this->size) < to_integer(this->fee) * to_integer(at_size)" } else { "to_integer(this->fee) * to_integer(at_size) < to_integer(result) * to_integer(this->size)" }),
                 ]
             }
         } else if name.ends_with("Unified") {
             if phase == Some(RoundingPhase::Rejections) {
                 vec![
-                    source.replace("views self->size;", ""),
-                    source.replace("requires self->size > 0;", ""),
+                    source.replace("views this->size;", ""),
+                    source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
-                    source.replace("requires at_size <= self->size;", ""),
+                    source.replace("requires at_size <= this->size;", ""),
                 ]
             } else {
                 vec![
-                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
+                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
                     source.replace(
                         if selected.ends_with("Down") {
-                            "(to_integer(result) + 1) * to_integer(self->size)"
+                            "(to_integer(result) + 1) * to_integer(this->size)"
                         } else {
-                            "(to_integer(result) + -1) * to_integer(self->size)"
+                            "(to_integer(result) + -1) * to_integer(this->size)"
                         },
-                        "to_integer(result) * to_integer(self->size)",
+                        "to_integer(result) * to_integer(this->size)",
                     ),
                     source.replace(
-                        "apply(int64_less_than_to_integer(self->fee, 8589934592i64));",
+                        "apply(int64_less_than_to_integer(this->fee, 8589934592i64));",
                         "",
                     ),
                 ]
@@ -728,87 +728,87 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 assert!(selected.ends_with("Up"));
                 vec![
                     source.replace(
-                        "apply(uint64_add_to_integer(((uint64)self->fee * (uint64)at_size), (uint64)self->size));",
+                        "apply(uint64_add_to_integer(((uint64)this->fee * (uint64)at_size), (uint64)this->size));",
                         "",
                     ),
                     source.replace(
-                        "apply(uint64_subtract_to_integer((((uint64)self->fee * (uint64)at_size) + (uint64)self->size), 1u64));",
+                        "apply(uint64_subtract_to_integer((((uint64)this->fee * (uint64)at_size) + (uint64)this->size), 1u64));",
                         "",
                     ),
                     source.replace(
-                        "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 1",
-                        "== to_integer(self->fee) * to_integer(at_size) + to_integer(self->size) - 2",
+                        "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1",
+                        "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2",
                     ),
                 ]
             } else if phase == Some(RoundingPhase::Rejections) {
                 vec![
-                    source.replace("views self->size;", ""),
-                    source.replace("requires self->size > 0;", ""),
+                    source.replace("views this->size;", ""),
+                    source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
-                    source.replace("requires at_size <= self->size;", ""),
+                    source.replace("requires at_size <= this->size;", ""),
                 ]
             } else {
                 vec![
-                    source.replace("requires self->fee < 8589934592i64;", ""),
-                    source.replace("requires to_integer(self->fee) <= 8589934591;", ""),
-                    source.replace("requires 0 <= to_integer(self->fee);", ""),
+                    source.replace("requires this->fee < 8589934592i64;", ""),
+                    source.replace("requires to_integer(this->fee) <= 8589934591;", ""),
+                    source.replace("requires 0 <= to_integer(this->fee);", ""),
                     source.replace(
                         "ensures to_integer(result) == truncating_quotient(",
                         "ensures to_integer(result) != truncating_quotient(",
                     ),
                     source.replace(
                         if selected.ends_with("Down") {
-                            "(to_integer(result) + 1) * to_integer(self->size)"
+                            "(to_integer(result) + 1) * to_integer(this->size)"
                         } else {
-                            "(to_integer(result) + -1) * to_integer(self->size)"
+                            "(to_integer(result) + -1) * to_integer(this->size)"
                         },
-                        "to_integer(result) * to_integer(self->size)",
+                        "to_integer(result) * to_integer(this->size)",
                     ),
                 ]
             }
         } else if name.ends_with("Negative") || name.ends_with("PositiveWide") {
             if phase == Some(RoundingPhase::Rejections) {
                 vec![
-                    source.replace("views self->size;", ""),
-                    source.replace("requires self->size > 0;", ""),
+                    source.replace("views this->size;", ""),
+                    source.replace("requires this->size > 0;", ""),
                     source.replace("requires 0 <= at_size;", ""),
-                    source.replace("requires at_size <= self->size;", ""),
+                    source.replace("requires at_size <= this->size;", ""),
                 ]
             } else {
                 vec![
                     source.replace(
                         if name.ends_with("Negative") {
-                            "requires not (self->fee >= 0i64);"
+                            "requires not (this->fee >= 0i64);"
                         } else {
-                            "requires self->fee >= 0i64 and not (self->fee < 8589934592i64);"
+                            "requires this->fee >= 0i64 and not (this->fee < 8589934592i64);"
                         },
                         "",
                     ),
-                    source.replace("requires to_integer(self->fee) <= 9223372036854775807;", ""),
+                    source.replace("requires to_integer(this->fee) <= 9223372036854775807;", ""),
                     source
-                        .replace("* to_integer(self->size) <=", "* to_integer(self->size) <")
+                        .replace("* to_integer(this->size) <=", "* to_integer(this->size) <")
                         .replace(
-                            "<= to_integer(result) * to_integer(self->size)",
-                            "< to_integer(result) * to_integer(self->size)",
+                            "<= to_integer(result) * to_integer(this->size)",
+                            "< to_integer(result) * to_integer(this->size)",
                         ),
                     source.replace(
-                        "to_integer(product) == to_integer(self->fee) * to_integer(at_size)",
-                        "to_integer(product) == to_integer(self->fee) * to_integer(at_size) + 1",
+                        "to_integer(product) == to_integer(this->fee) * to_integer(at_size)",
+                        "to_integer(product) == to_integer(this->fee) * to_integer(at_size) + 1",
                     ),
                     source.replace(
                         if selected.ends_with("Down") {
-                            "(to_integer(result) + 1) * to_integer(self->size)"
+                            "(to_integer(result) + 1) * to_integer(this->size)"
                         } else {
-                            "(to_integer(result) + -1) * to_integer(self->size)"
+                            "(to_integer(result) + -1) * to_integer(this->size)"
                         },
-                        "to_integer(result) * to_integer(self->size)",
+                        "to_integer(result) * to_integer(this->size)",
                     ),
                 ]
             }
         } else {
             vec![
-                source.replace("views self->size;", ""),
-                source.replace("requires self->size == 3;", ""),
+                source.replace("views this->size;", ""),
+                source.replace("requires this->size == 3;", ""),
                 source.replace("requires at_size == 2;", ""),
                 source.replace("ensures result ==", "ensures result !="),
             ]
@@ -1065,15 +1065,15 @@ fn pinned_std_span_size_preserves_full_width_extent_offline() {
             .all(|function| function.span.file == "sysroot/usr/include/c++/12/span")
     );
     let source = r#"verifying "span-probe.cpp";
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* self) {
- owns self->_M_extent_value;
- ensures result == self->_M_extent_value;
- ensures self->_M_extent_value == old(self->_M_extent_value);
+uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
+ owns this->_M_extent_value;
+ ensures result == this->_M_extent_value;
+ ensures this->_M_extent_value == old(this->_M_extent_value);
 } by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* self) {
- owns self->_M_extent._M_extent_value;
- ensures result == self->_M_extent._M_extent_value;
- ensures self->_M_extent._M_extent_value == old(self->_M_extent._M_extent_value);
+uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ owns this->_M_extent._M_extent_value;
+ ensures result == this->_M_extent._M_extent_value;
+ ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
 } by { execute(); simp(); }
 uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
  owns span._M_extent._M_extent_value;
@@ -1179,10 +1179,10 @@ fn pinned_std_span_data_preserves_pointer_identity_without_backing_authority_off
         "sysroot/usr/include/c++/12/span"
     );
     let source = r#"verifying "span-probe.cpp";
-int32* span__int__value_unsigned_long_18446744073709551615_data(const struct span__int__value_unsigned_long_18446744073709551615* self) {
- owns self->_M_ptr;
- ensures result == self->_M_ptr;
- ensures self->_M_ptr == old(self->_M_ptr);
+int32* span__int__value_unsigned_long_18446744073709551615_data(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ owns this->_M_ptr;
+ ensures result == this->_M_ptr;
+ ensures this->_M_ptr == old(this->_M_ptr);
 } by { execute(); simp(); }
 int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
  owns span._M_ptr;
@@ -1726,7 +1726,7 @@ fn check_bounded_upstream_rounding(phase: RoundingPhase) {
 fn check_upstream_fee_evaluation_fast(mode: &str, expected: i64, phase: RoundingPhase) {
     let instance = if mode == "Down" { "true" } else { "false" };
     let contract = format!(
-        "views self->fee; views self->size; requires self->fee == 7i64; requires self->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures self->fee == old(self->fee); ensures self->size == old(self->size);"
+        "views this->fee; views this->size; requires this->fee == 7i64; requires this->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures this->fee == old(this->fee); ensures this->size == old(this->size);"
     );
     let div = include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click")
         .split_once(';')
@@ -1735,8 +1735,8 @@ fn check_upstream_fee_evaluation_fast(mode: &str, expected: i64, phase: Rounding
     let source = format!(
         r#"{}
 {div}
-int64 FeeFrac_EvaluateFee__bool_{instance}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
-int64 FeeFrac_EvaluateFee{mode}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
+int64 FeeFrac_EvaluateFee__bool_{instance}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
+int64 FeeFrac_EvaluateFee{mode}(const struct FeeFrac* this, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}
 "#,
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
     );
@@ -1943,8 +1943,8 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
     };
     let caller = bounds(
         "to_integer(result)",
-        "to_integer(self->size)",
-        "to_integer(self->fee) * to_integer(at_size)",
+        "to_integer(this->size)",
+        "to_integer(this->fee) * to_integer(at_size)",
     );
     let helper = bounds(
         "to_integer(rounded)",
@@ -1954,17 +1954,17 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
     let fit_bounds = |product: &str| {
         if down {
             [
-                format!("-9223372036854775808 * to_integer(self->size) <= {product}"),
-                format!("{product} < 9223372036854775808 * to_integer(self->size)"),
+                format!("-9223372036854775808 * to_integer(this->size) <= {product}"),
+                format!("{product} < 9223372036854775808 * to_integer(this->size)"),
             ]
         } else {
             [
-                format!("-9223372036854775809 * to_integer(self->size) < {product}"),
-                format!("{product} <= 9223372036854775807 * to_integer(self->size)"),
+                format!("-9223372036854775809 * to_integer(this->size) < {product}"),
+                format!("{product} <= 9223372036854775807 * to_integer(this->size)"),
             ]
         }
     };
-    let input = fit_bounds("to_integer(self->fee) * to_integer(at_size)");
+    let input = fit_bounds("to_integer(this->fee) * to_integer(at_size)");
     let product = fit_bounds("to_integer(product)");
     let template = if result_fit {
         include_str!(
@@ -1977,9 +1977,9 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
         .replace(
             "@WIDE_GUARD@",
             if positive {
-                "self->fee >= 0i64 and not (self->fee < 8589934592i64)"
+                "this->fee >= 0i64 and not (this->fee < 8589934592i64)"
             } else {
-                "not (self->fee >= 0i64)"
+                "not (this->fee >= 0i64)"
             },
         )
         .replace("@MODE@", mode)
@@ -2509,49 +2509,49 @@ fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
     for (name, requirements, conclusion) in [
         (
             "NegativeMinimumFee",
-            "requires self->m_feerate.base.fee == -1i64; requires self->m_feerate.base.size == 2; requires virtual_bytes == 1; requires virtual_bytes != 0; requires self->m_feerate.base.fee < 0i64;",
+            "requires this->m_feerate.base.fee == -1i64; requires this->m_feerate.base.size == 2; requires virtual_bytes == 1; requires virtual_bytes != 0; requires this->m_feerate.base.fee < 0i64;",
             "ensures result != 0i64;",
         ),
         (
             "PositiveOversizeFee",
-            "requires self->m_feerate.base.fee == 7i64; requires self->m_feerate.base.size == 1; requires virtual_bytes == 2;",
+            "requires this->m_feerate.base.fee == 7i64; requires this->m_feerate.base.size == 1; requires virtual_bytes == 2;",
             "",
         ),
         (
             "ZeroAmountFee",
-            "requires self->m_feerate.base.fee == 7i64; requires self->m_feerate.base.size == 2; requires virtual_bytes == 0;",
+            "requires this->m_feerate.base.fee == 7i64; requires this->m_feerate.base.size == 2; requires virtual_bytes == 0;",
             "",
         ),
     ] {
         let proof = if conclusion.is_empty() {
             "execute(); simp();"
         } else {
-            "have self->m_feerate.base.size != 0 by { simp(); } execute(); extract(result != 0i64); simp();"
+            "have this->m_feerate.base.size != 0 by { simp(); } execute(); extract(result != 0i64); simp();"
         };
         let contract = root_contract.replacen(
-            "views self->m_feerate.base.fee;",
-            &format!("{requirements}\n    views self->m_feerate.base.fee;"),
+            "views this->m_feerate.base.fee;",
+            &format!("{requirements}\n    views this->m_feerate.base.fee;"),
             1,
         );
-        callers.push_str(&format!("\ncontract int64 {name}({contract} {conclusion} }}\ntheorem {name}_application() executes CFeeRate_GetFee(const struct CFeeRate* self, int32 virtual_bytes) {{ ensures {name}(&CFeeRate_GetFee) by {{ {proof} }} }}\n"));
+        callers.push_str(&format!("\ncontract int64 {name}({contract} {conclusion} }}\ntheorem {name}_application() executes CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {{ ensures {name}(&CFeeRate_GetFee) by {{ {proof} }} }}\n"));
     }
     callers.push_str(r#"
-contract int64 EmptyRate(const struct CFeeRate* self, int32 virtual_bytes) {
-    views self->m_feerate.base.fee; views self->m_feerate.base.size;
-    requires self->m_feerate.base.size == 0;
+contract int64 EmptyRate(const struct CFeeRate* this, int32 virtual_bytes) {
+    views this->m_feerate.base.fee; views this->m_feerate.base.size;
+    requires this->m_feerate.base.size == 0;
     requires 0 <= virtual_bytes; requires virtual_bytes <= 2147483647;
     ensures result == 0i64;
-    ensures self->m_feerate.base.fee == old(self->m_feerate.base.fee);
-    ensures self->m_feerate.base.size == old(self->m_feerate.base.size);
+    ensures this->m_feerate.base.fee == old(this->m_feerate.base.fee);
+    ensures this->m_feerate.base.size == old(this->m_feerate.base.size);
 }
-theorem empty_rate_application() executes CFeeRate_GetFee(const struct CFeeRate* self, int32 virtual_bytes) {
+theorem empty_rate_application() executes CFeeRate_GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
     ensures EmptyRate(&CFeeRate_GetFee) by {
-        have self->m_feerate.base.size >= 0 by { arithmetic() using { self->m_feerate.base.size == 0; } }
-        have self->m_feerate.base.size <= 2147483647 by { arithmetic() using { self->m_feerate.base.size == 0; } }
-        have self->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(self->m_feerate.base.fee) by { simp(); }
-        have self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) <= 9223372036854775807 by { simp(); }
-        have self->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) by { simp(); }
-        have self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size) by { simp(); }
+        have this->m_feerate.base.size >= 0 by { arithmetic() using { this->m_feerate.base.size == 0; } }
+        have this->m_feerate.base.size <= 2147483647 by { arithmetic() using { this->m_feerate.base.size == 0; } }
+        have this->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(this->m_feerate.base.fee) by { simp(); }
+        have this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807 by { simp(); }
+        have this->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by { simp(); }
+        have this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(this->m_feerate.base.size) by { simp(); }
         execute(); simp();
     }
 }
@@ -2746,8 +2746,8 @@ fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
         ("ZeroPerK", 0, 2),
         ("WidePerK", 8589934592, 1000),
     ] {
-        let contract = root_contract.replacen("views self->m_feerate.base.fee;", &format!("requires self->m_feerate.base.fee == {fee}i64; requires self->m_feerate.base.size == {size}; views self->m_feerate.base.fee;"), 1);
-        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate_GetFeePerK(const struct CFeeRate* self) {{ ensures {name}(&CFeeRate_GetFeePerK) by {{ execute(); simp(); }} }}\n"));
+        let contract = root_contract.replacen("views this->m_feerate.base.fee;", &format!("requires this->m_feerate.base.fee == {fee}i64; requires this->m_feerate.base.size == {size}; views this->m_feerate.base.fee;"), 1);
+        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate_GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate_GetFeePerK) by {{ execute(); simp(); }} }}\n"));
     }
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFeePerK",

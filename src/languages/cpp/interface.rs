@@ -198,7 +198,9 @@ fn function_interface(
         .map(|(index, parameter)| {
             crate::instrumentation::record_deterministic_work(1);
             let is_reference = super::lowering::is_reference_parameter(index, parameter);
-            let carried_name = if is_reference {
+            let carried_name = if super::lowering::is_receiver(index, parameter) {
+                super::lowering::RECEIVER_NAME.to_string()
+            } else if is_reference {
                 super::lowering::reference_carrier_name(&parameter.name)
             } else {
                 parameter.name.clone()

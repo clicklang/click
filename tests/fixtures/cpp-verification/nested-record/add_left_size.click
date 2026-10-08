@@ -1,12 +1,12 @@
 verifying "nested_record.cpp";
 
-void FeeEnvelope_AddLeftSize(struct FeeEnvelope* self, int delta) {
-    owns self->state.left.size;
-    views self->state.right.size;
-    requires 0 <= self->state.left.size;
-    requires self->state.left.size <= 10;
+void FeeEnvelope_AddLeftSize(struct FeeEnvelope* this, int delta) {
+    owns this->state.left.size;
+    views this->state.right.size;
+    requires 0 <= this->state.left.size;
+    requires this->state.left.size <= 10;
     requires 0 <= delta;
     requires delta <= 10;
-    ensures self->state.left.size == old(self->state.left.size) + delta;
-    ensures self->state.right.size == old(self->state.right.size);
+    ensures this->state.left.size == old(this->state.left.size) + delta;
+    ensures this->state.right.size == old(this->state.right.size);
 } by { execute(); simp(); }

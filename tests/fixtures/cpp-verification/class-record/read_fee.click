@@ -1,9 +1,9 @@
 verifying "class_record.cpp";
 
-int64 FeeRateState_ReadFee(const struct FeeRateState* self) {
-    views self->fee;
-    views self->size;
-    ensures self->fee == old(self->fee);
-    ensures self->size == old(self->size);
-    ensures result == old(self->fee);
+int64 FeeRateState_ReadFee(const struct FeeRateState* this) {
+    views this->fee;
+    views this->size;
+    ensures this->fee == old(this->fee);
+    ensures this->size == old(this->size);
+    ensures result == old(this->fee);
 } by { execute(); simp(); }

@@ -37,27 +37,27 @@ int guarded(int& value, bool should_throw) {
 ```click
 verifying "guarded.cpp";
 
-void Restore_constructor(struct Restore* self, int32* slot) {
-    owns self->pointer;
-    owns self->saved;
+void Restore_constructor(struct Restore* this, int32* slot) {
+    owns this->pointer;
+    owns this->saved;
     owns slot[0..1];
-    ensures self->pointer == slot;
-    ensures self->saved == old(slot[0]);
+    ensures this->pointer == slot;
+    ensures this->saved == old(slot[0]);
     ensures slot[0] == 9;
-    ensures separate(memory(*self), memory(self->pointer[0..1]));
+    ensures separate(memory(*this), memory(this->pointer[0..1]));
 } by {
     execute();
     simp();
 }
 
-void Restore_destructor(struct Restore* self) {
-    requires separate(memory(*self), memory(self->pointer[0..1]));
-    owns self->pointer;
-    owns self->saved;
-    owns self->pointer[0..1];
-    ensures self->pointer == old(self->pointer);
-    ensures self->saved == old(self->saved);
-    ensures self->pointer[0] == old(self->saved);
+void Restore_destructor(struct Restore* this) {
+    requires separate(memory(*this), memory(this->pointer[0..1]));
+    owns this->pointer;
+    owns this->saved;
+    owns this->pointer[0..1];
+    ensures this->pointer == old(this->pointer);
+    ensures this->saved == old(this->saved);
+    ensures this->pointer[0] == old(this->saved);
 } by {
     execute();
     simp();

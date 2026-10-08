@@ -1,13 +1,13 @@
 verifying "value_methods.cpp";
 
-bool FeeFrac_IsEmpty(const struct FeeFrac* self) {
-    owns self->fee;
-    owns self->size;
-    ensures self->fee == old(self->fee);
-    ensures self->size == old(self->size);
-    ensures result == (if old(self->size) == 0 { 1 } else { 0 });
+bool FeeFrac_IsEmpty(const struct FeeFrac* this) {
+    owns this->fee;
+    owns this->size;
+    ensures this->fee == old(this->fee);
+    ensures this->size == old(this->size);
+    ensures result == (if old(this->size) == 0 { 1 } else { 0 });
 } by {
-    if self->size == 0 {
+    if this->size == 0 {
         execute();
         simp();
     } else {

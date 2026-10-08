@@ -29,7 +29,8 @@ are done. These remain.
 C++ reference parameters are done: a sidecar declares `int32& value`, the
 name is the referent, `&value` is its address, and the pointer that carries
 it is named `&value` throughout (`reference_carrier_name` in
-`src/languages/c/syntax.rs`; design section "Reference parameters").
+`src/languages/c/syntax.rs`; design section "Reference parameters"). A
+member function's receiver is the pointer `this`.
 
 One printing gap remains. A contract expression prints a scalar referent as
 `value`. A kernel term for the same read, as in a "C operation" line or a
@@ -44,15 +45,6 @@ first field writes `box.field`.
 
 Done when: no diagnostic or expansion prints `load_...(&name)` for a
 reference parameter.
-
-### A2. Receivers are `this`
-
-Today a member function's receiver is a pointer parameter spelled `self`,
-which the exporter delivers as a reference. Decided: it is the pointer `this`,
-as in C++ (`this->fee`, `owns *this`). Do after A1.
-
-Done when: C++ sidecars spell the receiver `this` and `self` is refused for a
-C++ source with the spelling to write.
 
 ### A3. Reference locals in C++ bodies
 
