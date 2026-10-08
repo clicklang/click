@@ -119,3 +119,9 @@ subtree with the exact `plug` model. The C descent loop is the next consumer.
 The verifier now preserves its resource binders and caller frame on loop exits;
 standalone `do_while_*` regressions cover the reconstructed path, returned
 ownership, and preservation of unrelated fields across subsequent stores.
+
+The spine model also proves that a nonempty focus has the same minimum as the
+reconstructed subtree, that removing and blackening that minimum commutes with
+reconstructing its ancestor frames, and that parent consistency determines the
+focus parent from the spine. These are model lemmas for the deeper transplant;
+they do not yet establish its C postconditions.

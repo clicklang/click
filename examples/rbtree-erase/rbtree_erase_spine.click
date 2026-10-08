@@ -1,6 +1,7 @@
 verifying "rb_erase_augmented.c";
 
 import "../rbtree-model/rbtree_resources.click";
+import "../rbtree-model/rbtree_erase_child.click";
 
 spec enum EraseSpine {
     Top,
@@ -173,5 +174,89 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
                 simp();
             }
         },
+    }
+}
+
+# A nonempty focus is still the leftmost candidate through every spine frame.
+theorem erase_spine_minimum(spine: EraseSpine, tree: RbTree) {
+    requires tree != RbTree::Empty;
+    ensures rb_minimum(plug(erase_context(spine), tree)) == rb_minimum(tree) by {
+        induct(spine) as ih {
+            EraseSpine::Top => {
+                unfold(erase_context(EraseSpine::Top));
+                unfold(plug(Context::Top, tree)); normalize();
+            }
+            EraseSpine::Left(identity, parent, color, sibling, up) => {
+                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by { normalize(); }
+                apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling)));
+                apply(rb_minimum_nonempty_left(identity, parent, color, tree, sibling));
+                unfold(erase_context(EraseSpine::Left(identity, parent, color, sibling, up)));
+                unfold(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree));
+                rewrite(rb_minimum(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)))
+                    == rb_minimum(RbTree::Node(identity, parent, color, tree, sibling)));
+                assumption();
+            }
+        }
+    }
+}
+
+# Cutting the minimum below a left-only spine leaves its ancestor frames intact.
+theorem erase_spine_remove_min_blackened(spine: EraseSpine, tree: RbTree) {
+    requires tree != RbTree::Empty;
+    ensures rb_remove_min_blackened(plug(erase_context(spine), tree))
+        == plug(erase_context(spine), rb_remove_min_blackened(tree)) by {
+        induct(spine) as ih {
+            EraseSpine::Top => {
+                unfold(erase_context(EraseSpine::Top));
+                unfold(plug(Context::Top, tree));
+                unfold(plug(Context::Top, rb_remove_min_blackened(tree))); normalize();
+            }
+            EraseSpine::Left(identity, parent, color, sibling, up) => {
+                have RbTree::Node(identity, parent, color, tree, sibling) != RbTree::Empty by { normalize(); }
+                apply(ih(up, RbTree::Node(identity, parent, color, tree, sibling)));
+                apply(rb_remove_min_blackened_nonempty_left(identity, parent, color, tree, sibling));
+                unfold(erase_context(EraseSpine::Left(identity, parent, color, sibling, up)));
+                unfold(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree));
+                unfold(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), rb_remove_min_blackened(tree)));
+                rewrite(rb_remove_min_blackened(plug(erase_context(up), RbTree::Node(identity, parent, color, tree, sibling)))
+                    == plug(erase_context(up), rb_remove_min_blackened(RbTree::Node(identity, parent, color, tree, sibling))));
+                rewrite(rb_remove_min_blackened(RbTree::Node(identity, parent, color, tree, sibling))
+                    == RbTree::Node(identity, parent, color, rb_remove_min_blackened(tree), sibling));
+                normalize();
+            }
+        }
+    }
+}
+
+function erase_spine_parent(spine: EraseSpine, anchor: struct rb_node*) -> struct rb_node* {
+    match spine {
+        EraseSpine::Top => anchor,
+        EraseSpine::Left(identity, grandparent, color, sibling, up) => identity,
+    }
+}
+
+theorem erase_spine_focus_parent_consistent(spine: EraseSpine, tree: RbTree, anchor: struct rb_node*) {
+    requires rb_parent_consistent(plug(erase_context(spine), tree), anchor) == 1;
+    ensures rb_parent_consistent(tree, erase_spine_parent(spine, anchor)) == 1 by {
+        induct(spine) as ih {
+            EraseSpine::Top => {
+                unfold(erase_spine_parent(EraseSpine::Top, anchor));
+                have plug(erase_context(EraseSpine::Top), tree) == tree by {
+                    unfold(erase_context(EraseSpine::Top)); unfold(plug(Context::Top, tree)); normalize();
+                }
+                rewrite(tree == plug(erase_context(EraseSpine::Top), tree)); assumption();
+            },
+            EraseSpine::Left(identity, parent, color, sibling, up) => {
+                have erase_context(EraseSpine::Left(identity, parent, color, sibling, up)) == Context::Left(identity, parent, color, sibling, erase_context(up)) by {
+                    unfold(erase_context(EraseSpine::Left(identity, parent, color, sibling, up))); normalize();
+                }
+                have rb_parent_consistent(plug(Context::Left(identity, parent, color, sibling, erase_context(up)), tree), anchor) == 1 by {
+                    rewrite(Context::Left(identity, parent, color, sibling, erase_context(up)) == erase_context(EraseSpine::Left(identity, parent, color, sibling, up))); assumption();
+                }
+                apply(plug_parent_consistent_ctx(Context::Left(identity, parent, color, sibling, erase_context(up)), tree, anchor));
+                apply(ctx_consistent_left_focus(identity, parent, color, sibling, erase_context(up), tree, anchor));
+                unfold(erase_spine_parent(EraseSpine::Left(identity, parent, color, sibling, up), anchor)); assumption();
+            },
+        }
     }
 }
