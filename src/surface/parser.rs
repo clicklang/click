@@ -3694,8 +3694,25 @@ impl Parser {
         })
     }
 
+    /// A clause's optional `name:` prefix, as `ensures` takes.
+    fn parse_clause_label(&mut self, what: &str) -> Result<Option<String>, ClickError> {
+        if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon) {
+            let name = self.expect_ident(what)?;
+            self.expect(Token::Colon)?;
+            return Ok(Some(name));
+        }
+        Ok(None)
+    }
+
     fn parse_requirement(&mut self) -> Result<Requirement, ClickError> {
         self.expect_ident_spelling("requires")?;
+        // A proof cites a precondition by its proposition and nothing names
+        // one, so a label here would be read by nothing.
+        if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon) {
+            return Err(self.error(
+                "a `requires` clause takes no label; a proof cites a precondition by its proposition",
+            ));
+        }
         let requirement = match (self.peek_ident(), self.peek_next()) {
             (Some("viewable"), Some(Token::LParen)) => self.parse_loadable_requirement()?,
             _ => {
@@ -4378,6 +4395,7 @@ impl Parser {
     fn parse_region_proof_items(&mut self) -> Result<Vec<StructuralItem>, ClickError> {
         match self.next() {
             Some(Token::Ident(kind)) if kind == "invariant" => {
+                let name = self.parse_clause_label("invariant name")?;
                 let proposition = self.parse_proposition()?;
                 if self.peek_ident() == Some("by") {
                     return Err(self.error(
@@ -4385,7 +4403,10 @@ impl Parser {
                     ));
                 }
                 self.expect(Token::Semicolon)?;
-                Ok(vec![StructuralItem { claim: proposition }])
+                Ok(vec![StructuralItem {
+                    claim: proposition,
+                    name,
+                }])
             }
             Some(Token::Ident(kind)) => {
                 Err(self.error(format!("expected `invariant`, got `{kind}`")))

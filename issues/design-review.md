@@ -135,20 +135,6 @@ resource declares no fields to hold them; write the child without a name".
 Decide whether a parent without fields should be able to name a child. It
 would need a model for a resource that declares none.
 
-### B2. Labels only on `ensures`
-
-`ensures same: result == p->value;` is accepted. `requires nonnull: p != 0;`
-is a syntax error ("expected comparison operator in `proposition`, got
-`:`").
-
-Decided: `requires` and `invariant` take a label as `ensures` does.
-
-Regression: a labelled `requires` and a labelled `invariant`, each cited by
-its label where an `ensures` label can be cited today.
-
-Done when: those pass and the reference documents one label rule for all
-three.
-
 ### B3. Reading through a declared resource
 
 Recorded in the third pass: `views outer(p)` let C read the resource's
@@ -255,6 +241,9 @@ after such an `intro() as` re-verifies.
   `assumption()` closes them.
 - `requires`, `ensures`, `fact` and `invariant` stay four words: each says
   where its proposition holds.
+- `requires` takes no label. Requirement labels were removed on 2026-09-23
+  when proofs began citing a precondition by its proposition, and nothing
+  would read one. `invariant` takes a label, which names it in a failure.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a
   property of the function, the other a measure with an expression.
 
