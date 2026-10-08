@@ -4632,6 +4632,20 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
          views *bytes; ensures result == bytes[index]; } by { execute(); simp(); }",
     )
     .expect("the Rust spelling parses");
+    // An `impl` block holds `fn` contracts and nothing else, and is Rust.
+    for (source, expected) in [
+        (
+            "verifying \"g.rs\"; impl Guard { resource r() { } }",
+            "an `impl` block holds `fn` contracts",
+        ),
+        (
+            "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); simp(); } }",
+            "unknown C type `impl`",
+        ),
+    ] {
+        let error = parser::parse(source).expect_err("the impl block is refused");
+        assert!(error.message.contains(expected), "{source}: {error:?}");
+    }
     // `as` before anything but a scalar type is not a cast.
     parser::parse(
         "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",

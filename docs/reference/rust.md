@@ -267,6 +267,39 @@ fn empty(bytes: &[u8]) -> bool {
 }
 ```
 
+A method's contract is written in an `impl` block, `impl Type { ... }` or
+`impl Trait for Type { ... }`, and its receiver is `self`, `&self` or
+`&mut self`. It is the contract of the function the C-shaped spelling calls
+`Type_name`:
+
+<!-- verified-example: tests/fixtures/rust-verification/impl_blocks.click -->
+```click
+verifying "borrow.rs";
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        requires separate(memory(*self), memory(self.slot[0..1]));
+        owns self.slot;
+        owns self.saved;
+        owns *self.slot;
+        ensures self.slot == old(self.slot);
+        ensures self.saved == old(self.saved);
+        ensures *self.slot == old(self.saved);
+    } by {
+        execute();
+        simp();
+    }
+}
+
+fn cleanup(value: &mut i32) {
+    owns *value;
+    ensures *value == 42;
+} by {
+    execute();
+    simp();
+}
+```
+
 An array or a reference to a reference in a `fn` signature is refused for
 now, and so is `fn` in a C or C++ sidecar. Write those contracts
 in the C-shaped spelling the rest of this page uses. Click's own words

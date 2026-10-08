@@ -6,6 +6,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const SOURCE: &str = include_str!("../examples/basic-rust/borrow.rs");
+const FIELD_BORROW_GUARD_SOURCE: &str = include_str!("../examples/rust-field-borrow/guard.rs");
 const SIDECAR: &str = include_str!("../examples/basic-rust/borrow.click");
 struct Project {
     root: PathBuf,
@@ -2237,6 +2238,30 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         assert_cli(&p, &["verify"]);
     }
+}
+
+/// A method's contract sits in an `impl` block and its receiver is `self`.
+/// This is the contract `examples/rust-field-borrow` states for the free
+/// function `Guard_drop(struct Guard* self)`.
+#[test]
+fn rust_sidecar_impl_blocks_verify() {
+    let p = Project::new(FIELD_BORROW_GUARD_SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/impl_blocks.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace(
+                "ensures *self.slot == old(self.saved);",
+                "ensures *self.slot == old(self.saved) + 1;"
+            ),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
 }
 
 /// A slice parameter in a Rust signature is one name: `bytes.len()` is its

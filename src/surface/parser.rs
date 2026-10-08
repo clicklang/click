@@ -461,6 +461,9 @@ struct Parser {
     /// lengths included. One written alone as an index is converted to the
     /// 32-bit index a place takes.
     rust_usize_params: BTreeSet<String>,
+    /// The type of the `impl` block being parsed: its methods are the
+    /// functions `Type_name`, and `self` is their receiver.
+    rust_impl_type: Option<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -777,6 +780,7 @@ impl Parser {
             verifies_rust: false,
             rust_slice_params: BTreeSet::new(),
             rust_usize_params: BTreeSet::new(),
+            rust_impl_type: None,
             tokens,
             positions,
             matching_parentheses,
@@ -985,6 +989,8 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(false)?);
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
+            } else if self.verifies_rust && self.peek_ident() == Some("impl") {
+                self.parse_rust_impl_block(&mut function_blocks)?;
             } else {
                 function_blocks.push(self.parse_function_block(false)?);
             }
@@ -3325,6 +3331,24 @@ impl Parser {
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
+        // A method is the function `Type_name`, and its receiver is the
+        // first parameter, a pointer to the type named `self`.
+        let name = match self.rust_impl_type.clone() {
+            Some(impl_type) => {
+                if let Some(receiver) = self.parse_rust_receiver(&impl_type)? {
+                    let parsed = self.parse_parameter_array_suffix("self".into(), receiver)?;
+                    if let Some(struct_name) = parsed.struct_name {
+                        struct_params.insert(parsed.parameter.name.clone(), struct_name);
+                    }
+                    parameters.push(parsed.parameter);
+                    if self.peek() == Some(&Token::Comma) {
+                        self.position += 1;
+                    }
+                }
+                format!("{impl_type}_{name}")
+            }
+            None => name,
+        };
         while self.peek() != Some(&Token::RParen) {
             let parameter_name = self.expect_ident("parameter name")?;
             self.expect(Token::Colon)?;
@@ -3410,6 +3434,70 @@ impl Parser {
             reference_params: BTreeSet::new(),
             return_struct_name: parsed_return_type.struct_name,
         })
+    }
+
+    /// `impl Type { ... }` or `impl Trait for Type { ... }`: each `fn` inside
+    /// is the method's contract and proof. A trait method is named by its
+    /// type, as the imported function is.
+    #[inline(never)]
+    fn parse_rust_impl_block(
+        &mut self,
+        function_blocks: &mut Vec<FunctionBlock>,
+    ) -> Result<(), ClickError> {
+        self.expect_ident_spelling("impl")?;
+        let mut impl_type = self.expect_ident("type name")?;
+        if self.peek_ident() == Some("for") {
+            self.position += 1;
+            impl_type = self.expect_ident("type name")?;
+        }
+        self.expect(Token::LBrace)?;
+        let previous = self.rust_impl_type.replace(impl_type);
+        let mut result = Ok(());
+        while self.peek() != Some(&Token::RBrace) {
+            if self.peek_ident() != Some("fn") {
+                result = Err(self.error("an `impl` block holds `fn` contracts"));
+                break;
+            }
+            match self.parse_function_block(false) {
+                Ok(block) => function_blocks.push(block),
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
+        }
+        self.rust_impl_type = previous;
+        result?;
+        self.expect(Token::RBrace)?;
+        Ok(())
+    }
+
+    /// A method's receiver: `&self`, `&mut self` or `self`, as the type of
+    /// the parameter it is. `None`, with nothing consumed, for an associated
+    /// function that takes no receiver.
+    fn parse_rust_receiver(&mut self, impl_type: &str) -> Result<Option<ParsedType>, ClickError> {
+        let start = self.position;
+        let reference = self.peek() == Some(&Token::Amp);
+        if reference {
+            self.position += 1;
+        }
+        let mutable = reference && self.peek_ident() == Some("mut");
+        if mutable {
+            self.position += 1;
+        }
+        if self.peek_ident() != Some("self") {
+            self.position = start;
+            return Ok(None);
+        }
+        self.position += 1;
+        Ok(Some(ParsedType {
+            c_type: C0Type::Int32Pointer,
+            struct_name: Some(impl_type.to_string()),
+            struct_pointer: reference,
+            constant: false,
+            pointee_constant: reference && !mutable,
+            reference: false,
+        }))
     }
 
     /// `&[T]` or `&mut [T]` with a scalar element, as the pointer to its
