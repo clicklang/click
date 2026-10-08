@@ -9269,21 +9269,8 @@ impl Parser {
                 CExpression::Load(Box::new(pointer)),
             ));
         }
-        // The address of a reference parameter's referent is the pointer
-        // that carries it.
-        if self.peek() == Some(&Token::Amp)
-            && let Some(Token::Ident(name)) = self.peek_next()
-            && self.current_reference_params.contains(name)
-            && !matches!(
-                self.tokens.get(self.position + 2),
-                Some(Token::Arrow | Token::Dot | Token::LBracket)
-            )
-        {
-            let carrier = syntax::reference_carrier_name(name);
-            self.position += 2;
-            return Ok(ContractExpression::CFragment(CExpression::Variable(
-                carrier,
-            )));
+        if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
+            return self.parse_reference_parameter_address();
         }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
@@ -9319,11 +9306,47 @@ impl Parser {
     }
 
     fn parse_contract_postfix(&mut self) -> Result<ContractExpression, ClickError> {
-        let mut expression = self.parse_contract_primary()?;
-        // A reference parameter's name is its referent. The pointer that
-        // carries it is named as the referent's address. A scalar referent is
-        // the element behind that pointer; a struct referent is reached
-        // through the pointer, as its fields are.
+        let expression = self.parse_contract_primary()?;
+        self.parse_contract_postfix_suffix(expression)
+    }
+
+    /// The address of a reference parameter's referent, `&value`: the
+    /// pointer that carries it.
+    ///
+    /// Kept out of the recursive expression parser's frame, like the postfix
+    /// suffix: deeply nested expressions parse on a small stack.
+    #[inline(never)]
+    fn at_reference_parameter_address(&self) -> bool {
+        matches!(self.peek_next(), Some(Token::Ident(name)) if self.current_reference_params.contains(name))
+            && !matches!(
+                self.tokens.get(self.position + 2),
+                Some(Token::Arrow | Token::Dot | Token::LBracket)
+            )
+    }
+
+    /// Consumes `&name` where [`Self::at_reference_parameter_address`] holds.
+    #[inline(never)]
+    fn parse_reference_parameter_address(&mut self) -> Result<ContractExpression, ClickError> {
+        let Some(Token::Ident(name)) = self.peek_next() else {
+            return Err(self.error("expected a reference parameter after `&`"));
+        };
+        let carrier = syntax::reference_carrier_name(name);
+        self.position += 2;
+        Ok(ContractExpression::CFragment(CExpression::Variable(
+            carrier,
+        )))
+    }
+
+    /// A reference parameter's name is its referent. The pointer that
+    /// carries it is named as the referent's address. A scalar referent is
+    /// the element behind that pointer; a struct referent is reached through
+    /// the pointer, as its fields are. Out of line for the same reason as
+    /// [`Self::parse_reference_parameter_address`].
+    #[inline(never)]
+    fn resolve_reference_parameter(
+        &mut self,
+        mut expression: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
         if let ContractExpression::Binding(name)
         | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
             && self.current_reference_params.contains(name)
@@ -9349,7 +9372,7 @@ impl Parser {
                 );
             }
         }
-        self.parse_contract_postfix_suffix(expression)
+        Ok(expression)
     }
 
     // Keep postfix metadata and field-lowering temporaries out of the
@@ -9360,6 +9383,7 @@ impl Parser {
         &mut self,
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
             ContractExpression::CUnary {
                 lowered: CExpression::Cast { pointee_struct, .. },
