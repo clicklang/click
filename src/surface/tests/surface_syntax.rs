@@ -4327,6 +4327,40 @@ fn resource_array_extent_excludes_struct_padding() {
     assert_eq!(segment.field_element_width(), Some(1));
 }
 
+/// A resource owns a child resource with `owns`, the clause it uses for
+/// everything else it holds. A name is for reading the child's fields.
+#[test]
+fn a_child_resource_is_owned_like_any_other() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        int32 get(struct cell* p) { return p->value; }";
+    let proof = "int32 get(struct cell* p) { owns outer(p); ensures result == result; } by { \
+        unfold(outer(p)); unfold(inner(p)); execute(); fold(inner(p)); fold(outer(p)); simp(); }";
+    let inner = "resource inner(p: struct cell*) { owns p->value; }";
+    let source = format!(
+        "{inner} resource outer(p: struct cell*) {{ owns inner(p); owns p->other; }} \
+         verifying \"cell.c\"; {proof}"
+    );
+    verify_c0_sources(&source, &[("cell.c", c_source)]).unwrap();
+    for (child, expected) in [
+        (
+            "contains inner(p);",
+            "write `owns inner(p);`, not `contains inner(p);`",
+        ),
+        (
+            "owns item: inner(p);",
+            "this resource declares no fields to hold them; write the child without a name",
+        ),
+    ] {
+        let source = format!(
+            "{inner} resource outer(p: struct cell*) {{ {child} owns p->other; }} \
+             verifying \"cell.c\"; {proof}"
+        );
+        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+            .expect_err("the child clause is not the one spelling");
+        assert!(error.message.contains(expected), "{child}: {error:?}");
+    }
+}
+
 #[test]
 fn pointer_storage_views_name_the_field_alone() {
     let c_source =

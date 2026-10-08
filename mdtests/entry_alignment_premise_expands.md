@@ -79,8 +79,8 @@ resource arena_initialized_storage(
     initialized: int32
 ) {
     if initialized == 1 {
-        contains allocation(data, capacity * 4);
-        contains allocation(occupied, capacity * 4);
+        owns allocation(data, capacity * 4);
+        owns allocation(occupied, capacity * 4);
         fact 1 <= capacity;
         fact capacity <= 536870911;
     }
@@ -100,7 +100,7 @@ resource arena_initialized_access(
 
 resource arena_init_result(arena: struct arena*, initialized: int32) {
     owns *arena;
-    contains arena_initialized_storage(
+    owns arena_initialized_storage(
         arena->data,
         arena->occupied,
         arena->capacity,

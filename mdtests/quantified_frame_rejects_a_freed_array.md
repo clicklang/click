@@ -12,7 +12,7 @@ void dispose(int32 *data, int32 n) { free(data); }
 verifying "quantified_frame_rejects_a_freed_array.c";
 
 resource cell(p: int32*, n: int32) {
-    contains allocation(p, n * 4);
+    owns allocation(p, n * 4);
     owns p[0..n];
 }
 

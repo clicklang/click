@@ -600,7 +600,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
     let click_source = r#"
             resource allocated_cell(owner: struct cell_owner*) {
                 owns owner->data;
-                contains allocation(owner->data, 4);
+                owns allocation(owner->data, 4);
                 owns owner->data[0..1];
             }
 
@@ -692,7 +692,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
     let click_source = r#"
             resource allocated_cell(owner: struct cell_owner*) {
                 owns owner->data;
-                contains allocation(owner->data, 4);
+                owns allocation(owner->data, 4);
                 owns owner->data[0..1];
             }
 
@@ -1369,7 +1369,7 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
             abstract resource token(key: int32);
 
             resource token_bundle(key: int32) {
-                contains token(key);
+                owns token(key);
             }
 
             verifying "borrow_token.c";
@@ -1455,7 +1455,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
             }
 
             resource wrapped_cell(cell: int32*) {
-                contains owned_cell(cell);
+                owns owned_cell(cell);
             }
 
             verifying "set_seven.c";
@@ -1547,7 +1547,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
             }
 
             resource wrapped_cell(cell: int32*) {
-                contains owned_cell(cell);
+                owns owned_cell(cell);
             }
 
             verifying "set_seven.c";

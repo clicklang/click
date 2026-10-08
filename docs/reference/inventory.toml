@@ -1057,10 +1057,6 @@ path = "reference/language/index.md#iterated-guarded-ownership"
 
 
 [[item]]
-id = "language.contains"
-path = "reference/language/index.md#read-and-write-resources"
-
-[[item]]
 id = "language.and"
 path = "reference/language/index.md#propositions"
 

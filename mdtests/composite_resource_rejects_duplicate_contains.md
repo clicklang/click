@@ -13,8 +13,8 @@ int32 zero(int32 fd) {
 abstract resource socket_open(fd: int32);
 
 resource bad_bundle(fd: int32) {
-    contains socket_open(fd);
-    contains socket_open(fd);
+    owns socket_open(fd);
+    owns socket_open(fd);
 }
 
 verifying "zero.c";

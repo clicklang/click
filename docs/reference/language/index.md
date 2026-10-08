@@ -283,7 +283,7 @@ call path must establish that guard, either from a function precondition or
 ordinary C control flow. Guard matching uses C meaning rather than one
 spelling: negation, branch polarity, symmetric equality, and corresponding
 ordered comparisons are normalized. The call must pass one of the definition's
-direct `contains` children. Click follows ordinary C-local aliases but does not
+directly owned child resources. Click follows ordinary C-local aliases but does not
 accept pointer inequality, a same-named unrelated resource, or a newly folded
 resource as ancestry evidence. Because the separately certified partial
 contract checks the actual resource transfer at each call, the traversal may
@@ -1419,7 +1419,7 @@ Composite resources are declared resources with a body:
 abstract resource socket_open(fd: int32);
 
 resource uncalled(flag: int32*) {
-    contains socket_open(7);
+    owns socket_open(7);
     owns flag[0..1];
     fact flag[0] == 0;
 }
@@ -1844,7 +1844,7 @@ resource list(node: struct node*) {
     if node != 0 {
         owns node->value;
         owns node->next;
-        contains list(node->next);
+        owns list(node->next);
     }
 }
 ```
@@ -2010,7 +2010,7 @@ consumed by an actual `free`.
 ```click
 resource owned_item(item: struct item*) {
     if item != 0 {
-        contains allocation(item, sizeof(struct item));
+        owns allocation(item, sizeof(struct item));
         owns *item;
     }
 }

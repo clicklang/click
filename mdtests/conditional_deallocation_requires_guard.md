@@ -21,7 +21,7 @@ int32 conditional_deallocation_requires_guard(int32* p, int32 error) {
 abstract resource permit();
 
 resource allocated(p: int32*) {
-    contains allocation(p, 4);
+    owns allocation(p, 4);
     owns p[0..1];
 }
 

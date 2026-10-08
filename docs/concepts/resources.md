@@ -454,7 +454,7 @@ an accounting field to zero does not consume those members. The
 consumes the entry-capacity slot batch, checks the private-object population
 is empty, and retires both authorities while keeping the pool's C storage.
 
-Ordinary wrappers can package existing members with `contains R(p)` and later
+Ordinary wrappers can package existing members with `owns R(p)` and later
 expose them with `unfold`; these transfers require no authority and do not
 change the population. A wrapper cannot create a missing child or bypass the
 authority requirement for membership changes. The source-backed
@@ -923,7 +923,7 @@ resource nonnegative_fd(fd: int32) {
 }
 
 resource live_fd(fd: int32) {
-    contains nonnegative_fd(fd);
+    owns nonnegative_fd(fd);
 }
 ```
 
@@ -1194,7 +1194,7 @@ resource list(node: struct node*) {
     if node != 0 {
         owns node->value;
         owns node->next;
-        contains list(node->next);
+        owns list(node->next);
     }
 }
 ```

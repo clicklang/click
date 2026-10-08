@@ -1844,9 +1844,9 @@ impl Parser {
                     facts.push(condition);
                 }
                 Some("contains") => {
-                    self.position += 1;
-                    contains.push(self.parse_composite_resource_contains_clause()?);
-                    self.expect(Token::Semicolon)?;
+                    return Err(self.error(
+                        "a child resource is owned like any other resource; write `owns inner(p);`, not `contains inner(p);`",
+                    ));
                 }
                 Some("owns") => {
                     self.position += 1;
@@ -1854,7 +1854,7 @@ impl Parser {
                         && self.peek_next() == Some(&Token::Colon)
                     {
                         return Err(self.error(
-                            "a named child resource requires a field-bearing parent resource",
+                            "a child resource is named so its fields can be read, and this resource declares no fields to hold them; write the child without a name, as in `owns inner(p);`",
                         ));
                     }
                     contains.push(self.parse_owned_resource_binding()?);
@@ -2042,10 +2042,6 @@ impl Parser {
                 .map_err(|message| self.error(message));
         }
         Ok(ResourceClause::Iterated(Box::new(clause)))
-    }
-
-    fn parse_composite_resource_contains_clause(&mut self) -> Result<ResourceClause, ClickError> {
-        self.parse_declared_resource_call()
     }
 
     fn parse_click_parameters(&mut self) -> Result<ParsedParameters, ClickError> {

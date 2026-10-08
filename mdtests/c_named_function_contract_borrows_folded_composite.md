@@ -28,7 +28,7 @@ int32 borrow_then_spend_bundle(int32 key) {
 abstract resource permit(key: int32);
 
 resource bundle(key: int32) {
-    contains permit(key);
+    owns permit(key);
 }
 
 verifying "borrowed_callback_composite.c";

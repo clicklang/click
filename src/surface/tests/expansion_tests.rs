@@ -2963,9 +2963,9 @@ fn selected_post_execution_simp_keeps_the_surviving_execution_branch() {
     let click_source = r#"
             resource allocated_list(node: struct node*) {
                 if node != 0 {
-                    contains allocation(node, sizeof(struct node));
+                    owns allocation(node, sizeof(struct node));
                     owns *node;
-                    contains allocated_list(node->next);
+                    owns allocated_list(node->next);
                 }
             }
 
@@ -3018,7 +3018,7 @@ fn returning_malloc_result_expands_to_checkable_statement_steps() {
     let click_source = r#"
             resource maybe_allocated_int32s(data: int32*, count: int32) {
                 if data != 0 {
-                    contains allocation(data, count * 4);
+                    owns allocation(data, count * 4);
                     owns data[0..count];
                 }
             }
@@ -3089,7 +3089,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
     let click_source = r#"
             resource allocated_cell(owner: struct cell_owner*) {
                 owns owner->data;
-                contains allocation(owner->data, 4);
+                owns allocation(owner->data, 4);
                 owns owner->data[0..1];
             }
 
@@ -8887,7 +8887,7 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
         }
 
         resource wrapped_cell(p: int32*) {
-            contains cell(p);
+            owns cell(p);
         }
 
         verifying "read_cell.c";
@@ -9182,8 +9182,8 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
         }
 
         resource wrapped_cell(p: int32*, flag: int32) {
-            contains cell(p);
-            contains marker(flag);
+            owns cell(p);
+            owns marker(flag);
         }
 
         verifying "read_if.c";
@@ -12332,7 +12332,7 @@ fn outcome_simp_materializes_selected_composite_separation_on_the_checked_proof(
             owns owner->len;
             owns owner->cap;
             owns owner->data;
-            contains backing_buffer(owner);
+            owns backing_buffer(owner);
             fact 0 <= owner->len;
             fact owner->len <= owner->cap;
         }
@@ -14206,7 +14206,7 @@ void object_retain_many(struct object* obj, int32 amount) {
 
 const PRODUCED_RESOURCE_CLICK: &str = r#"
 authorized resource object_ref(obj: struct object*) {
-    contains allocation(obj, sizeof(struct object));
+    owns allocation(obj, sizeof(struct object));
     owns *obj;
     fact obj->refs == count(object_ref(obj));
 }

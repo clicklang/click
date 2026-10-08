@@ -15,7 +15,7 @@ int32 heap_free_owned_allocation_effect(int32 data[], int32 count, int32 flag[])
 
 ```click
 resource allocated_int32s(data: int32*, count: int32) {
-    contains allocation(data, count * 4);
+    owns allocation(data, count * 4);
     owns data[0..count];
     fact data != 0;
 }

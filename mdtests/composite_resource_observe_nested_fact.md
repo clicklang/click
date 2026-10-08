@@ -16,7 +16,7 @@ resource nonnegative_fd(fd: int32) {
 }
 
 resource live_fd(fd: int32) {
-    contains nonnegative_fd(fd);
+    owns nonnegative_fd(fd);
 }
 
 verifying "return_fd.c";

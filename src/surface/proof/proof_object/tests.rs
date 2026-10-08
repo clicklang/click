@@ -12510,7 +12510,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             abstract resource permit();
 
             resource ready() {
-                contains permit();
+                owns permit();
             }
 
             int32 nonnegative(int32 x) {

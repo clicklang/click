@@ -12,13 +12,13 @@ int32 recursive_resource_rejects_mutual_cycle(int32* p) {
 ```click
 resource left(p: int32*) {
     if p != 0 {
-        contains right(p);
+        owns right(p);
     }
 }
 
 resource right(p: int32*) {
     if p != 0 {
-        contains left(p);
+        owns left(p);
     }
 }
 

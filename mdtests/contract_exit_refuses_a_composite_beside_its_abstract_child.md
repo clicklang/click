@@ -15,7 +15,7 @@ resource ticket(id: int32) {
 }
 resource boxed(a: struct box*) {
     owns a->id;
-    contains ticket(a->id);
+    owns ticket(a->id);
 }
 verifying "abstract_child.c";
 int32 f(struct box* a) {

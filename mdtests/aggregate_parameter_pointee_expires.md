@@ -8,7 +8,7 @@ void dispose(struct packet input) { free(input.data); }
 ```click
 verifying "aggregate_parameter_pointee_expires.c";
 resource cell(p: int32*) {
-    contains allocation(p, 4);
+    owns allocation(p, 4);
     owns p[0..1];
 }
 void dispose(struct packet input) {

@@ -3,8 +3,8 @@ resource tree(node: struct node*) {
         owns node->value;
         owns node->left;
         owns node->right;
-        contains tree(node->left);
-        contains tree(node->right);
+        owns tree(node->left);
+        owns tree(node->right);
     }
 }
 

@@ -34,7 +34,7 @@ abstract resource ready_permit(key: int32);
 
 resource ready_bundle(key: int32) {
     if key >= 0 {
-        contains ready_permit(key);
+        owns ready_permit(key);
     }
 }
 

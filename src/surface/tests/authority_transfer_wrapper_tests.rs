@@ -16,7 +16,7 @@ fn project(source: &str) -> ClickProject {
 fn authority_transfer_wrapper_preserves_each_existing_child() {
     let source = r#"
         authorized abstract resource member(object: int32);
-        authorized resource held(object: int32) { contains member(object); }
+        authorized resource held(object: int32) { owns member(object); }
         verifying "wrapper.c";
         int32 package(int32 object) {
             consumes member(object);
@@ -43,7 +43,7 @@ fn authority_transfer_wrapper_preserves_each_existing_child() {
 fn authority_transfer_wrapper_cannot_create_a_missing_child() {
     let source = r#"
         authorized abstract resource member(object: int32);
-        authorized resource held(object: int32) { contains member(object); }
+        authorized resource held(object: int32) { owns member(object); }
         verifying "wrapper.c";
         int32 package(int32 object) {
             produces held(object) by {
@@ -67,7 +67,7 @@ fn authority_transfer_wrapper_cannot_create_a_missing_child() {
 fn authority_transfer_wrapper_cannot_bypass_member_birth_checks() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
-        authorized resource held(p: int32*) { contains member(p); }
+        authorized resource held(p: int32*) { owns member(p); }
         verifying "wrapper.c";
         int32 value() {
             ensures result == 7;
@@ -90,7 +90,7 @@ fn authority_transfer_wrapper_cannot_bypass_member_birth_checks() {
 fn authority_transfer_wrapper_preserves_a_tracked_member() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
-        authorized resource held(p: int32*) { contains member(p); }
+        authorized resource held(p: int32*) { owns member(p); }
         verifying "wrapper.c";
         int32 run() {
             ensures result == 0 or result == 1;
@@ -118,7 +118,7 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
 fn authority_member_wrapper_requires_population_cleanup_before_free() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
-        authorized resource held(p: int32*) { contains member(p); }
+        authorized resource held(p: int32*) { owns member(p); }
         verifying "wrapper.c";
         int32 run() {
             ensures result == 0 or result == 1;
@@ -149,7 +149,7 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
 fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome() {
     let source = r#"
         authorized resource member(p: int32*) { owns p[0..1]; }
-        authorized resource held(p: int32*) { contains member(p); }
+        authorized resource held(p: int32*) { owns member(p); }
         verifying "wrapper.c";
         int32* run() {
             ensures result == 0 or result != 0;
@@ -187,7 +187,7 @@ fn authority_transfer_wrapper_preserves_adjacent_mixed_width_memory_frame() {
 
 const MEMORY_FRAME_SOURCE: &str = r#"
         authorized abstract resource member(object: int32);
-        authorized resource held(object: int32) { contains member(object); }
+        authorized resource held(object: int32) { owns member(object); }
         verifying "wrapper.c";
         int32 package(int32 object, struct Frame* frame) {
             consumes member(object);

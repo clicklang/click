@@ -43,10 +43,10 @@ documentation inventory keep the following accepted words synchronized.
 | `let`, `where` | Value abbreviation and existential-binding forms. |
 | `requires`, `ensures`, `exceptional`, `throws`, `decreases` | Contract, theorem, function-totality, exceptional-postcondition, and loop-termination clauses. The initial exceptional signature is `throws int32`, with clauses spelled `exceptional ensures`; a `decreases` clause is one expression, classified after name resolution as a numeric (int32, unsigned, or `Integer`) measure, a resource application, or a resource binder; there is no `decreases resource` spelling. |
 | `diverges` | Signature and `loop`-head marker declaring that the function or loop may not return. It follows the parameter list, after `throws` when a signature carries both, and excludes a `decreases` clause on the same function or loop. |
-| `owns`, `views`, `consumes`, `produces` | Resource transfer clauses, in a contract and in a loop header. |
+| `owns`, `views`, `consumes`, `produces` | Resource transfer clauses, in a contract and in a loop header. In a resource body, `owns` and `views` state what the resource holds, memory and child resources alike. |
 | `constructs` | Authorizes one function to create an abstract resource token. |
 | `invariant`, `initialize`, `preserve` | Loop structural items and phase proofs; a loop header also takes `owns` and `views` clauses of its own. |
-| `contains`, `fact`, `field`, `if` | Composite-resource members, pure field declarations, and optional resource guard. `if` also forms expressions and proof splits. |
+| `contains`, `fact`, `field`, `if` | The containment proposition `contains(parent, child)`, resource facts, pure field declarations, and optional resource guard. A resource holds a child resource with `owns`, as it holds memory. `if` also forms expressions and proof splits. |
 | `read`, `write`, `object`, `memory`, `of`, `count` | Memory-resource forms, quantified resources, and resource-population expressions. |
 | `and`, `or`, `implies`, `not`, `in` | Proposition connectives and sequence membership. `and`, `or`, and `implies` have increasing precedence except right-associative `implies`; `in` has comparison precedence. |
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |

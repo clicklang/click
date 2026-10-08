@@ -17,7 +17,7 @@ int32 empty_repeat(int32 active) {
 ```click
 resource guarded(active: int32) {
     if active != 0 {
-        contains guarded(0);
+        owns guarded(0);
     }
 }
 

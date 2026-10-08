@@ -51,7 +51,7 @@ resource holder(p: struct node*, q: struct node*) {
     field tag: int32;
     owns side: tagged(q);
     fact side.tag == tag;
-    contains hop(p);
+    owns hop(p);
 }
 
 verifying "call_through_witness_footprint_includes_its_memory.c";

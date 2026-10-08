@@ -30,7 +30,7 @@ int32 twice(int32* p, int32 flag) {
 
 ```click
 resource allocated(p: int32*) {
-    contains allocation(p, 4);
+    owns allocation(p, 4);
     owns p[0..1];
 }
 
