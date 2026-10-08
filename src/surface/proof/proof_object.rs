@@ -30,6 +30,9 @@ thread_local! {
     static FINALIZATION_VIEW_CONSTRUCTIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
+    static CHOSEN_PROJECTION_WALK_WORK: std::cell::Cell<(usize, usize)> = const {
+        std::cell::Cell::new((0, 0))
+    };
     static CHECKED_HAVE_OPERATIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
