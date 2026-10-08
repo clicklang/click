@@ -2840,6 +2840,24 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Vec<ResourceOccurrenceId> {
+        if let Some(range) = required.memory_view_range() {
+            // Select the same indexed, alias-aligned frontier as memory
+            // ownership. A loop cursor can name a subrange through a checked
+            // offset equality without sharing the source's pointer spelling.
+            let candidates = self.memory_fact_candidates(range, false, assumptions);
+
+            return candidates
+                .entries
+                .iter()
+                .filter_map(|entry| {
+                    let candidate = self.fact(entry);
+                    let aligned = candidates.requirement(entry, required)?;
+
+                    (candidate.is_view() && resource_fact_entails(candidate, &aligned, assumptions))
+                        .then_some(self.occurrence(entry))
+                })
+                .collect();
+        }
         self.direct_match_candidate_positions(required)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
