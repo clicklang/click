@@ -17,21 +17,122 @@ correctness property is preservation of node identity and in-order order
 while links and colors change; a contract that consumes one well-formed
 tree and produces another cannot state that without an abstract model.
 
-## State, 2026-10-07: handoff
+## State, 2026-10-08: handoff
 
 Insert is finished. The black-successor splice's deficit-start model proof
-in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
-successors; next port the unlink in chunk 11 to the unchanged C. Its red
-successor and nonempty replacement-child branches still need their exit facts.
+in [chunk 10](#erase-d3-d4-d10) covers immediate and deep successors.
+Chunk 11 now verifies the unchanged C for zero/one-child deletion and every
+immediate-successor exit, at the root or below it on either parent link.
+Red-leaf and nonempty-child successors return balanced trees with null fixup;
+black-leaf successors retain the exact deficit context and return the successor
+for fixup. Exact models preserve parent consistency and in-order contents.
+Deeper C successors remain. The deeper replacement-child case has a balance
+exit theorem and concrete check in `rbtree_erase_child.click` and
+`successor_child_checks.click`; its exact splice sequence and parent-consistency
+connection remain.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
 The loaded tagged-null conversion bug found in the root-leaf case is also
 fixed: explicit 64-bit casts now accept values proven zero by the current
 facts. `mdtests/tagged_pointer_null_word.md` covers loaded zero and masked
-loaded tag words, with a separate nonzero-load rejection fixture. The original
-C erase attempt now passes the parent cast; its ownership proof and the rest
-of chunk 11 remain unfinished.
+loaded tag words, with a separate nonzero-load rejection fixture.
+
+`examples/rbtree-erase/rbtree_erase.click` consumes the focused `rb_at(node)`
+and its `Context::Top` resource and returns the detached node's raw fields and
+a whole root resource. It handles leaf, right-child, and left-child root
+removal, proves null as the fixup parent, and establishes a black-rooted
+red-black result with in-order sequence `left ++ right`. The imported
+`rbtree_erase_root.click` proves those model facts separately. Mutation tests
+reject missing root replacement and either missing child parent/color write.
+`rbtree_erase_successor.click` adds the immediate red-leaf successor case at
+the root (2026-10-08). It proves the exact successor-splice model, red-black
+validity, parent consistency, in-order contents, detached-node ownership,
+and null fixup parent. All five smart sites pass expansion audit. Mutations
+remove the successor's parent/color assignment or its new left child's parent
+assignment and are rejected.
+
+The post-return fold bug is fixed: checked `have` completions are retained on
+the returned path, bound to its program snapshot, with root assumptions
+checked once and subsequent persistent deltas checked incrementally. Kernel
+regressions reject sibling facts and different memory snapshots and check
+scaling; mdtests cover interleaved proofs and folds. Exact fact lookup now
+recognizes retained resource-composition facts. Explicit resource closers use
+the same checked ownership receipts as `simp`, fixing the successor's final
+expansion without changing C.
+
+`rbtree_erase_black_successor.click` covers the immediate black-leaf successor
+at the root (2026-10-08). Its output is the empty hole and exact deficit
+context, with `ctx_rb(..., Succ(Zero), Black)`, parent consistency, and
+remaining in-order contents. The returned fixup parent is the non-null
+successor. All five smart sites pass expansion audit. Mutations reject
+returning null or skipping root replacement.
+The proof also exposed scalar pure-function calls skipped by pointer
+`rewrite`; the existing binder-safe pointer walker now handles those goals,
+with missing-premise, capture, offset, snapshot, and scaling regressions.
+
+`rbtree_erase_child_successor.click` covers the immediate successor with a
+nonempty right child at the root (2026-10-08). Its `rb_immediate_successor_child`
+model reattaches the old left subtree and blackens the replacement child.
+`rb_erase_immediate_successor_child` proves balance under a valid outer context,
+local parent consistency, and the exact in-order sequence. The C contract
+returns that model, full root validity and parent consistency, and a null
+fixup parent. Neither the successor's nor its child's color is assumed by the
+contract. Mutation checks cover the required blackening write.
+
+`rbtree_erase_black_leaf.click` verifies non-root black-leaf deletion on both
+parent links. It returns the unchanged context model, an empty hole with a
+one-black-level deficit, parent consistency, and the non-null fixup parent.
+It holds and returns exclusive callback-table ownership. Mutation tests reject
+an unchanged left or right parent link and a null fixup return.
+`rbtree_erase_red_leaf.click` covers both parent links without a deficit: the
+empty hole fits the unchanged context at the same black height, and the return
+is null. Its mutations reject unchanged links and a non-null fixup return.
+
+`rbtree_erase_right_child.click` and `rbtree_erase_left_child.click` cover
+non-root one-child deletion for both parent links. They derive colors from
+red-black validity, return the exact blackened/reparented replacement and
+unchanged context, and prove whole-tree balance, parent consistency, in-order
+contents, and null fixup. `rbtree_erase_one_child.click` supplies the balance,
+local symmetry, and parent-consistency theorems. Mutation tests reject unchanged
+parent links, skipped parent/color writes, a red replacement, and non-null fixup.
+
+`rbtree_erase_nonroot_successor.click` extends immediate red-leaf successor
+splicing to both non-root parent links. It preserves the outer context and
+returns the exact replacement subtree, whole-tree balance, parent consistency,
+and in-order contents with null fixup. The erased node's color is not assumed.
+Six mutation tests cover both parent links, left-subtree attachment and parent
+updates, the successor's parent/color write, and the no-fixup return.
+
+`rbtree_erase_nonroot_black_successor.click` covers immediate black-leaf
+successors on both parent links. Its exact deficit context preserves parent
+consistency and completes to the intended splice in the original outer context.
+The returned fixup parent is the successor. Seven mutations cover the link and
+parent/color writes, null return, and returning the erased node's parent.
+
+`rbtree_erase_nonroot_child_successor.click` covers an immediate successor
+with a nonempty replacement child on either parent link. Its exact model
+blackens the child while preserving the outer context. Whole-tree balance,
+parent consistency, in-order contents, and null fixup follow without color
+assumptions. Eight mutations cover all required link and parent/color writes,
+child blackening, and the no-fixup return.
+
+The broader example gate exposed two post-return certification regressions in
+`arena_write` and `arena_region_length`. Exact-width readability of a
+materialized cell and immutable argument facts of ordinary held resources
+are now retained. Argument facts are instantiated without memory, resources,
+or ambient read premises; mutable invariants and authorized member bodies
+remain unavailable through this route. Focused regressions cover range and
+lifetime rejection, resource presence/quantity, and scaling.
+
+Two proof-driver fixes support this increment: named folds after return inside
+`open` are deferred to the returned state, and exact checked execution retains
+its loop semantics even when no loop was reached. Thus the unreachable
+successor loop does not demand a spurious ranking measure; reachable unranked
+loop summaries still fail termination checks. The replacement-child checks
+also exposed a theorem planner bug: it omitted a proved constructor inequality
+from `apply using` even though the simple checker needed it. The planner now
+retains that evidence, with positive, negative, and expansion regressions.
 
 This section records what changed in the verifier since the insert proof was
 first written, and how to write the erase proofs so they do not need the same
@@ -938,13 +1039,21 @@ permits a red root at the boundary inside the right subtree.
 `successor_splice_checks.click` covers an immediate successor and a deeper
 successor below a red right-subtree root, the exact context/parent shapes,
 rejection of zero as the required height, and exclusion of red successors or
-successors with a right child from the black-leaf theorem. The latter two C
-branches need separate no-deficit exit facts during chunk 11; do not apply
-this theorem to them or claim the spliced whole tree is already red-black.
+successors with a right child from the black-leaf theorem. The red-leaf
+successor now has a separate no-deficit theorem, `rb_erase_red_successor_splice`,
+establishing whole-tree validity, in-order removal, and parent consistency.
+`rb_minimum_child_blackens_without_deficit` proves the balance exit for a
+nonempty replacement child; its complete successor-splice sequence and
+parent-consistency equations remain. Keep these cases separate from the
+black-leaf theorem, whose whole spliced tree still needs fixup.
 
-**Chunk 11. `__rb_erase_augmented`.** The unlink in its no-child, one-child,
-and two-child cases, contracted so the in-order sequence loses exactly the
-designated node. Depends on 7 and 10.
+**Chunk 11. `__rb_erase_augmented`: zero/one-child and immediate-successor C written.**
+The unchanged C verifies zero/one-child deletion and every immediate-successor
+exit, at the root and on either non-root parent link. No-deficit cases return
+exact remaining models, whole-tree balance, parent consistency, in-order
+contents, and null fixup. Black-leaf cases retain the exact one-black-level
+deficit and return the correct fixup parent for chunk 12. Deeper successors
+and their descent loop remain. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.

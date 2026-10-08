@@ -3199,7 +3199,6 @@ fn verify_c0_sources_in_context(
         certification_state
             .resources()
             .synchronize_memory_equalities(&assumptions_from_propositions(&certification_facts));
-        let has_frontier_loop_rules = frontier_loop_artifacts.is_some();
         let contract_function = annotated_function_with_assumptions(
             &certification_function_block,
             parsed_function,
@@ -3509,18 +3508,7 @@ fn verify_c0_sources_in_context(
                             contract_function.clone(),
                             certification_arguments.clone(),
                             certification_function_environment,
-                            if has_frontier_loop_rules {
-                                CExecutionSemantics::APPLY_VERIFIED_RULES
-                            } else {
-                                match contract_execution_mode {
-                                    CFunctionContractExecutionMode::VerifyLoops => {
-                                        CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS
-                                    }
-                                    CFunctionContractExecutionMode::ExecuteLoops => {
-                                        CExecutionSemantics::APPLY_VERIFIED_RULES
-                                    }
-                                }
-                            },
+                            CExecutionSemantics::APPLY_VERIFIED_RULES,
                             contract_execution_mode,
                             &checked_artifacts,
                             &certification_pure_theorems,

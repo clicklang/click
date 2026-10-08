@@ -262,6 +262,17 @@ recorded completion when the ensure is quantified, since the loads minted
 under a binder carry its identity) and accepts the claim when the lowering
 equals a recorded completion whose premises the contract context holds.
 
+Post-return `have` completions used by a later named resource fold remain
+on that returned path's checked trace. The kernel binds them to its published
+program snapshot, checks their root assumptions against the retained path,
+and imports only the completed conclusions. It imports the path's execution
+facts and resource observations once, then checks persistent fact deltas for
+successive proofs. Resource folds recompute their semantic facts; they never
+replace the path context with a proof's ambient assumptions. Explicit
+resource `assumption` closers and `simp` retain the same checked claim
+receipts, and certification checks their joint availability independently of
+how the certificate was printed.
+
 There is one lowering. A claim goal is the contract's elaborated ensure
 lowered by the kernel at the path's outcome (`c_function_ensure_goals`); a
 registered predicate ensure is the predicate identity, which the proof
