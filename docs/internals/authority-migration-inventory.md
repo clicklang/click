@@ -1575,3 +1575,39 @@ outcome unfold is still recorded for every family: the certificate of
 earlier chunks of this step, this clears `c_contract_executes_composition.md`,
 `c_named_function_contract_refinement_theorem.md` and
 `c_step_contract_frontier_branch.md` in the trial switch.
+
+#### Chunk 1q: gaps found by switching the default
+
+Switching the default to authority semantics ran the library and example
+suites, as well as the mdtests, under authority rules. These changes clear
+the failures it found beyond the planned switch-time fixtures.
+
+- **Certifying views of observed children.** Contract certification expands
+  the held entry resources one level. When a proof had observed the trees of
+  a viewed root's children, that expansion replaced the projected child
+  views with their bodies, and the required child views seemed missing. A
+  view is duplicable, so a required view the unexpanded entry holds is
+  accepted. A proof that loads a child's cells also records viewability
+  premises that the entry holds only through the folded child. Such a
+  premise is retried against the entry's composites opened level by level,
+  as deep as the entry facts decide. Regression:
+  `authority_mode_certifies_observed_child_views.md`, reduced from
+  `examples/binary-tree`.
+- **Outcome refolds.** An outcome unfold under authority semantics is
+  retained on the completed path, and a refold of an ordinary family is not.
+  A second unfold then started from a path that never held the folded head.
+  It now leaves the retained path as it is, after checking the presented
+  exchange. Regression:
+  `authority_mode_outcome_refold_stays_on_the_completed_path.md`.
+- **Arena proof budget.** In `examples/arena`, one `have` in
+  `arena_pipeline` already used 2.24M of its 2.5M control budget under
+  legacy semantics. It exceeded the budget under authority semantics, whose
+  proof contexts carry more facts. Three of its `simp()` steps now name
+  their premises with `using`, which brings the container down to 0.46M
+  units under authority semantics. The C is unchanged. Another `have` in the
+  same function uses 2.07M units under authority semantics and 1.46M under
+  legacy.
+
+Still open before the switch: the authority return-proof recheck scans the
+ambient context, as `bugs/authority-return-proof-recheck-scans-the-ambient-context.md`
+describes, so a library scaling test fails under authority semantics.
