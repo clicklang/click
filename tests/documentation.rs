@@ -617,9 +617,16 @@ fn normative_technical_examples_are_backed_by_verification_fixtures() {
                 && fixture.ends_with(".click");
             let is_cpp_example =
                 fixture.starts_with("examples/basic-cpp/") && fixture.ends_with(".click");
-            if !is_mdtest && !is_cpp_integration_fixture && !is_cpp_example {
+            let is_rust_integration_fixture = fixture
+                .starts_with("tests/fixtures/rust-verification/")
+                && fixture.ends_with(".click");
+            if !is_mdtest
+                && !is_cpp_integration_fixture
+                && !is_cpp_example
+                && !is_rust_integration_fixture
+            {
                 failures.push(format!(
-                    "{}:{}: verified example must name an mdtests/*.md, C++ integration fixture, or C++ example: {fixture}",
+                    "{}:{}: verified example must name an mdtests/*.md, a C++ or Rust integration fixture, or a C++ example: {fixture}",
                     page.display(),
                     index + 1
                 ));
@@ -648,10 +655,15 @@ fn normative_technical_examples_are_backed_by_verification_fixtures() {
                 let documented_source = format!("{}\n", lines[index + 1..fence_end].join("\n"));
                 assert_eq!(
                     documented_source, fixture_source,
-                    "{fixture}: documented C++ proof must exactly match its integration fixture"
+                    "{fixture}: documented proof must exactly match its integration fixture"
                 );
-                let cpp_import_tests = fs::read_to_string(root().join("tests/cpp_import.rs"))
-                    .expect("read C++ integration tests");
+                let integration_tests = if is_rust_integration_fixture {
+                    "tests/rust_import.rs"
+                } else {
+                    "tests/cpp_import.rs"
+                };
+                let cpp_import_tests = fs::read_to_string(root().join(integration_tests))
+                    .expect("read the integration tests");
                 let include_path = if is_cpp_example {
                     format!("../{fixture}")
                 } else {
@@ -662,7 +674,7 @@ fn normative_technical_examples_are_backed_by_verification_fixtures() {
                 };
                 assert!(
                     cpp_import_tests.contains(&include_path),
-                    "{fixture}: C++ proof must be included by tests/cpp_import.rs"
+                    "{fixture}: the proof must be included by {integration_tests}"
                 );
             }
             if *line == "```c" {

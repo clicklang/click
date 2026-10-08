@@ -4561,6 +4561,44 @@ fn a_hidden_record_needs_its_child_declared_first() {
         ),
         "{error:?}"
     );
+/// A Rust sidecar states a signature as Rust does. It declares the same
+/// function as the C-shaped spelling, and `expr as T` is the scalar cast.
+#[test]
+fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
+    let c_shaped = "verifying \"arithmetic.rs\"; \
+        uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
+        ensures result == sum + (uint32)byte; } by { execute(); simp(); } \
+        bool touch(uint64 count, bool flag) { ensures result == flag; } by { execute(); simp(); }";
+    let rust = "verifying \"arithmetic.rs\"; \
+        fn add_byte(sum: u32, byte: u8) -> u32 { requires sum <= 4294967040u32; \
+        ensures result == sum + byte as u32; } by { execute(); simp(); } \
+        fn touch(count: usize, flag: bool) -> bool { ensures result == flag; } by { execute(); simp(); }";
+    assert_eq!(
+        parser::parse(rust).expect("the Rust spelling parses"),
+        parser::parse(c_shaped).expect("the C-shaped spelling parses"),
+    );
+    for (source, expected) in [
+        (
+            "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "a `fn` signature is the Rust spelling",
+        ),
+        (
+            "verifying \"add.rs\"; fn read(value: &i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "a reference in a `fn` signature is not supported yet",
+        ),
+        (
+            "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
+            "an array or slice in a `fn` signature is not supported yet",
+        ),
+    ] {
+        let error = parser::parse(source).expect_err("the signature is refused");
+        assert!(error.message.contains(expected), "{source}: {error:?}");
+    }
+    // `as` before anything but a scalar type is not a cast.
+    parser::parse(
+        "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",
+    )
+    .expect("a C sidecar is unchanged");
 }
 
 /// A missing memory fact is reported as the place a clause would name.

@@ -2239,6 +2239,35 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     }
 }
 
+/// A Rust sidecar states signatures as Rust does and casts with `as`. The
+/// contracts are the ones `examples/rust-unsigned` states in C shape.
+#[test]
+fn rust_sidecar_signatures_in_rust_syntax_verify() {
+    let p = Project::new(UNSIGNED_SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/fn_signatures.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let (_, verified) = C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert_eq!(verified.len(), 3);
+    // The signature is still checked against the imported function.
+    let error = C0VerificationSession::new_program_prepared(
+        &sidecar.replace("byte: u8", "byte: u32"),
+        &prepared,
+    )
+    .err()
+    .expect("the sidecar states another parameter type");
+    assert!(error.message().contains("add_byte"), "{}", error.message());
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("value * 3u32", "value * 4u32"),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
+}
+
 #[test]
 #[ignore = "nightly: 23 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_unsigned_panic_paths_are_rejected() {

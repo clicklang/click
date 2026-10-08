@@ -139,6 +139,41 @@ complete checksum loop now produces a locked, prepared import, and its
 postcondition remains unproved. General trait dispatch and arbitrary Rust
 crates remain outside the supported subset.
 
+## Signatures in Rust syntax
+
+A sidecar for a Rust source may state a function's signature as Rust does,
+with Rust type names, and cast with `as`:
+
+<!-- verified-example: tests/fixtures/rust-verification/fn_signatures.click -->
+```click
+verifying "borrow.rs";
+
+fn add_byte(sum: u32, byte: u8) -> u32 {
+    requires sum <= 4294967040u32;
+    ensures result == sum + byte as u32;
+} by { execute(); simp(); }
+
+fn times_three(value: u32) -> u32 {
+    requires value <= 1431655765u32;
+    ensures result == value * 3u32;
+} by { execute(); simp(); }
+
+fn reduce(value: u32) -> u32 {
+    ensures result == value % 65521u32;
+} by { execute(); simp(); }
+```
+
+It declares the same function as the C-shaped spelling
+`uint32 add_byte(uint32 sum, uint8 byte)`, and both are accepted. The
+parameter and return types are the integer and float types, `bool`, `()`,
+and a struct by name; `usize` and `isize` are 64 bits. `expr as T` takes a
+scalar type and binds as in Rust, tighter than a binary operator.
+
+A reference, a slice or an array in a `fn` signature is refused for now, and
+so is `fn` in a C or C++ sidecar. Write those contracts in the C-shaped
+spelling the rest of this page uses. Click's own words (`requires`,
+`ensures`, `owns`, `result`, the tactics) are the same in every language.
+
 ## Supported semantics
 
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar

@@ -207,6 +207,26 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
         })
 }
 
+/// The C0 type a Rust scalar type name denotes.
+fn rust_scalar_type(name: &str) -> Option<C0Type> {
+    Some(match name {
+        "bool" => C0Type::Bool,
+        "i8" => C0Type::Int8,
+        "i16" => C0Type::Int16,
+        "i32" => C0Type::Int32,
+        "i64" | "isize" => C0Type::Int64,
+        "i128" => C0Type::Int128,
+        "u8" => C0Type::UInt8,
+        "u16" => C0Type::UInt16,
+        "u32" => C0Type::UInt32,
+        "u64" | "usize" => C0Type::UInt64,
+        "u128" => C0Type::UInt128,
+        "f32" => C0Type::Float32,
+        "f64" => C0Type::Float64,
+        _ => return None,
+    })
+}
+
 fn is_tactic_name(name: &str) -> bool {
     matches!(name, "auto" | "simp")
 }
@@ -431,6 +451,9 @@ struct Parser {
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
+    /// Whether a `verifying` source is Rust, which is what admits a Rust
+    /// signature (`fn name(a: T) -> T`).
+    verifies_rust: bool,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -744,6 +767,7 @@ impl Parser {
             in_resource_definition: false,
             declared_resource_fields: BTreeMap::new(),
             hidden_child_fields: BTreeMap::new(),
+            verifies_rust: false,
             tokens,
             positions,
             matching_parentheses,
@@ -1336,6 +1360,9 @@ impl Parser {
             }
         }
         self.expect(Token::Semicolon)?;
+        if source_path.ends_with(".rs") {
+            self.verifies_rust = true;
+        }
         Ok(source_path)
     }
 
@@ -3185,6 +3212,9 @@ impl Parser {
                 return_struct_name: None,
             });
         }
+        if self.peek_ident() == Some("fn") {
+            return self.parse_rust_function_signature();
+        }
         let parsed_return_type = self.parse_type()?;
         if parsed_return_type.constant {
             return Err(
@@ -3260,6 +3290,122 @@ impl Parser {
             struct_array_params,
             reference_params,
             return_struct_name: parsed_return_type.struct_name,
+        })
+    }
+
+    /// A Rust sidecar states its signature as Rust does:
+    /// `fn name(a: T, b: U) -> R`. It declares the same function the C-shaped
+    /// spelling `R name(T a, U b)` does. References, slices and methods are
+    /// not in this form yet (`design/rust-sidecar-signatures.md`).
+    #[inline(never)]
+    fn parse_rust_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
+        if !self.verifies_rust {
+            return Err(self.error(
+                "a `fn` signature is the Rust spelling; a C or C++ source's contract is written `type name(type parameter, ...)`",
+            ));
+        }
+        if self.pending_contract_name.is_some() {
+            return Err(self.error(
+                "a named contract does not take a `fn` signature yet; write `contract type Name(type parameter, ...)`",
+            ));
+        }
+        self.expect_ident_spelling("fn")?;
+        let name = self.expect_ident("function name")?;
+        self.expect(Token::LParen)?;
+        let mut parameters = Vec::new();
+        let mut struct_params = BTreeMap::new();
+        while self.peek() != Some(&Token::RParen) {
+            let parameter_name = self.expect_ident("parameter name")?;
+            self.expect(Token::Colon)?;
+            let parsed_type = self.parse_rust_type()?;
+            let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
+            if let Some(struct_name) = parsed.struct_name {
+                struct_params.insert(parsed.parameter.name.clone(), struct_name);
+            }
+            parameters.push(parsed.parameter);
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::RParen)?;
+        let parsed_return_type = if self.peek() == Some(&Token::Arrow) {
+            self.position += 1;
+            self.parse_rust_type()?
+        } else {
+            ParsedType {
+                c_type: C0Type::Void,
+                struct_name: None,
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: false,
+                reference: false,
+            }
+        };
+        let return_type = match parsed_return_type.struct_name.as_deref() {
+            Some(struct_name) => self.scalar_struct_value_type(struct_name)?,
+            None => parsed_return_type.c_type,
+        };
+        let diverges = if self.peek_ident() == Some("diverges") {
+            self.position += 1;
+            true
+        } else {
+            false
+        };
+        Ok(ParsedFunctionSignature {
+            signature: FunctionSignature {
+                return_type,
+                return_pointee_constant: false,
+                name,
+                parameters,
+                exceptional_type: None,
+                diverges,
+                declared_loadable_bytes: Vec::new(),
+            },
+            struct_params,
+            struct_array_params: BTreeSet::new(),
+            reference_params: BTreeSet::new(),
+            return_struct_name: parsed_return_type.struct_name,
+        })
+    }
+
+    /// A Rust type in a signature: an integer or float type, `bool`, `()`,
+    /// or a struct by name.
+    fn parse_rust_type(&mut self) -> Result<ParsedType, ClickError> {
+        let scalar = |c_type| ParsedType {
+            c_type,
+            struct_name: None,
+            struct_pointer: false,
+            constant: false,
+            pointee_constant: false,
+            reference: false,
+        };
+        if self.peek() == Some(&Token::LParen) {
+            self.position += 1;
+            self.expect(Token::RParen)?;
+            return Ok(scalar(C0Type::Void));
+        }
+        if self.peek() == Some(&Token::Amp) {
+            return Err(self.error(
+                "a reference in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+            ));
+        }
+        if self.peek() == Some(&Token::LBracket) {
+            return Err(self.error(
+                "an array or slice in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+            ));
+        }
+        let spelling = self.expect_ident("type")?;
+        Ok(match rust_scalar_type(&spelling) {
+            Some(c_type) => scalar(c_type),
+            None => ParsedType {
+                c_type: C0Type::Int32Pointer,
+                struct_name: Some(spelling),
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: false,
+                reference: false,
+            },
         })
     }
 
@@ -7927,6 +8073,11 @@ impl Parser {
         &mut self,
         first: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        let first = if self.verifies_rust && self.peek_ident() == Some("as") {
+            self.parse_rust_casts(first)?
+        } else {
+            first
+        };
         let mut values = vec![first];
         let mut operators: Vec<(usize, ContractBinaryConstructor)> = Vec::new();
         // Each precedence level has the same independently enforced chain
@@ -7952,7 +8103,12 @@ impl Parser {
             }
             self.position += 1;
             operators.push((precedence, constructor));
-            values.push(self.parse_contract_unary()?);
+            let operand = self.parse_contract_unary()?;
+            values.push(if self.verifies_rust && self.peek_ident() == Some("as") {
+                self.parse_rust_casts(operand)?
+            } else {
+                operand
+            });
         }
 
         while let Some((_, constructor)) = operators.pop() {
@@ -9360,6 +9516,45 @@ impl Parser {
 
     fn parse_contract_unary(&mut self) -> Result<ContractExpression, ClickError> {
         self.parse_contract_unary_at_depth(0)
+    }
+
+    /// `expr as T` in a Rust sidecar is the scalar cast `(T)expr`. It binds
+    /// tighter than a binary operator and looser than a unary one, as in
+    /// Rust. `as` followed by anything but a scalar type is left for the
+    /// clause that owns it (`intro() as name`).
+    #[inline(never)]
+    fn parse_rust_casts(
+        &mut self,
+        mut operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        while self.peek_ident() == Some("as")
+            && matches!(
+                self.peek_next(),
+                Some(Token::Ident(name)) if rust_scalar_type(name).is_some()
+            )
+        {
+            self.position += 1;
+            let target = self.expect_ident("type")?;
+            let target_type = rust_scalar_type(&target)
+                .expect("checked above")
+                .to_kernel_type();
+            let Some(expression) = contract_expression_as_c_fragment(&operand) else {
+                return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value"));
+            };
+            operand = crate::surface::lowering::contract_c_unary(
+                operand,
+                CExpression::Cast {
+                    expression: Box::new(expression),
+                    target_type,
+                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    pointee_struct: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                },
+            );
+        }
+        Ok(operand)
     }
 
     fn parse_contract_unary_at_depth(
