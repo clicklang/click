@@ -371,6 +371,35 @@ impl CreationEvents {
             && root.empty_populations.is_empty()
     }
 
+    /// Whether two ledgers record the same storage, member, authority and
+    /// scope state. Each transition mints a fresh identity, so two paths
+    /// whose transitions net out the same, such as one that created and
+    /// retired a local and one that never declared it, hold equal records
+    /// under different identities. Records that carry identities of their
+    /// own, opaque imports and symbolic batches, must be the very same
+    /// records. Comparing two separately built maps visits their entries.
+    pub(in crate::kernel) fn records_same_state_as(&self, other: &Self) -> bool {
+        let (left, right) = (&self.0, &other.0);
+        left.identity == right.identity
+            || left.invocation == right.invocation
+                && left.opaque_actor == right.opaque_actor
+                && left.pending == right.pending
+                && left.creators == right.creators
+                && left.anchors == right.anchors
+                && left.authority == right.authority
+                && left.scopes == right.scopes
+                && left.exact_members == right.exact_members
+                && left.opaque_types == right.opaque_types
+                && left
+                    .symbolic_batches
+                    .shares_root_with(&right.symbolic_batches)
+                && left.symbolic_holders == right.symbolic_holders
+                && left.tainted == right.tainted
+                && left.opaque_imports.shares_root_with(&right.opaque_imports)
+                && left.opaque_holders == right.opaque_holders
+                && left.empty_populations == right.empty_populations
+    }
+
     fn memoized_c_event(&self, key: CEvent, create: impl FnOnce() -> Self) -> Self {
         if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
             return existing.clone();
