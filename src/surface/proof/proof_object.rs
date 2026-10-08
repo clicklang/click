@@ -788,10 +788,6 @@ impl ExecutionBranchDecisions {
         self.ordered.iter()
     }
 
-    fn suffix_since(&self, ancestor: &Self) -> Option<Vec<ExecutionBranchDecision>> {
-        self.ordered.suffix_since(&ancestor.ordered)
-    }
-
     fn record_route(&mut self, route: usize, decision: Arc<ExecutionBranchDecision>) {
         self.by_route = self.by_route.with_inserted(route, decision);
     }

@@ -339,8 +339,14 @@ charged to visible semantic output rather than hidden ambient state:
   add their local resource observations after that shared prefix, and carry
   the context to return preparation; duplicate or dropped cases keep the
   ordered fold. The same regression now bounds whole-verification context
-  construction in both proof forms. Flat path storage and terminal-join work
-  remain violations; the bug report records the whole-work curve.
+  construction in both proof forms. Logical proof cases also retain their
+  ordered branch decision when the checked arm opens, using the frozen C
+  spelling for a source-successor split. Returned paths share that prefix,
+  and terminal joins keep the nested history instead of copying
+  and indexing it again. The same regression now bounds whole-verification
+  work in both proof forms through 64 returns. Flat path facts and terminal
+  joins' flat returned-path containers still need sharing; the bug report
+  records the remaining representation costs and the whole-work curves.
 
 ## Execution capacity follows selected syntax
 

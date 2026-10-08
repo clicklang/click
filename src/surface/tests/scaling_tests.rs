@@ -6204,7 +6204,8 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
 
 /// Return preparation and contract preparation share checked contexts in both
 /// proof forms. Bound whole-transaction construction, not just one tactic.
-/// The explicit form still has other flat-path costs tracked in the bug report.
+/// Both forms must also keep whole-verification work near linear. Flat stored
+/// path facts remain a separate representation cost tracked in the bug report.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
     let mut entries = Vec::new();
@@ -6306,16 +6307,14 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         entries.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 32),
         "return and completion contexts must share their prefix: explicit={explicit}, {entries:?}"
     );
-    if !explicit {
-        assert!(
-            samples
-                .windows(2)
-                .skip(2)
-                .all(|pair| pair[1].work * 100 <= pair[0].work * 225),
-            "whole verification must retain context savings: {samples:?}; {}",
-            named_growth_diagnostic(&samples)
-        );
-    }
+    assert!(
+        samples
+            .windows(2)
+            .skip(2)
+            .all(|pair| pair[1].work * 100 <= pair[0].work * 225),
+        "whole verification must retain shared history and context savings: explicit={explicit}, {samples:?}; {}",
+        named_growth_diagnostic(&samples)
+    );
 }
 
 #[test]

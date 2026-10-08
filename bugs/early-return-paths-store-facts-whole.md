@@ -152,7 +152,33 @@ Measured on base `0aecf5bd5`, with the original C and both proofs unchanged:
 whole-verification context construction in both forms, plus the named return
 context phase. The explicit total-work curve still violates the near-linear
 contract: terminal joins rebuild flat returned-path containers, and flat path
-facts are still imported per outcome. This bug remains open for those costs.
+facts are still imported per outcome.
+
+Terminal proof-case joins also rebuilt each returned path's branch-decision
+history to insert the outer case before its nested cases. Each nested history
+was copied and indexed again at every enclosing join. Proof cases now retain
+their decision when the checked arm opens, so returned paths inherit the
+correctly ordered persistent prefix and terminal joins keep it unchanged.
+Source-successor splits choose their frozen C spelling before opening the
+arms, while their checked case premises still use the written condition.
+The nested split regression checks source order, opposite-arm isolation, and
+shared sequence identity through both terminal joins, at 16 through 4,096
+unrelated ambient facts.
+
+Measured on base `24e7eb10b`, with the original C and both proofs unchanged:
+
+| proof / metric | 4 | 8 | 16 | 32 | 64 |
+| --- | --- | --- | --- | --- | --- |
+| grouped total work | 6804 | 11732 | 21708 | 42060 | 84300 |
+| explicit total work, history rebuilt | 6281 | 10749 | 19994 | 42968 | 122184 |
+| explicit total work, history shared | 6281 | 10749 | 19394 | 36808 | 74696 |
+
+The context-entry counts remain unchanged. The context-reuse regression now
+bounds whole-verification work to at most 2.25 times per doubling at the
+largest sizes for both proof forms, rather than only the grouped proof.
+Flat path facts and the terminal joins' flat returned-path containers remain
+unshared, even though the counted whole-work curves through 64 returns now
+satisfy that bound. This bug remains open for those representation costs.
 
 ## Intended regression
 

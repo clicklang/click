@@ -1596,10 +1596,6 @@ impl<'a> Proof<'a> {
                 ],
             )
         };
-        // A terminal case can return many paths. Fingerprint its source once,
-        // then retain that key as each path carries the shared case history.
-        let case_fingerprint =
-            proof_case_split.then(|| ExecutionBranchDecisions::key(&surface_condition));
         for (name, expected, arm) in [("then", true, &arms[0]), ("else", false, &arms[1])] {
             if !arm.execution.core.frontier.is_at_function_exit() {
                 return Err(self.step_error(format!(
@@ -1761,34 +1757,9 @@ impl<'a> Proof<'a> {
                     ));
                     execution_evidence
                         .push(arm.execution.core.execution_evidence[arm_path_index].clone());
-                    if proof_case_split {
-                        // This join's decision precedes its arms' decisions.
-                        // Keep the shared prefix and rebuild only the nested
-                        // suffix; appending here would reverse nested cases.
-                        let prefix = &parent_execution.presentation.branch_decisions;
-                        let nested = provenance
-                            .branch_decisions
-                            .suffix_since(prefix)
-                            .ok_or_else(|| {
-                                self.step_error(
-                                    "terminal proof cases lost their branch decision ancestry",
-                                )
-                            })?;
-                        let routes = provenance.branch_decisions.by_route.clone();
-                        provenance.branch_decisions = prefix.clone();
-                        provenance.branch_decisions.by_route = routes;
-                        provenance.branch_decisions.push(ExecutionBranchDecision {
-                            fingerprint: std::sync::OnceLock::from(
-                                case_fingerprint.expect("proof case fingerprint"),
-                            ),
-                            condition: surface_condition.clone(),
-                            value: arm_index == 0,
-                        });
-                        for decision in nested {
-                            crate::instrumentation::record_deterministic_work(1);
-                            provenance.branch_decisions.push(decision);
-                        }
-                    }
+                    // Proof cases retain their decision when the checked arm
+                    // opens, so this path already shares the complete ordered
+                    // case history. A join must not rebuild its nested suffix.
                     if let Some(route) = terminal_route {
                         provenance.branch_decisions.record_route(
                             route,
