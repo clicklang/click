@@ -61,16 +61,16 @@ phase keeps the per-tactic work budgets [`click verify`](verify.md#deterministic
 
 | Option | Default | Meaning |
 | --- | ---: | --- |
-| `--session-work-limit UNITS` | `100000000` | Budget the deterministic work of original-sidecar session initialization. |
+| `--session-work-limit UNITS` | `100000000` | Budget each of smart-site inventory and original-sidecar session initialization. |
 | `--expansion-work-limit UNITS` | `50000000` | Budget the deterministic work of one expansion or re-expansion. |
 | `--verification-work-limit UNITS` | `50000000` | Budget the deterministic work of one retained or cold proof-unit verification. |
 | `--performance-slack UNITS` | `10000` | Set the minimum expanded-over-original work increase that can fail. |
 | `--slow-site-limit UNITS` | `10000` | Deprecated alias for `--performance-slack`. |
-| `--session-time-limit DURATION` | `10m` | Contain a hung session initialization. |
+| `--session-time-limit DURATION` | `10m` | Contain a hung inventory or session initialization. |
 | `--discovery-time-limit DURATION` | `10m` | Compatibility alias for `--session-time-limit`. |
 | `--expansion-time-limit DURATION` | `10m` | Contain a hung expansion or re-expansion. |
 | `--verification-time-limit DURATION` | `10m` | Contain a hung proof-unit verification. |
-| `--time-limit DURATION` | `10m` | Limit the whole audit and print a resume cursor on exhaustion. |
+| `--time-limit DURATION` | `10m` | Limit the whole audit, including inventory; print a resume cursor when sites are known. |
 | `--start-at PATH:LINE:COLUMN` | none | Resume inclusively at a source location. |
 | `--claim CLAIM` | all | Select an exact claim. Repeat the option to select several claims. |
 | `--changed-since REVISION` | none | Select claims affected since a Git revision. |

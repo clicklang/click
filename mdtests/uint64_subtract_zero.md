@@ -21,6 +21,12 @@ theorem subtract_self(n: uint64) {
     ensures (int32)(uint32)(n - n) == 0 by { normalize(); }
 }
 
+theorem subtract_self_compound(n: uint64) {
+    ensures (n + 1u64) - (n + 1u64) == 0u64 by {
+        apply(subtract_self(n + 1u64)); assumption();
+    }
+}
+
 theorem subtract_self_high_bits() {
     ensures 18446744073709551615u64 - 18446744073709551615u64 == 0u64 by { normalize(); }
 }
