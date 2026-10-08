@@ -1375,3 +1375,33 @@ compare equal when they differ only in creation ledgers that record nothing:
 no storage, member, authority, import, scope or batch. Regressions:
 `authority_mode_separate_claim_proofs_certify.md`,
 `authority_mode_rebased_execution_certifies.md` and a kernel unit test.
+
+#### Chunk 1d: iterated ownership
+
+`take`, `give`, `gather` and `scatter` regroup owned memory only: the kernel
+step replaces memory facts in the resource context and records no storage,
+member or authority event. Authority semantics no longer refuse them; the
+same guard and coverage checks apply. Regressions:
+`authority_mode_iterated_gather_scatter.md` and
+`authority_mode_iterated_take_false_guard_rejected.md`.
+
+Loop exits that reach the join through different calls carry different
+creation-ledger successors. When neither ledger records anything, the exits
+now join as the certification checks of chunk 1c compare them. Regression:
+`authority_mode_loop_exits_after_calls_join.md`.
+
+#### Chunk 1e: verified helpers that borrow a guard or lifetime
+
+A verified helper whose contract borrows mutex resources whole and returns
+them unchanged now passes the authority-mode helper shape check whether the
+resource is a typed `mutex_use` share, a guard or a lifetime. Its body is
+checked under the same rules; without a share it cannot reacquire a deposited
+control, and returning the same mutex resources leaves the mutex state as it
+was. Assumed external contracts over mutex resources are still refused.
+Regressions: `authority_mode_verified_helper_borrows_guard.md` and
+`authority_mode_verified_helper_guard_requires_held_mutex.md`.
+
+The kernel's member body-access check applies only to a family that reaches
+a population; an ordinary composite that is not a supported transfer wrapper,
+including a recursive one or a viewed one, opens and unfolds by its
+definition. Regression: `authority_mode_ordinary_recursive_resource_unfolds.md`.

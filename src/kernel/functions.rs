@@ -3031,12 +3031,15 @@ fn authority_mode_returned_control(
     Some(clause)
 }
 
-/// Every mutex resource in this contract is a borrowed typed `mutex_use`
-/// share, and the contract is no acquiring or releasing helper. A body that
-/// locks through such a share is checked at return by
-/// `check_acquired_control_member_effects`, so preserving its other
-/// resources changes no population the caller holds.
-fn authority_mode_borrows_only_mutex_uses(interface: &CFunctionContractInterface) -> bool {
+/// Every mutex resource in this contract is borrowed whole and returned
+/// unchanged: a typed `mutex_use` share, a guard or a lifetime. The contract
+/// is no acquiring or releasing helper. A body that locks through a borrowed
+/// share is checked at return by `check_acquired_control_member_effects`; a
+/// body holding only a borrowed guard or lifetime cannot reacquire a deposited
+/// control, and returning the same mutex resources leaves the mutex state as it
+/// was. Preserving its other resources therefore changes no population the
+/// caller holds.
+fn authority_mode_borrows_only_mutex_resources(interface: &CFunctionContractInterface) -> bool {
     matches!(
         super::mutexes::helper_contracts::classify(interface),
         Ok(None)
@@ -3046,8 +3049,10 @@ fn authority_mode_borrows_only_mutex_uses(interface: &CFunctionContractInterface
         .chain(interface.resource_ensures())
         .filter(|spec| spec_contains_mutex_authority(interface, spec))
         .all(|spec| {
-            spec.family() == ResourceFamily::MutexUse
-                && spec.role() == CResourceTransferRole::Borrow
+            matches!(
+                spec.family(),
+                ResourceFamily::MutexUse | ResourceFamily::MutexGuard | ResourceFamily::MutexLive
+            ) && spec.role() == CResourceTransferRole::Borrow
                 && spec.access() == CResourceAccessMode::Own
                 && spec.quantity() == &CResourceQuantity::One
                 && spec.guard().is_none()
@@ -3062,7 +3067,7 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
             .iter()
             .chain(interface.resource_ensures())
             .any(|spec| spec_contains_mutex_authority(interface, spec))
-            && !authority_mode_borrows_only_mutex_uses(interface))
+            && !authority_mode_borrows_only_mutex_resources(interface))
     {
         return false;
     }

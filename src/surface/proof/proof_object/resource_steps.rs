@@ -1819,17 +1819,6 @@ impl<'a> Proof<'a> {
         tactic: &IteratedTactic,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let name = tactic.name();
-        if matches!(
-            tactic,
-            IteratedTactic::Gather(_) | IteratedTactic::Scatter(_)
-        ) && self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
-        {
-            return Err(self.step_error(
-                "resource gathering and scattering may change untracked members in authority mode",
-            ));
-        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error(format!("`{name}` requires an execution-frontier proof")));
         };
