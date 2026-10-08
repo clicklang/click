@@ -4561,6 +4561,8 @@ fn a_hidden_record_needs_its_child_declared_first() {
         ),
         "{error:?}"
     );
+}
+
 /// A Rust sidecar states a signature as Rust does. It declares the same
 /// function as the C-shaped spelling, and `expr as T` is the scalar cast.
 #[test]

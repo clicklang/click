@@ -1733,6 +1733,20 @@ impl Parser {
         }
     }
 
+    /// The hidden parent field that holds `owner.field`, as an expression.
+    /// Out of line: the caller is the recursive postfix parser, whose frame
+    /// every temporary enlarges.
+    #[inline(never)]
+    fn hidden_child_field(&self, owner: &str, field: &str) -> Option<ContractExpression> {
+        if self.hidden_child_fields.is_empty() {
+            return None;
+        }
+        self.hidden_child_fields
+            .get(&(owner.to_string(), field.to_string()))
+            .cloned()
+            .map(ContractExpression::ResourceField)
+    }
+
     /// Gives a resource that declares no fields one hidden field per field of
     /// the child it names, with the equation that ties the two. A later
     /// `child.field` in the body reads the hidden field, so the body may
@@ -3532,6 +3546,30 @@ impl Parser {
             pointee_constant: !mutable,
             reference: false,
         }))
+    }
+
+    /// The index between brackets. Out of line, with the two helpers below:
+    /// their callers are the recursive expression parsers, whose frames every
+    /// temporary enlarges.
+    #[inline(never)]
+    fn parse_place_index(&mut self) -> Result<ContractExpression, ClickError> {
+        let index = self.parse_contract_expression()?;
+        Ok(self.rust_place_index(index))
+    }
+
+    /// The right operand of a binary operator, with any Rust `as` casts.
+    #[inline(never)]
+    fn parse_binary_operand(&mut self) -> Result<ContractExpression, ClickError> {
+        let operand = self.parse_contract_unary()?;
+        self.parse_rust_casts(operand)
+    }
+
+    /// A C variable named in a contract, or the length a slice parameter's
+    /// `name.len()` denotes.
+    #[inline(never)]
+    fn c_variable_expression(&mut self, name: String) -> ContractExpression {
+        let name = self.take_rust_slice_len(&name).unwrap_or(name);
+        ContractExpression::CFragment(CExpression::Variable(name))
     }
 
     /// An index or range bound in a Rust sidecar. A place takes a 32-bit
@@ -8341,12 +8379,7 @@ impl Parser {
         &mut self,
         first: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        let first = if self.verifies_rust && self.peek_ident() == Some("as") {
-            self.parse_rust_casts(first)?
-        } else {
-            first
-        };
-        let mut values = vec![first];
+        let mut values = vec![self.parse_rust_casts(first)?];
         let mut operators: Vec<(usize, ContractBinaryConstructor)> = Vec::new();
         // Each precedence level has the same independently enforced chain
         // limit as the former recursive-descent level. A lower-precedence
@@ -8371,12 +8404,7 @@ impl Parser {
             }
             self.position += 1;
             operators.push((precedence, constructor));
-            let operand = self.parse_contract_unary()?;
-            values.push(if self.verifies_rust && self.peek_ident() == Some("as") {
-                self.parse_rust_casts(operand)?
-            } else {
-                operand
-            });
+            values.push(self.parse_binary_operand()?);
         }
 
         while let Some((_, constructor)) = operators.pop() {
@@ -8559,8 +8587,7 @@ impl Parser {
             postfixes += 1;
             if self.peek() == Some(&Token::LBracket) {
                 self.position += 1;
-                let index = self.parse_contract_expression()?;
-                let index = self.rust_place_index(index);
+                let index = self.parse_place_index()?;
                 self.expect(Token::RBracket)?;
                 let index = contract_expression_as_c_fragment(&index).ok_or_else(|| {
                     self.error("struct array indices must be current C expressions")
@@ -9821,7 +9848,8 @@ impl Parser {
         &mut self,
         mut operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
-        while self.peek_ident() == Some("as")
+        while self.verifies_rust
+            && self.peek_ident() == Some("as")
             && matches!(
                 self.peek_next(),
                 Some(Token::Ident(name)) if rust_scalar_type(name).is_some()
@@ -10144,8 +10172,7 @@ impl Parser {
             match self.peek() {
                 Some(Token::LBracket) => {
                     self.position += 1;
-                    let index = self.parse_contract_expression()?;
-                    let index = self.rust_place_index(index);
+                    let index = self.parse_place_index()?;
                     self.expect(Token::RBracket)?;
                     if let Some(element_width) = struct_array_element_width
                         && let Some(base_struct_name) = &struct_name
@@ -10370,11 +10397,8 @@ impl Parser {
                         let owner = owner.clone();
                         self.position += 1;
                         let field = self.expect_ident("resource field name")?;
-                        if let Some(hidden) = self
-                            .hidden_child_fields
-                            .get(&(owner.clone(), field.clone()))
-                        {
-                            expression = ContractExpression::ResourceField(hidden.clone());
+                        if let Some(hidden) = self.hidden_child_field(&owner, &field) {
+                            expression = hidden;
                             continue;
                         }
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
@@ -10798,10 +10822,7 @@ impl Parser {
                                 binder_index: *binder_index,
                             })
                         }
-                        None => {
-                            let name = self.take_rust_slice_len(&name).unwrap_or(name);
-                            Ok(ContractExpression::CFragment(CExpression::Variable(name)))
-                        }
+                        None => Ok(self.c_variable_expression(name)),
                     }
                 }
             }
