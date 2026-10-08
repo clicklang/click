@@ -26,16 +26,21 @@ immediate-successor exit, at the root or below it on either parent link.
 Red-leaf and nonempty-child successors return balanced trees with null fixup;
 black-leaf successors retain the exact deficit context and return the successor
 for fixup. Exact models preserve parent consistency and in-order contents.
-Deeper C successors remain. The replacement-child model now covers any
-successor depth: `rb_erase_nonempty_successor_splice` proves balance, exact
-in-order removal, and parent consistency for the complete transplant.
-The C descent loop and its ownership transitions are the remaining chunk 11 work.
-The left-only `EraseSpine` resource and terminating `refold_erase_spine` tactic
-now verify and pass expansion audit. The loop-exit bug exposed by their C
-application is fixed: guard-false, break, and return exits retain the final
-resource binders and restore the withheld caller frame. Small regressions also
-cover stores through reconstructed node pointers without losing unrelated
-caller-owned fields. The deeper C transplant proof remains in progress.
+Root deletion with a deeper successor and a nonempty replacement child now
+verifies in `rbtree_erase_spine.click`. The C descent loop carries the exact
+left-only `EraseSpine`; opening and closing helper contracts expose its
+innermost link around one shared C continuation. `refold_erase_spine` rebuilds
+the path, and `rb_erase_nonempty_successor_splice` proves balance, exact
+in-order removal, and parent consistency for the complete transplant. The
+contract also returns detached-node ownership and null fixup. All 59 smart
+sites pass expansion audit; five mutation checks cover the deeper links,
+replacement parent, and blackening. The full erase project runs nightly
+(158 seconds); the 8–9 second mutations stay in the ordinary gate. Deeper leaf
+successors and non-root deeper successors remain in chunk 11.
+The loop-exit bug exposed by the C application is fixed: guard-false, break,
+and return exits retain the final resource binders and restore the withheld
+caller frame. Small regressions also cover stores through reconstructed node
+pointers without losing unrelated caller-owned fields.
 The deeper splice also exposed pointer-identity losses at checked reads,
 same-block alias transitivity, and seeded pointer fields at nonzero offsets.
 These now have focused regressions in `stored_pointer_child_survives_resource_unfold.md`,
@@ -1071,20 +1076,20 @@ context reconstruction, reparenting, contents, and parent-preservation lemmas.
 Keep these cases separate from the black-leaf theorem, whose whole spliced
 tree still needs fixup.
 
-**Chunk 11. `__rb_erase_augmented`: zero/one-child and immediate-successor C written.**
+**Chunk 11. `__rb_erase_augmented`: C coverage in progress.**
 The unchanged C verifies zero/one-child deletion and every immediate-successor
-exit, at the root and on either non-root parent link. No-deficit cases return
+exit, at the root and on either non-root parent link. It also verifies root
+deletion with a deeper successor and a nonempty replacement child, including
+the descent loop and a shared splice continuation. No-deficit cases return
 exact remaining models, whole-tree balance, parent consistency, in-order
 contents, and null fixup. Black-leaf cases retain the exact one-black-level
-deficit and return the correct fixup parent for chunk 12. Deeper successors
-and their descent loop remain. The pointer-valued selector `rb_min_parent`
-and `rb_min_context_cut_child` now verify the exact reconstruction equation
-for an empty or nonempty minimum child at any depth, with reparenting to the
-link owner. The pointer-result lowering defect this exposed is fixed and
-covered by positive, negative, substitution, and scaling regressions; the
-nonempty-child blackening connection now verifies through
-`rb_erase_nonempty_successor_splice`. The deeper C descent and transplant
-ownership proof remains. Depends on 7 and 10.
+deficit and return the correct fixup parent for chunk 12.
+
+Deeper leaf successors and non-root deeper successors remain. The model
+selectors, reconstruction equations, and nonempty-child blackening connection
+already cover arbitrary depth through `rb_min_parent`,
+`rb_min_context_cut_child`, and `rb_erase_nonempty_successor_splice`.
+Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.
