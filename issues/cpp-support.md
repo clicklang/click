@@ -961,11 +961,23 @@ through containing records and distinct tagged instances. Recomputed artifacts
 reject forged base identities/names/layouts, cycles and copied field lists.
 Deterministic multi-size checks cover the shared declaration graph walk.
 
-Next add ordered base-subobject projections for inherited field accesses and
-derived-to-base method/reference receivers. Method calls in conditions (the
-current unchanged `GetFee` refusal) also need explicit evaluation normalization.
-Preserve root constness, exact nominal identities, byte offsets and field
-authority through mixed field/base paths. Keep base edges distinct from actual field declarations.
+Ordered base-subobject projections now support inherited field reads/writes,
+implicit inherited method receivers and const/mutable base-reference arguments.
+Mixed field/base paths retain each nominal owner/target and use span, propagate
+complete-root constness and use the shared indexed byte-offset walk. Field
+projection encoding remains compatible. Ordinary/expanded/retained offline
+proofs cover two-level bases, forward declarations, containing records,
+mixed-width leaves, mutable updates/calls and sibling frames. Recomputed
+artifacts reject equal-layout nominal substitutions, bad spans, reordered or
+incomplete paths and forged const roots; hostile proofs reject missing authority
+and false results/frames. Multi-size checks retain one unit of path work per edge.
+
+Next normalize method/free-function calls in conditions with explicit bounded
+evaluation order and modular contracts. The unchanged `GetFee` refusal remains
+its `IsEmpty()` condition call. Retain branch-dependent behavior, borrowed
+memory, checked results and sibling frames through ordinary verification,
+expansion/reverification and retained proofs. Locked-header executable calls
+remain the next prerequisite after condition normalization.
 Automatic objects with embedded records, nontrivial embedded destruction and cross-header executable graphs remain
 separate prerequisites, rather than being inferred from declaration support.
 Compose `IsEmpty` and the unified Up contract only after those prerequisites.

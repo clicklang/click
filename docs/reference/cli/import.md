@@ -887,11 +887,20 @@ to the locked, reachable record graph. The proof interface exposes its storage
 under `base`, for example `state->left.base.fee`, retaining ordinary field
 authority and sibling frames. Base chains use the bounded record-layout walk
 and leaf-materialization budget. Forged edges, layouts and cycles are rejected.
-This is declaration and contract-layout support: inherited source accesses,
-derived-to-base receiver/reference conversions, automatic derived objects and
-base constructor/destructor execution remain unsupported. Multiple or virtual
-bases, empty bases, own derived fields and tail-padding reuse remain outside
-this profile.
+Inherited field reads/writes and method calls, and implicit derived-to-base
+record-reference arguments, use ordered paths that may mix fields and bases.
+Each base projection records its derived owner, nominal base target and use
+span in a distinct `base` wrapper; ordinary field projections retain their
+existing encoding. Validation checks each declared edge and the final field or
+callee identity, and lowering uses the accumulated byte offset. Constness
+propagates from the complete root object across both kinds of edge. Clang still
+checks source access control. Offline ordinary, expanded and retained proofs
+cover base chains, mixed-width leaves, const/mutable calls and sibling frames;
+recomputed artifacts reject wrong nominal targets even with equal layouts,
+reordered/incomplete paths, forged spans and mutable binding through const roots.
+Explicit casts, automatic derived objects and base constructor/destructor
+execution remain unsupported. Multiple or virtual bases, empty bases, own
+derived fields and tail-padding reuse remain outside this profile.
 
 Copies and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,

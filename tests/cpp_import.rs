@@ -12,8 +12,8 @@ use click::kernel::{
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
-    CppFunctionKind, CppInitializer, CppStatement, CppType, load_import, lower_import,
-    refresh_import,
+    CppFunctionKind, CppInitializer, CppProjection, CppStatement, CppType, load_import,
+    lower_import, refresh_import,
 };
 use click::surface::{
     C0VerificationSession, VerifiedClaim, expand_program_prepared_project_claim_source_by_label,
@@ -6124,10 +6124,6 @@ fn class_template_instances_retain_argument_and_layout_boundaries() {
             "named empty trivial tags",
         ),
         (
-            "struct Base { int value; }; template<class T> struct Box : Base {}; int call(const Box<int>& box) noexcept { return box.value; }",
-            "base-subobject projections",
-        ),
-        (
             "template<class T> struct Box { int value; }; int call(const Box<int*>& box) noexcept { return box.value; }",
             "named empty trivial tags",
         ),
@@ -6292,10 +6288,13 @@ fn single_base_layouts_retain_source_and_execution_boundaries() {
         assert!(error.contains(diagnostic), "{error}");
         assert!(!project.artifact().exists());
     }
-    let source = "struct Base { int value; }; struct Rate : Base {}; int read(const Rate& state) noexcept { return state.value; }";
+    let source = "struct Base { int value; }; struct Rate : Base {}; int read(const Rate& state) noexcept { return static_cast<const Base&>(state).value; }";
     let project = Project::with_fixture("inherited.cpp", "read", source);
     let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("base-subobject projections"), "{error}");
+    assert!(
+        error.contains("can access only current function"),
+        "{error}"
+    );
     assert!(!project.artifact().exists());
     let source = "struct Base { int value; }; struct Rate : Base { explicit Rate(int next) noexcept : Base{next} {} }; int read(int next) noexcept { Rate state(next); return 7; }";
     let project = Project::with_fixture("constructed_base.cpp", "read", source);
@@ -6305,6 +6304,200 @@ fn single_base_layouts_retain_source_and_execution_boundaries() {
         "{error}"
     );
     assert!(!project.artifact().exists());
+}
+
+const INHERITED_SOURCE: &str = r#"
+struct Base;
+struct Deep;
+struct Base {
+    long long fee; int size;
+    int Read() const noexcept { return size; }
+    void Set(int next) noexcept { size = next; }
+};
+struct Other { long long fee; int size; };
+struct SizeTag {}; struct WeightTag {};
+template<class Tag> struct Rate : Base {};
+struct Deep : Rate<SizeTag> {
+    int Observe() const noexcept { return size; }
+};
+struct Envelope {
+    Deep left; Rate<WeightTag> right; Other unrelated;
+    int Read() const noexcept { return left.size; }
+    int Via() const noexcept { return left.Read(); }
+    void Write(int next) noexcept { right.Set(next); }
+    void Copy() noexcept { right.size = left.size; }
+};
+int read(const Deep& state) noexcept { return state.size; }
+long long fee(const Deep& state) noexcept { return state.fee; }
+int Helper(const Base& value) noexcept { return value.size; }
+void SetHelper(Base& value, int next) noexcept { value.size = next; }
+int call(const Envelope& state) noexcept { return Helper(state.left); }
+void change(Envelope& state, int next) noexcept { SetHelper(state.right, next); }
+"#;
+
+#[test]
+fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
+    for (selected, contract) in [
+        (
+            "read",
+            "int32 read(const struct Deep* state) { views state->base.base.size; ensures result == state->base.base.size; }",
+        ),
+        (
+            "fee",
+            "int64 fee(const struct Deep* state) { views state->base.base.fee; ensures result == state->base.base.fee; }",
+        ),
+        (
+            "Deep::Observe",
+            "int32 Deep_Observe(const struct Deep* self) { views self->base.base.size; ensures result == self->base.base.size; }",
+        ),
+        (
+            "Envelope::Read",
+            "int32 Envelope_Read(const struct Envelope* self) { views self->left.base.base.size; ensures result == self->left.base.base.size; }",
+        ),
+        (
+            "Envelope::Copy",
+            "void Envelope_Copy(struct Envelope* self) { views self->left.base.base.size; owns self->right.base.size; ensures self->right.base.size == self->left.base.base.size; ensures self->left.base.base.size == old(self->left.base.base.size); }",
+        ),
+    ] {
+        let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let sidecar =
+            format!("verifying \"inherited.cpp\"; {contract} by {{ execute(); simp(); }}");
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(&project, &import, &sidecar);
+    }
+}
+
+#[test]
+fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
+    for (selected, sidecar) in [
+        (
+            "Envelope::Via",
+            r#"
+        int32 Base_Read(const struct Base* self) { views self->size; ensures result == self->size; } by { execute(); simp(); }
+        int32 Envelope_Via(const struct Envelope* self) { views self->left.base.base.size; views self->right.base.size; ensures result == self->left.base.base.size; ensures self->right.base.size == old(self->right.base.size); } by { execute(); simp(); }
+        "#,
+        ),
+        (
+            "Envelope::Write",
+            r#"
+        void Base_Set(struct Base* self, int32 next) { owns self->size; ensures self->size == next; } by { execute(); simp(); }
+        void Envelope_Write(struct Envelope* self, int32 next) { owns self->right.base.size; views self->left.base.base.size; ensures self->right.base.size == next; ensures self->left.base.base.size == old(self->left.base.base.size); } by { execute(); simp(); }
+        "#,
+        ),
+        (
+            "call",
+            r#"
+        int32 Helper(const struct Base* value) { views value->size; ensures result == value->size; } by { execute(); simp(); }
+        int32 call(const struct Envelope* state) { views state->left.base.base.size; views state->unrelated.size; ensures result == state->left.base.base.size; ensures state->unrelated.size == old(state->unrelated.size); } by { execute(); simp(); }
+        "#,
+        ),
+        (
+            "change",
+            r#"
+        void SetHelper(struct Base* value, int32 next) { owns value->size; ensures value->size == next; } by { execute(); simp(); }
+        void change(struct Envelope* state, int32 next) { owns state->right.base.size; views state->left.base.base.size; ensures state->right.base.size == next; ensures state->left.base.base.size == old(state->left.base.base.size); } by { execute(); simp(); }
+        "#,
+        ),
+    ] {
+        let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(
+            &project,
+            &import,
+            &format!("verifying \"inherited.cpp\"; {sidecar}"),
+        );
+    }
+}
+
+#[test]
+fn inherited_calls_reject_forged_nominal_paths_and_const_roots() {
+    use sha2::{Digest, Sha256};
+    for selected in ["call", "change"] {
+        let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let original_lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        let other = artifact["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["name"] == "Other")
+            .unwrap();
+        for mutation in 0..8 {
+            let mut hostile = artifact.clone();
+            let place = &mut hostile["function"]["body"][0]["arguments"][0]["place"];
+            let path = place["projections"].as_array_mut().unwrap();
+            let last = path.len() - 1;
+            match mutation {
+                0 => path[last]["base"]["record_declaration_id"] = "unknown".into(),
+                1 => {
+                    path[last]["base"]["base_declaration_id"] = other["declaration_id"].clone();
+                    path[last]["base"]["base_name"] = other["name"].clone();
+                }
+                2 => path[last]["base"]["base_name"] = "wrong".into(),
+                3 => path[last]["base"]["span"]["file"] = "other.h".into(),
+                4 => path.reverse(),
+                5 => {
+                    path.pop();
+                }
+                6 => {
+                    path[last]["unexpected"] = true.into();
+                }
+                7 if selected == "change" => {
+                    hostile["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                        true.into();
+                }
+                7 => {
+                    path.push(path[last].clone());
+                }
+                _ => unreachable!(),
+            }
+            let bytes = serde_json::to_vec(&hostile).unwrap();
+            let mut lock = original_lock.clone();
+            lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+            lock["artifact_bytes"] = bytes.len().into();
+            fs::write(project.artifact(), bytes).unwrap();
+            fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+            let error = load_import(&project.config()).unwrap_err();
+            assert!(
+                error.len() < 8000,
+                "unbounded error for {selected}/{mutation}"
+            );
+        }
+    }
+}
+
+#[test]
+fn inherited_calls_reject_missing_authority_and_false_frames() {
+    let project = Project::with_fixture("inherited.cpp", "call", INHERITED_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"
+        verifying "inherited.cpp";
+        int32 Helper(const struct Base* value) { views value->size; ensures result == value->size; } by { execute(); simp(); }
+        int32 call(const struct Envelope* state) { views state->left.base.base.size; views state->unrelated.size; ensures result == state->left.base.base.size; ensures state->unrelated.size == old(state->unrelated.size); } by { execute(); simp(); }
+    "#;
+    for hostile in [
+        sidecar.replace("views state->left.base.base.size;", ""),
+        sidecar.replace(
+            "ensures result == state->left.base.base.size;",
+            "ensures result != state->left.base.base.size;",
+        ),
+        sidecar.replace(
+            "state->unrelated.size == old(state->unrelated.size)",
+            "state->unrelated.size != old(state->unrelated.size)",
+        ),
+    ] {
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
 }
 
 const SIGNED_CONVERSION_SOURCE: &str =
@@ -11355,7 +11548,10 @@ fn nested_source_fields_read_write_and_update_with_exact_authority_offline() {
             object
                 .projections
                 .iter()
-                .map(|field| field.name.as_str())
+                .map(|projection| match projection {
+                    CppProjection::Field(field) => field.name.as_str(),
+                    CppProjection::Base { .. } => panic!("expected an embedded field path"),
+                })
                 .collect::<Vec<_>>(),
             if selected == "ReadRightFee" {
                 vec!["right"]
@@ -11597,7 +11793,10 @@ fn projected_record_calls_and_reference_arguments_verify_offline() {
             place
                 .projections
                 .iter()
-                .map(|field| field.name.as_str())
+                .map(|projection| match projection {
+                    CppProjection::Field(field) => field.name.as_str(),
+                    CppProjection::Base { .. } => panic!("expected an embedded field path"),
+                })
                 .collect::<Vec<_>>(),
             expected
         );

@@ -17,10 +17,11 @@ mod validity;
 pub use import::{PreparedCppImport, load_import, refresh_import};
 pub use lowering::{LoweredCppFunction, lower_import};
 pub use schema::{
-    CppBase, CppBinaryOperator, CppCallArgument, CppCleanup, CppConstant, CppConstantReference,
-    CppConstevalMetadata, CppExceptionBehavior, CppExport, CppExpression, CppField,
-    CppFieldInitializer, CppFieldReference, CppFunction, CppFunctionKind, CppFunctionReference,
-    CppInitializer, CppLibraryAssertion, CppLibraryAssertionKind, CppLibraryMetadata,
-    CppLiteralConstructor, CppLiteralMetadata, CppLiteralMetadataBinding, CppPlace,
-    CppPlaceReference, CppProfile, CppRecord, CppSpan, CppStatement, CppType, CppTypeAlias,
+    CppBase, CppBaseReference, CppBinaryOperator, CppCallArgument, CppCleanup, CppConstant,
+    CppConstantReference, CppConstevalMetadata, CppExceptionBehavior, CppExport, CppExpression,
+    CppField, CppFieldInitializer, CppFieldReference, CppFunction, CppFunctionKind,
+    CppFunctionReference, CppInitializer, CppLibraryAssertion, CppLibraryAssertionKind,
+    CppLibraryMetadata, CppLiteralConstructor, CppLiteralMetadata, CppLiteralMetadataBinding,
+    CppPlace, CppPlaceReference, CppProfile, CppProjection, CppRecord, CppSpan, CppStatement,
+    CppType, CppTypeAlias,
 };

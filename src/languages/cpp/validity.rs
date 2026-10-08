@@ -134,7 +134,16 @@ impl Metadata<'_> {
             super::budget::MAX_RECORDS,
         )?;
         for projection in &place.projections {
-            self.field(projection)?;
+            match projection {
+                CppProjection::Field(field) => self.field(field)?,
+                CppProjection::Base { base } => {
+                    identity(&base.base_declaration_id, &base.base_name, "base reference")?;
+                    if base.record_declaration_id.is_empty() {
+                        return Err("C++ base reference is missing derived record identity".into());
+                    }
+                    base.span.validate(self.logical_source)?;
+                }
+            }
         }
         place.span.validate(self.logical_source)
     }
