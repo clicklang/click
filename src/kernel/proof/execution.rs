@@ -6486,6 +6486,20 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
                 if left == right)
 }
 
+/// The pointer congruence fragment may give a field read another spelling
+/// in the same checked arm. This normalizes just the named positive equality;
+/// it neither searches premises nor proves a missing read/safety obligation.
+pub(super) fn checked_interface_pointer_equality(facts: &ProofFacts, goal: &Proposition) -> bool {
+    matches!(
+        goal,
+        Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerOffsetEqual(_, _),
+            true
+        )
+    ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
+}
+
 #[cfg(test)]
 fn checked_evidence_premises_hold(theorem: &Theorem, facts: &ProofFacts) -> bool {
     checked_evidence_premises_hold_in(theorem, facts.assumptions())
@@ -12824,6 +12838,37 @@ mod tests {
                 "exact-view lookup should visit only its indexed event at size {event_count}",
             );
         }
+    }
+
+    #[test]
+    fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
+        let a = Pointer::symbolic(Variable(95_700));
+        let b = Pointer::symbolic(Variable(95_701));
+        let c = Pointer::symbolic(Variable(95_702));
+        let equal = |a: Pointer, b: Pointer| {
+            Proposition::ConditionIs(crate::kernel::ConditionTerm::pointer_equal(a, b), true)
+        };
+        let parent = ProofFacts::from_ordered(&[equal(a.clone(), b.clone())]);
+        let arm = parent.with_fact(equal(b, c.clone()));
+        let goal = equal(a.clone(), c.clone());
+        assert!(checked_interface_pointer_equality(&arm, &goal));
+        assert!(!checked_interface_pointer_equality(&parent, &goal));
+        assert!(!checked_interface_pointer_equality(
+            &arm,
+            &equal(a.offset_by_bytes(8), c.offset_by_bytes(16))
+        ));
+        assert!(!checked_interface_pointer_equality(
+            &arm,
+            &Proposition::And(Box::new(goal.clone()), Box::new(goal))
+        ));
+        assert!(!checked_interface_pointer_equality(
+            &arm,
+            &Proposition::CMemoryLoadable {
+                memory: CMemory::new(),
+                base: a,
+                bytes: Bitvector32Term::Constant(8),
+            }
+        ));
     }
 
     #[test]

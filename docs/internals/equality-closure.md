@@ -380,6 +380,10 @@ path-local graph roots. Reconstructing a context must not forget what a logical
 term denotes. Registration never decodes arbitrary pointer arithmetic and adds
 no proposition premise, ownership, read validity, or cross-snapshot equality.
 Each query registers only its named values and their recorded dependencies.
+Filing a checked pointer equality also registers the producer definitions of
+its two operands. A later query can therefore use a read hidden behind another
+class member without first comparing that read directly or searching the
+class for read spellings.
 A registration generation distinguishes reasoning memo entries from earlier
 misses, without scanning or rebuilding the proof environment. `simp` can emit
 `normalize() using {}` to check an equality against this ambient graph.

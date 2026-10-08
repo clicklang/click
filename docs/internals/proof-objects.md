@@ -242,7 +242,10 @@ The kernel first materializes the retained function entry, binding its own
 checked arguments without advancing the C source. The arms, abstraction, and
 continuation then share this bound state; resuming execution uses the retained
 source and does not bind the parameters a second time. Interface clauses still
-require checked resources and facts from both arms.
+require checked resources and facts from both arms. Positive pointer equalities
+may normalize through the arm's maintained equality graph when a logical read
+has a different spelling; ownership, loadability, and other safety obligations
+still need their own checked evidence.
 
 An interface `branch ensuring` may join different heap lifetimes when the
 interface includes an owned, arm-sensitive resource that represents the

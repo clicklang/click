@@ -1139,7 +1139,12 @@ impl EqualityGraph {
     /// also equates its whole offsets. Returns whether any class merge
     /// occurred, not whether the supplied equality is valid.
     pub(in crate::kernel) fn add_equality(&mut self, left: &Pointer, right: &Pointer) -> bool {
-        let state = self.state.get_mut().expect("equality graph");
+        let mut state = self.state.lock().expect("equality graph");
+        // A read used by a checked premise is a dependency of later queries,
+        // even when those queries name only another member of its class.
+        // Register these two explicit operands now; never search the ambient
+        // classes for read spellings when answering a transitive query.
+        self.register_logical_read_values(&mut state, [left, right]);
         state.register_blocks([left.block.clone(), right.block.clone()]);
         // The affine fragment already carries spellable base displacements.
         // Retain raw address applications only for relations whose symbolic

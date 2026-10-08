@@ -42,7 +42,10 @@ These now have focused regressions in `stored_pointer_child_survives_resource_un
 `pure_pointer_transitivity_same_block.md`, and
 `model_pointer_alias_nonzero_field_load.md`. Entry-time `if` and `match`
 interfaces now bind the checked function arguments before joining, so a
-proof-only ownership split can rejoin and then start C execution.
+proof-only ownership split can rejoin and then start C execution. Post-loop
+interfaces also retain pointer-read congruence: checked equality premises
+register their read definitions, and interface pointer equalities normalize
+against that scoped graph (`proof_interface_pointer_read_congruence_after_loop.md`).
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.

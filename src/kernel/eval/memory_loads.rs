@@ -5169,6 +5169,93 @@ mod tests {
     }
 
     #[test]
+    fn pointer_read_premises_register_definitions_before_transitive_queries() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let snapshot = intern_c_memory_ref(&memory);
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(95_600)), 4),
+        };
+        let parent = Pointer::symbolic(Variable(95_601));
+        let successor = Pointer::symbolic(Variable(95_602));
+        let address = base.offset_by_bytes(16);
+        let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+        let CValue::Pointer(stored) =
+            crate::kernel::cell_run_value(&address, CType::Int64Pointer, load)
+        else {
+            panic!("pointer field");
+        };
+        let bare = PureFactContext::new();
+        let read = logical_pointer_read(&memory, &parent.offset_by_bytes(16), &bare);
+        let base_equality = ConditionTerm::pointer_equal(parent.clone(), base);
+        let read_equality =
+            ConditionTerm::pointer_equal(stored.pointer().clone(), successor.clone());
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128, 512] {
+            let mut ambient = bare.clone();
+            for i in 0..size {
+                ambient = ambient.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(96_600 + i)),
+                        Pointer::symbolic(Variable(97_600 + i)),
+                    ),
+                    true,
+                );
+            }
+            let (context, insertion_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    ambient
+                        .clone()
+                        .assume_condition(base_equality.clone(), true)
+                        .assume_condition(read_equality.clone(), true)
+                });
+            let ((equal, query_work), map_work) =
+                crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        context.pointers_known_equal(&read, &successor)
+                    })
+                });
+            assert!(
+                equal,
+                "a query must not depend on first comparing the two read spellings"
+            );
+            samples.push((insertion_work, query_work));
+            assert!(
+                map_work < 1024 * (size.ilog2() as usize + 1),
+                "size={size}, map work={map_work}"
+            );
+            assert!(!ambient.pointers_known_equal(&read, &successor));
+            assert!(
+                !ambient
+                    .clone()
+                    .assume_condition(base_equality.clone(), true)
+                    .pointers_known_equal(&read, &successor)
+            );
+            assert!(
+                !ambient
+                    .assume_condition(read_equality.clone(), true)
+                    .pointers_known_equal(&read, &successor)
+            );
+            let other = logical_pointer_read(&memory, &parent.offset_by_bytes(24), &bare);
+            assert!(!context.pointers_known_equal(&other, &successor));
+            let changed = memory.clone().store(
+                address.clone(),
+                CValue::typed_pointer(Pointer::symbolic(Variable(95_603)), CType::Int64Pointer),
+            );
+            let replacement = logical_pointer_read(&changed, &address, &context);
+            assert!(!context.pointers_known_equal(&replacement, &successor));
+            assert!(!ResourceContext::new().permits_memory_read(&address, 8, &context));
+        }
+        assert!(
+            samples.iter().all(
+                |(insert, query)| *insert <= samples[0].0 + 100 && *query <= samples[0].1 + 100
+            ),
+            "read registration scanned unrelated equalities: {samples:?}"
+        );
+    }
+
+    #[test]
     fn seeded_pointer_cells_retain_their_typed_load_definition() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = CMemory::new();
