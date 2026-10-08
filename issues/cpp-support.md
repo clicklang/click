@@ -162,8 +162,8 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    hard-coded offsets. Integral template identity and unsigned descriptor
    storage prerequisites are implemented above; the remaining operations
    still need frontend admission and source proofs.
-2. **Descriptor values and reference returns (next design decision).**
-   Recommended profile: preserve native reference result signatures in sidecars
+2. **Descriptor values and reference returns (accepted).**
+   The user accepted this profile: preserve native reference result signatures in sidecars
    (`int32&`), matching native reference parameters. The result is a non-owning
    alias represented by the shared pointer/allocation-lifetime model. Reading or
    writing through it still needs caller-held backing authority; no exclusive
@@ -175,9 +175,22 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    temporary lifetimes. Copy the descriptor pointer and native uint64 extent,
    never pointee contents or authority. Verify the selected constructors and
    methods from their pinned source. General nontrivial class value semantics
-   remain outside this profile. Reference results and aggregate results still
-   require implementation; the pointer-return increment above does not admit
-   either one.
+   remain outside this profile.
+
+   Native mutable and const int32 reference results now preserve alias identity
+   for existing reference parameters and direct call forwarding. Sidecars use
+   `int32&` / `const int32&`: `result` reads the referent and `&result` is its
+   address. Alias-only proofs need no backing ownership; value claims need
+   existing authority. Ordinary, expanded and retained proofs run offline, with
+   negative checks for false alias/value claims, missing authority, signature
+   and const mismatches, and rehashed artifact mutations.
+
+   New bindings through raw pointers are deliberately refused until shared
+   live-object validation distinguishes real referents from null, expired or
+   one-past addresses without an implicit pointee load. This check is required
+   for `span.back()`. Local reference bindings and shared aggregate results,
+   construction and copies remain implementation work; `SpanPopBack` has not
+   been verified.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,

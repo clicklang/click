@@ -172,9 +172,12 @@ fn function_interface(
     source: &super::CppFunction,
     lowered: &crate::kernel::CFunction,
 ) -> Result<syntax::C0Function, String> {
+    let return_reference = matches!(source.return_type, CppType::LvalueReference { .. });
+    let return_constant = matches!(&source.return_type, CppType::LvalueReference { pointee } if Scalar::is(pointee, ScalarKind::Int32, true));
     let return_type = if source.return_type == CppType::Void {
         C0Type::Void
-    } else if matches!(&source.return_type, CppType::Pointer { pointee }
+    } else if return_reference
+        || matches!(&source.return_type, CppType::Pointer { pointee }
         if Scalar::is(pointee, ScalarKind::Int32, false))
     {
         C0Type::Int32Pointer
@@ -261,6 +264,8 @@ fn function_interface(
         .collect::<Result<Vec<_>, _>>()?;
     Ok(
         syntax::C0Function::external(return_type, lowered.name().to_owned(), parameters)
+            .with_return_reference(return_reference)
+            .with_return_pointee_constant(return_constant)
             .with_prelowered_kernel_function(lowered.clone()),
     )
 }

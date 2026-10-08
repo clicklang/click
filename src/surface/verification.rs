@@ -6980,6 +6980,7 @@ pub(in crate::surface) fn external_c0_function(
             .collect(),
     )
     .with_return_pointee_constant(function_block.signature().return_pointee_is_constant())
+    .with_return_reference(function_block.signature().returns_reference())
 }
 
 pub(in crate::surface) fn build_function_environment(
@@ -8394,6 +8395,13 @@ pub(in crate::surface) fn check_signature(
             parsed_function.return_type()
         ))
         .with_kind(ClickErrorKind::Type));
+    }
+
+    if signature.returns_reference() != parsed_function.returns_reference() {
+        return Err(ClickError::new(format!(
+            "signature mismatch for `{}` in `{source_path}`: reference and pointer results are distinct",
+            signature.name()
+        )).with_kind(ClickErrorKind::Type));
     }
 
     if signature.return_pointee_is_constant() != parsed_function.return_pointee_is_constant() {
