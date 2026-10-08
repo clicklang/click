@@ -24717,6 +24717,16 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             ),
         });
     }
+    // What a fold consumes is what holding the folded instance lets C read.
+    let folded_cells = if unfold {
+        Vec::new()
+    } else {
+        body.facts()
+            .iter()
+            .filter_map(CResourceFact::memory_own_range)
+            .map(|range| CResourceFact::view_memory(range.clone()))
+            .collect::<Vec<_>>()
+    };
     facts.push(Proposition::CResourceComposition(body));
     let mut body_assumptions = assumptions
         .clone()
@@ -24809,6 +24819,34 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                     slot: (*slot).into(),
                 }),
             );
+        }
+    }
+    // Holding an instance lets C read the cells its body owns. A fold makes
+    // the instance, so it publishes that read authority here, attached to
+    // the new occurrence: it retires when the instance is unfolded, consumed
+    // or freed. The checker derives the rewrite again and gets the same
+    // views, so a checked execution and its record agree.
+    if !unfold && let Some(folded) = next.resources.owned_instance(instance.identity).cloned() {
+        let owner = CResourceFact::own(CResource::Instance(folded.clone()));
+        if let Some((occurrence, _)) = next.resources.unique_owned_occurrence_for_fact(&owner) {
+            // The cells are the ones this fold just consumed: the body the
+            // rewrite evaluated, with the selected arm's constructor
+            // bindings in scope.
+            let views = folded_cells
+                .into_iter()
+                .filter(|view| !next.resources.contains_exact_representation(view))
+                .collect::<Vec<_>>();
+            if !views.is_empty() {
+                next.resources = next
+                    .resources
+                    .clone()
+                    .unchecked_with_supported_facts_from_occurrence_with_memory(
+                        occurrence,
+                        &owner,
+                        views,
+                        next.memory(),
+                    );
+            }
         }
     }
     Ok(ResourceInstanceRewriteResult {
@@ -29456,7 +29494,7 @@ fn instance_arm_views(
 /// arm's clauses. An instance whose model carries no variant evidence at all,
 /// or whose arms name a constructor binding in a memory clause, publishes
 /// nothing.
-fn instance_arm_read_authority(
+pub(super) fn instance_arm_read_authority(
     instance: &ResourceInstance,
     definitions: &[CCompositeResourceDefinition],
     state: &CState,

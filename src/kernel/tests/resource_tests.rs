@@ -6,6 +6,17 @@ use crate::kernel::LoanViewBinding;
 use crate::kernel::loans::{LoanLedger, LoanViewBindings};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
+/// A fold publishes read authority for the cells it consumed, attached to
+/// the folded instance. Folding what an unfold opened returns the state the
+/// unfold started from, apart from that observation.
+fn folded_without_read_views(state: CState) -> CState {
+    let resources = state
+        .resources()
+        .clone()
+        .without_owned_instance_read_views();
+    state.with_resource_context(resources)
+}
+
 #[test]
 fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() {
     let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
@@ -1435,7 +1446,13 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
         raw.resources().instance_consumption(left.identity()),
         Some(InstanceConsumption::Unfold)
     ));
-    assert_eq!(closed.resources(), state.resources());
+    assert_eq!(
+        closed
+            .resources()
+            .clone()
+            .without_owned_instance_read_views(),
+        *state.resources()
+    );
     assert!(closed.instance_field_scope.is_empty());
     for bad in [
         vec![],
@@ -1613,7 +1630,13 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
     )
     .unwrap()
     .state;
-    assert_eq!(closed.resources(), state.resources());
+    assert_eq!(
+        closed
+            .resources()
+            .clone()
+            .without_owned_instance_read_views(),
+        *state.resources()
+    );
 }
 
 #[test]
@@ -1646,7 +1669,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
         assert!(rewrite_resource_instance(&open, &instance, &definition, &unknown, false).is_err());
         let (closed, _) =
             rewrite_resource_instance(&open, &instance, &definition, &assumptions, false).unwrap();
-        assert_eq!(closed, state);
+        assert_eq!(folded_without_read_views(closed), state);
         let raw = CState::new().with_resource_context(open.resources().clone());
         let mut fresh = instance.clone();
         fresh.identity = Variable(999);
@@ -1808,9 +1831,11 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
         rewrite_resource_instance(&CState::new(), &fresh, &definition, &unknown, false).is_err()
     );
     assert_eq!(
-        rewrite_resource_instance(&open, &instance, &definition, &set, false)
-            .unwrap()
-            .0,
+        folded_without_read_views(
+            rewrite_resource_instance(&open, &instance, &definition, &set, false)
+                .unwrap()
+                .0
+        ),
         state
     );
     assert!(rewrite_resource_instance(&open, &instance, &definition, &unknown, false).is_err());
@@ -1858,9 +1883,11 @@ fn instance_memory_fold_requires_body_ownership_not_an_open_handle() {
     );
     assert!(opened.instance_field_scope.is_empty());
     assert_eq!(
-        rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
-            .unwrap()
-            .0,
+        folded_without_read_views(
+            rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
+                .unwrap()
+                .0
+        ),
         state
     );
     assert!(

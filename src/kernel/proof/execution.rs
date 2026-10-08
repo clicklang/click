@@ -12696,13 +12696,17 @@ mod tests {
                 .to_vec();
             let (outcome, _, _) =
                 trace_completion(&function, &events, facts.assumptions(), false).unwrap();
-            assert_eq!(
-                outcome,
-                CStatementOutcome::Return {
-                    value: int32(7),
-                    state: Box::new(folded.clone())
-                }
-            );
+            // The fold publishes read authority for the cells it consumed;
+            // apart from that observation the state is the folded one.
+            let CStatementOutcome::Return { value, state } = outcome else {
+                panic!("the completion returns");
+            };
+            assert_eq!(value, int32(7));
+            let resources = state
+                .resources()
+                .clone()
+                .without_owned_instance_read_views();
+            assert_eq!(state.with_resource_context(resources), folded);
             // Copying an event to a different path with a different body
             // state is rejected during final certification.
             let mut forged = base.execution_evidence[size - 1].clone();
