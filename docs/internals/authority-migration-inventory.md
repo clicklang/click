@@ -1442,3 +1442,28 @@ involved. The verification run now builds each function's entry context once
 and shares it across the function's claim proofs (a block that differs from
 the cached one under the same name builds its own). Regression:
 `authority_mode_separate_claim_proofs_share_one_entry.md`.
+
+#### Chunk 1i: legacy population-count fixtures
+
+Three fixtures added after milestone 5 read `count(...)` without authority:
+`population_count_alias_consumption_rejected.md`,
+`population_count_distinct_arguments_consumption.md` and
+`modeled_pthread_population_count_alias_rejected.md`. Their legacy property,
+that a count over a population which may alias another is refused, cannot
+arise under authority semantics: a count comes from the authority's ledger,
+not from the owned entries a key happens to spell, and two authorities are
+exclusive, so holding both proves the anchors distinct. Their authority
+replacements are:
+
+- `authority_population_count_distinct_arguments_consumption.md`: spending
+  one member of each of two distinct populations counts each separately
+  (replaces the distinct-arguments fixture).
+- `authority_population_count_alias_spend_requires_authority.md`: spending a
+  possibly aliased member needs its own authority (replaces the sequential
+  alias fixture).
+- `authority_modeled_pthread_alias_worker_requires_authority.md` and its
+  passing companion `authority_modeled_pthread_distinct_workers_spend.md`
+  (replace the worker alias fixture).
+
+The legacy fixtures remain until the switch, where they retire against these
+replacements with `fold_negative_quantity_legacy_control.md`.
