@@ -146,7 +146,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let pointer = logical_memory_load_address(pointer, assumptions);
+    let pointer = logical_memory_load_address(memory, pointer, assumptions);
     if assumptions.should_keep_spec_loads_symbolic() {
         let _assumptions_id_scope = assumptions.enter_id_scope();
         let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
@@ -242,7 +242,11 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 
 /// Use a published footprint only to select coordinates for this logical
 /// address. Equality of the address grants no access or snapshot transport.
-fn logical_memory_load_address(pointer: Pointer, assumptions: &PureFactContext) -> Pointer {
+fn logical_memory_load_address(
+    memory: &CMemory,
+    pointer: Pointer,
+    assumptions: &PureFactContext,
+) -> Pointer {
     // Only opaque logical binders need a new coordinate spelling. Concrete
     // and external addresses already name their storage; loaded pointers
     // retain their exact typed read definition for explicit rewrites.
@@ -250,6 +254,13 @@ fn logical_memory_load_address(pointer: Pointer, assumptions: &PureFactContext) 
         return pointer;
     };
     if crate::kernel::is_load_variable(variable) {
+        return pointer;
+    }
+    // The C evaluator gives an exact materialized cell precedence over an
+    // alias. Do the same before selecting footprint coordinates: a model
+    // match may expose another name whose cell was materialized separately.
+    // Choosing that alias here would rename a value the C already read.
+    if memory.known_value(&pointer).is_some() {
         return pointer;
     }
     // Select a published footprint spelling by the trusted address class. The
@@ -1456,7 +1467,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     // C and logical reads must name the same typed value through a checked
     // opaque address alias. Only the symbolic value's coordinates change:
     // C access validity still checks the original pointer and its provenance.
-    let address = logical_memory_load_address(pointer.clone(), assumptions);
+    let address = logical_memory_load_address(memory, pointer.clone(), assumptions);
     let value = symbolic_load_value(memory, &address, value_type)?;
     // Terms are canonical at creation: an int or byte load evaluates to its
     // load variable, with the defining fact beside it, so every fact,
@@ -4913,7 +4924,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(95_000)), 4),
         };
         let alias = Pointer::symbolic(Variable(95_001));
         let memory = CMemory::new();
@@ -4968,7 +4979,7 @@ mod tests {
         assert_eq!(program[0].outcome, logical[0].outcome);
         let unrelated = evaluate_logical_memory_load_paths(
             &memory,
-            alias,
+            alias.clone(),
             CType::UInt64,
             Vec::new().into(),
             Vec::new(),
@@ -4978,6 +4989,42 @@ mod tests {
             unrelated[0].outcome, logical[0].outcome,
             "an unpublished address equality must not merge different reads"
         );
+        // The C read may have been named before this model alias existed.
+        // Reusing the materialized cell must preserve that earlier value.
+        let CExpressionOutcome::Value(earlier_value) = &unrelated[0].outcome else {
+            panic!("the earlier read should denote a scalar value");
+        };
+        let CExpressionOutcome::Value(alias_value) = &logical[0].outcome else {
+            panic!("the newly exposed alias should denote a scalar value");
+        };
+        let cached_memory = memory
+            .clone()
+            .materialize_named_cell(alias.clone(), earlier_value.clone())
+            .materialize_named_cell(owner.clone(), alias_value.clone());
+        let reloaded = evaluate_logical_memory_load_paths(
+            &cached_memory,
+            alias.clone(),
+            CType::UInt64,
+            Vec::new().into(),
+            Vec::new(),
+            &context,
+        );
+        let program_reload = evaluate_c_memory_load_paths(
+            &cached_memory,
+            alias,
+            CType::UInt64,
+            Vec::new().into(),
+            Vec::new(),
+            &context,
+            true,
+            false,
+            None,
+            None,
+        );
+        assert_eq!(reloaded.len(), 1);
+        assert_eq!(program_reload.len(), 1);
+        assert_eq!(reloaded[0].outcome, unrelated[0].outcome);
+        assert_eq!(program_reload[0].outcome, reloaded[0].outcome);
         let displaced = evaluate_logical_memory_load_paths(
             &memory,
             owner.offset_by_bytes(8),
@@ -5049,7 +5096,11 @@ mod tests {
                 crate::instrumentation::measure_deterministic_work(|| {
                     for offset in [0, 4, 8] {
                         assert_eq!(
-                            logical_memory_load_address(alias.offset_by_bytes(offset), &context),
+                            logical_memory_load_address(
+                                &memory,
+                                alias.offset_by_bytes(offset),
+                                &context
+                            ),
                             owner.offset_by_bytes(offset)
                         );
                         let paths = evaluate_logical_memory_load_paths(
@@ -5068,7 +5119,10 @@ mod tests {
                 })
             });
             samples.push((work, map_work));
-            assert_eq!(logical_memory_load_address(alias.clone(), &before), alias);
+            assert_eq!(
+                logical_memory_load_address(&memory, alias.clone(), &before),
+                alias
+            );
         }
         assert!(
             samples[2].0 <= samples[0].0 * 3 + 128,
