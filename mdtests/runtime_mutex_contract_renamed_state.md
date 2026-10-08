@@ -30,7 +30,7 @@ resource counter_state(counter: struct counter*) {
 verifying "runtime_mutex_contract_renamed_state.c";
 
 int32 read_counter(struct counter *counter) {
-    owns &counter->mu;
+    owns counter->mu;
     requires aligned(&counter->mu, 8);
     owns initial: counter_state(counter);
     ensures result == initial.value;

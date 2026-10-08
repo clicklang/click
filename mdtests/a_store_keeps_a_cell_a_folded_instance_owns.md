@@ -1,10 +1,10 @@
 # A store keeps a cell a folded instance owns
 
-`touch` owns the descriptor `object(s)` only inside the folded field-bearing
-instance `r`, and writes `other->at` through its flat `object(other)`. The
+`touch` owns the descriptor `*s` only inside the folded field-bearing
+instance `r`, and writes `other->at` through its flat `*other`. The
 cells of `r`'s unconditional, unmatched body are named at entry, where the
 precondition reads `s->at`, and the store keeps `s->at`: the instance is held
-here, its body owns `object(s)` one layer down, and that is a different owned
+here, its body owns `*s` one layer down, and that is a different owned
 member than the one holding the written bytes, so the partition law places
 the two apart exactly as it does for two flat members. The postcondition
 reads the entry value without unfolding `r`.
@@ -29,7 +29,7 @@ void touch(struct slot* s, struct slot* other) {
 ```click
 resource slot_span(s: struct slot*) {
     field at: int32;
-    owns object(s);
+    owns *s;
     fact s->at == at;
 }
 
@@ -37,7 +37,7 @@ verifying "a_store_keeps_a_cell_a_folded_instance_owns.c";
 
 void touch(struct slot* s, struct slot* other) {
     owns r: slot_span(s);
-    owns object(other);
+    owns *other;
     requires s->at == 5;
     ensures s->at == 5;
 } by {

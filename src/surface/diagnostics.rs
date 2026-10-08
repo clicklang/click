@@ -4024,9 +4024,22 @@ pub(super) fn describe_c_value(
     }
 }
 
+/// Whether a rendered pointer reads as one operand under a prefix `*`.
+fn is_place_spelling(rendered: &str) -> bool {
+    rendered
+        .chars()
+        .all(|character| character.is_alphanumeric() || "_:->.".contains(character))
+}
+
 pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
     let base = describe_c_expression(&segment.base);
     let current = match &segment.surface {
+        // A place written alone is recorded as one element at its address.
+        ContractSegmentSurface::Range {
+            base: ContractExpression::CFragment(CExpression::AddressOf(place)),
+            start: ContractExpression::CFragment(CExpression::Value(start)),
+            end: ContractExpression::CFragment(CExpression::Value(end)),
+        } if *start == int32(0) && *end == int32(1) => describe_c_expression(place),
         ContractSegmentSurface::Range { base, start, end } => {
             let rendered_base = describe_contract_expression(base);
             format!(
@@ -4036,21 +4049,17 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             )
         }
         ContractSegmentSurface::Field {
-            address,
             base: surface_base,
             name,
             ..
         } => match surface_base {
             Some(surface_base) => {
-                format!(
-                    "{}{}->{name}",
-                    if *address { "&" } else { "" },
-                    describe_contract_expression(surface_base)
-                )
+                format!("{}->{name}", describe_contract_expression(surface_base))
             }
-            None => format!("{}{base}->{name}", if *address { "&" } else { "" }),
+            None => format!("{base}->{name}"),
         },
-        ContractSegmentSurface::Object(_) => format!("object({base})"),
+        ContractSegmentSurface::Object(_) if is_place_spelling(&base) => format!("*{base}"),
+        ContractSegmentSurface::Object(_) => format!("*({base})"),
     };
     match segment.state {
         ContractSegmentState::Current => current,

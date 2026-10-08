@@ -46,8 +46,8 @@ resource tree_at(p: struct node*) {
         Tree::Empty => { fact p == 0; },
         Tree::Node(identity, value, left_model, right_model) => {
             owns p->value;
-            owns &p->left;
-            owns &p->right;
+            owns p->left;
+            owns p->right;
             owns left: tree_at(p->left);
             owns right: tree_at(p->right);
             fact p != 0;

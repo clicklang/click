@@ -22,7 +22,7 @@ void probe(struct node *node) { node->right->augmented = 7; }
 ```click
 resource left(node: struct node*) {
     field weight: int32;
-    owns &node->left;
+    owns node->left;
 }
 
 verifying "probe.c";

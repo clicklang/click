@@ -15,7 +15,7 @@ void empty(struct pool* pool) { cleanup(pool); }
 ```click resource_semantics=authority
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     fact 0 <= pool->capacity;
     fact pool->capacity == count(slot(pool));
@@ -24,7 +24,7 @@ verifying "cleanup.c";
 void cleanup(struct pool* pool) {
     consumes control(pool);
     consumes pool->capacity of slot(pool);
-    produces object(pool);
+    produces *pool;
     ensures pool->capacity == 0;
     ensures count(slot(pool)) == 0;
 } by {
@@ -38,7 +38,7 @@ void cleanup(struct pool* pool) {
 void forward(struct pool* pool) {
     consumes control(pool);
     consumes pool->capacity of slot(pool);
-    produces object(pool);
+    produces *pool;
     ensures pool->capacity == 0;
     ensures count(slot(pool)) == 0;
 } by {
@@ -47,7 +47,7 @@ void forward(struct pool* pool) {
 void nested(struct pool* pool) {
     consumes control(pool);
     consumes pool->capacity of slot(pool);
-    produces object(pool);
+    produces *pool;
     ensures pool->capacity == 0;
     ensures count(slot(pool)) == 0;
 } by {
@@ -57,7 +57,7 @@ void empty(struct pool* pool) {
     consumes control(pool);
     consumes 0 of slot(pool);
     requires pool->capacity == 1;
-    produces object(pool);
+    produces *pool;
     ensures pool->capacity == 0;
     ensures count(slot(pool)) == 0;
 } by { execute(); simp(); }

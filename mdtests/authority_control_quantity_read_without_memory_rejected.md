@@ -8,7 +8,7 @@ void inspect(struct pool* pool) {}
 ```click resource_semantics=authority
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     fact pool->capacity == count(slot(pool));
 }

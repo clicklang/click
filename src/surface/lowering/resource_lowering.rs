@@ -912,7 +912,7 @@ fn materialize_access_segment_cells(
         )));
     }
 
-    // A complete object (`object(p)`) is one struct at the base: its cells
+    // A complete object (`*p`) is one struct at the base: its cells
     // take the field types of the layout, so a `uint64` or pointer field
     // reads back with its own type rather than as int32 words.
     if let Some(layout) = object_segment_layout(parameters, source_segment) {
@@ -2848,7 +2848,7 @@ pub(in crate::surface) fn loadable_base_and_bytes(
     }
 }
 
-/// The struct layout behind `object(p)` for a struct-pointer parameter `p`.
+/// The struct layout behind `*p` for a struct-pointer parameter `p`.
 /// Such a segment is one complete object, not a run of int32 words, so its
 /// cells take the field types of the layout.
 pub(in crate::surface) fn object_segment_layout<'a>(

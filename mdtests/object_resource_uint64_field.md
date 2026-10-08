@@ -1,6 +1,6 @@
-# A `uint64` field reads through `object()`
+# A `uint64` field reads through `*p`
 
-`object(p)` covers one complete struct. Its cells take the field types of
+`*p` covers one complete struct. Its cells take the field types of
 the layout, so an `unsigned long` field after an `int32` field reads back as
 a 64-bit value rather than as int32 words.
 
@@ -19,7 +19,7 @@ unsigned long read_word(struct node* node) {
 verifying "object_resource_uint64_field.c";
 
 resource node_storage(p: struct node*) {
-    owns object(p);
+    owns *p;
 }
 
 unsigned long read_word(struct node* node) {

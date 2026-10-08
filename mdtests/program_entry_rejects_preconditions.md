@@ -8,7 +8,7 @@ int main(void) { return state; }
 ```click
 verifying "main.c";
 int main() {
-    consumes &state[0..1];
+    consumes state;
     ensures result == 7;
 } by { execute(); simp(); }
 ```

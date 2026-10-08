@@ -38,7 +38,7 @@ resource cell_at(p: struct node*) {
 
 resource holder_at(h: struct node*) {
     field model: Cell;
-    owns &h->next;
+    owns h->next;
     owns child: cell_at(h->next);
     fact child.model == model;
 }

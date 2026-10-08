@@ -19,7 +19,7 @@ authorized resource object_ref(obj: struct object*) {}
 
 resource object_control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
-    owns object(obj);
+    owns *obj;
     owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));
 }

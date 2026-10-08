@@ -2,7 +2,7 @@
 
 The region is unfolded while the second `struct slot` still holds its
 materialized cells, then the C writes that descriptor's `at` and `pool`
-fields. The descriptor `object(s)` and `object(other)` are then two owned
+fields. The descriptor `*s` and `*other` are then two owned
 members of the frame, so the writes leave `s->pool` in place and the fold
 finds the range the unfold produced.
 
@@ -31,7 +31,7 @@ int32 peek(struct slot* s, struct slot* other) {
 ```click
 resource pool_state(pool: struct pool*) {
     field live: int32;
-    owns &pool->data;
+    owns pool->data;
     owns pool->n;
     fact 0 <= live;
 }
@@ -39,7 +39,7 @@ resource pool_state(pool: struct pool*) {
 resource pool_slot(s: struct slot*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     owns s->pool->data[at..end];
     fact s->at == at;
     fact s->end == end;
@@ -52,7 +52,7 @@ verifying "unfold_region_then_write_a_descriptor_of_its_type.c";
 int32 peek(struct slot* s, struct slot* other) {
     owns r: pool_slot(s);
     owns st: pool_state(old(s->pool));
-    owns object(other);
+    owns *other;
 } by {
     let { live: n } = unfold(st);
     let { at: a, end: e } = unfold(r);

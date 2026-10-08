@@ -37,7 +37,7 @@ int32 peek(struct slot* s, struct slot* other) {
 ```click
 resource pool_state(pool: struct pool*) {
     field live: int32;
-    owns &pool->data;
+    owns pool->data;
     owns pool->n;
     fact 0 <= live;
 }
@@ -45,7 +45,7 @@ resource pool_state(pool: struct pool*) {
 resource pool_slot(s: struct slot*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     owns s->pool->data[at..end];
     fact s->at == at;
     fact s->end == end;
@@ -58,7 +58,7 @@ verifying "unfold_region_after_writing_through_another_descriptors_pool.c";
 int32 peek(struct slot* s, struct slot* other) {
     owns r: pool_slot(s);
     owns st: pool_state(old(s->pool));
-    owns object(other);
+    owns *other;
     owns other->pool->n;
     ensures result == old(s->pool->n);
 } by {

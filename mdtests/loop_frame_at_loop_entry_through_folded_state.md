@@ -48,13 +48,13 @@ resource window(occupied: int32*, capacity: int32, start: int32, end: int32) {
 
 resource state(arena: struct arena*) {
     field capacity: int32;
-    owns &arena->data;
-    owns &arena->occupied;
+    owns arena->data;
+    owns arena->occupied;
     owns arena->capacity;
     owns arena->live_regions;
     fact arena->capacity == capacity;
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
 }

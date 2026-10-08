@@ -30,8 +30,8 @@ uint8 write_read(uint8* bytes, uint64 bytes_len, uint64 index, uint8 value) {
 } by { execute(); simp(); }
 
 void Guard_drop(struct Guard* self) {
-    requires separate(memory(object(self)), memory(self->slot[0..1]));
-    owns &self->slot;
+    requires separate(memory(*self), memory(self->slot[0..1]));
+    owns self->slot;
     owns self->saved;
     owns self->slot[0..1];
     ensures self->slot == old(self->slot);

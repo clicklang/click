@@ -57,7 +57,7 @@ verifying "load_origin_first_seen_per_function.c";
 void pool_init(struct pool* pool, int32 capacity) {
     requires count(pool_slot(pool)) == 0;
     requires 0 <= capacity;
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     produces capacity of pool_slot(pool);
     ensures valid_pool(pool);
@@ -72,13 +72,13 @@ void pool_init(struct pool* pool, int32 capacity) {
 }
 
 void pool_reset(struct pool* pool) {
-    owns object(pool);
+    owns *pool;
     ensures pool->capacity == 0;
 } by auto;
 
 void reset_pipeline(struct pool* pool) {
     requires count(pool_slot(pool)) == 0;
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     ensures pool->capacity == 0;
 } by {
@@ -90,8 +90,8 @@ void reset_pipeline(struct pool* pool) {
 
 void two_inits(struct pool* a, struct pool* b) {
     requires a != b;
-    owns object(a);
-    owns object(b);
+    owns *a;
+    owns *b;
     owns authority(pool_slot(a));
     owns authority(pool_slot(b));
     requires count(pool_slot(a)) == 0;

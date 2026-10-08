@@ -16,11 +16,11 @@ int main(void) { return read_low() < 0 && read_high() > 4294967295UL && zero == 
 ```click
 verifying "wide.c" as wide;
 long read_low() {
-    owns &wide::low[0..1];
+    owns wide::low;
     ensures result == old(wide::low);
 } by { execute(); simp(); }
 unsigned long read_high() {
-    owns &wide::high[0..1];
+    owns wide::high;
     ensures result == old(wide::high);
 } by { execute(); simp(); }
 int main() {

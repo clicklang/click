@@ -77,15 +77,11 @@ final proof must also handle real mutation-capable augmentation callbacks and
 their effects, which is rbtree C6 work; the no-op audit fixture does not
 complete that requirement.
 
-`object(&static_object)` still fails parsing with
-`object(...) currently expects a named C struct pointer parameter`. The parser
-in `src/surface/parser.rs::parse_current_contract_segments_inner` requires a
-named struct-pointer parameter. Field ranges can express the relevant table
-separation, as the ordinary passing suite shows. Generalizing the convenience
-spelling is therefore deferred unless an unchanged MVR proof exposes an
-obligation that cannot be expressed with the existing field ranges. No
-unconditional separation between a static object and an arbitrary external
-argument may be assumed.
+A static aggregate is named directly as a place: `owns static_object` covers
+the whole object, and `object(...)` with its named-parameter restriction is
+gone. Field ranges still express the relevant table separation, as the
+ordinary passing suite shows. No unconditional separation between a static
+object and an arbitrary external argument may be assumed.
 
 ## Existing P2 caller and linkage work stays separate
 
@@ -136,9 +132,6 @@ close the P1 rbtree/static-table work:
 - Wider literal prefixes/encodings, non-ASCII characters and additional escape
   forms, with explicit element types and encoding semantics. Basic ASCII and
   adjacent basic literals are already delivered.
-- General `object(...)` syntax for static aggregate addresses, if useful after
-  the current field-based specification path; it must preserve exact object
-  identity and layout and confer no new permissions.
 
 ## Acceptance criteria for the retained P2 work
 

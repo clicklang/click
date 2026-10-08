@@ -1,7 +1,7 @@
 resource marked_list(node: struct node*) {
     if node != 0 {
         contains allocation(node, sizeof(struct node));
-        owns object(node);
+        owns *node;
         fact aligned(node, 8);
         let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
         contains marked_list(next);

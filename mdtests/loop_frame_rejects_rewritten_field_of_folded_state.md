@@ -29,18 +29,18 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
 ```click
 resource state(arena: struct arena*) {
     field capacity: int32;
-    owns &arena->occupied;
-    owns &arena->spare;
+    owns arena->occupied;
+    owns arena->spare;
     owns arena->capacity;
     owns arena->occupied[0..arena->capacity];
     owns arena->spare[0..arena->capacity];
     fact arena->capacity == capacity;
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->spare[0..arena->capacity])
     );
     fact separate(

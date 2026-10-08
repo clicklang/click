@@ -290,7 +290,7 @@ applies.
 
 Two consequences are worth knowing when reading proofs. Where crossing a
 write needs evidence and no cell was materialized before it (a havoc of
-`object(other)` against a pointer that is only separate by a `requires`),
+`*other` against a pointer that is only separate by a `requires`),
 the read before the call and the read after it are different variables
 unless a step's frame check or an explicit `transport` carries the fact
 across; facts never match across such an effect structurally, and a step

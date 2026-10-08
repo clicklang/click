@@ -1,6 +1,56 @@
 use super::*;
 use click::surface::verify_c0_sources;
 
+/// A site cap covering the whole claim must not re-run it for each site.
+#[test]
+#[ignore = "nightly: audit scaling stays outside the verification gate"]
+fn bounded_whole_claim_audit_matches_uncapped_work_at_every_size() {
+    let directory = std::env::temp_dir().join(format!(
+        "click-audit-bounded-scaling-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(
+        directory.join("unit.c"),
+        "int32 identity(int32 x) { return x; }",
+    )
+    .unwrap();
+    let path = directory.join("unit.click");
+    for size in [4, 8, 16, 32] {
+        let mut source = String::from(
+            "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\n",
+        );
+        // Keep the premise set fixed as the independent written sites grow.
+        for _ in 0..size {
+            source.push_str("have x == x by simp;\n");
+        }
+        source.push_str("simp();\n}\n");
+        fs::write(&path, source).unwrap();
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert_eq!(sites.len(), size + 2);
+        let arguments = parse_arguments([
+            "--max-sites".to_string(),
+            sites.len().to_string(),
+            path.display().to_string(),
+        ])
+        .unwrap();
+        let (result, work) =
+            click::instrumentation::measure_deterministic_work(|| run_audit(arguments));
+        result.unwrap();
+        let uncapped = parse_arguments([path.display().to_string()]).unwrap();
+        let (result, uncapped_work) =
+            click::instrumentation::measure_deterministic_work(|| run_audit(uncapped));
+        result.unwrap();
+        // Compare the same claim at every size: the cap must add no repeated
+        // expansion or cold checking, regardless of that claim's own cost.
+        // Retained session work runs on its owned worker thread; the counter
+        // here includes inventory, expansion, and both cold verifications.
+        assert_eq!(work, uncapped_work, "{size} sites");
+        eprintln!("audit {size}: bounded {work}, uncapped {uncapped_work} main-thread work units");
+    }
+    fs::remove_dir_all(directory).unwrap();
+}
+
 #[test]
 fn parses_arguments_and_duration_units() {
     let arguments = parse_arguments(
@@ -840,7 +890,7 @@ void object_retain_many(struct object* obj, int32 amount) {
 }"#;
     let click_source = r#"resource object_ref(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
-    owns object(obj);
+    owns *obj;
     fact obj->refs == count(object_ref(obj));
 }
 
@@ -924,7 +974,7 @@ struct node* unpack(struct node* node) {
     return (struct node*)(node->word & ~1);
 }"#;
     let click_source = r#"resource packed(node: struct node*) {
-    owns object(node);
+    owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
 }
 
@@ -1002,7 +1052,7 @@ uint32 count_live(struct cell *node) {
 }"#;
     let click_source = r#"resource tagged(node: struct cell*) {
     if node != 0 {
-        owns object(node);
+        owns *node;
         fact aligned(node, 8);
         let next: struct cell* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
         contains tagged(next);

@@ -46,7 +46,7 @@ cargo run --bin click -- verify examples/multifile-registry/registry.click
 
 The project does not verify yet. `click verify` and the examples gate agree:
 both stop at `registry_run`'s entry, which cannot evaluate
-`owns beta::record_beta::batches[0].value[0..1]` (an owned field path into
+`owns beta::record_beta::batches[0].value` (an owned field path into
 another module's function-local static struct array has no known pointee
 type), and past that point the cross-file caller needs static-state caller
 transport (`issues/static-state-caller-transport.md`). The examples gate

@@ -19,7 +19,7 @@ resource cell(p: struct node*) {
     owns p->value;
 }
 resource pair(p: struct node*) {
-    owns &p->next;
+    owns p->next;
     contains cell(p->next);
 }
 verifying "three_from_two.c";

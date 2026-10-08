@@ -18,7 +18,7 @@ void take_two(struct child* obj) {
 authorized resource child_ref(obj: struct child*) {}
 resource control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
-    owns object(obj);
+    owns *obj;
     owns authority(child_ref(obj));
     fact obj->refs == count(child_ref(obj));
 }

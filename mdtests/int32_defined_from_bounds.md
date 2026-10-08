@@ -79,7 +79,7 @@ int caller(struct box* b) {
 ```click
 resource counted(b: struct box*) {
     field total: int32;
-    owns object(b);
+    owns *b;
 }
 
 verifying "int32_defined_from_bounds.c";
