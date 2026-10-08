@@ -230,6 +230,20 @@ impl Metadata<'_> {
         Ok(())
     }
 
+    fn conversions(&self, conversions: &[super::CppScalarConversion]) -> Result<(), String> {
+        for conversion in conversions {
+            crate::instrumentation::record_deterministic_work(1);
+            conversion.span.validate(self.logical_source)?;
+            conversion
+                .source_type
+                .validate_aliases_in(self.alias_sources)?;
+            conversion
+                .value_type
+                .validate_aliases_in(self.alias_sources)?;
+        }
+        Ok(())
+    }
+
     fn initializer(&self, initializer: &CppInitializer) -> Result<(), String> {
         match initializer {
             CppInitializer::Value { value } => self.expression(value),
@@ -242,16 +256,7 @@ impl Metadata<'_> {
                 span.validate(self.logical_source)?;
                 self.callee(callee)?;
                 self.arguments(arguments)?;
-                for conversion in conversions {
-                    crate::instrumentation::record_deterministic_work(1);
-                    conversion.span.validate(self.logical_source)?;
-                    conversion
-                        .source_type
-                        .validate_aliases_in(self.alias_sources)?;
-                    conversion
-                        .value_type
-                        .validate_aliases_in(self.alias_sources)?;
-                }
+                self.conversions(conversions)?;
                 Ok(())
             }
             CppInitializer::Constructor {
@@ -372,12 +377,14 @@ impl Metadata<'_> {
                     callee,
                     arguments,
                     value_type,
+                    conversions,
                     cleanups,
                     span,
                 } => {
                     self.callee(callee)?;
                     self.arguments(arguments)?;
                     value_type.validate_aliases_in(self.alias_sources)?;
+                    self.conversions(conversions)?;
                     self.cleanups(cleanups)?;
                     span
                 }

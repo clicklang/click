@@ -564,13 +564,16 @@ impl LoweringContext<'_> {
                 callee,
                 arguments,
                 value_type,
+                conversions,
                 ..
             } => {
                 let evaluation = self.normalize_scalar(ScalarInput::Call {
                     callee,
                     arguments,
-                    value_type,
-                    conversions: &[],
+                    value_type: conversions
+                        .first()
+                        .map_or(value_type, |cast| &cast.source_type),
+                    conversions,
                 })?;
                 self.lower_scalar_return(
                     evaluation,
