@@ -68,6 +68,32 @@ impl<'a> Proof<'a> {
         }
     }
 
+    pub(in crate::surface::proof) fn prepare_entry_interface(&self) -> Result<Self, ClickError> {
+        let Some(execution) = self.execution() else {
+            return Ok(self.clone());
+        };
+        if !execution.core.frontier.is_at_function_entry()
+            || execution.core.frontier.entry_member_prefix
+        {
+            return Ok(self.clone());
+        }
+        let mut execution = execution.clone();
+        execution
+            .core
+            .materialize_function_entry()
+            .map_err(|message| self.step_error(message))?;
+        let state = self
+            .state
+            .publish_checked_frontier_transition(
+                self.facts().clone(),
+                execution,
+                Vec::new(),
+                Vec::new(),
+            )
+            .map_err(|_| self.step_error("entry interface lost its execution frontier"))?;
+        Ok(self.with_kernel_state(state))
+    }
+
     /// Starts the `source_index`th source tactic on a threaded execution
     /// Proof by clearing the checked and newly added facts reported for the
     /// preceding step, and by addressing this occurrence in diagnostics so

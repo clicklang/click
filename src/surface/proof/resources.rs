@@ -962,6 +962,7 @@ fn common_possible_instance_arm(
 /// convention. It is bounded by the arm body: one cell per element of each
 /// constant-bounded range the arm owns, no search, and cells the snapshot
 /// already holds are left alone.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     resource_environment: &ResourceEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
@@ -970,6 +971,7 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     state: CState,
     instance: &ResourceInstance,
     assumptions: &PureFactContext,
+    entry_assumptions: &PureFactContext,
 ) -> CState {
     // An unfold consumes the instance and exposes its body, so an unmatched
     // body is the one it exposes. Its cells are named here exactly as a
@@ -991,13 +993,16 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     let Some(selected) = selected else {
         return state;
     };
+    // Select the arm from the facts the rewrite published, but choose its
+    // pointer spellings from the same entry context as the kernel rewrite.
+    // A new body equality must not rename an already published scalar load.
     project_selected_instance_arm_cells(
         &selected,
         instance,
         parameters,
         arguments,
         state,
-        assumptions,
+        entry_assumptions,
         false,
         None,
     )

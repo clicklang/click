@@ -47,7 +47,7 @@ mod cell_store;
 pub(crate) use cell_store::CHECKED_RUN_SLOTS;
 pub use cell_store::CellRun;
 pub(crate) use cell_store::{
-    CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet,
+    CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet, cell_run_value,
     offset_stem_and_constant,
 };
 mod counted_populations;

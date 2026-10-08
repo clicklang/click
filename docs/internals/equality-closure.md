@@ -84,17 +84,23 @@ explicit offset normalization remains available through `are_offsets_equal`.
 This avoids normalization work during unrelated field-separation checks.
 These checks require no alias enumeration or cancellation rule.
 
-When a checked cross-block pointer premise has a symbolic displacement that
-cannot be spelled as an offset term, the graph additionally joins its raw
-`address(block, offset)` applications. Offset-class merges then propagate by
+Checked cross-block pointer premises involving the shared external-argument
+block, concrete storage, or an unspellable displacement also join their raw
+`address(block, offset)` applications. An address class retains one offset
+witness per exact block. Merging classes with a shared block joins those
+offsets: `address(A, x) == p` and `p == address(A, y)` establish `x == y`,
+regardless of the affine representative. This is exact byte-address
+injectivity within one block; addresses from different blocks do not imply
+equal offsets. Only witnesses in the lighter class move, so unrelated
+address classes are never scanned. Offset-class merges then propagate by
 ordinary congruence, so `x == y`, `address(A, y) == z`, and `z == null` establish
 `address(A, x) == null` in any insertion order. Affine block merges translate
 registered applications when that translation is spellable. Query registration
 can use a stated `i64::MIN` translation directly without constructing its
 opposite sign. Unsupported translations otherwise remain unknown.
-Raw applications supplement the affine fragment only where its offset
-spelling loses this connection; derived load merges retain their existing
-indexed closure rather than eagerly duplicating every application.
+Raw applications preserve these exact premises independently of affine
+coordinates; derived load merges retain their existing indexed closure
+without eagerly duplicating every application.
 
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition, unsigned division/remainder and bitwise XOR have
@@ -364,13 +370,20 @@ graph relation changes neither logical premises nor read permission. Volatile
 reads do not register this bridge.
 
 Specification pointer loads now retain an exact definition supplied by their
-typed producer as graph term metadata. These definitions are shared across
+typed producer as graph term metadata. Resource-entry cells and lazy cell
+ranges use the same typed constructor and retain this definition before any C
+access, so a later read through a model alias has the same identity even at a
+nonzero field offset. These definitions are shared across
 contexts within one verification session, like load-variable interning;
 address hypotheses, unions, and their consequences remain in persistent
 path-local graph roots. Reconstructing a context must not forget what a logical
 term denotes. Registration never decodes arbitrary pointer arithmetic and adds
 no proposition premise, ownership, read validity, or cross-snapshot equality.
 Each query registers only its named values and their recorded dependencies.
+Filing a checked pointer equality also registers the producer definitions of
+its two operands. A later query can therefore use a read hidden behind another
+class member without first comparing that read directly or searching the
+class for read spellings.
 A registration generation distinguishes reasoning memo entries from earlier
 misses, without scanning or rebuilding the proof environment. `simp` can emit
 `normalize() using {}` to check an equality against this ambient graph.
