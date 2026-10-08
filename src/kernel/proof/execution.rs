@@ -6087,6 +6087,10 @@ pub(crate) struct PendingLoopReturnPath {
 pub(crate) struct ExecutionProofCore {
     pub(crate) state: SharedValue<CState>,
     initial_match_scope: SharedValue<CState>,
+    /// Context of the logical frontier cases admitted by the kernel, in
+    /// split order. Forks share the prefix; a join restores the parent's.
+    /// Other case producers use the ordinary local-context construction.
+    checked_step_cases: (usize, PureFactContext),
     /// Every variable `initial_match_scope` mentions, built once and shared by
     /// every branch forked from this region. A constructor witness introduced
     /// anywhere in the region must avoid these; everything the kernel has
@@ -7629,6 +7633,7 @@ impl ExecutionProofCore {
         let state: SharedValue<CState> = state.into();
         Self {
             initial_match_scope: state.clone(),
+            checked_step_cases: (0, PureFactContext::new()),
             initial_match_reserved: Arc::new(std::sync::OnceLock::new()),
             state,
             evidence_state: None,
@@ -8215,6 +8220,20 @@ impl ExecutionProofCore {
             return Err("the branch continuation does not begin the parent's remaining source");
         }
         Ok(tail)
+    }
+
+    /// Called only after the kernel admitted this logical frontier case.
+    pub(in crate::kernel::proof) fn retain_step_case(&mut self, fact: Proposition) {
+        self.checked_step_cases.0 += 1;
+        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+        self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
+    }
+
+    /// A local context for a presentation containing exactly these admitted
+    /// cases. The caller still checks every selected premise against its
+    /// ProofFacts; presentation never supplies semantic authority.
+    pub(crate) fn checked_step_case_context(&self, count: usize) -> Option<PureFactContext> {
+        (self.checked_step_cases.0 == count).then(|| self.checked_step_cases.1.clone())
     }
 
     /// The state the retained evidence has reached, or the core's state

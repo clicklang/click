@@ -162,9 +162,10 @@ fn check_upstream_cpp_rounding_phase(
     fs::write(&sidecar, source).unwrap();
     let refreshed = refresh_import(&config_path);
     if fee_rate_boundary {
-        let error = refreshed.expect_err("GetFee must retain the unsupported record boundary");
-        assert!(error.contains("have no bases"), "{error}");
-        assert!(error.contains("feefrac.h"), "{error}");
+        let error =
+            refreshed.expect_err("GetFee must retain the unsupported condition-call boundary");
+        assert!(error.contains("unsupported expression"), "{error}");
+        assert!(error.contains("feerate.cpp:23:19"), "{error}");
         assert!(error.len() < 8000);
         assert!(!root.join(format!("{name}.click-cpp.json")).exists());
         fs::remove_dir_all(root).unwrap();
@@ -2120,7 +2121,7 @@ fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_
 }
 
 #[test]
-fn pinned_upstream_fee_rate_getfee_retains_record_composition_boundary() {
+fn pinned_upstream_fee_rate_getfee_retains_condition_call_boundary() {
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFee",
         "CFeeRateGetFeeBoundary",

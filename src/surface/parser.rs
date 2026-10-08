@@ -7737,27 +7737,14 @@ impl Parser {
                     "`object({base_name})` requires `{base_name}` to be a C struct pointer"
                 ))
             })?;
-            let layout = self.struct_layouts.get(struct_name).ok_or_else(|| {
-                self.error(format!(
-                    "`object({base_name})` has no imported layout for `struct {struct_name}`"
-                ))
-            })?;
-            if layout.size_bytes() % 4 != 0 {
-                return Err(self.error(format!(
-                    "`object({base_name})` cannot represent the {}-byte `struct {struct_name}` as an int32-aligned memory segment",
-                    layout.size_bytes()
-                )));
-            }
-            return Ok(vec![ContractSegment {
-                state: ContractSegmentState::Current,
-                base,
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(layout.size_bytes() / 4)),
-                surface: ContractSegmentSurface::Object(struct_name.clone()),
-            }]);
+            let struct_name = struct_name.clone();
+            return Ok(vec![self.object_segment(base, struct_name)?]);
         }
-        let address = self.peek() == Some(&Token::Amp);
-        if address {
+        // `*p` is the object `p` points at: one complete struct for a struct
+        // pointer, one element for a scalar pointer.
+        let dereference = self.peek() == Some(&Token::Star);
+        let mut address = !dereference && self.peek() == Some(&Token::Amp);
+        if dereference || address {
             self.position += 1;
         }
         let (mut surface_base, mut base) = if typed_load_type_from_name(self.peek_ident()).is_some()
@@ -7799,6 +7786,16 @@ impl Parser {
             }
             _ => None,
         };
+        let names_aggregate_object = match &surface_base {
+            ContractExpression::Binding(name)
+            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+                self.current_aggregate_objects.contains_key(name)
+                    || self.current_global_array_shapes.contains_key(name)
+                    || self.qualified_object(name).is_some()
+            }
+            _ => false,
+        };
+        let mut dereferences_pointer = !names_aggregate_object;
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &surface_base {
             ContractExpression::Binding(name)
@@ -7853,6 +7850,7 @@ impl Parser {
                     self.error("struct array indices must be current C expressions")
                 })?;
                 let surface_base_before_index = surface_base;
+                dereferences_pointer = false;
                 if let Some(element_width) = struct_array_element_width {
                     let mut indexes = vec![index.clone()];
                     let mut surface_indexes = vec![ContractExpression::CFragment(index.clone())];
@@ -7979,19 +7977,18 @@ impl Parser {
             }
             self.position += 1;
             let field_name = self.expect_ident("field name")?;
-            if !matches!(
-                self.peek(),
-                Some(Token::Arrow | Token::Dot | Token::LBracket)
-            ) {
+            // Under `*`, the last field is read as the pointer it holds, not
+            // owned as a slot.
+            if !dereference
+                && !matches!(
+                    self.peek(),
+                    Some(Token::Arrow | Token::Dot | Token::LBracket)
+                )
+            {
                 if let Some(base_union_name) = &union_name
                     && self.union_layouts.contains_key(base_union_name)
                 {
                     let field = self.resolve_union_field_metadata(base_union_name, &field_name)?;
-                    if field.c_type.is_pointer() && !address {
-                        return Err(self.error(format!(
-                            "pointer field `{field_name}` requires an explicit range for its contents or `&` for its storage"
-                        )));
-                    }
                     // Address ownership covers opaque union storage in ABI byte units.
                     // It does not authorize reading or copying a typed union value.
                     let field = if address && field.union_name.is_some() {
@@ -8031,11 +8028,6 @@ impl Parser {
                             );
                         }
                         return self.aggregate_field_segments(base, &field_name, &field);
-                    }
-                    if field.c_type.is_pointer() && !address {
-                        return Err(self.error(format!(
-                            "pointer field `{field_name}` requires an explicit range for its contents or `&` for its storage"
-                        )));
                     }
                     // Address ownership covers opaque union storage in ABI byte units.
                     // It does not authorize reading or copying a typed union value.
@@ -8086,6 +8078,7 @@ impl Parser {
                 && self.union_layouts.contains_key(base_union_name)
             {
                 let field = self.resolve_union_field_metadata(base_union_name, &field_name)?;
+                dereferences_pointer = field.c_type.is_pointer();
                 let pointer = self.offset_field_pointer(base, field.offset_bytes);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 (
@@ -8101,6 +8094,7 @@ impl Parser {
                 && self.struct_layouts.contains_key(base_struct_name)
             {
                 let field = self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
+                dereferences_pointer = field.c_type.is_pointer();
                 let pointer = self.offset_field_pointer(base, field.offset_bytes);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 indexed_scalar_field = scalar_array_field_element(&field)
@@ -8184,8 +8178,42 @@ impl Parser {
                 },
             }]);
         }
-        if !address && struct_name.is_some() && self.peek() != Some(&Token::LBracket) {
-            return Err(self.error("whole-struct views require a declared resource"));
+        if dereference {
+            if self.peek() == Some(&Token::LBracket) {
+                return Err(self.error(
+                    "`*` names one object and takes no range; write the range on the pointer, as in `p[lo..hi]`",
+                ));
+            }
+            if !dereferences_pointer {
+                return Err(self.error("`*` expects a pointer"));
+            }
+            let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
+            let Some(struct_name) = struct_name else {
+                return Ok(vec![ContractSegment {
+                    state: ContractSegmentState::Current,
+                    base,
+                    start: start.clone(),
+                    end: end.clone(),
+                    surface: ContractSegmentSurface::Range {
+                        base: surface_base,
+                        start: ContractExpression::CFragment(start),
+                        end: ContractExpression::CFragment(end),
+                    },
+                }]);
+            };
+            return Ok(vec![self.object_segment(base, struct_name)?]);
+        }
+        // A place written alone is its own storage.
+        if !address && self.peek() != Some(&Token::LBracket) {
+            if let CExpression::Variable(name) = &base
+                && self.current_struct_params.contains_key(name)
+                && !names_aggregate_object
+            {
+                return Err(self.error(format!(
+                    "`{name}` alone names the variable that holds the pointer, which a contract cannot own; write `*{name}` for the object it points at"
+                )));
+            }
+            address = true;
         }
         if address {
             base = match base {
@@ -8248,6 +8276,32 @@ impl Parser {
                 end: end_expression,
             },
         }])
+    }
+
+    /// One complete struct object at `base`.
+    fn object_segment(
+        &self,
+        base: CExpression,
+        struct_name: String,
+    ) -> Result<ContractSegment, ClickError> {
+        let layout = self.struct_layouts.get(&struct_name).ok_or_else(|| {
+            self.error(format!(
+                "a whole object needs an imported layout for `struct {struct_name}`"
+            ))
+        })?;
+        if layout.size_bytes() % 4 != 0 {
+            return Err(self.error(format!(
+                "a whole object cannot represent the {}-byte `struct {struct_name}` as an int32-aligned memory segment",
+                layout.size_bytes()
+            )));
+        }
+        Ok(ContractSegment {
+            state: ContractSegmentState::Current,
+            base,
+            start: CExpression::Value(int32(0)),
+            end: CExpression::Value(int32(layout.size_bytes() / 4)),
+            surface: ContractSegmentSurface::Object(struct_name),
+        })
     }
 
     fn aggregate_field_segments(
