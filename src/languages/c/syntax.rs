@@ -3805,7 +3805,7 @@ impl C0StructLayout {
                 ),
                 C0Type::UInt8Array(length) if length <= i32::MAX as u32 => (length, 1),
                 C0Type::UInt8 => (1, 1),
-                C0Type::Int64 => (8, 8),
+                C0Type::Int64 | C0Type::UInt64 => (8, 8),
                 C0Type::UInt16 => (2, 2),
                 C0Type::Int32 | C0Type::UInt32 => (4, 4),
                 C0Type::Int32Pointer

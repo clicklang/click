@@ -6609,17 +6609,53 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                 }
             }
         }
+        // A proof that observes a viewed child of an entry composite loads
+        // that child's cells. The entry holds them through the folded child,
+        // so a loadability premise the entry as given does not certify is
+        // retried against the entry's composites opened level by level, as
+        // deep as the entry facts decide. The levels are built only when such
+        // a premise appears, once per certification.
+        let opened_entry_levels = std::cell::OnceCell::<Vec<ResourceContext>>::new();
+        let opened_entry_levels = || {
+            opened_entry_levels.get_or_init(|| {
+                let mut levels = Vec::new();
+                let mut current = entry_state.resources().clone();
+                while let Some(next) =
+                    super::functions::expand_all_composite_resource_facts_at_state(
+                        &current,
+                        function.composite_resource_definitions(),
+                        &entry_state,
+                        &reuse_assumptions,
+                    )
+                {
+                    if next == current {
+                        break;
+                    }
+                    levels.push(next.clone());
+                    current = next;
+                }
+                levels
+            })
+        };
         let checked_premise_is_authorized =
             |_checked: &CCheckedFunctionExecution, premise: &Proposition| {
                 reuse_assumptions.proves_exact(premise)
                     || reuse_assumptions.states_required_goal(premise)
                     || matches!(premise, Proposition::CMemoryLoadable { .. })
-                        && resources_certify_loadability(
+                        && (resources_certify_loadability(
                             &entry_state,
                             entry_state.resources(),
                             premise,
                             &reuse_assumptions,
-                        )
+                        ) || entry_state.uses_population_authority_semantics()
+                            && opened_entry_levels().iter().any(|resources| {
+                                resources_certify_loadability(
+                                    &entry_state,
+                                    resources,
+                                    premise,
+                                    &reuse_assumptions,
+                                )
+                            }))
             };
         let authorized = |checked: &CCheckedFunctionExecution| {
             checked

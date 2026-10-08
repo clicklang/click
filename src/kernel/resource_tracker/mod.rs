@@ -352,6 +352,9 @@ impl Stop {
 pub(crate) enum Change {
     /// One address was assigned.
     Store { pointer: Pointer },
+    /// A compact range of cell values was recorded. The edge does not
+    /// distinguish input materialization from a source-level range write.
+    CellsSeeded { pointer: Pointer },
     /// A call may have written the ranges it declared.
     Call { ranges: Vec<CMemoryRange> },
     /// A loop may have written the ranges its checked effect summary
@@ -411,9 +414,9 @@ impl Change {
             CMemoryDerivation::Store { pointer, .. } => Self::Store {
                 pointer: pointer.clone(),
             },
-            // A seeded run is its stores; the run's first element stands for
-            // them, as the one address a refusal can spell.
-            CMemoryDerivation::CellsSeeded { run, .. } => Self::Store {
+            // The first element names the recorded range, without attributing
+            // the input materialization to a source store.
+            CMemoryDerivation::CellsSeeded { run, .. } => Self::CellsSeeded {
                 pointer: run.base().clone(),
             },
             CMemoryDerivation::CallHavoc { mutable_ranges, .. } => Self::Call {

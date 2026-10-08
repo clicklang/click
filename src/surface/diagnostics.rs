@@ -2941,6 +2941,16 @@ fn describe_cell_version_stop(
         Some(cell) => format!("`{}`", cell.text()),
         None => "this read".to_string(),
     };
+    if let resource_tracker::Change::CellsSeeded { pointer: recorded } = &stop.change {
+        let recorded = describe_source_cell(recorded, parameters, arguments)
+            .map(|cell| format!("`{}`", cell.text()))
+            .unwrap_or_else(|| "another cell".to_string());
+        return format!(
+            "{named} is not yet related to {recorded}, whose range contents were recorded. \
+             The recording alone does not identify a source write. Establish the index/address \
+             relation or preservation needed to compare these reads."
+        );
+    }
     let certain = stop.reason == resource_tracker::StopReason::Affected;
     let changed = if certain {
         "changed"
@@ -2965,6 +2975,11 @@ fn describe_cell_cause(
     match &stop.change {
         resource_tracker::Change::Store { pointer } => {
             describe_store_cause(cell, pointer, widths, certain, parameters, arguments)
+        }
+        resource_tracker::Change::CellsSeeded { .. } => {
+            "range contents were recorded; establish the index/address relation or preservation needed \
+             to compare these reads."
+                .to_string()
         }
         resource_tracker::Change::Call { ranges } => {
             describe_havoc_cause("the call in between", cell, ranges, parameters, arguments)
@@ -3340,6 +3355,9 @@ fn describe_step(
                 Some(store) => format!("the store to `{}`", store.text()),
                 None => "a store".to_string(),
             }
+        }
+        resource_tracker::Change::CellsSeeded { .. } => {
+            "the recording of range contents".to_string()
         }
         resource_tracker::Change::Call { .. } => "the call".to_string(),
         resource_tracker::Change::Loop { .. } => "the loop".to_string(),

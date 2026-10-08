@@ -1571,3 +1571,33 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
         "((char *)cursor)[4..8]"
     );
 }
+
+#[test]
+fn read_only_wide_index_diagnostic_requests_equality_without_inventing_a_store() {
+    let source = "int32 last(int32* data, uint64 length) { return *(data + (length - 1ULL)); }";
+    let sidecar = r#"
+verifying "last.c";
+int32 last(int32* data, uint64 length) {
+    owns data[0..1];
+    requires length == 1u64;
+    ensures result == old(data[0]);
+} by { execute(); simp(); }
+"#;
+    let error = verify_c0_sources(sidecar, &[("last.c", source)]).unwrap_err();
+    let message = error.message();
+    assert!(message.contains("index/address"), "{message}");
+    assert!(
+        message.contains("range contents were recorded"),
+        "{message}"
+    );
+    assert!(!message.contains("the store to"), "{message}");
+    assert!(
+        !message.contains("state `(length - 1u64) != 0`"),
+        "{message}"
+    );
+    let explicit = sidecar.replace(
+        "execute(); simp();",
+        "execute(); rewrite(length == 1u64); simp();",
+    );
+    verify_c0_sources(&explicit, &[("last.c", source)]).unwrap();
+}
