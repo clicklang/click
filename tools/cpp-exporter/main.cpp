@@ -915,6 +915,29 @@ private:
                                       bool allow_nested_scope) {
     statement = without_branch_weights(statement);
     if (!statement) return std::nullopt;
+    if (const auto *loop = llvm::dyn_cast<clang::DoStmt>(statement)) {
+      // A literal-false do loop executes its body once. Do not fold runtime
+      // conditions or erase control transfers; lower_branch still rejects
+      // unsupported break/continue and local-lifetime arrangements.
+      const auto *condition = loop->getCond()->IgnoreParenImpCasts();
+      const auto *boolean = llvm::dyn_cast<clang::CXXBoolLiteralExpr>(condition);
+      const auto *integer = llvm::dyn_cast<clang::IntegerLiteral>(condition);
+      if (!((boolean && !boolean->getValue()) ||
+            (integer && integer->getValue().isZero()))) {
+        fail(loop->getDoLoc(),
+             "C++ do loops require a literal false condition; runtime and repeated loops remain unsupported");
+        return std::nullopt;
+      }
+      auto body = lower_branch(loop->getBody(), function, CleanupScopeKind::None);
+      if (!body) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "if";
+      result["condition"] = boolean_constant(true, loop->getCond()->getSourceRange(), true);
+      result["then_branch"] = std::move(*body);
+      result["else_branch"] = llvm::json::Array();
+      result["span"] = span(loop->getSourceRange());
+      return Json(std::move(result));
+    }
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
