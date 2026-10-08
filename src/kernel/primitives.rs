@@ -3161,6 +3161,10 @@ pub struct CFunctionContractInterface {
     pub(crate) contract_claims: Vec<CFunctionContractClaim>,
     pub(crate) opaque_contract_supported: bool,
     pub(crate) composite_resource_definitions: Vec<CCompositeResourceDefinition>,
+    /// Sorted names of the abstract families that are not `authorized`.
+    /// Abstract families have no definition here, so only a name on this list
+    /// is known to take no part in population accounting.
+    pub(crate) ordinary_abstract_families: Vec<String>,
     /// Contract-local definitions for opaque Click predicate requirements.
     /// Both sides are instantiated at the exact function entry state.
     pub(crate) predicate_unfoldings: Vec<CPredicateUnfolding>,
@@ -9857,6 +9861,16 @@ impl CCheckedFunctionExecution {
 
     pub(crate) fn function_arguments(&self) -> &[CExpression] {
         &self.arguments
+    }
+
+    /// A complete proof checked its returned resource units jointly on every path.
+    pub(crate) fn has_checked_resource_transitions(&self) -> bool {
+        !self.execution.paths.is_empty()
+            && self.checked_resource_transitions.len() == self.execution.paths.len()
+            && self
+                .checked_resource_transitions
+                .iter()
+                .all(|checked| *checked)
     }
 
     /// The exact caller state used to enter this checked execution, when the

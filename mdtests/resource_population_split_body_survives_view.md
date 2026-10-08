@@ -51,7 +51,7 @@ void split_body_pipeline(struct pair* pair) {
 
 ```click
 resource wrapper(pair: struct pair*) {
-    owns object(pair);
+    owns *pair;
 }
 
 verifying "resource_population_split_wrap.c";
@@ -60,7 +60,7 @@ verifying "resource_population_split_read.c";
 verifying "resource_population_split_pipeline.c";
 
 void wrap_pair(struct pair* pair) {
-    consumes object(pair);
+    consumes *pair;
     produces wrapper(pair);
 } by {
     execute();
@@ -84,7 +84,7 @@ int32 read_right(struct pair* pair) {
 }
 
 void split_body_pipeline(struct pair* pair) {
-    owns object(pair);
+    owns *pair;
 } by {
     execute();
     simp();

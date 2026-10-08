@@ -1,7 +1,7 @@
 verifying "capture.cpp";
 
 void RestoreState_constructor(struct RestoreState* self, int32* slot) {
-    owns &self->pointer;
+    owns self->pointer;
     owns self->saved;
     owns slot[0..1];
     ensures self->pointer == slot;
@@ -13,8 +13,8 @@ void RestoreState_constructor(struct RestoreState* self, int32* slot) {
 }
 
 void RestoreState_destructor(struct RestoreState* self) {
-    requires separate(memory(object(self)), memory(self->pointer[0..1]));
-    owns &self->pointer;
+    requires separate(memory(*self), memory(self->pointer[0..1]));
+    owns self->pointer;
     owns self->saved;
     owns self->pointer[0..1];
     ensures self->pointer == old(self->pointer);

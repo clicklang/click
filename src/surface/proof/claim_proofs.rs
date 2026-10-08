@@ -1990,7 +1990,7 @@ pub(super) fn finish_ordered_proof<'a>(
         let mut checked_returned_resources_by_path =
             vec![crate::kernel::ResourceContext::new(); execution.paths().len()];
         let mut returned_core = proof_execution.core.clone();
-        let mut any_return_instance_rewrite = false;
+        let mut any_return_resource_rewrite = false;
         let mut surface_closers_by_claim = vec![Vec::new(); claims.len()];
         let mut surface_grouped_closers_by_path = Vec::with_capacity(execution.paths().len());
         let mut surface_post_tactics_by_path = Vec::with_capacity(execution.paths().len());
@@ -2273,7 +2273,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // retain a claim proof too, but their `have` steps still
                     // extend the ambient outcome as before.
                     let mut introduced_claim_scope = false;
-                    let mut has_return_instance_rewrite = false;
+                    let mut has_return_resource_rewrite = false;
                     // Frame closure also applies the contract's returned
                     // resource transition. Track that ownership transition
                     // separately from the return-count interpretation above:
@@ -2451,8 +2451,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                     ProofStep::FoldResource(resource.clone())
                                 };
                                 let folded = evolving.apply_step(step)?;
-                                has_return_instance_rewrite |=
-                                    matches!(resource, ResourceClause::Named { .. });
+                                has_return_resource_rewrite |=
+                                    folded.execution().is_some_and(|execution| {
+                                        execution
+                                            .core
+                                            .has_checked_return_resource_rewrite(path_index)
+                                    });
                                 outcome = folded.focused_outcome_snapshot()?;
                                 let surface_tactics =
                                     folded.certificate_since(&before)?.to_proof_tactics();
@@ -4996,11 +5000,11 @@ pub(super) fn finish_ordered_proof<'a>(
                     // snapshot differs from it only in ghost resource
                     // representation; a claim completed at that snapshot is
                     // bound to the certified path by result, memory, and locals.
-                    // Explicit instance folds are checked resource events,
-                    // including after C returns. Certify their retained trace
-                    // before accepting the resulting ownership representation.
+                    // Named instances and authority wrappers retain checked
+                    // resource exchanges after C returns. Certify their retained
+                    // trace before accepting the resulting ownership representation.
                     let rewritten_path;
-                    let certified_path = if has_return_instance_rewrite {
+                    let certified_path = if has_return_resource_rewrite {
                         let core = &outcome_proof
                             .as_ref()
                             .and_then(Proof::execution)
@@ -5023,7 +5027,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         returned_core
                             .collect_return_resource_rewrites(core, path_index)
                             .map_err(ClickError::new)?;
-                        any_return_instance_rewrite = true;
+                        any_return_resource_rewrite = true;
                         &rewritten_path
                     } else {
                         completed_execution
@@ -5228,7 +5232,7 @@ pub(super) fn finish_ordered_proof<'a>(
             }
         }
         let mut final_checked_execution = completed_execution.clone();
-        if any_return_instance_rewrite {
+        if any_return_resource_rewrite {
             let completed = returned_core
                 .checked_function_execution(
                     execution,

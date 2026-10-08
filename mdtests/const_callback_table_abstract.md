@@ -44,8 +44,8 @@ int32 caller() {
 verifying "abstract_table.c";
 
 resource callbacks_storage(p: struct callbacks*) {
-    views &p->propagate;
-    views &p->copy;
+    views p->propagate;
+    views p->copy;
 }
 
 contract int32 Propagate() {
@@ -72,8 +72,8 @@ int32 run_suite(const struct callbacks *callbacks) {
 }
 
 int32 caller() {
-    views &suite.propagate;
-    views &suite.copy;
+    views suite.propagate;
+    views suite.copy;
     ensures result == 35;
 } by {
     fold(callbacks_storage(&suite));

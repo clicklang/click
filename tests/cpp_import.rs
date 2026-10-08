@@ -12,8 +12,8 @@ use click::kernel::{
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
-    CppFunctionKind, CppInitializer, CppStatement, CppType, load_import, lower_import,
-    refresh_import,
+    CppFunctionKind, CppInitializer, CppProjection, CppStatement, CppType, load_import,
+    lower_import, refresh_import,
 };
 use click::surface::{
     C0VerificationSession, VerifiedClaim, expand_program_prepared_project_claim_source_by_label,
@@ -1170,17 +1170,17 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
 
     let sidecar_source = r#"verifying "caller.cpp";
         void Restore_constructor(struct Restore* self, int32* slot) {
-            owns &self->pointer;
+            owns self->pointer;
             owns self->saved;
             owns slot[0..1];
             ensures self->pointer == slot;
             ensures self->saved == old(slot[0]);
             ensures slot[0] == 9;
-            ensures separate(memory(object(self)), memory(self->pointer[0..1]));
+            ensures separate(memory(*self), memory(self->pointer[0..1]));
         } by { execute(); simp(); }
         void Restore_destructor(struct Restore* self) {
-            requires separate(memory(object(self)), memory(self->pointer[0..1]));
-            owns &self->pointer;
+            requires separate(memory(*self), memory(self->pointer[0..1]));
+            owns self->pointer;
             owns self->saved;
             owns self->pointer[0..1];
             ensures self->pointer == old(self->pointer);
@@ -3120,7 +3120,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded record proof must reverify");
 
-    let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns &state->pointer;\n", "");
+    let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns state->pointer;\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
     verify_program_prepared_project(&missing_project, &import)
@@ -3498,7 +3498,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         .expect("expanded terminal-cleanup proof must reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
-        "void RestoreState_destructor(struct RestoreState* self) {\n    requires separate(memory(object(self)), memory(self->pointer[0..1]));\n    owns &self->pointer;\n    owns self->saved;\n    owns self->pointer[0..1];\n    ensures self->pointer == old(self->pointer);\n    ensures self->saved == old(self->saved);\n    ensures self->pointer[0] == old(self->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
+        "void RestoreState_destructor(struct RestoreState* self) {\n    requires separate(memory(*self), memory(self->pointer[0..1]));\n    owns self->pointer;\n    owns self->saved;\n    owns self->pointer[0..1];\n    ensures self->pointer == old(self->pointer);\n    ensures self->saved == old(self->saved);\n    ensures self->pointer[0] == old(self->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
         "",
     );
     fs::write(&sidecar, &missing_destructor).unwrap();
@@ -4565,7 +4565,7 @@ fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("stage_restore.cpp:2"), "{error}");
-    assert!(error.contains("have no bases"), "{error}");
+    assert!(error.contains("no own fields"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -4835,10 +4835,7 @@ fn cpp_frontend_rejects_unsupported_source_without_a_c_fallback() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("increment.cpp:1"), "{error}");
-    assert!(
-        error.contains("standard-layout and trivially-copyable"),
-        "{error}"
-    );
+    assert!(error.contains("record must be standard-layout"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -5939,16 +5936,568 @@ fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
     }
 }
 
+const CLASS_INSTANCE_SOURCE: &str = r#"
+struct SizeTag {};
+struct WeightTag {};
+template<class T, bool Flag = false> struct Box {
+    int value;
+    int Read() const noexcept { return value; }
+};
+using Integer = int;
+int call(const Box<Integer>& box) noexcept { return box.Read(); }
+int wide(const Box<long long>& box) noexcept { return box.Read(); }
+int long_type(const Box<long>& box) noexcept { return box.Read(); }
+int plain(const Box<int>& box) noexcept { return box.Read(); }
+int tagged(const Box<SizeTag, true>& box) noexcept { return box.Read(); }
+int other_tag(const Box<WeightTag, true>& box) noexcept { return box.Read(); }
+int both(const Box<SizeTag, true>& left, const Box<WeightTag, true>& right) noexcept { return left.Read(); }
+"#;
+
 #[test]
-fn class_template_instances_remain_explicitly_unsupported() {
-    let source = "template<class T> struct Box { int value; }; int call(const Box<int>& box) noexcept { return box.value; }";
-    let project = Project::with_fixture("unsupported.cpp", "call", source);
+fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
+    let mut alias_identity = None;
+    let mut identities = std::collections::BTreeSet::new();
+    for (selected, record) in [
+        ("call", "Box__int__bool_false"),
+        ("wide", "Box__long_long__bool_false"),
+        ("long_type", "Box__long__bool_false"),
+        ("tagged", "Box__tag_SizeTag__bool_true"),
+        ("other_tag", "Box__tag_WeightTag__bool_true"),
+    ] {
+        let project = Project::with_fixture("instances.cpp", selected, CLASS_INSTANCE_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(import.export().records.len(), 1);
+        let instance = &import.export().records[0];
+        assert_eq!(instance.name, record);
+        assert!(identities.insert(instance.declaration_id.clone()));
+        if selected == "call" {
+            alias_identity = Some(instance.declaration_id.clone());
+        }
+        assert_eq!(instance.size_bytes, 4);
+        assert_eq!(instance.fields[0].name, "value");
+        assert_eq!(
+            import.export().reachable_functions[0].name,
+            format!("{record}_Read")
+        );
+        let sidecar = format!(
+            "verifying \"instances.cpp\"; int32 {record}_Read(const struct {record}* self) {{ views self->value; ensures result == self->value; }} by {{ execute(); simp(); }} int32 {selected}(const struct {record}* box) {{ views box->value; ensures result == box->value; }} by {{ execute(); simp(); }}"
+        );
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), &sidecar);
+    }
+    let plain = Project::with_fixture("instances.cpp", "plain", CLASS_INSTANCE_SOURCE);
+    refresh_import(&plain.config()).unwrap();
+    assert_eq!(
+        load_import(&plain.config()).unwrap().export().records[0].declaration_id,
+        alias_identity.unwrap()
+    );
+}
+
+#[test]
+fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
+    let source = r#"
+        template<class T> struct Stored {
+            T value;
+            explicit Stored(T next) noexcept : value(next) {}
+            T Read() const noexcept { return value; }
+            ~Stored() noexcept { value = 0; }
+        };
+        long long create(long long next) noexcept {
+            Stored<long long> box(next);
+            return box.Read();
+        }
+    "#;
+    let ordinary = source
+        .replace("template<class T> struct Stored", "struct Stored")
+        .replace("T value", "long long value")
+        .replace("T next", "long long next")
+        .replace("T Read", "long long Read")
+        .replace("Stored<long long>", "Stored");
+    for (cpp, record) in [(source, "Stored__long_long"), (ordinary.as_str(), "Stored")] {
+        let project = Project::with_fixture("stored.cpp", "create", cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(import.export().records[0].fields[0].size_bytes, 8);
+        let sidecar = r#"
+        verifying "stored.cpp";
+        void Stored__long_long_constructor(struct Stored__long_long* self, int64 next) {
+            owns self->value; ensures self->value == next;
+        } by { execute(); simp(); }
+        int64 Stored__long_long_Read(const struct Stored__long_long* self) {
+            views self->value; ensures result == self->value;
+        } by { execute(); simp(); }
+        void Stored__long_long_destructor(struct Stored__long_long* self) {
+            owns self->value; ensures self->value == 0i64;
+        } by { execute(); simp(); }
+        int64 create(int64 next) {
+            ensures result == next;
+        } by { execute(); simp(); }
+    "#;
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(
+            &project,
+            &import,
+            &sidecar.replace("Stored__long_long", record),
+        );
+    }
+}
+
+#[test]
+fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layouts() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture("instances.cpp", "both", CLASS_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let records = &import.export().records;
+    assert_eq!(records.len(), 2);
+    assert_ne!(records[0].declaration_id, records[1].declaration_id);
+    assert_ne!(
+        records[0].fields[0].declaration_id,
+        records[1].fields[0].declaration_id
+    );
+    assert_eq!(records[0].size_bytes, records[1].size_bytes);
+    let sidecar = r#"
+        verifying "instances.cpp";
+        int32 Box__tag_SizeTag__bool_true_Read(const struct Box__tag_SizeTag__bool_true* self) {
+            views self->value; ensures result == self->value;
+        } by { execute(); simp(); }
+        int32 both(const struct Box__tag_SizeTag__bool_true* left,
+                   const struct Box__tag_WeightTag__bool_true* right) {
+            views left->value; views right->value;
+            ensures result == left->value;
+            ensures right->value == old(right->value);
+        } by { execute(); simp(); }
+    "#;
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(&project, &import, sidecar);
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let right = artifact["function"]["parameters"][1].clone();
+    let place = &mut artifact["function"]["body"][0]["arguments"][0]["place"];
+    place["declaration_id"] = right["declaration_id"].clone();
+    place["name"] = right["name"].clone();
+    let bytes = serde_json::to_vec(&artifact).unwrap();
+    let mut lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+    lock["artifact_bytes"] = bytes.len().into();
+    fs::write(project.artifact(), bytes).unwrap();
+    fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(error.contains("unsupported argument"), "{error}");
+}
+
+#[test]
+fn class_template_instances_complete_unused_parameter_types_without_source_edits() {
+    let source = "template<class T> struct Box { T value; }; int call(const Box<int>& box) noexcept { return 7; }";
+    let project = Project::with_fixture("unused.cpp", "call", source);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().records[0].name, "Box__int");
+    assert_eq!(import.export().records[0].fields[0].size_bytes, 4);
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"
+        verifying "unused.cpp";
+        int32 call(const struct Box__int* box) { ensures result == 7; }
+        by { execute(); simp(); }
+    "#,
+    );
+}
+
+#[test]
+fn class_template_instances_retain_argument_and_layout_boundaries() {
+    for (source, diagnostic) in [
+        (
+            "template<int N> struct Box { int value; }; int call(const Box<1>& box) noexcept { return box.value; }",
+            "C++ template arguments require Boolean",
+        ),
+        (
+            "template<class T> struct Box { int value; }; int call(const Box<const int>& box) noexcept { return box.value; }",
+            "qualified C++ template type arguments",
+        ),
+        (
+            "struct Tag { int value; }; template<class T> struct Box { int value; }; int call(const Box<Tag>& box) noexcept { return box.value; }",
+            "named empty trivial tags",
+        ),
+        (
+            "template<class T> struct Box { int value; }; int call(const Box<int*>& box) noexcept { return box.value; }",
+            "named empty trivial tags",
+        ),
+        (
+            "template<class... T> struct Box { int value; }; int call(const Box<int>& box) noexcept { return box.value; }",
+            "C++ template arguments require Boolean",
+        ),
+        (
+            "namespace A_B { struct Tag {}; } namespace A { struct B_Tag {}; } template<class T> struct Box { int value; }; int call(const Box<A_B::Tag>& a, const Box<A::B_Tag>& b) noexcept { return a.value; }",
+            "same-named record layouts",
+        ),
+        (
+            "struct Box; int call(const Box& box) noexcept { return 7; }",
+            "incomplete type",
+        ),
+    ] {
+        let project = Project::with_fixture("unsupported.cpp", "call", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+const BASE_LAYOUT_SOURCE: &str = r#"
+struct Base { long long fee; int size; };
+struct SizeTag {}; struct WeightTag {};
+template<class Tag> struct Rate : public Base {};
+struct Envelope { Rate<SizeTag> left; Rate<WeightTag> right; int untouched; };
+int read(const Envelope& state) noexcept { return state.untouched; }
+"#;
+
+#[test]
+fn single_base_layouts_preserve_nominal_subobjects_and_verify_offline() {
+    let project = Project::with_fixture("bases.cpp", "read", BASE_LAYOUT_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().records.len(), 4);
+    let base = import
+        .export()
+        .records
+        .iter()
+        .find(|record| record.name == "Base")
+        .unwrap();
+    let mut identities = std::collections::BTreeSet::new();
+    for record in import
+        .export()
+        .records
+        .iter()
+        .filter(|record| record.base.is_some())
+    {
+        assert!(record.fields.is_empty());
+        assert!(identities.insert(record.declaration_id.clone()));
+        let subobject = record.base.as_ref().unwrap();
+        assert_eq!(
+            subobject.value_type,
+            CppType::Record {
+                declaration_id: base.declaration_id.clone(),
+                name: "Base".into(),
+                is_const: false,
+            }
+        );
+        assert_eq!(subobject.offset_bytes, 0);
+        assert_eq!(subobject.size_bytes, base.size_bytes);
+    }
+    assert_eq!(identities.len(), 2);
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"
+        verifying "bases.cpp";
+        int32 read(const struct Envelope* state) {
+            views state->left.base.fee; views state->right.base.size;
+            views state->untouched;
+            ensures result == state->untouched;
+            ensures state->left.base.fee == old(state->left.base.fee);
+            ensures state->right.base.size == old(state->right.base.size);
+        } by { execute(); simp(); }
+    "#,
+    );
+}
+
+#[test]
+fn single_base_layouts_reject_forged_edges_layouts_and_flattened_fields() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture("bases.cpp", "read", BASE_LAYOUT_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let original_lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let index = artifact["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|record| record.get("base").is_some())
+        .unwrap();
+    for mutation in 0..8 {
+        let mut hostile = artifact.clone();
+        let record = &mut hostile["records"][index];
+        match mutation {
+            0 => record["base"]["value_type"]["declaration_id"] = "unknown".into(),
+            1 => record["base"]["value_type"]["name"] = "Other".into(),
+            2 => record["base"]["offset_bytes"] = 4.into(),
+            3 => record["base"]["size_bytes"] = 8.into(),
+            4 => record["size_bytes"] = 32.into(),
+            5 => record["base"]["value_type"]["is_const"] = true.into(),
+            6 => {
+                record["base"]["value_type"]["declaration_id"] = record["declaration_id"].clone();
+                record["base"]["value_type"]["name"] = record["name"].clone();
+            }
+            7 => {
+                let fields = artifact["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|item| item["name"] == "Base")
+                    .unwrap()["fields"]
+                    .clone();
+                record["fields"] = fields;
+                record.as_object_mut().unwrap().remove("base");
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&hostile).unwrap();
+        let mut lock = original_lock.clone();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "accepted base mutation {mutation}"
+        );
+    }
+}
+
+#[test]
+fn single_base_layouts_retain_source_and_execution_boundaries() {
+    for (declaration, diagnostic) in [
+        ("struct Rate : private Base {};", "public non-virtual"),
+        ("struct Rate : virtual Base {};", "public non-virtual"),
+        (
+            "struct Other { int value; }; struct Rate : Base, Other {};",
+            "one public non-virtual base",
+        ),
+        ("struct Rate : Base { int extra; };", "no own fields"),
+        (
+            "struct Empty {}; struct Rate : Empty {};",
+            "at least one field",
+        ),
+        (
+            "struct Rate : Base { ~Rate() noexcept { } };",
+            "trivial copying/destruction",
+        ),
+    ] {
+        let source = format!(
+            "struct Base {{ int value; }}; {declaration} int read(const Rate& state) noexcept {{ return 7; }}"
+        );
+        let project = Project::with_fixture("unsupported_base.cpp", "read", &source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+    let source = "struct Base { int value; }; struct Rate : Base {}; int read(const Rate& state) noexcept { return static_cast<const Base&>(state).value; }";
+    let project = Project::with_fixture("inherited.cpp", "read", source);
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(
-        error.contains("class template instances are unsupported"),
+        error.contains("can access only current function"),
         "{error}"
     );
     assert!(!project.artifact().exists());
+    let source = "struct Base { int value; }; struct Rate : Base { explicit Rate(int next) noexcept : Base{next} {} }; int read(int next) noexcept { Rate state(next); return 7; }";
+    let project = Project::with_fixture("constructed_base.cpp", "read", source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("constructors with base subobjects"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+}
+
+const INHERITED_SOURCE: &str = r#"
+struct Base;
+struct Deep;
+struct Base {
+    long long fee; int size;
+    int Read() const noexcept { return size; }
+    void Set(int next) noexcept { size = next; }
+};
+struct Other { long long fee; int size; };
+struct SizeTag {}; struct WeightTag {};
+template<class Tag> struct Rate : Base {};
+struct Deep : Rate<SizeTag> {
+    int Observe() const noexcept { return size; }
+};
+struct Envelope {
+    Deep left; Rate<WeightTag> right; Other unrelated;
+    int Read() const noexcept { return left.size; }
+    int Via() const noexcept { return left.Read(); }
+    void Write(int next) noexcept { right.Set(next); }
+    void Copy() noexcept { right.size = left.size; }
+};
+int read(const Deep& state) noexcept { return state.size; }
+long long fee(const Deep& state) noexcept { return state.fee; }
+int Helper(const Base& value) noexcept { return value.size; }
+void SetHelper(Base& value, int next) noexcept { value.size = next; }
+int call(const Envelope& state) noexcept { return Helper(state.left); }
+void change(Envelope& state, int next) noexcept { SetHelper(state.right, next); }
+"#;
+
+#[test]
+fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
+    for (selected, contract) in [
+        (
+            "read",
+            "int32 read(const struct Deep* state) { views state->base.base.size; ensures result == state->base.base.size; }",
+        ),
+        (
+            "fee",
+            "int64 fee(const struct Deep* state) { views state->base.base.fee; ensures result == state->base.base.fee; }",
+        ),
+        (
+            "Deep::Observe",
+            "int32 Deep_Observe(const struct Deep* self) { views self->base.base.size; ensures result == self->base.base.size; }",
+        ),
+        (
+            "Envelope::Read",
+            "int32 Envelope_Read(const struct Envelope* self) { views self->left.base.base.size; ensures result == self->left.base.base.size; }",
+        ),
+        (
+            "Envelope::Copy",
+            "void Envelope_Copy(struct Envelope* self) { views self->left.base.base.size; owns self->right.base.size; ensures self->right.base.size == self->left.base.base.size; ensures self->left.base.base.size == old(self->left.base.base.size); }",
+        ),
+    ] {
+        let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let sidecar =
+            format!("verifying \"inherited.cpp\"; {contract} by {{ execute(); simp(); }}");
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(&project, &import, &sidecar);
+    }
+}
+
+#[test]
+fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
+    for (selected, sidecar) in [
+        (
+            "Envelope::Via",
+            r#"
+        int32 Base_Read(const struct Base* self) { views self->size; ensures result == self->size; } by { execute(); simp(); }
+        int32 Envelope_Via(const struct Envelope* self) { views self->left.base.base.size; views self->right.base.size; ensures result == self->left.base.base.size; ensures self->right.base.size == old(self->right.base.size); } by { execute(); simp(); }
+        "#,
+        ),
+        (
+            "Envelope::Write",
+            r#"
+        void Base_Set(struct Base* self, int32 next) { owns self->size; ensures self->size == next; } by { execute(); simp(); }
+        void Envelope_Write(struct Envelope* self, int32 next) { owns self->right.base.size; views self->left.base.base.size; ensures self->right.base.size == next; ensures self->left.base.base.size == old(self->left.base.base.size); } by { execute(); simp(); }
+        "#,
+        ),
+        (
+            "call",
+            r#"
+        int32 Helper(const struct Base* value) { views value->size; ensures result == value->size; } by { execute(); simp(); }
+        int32 call(const struct Envelope* state) { views state->left.base.base.size; views state->unrelated.size; ensures result == state->left.base.base.size; ensures state->unrelated.size == old(state->unrelated.size); } by { execute(); simp(); }
+        "#,
+        ),
+        (
+            "change",
+            r#"
+        void SetHelper(struct Base* value, int32 next) { owns value->size; ensures value->size == next; } by { execute(); simp(); }
+        void change(struct Envelope* state, int32 next) { owns state->right.base.size; views state->left.base.base.size; ensures state->right.base.size == next; ensures state->left.base.base.size == old(state->left.base.base.size); } by { execute(); simp(); }
+        "#,
+        ),
+    ] {
+        let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(
+            &project,
+            &import,
+            &format!("verifying \"inherited.cpp\"; {sidecar}"),
+        );
+    }
+}
+
+#[test]
+fn inherited_calls_reject_forged_nominal_paths_and_const_roots() {
+    use sha2::{Digest, Sha256};
+    for selected in ["call", "change"] {
+        let project = Project::with_fixture("inherited.cpp", selected, INHERITED_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let original_lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        let other = artifact["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["name"] == "Other")
+            .unwrap();
+        for mutation in 0..8 {
+            let mut hostile = artifact.clone();
+            let place = &mut hostile["function"]["body"][0]["arguments"][0]["place"];
+            let path = place["projections"].as_array_mut().unwrap();
+            let last = path.len() - 1;
+            match mutation {
+                0 => path[last]["base"]["record_declaration_id"] = "unknown".into(),
+                1 => {
+                    path[last]["base"]["base_declaration_id"] = other["declaration_id"].clone();
+                    path[last]["base"]["base_name"] = other["name"].clone();
+                }
+                2 => path[last]["base"]["base_name"] = "wrong".into(),
+                3 => path[last]["base"]["span"]["file"] = "other.h".into(),
+                4 => path.reverse(),
+                5 => {
+                    path.pop();
+                }
+                6 => {
+                    path[last]["unexpected"] = true.into();
+                }
+                7 if selected == "change" => {
+                    hostile["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                        true.into();
+                }
+                7 => {
+                    path.push(path[last].clone());
+                }
+                _ => unreachable!(),
+            }
+            let bytes = serde_json::to_vec(&hostile).unwrap();
+            let mut lock = original_lock.clone();
+            lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+            lock["artifact_bytes"] = bytes.len().into();
+            fs::write(project.artifact(), bytes).unwrap();
+            fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+            let error = load_import(&project.config()).unwrap_err();
+            assert!(
+                error.len() < 8000,
+                "unbounded error for {selected}/{mutation}"
+            );
+        }
+    }
+}
+
+#[test]
+fn inherited_calls_reject_missing_authority_and_false_frames() {
+    let project = Project::with_fixture("inherited.cpp", "call", INHERITED_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"
+        verifying "inherited.cpp";
+        int32 Helper(const struct Base* value) { views value->size; ensures result == value->size; } by { execute(); simp(); }
+        int32 call(const struct Envelope* state) { views state->left.base.base.size; views state->unrelated.size; ensures result == state->left.base.base.size; ensures state->unrelated.size == old(state->unrelated.size); } by { execute(); simp(); }
+    "#;
+    for hostile in [
+        sidecar.replace("views state->left.base.base.size;", ""),
+        sidecar.replace(
+            "ensures result == state->left.base.base.size;",
+            "ensures result != state->left.base.base.size;",
+        ),
+        sidecar.replace(
+            "state->unrelated.size == old(state->unrelated.size)",
+            "state->unrelated.size != old(state->unrelated.size)",
+        ),
+    ] {
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
 }
 
 const SIGNED_CONVERSION_SOURCE: &str =
@@ -6286,13 +6835,13 @@ fn direct_return_calls_capture_typed_results_before_destructors() {
         let source = format!(
             r#"verifying "cleanup.cpp";
 void Restore_constructor(struct Restore* self, int32* slot) {{
- owns &self->p; owns self->saved; owns slot[0..1];
+ owns self->p; owns self->saved; owns slot[0..1];
  ensures self->p == slot; ensures self->saved == old(slot[0]); ensures slot[0] == 7;
- ensures separate(memory(object(self)), memory(self->p[0..1]));
+ ensures separate(memory(*self), memory(self->p[0..1]));
 }} by {{ execute(); simp(); }}
 void Restore_destructor(struct Restore* self) {{
- requires separate(memory(object(self)), memory(self->p[0..1]));
- owns &self->p; owns self->saved; owns self->p[0..1];
+ requires separate(memory(*self), memory(self->p[0..1]));
+ owns self->p; owns self->saved; owns self->p[0..1];
  ensures self->p == old(self->p); ensures self->saved == old(self->saved);
  ensures self->p[0] == old(self->saved);
 }} by {{ execute(); simp(); }}
@@ -7071,15 +7620,15 @@ fn normalized_initializer_calls_capture_before_normal_cleanup() {
     // Reuse the existing independently checked constructor/destructor contracts.
     let source = r#"verifying "evaluation.cpp";
 void Restore_constructor(struct Restore* self, int32* value) {
- owns &self->slot; owns self->saved; owns value[0..1];
+ owns self->slot; owns self->saved; owns value[0..1];
  ensures self->slot == value;
  ensures self->saved == old(value[0]);
  ensures value[0] == 7;
- ensures separate(memory(object(self)), memory(self->slot[0..1]));
+ ensures separate(memory(*self), memory(self->slot[0..1]));
 } by { execute(); simp(); }
 void Restore_destructor(struct Restore* self) {
- requires separate(memory(object(self)), memory(self->slot[0..1]));
- owns &self->slot; owns self->saved; owns self->slot[0..1];
+ requires separate(memory(*self), memory(self->slot[0..1]));
+ owns self->slot; owns self->saved; owns self->slot[0..1];
  ensures self->slot == old(self->slot);
  ensures self->saved == old(self->saved);
  ensures self->slot[0] == old(self->saved);
@@ -10538,7 +11087,7 @@ fn class_record_import_keeps_cpp_access_control_and_layout_restrictions() {
                 "class FeeRateState {",
                 "struct Base { int value; };\nclass FeeRateState : public Base {",
             ),
-            "have no bases",
+            "no own fields",
         ),
         (
             source.replace("    int size;", "    int size : 4;"),
@@ -10999,7 +11548,10 @@ fn nested_source_fields_read_write_and_update_with_exact_authority_offline() {
             object
                 .projections
                 .iter()
-                .map(|field| field.name.as_str())
+                .map(|projection| match projection {
+                    CppProjection::Field(field) => field.name.as_str(),
+                    CppProjection::Base { .. } => panic!("expected an embedded field path"),
+                })
                 .collect::<Vec<_>>(),
             if selected == "ReadRightFee" {
                 vec!["right"]
@@ -11143,16 +11695,15 @@ fn nested_source_field_artifacts_reject_forged_paths_readonly_roots_and_unimplem
             assert!(error.contains("const record reference"), "{error}");
         }
         if change == "plain_load" {
-            assert!(error.contains("only as member-access"), "{error}");
+            assert!(error.contains("unsupported in this operation"), "{error}");
         }
     }
 }
 
 #[test]
-fn nested_source_fields_keep_cpp_access_checks_and_projected_receivers_as_boundaries() {
+fn nested_source_fields_keep_cpp_access_checks() {
     for source in [
         "struct Child { int value; }; struct Outer { Child child; }; void write(const Outer& root) noexcept { root.child.value = 1; }",
-        "struct Child { int value; int Read() const noexcept { return value; } }; struct Outer { Child child; }; int write(const Outer& root) noexcept { return root.child.Read(); }",
         "struct Child { int value; }; class Outer { Child child; }; int write(const Outer& root) noexcept { return root.child.value; }",
     ] {
         let project = Project::with_fixture("nested.cpp", "write", source);
@@ -11168,11 +11719,11 @@ fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
     for (selected, sidecar) in [
         (
             "read",
-            "verifying \"pointer_nested.cpp\"; int read(const struct Outer* state, int* value) { views &state->child.pointer; views value[0..1]; requires state->child.pointer == value; ensures result == value[0]; } by { execute(); simp(); }",
+            "verifying \"pointer_nested.cpp\"; int read(const struct Outer* state, int* value) { views state->child.pointer; views value[0..1]; requires state->child.pointer == value; ensures result == value[0]; } by { execute(); simp(); }",
         ),
         (
             "write",
-            "verifying \"pointer_nested.cpp\"; void write(const struct Outer* state, int* value, int next) { views &state->child.pointer; owns value[0..1]; requires state->child.pointer == value; ensures value[0] == next; ensures state->child.pointer == old(state->child.pointer); } by { execute(); simp(); }",
+            "verifying \"pointer_nested.cpp\"; void write(const struct Outer* state, int* value, int next) { views state->child.pointer; owns value[0..1]; requires state->child.pointer == value; ensures value[0] == next; ensures state->child.pointer == old(state->child.pointer); } by { execute(); simp(); }",
         ),
     ] {
         let project = Project::with_fixture("pointer_nested.cpp", selected, source);
@@ -11189,5 +11740,244 @@ fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
             panic!("nested pointer access accepted insufficient pointee authority")
         };
         assert!(error.message().len() < 8000);
+    }
+}
+
+#[test]
+fn projected_record_calls_and_reference_arguments_verify_offline() {
+    for (selected, sidecar, expected) in [
+        (
+            "FeeEnvelope::ReadLeftByMethod",
+            include_str!("fixtures/cpp-verification/nested-record/projected_read.click"),
+            vec!["state", "left"],
+        ),
+        (
+            "FeeEnvelope::SetRightByMethod",
+            include_str!("fixtures/cpp-verification/nested-record/projected_write.click"),
+            vec!["state", "right"],
+        ),
+        (
+            "FeeEnvelope::ReadRightByReference",
+            include_str!("fixtures/cpp-verification/nested-record/reference_read.click"),
+            vec!["state", "right"],
+        ),
+        (
+            "FeeEnvelope::SetLeftByReference",
+            include_str!("fixtures/cpp-verification/nested-record/reference_write.click"),
+            vec!["state", "left"],
+        ),
+        (
+            "FeeEnvelope::BumpLeftByReference",
+            include_str!("fixtures/cpp-verification/nested-record/reference_bump.click"),
+            vec!["state", "left", "size"],
+        ),
+        (
+            "FeeEnvelope::ReadRightSizeByReference",
+            include_str!("fixtures/cpp-verification/nested-record/reference_size_read.click"),
+            vec!["state", "right", "size"],
+        ),
+    ] {
+        let project = nested_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let arguments = match &import.export().function.body[0] {
+            CppStatement::ReturnCall { arguments, .. } | CppStatement::Call { arguments, .. } => {
+                arguments
+            }
+            _ => panic!("expected projected call"),
+        };
+        let CppCallArgument::Reference { place } = &arguments[0] else {
+            panic!("expected projected reference")
+        };
+        assert_eq!(
+            place
+                .projections
+                .iter()
+                .map(|projection| match projection {
+                    CppProjection::Field(field) => field.name.as_str(),
+                    CppProjection::Base { .. } => panic!("expected an embedded field path"),
+                })
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(import.export().reachable_functions.len(), 1);
+        fs::remove_file(&project.exporter).unwrap();
+        check_return_call_sidecar(&project, &load_import(&project.config()).unwrap(), sidecar);
+    }
+}
+
+#[test]
+fn projected_call_artifacts_check_target_identity_and_root_constness() {
+    use sha2::{Digest, Sha256};
+    for selected in [
+        "FeeEnvelope::SetRightByMethod",
+        "FeeEnvelope::SetLeftByReference",
+        "FeeEnvelope::BumpLeftByReference",
+    ] {
+        let project = nested_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let original: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let original_lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        for change in [
+            "readonly",
+            "owner",
+            "field",
+            "name",
+            "source",
+            "order",
+            "missing",
+            "depth",
+            "root",
+            "root_name",
+        ] {
+            let mut artifact = original.clone();
+            let place = &mut artifact["function"]["body"][0]["arguments"][0]["place"];
+            match change {
+                "readonly" => {
+                    artifact["function"]["function_kind"]["is_const"] = true.into();
+                    artifact["function"]["parameters"][0]["value_type"]["pointee"]["is_const"] =
+                        true.into();
+                }
+                "owner" => place["projections"][0]["record_declaration_id"] = "unknown".into(),
+                "field" => place["projections"][1]["declaration_id"] = "unknown".into(),
+                "name" => place["projections"][1]["name"] = "unknown".into(),
+                "source" => place["projections"][0]["span"]["file"] = "state.h".into(),
+                "order" => place["projections"].as_array_mut().unwrap().reverse(),
+                "missing" => {
+                    place["projections"].as_array_mut().unwrap().pop();
+                }
+                "depth" => {
+                    let step = place["projections"][0].clone();
+                    place["projections"] = vec![step; 257].into();
+                }
+                "root" => place["declaration_id"] = "unknown".into(),
+                "root_name" => place["name"] = "unknown".into(),
+                _ => unreachable!(),
+            }
+            let bytes = serde_json::to_vec(&artifact).unwrap();
+            let mut lock = original_lock.clone();
+            lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+            lock["artifact_bytes"] = bytes.len().into();
+            fs::write(project.artifact(), bytes).unwrap();
+            fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+            let error = load_import(&project.config()).unwrap_err();
+            assert!(error.len() < 8000, "{selected}/{change}: {error}");
+            if change == "readonly" || change == "missing" {
+                assert!(
+                    error.contains("unsupported argument"),
+                    "{selected}/{change}: {error}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn projected_call_contracts_require_leaf_authority_and_preserve_sibling_frames() {
+    for (selected, sidecar, mutants) in [
+        (
+            "FeeEnvelope::SetRightByMethod",
+            include_str!("fixtures/cpp-verification/nested-record/projected_write.click"),
+            vec![
+                (
+                    "owns self->state.right.fee;",
+                    "views self->state.right.fee;",
+                ),
+                ("owns self->state.right.fee;", "owns self->state.left.size;"),
+                (
+                    "self->state.left.fee == old(self->state.left.fee)",
+                    "self->state.left.fee == next",
+                ),
+                (
+                    "self->state.right.fee == next",
+                    "self->state.right.fee != next",
+                ),
+            ],
+        ),
+        (
+            "FeeEnvelope::BumpLeftByReference",
+            include_str!("fixtures/cpp-verification/nested-record/reference_bump.click"),
+            vec![
+                ("requires self->state.left.size <= 10;", ""),
+                (
+                    "owns self->state.left.size;",
+                    "views self->state.left.size;",
+                ),
+                (
+                    "self->state.right.size == old(self->state.right.size)",
+                    "self->state.right.size != old(self->state.right.size)",
+                ),
+                ("requires value[0] <= 10;", ""),
+            ],
+        ),
+    ] {
+        let project = nested_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        for (before, after) in mutants {
+            let hostile = sidecar.replace(before, after);
+            assert_ne!(hostile, sidecar);
+            let path = project.directory.join("hostile.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("invalid projected call contract accepted: {selected}/{before}")
+            };
+            assert!(error.message().len() < 8000);
+        }
+    }
+}
+
+#[test]
+fn projected_calls_keep_cpp_constness_and_source_profile_boundaries() {
+    for source in [
+        "struct Child { int value; void Set() noexcept { value = 1; } }; struct Outer { Child child; }; void run(const Outer& root) noexcept { root.child.Set(); }",
+        "struct Child { int value; }; struct Outer { Child child; }; void Set(Child& value) noexcept { value.value = 1; } void run(const Outer& root) noexcept { Set(root.child); }",
+        "struct Outer { int value; }; void Set(int& value) noexcept { value = 1; } void run(const Outer& root) noexcept { Set(root.value); }",
+        "struct Child { int value; int Read() const noexcept { return value; } }; struct Outer { Child child; }; int run(Outer* root) noexcept { return root->child.Read(); }",
+        "struct Child { int value; int Read() const noexcept { return value; } }; int run() noexcept { return Child{1}.Read(); }",
+        "struct Outer { long long value; }; void Set(long long& value) noexcept { value = 1; } void run(Outer& root) noexcept { Set(root.value); }",
+    ] {
+        let project = Project::with_fixture("projected.cpp", "run", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn projected_calls_require_certified_callee_contracts_and_true_results() {
+    for (selected, sidecar) in [
+        (
+            "FeeEnvelope::ReadLeftByMethod",
+            include_str!("fixtures/cpp-verification/nested-record/projected_read.click"),
+        ),
+        (
+            "FeeEnvelope::ReadRightByReference",
+            include_str!("fixtures/cpp-verification/nested-record/reference_read.click"),
+        ),
+        (
+            "FeeEnvelope::ReadRightSizeByReference",
+            include_str!("fixtures/cpp-verification/nested-record/reference_size_read.click"),
+        ),
+    ] {
+        let project = nested_record_project(selected);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let (_, caller) = sidecar.split_once("} by { execute(); simp(); }").unwrap();
+        for hostile in [
+            format!("verifying \"nested_record.cpp\";\n{caller}"),
+            sidecar.replace("result ==", "result !="),
+        ] {
+            let path = project.directory.join("hostile.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("projected call accepted missing or false callee contract: {selected}")
+            };
+            assert!(error.message().len() < 8000);
+        }
     }
 }

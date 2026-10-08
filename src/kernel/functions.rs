@@ -2238,8 +2238,8 @@ pub(super) fn execute_c_function_verification_paths(
 }
 
 /// Whether any resource the contract moves can touch a population: a
-/// population authority, a mutex protocol resource, an abstract token, or a
-/// family that reaches an authorized family. A contract over ordinary
+/// population authority, a mutex protocol resource, an abstract token not
+/// known to be ordinary, or a family that reaches an authorized family. A contract over ordinary
 /// families and memory alone has no population effect.
 pub(super) fn contract_reaches_population(interface: &CFunctionContractInterface) -> bool {
     interface
@@ -2257,6 +2257,12 @@ fn spec_reaches_population(interface: &CFunctionContractInterface, spec: &CResou
     ) || matches!(spec.term(), CResourceTerm::PopulationAuthority { .. })
     {
         return true;
+    }
+    if let CResourceTerm::Token { name, .. } = spec.term()
+        && (name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            || interface.is_ordinary_abstract_family(name))
+    {
+        return false;
     }
     match spec.contained_definition_name() {
         Some(name) => interface
@@ -27600,6 +27606,15 @@ pub(super) fn jointly_consume_returned_resource_units(
         {
             return Some(remaining);
         }
+        // Only memory ranges need adjacent supplier fragments to rejoin.
+        // Preserve the checked representation of composite/population exchanges.
+        if required.memory_range().is_some()
+            && let Some(remaining) = available
+                .clone()
+                .without_fact_incrementally(required, assumptions)
+        {
+            return Some(remaining);
+        }
         let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = required else {
             return open_available_head(
                 &available,
@@ -28128,7 +28143,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 /// - A clause that is not plain memory — a composite, a token, an instance —
 ///   has no `CMemoryRange` to name, and `separate(memory(..), memory(..))`
 ///   cannot express its footprint without expanding it. Such a pair is
-///   skipped outright rather than approximated; `owns object(r)` is *not* one
+///   skipped outright rather than approximated; `owns *r` is *not* one
 ///   of those, because `object(r)` lowers to the plain range `r[0..size/4]`.
 ///
 /// **Cost.** At most `#owned × #viewed` clauses of one contract, built once at
@@ -29365,7 +29380,7 @@ fn instance_arm_read_authority(
 ///
 /// This is the same publication a field-free composite's expansion and a
 /// decided match arm make. The body is evaluated at the instance's own
-/// fields and arguments, so `owns object(region)` in the arena example's
+/// fields and arguments, so `owns *region` in the arena example's
 /// `arena_region` makes `region->arena` readable for a clause that names
 /// `arena_state(region->arena)`. Nothing is owned twice and nothing is
 /// opened: the instance stays folded, and only an explicit `unfold` moves its
@@ -33613,6 +33628,25 @@ mod population_creation_frame_tests {
             );
         assert!(contract_reaches_population(minting.contract_interface()));
         assert!(refused(&call(&minting)));
+    }
+
+    #[test]
+    fn unused_creation_ledgers_compare_equal_and_used_ones_do_not() {
+        let left = CState::new().with_population_creation_tracking();
+        let right = CState::new().with_population_creation_tracking();
+        assert_ne!(left, right, "fresh ledgers have distinct identities");
+        assert!(left.equal_up_to_unused_creation_ledgers(&right));
+        assert!(!left.equal_up_to_unused_creation_ledgers(&CState::new()));
+
+        let mut base = CState::new().with_local("frame:holder", int32(0));
+        let block = base.locals.slot("frame:holder").unwrap().block.clone();
+        base.set_memory(CMemory::new().with_block(block.clone(), 4));
+        let unused = base.clone().with_population_creation_tracking();
+        let mut used = base.with_population_creation_tracking();
+        assert!(used.equal_up_to_unused_creation_ledgers(&unused));
+        used.record_population_storage_creation(block);
+        assert!(!used.equal_up_to_unused_creation_ledgers(&unused));
+        assert!(!unused.equal_up_to_unused_creation_ledgers(&used));
     }
 
     #[test]

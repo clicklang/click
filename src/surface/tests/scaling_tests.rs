@@ -3182,17 +3182,17 @@ fn grouped_proof_finalization_reads_each_path_once() {
 fn a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof() {
     const RESOURCES: &str = "resource box_state(b: struct box*) {
     field len: int32;
-    owns &b->data;
+    owns b->data;
     owns b->len;
     owns b->data[0..len];
     fact b->len == len;
     fact 0 <= len;
-    fact separate(memory(object(b)), memory(b->data[0..b->len]));
+    fact separate(memory(*b), memory(b->data[0..b->len]));
 }
 
 resource holder_state(h: struct holder*) {
     field start: int32;
-    owns object(h);
+    owns *h;
     fact h->start == start;
     fact 0 <= start;
 }
@@ -3366,10 +3366,10 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
     let click_source = format!(
         "verifying \"mark_tail.c\";\n\n\
          void mark_tail(struct arena* arena, int32 start, int32 end) {{\n\
-         \x20   owns object(arena);\n\
+         \x20   owns *arena;\n\
          \x20   owns arena->occupied[0..arena->capacity];\n\
          \x20   requires separate(\n\
-         \x20       memory(object(arena)),\n\
+         \x20       memory(*arena),\n\
          \x20       memory(arena->occupied[0..arena->capacity])\n\
          \x20   );\n\
          \x20   requires 0 <= start;\n\
@@ -3715,10 +3715,10 @@ fn counter_call_chain(call_count: usize) -> (String, String) {
     }
     c_source.push_str("}\n");
     let mut click_source = String::from(
-        "verifying \"drive.c\";\n\nvoid touch(struct range* r) {\n    owns object(r);\n    requires r->end < 1000000;\n    ensures r->end == old(r->end) + 1;\n    ensures r->start == old(r->start);\n} by {\n    execute();\n    simp();\n}\n\n",
+        "verifying \"drive.c\";\n\nvoid touch(struct range* r) {\n    owns *r;\n    requires r->end < 1000000;\n    ensures r->end == old(r->end) + 1;\n    ensures r->start == old(r->start);\n} by {\n    execute();\n    simp();\n}\n\n",
     );
     click_source.push_str(&format!(
-        "void drive(struct range* r) {{\n    owns object(r);\n    requires r->end == 0;\n    ensures r->end == {call_count};\n}} by {{\n"
+        "void drive(struct range* r) {{\n    owns *r;\n    requires r->end == 0;\n    ensures r->end == {call_count};\n}} by {{\n"
     ));
     for _ in 0..call_count {
         click_source.push_str("    step();\n");
@@ -6202,15 +6202,15 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
         .expect("indexed fan-out thread");
 }
 
-/// Contract preparation reuses completed contexts in both proof forms.
-/// Bound whole-transaction construction too for the grouped form. The explicit
-/// form has separate existing return-context and other costs, kept
-/// in the measurements and tracked in the early-return bug report.
+/// Return preparation and contract preparation share checked contexts in both
+/// proof forms. Bound whole-transaction construction, not just one tactic.
+/// The explicit form still has other flat-path costs tracked in the bug report.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
     let mut entries = Vec::new();
     let mut contract_entries = Vec::new();
     let mut allocation_resolution = Vec::new();
+    let mut return_context = Vec::new();
     for returns in [4, 8, 16, 32, 64] {
         let c = early_return_fan_out(returns);
         let click = if explicit {
@@ -6242,6 +6242,13 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             sample
                 .named_work
                 .get("operation `branch allocation resolution`")
+                .copied()
+                .unwrap_or(0),
+        );
+        return_context.push(
+            sample
+                .named_work
+                .get("operation `statement return context`")
                 .copied()
                 .unwrap_or(0),
         );
@@ -6280,13 +6287,26 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             .all(|pair| pair[1] <= pair[0] + 8),
         "settled allocations must not rebuild branch contexts: {allocation_resolution:?}"
     );
-    if !explicit {
+    if explicit {
         assert!(
-            entries
-                .windows(2)
-                .all(|pair| pair[1] * 100 <= pair[0] * 225 + 800),
-            "completed contexts must be reused: {entries:?}"
+            samples
+                .last()
+                .unwrap()
+                .named_work
+                .contains_key("operation `statement return context`")
         );
+        assert!(
+            return_context
+                .windows(2)
+                .all(|pair| pair[1] <= pair[0] * 2 + 8),
+            "returns must reuse their checked local prefix: {return_context:?}"
+        );
+    }
+    assert!(
+        entries.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 32),
+        "return and completion contexts must share their prefix: explicit={explicit}, {entries:?}"
+    );
+    if !explicit {
         assert!(
             samples
                 .windows(2)

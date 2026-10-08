@@ -33,8 +33,8 @@ void probe_reversed(struct node *node) { node->right->augmented = 7; }
 ```click
 resource pair(node: struct node*) {
     field weight: int32;
-    owns &node->left;
-    owns &node->right;
+    owns node->left;
+    owns node->right;
 }
 
 verifying "probe.c";

@@ -62,13 +62,13 @@ predicate terminated_at(data: int32[], length: int32) {
 resource owned_string(owner: struct owned_string*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len < owner->cap;
     fact terminated_at(owner->data, owner->len);
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     );
 }
@@ -76,13 +76,13 @@ resource owned_string(owner: struct owned_string*) {
 resource empty_owned_string(owner: struct owned_string*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact owner->len == 0;
     fact owner->len < owner->cap;
     fact terminated_at(owner->data, owner->len);
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     );
 }
@@ -104,7 +104,7 @@ int32 owned_string_init(
     int32 capacity
 ) {
     requires 1 <= capacity;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..capacity];
     produces owned_string(owner);
     ensures result == 0;
@@ -125,11 +125,11 @@ int32 owned_string_init(
     have 0 <= owner->len by simp;
     have owner->len < owner->cap by simp;
     have separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
         simp() using {
-            separate(memory(object(owner)), memory(data[0..capacity]));
+            separate(memory(*owner), memory(data[0..capacity]));
             owner->data == data;
             owner->cap == capacity;
         }
@@ -213,7 +213,7 @@ int32 owned_string_set(
     have 0 <= owner->len by simp;
     have owner->len < owner->cap by simp;
     have separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
         simp();
@@ -265,7 +265,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
         ) using {
             at(statement(4).entry, owner->data) == old(owner->data);
             at(statement(4).entry, separate(
-                memory(object(owner)),
+                memory(*owner),
                 memory(owner->data[0..owner->cap])
             ));
             at(statement(4).entry, (index + 1)) < at(statement(4).entry, owner->cap);
@@ -288,7 +288,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
                 memory(owner->len),
                 memory(owner->data[0..owner->cap])
             ));
-            at(statement(4).entry, separate(memory(owner->len), memory(&owner->data)));
+            at(statement(4).entry, separate(memory(owner->len), memory(owner->data)));
             at(statement(4).entry, (index + 1)) < at(statement(4).entry, owner->cap);
             at(statement(4).entry, index) < at(statement(4).entry, owner->cap);
             at(statement(3).entry, 0) <= at(statement(3).entry, owner->len);
@@ -351,27 +351,27 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
         }
         assumption();
     }
-    have separate(memory(object(owner)), memory(owner->data[0..owner->cap])) by {
+    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by {
         transport(
             at(statement(4).entry, separate(
-                memory(object(owner)),
+                memory(*owner),
                 memory(owner->data[0..owner->cap])
             )),
-            separate(memory(object(owner)), memory(owner->data[0..owner->cap]))
+            separate(memory(*owner), memory(owner->data[0..owner->cap]))
         ) using {
             at(statement(4).entry, separate(memory(owner->len), memory(owner->cap)));
-            at(statement(4).entry, separate(memory(owner->len), memory(&owner->data)));
-            at(statement(4).entry, separate(memory(object(owner)), memory(owner->data[0..owner->cap])));
-            at(statement(4).entry, separate(memory(owner->cap), memory(&owner->data)));
+            at(statement(4).entry, separate(memory(owner->len), memory(owner->data)));
+            at(statement(4).entry, separate(memory(*owner), memory(owner->data[0..owner->cap])));
+            at(statement(4).entry, separate(memory(owner->cap), memory(owner->data)));
             at(statement(3).entry, 0) <= at(statement(3).entry, owner->len);
             at(statement(4).entry, (index + 1)) < at(statement(4).entry, owner->cap);
             at(statement(4).entry, index) < at(statement(4).entry, owner->cap);
             at(statement(4).entry, separate(memory(owner->len), memory(owner->data[0..owner->cap])));
             at(statement(4).entry, separate(memory(owner->cap), memory(owner->data[0..owner->cap])));
-            at(statement(4).entry, separate(memory(&owner->data), memory(owner->data[0..owner->cap])));
+            at(statement(4).entry, separate(memory(owner->data), memory(owner->data[0..owner->cap])));
             at(statement(4).entry, contains(owned_string(owner), memory(owner->len)));
             at(statement(4).entry, contains(owned_string(owner), memory(owner->cap)));
-            at(statement(4).entry, contains(owned_string(owner), memory(&owner->data)));
+            at(statement(4).entry, contains(owned_string(owner), memory(owner->data)));
             at(statement(4).entry, contains(owned_string(owner), memory(owner->data[0..owner->cap])));
             terminated_at(at(statement(0).entry, owner->data), at(statement(0).entry, owner->len));
             terminated_at(owner->data, owner->len);
@@ -412,7 +412,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
                     memory(owner->len),
                     memory(owner->data[0..owner->cap])
                 ));
-                at(statement(4).entry, separate(memory(owner->len), memory(&owner->data)));
+                at(statement(4).entry, separate(memory(owner->len), memory(owner->data)));
                 at(statement(4).entry, (index + 1)) < at(statement(4).entry, owner->cap);
                 at(statement(4).entry, index) < at(statement(4).entry, owner->cap);
                 at(statement(3).entry, 0) <= at(statement(3).entry, owner->len);
@@ -531,7 +531,7 @@ int32 owned_string_pop(struct owned_string* owner) {
         }
         assumption();
     }
-    have separate(memory(object(owner)), memory(owner->data[0..owner->cap])) by {
+    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by {
         assumption();
     }
     fold(owned_string(owner));
@@ -607,7 +607,7 @@ int32 owned_string_clear(struct owned_string* owner) {
         assumption();
     }
     have separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
         simp();
@@ -635,7 +635,7 @@ int32 owned_string_pipeline(
     int32 first
 ) {
     requires 2 <= capacity;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..capacity];
     produces empty_owned_string(owner);
     ensures result == first;

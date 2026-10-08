@@ -173,6 +173,12 @@ impl PureFactList {
         }
     }
 
+    /// Retain the already checked context of this exact ordered fact list.
+    pub(crate) fn with_checked_context(facts: Vec<Proposition>, context: PureFactContext) -> Self {
+        let length = facts.len();
+        Self::with_built_context(facts, BuiltContext(Mutex::new(Some((length, context)))))
+    }
+
     /// The context of every fact in the list, extending the built prefix by
     /// the facts appended since.
     pub(crate) fn context(&self) -> PureFactContext {

@@ -1831,7 +1831,7 @@ pub struct C0Parameter {
     union_name: Option<String>,
     struct_layout: Option<C0StructLayout>,
     /// The layout of the pointee when the parameter is a pointer to a struct,
-    /// so `object(p)` resources can type the object's cells field by field.
+    /// so `*p` resources can type the object's cells field by field.
     /// Distinct from `struct_layout`, which marks struct values and arrays.
     pointee_struct_layout: Option<C0StructLayout>,
     function_pointer_signature: Option<C0FunctionPointerSignature>,

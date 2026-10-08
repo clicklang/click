@@ -25,7 +25,13 @@ to select library sites.
 
 ## Checks
 
-For each selected site, audit:
+A wholly selected claim is expanded once, with all its smart sites together.
+The rewritten claim must contain no smart tactics and pass retained and cold
+verification, including the performance comparison. A failed whole-claim
+expansion fails the audit.
+
+When a cursor or bounded selection covers only part of a claim, each selected
+site gets these checks:
 
 1. expands the source site;
 2. verifies the rewritten proof unit in the retained session;
@@ -75,8 +81,8 @@ ambiguous claim across sidecars are errors.
 
 Passing progress is one row per claim unless `--verbose` is set. A bounded or
 timed-out run prints a resumable `--start-at` command with the active selection
-and output mode. The summary distinguishes passing sites, site failures, and
-incomplete work.
+and output mode. The summary distinguishes passing sites, site failures, claim failures,
+session failures, and incomplete work.
 
 The command exits with status 1 for any audit failure or exhausted hard limit.
 A full audit is a manual release gate for expansion integrity and performance,

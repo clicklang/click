@@ -711,7 +711,24 @@ type arguments are accepted. Each instance keeps its distinct Clang USR.
 Sidecar names append argument tokens in order, such as `choose__bool_true`,
 `identity__unsigned_long`, or `Value_select__bool_false`. Type aliases use the
 canonical builtin token; equal-width types such as `long` and `long long`
-retain different names. Name collisions remain explicit import errors.
+retain different names. Callable name collisions use the existing injective
+Clang-declaration identity names.
+
+Concrete class-template instances reached through ordinary selected callers
+use the same ordered builtin/Boolean argument tokens, plus `__tag_Name` for
+named empty trivial tag types declared in the locked import root. For example, `Box<int, false>` exports as `Box__int__bool_false`,
+while `Box<SizeTag, true>` exports as `Box__tag_SizeTag__bool_true`.
+Qualified tag names include their namespace components. Clang's canonical USR
+keeps each record, field and method nominally distinct even when layouts match;
+aliases share the canonical instance. Method, constructor and destructor names
+use the concrete record name. Record-name collisions are import errors. At most
+32 class arguments are supported. Clang completes reachable specializations
+before layout export, including unused reference parameter types; incomplete
+record declarations fail import without an artifact. Instances must satisfy
+the ordinary record and executable-body profile, including the bounded single-base layout profile below, supported fields and
+destruction, and no virtual dispatch. Empty tags serve only as type arguments;
+this does not add empty runtime objects. Click verifies the
+resolved layout and bodies without performing template substitution itself.
 
 For `if constexpr`, pinned Clang chooses the instantiated arm in constant
 evaluation context. The artifact retains an ordinary constant Boolean `if`,
@@ -728,9 +745,9 @@ constant-evaluation context, and unsupported arguments. Its instantiated fee
 fast paths retain the unsigned expressions and cover both rounding directions
 with expansion/reverification and retained audit. They remain synthetic
 prerequisite proofs, not verification of upstream `EvaluateFee`. Selecting a
-dependent template pattern, packs, other non-type arguments, class templates,
-qualified or non-scalar type arguments, and calls in unsupported expression
-positions remain outside this slice. Template substitution and constexpr
+dependent template pattern, packs, other non-type arguments, qualified type
+arguments, non-scalar function-template arguments, nontrivial class tag types,
+and calls in unsupported expression positions remain outside this slice. Template substitution and constexpr
 selection are trusted compiler operations under the locked input profile;
 selected function implementations still require verified sidecar contracts.
 
@@ -760,9 +777,15 @@ share an indexed resolver and exact accumulated byte offsets. Root constness
 applies to the full path; ownership and views apply to the accessed leaf, with
 separate sibling objects retaining separate authority. A const object's pointer
 field may still reference mutable memory; pointee authority is checked separately.
-Projection use spans
-belong to the selected source. Projected method receivers, projected reference
-arguments and automatic objects with embedded records remain outside this slice.
+Projection use spans belong to the selected source. Methods and helpers can
+receive an embedded record by reference, and helpers can receive a signed-32
+field by reference. These calls use the same checked field path and exact byte
+address. The root's constness controls binding to mutable references, including
+implicit method receivers; it cannot be discarded by projecting a mutable field.
+Callee contracts require authority at the selected subobject or scalar leaf and
+preserve sibling frames. Plain scalar locals, temporary objects, arbitrary record
+pointers, inherited subobjects and automatic objects with embedded records remain
+outside this reference-call slice.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one
@@ -855,9 +878,33 @@ destructor synthesized on the path where no object exists. Objects in both
 arms, combination with another aggregate or cleanup scope, and deeper
 conditional construction remain rejected.
 
+A record may have one public, non-virtual base when it has no fields of its
+own, remains standard-layout and trivially copyable/destructible, and preserves
+the complete base's size and alignment at offset zero. The artifact stores an
+explicit nominal `base` edge with its own layout and source span; inherited
+fields are not copied into the derived declaration. The base must itself belong
+to the locked, reachable record graph. The proof interface exposes its storage
+under `base`, for example `state->left.base.fee`, retaining ordinary field
+authority and sibling frames. Base chains use the bounded record-layout walk
+and leaf-materialization budget. Forged edges, layouts and cycles are rejected.
+Inherited field reads/writes and method calls, and implicit derived-to-base
+record-reference arguments, use ordered paths that may mix fields and bases.
+Each base projection records its derived owner, nominal base target and use
+span in a distinct `base` wrapper; ordinary field projections retain their
+existing encoding. Validation checks each declared edge and the final field or
+callee identity, and lowering uses the accumulated byte offset. Constness
+propagates from the complete root object across both kinds of edge. Clang still
+checks source access control. Offline ordinary, expanded and retained proofs
+cover base chains, mixed-width leaves, const/mutable calls and sibling frames;
+recomputed artifacts reject wrong nominal targets even with equal layouts,
+reordered/incomplete paths, forged spans and mutable binding through const roots.
+Explicit casts, automatic derived objects and base constructor/destructor
+execution remain unsupported. Multiple or virtual bases, empty bases, own
+derived fields and tail-padding reuse remain outside this profile.
+
 Copies and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
-virtual dispatch, inheritance, bit-fields, nested record construction,
+virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported

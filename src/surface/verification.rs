@@ -3109,9 +3109,19 @@ fn verify_c0_sources_in_context(
         // certification so resource occurrence IDs and loan ledger roots are
         // shared by proof and certification; rebuilding it independently
         // would create an equivalent-looking but unauthorized authority.
-        if let Some(entry) = function_verified
+        // A proof with a jointly checked return exchange supplies one coherent
+        // entry/exit pair. Prefer its caller over a separate clause proof's
+        // entry, whose borrowed-memory representation may differ and prevent
+        // reuse of the checked post-return exchange.
+        if let Some(entry) = checked_executions
             .iter()
-            .find_map(|verified| verified.checked_execution.caller_state())
+            .filter(|execution| execution.has_checked_resource_transitions())
+            .find_map(|execution| execution.caller_state())
+            .or_else(|| {
+                checked_executions
+                    .iter()
+                    .find_map(|execution| execution.caller_state())
+            })
         {
             certification_state = entry.clone();
         }
@@ -7099,6 +7109,9 @@ pub(in crate::surface) fn build_function_environment(
                         predicate_environment,
                         click_function_environment,
                     )?)
+                    .with_ordinary_abstract_families(ordinary_abstract_families(
+                        resource_environment,
+                    ))
                     .with_predicate_unfoldings(predicate_unfoldings)
                     .with_contract(
                         contract_requires,
@@ -7388,6 +7401,28 @@ pub(in crate::surface) fn function_resource_constructors(
                 CResourceSnapshot::Current,
             )
         })
+        .collect()
+}
+
+/// The abstract families declared without `authorized`; the kernel treats
+/// every other abstract family as a possible population member.
+pub(in crate::surface) fn ordinary_abstract_families(
+    resource_environment: &ResourceEnvironment,
+) -> Vec<String> {
+    resource_environment
+        .definitions
+        .values()
+        .filter(|definition| {
+            definition.composite_body().is_none()
+                && !definition.is_authorized()
+                // The built-in resources have their own kernel forms.
+                && !matches!(
+                    definition.name(),
+                    "authority" | "mutex_guard" | "mutex_live" | "mutex_use"
+                )
+                && definition.name() != crate::kernel::CResourceFact::ALLOCATION_RESOURCE_NAME
+        })
+        .map(|definition| definition.name().to_string())
         .collect()
 }
 
@@ -9193,7 +9228,7 @@ int read_retargeted(struct buffer *owner, int *other) {\n\
 verifying "reader.c";
 
 int32 read_entry(struct buffer* owner, int32* other) {
-    owns &owner->data;
+    owns owner->data;
     views owner->data[0..1];
     ensures result == owner->data[0];
 } by {
@@ -9217,7 +9252,7 @@ int32 read_entry(struct buffer* owner, int32* other) {
 verifying "reader.c";
 
 int32 read_retargeted(struct buffer* owner, int32* other) {
-    owns &owner->data;
+    owns owner->data;
     views owner->data[0..1];
     ensures result == owner->data[0];
 } by {
@@ -9428,14 +9463,14 @@ verifying "reader.c";
 resource box(p: struct s*) {
     owns p->a;
     owns p->b;
-    owns &p->d;
+    owns p->d;
     views p->d[0..p->b];
     fact 0 <= p->b;
 }
 
 extern int32 setup(struct s* p, int32 d[], int32 n) {
     requires 0 <= n;
-    consumes object(p);
+    consumes *p;
     views d[0..n];
     produces box(p);
     ensures p->b == n;
@@ -9444,7 +9479,7 @@ extern int32 setup(struct s* p, int32 d[], int32 n) {
 
 extern void drop_box(struct s* p) {
     consumes box(p);
-    produces object(p);
+    produces *p;
 }
 "#;
 
@@ -9460,7 +9495,7 @@ extern void drop_box(struct s* p) {
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }}
@@ -9486,7 +9521,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }}
@@ -9507,7 +9542,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }} by {{
@@ -9535,7 +9570,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }} by {{
@@ -9566,21 +9601,21 @@ verifying "reader.c";
 resource box(p: struct s*) {
     owns p->a;
     owns p->b;
-    owns &p->d;
+    owns p->d;
     views p->d[0..p->b];
     fact 0 <= p->b;
 }
 
 extern int32 conjure(struct s* p, int32 n) {
     requires 0 <= n;
-    consumes object(p);
+    consumes *p;
     produces box(p);
     ensures p->b == n;
 }
 
 int32 f(struct s* p, int32 n) {
     requires 0 < n;
-    consumes object(p);
+    consumes *p;
     produces box(p);
     ensures result == 0;
 }

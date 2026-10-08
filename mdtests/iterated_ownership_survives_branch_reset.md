@@ -71,17 +71,17 @@ resource arena_scan(data: int32*, occupied: int32*, capacity: int32) {
 verifying "iterated_ownership_survives_branch_reset.c";
 
 int32 scan_run(struct arena* arena, int32 count) {
-    owns object(arena);
+    owns *arena;
     owns arena_cells(arena->data, arena->occupied, arena->capacity);
     requires 0 < count;
     requires count <= arena->capacity;
     requires arena->capacity <= 536870911;
     requires separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
     requires separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->data[0..arena->capacity])
     );
 } by {

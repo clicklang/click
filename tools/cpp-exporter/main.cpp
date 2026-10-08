@@ -29,6 +29,7 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/LangStandard.h"
 #include "clang/Basic/Builtins.h"
+#include "clang/Basic/DiagnosticSema.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -37,6 +38,7 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Sema/Sema.h"
 #include "clang/Tooling/CompilationDatabase.h"
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
@@ -155,7 +157,7 @@ bool has_untracked_preprocessor_input(const std::string &argument) {
 
 class SemanticExporter : public clang::RecursiveASTVisitor<SemanticExporter> {
 public:
-  SemanticExporter(clang::ASTContext &context, std::string logical_source,
+  SemanticExporter(clang::CompilerInstance &compiler, std::string logical_source,
                    std::string logical_source_path,
                    std::string selected_name,
                    std::string dependency_root,
@@ -165,7 +167,8 @@ public:
                    std::string exception_behavior,
                    const std::map<std::string, llvm::json::Value> &library_assertions,
                    ExportState &state)
-      : context_(context), source_manager_(context.getSourceManager()),
+      : compiler_(compiler), context_(compiler.getASTContext()),
+        source_manager_(context_.getSourceManager()),
         logical_source_(std::move(logical_source)),
         logical_source_path_(std::move(logical_source_path)),
         selected_name_(std::move(selected_name)),
@@ -373,7 +376,7 @@ private:
       function_kind["kind"] =
           constructor != nullptr ? "constructor" : "destructor";
       function_kind["record_declaration_id"] = declaration_id(record);
-      function_kind["record_name"] = record->getNameAsString();
+      function_kind["record_name"] = record_name(record);
     } else {
       return_type =
           lower_type(declaration->getReturnType(),
@@ -391,7 +394,7 @@ private:
             (!method->isStatic() && !remember_record(record)))
           return std::nullopt;
         function_kind["record_declaration_id"] = declaration_id(record);
-        function_kind["record_name"] = record->getNameAsString();
+        function_kind["record_name"] = record_name(record);
         if (!method->isStatic())
           function_kind["is_const"] = method->isConst();
       }
@@ -403,7 +406,7 @@ private:
       llvm::json::Object record_type;
       record_type["kind"] = "record";
       record_type["declaration_id"] = declaration_id(record);
-      record_type["name"] = record->getNameAsString();
+      record_type["name"] = record_name(record);
       record_type["is_const"] = method->isConst();
       llvm::json::Object reference_type;
       reference_type["kind"] = "lvalue_reference";
@@ -503,6 +506,25 @@ private:
     return Json(std::move(result));
   }
 
+  const clang::CXXRecordDecl *complete_record_type(
+      clang::QualType type, clang::SourceLocation location) {
+    const auto *record_type = type->getAs<clang::RecordType>();
+    // Clang may leave an unused specialization uninstantiated. Complete only
+    // this reachable type before querying its declaration or layout.
+    if (record_type->getDecl()->getDefinition() == nullptr &&
+        compiler_.getSema().RequireCompleteType(
+            location, type, clang::diag::err_incomplete_type)) {
+      fail(location, "the supported C++ record type must be complete");
+      return nullptr;
+    }
+    const auto *record = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(
+        record_type->getDecl()->getDefinition());
+    if (record == nullptr) {
+      fail(location, "the supported C++ record type must be complete");
+    }
+    return record;
+  }
+
   std::optional<Json> lower_parameter(const clang::ParmVarDecl *parameter) {
     const auto *reference =
         parameter->getType()->getAs<clang::LValueReferenceType>();
@@ -519,10 +541,12 @@ private:
     if (reference != nullptr &&
         !reference->getPointeeType().isVolatileQualified() &&
         !reference->getPointeeType().isRestrictQualified()) {
-      if (const auto *record_type =
-              reference->getPointeeType()->getAs<clang::RecordType>()) {
-        record_reference = llvm::dyn_cast<clang::CXXRecordDecl>(
-            record_type->getDecl()->getDefinition());
+      if (reference->getPointeeType()->getAs<clang::RecordType>() != nullptr) {
+        record_reference = complete_record_type(reference->getPointeeType(),
+                                                parameter->getLocation());
+        if (record_reference == nullptr) {
+          return std::nullopt;
+        }
       }
     }
     const auto *pointer = parameter->getType()->getAs<clang::PointerType>();
@@ -616,9 +640,8 @@ private:
       result["pointee"] = std::move(*pointee);
       return Json(std::move(result));
     }
-    if (const auto *record_type = type->getAs<clang::RecordType>()) {
-      const auto *record = llvm::dyn_cast<clang::CXXRecordDecl>(
-          record_type->getDecl()->getDefinition());
+    if (type->getAs<clang::RecordType>() != nullptr) {
+      const auto *record = complete_record_type(type, location);
       if (type.isVolatileQualified() || type.isRestrictQualified() ||
           record == nullptr || !remember_record(record)) {
         if (record == nullptr && state_.error.empty()) {
@@ -632,7 +655,7 @@ private:
       llvm::json::Object result;
       result["kind"] = "record";
       result["declaration_id"] = declaration_id(record);
-      result["name"] = record->getNameAsString();
+      result["name"] = record_name(record);
       result["is_const"] = type.isConstQualified();
       return Json(std::move(result));
     }
@@ -2622,9 +2645,9 @@ private:
 
   bool validate_record(const clang::CXXRecordDecl *record) {
     if (llvm::isa<clang::ClassTemplateSpecializationDecl>(record)) {
-      fail(record->getLocation(),
-           "C++ class template instances are unsupported");
-      return false;
+      record_name(record);
+      if (!state_.error.empty())
+        return false;
     }
     if ((!record->isStruct() && !record->isClass()) || record->getName().empty()) {
       fail(record->getLocation(),
@@ -2637,12 +2660,40 @@ private:
            "the supported C++ record must be declared within the import root");
       return false;
     }
-    if (!record->isStandardLayout() || record->getNumBases() != 0) {
-      fail(record->getLocation(),
-           "the supported C++ record must be standard-layout and trivially-copyable except for a supported destructor, and have no bases");
+    if (record->getNumBases() != 0) {
+      if (record->getNumBases() != 1 || !record->field_empty()) {
+        fail(record->getLocation(),
+             "the supported C++ base profile requires one public non-virtual base and no own fields");
+        return false;
+      }
+      const auto &base = *record->bases_begin();
+      if (base.isVirtual() || base.getAccessSpecifier() != clang::AS_public ||
+          !record->isTriviallyCopyable() || !record->hasTrivialDestructor()) {
+        fail(record->getLocation(),
+             "the supported C++ base profile requires public non-virtual inheritance and trivial copying/destruction");
+        return false;
+      }
+      const auto *base_record = base.getType()->getAsCXXRecordDecl();
+      if (base_record == nullptr || !remember_record(base_record) ||
+          !base_record->getDefinition()->hasTrivialDestructor()) {
+        if (state_.error.empty())
+          fail(base.getBeginLoc(), "C++ base subobjects require trivial destruction");
+        return false;
+      }
+      const auto &layout = context_.getASTRecordLayout(record);
+      const auto &base_layout = context_.getASTRecordLayout(base_record);
+      if (!layout.getBaseClassOffset(base_record).isZero() ||
+          layout.getSize() != base_layout.getSize() ||
+          layout.getAlignment() != base_layout.getAlignment()) {
+        fail(base.getBeginLoc(), "C++ single-base layout must preserve the complete base layout");
+        return false;
+      }
+    }
+    if (!record->isStandardLayout()) {
+      fail(record->getLocation(), "the supported C++ record must be standard-layout");
       return false;
     }
-    if (record->field_empty()) {
+    if (record->field_empty() && record->getNumBases() == 0) {
       fail(record->getLocation(),
            "the supported C++ record must contain at least one field");
       return false;
@@ -2700,6 +2751,10 @@ private:
 
   bool validate_constructor(const clang::CXXConstructorDecl *constructor,
                             const clang::CXXRecordDecl *record) {
+    if (record->getNumBases() != 0) {
+      fail(constructor->getLocation(), "C++ constructors with base subobjects remain unsupported");
+      return false;
+    }
     const auto *prototype =
         constructor->getType()->getAs<clang::FunctionProtoType>();
     if (!constructor->isExplicit() || constructor->getAccess() != clang::AS_public ||
@@ -2830,10 +2885,23 @@ private:
     }
     llvm::json::Object result;
     result["declaration_id"] = declaration_id(record);
-    result["name"] = record->getNameAsString();
+    result["name"] = record_name(record);
     result["size_bytes"] = static_cast<std::int64_t>(size);
     result["alignment_bytes"] = static_cast<std::int64_t>(alignment);
     result["fields"] = std::move(fields);
+    if (record->getNumBases() == 1) {
+      const auto &base = *record->bases_begin();
+      auto value_type = lower_type(base.getType(), base.getBeginLoc());
+      if (!value_type) return std::nullopt;
+      llvm::json::Object subobject;
+      subobject["value_type"] = std::move(*value_type);
+      subobject["offset_bytes"] = static_cast<std::int64_t>(
+          layout.getBaseClassOffset(base.getType()->getAsCXXRecordDecl()).getQuantity());
+      subobject["size_bytes"] = static_cast<std::int64_t>(
+          context_.getTypeSizeInChars(base.getType()).getQuantity());
+      subobject["span"] = declaration_span(base.getSourceRange());
+      result["base"] = std::move(subobject);
+    }
     const clang::CXXDestructorDecl *destructor = record->getDestructor();
     if (destructor != nullptr && !destructor->isImplicit()) {
       const auto *definition = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(
@@ -2858,137 +2926,141 @@ private:
     return Json(std::move(result));
   }
 
+  bool validate_member_object(const clang::MemberExpr *member,
+                              const clang::CXXRecordDecl *owner) {
+    if (member->isArrow() &&
+        !llvm::isa<clang::CXXThisExpr>(member->getBase()->IgnoreParenImpCasts())) {
+      fail(member->getOperatorLoc(),
+           "C++ field projections cannot traverse record pointers; arrow access requires the current object");
+      return false;
+    }
+    auto type = member->getBase()->getType();
+    if (const auto *pointer = type->getAs<clang::PointerType>())
+      type = pointer->getPointeeType();
+    const auto *record = type->getAsCXXRecordDecl();
+    if (record == nullptr || record->getCanonicalDecl() != owner->getCanonicalDecl()) {
+      fail(member->getMemberLoc(), "C++ field projection has a mismatched record owner");
+      return false;
+    }
+    return remember_record(owner);
+  }
+
+  Json field_reference(const clang::MemberExpr *member,
+                       const clang::FieldDecl *field) {
+    llvm::json::Object result;
+    result["record_declaration_id"] = declaration_id(field->getParent());
+    result["declaration_id"] = declaration_id(field);
+    result["name"] = field->getNameAsString();
+    result["span"] = span(member->getMemberNameInfo().getSourceRange());
+    return Json(std::move(result));
+  }
+
   std::optional<LoweredMember>
   lower_member(const clang::MemberExpr *member,
                const clang::FunctionDecl *function) {
     const auto *field = llvm::dyn_cast<clang::FieldDecl>(member->getMemberDecl());
-    const auto *record = field == nullptr
-                             ? nullptr
-                             : llvm::dyn_cast<clang::CXXRecordDecl>(
-                                   field->getParent()->getDefinition());
-    if (field == nullptr || record == nullptr || !remember_record(record)) {
-      if (field == nullptr && state_.error.empty()) {
-        fail(member->getMemberLoc(),
-             "the supported C++ member access must resolve to a data field");
-      }
+    const auto *record = field == nullptr ? nullptr :
+        llvm::dyn_cast_or_null<clang::CXXRecordDecl>(field->getParent()->getDefinition());
+    if (record == nullptr) {
+      fail(member->getMemberLoc(), "the supported C++ member access must resolve to a data field");
       return std::nullopt;
     }
-    const clang::Expr *base = member->getBase()->IgnoreParenImpCasts();
-    std::vector<const clang::MemberExpr *> projections;
-    while (const auto *projection = llvm::dyn_cast<clang::MemberExpr>(base)) {
-      if (projections.size() >= kMaxRecordDeclarations) {
-        fail(projection->getMemberLoc(), "C++ artifact budget exhausted: record field projections");
-        return std::nullopt;
-      }
-      const auto *projected_field = llvm::dyn_cast<clang::FieldDecl>(projection->getMemberDecl());
-      if (projected_field == nullptr ||
-          projected_field->getType()->getAsCXXRecordDecl() == nullptr) {
-        fail(projection->getMemberLoc(), "C++ field projections require embedded record fields");
-        return std::nullopt;
-      }
-      projections.push_back(projection);
-      base = projection->getBase()->IgnoreParenImpCasts();
-    }
-    const auto *root_record = projections.empty() ? record :
-        llvm::cast<clang::CXXRecordDecl>(projections.back()->getMemberDecl()->getDeclContext());
-    const auto *this_expression = llvm::dyn_cast<clang::CXXThisExpr>(base);
-    const auto *object_method = llvm::dyn_cast<clang::CXXMethodDecl>(function);
-    const auto *reference = llvm::dyn_cast<clang::DeclRefExpr>(base);
-    const auto *parameter = reference == nullptr
-                                ? nullptr
-                                : llvm::dyn_cast<clang::ParmVarDecl>(
-                                      reference->getDecl());
-    const auto *local = reference == nullptr
-                            ? nullptr
-                            : llvm::dyn_cast<clang::VarDecl>(
-                                  reference->getDecl());
-    const auto *reference_type =
-        parameter == nullptr
-            ? nullptr
-            : parameter->getType()->getAs<clang::LValueReferenceType>();
-    const auto *base_record_type =
-        reference_type == nullptr
-            ? nullptr
-            : reference_type->getPointeeType()->getAs<clang::RecordType>();
-    const auto *local_record_type =
-        local == nullptr ? nullptr : local->getType()->getAs<clang::RecordType>();
-    const bool supported_parameter =
-        parameter != nullptr && parameter->getDeclContext() == function &&
-        reference_type != nullptr &&
-        !reference_type->getPointeeType().isVolatileQualified() &&
-        !reference_type->getPointeeType().isRestrictQualified() &&
-        base_record_type != nullptr &&
-        base_record_type->getDecl()->getCanonicalDecl() ==
-            root_record->getCanonicalDecl();
-    const bool supported_local =
-        local != nullptr && parameter == nullptr &&
-        local->getDeclContext() == function && local->hasLocalStorage() &&
-        !local->isStaticLocal() && !local->getType().hasQualifiers() &&
-        local_record_type != nullptr &&
-        local_record_type->getDecl()->getCanonicalDecl() ==
-            root_record->getCanonicalDecl();
-    const bool supported_this =
-        this_expression != nullptr && object_method != nullptr &&
-        !object_method->isStatic() &&
-        object_method->getParent()->getCanonicalDecl() ==
-            root_record->getCanonicalDecl();
-    if ((member->isArrow() && (!supported_this || !projections.empty())) ||
-        (!projections.empty() && projections.back()->isArrow() && !supported_this)) {
-      fail(member->getOperatorLoc(),
-           "the first C++ object slice supports arrow access only for the "
-           "current method, constructor, or destructor object");
-      return std::nullopt;
-    }
-    if (!supported_parameter && !supported_local && !supported_this) {
-      fail(member->getMemberLoc(),
-           "supported C++ member access must use the current constructor/destructor object, a mutable record-reference parameter, or a supported record local directly");
-      return std::nullopt;
-    }
-    auto object = lower_place_reference(base, function);
-    if (!object) {
-      return std::nullopt;
-    }
-    if (!projections.empty()) {
-      llvm::json::Array path;
-      for (auto iterator = projections.rbegin(); iterator != projections.rend(); ++iterator) {
-        const auto *projection = *iterator;
-        const auto *projected_field = llvm::cast<clang::FieldDecl>(projection->getMemberDecl());
-        const auto *owner = llvm::cast<clang::CXXRecordDecl>(projected_field->getParent());
-        const auto *base_type = projection->getBase()->getType()->getAsCXXRecordDecl();
-        // The root `this` is a pointer; every subsequent step is a by-value field.
-        if (projection->isArrow()) {
-          if (!supported_this || projection != projections.back()) {
-            fail(projection->getMemberLoc(), "C++ field projections cannot traverse record pointers");
-            return std::nullopt;
-          }
-        } else if (base_type == nullptr || base_type->getCanonicalDecl() != owner->getCanonicalDecl()) {
-          fail(projection->getMemberLoc(), "C++ field projection has a mismatched record owner");
-          return std::nullopt;
-        }
-        llvm::json::Object step;
-        step["record_declaration_id"] = declaration_id(owner);
-        step["declaration_id"] = declaration_id(projected_field);
-        step["name"] = projected_field->getNameAsString();
-        step["span"] = span(projection->getMemberNameInfo().getSourceRange());
-        path.push_back(std::move(step));
-      }
-      (*object->getAsObject())["projections"] = std::move(path);
-    }
-    llvm::json::Object lowered_field;
-    lowered_field["record_declaration_id"] = declaration_id(record);
-    lowered_field["declaration_id"] = declaration_id(field);
-    lowered_field["name"] = field->getNameAsString();
-    lowered_field["span"] = span(member->getMemberNameInfo().getSourceRange());
-    if (!state_.error.empty()) {
-      return std::nullopt;
-    }
-    return LoweredMember{std::move(*object), Json(std::move(lowered_field))};
+    if (!validate_member_object(member, record)) return std::nullopt;
+    auto object = lower_place_reference(member->getBase(), function);
+    if (!object || !state_.error.empty()) return std::nullopt;
+    return LoweredMember{std::move(*object), field_reference(member, field)};
   }
 
   std::optional<Json>
   lower_place_reference(const clang::Expr *expression,
                         const clang::FunctionDecl *expected_function) {
-    expression = expression->IgnoreParenImpCasts();
+    // Walk once from leaf to root, then reverse the mixed field/base edges.
+    // Never erase an implicit derived-to-base conversion with IgnoreImpCasts.
+    std::vector<Json> reverse_path;
+    auto push = [&](Json projection) {
+      if (reverse_path.size() >= kMaxRecordDeclarations) {
+        fail(expression->getExprLoc(), "C++ artifact budget exhausted: record field projections");
+        return false;
+      }
+      reverse_path.push_back(std::move(projection));
+      return true;
+    };
+    while (true) {
+      expression = expression->IgnoreParens();
+      if (const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(expression)) {
+        if (cast->getCastKind() == clang::CK_DerivedToBase ||
+            cast->getCastKind() == clang::CK_UncheckedDerivedToBase) {
+          auto source_type = cast->getSubExpr()->getType();
+          if (const auto *pointer = source_type->getAs<clang::PointerType>())
+            source_type = pointer->getPointeeType();
+          const auto *owner = source_type->getAsCXXRecordDecl();
+          if (owner != nullptr) owner = owner->getDefinition();
+          std::vector<Json> edges;
+          if (cast->path_empty()) {
+            fail(cast->getExprLoc(), "C++ base conversion requires an explicit nominal base path");
+            return std::nullopt;
+          }
+          for (const auto *base : cast->path()) {
+            if (owner == nullptr || !remember_record(owner) ||
+                owner->getNumBases() != 1 || base->isVirtual() ||
+                base->getAccessSpecifier() != clang::AS_public) {
+              if (state_.error.empty())
+                fail(cast->getExprLoc(), "C++ base conversion requires a declared public non-virtual base");
+              return std::nullopt;
+            }
+            const auto *target = base->getType()->getAsCXXRecordDecl();
+            if (target != nullptr) target = target->getDefinition();
+            const auto *declared = owner->bases_begin()->getType()->getAsCXXRecordDecl();
+            if (target == nullptr || declared == nullptr ||
+                target->getCanonicalDecl() != declared->getCanonicalDecl()) {
+              fail(cast->getExprLoc(), "C++ base conversion has a mismatched nominal base path");
+              return std::nullopt;
+            }
+            if (edges.size() + reverse_path.size() >= kMaxRecordDeclarations) {
+              fail(cast->getExprLoc(), "C++ artifact budget exhausted: record field projections");
+              return std::nullopt;
+            }
+            llvm::json::Object reference;
+            reference["record_declaration_id"] = declaration_id(owner);
+            reference["base_declaration_id"] = declaration_id(target);
+            reference["base_name"] = record_name(target);
+            reference["span"] = span(cast->getSourceRange());
+            llvm::json::Object projection;
+            projection["base"] = std::move(reference);
+            edges.push_back(Json(std::move(projection)));
+            owner = target;
+          }
+          for (auto iterator = edges.rbegin(); iterator != edges.rend(); ++iterator)
+            if (!push(std::move(*iterator))) return std::nullopt;
+        }
+        expression = cast->getSubExpr();
+        continue;
+      }
+      if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(expression)) {
+        const auto *field = llvm::dyn_cast<clang::FieldDecl>(member->getMemberDecl());
+        const auto *owner = field == nullptr ? nullptr :
+            llvm::dyn_cast_or_null<clang::CXXRecordDecl>(field->getParent()->getDefinition());
+        if (owner == nullptr || !validate_member_object(member, owner)) {
+          if (state_.error.empty())
+            fail(member->getMemberLoc(), "C++ field projections require declared data fields");
+          return std::nullopt;
+        }
+        if (!push(field_reference(member, field))) return std::nullopt;
+        expression = member->getBase();
+        continue;
+      }
+      break;
+    }
+    auto finish = [&](llvm::json::Object result) -> std::optional<Json> {
+      if (!reverse_path.empty()) {
+        llvm::json::Array path;
+        for (auto iterator = reverse_path.rbegin(); iterator != reverse_path.rend(); ++iterator)
+          path.push_back(std::move(*iterator));
+        result["projections"] = std::move(path);
+      }
+      if (!state_.error.empty()) return std::nullopt;
+      return Json(std::move(result));
+    };
     if (llvm::isa<clang::CXXThisExpr>(expression)) {
       const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(expected_function);
       if (method == nullptr || method->isStatic()) {
@@ -3001,7 +3073,7 @@ private:
       result["declaration_id"] = object_self_id(method);
       result["name"] = "self";
       result["span"] = span(method->getNameInfo().getSourceRange());
-      return Json(std::move(result));
+      return finish(std::move(result));
     }
     const auto *reference = llvm::dyn_cast<clang::DeclRefExpr>(expression);
     const auto *place =
@@ -3029,7 +3101,7 @@ private:
     if (!state_.error.empty()) {
       return std::nullopt;
     }
-    return Json(std::move(result));
+    return finish(std::move(result));
   }
 
   std::string declaration_id(const clang::Decl *declaration) {
@@ -3073,12 +3145,15 @@ private:
     return Json(std::move(result));
   }
 
-  std::string template_suffix(const clang::FunctionDecl *function) {
-    const auto *arguments = function->getTemplateSpecializationArgs();
-    if (arguments == nullptr)
+  std::string template_argument_suffix(
+      llvm::ArrayRef<clang::TemplateArgument> arguments,
+      clang::SourceLocation location, bool allow_tags) {
+    if (allow_tags && arguments.size() > 32) {
+      fail(location, "C++ class template instances support at most 32 arguments");
       return {};
+    }
     std::string suffix;
-    for (const auto &argument : arguments->asArray()) {
+    for (const auto &argument : arguments) {
       if (argument.getKind() == clang::TemplateArgument::Integral &&
           argument.getIntegralType()->isBooleanType()) {
         suffix +=
@@ -3086,7 +3161,7 @@ private:
       } else if (argument.getKind() == clang::TemplateArgument::Type) {
         const auto type = context_.getCanonicalType(argument.getAsType());
         if (type.hasQualifiers()) {
-          fail(function->getLocation(),
+          fail(location,
                "qualified C++ template type arguments are unsupported");
           return {};
         }
@@ -3107,19 +3182,61 @@ private:
             break;
           }
         }
+        if (name == nullptr && allow_tags) {
+          const auto *tag = type->getAsCXXRecordDecl();
+          if (tag != nullptr && tag->getDefinition() != nullptr) {
+            tag = tag->getDefinition();
+            if (!llvm::isa<clang::ClassTemplateSpecializationDecl>(tag) &&
+                !tag->getName().empty() && tag->field_empty() &&
+                tag->getNumBases() == 0 && tag->isStandardLayout() &&
+                tag->isTriviallyCopyable() && tag->hasTrivialDestructor() &&
+                (is_in_logical_source(tag->getLocation()) ||
+                 dependency_source(tag->getLocation()))) {
+              std::string tag_name = tag->getQualifiedNameAsString();
+              size_t pos = 0;
+              while ((pos = tag_name.find("::", pos)) != std::string::npos) {
+                tag_name.replace(pos, 2, "_");
+                ++pos;
+              }
+              suffix += "__tag_" + tag_name;
+              continue;
+            }
+          }
+          fail(location, "C++ class template type arguments require supported "
+                         "builtin scalars or named empty trivial tags within the import root");
+          return {};
+        }
         if (name == nullptr) {
-          fail(function->getLocation(), "C++ template type arguments require "
-                                        "bool or 32/64-bit builtin integers");
+          fail(location, "C++ template type arguments require "
+                         "bool or 32/64-bit builtin integers");
           return {};
         }
         suffix += name;
       } else {
-        fail(function->getLocation(), "C++ template arguments require Boolean "
-                                      "values or supported scalar types");
+        fail(location, "C++ template arguments require Boolean "
+                       "values or supported scalar types");
         return {};
       }
     }
     return suffix;
+  }
+
+  std::string template_suffix(const clang::FunctionDecl *function) {
+    const auto *arguments = function->getTemplateSpecializationArgs();
+    return arguments == nullptr
+               ? std::string{}
+               : template_argument_suffix(arguments->asArray(),
+                                          function->getLocation(), false);
+  }
+
+  std::string record_name(const clang::CXXRecordDecl *record) {
+    std::string name = record->getNameAsString();
+    if (const auto *instance =
+            llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record)) {
+      name += template_argument_suffix(instance->getTemplateArgs().asArray(),
+                                       record->getLocation(), true);
+    }
+    return name;
   }
 
   std::string function_name(const clang::FunctionDecl *function) {
@@ -3145,18 +3262,18 @@ private:
                  ? "operator_add_assign"
                  : "operator_subtract_assign";
     }
-    return method->getParent()->getNameAsString() + "_" + name +
+    return record_name(method->getParent()) + "_" + name +
            template_suffix(method);
   }
 
   std::string constructor_name(
-      const clang::CXXConstructorDecl *constructor) const {
-    return constructor->getParent()->getNameAsString() + "_constructor";
+      const clang::CXXConstructorDecl *constructor) {
+    return record_name(constructor->getParent()) + "_constructor";
   }
 
   std::string destructor_name(
-      const clang::CXXDestructorDecl *destructor) const {
-    return destructor->getParent()->getNameAsString() + "_destructor";
+      const clang::CXXDestructorDecl *destructor) {
+    return record_name(destructor->getParent()) + "_destructor";
   }
 
   Json span(clang::SourceRange range) {
@@ -3302,6 +3419,7 @@ private:
     state_.error = logical_source_ + ": error: " + std::move(message);
   }
 
+  clang::CompilerInstance &compiler_;
   clang::ASTContext &context_;
   clang::SourceManager &source_manager_;
   std::string logical_source_;
@@ -3338,9 +3456,9 @@ private:
 
 class ExportConsumer : public clang::ASTConsumer {
 public:
-  ExportConsumer(clang::ASTContext &context, const Options &options,
+  ExportConsumer(clang::CompilerInstance &compiler, const Options &options,
                  ExportState &state)
-      : exporter_(context, options.logical_source, options.logical_source_path,
+      : exporter_(compiler, options.logical_source, options.logical_source_path,
                   options.function, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
@@ -3415,7 +3533,7 @@ public:
         std::make_unique<PreprocessorFiles>(compiler.getSourceManager(),
                                             options_.compilation_directory,
                                             state_));
-    return std::make_unique<ExportConsumer>(compiler.getASTContext(), options_,
+    return std::make_unique<ExportConsumer>(compiler, options_,
                                             state_);
   }
 

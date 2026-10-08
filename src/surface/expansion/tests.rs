@@ -1381,13 +1381,13 @@ predicate terminated_at(data: int32[], length: int32) {
 resource owned_box(owner: struct box*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len < owner->cap;
     fact terminated_at(owner->data, owner->len);
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     );
 }

@@ -13,9 +13,9 @@ resource tree(p: struct node*) {
     match model {
         Tree::Empty => { fact p == 0; },
         Tree::Node(id, lm, rm) => {
-            owns &p->left;
-            owns &p->right;
-            owns &p->tag;
+            owns p->left;
+            owns p->right;
+            owns p->tag;
             owns left: tree(p->left);
             owns right: tree(p->right);
             fact p != 0;
@@ -27,7 +27,7 @@ resource tree(p: struct node*) {
 }
 void roundtrip(struct node* p, struct node* q) {
     owns t: tree(p);
-    owns &q->tag;
+    owns q->tag;
     requires t.model != Tree::Empty;
     ensures t.model == old(t.model);
 } by {

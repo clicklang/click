@@ -52,7 +52,7 @@ resource zero_box(box: struct box*) {
 }
 
 int32 make_zero(struct box* box) {
-    consumes object(box);
+    consumes *box;
     produces zero_box(box);
 
     ensures result == 0;
@@ -74,7 +74,7 @@ int32 read_zero(struct box* box) {
 }
 
 int32 zero_pipeline(struct box* box) {
-    consumes object(box);
+    consumes *box;
     produces zero_box(box);
 
     ensures result == 0;

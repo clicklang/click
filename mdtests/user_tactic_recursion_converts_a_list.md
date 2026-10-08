@@ -55,7 +55,7 @@ resource list_at(p: struct node*) {
     match model {
         Links::Nil => { fact p == 0; },
         Links::Cons(rest_model) => {
-            owns &p->next;
+            owns p->next;
             owns rest: list_at(p->next);
             fact p != 0;
             fact rest.model == rest_model;
@@ -68,7 +68,7 @@ resource list2_at(p: struct node*) {
     match model {
         Links::Nil => { fact p == 0; },
         Links::Cons(rest_model) => {
-            owns &p->next;
+            owns p->next;
             owns rest: list2_at(p->next);
             fact p != 0;
             fact rest.model == rest_model;

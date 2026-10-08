@@ -2,7 +2,7 @@
 
 `mark_run` is `loop_frame_through_field_over_folded_binder_cells.md` with the
 arena's fields owned by a field-bearing `state` resource instead of the
-function's own `object(arena)`, the shape `examples/arena`'s `arena_state`
+function's own `*arena`, the shape `examples/arena`'s `arena_state`
 has. The proof unfolds the state before it executes, so the fields
 `&arena->occupied` and `arena->capacity` are held outright, outside the
 loop's havoc, and the loop that owns the `window` over the map keeps
@@ -62,13 +62,13 @@ resource window(occupied: int32*, capacity: int32, start: int32, end: int32) {
 
 resource state(arena: struct arena*) {
     field capacity: int32;
-    owns &arena->data;
-    owns &arena->occupied;
+    owns arena->data;
+    owns arena->occupied;
     owns arena->capacity;
     owns arena->live_regions;
     fact arena->capacity == capacity;
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
 }

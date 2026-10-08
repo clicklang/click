@@ -75,9 +75,9 @@ Successful progress is concise by default: one row per claim. `--verbose`
 restores one row per smart site.
 
 A claim whose sites are all selected is expanded once, with every site
-together, since expanding one site runs its whole claim. Its sites are audited
-one at a time, as above, only when that whole-claim expansion fails or the
-selection covers the claim in part.
+together, since expanding one site runs its whole claim. Failure of that whole-claim
+expansion fails the audit. Sites are audited one at a time, as above, only
+when the selection covers the claim in part.
 
 The audit's own checks count deterministic work units, the ones the tactic
 budgets are charged, so machine load cannot change them; wall-clock time is
@@ -696,12 +696,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             .entry((site.click_path.clone(), site.claim.clone()))
             .or_default() += 1;
     }
-    // A claim whose sites did not expand together is audited a site at a
-    // time, which names the site at fault. The value is the together
-    // failure and the site failures counted before the claim began: if every
-    // site then passes alone, the together failure is the finding.
-    let mut together_failures: BTreeMap<(PathBuf, String), (String, usize)> = BTreeMap::new();
-    let mut whole_claim_failures = 0;
+    let mut claim_failures = 0;
     let started = Instant::now();
     let deadline = started + arguments.time_limit;
 
@@ -779,7 +774,8 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
 
         // A wholly selected claim is expanded once, with all its sites
         // together: expanding a site runs its whole claim, so expanding them
-        // one at a time runs the claim once per site.
+        // one at a time runs the claim once per site. A site cap still
+        // selects the whole claim when its remaining allowance covers it.
         let claim_key = (site.click_path.clone(), site.claim.clone());
         let claim_sites = selected[cursor..]
             .iter()
@@ -793,9 +789,10 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                     previous.click_path != site.click_path || previous.claim != site.claim
                 });
         if at_claim_start
-            && arguments.max_sites.is_none()
+            && arguments
+                .max_sites
+                .is_none_or(|limit| claim_sites <= limit.saturating_sub(attempted_sites))
             && inventoried_claim_counts.get(&claim_key) == Some(&claim_sites)
-            && !together_failures.contains_key(&claim_key)
         {
             print!(
                 "CLAIM [{}/{}] {}  {} ({claim_sites} sites) ... ",
@@ -831,9 +828,16 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                         out_of_time = true;
                         break;
                     }
-                    println!("its sites did not expand together; auditing each alone");
+                    println!("FAIL");
                     println!("    {}", message.replace('\n', "\n    "));
-                    together_failures.insert(claim_key, (message, site_failures));
+                    print_resume(&arguments, site);
+                    claim_failures += 1;
+                    attempted_sites += claim_sites;
+                    if !arguments.keep_going {
+                        break;
+                    }
+                    cursor += claim_sites;
+                    continue;
                 }
             }
         }
@@ -976,25 +980,6 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             }
             pending.clear();
         }
-        if !next_is_same_claim
-            && let Some((message, failures_before)) =
-                together_failures.remove(&(site.click_path.clone(), site.claim.clone()))
-            && site_failures == failures_before
-            && !stop
-        {
-            // Whole-claim expansion is a faster route to the same audit, not
-            // yet a requirement of it: see
-            // `bugs/whole-claim-expansion-fails-on-proof-matches.md`. A claim
-            // whose sites all pass alone has passed; the difference is
-            // reported so it is not lost.
-            println!(
-                "NOTE {}  {}: every site expands alone, but `click expand --claim` on the whole claim fails",
-                site.click_path.display(),
-                site.claim
-            );
-            println!("    {}", message.replace('\n', "\n    "));
-            whole_claim_failures += 1;
-        }
         if stop {
             break;
         }
@@ -1015,22 +1000,15 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
 
     println!(
         "\nSUMMARY: {audited_sites} sites passed; {site_failures} site failures; \
-         {session_failures} session failures; {} sites discovered{}{}",
+         {claim_failures} claim failures; {session_failures} session failures; {} sites discovered{}",
         scoped_sites.len(),
-        if whole_claim_failures == 0 {
-            String::new()
-        } else {
-            format!(
-                "; {whole_claim_failures} claim(s) audited a site at a time because whole-claim expansion failed"
-            )
-        },
         if arguments.max_sites.is_some() {
             " (bounded run)"
         } else {
             ""
         }
     );
-    let failures = site_failures + session_failures;
+    let failures = site_failures + claim_failures + session_failures;
     if out_of_time {
         if cursor < selected.len() {
             println!();

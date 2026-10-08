@@ -1763,6 +1763,14 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
+        // A family that reaches no population keeps its ordinary definition
+        // law; only population-reaching bodies take the checks below.
+        let reaches_population = match selected.resource() {
+            CResource::Composite { name, .. } => function
+                .composite_resource_definition(name)
+                .is_none_or(|definition| definition.reaches_population()),
+            _ => true,
+        };
         if before_state.uses_population_authority_semantics()
             && !matches!(selected.resource(), CResource::Instance(_))
         {
@@ -1804,7 +1812,7 @@ impl CheckedResourceRewrite {
                     )
                 })
             {
-                return Self::check_transfer_wrapper(
+                let checked = Self::check_transfer_wrapper(
                     before_state,
                     before_facts,
                     selected,
@@ -1812,8 +1820,13 @@ impl CheckedResourceRewrite {
                     after_facts,
                     call_events,
                     definition,
-                    selected_children,
+                    selected_children.clone(),
                 );
+                // A wrapper that reaches no population and has a body this
+                // delta check does not model keeps its ordinary definition law.
+                if checked.is_ok() || reaches_population {
+                    return checked;
+                }
             }
             // Population accounting covers only `authorized resource`
             // families; any other family keeps its ordinary definition law.
@@ -3026,7 +3039,18 @@ impl CheckedResourceObservation {
         derivations: &PersistentOrderedSet<Theorem>,
         call_events: &CheckedCallEvents,
     ) -> Result<Self, &'static str> {
-        if before_state.uses_population_authority_semantics() {
+        // Only an authorized family has a population count to observe; any
+        // other observation is an ordinary resource observation.
+        let counted = match observed.resource() {
+            crate::kernel::CResource::Composite { name, .. } => function
+                .composite_resource_definition(name)
+                .is_none_or(|definition| definition.is_authorized()),
+            crate::kernel::CResource::Token { name, .. } => !function
+                .contract_interface()
+                .is_ordinary_abstract_family(name),
+            _ => true,
+        };
+        if before_state.uses_population_authority_semantics() && counted {
             let unchanged = before_state.memory.diagnostic_identity()
                 == after_state.memory.diagnostic_identity()
                 && before_state.shares_non_memory_storage_with(after_state)
@@ -6064,6 +6088,10 @@ pub(crate) struct PendingLoopReturnPath {
 pub(crate) struct ExecutionProofCore {
     pub(crate) state: SharedValue<CState>,
     initial_match_scope: SharedValue<CState>,
+    /// Context of the logical frontier cases admitted by the kernel, in
+    /// split order. Forks share the prefix; a join restores the parent's.
+    /// Other case producers use the ordinary local-context construction.
+    checked_step_cases: (usize, PureFactContext),
     /// Every variable `initial_match_scope` mentions, built once and shared by
     /// every branch forked from this region. A constructor witness introduced
     /// anywhere in the region must avoid these; everything the kernel has
@@ -7606,6 +7634,7 @@ impl ExecutionProofCore {
         let state: SharedValue<CState> = state.into();
         Self {
             initial_match_scope: state.clone(),
+            checked_step_cases: (0, PureFactContext::new()),
             initial_match_reserved: Arc::new(std::sync::OnceLock::new()),
             state,
             evidence_state: None,
@@ -8203,6 +8232,20 @@ impl ExecutionProofCore {
             return Err("the branch continuation does not begin the parent's remaining source");
         }
         Ok(tail)
+    }
+
+    /// Called only after the kernel admitted this logical frontier case.
+    pub(in crate::kernel::proof) fn retain_step_case(&mut self, fact: Proposition) {
+        self.checked_step_cases.0 += 1;
+        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+        self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
+    }
+
+    /// A local context for a presentation containing exactly these admitted
+    /// cases. The caller still checks every selected premise against its
+    /// ProofFacts; presentation never supplies semantic authority.
+    pub(crate) fn checked_step_case_context(&self, count: usize) -> Option<PureFactContext> {
+        (self.checked_step_cases.0 == count).then(|| self.checked_step_cases.1.clone())
     }
 
     /// The state the retained evidence has reached, or the core's state
@@ -10176,6 +10219,11 @@ impl ExecutionProofCore {
             .0
             .pop()
             .ok_or("return fold selected an unknown path")
+    }
+
+    /// Whether this path retains a kernel-checked exchange after its C return.
+    pub(crate) fn has_checked_return_resource_rewrite(&self, path_index: usize) -> bool {
+        self.return_resource_rewrites.get(&path_index).is_some()
     }
 
     /// Collect a finished outcome's exchange without copying sibling traces.
@@ -14869,7 +14917,8 @@ mod population_authority_rewrite_tests {
                 false,
                 vec![],
                 vec![],
-            );
+            )
+            .with_authorized(true);
             let (mut state, _) = state
                 .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
                 .unwrap();
@@ -15090,6 +15139,15 @@ mod authority_transfer_wrapper_scaling_tests {
                 resources = resources.unchecked_with_fact(unrelated);
                 before = before.with_local(format!("local_{index}"), int32(index as u32));
                 memory = memory.with_block(format!("block_{index}"), 4);
+                resources =
+                    resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                        Pointer {
+                            block: format!("block_{index}").into(),
+                            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                        },
+                        0.into(),
+                        1.into(),
+                    )));
                 facts = facts.with_fact(Proposition::ConditionIs(
                     crate::kernel::ConditionTerm::Bitvector32Equal(
                         Box::new(Bitvector32Term::Variable(Variable(index as u64 + 100))),
@@ -15156,6 +15214,36 @@ mod authority_transfer_wrapper_scaling_tests {
                 .is_err(),
                 "the unrelated frame must remain authenticated"
             );
+            let unrelated_memory = CResourceFact::own_memory(CMemoryRange::new(
+                Pointer {
+                    block: "block_0".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                },
+                0.into(),
+                1.into(),
+            ));
+            for (input, output) in [(&before, &folded), (&folded, &unfolded)] {
+                let forged = output.clone().with_resource_context(
+                    output
+                        .resources()
+                        .clone()
+                        .without_fact_incrementally(&unrelated_memory, facts.assumptions())
+                        .unwrap(),
+                );
+                assert!(
+                    CheckedResourceRewrite::check(
+                        &function,
+                        input,
+                        &facts,
+                        &selected,
+                        &forged,
+                        &facts,
+                        &CheckedCallEvents::default(),
+                    )
+                    .is_err(),
+                    "a wrapper exchange cannot remove unrelated memory"
+                );
+            }
             work
         });
         assert!(

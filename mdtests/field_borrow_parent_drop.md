@@ -25,13 +25,13 @@ int cleanup(int& value) {
 ```click
 verifying "field_drop.cpp";
 void Guard_constructor(struct Guard* self, int32* value) {
-    owns &self->slot;
+    owns self->slot;
     owns self->saved;
     ensures self->slot == value;
     ensures self->saved == 1;
 } by { execute(); simp(); }
 void Guard_destructor(struct Guard* self) {
-    owns &self->slot;
+    owns self->slot;
     owns self->saved;
     owns self->slot[0..1];
     ensures self->slot == old(self->slot);

@@ -595,15 +595,15 @@ The [`class-record` fixture](../../tests/fixtures/cpp-verification/class-record/
 checks const readers, mutable field updates, frames, expansion/reverification
 and retained verification. Hostile claims, omitted authority and writes through
 views are rejected, as are illegal C++ client access, unions, mixed-access
-non-standard layouts, inheritance and bit-fields.
+non-standard layouts, general inheritance and bit-fields.
 
 The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
-its nested `FeePerVSize` field now reaches the unsupported class template
-instance in `util/feefrac.h`. Header-declared records are now supported through the
-explicitly locked dependency mechanism described below. The exporter reports
-the actual header location and writes no partial artifact. Nested record places
-and inherited base-subobject authority are the next prerequisites; `GetFee`
-itself is not yet verified. Its empty-rate branch and negative-fee minimum
+its nested `FeePerVSize` layout now imports, and the first refusal is the
+`m_feerate.IsEmpty()` call in the condition at `policy/feerate.cpp:23`.
+Header-declared records use the explicitly locked dependency mechanism described
+below. The exporter reports the actual source location and writes no partial
+artifact. Condition-call normalization and locked-header executable calls remain
+prerequisites; `GetFee` is not yet verified. Its empty-rate branch and negative-fee minimum
 correction will need contracts of their own when composing the Up proof.
 
 
@@ -650,11 +650,10 @@ missing declarations, cycles, false sibling frames, missing authority,
 read-only writes and excessive shared-layout expansion.
 
 Declaration and contract metadata now also support nested C++ source field
-reads, writes and signed compound updates. Projected method receivers,
-inherited base subobjects, automatic
-objects with embedded fields and nontrivial embedded destruction remain explicit
-boundaries. `CFeeRate::GetFee` is still a refusal regression at its actual
-`FeePerVSize` template instance; no Bitcoin source is changed.
+reads, writes, signed compound updates and projected method/reference calls.
+Automatic objects with embedded fields and nontrivial embedded destruction
+remain explicit boundaries. `CFeeRate::GetFee`
+is still a refusal regression at the call in its `IsEmpty()` condition; no Bitcoin source is changed.
 
 
 ## Nested source field accesses
@@ -675,5 +674,22 @@ false frames and unproved signed overflow. Recomputed-digest artifacts cannot
 launder invalid owners, field IDs/names, path order/depth, declaration-source
 spans, read-only roots or projections attached to unsupported plain places.
 Deterministic checks bound work by path length independently of sibling count.
-`CFeeRate::GetFee` still stops at the class template instance; projected method
-receivers and inherited base identity remain next.
+Projected calls now pass embedded record receivers and reference arguments, or
+signed-32 leaf references, at their exact byte addresses. Root constness controls
+mutable binding even when the projected field declaration is mutable. Modular
+callee contracts require authority for that leaf; caller proofs retain sibling
+frames. Ordinary, expanded and retained offline checks cover const/mutable child
+methods and record/scalar helper references. Hostile contracts and recomputed
+artifacts reject missing authority, false frames, wrong targets and const roots
+passed to mutable callees. Reference resolution shares the indexed path walk.
+Concrete class-template instances now retain their nominal identity, including
+empty tags such as `VSizeTag`. Public non-virtual single bases of data-free
+trivial wrappers now retain a separate nominal base layout, exposed as `base`
+in sidecars. Base fields are not copied into the derived declaration, and
+validation rejects forged edges, layouts and cycles. `CFeeRate::GetFee` now
+stops at the call in its `IsEmpty()` condition. Inherited source reads/writes and
+implicit method/reference receivers now use
+ordered nominal base projections, including mixed field/base paths. Root
+constness and sibling authority are retained. Condition-call normalization and
+locked-header executable calls remain prerequisites before composing the wrapper
+proof.

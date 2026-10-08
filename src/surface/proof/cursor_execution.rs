@@ -1908,7 +1908,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
         )? {
             // No handler: the throw is this path's function outcome.
             record_completed_continuation_exits(&mut execution.core.frontier);
-            let return_assumptions = assumptions_from_propositions(&transition.pure_facts);
+            let return_assumptions = transition.pure_facts.context();
             let case_outcomes =
                 crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
                     &prepared.execution_start_state,
@@ -1999,7 +1999,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
 pub(super) fn execute_step_successor_from_frontier_position(
     execution: &ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &PureFactList,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
@@ -2007,7 +2007,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
     context: Option<&PureFactContext>,
 ) -> Result<ExecutionPointStepSuccessor, ClickError> {
     let mut successor = execution.clone();
-    let mut successor_facts = PureFactList::from(available_pure_facts.to_vec());
+    let mut successor_facts = available_pure_facts.clone();
     let introduced_facts = execute_step_from_frontier_position_selecting_path(
         &mut successor,
         proof_context,
@@ -2571,7 +2571,7 @@ fn execute_step_from_frontier_position_selecting_path(
         });
         let mut completed_outcomes = Vec::new();
         for transition in transitions {
-            let return_assumptions = assumptions_from_propositions(&transition.pure_facts);
+            let return_assumptions = transition.pure_facts.context();
             let case_outcomes =
                 crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
                     &execution_start_state,
@@ -3198,7 +3198,14 @@ fn execute_step_from_frontier_position_selecting_path(
             };
             if !routed {
                 record_completed_continuation_exits(&mut execution.core.frontier);
-                let return_assumptions = assumptions_from_propositions(&successor_pure_facts);
+                let return_assumptions = {
+                    let _return_context = crate::instrumentation::OperationTiming::new(
+                        function.name(),
+                        claim_label,
+                        "statement return context",
+                    );
+                    successor_pure_facts.context()
+                };
                 let case_outcomes =
                     crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
                         &execution_start_state,

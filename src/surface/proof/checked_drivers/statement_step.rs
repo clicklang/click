@@ -53,6 +53,9 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
+    let checked_case_context = execution
+        .core
+        .checked_step_case_context(execution.presentation.case_assumptions.len());
     let state: &mut CState = &mut execution.core.state;
     let assumptions = requirement_pure_facts.assumptions();
     // A bare `step()` executes in the whole proof context: prerequisites
@@ -117,6 +120,13 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             step_facts.push(branch_fact);
         }
     }
+    // Reuse only the kernel-admitted case prefix when all written cases
+    // selected one distinct available fact each. Other producers and dropped
+    // or duplicate cases keep the ordinary ordered fold.
+    let mut local_context = checked_case_context.filter(|cases| {
+        step_facts.len() == execution.presentation.case_assumptions.len()
+            && step_facts.iter().all(|fact| cases.proves_exact(fact))
+    });
     let step_assumptions = match context {
         Some(context) => context.clone(),
         None => assumptions_from_propositions(&step_facts),
@@ -126,9 +136,17 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .observable_facts_assuming_valid(&step_assumptions)
     {
         if !step_facts.contains(&resource_fact) {
+            if let Some(local) = &mut local_context {
+                crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+                *local = local.clone().assume_proposition(resource_fact.clone());
+            }
             step_facts.push(resource_fact);
         }
     }
+    let step_facts = match local_context {
+        Some(context) => PureFactList::with_checked_context(step_facts, context),
+        None => PureFactList::from(step_facts),
+    };
     let apply = |policy, selected_context| {
         execute_step_successor_from_frontier_position(
             execution,

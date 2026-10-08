@@ -28,8 +28,8 @@ resource part(r: struct region*) {
     field tag: Tag;
     match tag {
         Tag::T(x) => {
-            owns &r->arena;
-            owns &r->arena->data;
+            owns r->arena;
+            owns r->arena->data;
             owns r->arena->capacity;
             owns r->arena->data[x..r->arena->capacity];
         },
@@ -40,7 +40,7 @@ verifying "load_variable_naming_epoch.c";
 
 int32 f(struct region* r, struct arena* out) {
     owns b: part(r);
-    consumes object(out);
+    consumes *out;
     ensures result == 0;
 } by {
     match b.tag {

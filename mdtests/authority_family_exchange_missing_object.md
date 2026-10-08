@@ -19,13 +19,13 @@ int32 lifecycle(struct payload* first, struct payload* second) {
 
 ```click resource_semantics=authority
 authorized resource capacity(pool: int32*) {}
-authorized resource item(pool: int32*, p: struct payload*) { owns object(p); }
+authorized resource item(pool: int32*, p: struct payload*) { owns *p; }
 verifying "family_exchange.c";
 void checkout(int32* pool, struct payload* p) {
     owns authority(capacity(pool));
     owns authority(item(pool, _));
     consumes capacity(pool);
-    consumes object(p);
+    consumes *p;
     requires defined(count(item(pool, _)) + 1);
     produces item(pool, p);
     ensures p->value == old(p->value);

@@ -1542,69 +1542,81 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             )));
         }
     };
+    // Under authority semantics only an authorized family has a
+    // population count; any other observation records no count witness.
+    let counts_population = !state.uses_population_authority_semantics()
+        || matches!(
+            &counted_resource,
+            ResourceClause::Declared { name, .. }
+                if resource_environment
+                    .get(name)
+                    .is_some_and(|definition| definition.is_authorized())
+        );
     if abstract_resource.owned_quantity_term().is_some() {
-        let count_witness = ClickProposition::Comparison {
-            left: observed_quantity.clone(),
-            operator: ComparisonOperator::LessEqual,
-            right: ContractExpression::ResourceCount(Box::new(counted_resource.clone())),
-        };
-        let count_kernel = lower_outcome_proposition_with_assumptions(
-            parameters,
-            arguments,
-            &state,
-            &state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
-            available_pure_facts.assumptions(),
-            &count_witness,
-            predicate_environment,
-            click_function_environment,
-        )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: could not lower `observe({})` count witness: {message}",
-                describe_resource_clause(resource)
-            ))
-        })?;
         let count_authority = abstract_resource.clone();
-        if state.uses_population_authority_semantics() {
-            let checked = crate::kernel::checked_owned_resource_count_lower_bound(
+        if counts_population {
+            let count_witness = ClickProposition::Comparison {
+                left: observed_quantity.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::ResourceCount(Box::new(counted_resource.clone())),
+            };
+            let count_kernel = lower_outcome_proposition_with_assumptions(
+                parameters,
+                arguments,
                 &state,
-                &count_authority,
-                &assumptions,
-            )
-            .ok_or_else(|| {
-                ClickError::new("count observation cannot certify the owned quantity bound")
-            })?;
-            if checked != count_kernel {
-                return Err(ClickError::new(
-                    "count observation does not match its checked ledger bound",
-                ));
-            }
-            surface_propositions.record_lowering(&count_witness, &count_kernel)?;
-            available_pure_facts.insert(count_kernel);
-        } else if assumptions.proves(&count_kernel) {
-            let derivation = prove_owned_resource_count_lower_bound(
                 &state,
-                &count_authority,
-                &count_kernel,
-                &assumptions,
+                &CValue::Int32(Bitvector32Term::Constant(0)),
+                available_pure_facts.assumptions(),
+                &count_witness,
+                predicate_environment,
+                click_function_environment,
             )
-            .ok_or_else(|| {
+            .map_err(|message| {
                 ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: kernel rejected the resource-count witness for `observe({})`",
+                    "`{claim_label}` tactic {tactic_index}: could not lower `observe({})` count witness: {message}",
                     describe_resource_clause(resource)
                 ))
             })?;
-            if !count_derivations.contains(&derivation) {
-                count_derivations.insert(derivation);
+            if state.uses_population_authority_semantics() {
+                let checked = crate::kernel::checked_owned_resource_count_lower_bound(
+                    &state,
+                    &count_authority,
+                    &assumptions,
+                )
+                .ok_or_else(|| {
+                    ClickError::new("count observation cannot certify the owned quantity bound")
+                })?;
+                if checked != count_kernel {
+                    return Err(ClickError::new(
+                        "count observation does not match its checked ledger bound",
+                    ));
+                }
+                surface_propositions.record_lowering(&count_witness, &count_kernel)?;
+                available_pure_facts.insert(count_kernel);
+            } else if assumptions.proves(&count_kernel) {
+                let derivation = prove_owned_resource_count_lower_bound(
+                    &state,
+                    &count_authority,
+                    &count_kernel,
+                    &assumptions,
+                )
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "`{claim_label}` tactic {tactic_index}: kernel rejected the resource-count witness for `observe({})`",
+                        describe_resource_clause(resource)
+                    ))
+                })?;
+                if !count_derivations.contains(&derivation) {
+                    count_derivations.insert(derivation);
+                }
+                surface_propositions.record_lowering(&count_witness, &count_kernel)?;
+                available_pure_facts.insert(count_kernel);
+            } else if explicit_quantity {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: `observe({})` could not certify its resource-count lower bound",
+                    describe_resource_clause(resource)
+                )));
             }
-            surface_propositions.record_lowering(&count_witness, &count_kernel)?;
-            available_pure_facts.insert(count_kernel);
-        } else if explicit_quantity {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `observe({})` could not certify its resource-count lower bound",
-                describe_resource_clause(resource)
-            )));
         }
         let nonnegative_witness = ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Value(int32(0))),
@@ -1668,7 +1680,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 .record_lowering(&count_nonnegative_witness, &count_nonnegative_kernel)?;
         }
     }
-    if state.uses_population_authority_semantics() {
+    if state.uses_population_authority_semantics() && counts_population {
         // Authority-mode observation names checked count/quantity facts only.
         // Member bodies remain folded, with their custody and memory unchanged.
         return Ok((state, abstract_resource));
@@ -4318,34 +4330,41 @@ fn fold_composite_resources_on_outcome_with_facts(
         }
         let mut resources = post_state.resources().clone();
         for lowered in lowered_contained.as_slice() {
-            // Prefer consuming an equivalent whole representation. Generic
-            // range consumption is allowed to treat a requirement as a
-            // subrange; when the two endpoints are framed forms from
-            // different snapshots, that would leave spurious fragments.
-            let directly_matching = resources.facts().iter().find(|available| {
-                let quantities_match = match (available, lowered) {
-                    (
-                        CResourceFact::Own(_, available_quantity),
-                        CResourceFact::Own(_, lowered_quantity),
-                    ) => available_quantity == lowered_quantity,
-                    (CResourceFact::View(_), CResourceFact::View(_)) => true,
-                    _ => false,
-                };
-                quantities_match
-                    && c_resources_directly_match(
-                        available.resource(),
-                        lowered.resource(),
-                        &assumptions,
-                    )
-            });
-            if let Some(directly_matching) = directly_matching.cloned() {
-                resources = resources
-                    .without_exact_representation(&directly_matching)
-                    .expect("the directly matched resource came from this context");
-                continue;
-            }
-            let diagnostic_facts = resources.facts().to_vec();
-            let Some(next) = resources.without_fact(lowered, &assumptions) else {
+            let next = if post_state.uses_population_authority_semantics() {
+                // The kernel checks the selected exchange, with its frame intact.
+                resources
+                    .clone()
+                    .without_fact_incrementally(lowered, &assumptions)
+            } else {
+                // Prefer consuming an equivalent whole representation. Generic
+                // range consumption can leave fragments when endpoints denote
+                // framed forms from different snapshots.
+                let directly_matching = resources.facts().iter().find(|available| {
+                    let quantities_match = match (available, lowered) {
+                        (
+                            CResourceFact::Own(_, available_quantity),
+                            CResourceFact::Own(_, lowered_quantity),
+                        ) => available_quantity == lowered_quantity,
+                        (CResourceFact::View(_), CResourceFact::View(_)) => true,
+                        _ => false,
+                    };
+                    quantities_match
+                        && c_resources_directly_match(
+                            available.resource(),
+                            lowered.resource(),
+                            &assumptions,
+                        )
+                });
+                if let Some(directly_matching) = directly_matching.cloned() {
+                    resources = resources
+                        .without_exact_representation(&directly_matching)
+                        .expect("the directly matched resource came from this context");
+                    continue;
+                }
+                resources.clone().without_fact(lowered, &assumptions)
+            };
+            let Some(next) = next else {
+                let diagnostic_facts = resources.facts().to_vec();
                 let available_pure_facts = pure_facts.materialize();
                 let action = match closure {
                     ResourceBodyClosure::Initialize => {
@@ -4409,7 +4428,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                 binding.hold = Some(hold);
                 post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
             }
-            let (resources, inserted_occurrence) = if authority_control_body {
+            // Authority rewrites authenticate the selected exchange only;
+            // normalizing unrelated memory changes the checked frame.
+            let (resources, inserted_occurrence) = if authority_control_body
+                || post_state.uses_population_authority_semantics()
+            {
                 let (resources, inserted) = post_state
                     .resources()
                     .clone()
@@ -5141,7 +5164,7 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     }
 
-    // `object(p)` is one complete struct: its cells take the layout's field
+    // `*p` is one complete struct: its cells take the layout's field
     // types, so a wide integer field reads back as itself. Pointer fields
     // keep the int32 words this projection uses everywhere: a pointer cell
     // must carry its load variable, which the load itself mints, whereas a
@@ -5271,7 +5294,7 @@ mod v11_resource_dependency_tests {
 authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
-    owns object(obj);
+    owns *obj;
     owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);

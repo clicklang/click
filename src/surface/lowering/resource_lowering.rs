@@ -912,7 +912,7 @@ fn materialize_access_segment_cells(
         )));
     }
 
-    // A complete object (`object(p)`) is one struct at the base: its cells
+    // A complete object (`*p`) is one struct at the base: its cells
     // take the field types of the layout, so a `uint64` or pointer field
     // reads back with its own type rather than as int32 words.
     if let Some(layout) = object_segment_layout(parameters, source_segment) {
@@ -2459,6 +2459,14 @@ fn lower_resource_segment_with_values(
         ),
     };
     let base = evaluate(&segment.base, surface_base).map_err(|message| {
+        // A parameter or local has no storage a contract can name.
+        if let CExpression::AddressOf(variable) = &segment.base
+            && let CExpression::Variable(name) = &**variable
+        {
+            return ClickError::new(format!(
+                "could not lower `{resource_name}` resource: `{name}` alone names the variable itself, which a contract cannot own; write `*{name}` for the object it points at"
+            ));
+        }
         ClickError::new(format!(
             "could not lower `{resource_name}` resource: {message} (segment {})",
             super::super::diagnostics::describe_contract_segment(segment)
@@ -2840,7 +2848,7 @@ pub(in crate::surface) fn loadable_base_and_bytes(
     }
 }
 
-/// The struct layout behind `object(p)` for a struct-pointer parameter `p`.
+/// The struct layout behind `*p` for a struct-pointer parameter `p`.
 /// Such a segment is one complete object, not a run of int32 words, so its
 /// cells take the field types of the layout.
 pub(in crate::surface) fn object_segment_layout<'a>(

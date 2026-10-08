@@ -33,10 +33,10 @@ int32 box_cycle(struct box* box) {
 
 ```click
 resource boxed(box: struct box*) {
-    owns object(box);
+    owns *box;
     contains allocation(box->data, 4);
     owns box->data[0..1];
-    fact separate(memory(object(box)), memory(box->data[0..1]));
+    fact separate(memory(*box), memory(box->data[0..1]));
 }
 
 verifying "box.c";

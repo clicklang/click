@@ -38,14 +38,14 @@ int32 read(struct region* region, int32 index) {
 ```click
 resource arena_meta(arena: struct arena*) {
     field live: int32;
-    owns &arena->data;
+    owns arena->data;
     owns arena->live_regions;
 }
 
 resource live_region(region: struct region*) {
     field start: int32;
     field end: int32;
-    owns object(region);
+    owns *region;
     owns region->arena->data[start..end];
     fact region->start == start;
     fact region->end == end;

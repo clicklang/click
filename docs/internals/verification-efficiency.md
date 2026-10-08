@@ -334,8 +334,13 @@ charged to visible semantic output rather than hidden ambient state:
   producers and paths with observable entry-resource facts retain the flat
   rebuild. Decided C branches now build allocation-resolution assumptions
   only while an allocation is pending; the same regression bounds that phase
-  in both proof forms. The explicit proof still constructs contexts elsewhere,
-  including return preparation; the bug report records both proof forms.
+  in both proof forms. Logical frontier cases retain a kernel-owned persistent
+  local context. Explicit steps keep the existing premise-availability checks,
+  add their local resource observations after that shared prefix, and carry
+  the context to return preparation; duplicate or dropped cases keep the
+  ordered fold. The same regression now bounds whole-verification context
+  construction in both proof forms. Flat path storage and terminal-join work
+  remain violations; the bug report records the whole-work curve.
 
 ## Execution capacity follows selected syntax
 

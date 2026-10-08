@@ -728,6 +728,7 @@ impl CFunctionContractInterface {
             contract_claims: Vec::new(),
             opaque_contract_supported: true,
             composite_resource_definitions: Vec::new(),
+            ordinary_abstract_families: Vec::new(),
             predicate_unfoldings: Vec::new(),
             recursion_measure: None,
         }
@@ -862,6 +863,13 @@ impl CFunctionContractInterface {
             .binary_search_by(|definition| definition.name().cmp(name))
             .ok()
             .map(|index| &self.composite_resource_definitions[index])
+    }
+
+    /// Whether `name` is an abstract family declared without `authorized`.
+    pub(crate) fn is_ordinary_abstract_family(&self, name: &str) -> bool {
+        self.ordinary_abstract_families
+            .binary_search_by(|family| family.as_str().cmp(name))
+            .is_ok()
     }
 
     pub fn predicate_unfoldings(&self) -> &[CPredicateUnfolding] {
@@ -1189,6 +1197,14 @@ impl CFunction {
         name: &str,
     ) -> Option<&CCompositeResourceDefinition> {
         self.contract_interface.composite_resource_definition(name)
+    }
+
+    /// Records the abstract families declared without `authorized`.
+    pub fn with_ordinary_abstract_families(mut self, mut families: Vec<String>) -> Self {
+        families.sort();
+        families.dedup();
+        self.contract_interface.ordinary_abstract_families = families;
+        self
     }
 
     pub fn with_predicate_unfoldings(mut self, unfoldings: Vec<CPredicateUnfolding>) -> Self {

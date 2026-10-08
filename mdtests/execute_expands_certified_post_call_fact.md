@@ -66,11 +66,11 @@ verifying "require_one.c";
 verifying "post_call_chain.c";
 
 resource cell_storage(p: struct cell*) {
-    owns object(p);
+    owns *p;
 }
 
 void set_one(struct cell* cell) {
-    owns object(cell);
+    owns *cell;
     ensures cell->value == 1;
 } by {
     execute();
@@ -79,7 +79,7 @@ void set_one(struct cell* cell) {
 
 void set_two(struct cell* cell) {
     requires cell->value == 1;
-    owns object(cell);
+    owns *cell;
     ensures cell->value == 2;
 } by {
     execute();
@@ -88,7 +88,7 @@ void set_two(struct cell* cell) {
 
 void restore_one(struct cell* cell) {
     requires cell->value == 2;
-    owns object(cell);
+    owns *cell;
     ensures cell->value == 1;
 } by {
     execute();
@@ -104,7 +104,7 @@ void require_one(struct cell* cell) {
 }
 
 int32 post_call_chain(struct cell* cell) {
-    owns object(cell);
+    owns *cell;
     ensures result == 0;
 } by {
     execute();

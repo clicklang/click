@@ -48,21 +48,21 @@ verifying "target.c" as target_file;
 verifying "reader.c";
 
 int32 read_target_alias() {
-    owns &target_file::target_alias[0..1];
+    owns target_file::target_alias;
     owns target_file::target_alias[0..1];
     ensures result == target_file::target_alias[0] by auto;
 }
 
 int32 read_static_alias() {
-    owns &target_file::read_static_alias::local_alias[0..1];
+    owns target_file::read_static_alias::local_alias;
     owns target_file::read_static_alias::local_alias[0..1];
     ensures result == target_file::read_static_alias::local_alias[0] by auto;
 }
 
 int32 run() {
-    owns &target_file::target_alias[0..1];
+    owns target_file::target_alias;
     owns target_file::target_alias[0..1];
-    owns &target_file::read_static_alias::local_alias[0..1];
+    owns target_file::read_static_alias::local_alias;
     owns target_file::read_static_alias::local_alias[0..1];
     requires target_file::target_alias[0] == 3;
     requires target_file::read_static_alias::local_alias[0] == 3;
