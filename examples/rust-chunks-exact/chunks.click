@@ -59,12 +59,6 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
                 }
             }
             execute_until(read(1)); step();
-            have viewable(bytes[0..(int32)(uint32)bytes_len]) by {
-                transport(at(iteration, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
-                    at(iteration, viewable(bytes[0..(int32)(uint32)bytes_len]));
-                    0 <= (int32)(uint32)bytes_len;
-                }
-            }
             have iter_remaining == at(iteration, iter_remaining) - 4 by { simp(); }
             have (at(iteration, iter_remaining) - 4) % 4 == at(iteration, iter_remaining % 4) by {
                 normalize() using { at(iteration, 4 <= iter_remaining); }
@@ -106,6 +100,13 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
                 rewrite(((int32)(uint32)(bytes_len - bytes_len % 4u64) - iter_remaining) == at(iteration, (int32)(uint32)(bytes_len - bytes_len % 4u64) - iter_remaining) + 4); simp();
             }
             execute_until(back_edge());
+            # Transport after the body's automatic-storage cleanup.
+            have viewable(bytes[0..(int32)(uint32)bytes_len]) by {
+                transport(at(iteration, viewable(bytes[0..(int32)(uint32)bytes_len])), viewable(bytes[0..(int32)(uint32)bytes_len])) using {
+                    at(iteration, viewable(bytes[0..(int32)(uint32)bytes_len]));
+                    0 <= (int32)(uint32)bytes_len;
+                }
+            }
             close_invariants();
         }
     }
