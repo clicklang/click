@@ -64,5 +64,5 @@ uint32 run(struct counter* p) {
 ```
 
 ```expect
-fail: missing resource fact `views p[10..11]`
+fail: missing resource fact `views p->value`
 ```

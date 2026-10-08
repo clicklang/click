@@ -9158,7 +9158,7 @@ int32 reader(int32 p[], int32 q[]) {
             error.message()
         );
         assert!(
-            error.message().contains("`views p[0..1]`")
+            error.message().contains("`views p[0]`")
                 && error.message().contains("is already supported by `owns "),
             "{}",
             error.message()
@@ -9270,7 +9270,8 @@ int32 read_retargeted(struct buffer* owner, int32* other) {
         // The view the state still holds is anchored at the pointer field's
         // entry load, not at whatever `owner->data` points at now.
         assert!(
-            error.message().contains("views owner[") && !error.message().contains("arg-memory"),
+            error.message().contains("views owner->data[")
+                && !error.message().contains("arg-memory"),
             "{}",
             error.message()
         );
@@ -9415,7 +9416,7 @@ int32 copy_pair(struct pair* s, struct pair* t) {
         assert!(
             error
                 .message()
-                .contains("missing resource fact `owns s[0..1]`"),
+                .contains("missing resource fact `owns s->a`"),
             "{}",
             error.message()
         );

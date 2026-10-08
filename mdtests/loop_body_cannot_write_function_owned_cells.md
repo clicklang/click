@@ -55,5 +55,5 @@ void fill(struct box* b, int32* a, int32 n) {
 ```
 
 ```expect
-fail: missing resource fact `owns b[0..1]`
+fail: missing resource fact `owns b->x`
 ```

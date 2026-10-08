@@ -42,5 +42,5 @@ int32 set_then_read(int32 *v, int32 i) {
 ```
 
 ```expect
-fail: missing resource fact `views v[0..1]`
+fail: missing resource fact `views v[0]`
 ```

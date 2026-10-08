@@ -78,5 +78,5 @@ int32 read_counter(struct counter *counter) {
 ```
 
 ```expect
-fail: missing resource fact `owns counter[0..40]`
+fail: missing resource fact `owns counter->mu`
 ```
