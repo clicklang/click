@@ -1928,6 +1928,21 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
     last_tactic: Option<(usize, &'static str)>,
 ) -> Result<Proof<'a>, ClickError> {
     check_verification_deadline()?;
+    if proof.is_at_function_exit() && !matches!(node, InternalProofNode::Done) {
+        let tactics = deferred_post_execution_region(node).ok_or_else(|| {
+            proof.step_error("unsupported proof structure after a loop-body return")
+        })?;
+        for deferred in tactics {
+            proof = proof.defer_post_execution_source_tactic(
+                deferred.tactic_index,
+                deferred.source_index,
+                deferred.tactic,
+                expansion_capture.as_deref_mut(),
+            )?;
+        }
+        leaves.push(proof.clone());
+        return Ok(proof);
+    }
     match node {
         InternalProofNode::Match {
             index,
@@ -2151,6 +2166,24 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                         refuted_match_paths.push((execution, proof.path_certificate()?));
                     }
                     return Ok(proof);
+                }
+                if proof.is_at_function_exit() {
+                    if let Some(reason) = post_exit_execution_tactic_error(&indexed.tactic) {
+                        return Err(proof
+                            .at_source_tactic(indexed.source_index)
+                            .step_error(reason));
+                    }
+                    let post_tactic =
+                        flat_post_execution_tactic(&indexed.tactic).ok_or_else(|| {
+                            proof.step_error("unsupported loop return closing tactic")
+                        })?;
+                    proof = proof.defer_post_execution_source_tactic(
+                        indexed.index,
+                        indexed.source_index,
+                        post_tactic,
+                        expansion_capture.as_deref_mut(),
+                    )?;
+                    continue;
                 }
                 let handled_by_linear_driver = !matches!(
                     indexed.tactic,

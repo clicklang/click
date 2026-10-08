@@ -45,7 +45,7 @@ void *fill_range(void *argument) {
     requires ((struct range_job *)argument)->begin <= ((struct range_job *)argument)->end;
     requires 0 <= ((struct range_job *)argument)->end - ((struct range_job *)argument)->begin;
     requires ((struct range_job *)argument)->end - ((struct range_job *)argument)->begin <= 1073741823;
-    requires separate(memory(((struct range_job *)argument)[0..6]), memory(((struct range_job *)argument)->output[((struct range_job *)argument)->begin..((struct range_job *)argument)->end]));
+    requires separate(memory(*((struct range_job *)argument)), memory(((struct range_job *)argument)->output[((struct range_job *)argument)->begin..((struct range_job *)argument)->end]));
     ensures result == 0;
     ensures range_filled((struct range_job *)argument);
 } by {

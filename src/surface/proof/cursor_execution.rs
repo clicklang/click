@@ -2467,6 +2467,19 @@ fn execute_step_from_frontier_position_selecting_path(
     // its postcondition and resource obligations are checked on the value
     // and state it returned. A loop whose every successor returns completes
     // the frontier below like any other terminal operation.
+    if matches!(loop_step_policy, LoopStepPolicy::ApplyVerifiedRule)
+        && let Some(planned) =
+            loop_index.and_then(|index| execution.presentation.loop_return_proofs.get(&index))
+        && transitions
+            .iter()
+            .filter(|transition| matches!(transition.outcome, CStatementOutcome::Return { .. }))
+            .count()
+            != planned.paths.len()
+    {
+        return Err(ClickError::new(
+            "checked loop return outcomes do not align with their preservation proofs",
+        ));
+    }
     let mut loop_return_transitions = Vec::new();
     if matches!(loop_step_policy, LoopStepPolicy::ApplyVerifiedRule)
         && transitions.len() > 1
@@ -2873,11 +2886,14 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
         })?;
     if let Some(parent) = loop_return_parent {
-        for returned in loop_return_transitions {
+        for (return_index, returned) in loop_return_transitions.into_iter().enumerate() {
             // The path's fact base: what was available at the loop, plus what
             // the returned path itself states. Nothing the continuing path
             // establishes after the loop is cited on it.
-            let mut returned_facts = ProofFacts::from_ordered(available_pure_facts);
+            let mut returned_facts = loop_index
+                .and_then(|index| execution.presentation.loop_return_proofs.get(&index))
+                .map(|planned| planned.entry_facts.clone())
+                .unwrap_or_else(|| ProofFacts::from_source(&*available_pure_facts));
             for fact in returned.pure_facts.iter() {
                 if !returned_facts.contains(fact) {
                     returned_facts = returned_facts.with_kernel_checked_fact(fact.clone());
@@ -2913,6 +2929,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     returned_facts,
                     loan_evidence,
                     loop_index,
+                    return_index,
                 )
                 .map_err(|refusal| {
                     ClickError::new(format!(

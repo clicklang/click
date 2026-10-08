@@ -33,7 +33,7 @@ resource owned_buffer(owner: struct owner*) {
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
-    fact separate(memory(owner[0..3]), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 resource owned_buffer_with_room(owner: struct owner*) {
@@ -43,7 +43,7 @@ resource owned_buffer_with_room(owner: struct owner*) {
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len < owner->cap;
-    fact separate(memory(owner[0..3]), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 verifying "push_one.c";
@@ -64,7 +64,7 @@ int32 push_one(struct owner* owner, int32 value) {
                 at(statement(6).entry, separate(memory(owner->data), memory(owner->data[0..owner->cap])));
                 at(statement(6).entry, 0) <= at(statement(6).entry, index);
                 at(statement(6).entry, index) < at(statement(6).entry, owner->cap);
-                at(statement(6).entry, separate(memory(owner[0..3]), memory(owner->data[0..owner->cap])));
+                at(statement(6).entry, separate(memory(*owner), memory(owner->data[0..owner->cap])));
                 contains(owned_buffer_with_room(owner), memory(owner->len));
                 contains(owned_buffer_with_room(owner), memory(owner->cap));
                 contains(owned_buffer_with_room(owner), memory(owner->data));
@@ -72,7 +72,7 @@ int32 push_one(struct owner* owner, int32 value) {
             }
         }
         have owner->len <= owner->cap by simp;
-        have separate(memory(owner[0..3]), memory(owner->data[0..owner->cap])) by simp;
+        have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
         fold(owned_buffer(owner));
     }
 
@@ -89,7 +89,7 @@ int32 push_one(struct owner* owner, int32 value) {
                 at(statement(6).entry, separate(memory(owner->data), memory(owner->data[0..owner->cap])));
                 at(statement(6).entry, 0) <= at(statement(6).entry, index);
                 at(statement(6).entry, index) < at(statement(6).entry, owner->cap);
-                at(statement(6).entry, separate(memory(owner[0..3]), memory(owner->data[0..owner->cap])));
+                at(statement(6).entry, separate(memory(*owner), memory(owner->data[0..owner->cap])));
                 contains(owned_buffer_with_room(owner), memory(owner->len));
                 contains(owned_buffer_with_room(owner), memory(owner->cap));
                 contains(owned_buffer_with_room(owner), memory(owner->data));
@@ -97,7 +97,7 @@ int32 push_one(struct owner* owner, int32 value) {
             }
         }
         have owner->len <= owner->cap by simp;
-        have separate(memory(owner[0..3]), memory(owner->data[0..owner->cap])) by simp;
+        have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
         fold(owned_buffer(owner));
         simp();
     }

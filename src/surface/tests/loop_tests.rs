@@ -197,7 +197,7 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
         let expanded =
             expand_c0_claim_source(&click, &sources, "count_down_or_stop", CProofClaim::Grouped)
                 .expect("both checked loop exits must expand");
-        assert!(expanded.contains("if result =="), "{expanded}");
+        assert!(!expanded.contains("if result =="), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
                 verify_c0_sources(&expanded, &sources)
@@ -210,14 +210,6 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
         let forged = expanded.replacen("result == 7", "result == 8", 1);
         verify_c0_sources(&forged, &sources)
             .expect_err("a false return contract must remain rejected");
-        let selector = if click.contains("result == 0 or result == 7") {
-            "if result == 0"
-        } else {
-            "if result == 7"
-        };
-        let forged = expanded.replacen(selector, "if result == 123", 1);
-        verify_c0_sources(&forged, &sources)
-            .expect_err("a guard that assigns both outcomes one closer must fail");
     }
 }
 
@@ -2425,4 +2417,143 @@ fn conditional_loop_resources_reject_unsupported_binding_and_body_items() {
         let error = parse(&source).expect_err("unsupported conditional declaration");
         assert!(error.message().contains(expected), "{error:?}");
     }
+}
+
+#[test]
+fn loop_return_closers_expand_in_their_preservation_arms() {
+    for (fixture, function) in [
+        (
+            "a_summarized_loop_body_return_is_certified_with_its_value",
+            "f",
+        ),
+        ("loop_return_closes_in_preserve_arm", "f"),
+        ("nested_loop_return_survives_outer_backedge", "f"),
+        ("natural_goto_forward_exit_and_return", "count_down_or_stop"),
+    ] {
+        let (click, sources) = loop_fixture(fixture);
+        let sources = borrowed_sources(&sources);
+        verify_c0_sources(&click, &sources).unwrap();
+        for site in c0_smart_tactic_source_sites(&click, &sources).unwrap() {
+            let position =
+                c0_tactic_source_position(&click, &sources, &site.claim_label, site.source_index)
+                    .unwrap();
+            let expanded =
+                expand_c0_tactic_source_at(&click, &sources, position.line, position.column)
+                    .unwrap_or_else(|error| {
+                        panic!("{fixture} {}: {}", site.source_index, error.message())
+                    });
+            verify_c0_sources(&expanded, &sources).unwrap();
+        }
+        let expanded =
+            expand_c0_claim_source(&click, &sources, function, CProofClaim::Grouped).unwrap();
+        assert!(!expanded.contains("if result =="), "{expanded}");
+        assert!(
+            c0_smart_tactic_source_sites(&expanded, &sources)
+                .unwrap()
+                .is_empty(),
+            "{expanded}"
+        );
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &sources)
+            });
+        result.unwrap();
+        assert_eq!(
+            planning, 0,
+            "{fixture}: expanded proof must cold recheck without planning"
+        );
+    }
+}
+
+#[test]
+fn nested_loop_return_keeps_the_inner_arms_closer() {
+    let c = "int32 f(int32 n) { while (1) { while (1) { return 7; } } }";
+    let click = r#"
+verifying "nested.c";
+int32 f(int32 n) {
+    requires n == 5;
+    ensures result == 7;
+} by {
+    loop { decreases 1; invariant n == 5;
+        preserve by {
+            loop { decreases 1; invariant n == 5;
+                preserve by { step(); have result == 7 by simp; simp(); }
+            }
+        }
+    }
+}
+"#;
+    let sources = [("nested.c", c)];
+    verify_c0_sources(click, &sources).unwrap();
+    let false_arm = click.replace("have result == 7", "have result == 8");
+    assert!(
+        verify_c0_sources(&false_arm, &sources)
+            .unwrap_err()
+            .message()
+            .contains("checked outcome `have`")
+    );
+    for site in c0_smart_tactic_source_sites(click, &sources).unwrap() {
+        let position =
+            c0_tactic_source_position(click, &sources, &site.claim_label, site.source_index)
+                .unwrap();
+        let expanded =
+            expand_c0_tactic_source_at(click, &sources, position.line, position.column).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+    }
+    let expanded = expand_c0_claim_source(click, &sources, "f", CProofClaim::Grouped).unwrap();
+    assert!(
+        c0_smart_tactic_source_sites(&expanded, &sources)
+            .unwrap()
+            .is_empty()
+    );
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        verify_c0_sources(&expanded, &sources)
+    });
+    result.unwrap();
+    assert_eq!(planning, 0);
+}
+
+#[test]
+fn loop_return_closers_do_not_require_distinct_result_values() {
+    let (click, sources) = loop_fixture("loop_return_closes_in_preserve_arm");
+    let click = click
+        .replace(
+            "ensures result == 5 or result == 7;",
+            "ensures result == 7;",
+        )
+        .replace("have result == 5 by simp;", "have result == 7 by simp;");
+    let sources = sources
+        .into_iter()
+        .map(|(name, source)| (name, source.replace("return i;", "return 7;")))
+        .collect::<Vec<_>>();
+    let sources = borrowed_sources(&sources);
+    verify_c0_sources(&click, &sources).unwrap();
+    let expanded = expand_c0_claim_source(&click, &sources, "f", CProofClaim::Grouped).unwrap();
+    assert!(!expanded.contains("if result =="), "{expanded}");
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
+#[test]
+fn loop_return_inside_branch_retains_its_fact_ancestry() {
+    let c = "int32 f(int32 n) { if (n > 0) { int32 i = 0; while (i < n) { if (i == 2) return 7; i++; } return i; } else { return 7; } }";
+    let click = r#"
+verifying "branch.c";
+int32 f(int32 n) {
+    requires n >= 0;
+    ensures result == n or result == 7;
+} by {
+    branch then {
+        step(); step();
+        loop { decreases n-i; invariant i >= 0; invariant i <= n; }
+        step(); have result == n by simp; simp();
+    } else { step(); simp(); }
+}
+"#;
+    let sources = [("branch.c", c)];
+    verify_c0_sources(click, &sources).unwrap();
+    let expanded = expand_c0_claim_source(click, &sources, "f", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let false_contract = click.replace("result == n or result == 7", "result == n");
+    verify_c0_sources(&false_contract, &sources)
+        .expect_err("returned loop path must still be checked after joining the branch");
 }

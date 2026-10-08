@@ -1831,13 +1831,14 @@ impl CheckedResourceRewrite {
             }
             // Population accounting covers only `authorized resource`
             // families; any other family keeps its ordinary definition law.
-            let ordinary_family = matches!(
-                selected,
-                CResourceFact::Own(CResource::Composite { name, .. }, _)
-                    if function
-                        .composite_resource_definition(name)
-                        .is_some_and(|definition| !definition.is_authorized())
-            );
+            let ordinary_family = !reaches_population
+                || matches!(
+                    selected,
+                    CResourceFact::Own(CResource::Composite { name, .. }, _)
+                        if function
+                            .composite_resource_definition(name)
+                            .is_some_and(|definition| !definition.is_authorized())
+                );
             if !ordinary_family {
                 let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) =
                     selected
@@ -6072,6 +6073,8 @@ pub(crate) struct ExceptionalContinuation {
 /// continuing path is cited on it.
 #[derive(Clone)]
 pub(crate) struct PendingLoopReturnPath {
+    /// Position among the return outcomes exported by this loop rule.
+    pub(crate) return_index: usize,
     trace: PersistentSequence<CheckedExecutionEvent>,
     /// The source loop whose rule returned this path, for the point its
     /// premises are read at.
@@ -8049,6 +8052,7 @@ impl ExecutionProofCore {
         pure_facts: ProofFacts,
         loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
         loop_index: Option<usize>,
+        return_index: usize,
     ) -> Result<(), EvidenceRefusal> {
         if parent.execution_evidence.len() != 1
             || self.execution_evidence.len() != 1
@@ -8091,6 +8095,7 @@ impl ExecutionProofCore {
             trace.push(CheckedExecutionEvent::Call(event));
         }
         self.pending_loop_returns.push(PendingLoopReturnPath {
+            return_index,
             trace,
             loop_index,
             outcome,
@@ -8102,9 +8107,13 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    /// Already checked returns retained while the continuing path advances.
+    pub(crate) fn pending_loop_returns(&self) -> impl Iterator<Item = &PendingLoopReturnPath> {
+        self.pending_loop_returns.iter()
+    }
+
     /// Appends each retained returned path once, after the live successor
-    /// has completed. Candidate construction consumes the returned metadata
-    /// in exactly this trace order, so the paths stay zipped with the traces.
+    /// completes, in the same order as its checked trace.
     pub(crate) fn complete_pending_loop_returns(&mut self) -> Vec<PendingLoopReturnPath> {
         if self.pending_loop_returns.is_empty() || self.completed_pending_loop_returns.is_some() {
             return Vec::new();
@@ -8129,8 +8138,13 @@ impl ExecutionProofCore {
             .map(|path| &path.pure_facts)
     }
 
-    /// The loop whose rule returned a completed path of a summarized loop, by
-    /// its index among this execution's paths; `None` for every other path.
+    /// The source loop and rule-return ordinal of a completed pending path.
+    pub(crate) fn pending_loop_return_origin(&self, path_index: usize) -> Option<(usize, usize)> {
+        let index = path_index.checked_sub(self.pending_loop_return_start?)?;
+        let path = self.completed_pending_loop_returns.as_ref()?.get(index)?;
+        Some((path.loop_index?, path.return_index))
+    }
+
     pub(crate) fn pending_loop_return_loop_index(&self, path_index: usize) -> Option<usize> {
         let start = self.pending_loop_return_start?;
         path_index
@@ -9473,10 +9487,9 @@ impl ExecutionProofCore {
         if self.evidence_completed {
             return Err("an iterated ownership step was recorded after the trace completed".into());
         }
+        // An iterated step regroups owned memory only; it creates, moves or
+        // retires no population member, so authority semantics apply it as is.
         let before_state = self.reached_state().clone();
-        if before_state.uses_population_authority_semantics() {
-            return Err("iterated ownership is unavailable in authority mode".into());
-        }
         let after_state =
             crate::kernel::apply_iterated_step(&before_state, &step, before_facts.assumptions())?;
         let checked = CheckedIteratedStep {

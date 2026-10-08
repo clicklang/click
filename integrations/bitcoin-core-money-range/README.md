@@ -599,12 +599,12 @@ non-standard layouts, general inheritance and bit-fields.
 
 The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
 its nested `FeePerVSize` layout now imports, and the first refusal is the
-header-defined `m_feerate.IsEmpty()` callee reached from the condition at
-`policy/feerate.cpp:23`. Direct Boolean condition calls now normalize; executable
-call graphs still require definitions in the selected file.
+converted call `CAmount(m_feerate.EvaluateFeeUp(virtual_bytes))` at
+`policy/feerate.cpp:24:38`. Direct Boolean condition calls and executable ordinary
+callees in locked headers now import within their documented profiles.
 Header-declared records use the explicitly locked dependency mechanism described
 below. The exporter reports the actual source location and writes no partial
-artifact. Locked-header executable calls remain a
+artifact. Scalar-call result conversions remain a
 prerequisite; `GetFee` is not yet verified. Its empty-rate branch and negative-fee minimum
 correction will need contracts of their own when composing the Up proof.
 
@@ -619,9 +619,14 @@ and physical layouts. The same declaration-source mechanism serves existing
 scalar aliases; every discovered header must match an explicitly configured,
 locked dependency. A field declaration must share its record's source.
 
-Function bodies and member-use spans remain in the selected source. This
-profile does not admit a cross-header function graph or import unrelated
-record declarations. Views and ownership, const receiver rules and the shared
+The selected function remains in its configured logical source. Reachable
+ordinary method/free-function bodies can now come from explicitly locked
+headers; each body and its executable/member/callee-use spans stay within one
+source. Alias declaration spans may come from the locked declaration inventory.
+Every reachable body is validated and requires ordinary verified contracts;
+unrelated record declarations are not imported. Dependency-header constructor/destructor
+bodies and constant definitions and mixed-source executable spans remain
+unsupported. Views and ownership, const receiver rules and the shared
 C memory model remain unchanged. Const reads and mutable updates verify
 offline after removing the exporter, including expansion/reverification and
 retained verification.
@@ -655,7 +660,7 @@ Declaration and contract metadata now also support nested C++ source field
 reads, writes, signed compound updates and projected method/reference calls.
 Automatic objects with embedded fields and nontrivial embedded destruction
 remain explicit boundaries. `CFeeRate::GetFee`
-is still a refusal regression at the header-defined `IsEmpty()` callee; no Bitcoin source is changed.
+is still a refusal regression at the converted `EvaluateFeeUp()` call; no Bitcoin source is changed.
 
 
 ## Nested source field accesses
@@ -664,7 +669,7 @@ The nested-record fixture also reads a signed-64 leaf through a const receiver,
 updates a separate child object's signed-64 field through explicit `this`, and
 performs a bounded signed-32 compound update. A const reference-parameter reader
 uses the same representation. Each access retains its root declaration and an
-ordered path of owner/field identities and selected-source use spans. A shared
+ordered path of owner/field identities and per-function use spans. A shared
 indexed resolver validates those identities and lowers the exact accumulated
 byte offset. The root's constness applies to writes through the complete path.
 Reading a pointer field through a const object does not make the pointee const;
@@ -689,9 +694,10 @@ empty tags such as `VSizeTag`. Public non-virtual single bases of data-free
 trivial wrappers now retain a separate nominal base layout, exposed as `base`
 in sidecars. Base fields are not copied into the derived declaration, and
 validation rejects forged edges, layouts and cycles. `CFeeRate::GetFee` now
-stops at the header-defined `IsEmpty()` callee. Inherited source reads/writes and
+stops at the converted `EvaluateFeeUp()` call. Inherited source reads/writes and
 implicit method/reference receivers now use
 ordered nominal base projections, including mixed field/base paths. Root
 constness and sibling authority are retained. Direct Boolean condition calls now normalize once before branching;
-locked-header executable calls remain a prerequisite before composing the wrapper
+locked-header ordinary executable calls now retain per-function source provenance.
+Scalar-call result conversions remain a prerequisite before composing the wrapper
 proof.

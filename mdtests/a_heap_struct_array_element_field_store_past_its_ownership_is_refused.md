@@ -1,6 +1,6 @@
 # A heap struct array element's field store past its ownership is refused
 
-`owns p[0..6]` holds three eight-byte elements, but the loop writes
+`owns p[0..3]` holds three eight-byte elements, but the loop writes
 `p[3].y` on its last iteration. The element bound does not place that field
 inside the owned range, so the store is refused.
 
@@ -21,7 +21,7 @@ int32 fill_too_many_heap_fields(struct point* p) {
 verifying "heap_struct_array_element_field_store_past_ownership.c";
 
 int32 fill_too_many_heap_fields(struct point* p) {
-    owns p[0..6];
+    owns p[0..3];
     ensures result == 0;
 } by {
     step(); step();

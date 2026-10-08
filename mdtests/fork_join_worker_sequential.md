@@ -44,7 +44,7 @@ resource range_task(job: struct range_job*) {
     fact job->begin <= job->end;
     fact 0 <= job->end - job->begin;
     fact job->end - job->begin <= 1073741823;
-    fact separate(memory(job[0..6]), memory(job->output[job->begin..job->end]));
+    fact separate(memory(*job), memory(job->output[job->begin..job->end]));
 }
 
 predicate range_filled(job: struct range_job*) {

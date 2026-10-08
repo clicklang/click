@@ -1732,7 +1732,17 @@ impl<'a> Proof<'a> {
                 let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
                     entries
                         .iter()
-                        .find(|(evidence, _)| evidence == &path_loan_evidence)
+                        .find(|(evidence, index)| {
+                            evidence == &path_loan_evidence
+                                && match (
+                                    &provenance.loop_return,
+                                    &outcome_provenance[*index].loop_return,
+                                ) {
+                                    (None, None) => true,
+                                    (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                                    _ => false,
+                                }
+                        })
                         .map(|(_, index)| *index)
                 });
                 if let Some(retained_index) = retained_index {

@@ -3724,7 +3724,7 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
 }
 
 #[test]
-fn aggregate_views_require_a_declared_resource() {
+fn an_embedded_struct_is_viewed_as_a_place() {
     let c_source = r#"
         struct inner {
             int32 count;
@@ -3748,13 +3748,9 @@ fn aggregate_views_require_a_declared_resource() {
             ensures result == packet->inner.count;
         }
     "#;
-    let error = parse_c0_click_file(click_source, &[("aggregate_resource_places.c", c_source)])
-        .expect_err("whole-struct views require an explicit resource definition");
-    assert!(
-        error
-            .message
-            .contains("whole-struct views require a declared resource")
-    );
+    // An embedded struct is viewed like any other place.
+    let viewed = format!("{click_source} by {{ execute(); simp(); }}");
+    verify_c0_sources(&viewed, &[("aggregate_resource_places.c", c_source)]).unwrap();
 }
 
 #[test]
@@ -4356,6 +4352,37 @@ fn pointer_storage_views_name_the_field_alone() {
     );
 }
 
+/// A range on a struct pointer counts structs, and `*link` for a
+/// `struct T**` is one pointer slot, not a struct.
+#[test]
+fn a_struct_pointer_range_counts_structs() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        int32 second(struct cell* p) { return p[1].other; } \
+        struct cell* first(struct cell** link) { return *link; }";
+    let contract = |clause: &str| {
+        format!(
+            "verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }} by {{ execute(); simp(); }}"
+        )
+    };
+    verify_c0_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
+    let error = verify_c0_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
+        .expect_err("one struct does not cover the second");
+    assert!(error.message.contains("missing resource fact"), "{error:?}");
+
+    let link = "verifying \"cells.c\"; struct cell* first(struct cell** link) { views *link; }";
+    let file = parse_c0_click_file(link, &[("cells.c", c_source)]).unwrap();
+    let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
+        &file.function_blocks()[0].requires()[0]
+    else {
+        panic!("expected a view of the pointer slot");
+    };
+    assert!(matches!(
+        segment.surface,
+        ContractSegmentSurface::Range { .. }
+    ));
+    assert_eq!(segment.end, CExpression::Value(int32(1)));
+}
+
 /// `*p` is the object behind a pointer, and a place written alone is its own
 /// storage: a global, an element, a field.
 #[test]
@@ -4419,22 +4446,21 @@ fn a_resource_clause_names_a_place() {
     }
 }
 
+/// A whole struct is viewed like any other place: it reads every field and
+/// writes none.
 #[test]
-fn whole_struct_view_requires_a_declared_resource() {
-    let c_source =
-        "struct packet { int32 data; }; int32 read(struct packet* p) { return p->data; }";
-    for target in ["*p", "*p"] {
-        let source = format!(
-            "verifying \"pointer.c\"; int32 read(struct packet* p) {{ views {target}; ensures result == p->data; }}"
-        );
-        let error = parse_c0_click_file(&source, &[("pointer.c", c_source)]).unwrap_err();
-        assert!(
-            error
-                .message
-                .contains("whole-struct views require a declared resource"),
-            "{error:?}"
-        );
-    }
+fn a_whole_struct_view_reads_and_does_not_write() {
+    let c_source = "struct packet { int32 data; int32 other; }; \
+        int32 read(struct packet* p) { return p->other; } \
+        int32 write(struct packet* p) { p->other = 1; return 0; }";
+    let read = "verifying \"pointer.c\"; int32 read(struct packet* p) { views *p; \
+        ensures result == p->other; } by { execute(); simp(); }";
+    verify_c0_sources(read, &[("pointer.c", c_source)]).unwrap();
+    let write = "verifying \"pointer.c\"; int32 write(struct packet* p) { views *p; } \
+        by { execute(); simp(); }";
+    let error = verify_c0_sources(write, &[("pointer.c", c_source)])
+        .expect_err("a view does not authorize a write");
+    assert!(error.message.contains("missing resource fact"), "{error:?}");
 }
 
 /// A function-entry alignment fact cited after execution is qualified side

@@ -217,6 +217,7 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
 
 #[derive(Clone, Default)]
 pub(in crate::surface::proof) struct LoopProofCertificates {
+    pub(in crate::surface::proof) returns: Vec<Arc<LoopReturnProof>>,
     pub(in crate::surface::proof) initialize: Option<ProofCertificate>,
     pub(in crate::surface::proof) preserve: Option<ProofCertificate>,
 }

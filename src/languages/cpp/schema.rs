@@ -977,18 +977,28 @@ impl CppExport {
             dependencies: constant_dependencies,
         } = validate_constant_inventory(&self.constants, logical_source, &declaration_sources)?;
 
+        self.function.span.validate(logical_source)?;
         let mut functions = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
         for source in std::iter::once(&self.function).chain(&self.reachable_functions) {
+            source.span.validate_in(&declaration_sources)?;
+            if source.span.file != logical_source
+                && matches!(
+                    source.function_kind,
+                    CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. }
+                )
+            {
+                return Err("C++ header constructors and destructors remain outside the executable graph profile".into());
+            }
             source.validate(
-                logical_source,
+                &source.span.file,
                 &declaration_sources,
                 &records,
                 self.profile.exceptions,
                 self.exception_behavior,
             )?;
             source.validate_constant_references(
-                logical_source,
+                &source.span.file,
                 &constants,
                 &mut referenced_constants,
             )?;
@@ -1056,7 +1066,6 @@ impl CppExport {
             &records,
             &mut visiting,
             &mut visited,
-            logical_source,
         )?;
         validate_reachable_records(&functions, &records)?;
         if visited.len() != functions.len() {
@@ -1519,6 +1528,8 @@ impl CppRecord {
 }
 
 impl CppFunction {
+    // Executable spans are local to this body; alias origins are checked once
+    // by metadata validity against the shared locked declaration inventory.
     fn validate(
         &self,
         logical_source: &str,
@@ -2319,7 +2330,6 @@ impl CppStatement {
                 span,
             } => {
                 validate_call(callee, arguments, span, places, records, logical_source)?;
-                value_type.validate_aliases(logical_source)?;
                 if require_scalar_integer(value_type, "return-call value").is_err() {
                     require_bool(value_type, false, "return-call value")?;
                 }
@@ -2669,7 +2679,6 @@ impl CppCallArgument {
                 value_type,
                 span,
             } => {
-                value_type.validate_aliases(logical_source)?;
                 if require_scalar_integer(value_type, "nested-call value").is_err() {
                     require_bool(value_type, false, "nested-call value")?;
                 }
@@ -2764,7 +2773,6 @@ impl CppExpression {
         records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
-        self.value_type().validate_aliases(logical_source)?;
         match self {
             Self::IntegerLiteral {
                 value,
@@ -3214,7 +3222,6 @@ fn validate_reachable_calls(
     records: &RecordIndex<'_>,
     visiting: &mut Vec<String>,
     visited: &mut BTreeMap<String, usize>,
-    logical_source: &str,
 ) -> Result<usize, String> {
     crate::instrumentation::record_deterministic_work(1);
     if let Some(depth) = visited.get(declaration_id) {
@@ -3263,7 +3270,7 @@ fn validate_reachable_calls(
             } => (*callee, *arguments),
             CollectedCall::Destructor { callee, .. } => (*callee, &[][..]),
         };
-        callee.span.validate(logical_source)?;
+        callee.span.validate(&function.span.file)?;
         let target = functions.get(&callee.declaration_id).ok_or_else(|| {
             format!(
                 "C++ call to `{}` refers to missing reachable definition `{}`",
@@ -3370,7 +3377,6 @@ fn validate_reachable_calls(
             records,
             visiting,
             visited,
-            logical_source,
         )?;
         // Cached subgraphs still contribute their full depth to this path.
         depth = depth.max(child_depth + 1);
@@ -4877,7 +4883,6 @@ mod tests {
                 &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
-                "fixture.cpp",
             )
         };
         assert!(validate(&inner).is_ok());
@@ -4957,7 +4962,6 @@ mod tests {
                     &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
-                    "fixture.cpp",
                 )
             };
             validate(&inner).unwrap();
@@ -5043,7 +5047,6 @@ mod tests {
                 &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
-                "fixture.cpp",
             )
         };
         assert!(validate(&caller, &callee).is_ok());
@@ -5802,7 +5805,6 @@ mod tests {
                     &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
-                    "fixture.cpp",
                 )
             });
             assert_eq!(result.unwrap(), 2);
@@ -5902,7 +5904,6 @@ mod tests {
                 &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
-                "fixture.cpp",
             )
             .unwrap_err();
             assert!(
@@ -5967,7 +5968,6 @@ mod tests {
                     &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
-                    "fixture.cpp",
                 )
             });
             if size < super::super::budget::MAX_CALL_DEPTH {
@@ -6412,6 +6412,92 @@ mod tests {
                 validate_record_inventory(&inventory, "fixture.cpp", &sources)
                     .unwrap_err()
                     .contains("by-value cycle")
+            );
+        }
+    }
+
+    #[test]
+    fn cross_header_call_origins_have_linear_graph_work() {
+        let span_in = |source: String| CppSpan {
+            file: source,
+            ..cleanup_span()
+        };
+        let function = |name: String, source: String, body| CppFunction {
+            declaration_id: name.clone(),
+            name,
+            function_kind: CppFunctionKind::Free,
+            return_type: CppType::Void,
+            parameters: vec![],
+            declared_noexcept: true,
+            span: span_in(source),
+            body,
+        };
+        let call = |name: String, source: String| CppStatement::Call {
+            callee: CppFunctionReference {
+                declaration_id: name.clone(),
+                name,
+                span: span_in(source.clone()),
+            },
+            arguments: vec![],
+            span: span_in(source),
+        };
+        for size in [4, 16, 64, 128] {
+            let mut functions = vec![function("leaf".into(), "leaf.h".into(), vec![])];
+            for index in 0..size {
+                let source = format!("header-{index}.h");
+                functions.push(function(
+                    format!("helper-{index}"),
+                    source.clone(),
+                    vec![call("leaf".into(), source)],
+                ));
+            }
+            functions.push(function(
+                "root".into(),
+                "fixture.cpp".into(),
+                (0..size)
+                    .map(|index| call(format!("helper-{index}"), "fixture.cpp".into()))
+                    .collect(),
+            ));
+            let sources = functions
+                .iter()
+                .map(|function| function.span.file.clone())
+                .collect();
+            for function in &functions {
+                super::super::validity::check_function(function, &function.span.file, &sources)
+                    .unwrap();
+            }
+            let index = functions
+                .iter()
+                .map(|function| (function.declaration_id.clone(), function))
+                .collect();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_reachable_calls(
+                    "root",
+                    &index,
+                    &RecordIndex::default(),
+                    &mut Vec::new(),
+                    &mut BTreeMap::new(),
+                )
+            });
+            assert_eq!(result.unwrap(), 3);
+            assert!(work <= 12 * size + 16, "{size}: {work}");
+            let mut forged = functions[1].clone();
+            let CppStatement::Call { callee, .. } = &mut forged.body[0] else {
+                unreachable!()
+            };
+            callee.span.file = "leaf.h".into();
+            let mut index = index.clone();
+            index.insert(forged.declaration_id.clone(), &forged);
+            assert!(
+                validate_reachable_calls(
+                    "root",
+                    &index,
+                    &RecordIndex::default(),
+                    &mut Vec::new(),
+                    &mut BTreeMap::new()
+                )
+                .unwrap_err()
+                .contains("source span")
             );
         }
     }

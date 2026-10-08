@@ -4926,7 +4926,8 @@ fn loop_exit_state_difference(
     right: &CState,
     assumptions: &PureFactContext,
 ) -> Option<String> {
-    if left == right {
+    // Creation ledgers that record nothing differ only in their fresh names.
+    if left.equal_up_to_unused_creation_ledgers(right) {
         return None;
     }
     let same_memory = left.memory().same_contents_as(right.memory());
@@ -4943,7 +4944,7 @@ fn loop_exit_state_difference(
         if same_resources {
             aligned.resources = left.resources.clone();
         }
-        if *left == aligned {
+        if left.equal_up_to_unused_creation_ledgers(&aligned) {
             return None;
         }
     }

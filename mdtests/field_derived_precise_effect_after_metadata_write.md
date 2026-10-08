@@ -54,7 +54,7 @@ resource owned_buffer(owner: struct buffer*) {
     fact 0 <= owner->len;
     fact owner->len < owner->cap;
     fact separate(
-        memory(owner[0..4]),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     );
 }

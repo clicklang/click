@@ -1354,6 +1354,23 @@ pub(super) enum PostExecutionTactic {
 }
 
 #[derive(Clone)]
+pub(super) struct PlannedLoopReturns {
+    pub(super) paths: Arc<Vec<Arc<LoopReturnProof>>>,
+    pub(super) entry_facts: ProofFacts,
+}
+
+/// Surface ownership of one returned loop path. It grants no proof authority:
+/// finalization still checks the kernel outcome and all contract obligations.
+#[derive(Clone)]
+pub(super) struct LoopReturnProof {
+    pub(super) loop_index: usize,
+    pub(super) owners: PersistentSequence<(usize, usize)>,
+    pub(super) case_path: Vec<ProofCaseChoice>,
+    pub(super) tactics: PersistentSequence<DeferredPostExecutionTactic>,
+    pub(super) capture: Option<DeferredTacticCapture>,
+}
+
+#[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
     pub(super) lexical_bindings:
         Option<crate::persistent::PersistentMap<String, ContractExpression>>,
@@ -1666,6 +1683,259 @@ impl<'a> ExecutionView<'a> {
             effect_facts,
             function_entry_state,
             proof_bindings: None,
+        }
+    }
+}
+
+/// Route all return closers in one traversal of the retained certificate.
+/// Looking up each loop by rescanning the whole proof would be quadratic in
+/// a function with many independent returning loops.
+pub(super) fn append_loop_return_closers(
+    steps: &mut [ProofStep],
+    returns: &[LoopReturnClosure],
+    claim_index: Option<usize>,
+) -> Result<(), ClickError> {
+    fn arm<'a>(
+        steps: &'a mut Vec<ProofStep>,
+        choices: &[ProofCaseChoice],
+    ) -> Result<&'a mut Vec<ProofStep>, ClickError> {
+        let Some((choice, rest)) = choices.split_first() else {
+            return Ok(steps);
+        };
+        let position = steps
+            .iter()
+            .position(|step| match step {
+                ProofStep::If { condition, .. } => {
+                    choice.match_arm.is_none() && *condition == choice.condition
+                }
+                ProofStep::Match { .. } => choice.match_arm.is_some(),
+                _ => false,
+            })
+            .ok_or_else(|| ClickError::new("loop return lost its preservation arm"))?;
+        match &mut steps[position] {
+            ProofStep::If {
+                then_proof,
+                else_proof,
+                ..
+            } => arm(
+                if choice.value {
+                    then_proof.steps_mut()
+                } else {
+                    else_proof.steps_mut()
+                },
+                rest,
+            ),
+            ProofStep::Match { arms, .. } => arm(
+                arms.get_mut(choice.match_arm.as_ref().unwrap().arm)
+                    .ok_or_else(|| ClickError::new("loop return lost its match arm"))?
+                    .proof
+                    .steps_mut(),
+                rest,
+            ),
+            _ => unreachable!(),
+        }
+    }
+    let mut by_loop = BTreeMap::<usize, Vec<(&LoopReturnProof, Vec<ProofTactic>)>>::new();
+    for (returned, post, grouped, per_claim) in returns {
+        let closer = claim_index.map_or(grouped, |index| &per_claim[index]);
+        by_loop
+            .entry(returned.loop_index)
+            .or_default()
+            .push((returned, post.iter().chain(closer).cloned().collect()));
+    }
+    fn visit(
+        steps: &mut [ProofStep],
+        by_loop: &mut BTreeMap<usize, Vec<(&LoopReturnProof, Vec<ProofTactic>)>>,
+    ) -> Result<(), ClickError> {
+        for step in steps {
+            crate::instrumentation::record_deterministic_work(1);
+            match step {
+                ProofStep::Loop(clause) => {
+                    if let Some(preserve) = clause.preserve_proof.as_mut() {
+                        if let CodeRegion::Loop(index) = clause.region
+                            && let Some(returns) = by_loop.remove(&index)
+                        {
+                            for (returned, suffix) in returns {
+                                let target = arm(preserve.steps_mut(), &returned.case_path)?;
+                                let certificate = ProofCertificate::from_proof_tactics(&suffix)
+                                    .map_err(|error| {
+                                        ClickError::new(format!(
+                                            "loop return closer is not simple: {error:?}"
+                                        ))
+                                    })?;
+                                target.extend(certificate.into_steps());
+                            }
+                        }
+                        visit(preserve.steps_mut(), by_loop)?;
+                    }
+                }
+                ProofStep::If {
+                    then_proof,
+                    else_proof,
+                    ..
+                } => {
+                    visit(then_proof.steps_mut(), by_loop)?;
+                    visit(else_proof.steps_mut(), by_loop)?;
+                }
+                ProofStep::Match { arms, .. } => {
+                    for arm in arms {
+                        visit(arm.proof.steps_mut(), by_loop)?;
+                    }
+                }
+                ProofStep::CallOutcomes {
+                    returned_proof,
+                    threw_proof,
+                } => {
+                    visit(returned_proof.steps_mut(), by_loop)?;
+                    visit(threw_proof.steps_mut(), by_loop)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    if by_loop.is_empty() {
+        return Ok(());
+    }
+    visit(steps, &mut by_loop)?;
+    if !by_loop.is_empty() {
+        return Err(ClickError::new(
+            "loop return lost its enclosing loop certificate",
+        ));
+    }
+    Ok(())
+}
+
+type LoopReturnClosure = (
+    Arc<LoopReturnProof>,
+    Vec<ProofTactic>,
+    Vec<ProofTactic>,
+    Vec<Vec<ProofTactic>>,
+);
+
+/// The loop's provisional expansion was recorded during execution, before
+/// its returned outcomes were checked. Complete that same capture now.
+pub(super) fn complete_loop_return_expansion(
+    capture: Option<&mut ExpansionCapture>,
+    steps: &[ProofStep],
+    returns: &[LoopReturnClosure],
+) -> Result<(), ClickError> {
+    let Some(capture) = capture else {
+        return Ok(());
+    };
+    let Some(loop_index) = returns.iter().find_map(|(p, _, _, _)| {
+        p.owners
+            .iter()
+            .find(|(_, source)| Some(*source) == capture.source_index)
+            .map(|(index, _)| *index)
+    }) else {
+        return Ok(());
+    };
+    fn find(steps: &[ProofStep], index: usize) -> Option<&ProofStep> {
+        for step in steps {
+            match step {
+                ProofStep::Loop(clause) if clause.region == CodeRegion::Loop(index) => {
+                    return Some(step);
+                }
+                ProofStep::Loop(clause) => {
+                    if let Some(found) = clause
+                        .preserve_proof
+                        .as_ref()
+                        .and_then(|proof| find(proof.steps(), index))
+                    {
+                        return Some(found);
+                    }
+                }
+                ProofStep::Match { arms, .. } => {
+                    for arm in arms {
+                        if let Some(found) = find(arm.proof.steps(), index) {
+                            return Some(found);
+                        }
+                    }
+                }
+                ProofStep::CallOutcomes {
+                    returned_proof,
+                    threw_proof,
+                } => {
+                    if let Some(found) = find(returned_proof.steps(), index)
+                        .or_else(|| find(threw_proof.steps(), index))
+                    {
+                        return Some(found);
+                    }
+                }
+                ProofStep::If {
+                    then_proof,
+                    else_proof,
+                    ..
+                } => {
+                    if let Some(found) =
+                        find(then_proof.steps(), index).or_else(|| find(else_proof.steps(), index))
+                    {
+                        return Some(found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+    let step = find(steps, loop_index)
+        .ok_or_else(|| ClickError::new("selected loop return expansion lost its loop"))?;
+    capture.result = Some(Ok(
+        ProofCertificate::from_steps(vec![step.clone()])?.to_proof_tactics()
+    ));
+    Ok(())
+}
+
+#[cfg(test)]
+mod loop_return_routing_tests {
+    use super::*;
+
+    #[test]
+    fn loop_return_closer_routing_scales_with_certificate_size() {
+        for size in [16, 64, 256] {
+            let mut steps = Vec::new();
+            let mut returns = Vec::new();
+            for index in 0..size {
+                steps.push(ProofStep::Loop(CertificateStructuralClause {
+                    region: CodeRegion::Loop(index),
+                    label: None,
+                    decreases: None,
+                    diverges: false,
+                    items: Vec::new(),
+                    resources: Vec::new(),
+                    initialize_proof: None,
+                    preserve_proof: Some(Box::new(
+                        ProofCertificate::from_steps(vec![ProofStep::Step]).unwrap(),
+                    )),
+                }));
+                returns.push((
+                    Arc::new(LoopReturnProof {
+                        loop_index: index,
+                        owners: PersistentSequence::default(),
+                        case_path: Vec::new(),
+                        tactics: PersistentSequence::default(),
+                        capture: None,
+                    }),
+                    Vec::new(),
+                    vec![ProofTactic::Assumption],
+                    Vec::new(),
+                ));
+            }
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                append_loop_return_closers(&mut steps, &returns, None)
+            });
+            result.unwrap();
+            assert!(work <= 8 * size, "{size} loops required {work} work units");
+            for step in steps {
+                let ProofStep::Loop(clause) = step else {
+                    unreachable!()
+                };
+                assert!(matches!(
+                    clause.preserve_proof.unwrap().steps(),
+                    [ProofStep::Step, ProofStep::Assumption]
+                ));
+            }
         }
     }
 }

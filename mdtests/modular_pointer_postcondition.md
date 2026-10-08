@@ -31,8 +31,8 @@ verifying "set_pointer.c";
 verifying "call_set_pointer.c";
 
 int32 set_pointer(struct holder* owner, int32* data) {
-    consumes owner[0..2];
-    produces owner[0..2];
+    consumes *owner;
+    produces *owner;
     ensures result == 0;
     ensures owner->data == data;
 } by {
@@ -41,8 +41,8 @@ int32 set_pointer(struct holder* owner, int32* data) {
 }
 
 int32 call_set_pointer(struct holder* owner, int32* data) {
-    consumes owner[0..2];
-    produces owner[0..2];
+    consumes *owner;
+    produces *owner;
     ensures result == 1;
 } by {
     execute_until(statement(2));

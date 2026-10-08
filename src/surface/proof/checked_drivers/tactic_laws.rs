@@ -5,6 +5,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     expansion_capture: Option<&mut ExpansionCapture>,
     loop_template: &StructuralClause,
     proof_locals: &BTreeMap<String, ContractExpression>,
+    entry_facts: &ProofFacts,
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut PureFactList,
@@ -230,7 +231,14 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         _ => None,
     };
     let certificates = loop_certificates.borrow().clone();
-    let mut expanded_loop = loop_template.clone();
+    execution.presentation.loop_return_proofs.insert(
+        loop_index,
+        PlannedLoopReturns {
+            paths: Arc::new(certificates.returns.clone()),
+            entry_facts: entry_facts.clone(),
+        },
+    );
+    let mut expanded_loop = loop_template.bound_to_loop(loop_index);
     expanded_loop.initialize_proof = Some(SourceProof::Script(
         certificates
             .initialize
@@ -286,6 +294,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         StatementFactTransportPolicy::Automatic,
         LoopStepPolicy::ApplyVerifiedRule,
     )?;
+    execution.record_terminal_loop_return_proofs(&certificates.returns)?;
     // The rule was verified on its own copy of this proof's state, counting
     // identities from this proof's mark, and applying it leaves the ones it
     // invented in the state here: the head's havoc of every local the body

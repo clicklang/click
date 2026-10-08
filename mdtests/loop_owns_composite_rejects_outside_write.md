@@ -32,7 +32,7 @@ void loop_owns_composite_rejects_outside_write(struct cell* node, int32 q[], int
     requires n <= 2147483647;
     owns cell(node);
     owns q[0..1];
-    requires separate(memory(node[0..1]), memory(q[0..1]));
+    requires separate(memory(*node), memory(q[0..1]));
 } by {
     step();
     step();

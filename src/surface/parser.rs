@@ -2138,6 +2138,14 @@ impl Parser {
                     }
                 };
                 if let Some(struct_name) = parsed_parameter.struct_name {
+                    if parsed_parameter.parameter.click_type
+                        == ClickType::C(C0Type::Int32PointerPointer)
+                    {
+                        struct_params.insert(
+                            struct_pointer_pointer_key(&parsed_parameter.parameter.name),
+                            struct_name.clone(),
+                        );
+                    }
                     struct_params.insert(parsed_parameter.parameter.name.clone(), struct_name);
                 }
                 if parsed_parameter.struct_array {
@@ -3146,6 +3154,14 @@ impl Parser {
                 self.parse_parameter_array_suffix(name, parsed_type)?
             };
             if let Some(struct_name) = parsed_parameter.struct_name {
+                if parsed_parameter.parameter.click_type
+                    == ClickType::C(C0Type::Int32PointerPointer)
+                {
+                    struct_params.insert(
+                        struct_pointer_pointer_key(&parsed_parameter.parameter.name),
+                        struct_name.clone(),
+                    );
+                }
                 struct_params.insert(parsed_parameter.parameter.name.clone(), struct_name);
             }
             if parsed_parameter.struct_array {
@@ -3738,18 +3754,7 @@ impl Parser {
         {
             return self.parse_declared_resource_call_with_access(access);
         }
-        let segments = self.parse_current_contract_segments_inner(
-            access != ResourceAccessMode::View || self.in_resource_definition,
-        )?;
-        if access == ResourceAccessMode::View
-            && !self.in_resource_definition
-            && (segments.len() > 1
-                || segments
-                    .iter()
-                    .any(|segment| matches!(segment.surface, ContractSegmentSurface::Object(_))))
-        {
-            return Err(self.error("whole-struct views require a declared resource"));
-        }
+        let segments = self.parse_current_contract_segments_inner(true)?;
         if segments.len() > 1 {
             return Ok(ResourceClause::MemoryAggregate { access, segments });
         }
@@ -7774,6 +7779,14 @@ impl Parser {
             }
             _ => None,
         };
+        if let ContractExpression::Binding(name)
+        | ContractExpression::CFragment(CExpression::Variable(name)) = &surface_base
+            && self
+                .current_struct_params
+                .contains_key(&struct_pointer_pointer_key(name))
+        {
+            struct_name = None;
+        }
         let names_aggregate_object = match &surface_base {
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
@@ -8005,9 +8018,9 @@ impl Parser {
                         self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
                     if field.struct_name.is_some() && !field.c_type.is_pointer() {
                         if !allow_aggregates {
-                            return Err(
-                                self.error("whole-struct views require a declared resource")
-                            );
+                            return Err(self.error(
+                                "aggregate contract segments are only supported in resource clauses",
+                            ));
                         }
                         return self.aggregate_field_segments(base, &field_name, &field);
                     }
@@ -8246,6 +8259,26 @@ impl Parser {
                 },
             }]);
         }
+        // A range on a struct pointer counts structs. Memory is held in
+        // four-byte cells, so each bound is scaled by the struct's cell count.
+        // A struct-array parameter already carries its element width.
+        let struct_cells = match &struct_name {
+            Some(name) if struct_array_element_width.is_none() => {
+                let layout = self.struct_layouts.get(name).ok_or_else(|| {
+                    self.error(format!(
+                        "a range of `struct {name}` needs an imported layout for it"
+                    ))
+                })?;
+                if layout.size_bytes() % 4 != 0 {
+                    return Err(self.error(format!(
+                        "a range cannot represent the {}-byte `struct {name}` as int32-aligned memory",
+                        layout.size_bytes()
+                    )));
+                }
+                Some(layout.size_bytes() / 4)
+            }
+            _ => None,
+        };
         self.expect(Token::LBracket)?;
         let start_expression = self.parse_contract_expression()?;
         let mut start = resource_body_c_fragment(&start_expression).ok_or_else(|| {
@@ -8261,6 +8294,13 @@ impl Parser {
             )
         })?;
         self.expect(Token::RBracket)?;
+        if let Some(cells) = struct_cells.filter(|cells| *cells != 1) {
+            let scale = |bound: CExpression| {
+                CExpression::Multiply(Box::new(CExpression::Value(int32(cells))), Box::new(bound))
+            };
+            start = scale(start);
+            end = scale(end);
+        }
         if let Some(offset) = scalar_range_offset {
             start = CExpression::Add(Box::new(offset.clone()), Box::new(start));
             end = CExpression::Add(Box::new(offset), Box::new(end));
@@ -10861,6 +10901,12 @@ fn lowered_field_expression(pointer: CExpression, field: &ResolvedField) -> CExp
             source: Default::default(),
         }
     }
+}
+
+/// The key under which the struct-parameter map records that a parameter is
+/// a `struct T**`. It is not an identifier, so no name lookup finds it.
+fn struct_pointer_pointer_key(name: &str) -> String {
+    format!("{name}**")
 }
 
 fn field_has_direct_memory_place(field: &ResolvedField) -> bool {

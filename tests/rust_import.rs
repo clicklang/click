@@ -1295,6 +1295,76 @@ fn charon_arrays_live_refresh_and_rejected_source_shapes() {
 }
 
 const CHARON_LOOP_SOURCE: &str = include_str!("../design/charon-trial/borrowed-loop/loop.rs");
+const PLAIN_RECORD_LOOP_SOURCE: &str =
+    include_str!("../design/charon-trial/plain-record-loop/loop.rs");
+const PLAIN_RECORD_LOOP_PROOF: &str =
+    include_str!("../design/charon-trial/plain-record-loop/loop.click");
+
+fn plain_record_loop_project() -> Project {
+    let p = Project::new(PLAIN_RECORD_LOOP_SOURCE);
+    for (name, bytes) in [
+        ("loop.rs", PLAIN_RECORD_LOOP_SOURCE.as_bytes()),
+        ("borrow.click", PLAIN_RECORD_LOOP_PROOF.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/plain-record-loop/loop.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/plain-record-loop/loop.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "loop.ullbc",
+            include_bytes!("../design/charon-trial/plain-record-loop/loop.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+#[test]
+fn charon_plain_record_loop_proves_symbolic_iterations_and_rejects_false_claims() {
+    let p = plain_record_loop_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(PLAIN_RECORD_LOOP_PROOF, &prepared).unwrap();
+    for (before, after) in [
+        ("ensures result == n;", "ensures result == n + 1;"),
+        ("invariant sum == i;", "invariant sum == i + 1;"),
+        ("requires 0 <= n and n <= 1000;", "requires n <= 1000;"),
+    ] {
+        assert!(
+            C0VerificationSession::new_program_prepared(
+                &PLAIN_RECORD_LOOP_PROOF.replace(before, after),
+                &prepared,
+            )
+            .is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: plain-record loop proof-tool agreement"]
+fn charon_plain_record_loop_tools_recheck_expanded_certificate() {
+    let p = plain_record_loop_project();
+    for args in [
+        vec!["verify"],
+        vec!["expand", "--claim", "packet_walk.contract", "--in-place"],
+        vec!["verify"],
+        vec!["profile"],
+    ] {
+        let result = p.cli(&args);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
 const CHARON_LOOP_SIDECAR: &str = include_str!("../design/charon-trial/borrowed-loop/loop.click");
 fn charon_loop_project() -> Project {
     let p = Project::new(CHARON_LOOP_SOURCE);

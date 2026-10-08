@@ -1345,3 +1345,24 @@ iterator steps, including outer-loop reduction and reset. The full caller
 contract still covers four constructor-state bytes; larger batches, general
 initial states, whole-loop panic freedom, and the common checksum specification
 remain unproved.
+
+### Compiler storage lifetimes in symbolic record loops
+
+An arbitrary-head trial of the original Adler remainder-vector loop exposed a
+discarded Charon `StorageLive` event. The loop correctly abstracted a temporary
+record's written liveness flag, but the adapter had omitted the operation that
+starts its next lifetime. The next construction consequently lacked its
+dead-storage prerequisite.
+
+The adapter now retains record storage starts. Lowering restarts only plain
+scalar/array records with no destructor; it grants no memory authority and
+does not discard `Drop` or reference-bearing state. The frozen
+`design/charon-trial/plain-record-loop` fixture proves a symbolic constructor
+loop without compiler-flag invariants. Mutations check the missing-storage
+failure, false loop claims, and protection of live `Drop` records. Its expanded
+certificate is checked independently.
+
+The Adler arbitrary-head trial now reaches the original byte-conversion call.
+The chunk-slice view still needs a checked transfer to that call's slice
+binding. The complete Adler caller remains the four-byte constructor boundary;
+this storage-lifetime fix does not claim arbitrary-batch induction.

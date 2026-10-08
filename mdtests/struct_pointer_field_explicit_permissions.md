@@ -25,11 +25,11 @@ int32 set_owned_first(struct owner* owner, int32 data[]) {
 verifying "set_owned_first.c";
 
 int32 set_owned_first(struct owner* owner, int32 data[]) {
-    consumes owner[0..3];
+    consumes *owner;
     consumes data[0..1];
 
     ensures result == 1 by auto;
-    produces owner[0..3] by auto;
+    produces *owner by auto;
     produces data[0..1] by auto;
 }
 ```
