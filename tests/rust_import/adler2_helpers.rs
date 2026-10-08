@@ -1252,6 +1252,31 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
 }
 
 #[test]
+#[ignore = "nightly: symbolic original vector-loop invariant and ranking rejections"]
+fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
+    for (before, after) in [
+        (
+            "decreases __rust_mir_62_remaining;",
+            "decreases 4 - __rust_mir_62_remaining;",
+        ),
+        (
+            "invariant __rust_mir_62_remaining % 4 == 0;",
+            "invariant __rust_mir_62_remaining % 4 == 1;",
+        ),
+        (
+            "invariant __rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[3]);",
+            "invariant __rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[2]);",
+        ),
+        (
+            "invariant b_vec._0[3] <= 255u32;",
+            "invariant b_vec._0[3] <= 254u32;",
+        ),
+    ] {
+        reject_compute(FOUR_BYTE_COMPUTE, before, after);
+    }
+}
+
+#[test]
 #[ignore = "nightly: original four-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
     recheck_compute_tools(FOUR_BYTE_COMPUTE, 4);
