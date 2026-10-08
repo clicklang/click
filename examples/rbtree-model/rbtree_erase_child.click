@@ -370,3 +370,100 @@ function rb_erase_immediate_child_model(tree: RbTree) -> RbTree {
         },
     }
 }
+
+# The minimum's nonempty right child is blackened when it replaces the minimum.
+function rb_remove_min_blackened(tree: RbTree) -> RbTree
+    decreases tree
+{
+    match tree {
+        RbTree::Empty => RbTree::Empty,
+        RbTree::Node(node, parent, color, left, right) => match left {
+            RbTree::Empty => rb_reparent(rb_recolor(right, Color::Black), parent),
+            RbTree::Node(a, b, c, l, r) =>
+                RbTree::Node(node, parent, color, rb_remove_min_blackened(left), right),
+        },
+    }
+}
+
+theorem rb_remove_min_blackened_nonempty_left(node: struct rb_node*, parent: struct rb_node*,
+        color: Color, left: RbTree, right: RbTree) {
+    requires not(left == RbTree::Empty);
+
+    ensures rb_remove_min_blackened(RbTree::Node(node, parent, color, left, right)) == RbTree::Node(node, parent,
+        color, rb_remove_min_blackened(left), right) by {
+        induct(left) as ih {
+            RbTree::Empty => {
+                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                contradiction(RbTree::Empty == RbTree::Empty);
+            }
+            RbTree::Node(a, b, c, l, r) => {
+                unfold(rb_remove_min_blackened(RbTree::Node(node, parent, color,
+                    RbTree::Node(a, b, c, l, r), right)));
+                normalize();
+            }
+        }
+    }
+}
+
+theorem rb_min_context_cut_blackened_child(tree: RbTree, up: Context, successor: struct rb_node*,
+        min_color: Color, child: RbTree) {
+    requires rb_minimum(tree) == RbMinimum::Found(successor, min_color, child);
+    ensures plug(rb_min_context(tree, up), rb_reparent(rb_recolor(child, Color::Black), rb_min_parent(tree)))
+        == plug(up, rb_remove_min_blackened(tree)) by {
+        induct(tree) as ih {
+            RbTree::Empty => {
+                have not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child)) by {
+                    unfold(rb_minimum(RbTree::Empty)); normalize();
+                }
+                contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color, child));
+            }
+            RbTree::Node(node, parent, color, left, right) => {
+                if left == RbTree::Empty {
+                    apply(rb_minimum_child_empty_left(node, parent, color, left, right,
+                        successor, min_color, child));
+                    extract(right == child);
+                    rewrite(left == RbTree::Empty);
+                    unfold(rb_min_context(RbTree::Node(node, parent, color, RbTree::Empty, right), up));
+                    unfold(rb_min_parent(RbTree::Node(node, parent, color, RbTree::Empty, right)));
+                    unfold(rb_remove_min_blackened(RbTree::Node(node, parent, color, RbTree::Empty, right)));
+                    rewrite(right == child); normalize();
+                } else {
+                    apply(rb_minimum_nonempty_left(node, parent, color, left, right));
+                    have rb_minimum(left) == RbMinimum::Found(successor, min_color, child) by {
+                        rewrite(rb_minimum(left) == rb_minimum(RbTree::Node(node, parent, color, left, right)));
+                        assumption();
+                    }
+                    apply(ih(left, Context::Left(node, parent, color, right, up), successor, min_color, child));
+                    apply(rb_remove_min_blackened_nonempty_left(node, parent, color, left, right));
+                    apply(rb_min_context_nonempty_left(node, parent, color, left, right, up));
+                    apply(rb_min_parent_nonempty_left(node, parent, color, left, right));
+                    rewrite(rb_min_parent(RbTree::Node(node, parent, color, left, right)) == rb_min_parent(left));
+                    rewrite(rb_min_context(RbTree::Node(node, parent, color, left, right), up)
+                        == rb_min_context(left, Context::Left(node, parent, color, right, up)));
+                    rewrite(plug(rb_min_context(left, Context::Left(node, parent, color, right, up)),
+                        rb_reparent(rb_recolor(child, Color::Black), rb_min_parent(left)))
+                        == plug(Context::Left(node, parent, color, right, up), rb_remove_min_blackened(left)));
+                    unfold(plug(Context::Left(node, parent, color, right, up), rb_remove_min_blackened(left)));
+                    rewrite(rb_remove_min_blackened(RbTree::Node(node, parent, color, left, right))
+                        == RbTree::Node(node, parent, color, rb_remove_min_blackened(left), right)); normalize();
+                }
+            }
+        }
+    }
+}
+
+theorem rb_remove_min_blackened_preserves_balance(tree: RbTree, up: Context,
+        successor: struct rb_node*, min_color: Color, child: RbTree) {
+    requires rb_minimum(tree) == RbMinimum::Found(successor, min_color, child);
+    requires is_rb(tree) == 1;
+    requires ctx_rb(up, black_height(tree), rb_color(tree)) == 1;
+    requires not(child == RbTree::Empty);
+    ensures is_rb_root(plug(up, rb_remove_min_blackened(tree))) == 1 by {
+        apply(rb_minimum_child_blackens_without_deficit(tree, up, successor,
+            min_color, child, rb_min_parent(tree)));
+        apply(rb_min_context_cut_blackened_child(tree, up, successor, min_color, child));
+        rewrite(plug(up, rb_remove_min_blackened(tree)) == plug(rb_min_context(tree, up),
+            rb_reparent(rb_recolor(child, Color::Black), rb_min_parent(tree))));
+        assumption();
+    }
+}

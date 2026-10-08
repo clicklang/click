@@ -722,3 +722,8 @@ is used only here. Everything else comes from the prelude: `List`, `Nat`,
 plugging the successor's right child into that context, reparented to the
 selected parent. It applies to empty and nonempty children at any depth;
 blackening a nonempty child is a separate balance step.
+
+`rb_remove_min_blackened` and `rb_min_context_cut_blackened_child` give the
+corresponding exact model when the replacement child is blackened.
+`rb_remove_min_blackened_preserves_balance` connects it to the no-deficit
+balance theorem for a nonempty minimum child at arbitrary depth.
