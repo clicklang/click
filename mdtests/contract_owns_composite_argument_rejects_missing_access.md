@@ -16,7 +16,7 @@ void probe(struct node *node) { }
 
 ```click
 resource pair(node: struct node*) {
-    owns node->left[0..1];
+    owns node->left->left;
 }
 
 verifying "dependent_pair_missing_access.c";

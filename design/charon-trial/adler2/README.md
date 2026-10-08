@@ -1,8 +1,8 @@
 # Unchanged adler2 crate adapter trial
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
-proves the four-lane helper bodies and the original computation on empty input
-from `a = 1`, `b = 0`. **The general Adler-32 checksum postcondition remains
+proves the four-lane helper bodies and the original computation for zero through
+four input bytes from `a = 1`, `b = 0`. **The general Adler-32 checksum postcondition remains
 unproved.**
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
@@ -146,9 +146,37 @@ The native lane-step lemmas now compose with this derived index. Under the
 A/B bounds at N and the byte bound, both addition guards hold and the updated
 native lane observations satisfy the A/B ceilings at
 `N(total, remaining - 4)`. Initial, empty, short-tail, small exact-multiple,
-and final full-batch indices have checked endpoints. The library has 14 theorem
-groups with 30 checked conclusions; verification, profiling, auditing, and
+and final full-batch indices have checked endpoints. The library has 16 theorem
+groups with 34 checked conclusions; verification, profiling, auditing, and
 expansion recheck them alongside the existing arithmetic dependencies.
+
+The stored traversal length is `int32`, with range checks at construction;
+the source slice's length remains `uint64`. The proofs use the traversal
+observation directly rather than treating the slice length as an iterator
+counter. A checked initialization theorem establishes both ceilings from
+reduced lanes at `N(total, total) = 0`. Another theorem exports the exact
+Integer-sum requirements of the original `AddAssign` calls for both `a + byte`
+and `b + (a + byte)`.
+
+The four-byte caller now stops at the actual remainder-vector iterator head,
+establishes all eight lane bounds there, observes the stored four-byte
+transition, and uses the derived index to discharge the original A helper's
+four addition requirements. Its verification unit checks the iterator and lane
+lemma bodies alongside every original helper body. False stored lengths and
+initial indices are rejected independently. The input extent of that caller
+contract remains four bytes; the conditional lemmas cover arbitrary batches,
+but induction over larger batches remains to be supplied.
+
+A false byte-order contract exposed expensive premise presentation: each
+attempt to name a scalar atom copied every memory-backed local value across
+historical snapshots. Scalar-name lookup now checks the recorded load address
+first. A smart proof producer may then search declared local slots for a
+checked alias, borrowing values and charging every inspected slot. Explicit
+certificate validation skips that search and uses the recorded load and memory
+epoch. The lookup never materializes unrelated heap storage. Scaling
+regressions cover increasing local counts, deep unrelated expressions, and a
+million-element seeded range. The caller names its stored cursor, chunk size,
+and remaining length explicitly at the head, so the four-byte transition uses those few checked facts.
 
 These implications match the adapter's stored remaining-byte state and
 four-byte `next` transition. They do not yet prove that the original nested
@@ -296,6 +324,16 @@ native-to-Integer additions establish final scalar ceilings of 1021 and 397210;
 the output casts are justified by the modulo range. Nightly regressions check
 false outputs, byte ordering, repeated reads, and agreement between verification,
 profiling, audit, expansion, and verification of the expanded contract.
+
+The vector-step proof also retains the entry A/B lanes at a named snapshot,
+uses the general iterator addition contracts for the B call's guards, and
+applies native preservation to all eight actual helper results. The resulting
+ceilings use the real decremented remaining length. Explicit observations
+bridge the two call snapshots; they do not substitute the constructor's zero
+lanes into the preservation argument. Nightly mutations reject false bounds
+on the first and last lanes, a too-small B sum guard, and a stale remaining
+count. This checks preservation at the four-byte caller boundary; it does not
+yet establish induction over arbitrary batches.
 
 With constructor-state inputs of lengths zero through four checked, next
 establish and preserve the lane

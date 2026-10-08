@@ -1,7 +1,7 @@
 verifying "json_object_set_ref_count.c";
 
 int32 json_object_set_ref_count(struct json_object* obj, int32 count) {
-    consumes obj[0..1];
+    consumes *obj;
     ensures returns_count: result == count;
     ensures stores_count: obj->ref_count == count;
 } by auto;

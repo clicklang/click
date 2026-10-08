@@ -622,6 +622,91 @@ pub enum CppCallArgument {
     },
 }
 
+/// A pure condition retains its existing expression encoding. A call is a
+/// separate effectful operation, evaluated exactly once before either arm.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum CppCondition {
+    Expression(CppExpression),
+    Call { call: CppConditionCall },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppConditionCall {
+    pub callee: CppFunctionReference,
+    pub arguments: Vec<CppCallArgument>,
+    pub value_type: CppType,
+    pub span: CppSpan,
+}
+
+impl From<CppExpression> for CppCondition {
+    fn from(value: CppExpression) -> Self {
+        Self::Expression(value)
+    }
+}
+
+impl CppCondition {
+    pub(crate) fn value_type(&self) -> &CppType {
+        match self {
+            Self::Expression(value) => value.value_type(),
+            Self::Call { call } => &call.value_type,
+        }
+    }
+
+    fn constant_boolean(&self) -> Option<bool> {
+        match self {
+            Self::Expression(value) => value.constant_boolean(),
+            Self::Call { .. } => None,
+        }
+    }
+
+    fn validate(
+        &self,
+        places: &ValidationPlaces<'_>,
+        records: &RecordIndex<'_>,
+        logical_source: &str,
+    ) -> Result<(), String> {
+        match self {
+            Self::Expression(value) => value.validate(places, records, logical_source),
+            Self::Call { call } => {
+                require_bool(&call.value_type, false, "if condition call")?;
+                validate_call(
+                    &call.callee,
+                    &call.arguments,
+                    &call.span,
+                    places,
+                    records,
+                    logical_source,
+                )
+            }
+        }
+    }
+
+    fn validate_constant_references(
+        &self,
+        logical_source: &str,
+        constants: &BTreeMap<String, &CppConstant>,
+        referenced_constants: &mut BTreeSet<String>,
+    ) -> Result<(), String> {
+        match self {
+            Self::Expression(value) => {
+                value.validate_constant_references(logical_source, constants, referenced_constants)
+            }
+            Self::Call { call } => {
+                for argument in &call.arguments {
+                    argument.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppInitializer {
@@ -708,7 +793,7 @@ pub enum CppStatement {
         span: CppSpan,
     },
     If {
-        condition: CppExpression,
+        condition: CppCondition,
         then_branch: Vec<CppStatement>,
         else_branch: Vec<CppStatement>,
         span: CppSpan,
@@ -892,18 +977,28 @@ impl CppExport {
             dependencies: constant_dependencies,
         } = validate_constant_inventory(&self.constants, logical_source, &declaration_sources)?;
 
+        self.function.span.validate(logical_source)?;
         let mut functions = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
         for source in std::iter::once(&self.function).chain(&self.reachable_functions) {
+            source.span.validate_in(&declaration_sources)?;
+            if source.span.file != logical_source
+                && matches!(
+                    source.function_kind,
+                    CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. }
+                )
+            {
+                return Err("C++ header constructors and destructors remain outside the executable graph profile".into());
+            }
             source.validate(
-                logical_source,
+                &source.span.file,
                 &declaration_sources,
                 &records,
                 self.profile.exceptions,
                 self.exception_behavior,
             )?;
             source.validate_constant_references(
-                logical_source,
+                &source.span.file,
                 &constants,
                 &mut referenced_constants,
             )?;
@@ -971,7 +1066,6 @@ impl CppExport {
             &records,
             &mut visiting,
             &mut visited,
-            logical_source,
         )?;
         validate_reachable_records(&functions, &records)?;
         if visited.len() != functions.len() {
@@ -1434,6 +1528,8 @@ impl CppRecord {
 }
 
 impl CppFunction {
+    // Executable spans are local to this body; alias origins are checked once
+    // by metadata validity against the shared locked declaration inventory.
     fn validate(
         &self,
         logical_source: &str,
@@ -1948,6 +2044,12 @@ impl CppFunction {
                         "conditional guarded try requires one guard, a returning int32 handler, and no outer cleanup lifetime".into(),
                     );
                 }
+                if matches!(condition, CppCondition::Call { .. }) {
+                    return Err(
+                        "conditional guarded try requires a pure condition to preserve catch scope"
+                            .into(),
+                    );
+                }
                 span.validate(logical_source)?;
                 try_span.validate(logical_source)?;
                 condition.validate(&places, records, logical_source)?;
@@ -2228,7 +2330,6 @@ impl CppStatement {
                 span,
             } => {
                 validate_call(callee, arguments, span, places, records, logical_source)?;
-                value_type.validate_aliases(logical_source)?;
                 if require_scalar_integer(value_type, "return-call value").is_err() {
                     require_bool(value_type, false, "return-call value")?;
                 }
@@ -2578,7 +2679,6 @@ impl CppCallArgument {
                 value_type,
                 span,
             } => {
-                value_type.validate_aliases(logical_source)?;
                 if require_scalar_integer(value_type, "nested-call value").is_err() {
                     require_bool(value_type, false, "nested-call value")?;
                 }
@@ -2673,7 +2773,6 @@ impl CppExpression {
         records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
-        self.value_type().validate_aliases(logical_source)?;
         match self {
             Self::IntegerLiteral {
                 value,
@@ -3123,7 +3222,6 @@ fn validate_reachable_calls(
     records: &RecordIndex<'_>,
     visiting: &mut Vec<String>,
     visited: &mut BTreeMap<String, usize>,
-    logical_source: &str,
 ) -> Result<usize, String> {
     crate::instrumentation::record_deterministic_work(1);
     if let Some(depth) = visited.get(declaration_id) {
@@ -3172,7 +3270,7 @@ fn validate_reachable_calls(
             } => (*callee, *arguments),
             CollectedCall::Destructor { callee, .. } => (*callee, &[][..]),
         };
-        callee.span.validate(logical_source)?;
+        callee.span.validate(&function.span.file)?;
         let target = functions.get(&callee.declaration_id).ok_or_else(|| {
             format!(
                 "C++ call to `{}` refers to missing reachable definition `{}`",
@@ -3279,7 +3377,6 @@ fn validate_reachable_calls(
             records,
             visiting,
             visited,
-            logical_source,
         )?;
         // Cached subgraphs still contribute their full depth to this path.
         depth = depth.max(child_depth + 1);
@@ -3335,10 +3432,19 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 callee, arguments, ..
             } => collect_scalar_call(callee, arguments, None, calls),
             CppStatement::If {
+                condition,
                 then_branch,
                 else_branch,
                 ..
             } => {
+                if let CppCondition::Call { call } = condition {
+                    collect_scalar_call(
+                        &call.callee,
+                        &call.arguments,
+                        Some(&call.value_type),
+                        calls,
+                    );
+                }
                 collect_calls(then_branch, calls);
                 collect_calls(else_branch, calls);
             }
@@ -4285,14 +4391,14 @@ mod tests {
             declared_noexcept: true,
             span: span.clone(),
             body: vec![CppStatement::If {
-                condition: CppExpression::IntegralCast {
+                condition: CppCondition::Expression(CppExpression::IntegralCast {
                     value: Box::new(literal.clone()),
                     value_type: CppType::Boolean {
                         bits: 8,
                         is_const: false,
                     },
                     span: span.clone(),
-                },
+                }),
                 then_branch: vec![CppStatement::Scope {
                     body: vec![CppStatement::Return {
                         value: literal,
@@ -4777,7 +4883,6 @@ mod tests {
                 &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
-                "fixture.cpp",
             )
         };
         assert!(validate(&inner).is_ok());
@@ -4857,7 +4962,6 @@ mod tests {
                     &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
-                    "fixture.cpp",
                 )
             };
             validate(&inner).unwrap();
@@ -4943,7 +5047,6 @@ mod tests {
                 &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
-                "fixture.cpp",
             )
         };
         assert!(validate(&caller, &callee).is_ok());
@@ -5702,7 +5805,6 @@ mod tests {
                     &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
-                    "fixture.cpp",
                 )
             });
             assert_eq!(result.unwrap(), 2);
@@ -5755,11 +5857,11 @@ mod tests {
             body: vec![
                 scope("first"),
                 CppStatement::If {
-                    condition: CppExpression::IntegerLiteral {
+                    condition: CppCondition::Expression(CppExpression::IntegerLiteral {
                         value: "1".into(),
                         value_type: signed_integer(32, false),
                         span: cleanup_span(),
-                    },
+                    }),
                     then_branch: vec![scope("then")],
                     else_branch: vec![scope("else")],
                     span: cleanup_span(),
@@ -5802,7 +5904,6 @@ mod tests {
                 &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
-                "fixture.cpp",
             )
             .unwrap_err();
             assert!(
@@ -5867,7 +5968,6 @@ mod tests {
                     &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
-                    "fixture.cpp",
                 )
             });
             if size < super::super::budget::MAX_CALL_DEPTH {
@@ -6190,8 +6290,8 @@ mod tests {
             cleanups: vec![],
             span: cleanup_span(),
         };
-        let branch = |condition, then_branch, else_branch| CppStatement::If {
-            condition,
+        let branch = |condition: CppExpression, then_branch, else_branch| CppStatement::If {
+            condition: condition.into(),
             then_branch,
             else_branch,
             span: cleanup_span(),
@@ -6312,6 +6412,92 @@ mod tests {
                 validate_record_inventory(&inventory, "fixture.cpp", &sources)
                     .unwrap_err()
                     .contains("by-value cycle")
+            );
+        }
+    }
+
+    #[test]
+    fn cross_header_call_origins_have_linear_graph_work() {
+        let span_in = |source: String| CppSpan {
+            file: source,
+            ..cleanup_span()
+        };
+        let function = |name: String, source: String, body| CppFunction {
+            declaration_id: name.clone(),
+            name,
+            function_kind: CppFunctionKind::Free,
+            return_type: CppType::Void,
+            parameters: vec![],
+            declared_noexcept: true,
+            span: span_in(source),
+            body,
+        };
+        let call = |name: String, source: String| CppStatement::Call {
+            callee: CppFunctionReference {
+                declaration_id: name.clone(),
+                name,
+                span: span_in(source.clone()),
+            },
+            arguments: vec![],
+            span: span_in(source),
+        };
+        for size in [4, 16, 64, 128] {
+            let mut functions = vec![function("leaf".into(), "leaf.h".into(), vec![])];
+            for index in 0..size {
+                let source = format!("header-{index}.h");
+                functions.push(function(
+                    format!("helper-{index}"),
+                    source.clone(),
+                    vec![call("leaf".into(), source)],
+                ));
+            }
+            functions.push(function(
+                "root".into(),
+                "fixture.cpp".into(),
+                (0..size)
+                    .map(|index| call(format!("helper-{index}"), "fixture.cpp".into()))
+                    .collect(),
+            ));
+            let sources = functions
+                .iter()
+                .map(|function| function.span.file.clone())
+                .collect();
+            for function in &functions {
+                super::super::validity::check_function(function, &function.span.file, &sources)
+                    .unwrap();
+            }
+            let index = functions
+                .iter()
+                .map(|function| (function.declaration_id.clone(), function))
+                .collect();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_reachable_calls(
+                    "root",
+                    &index,
+                    &RecordIndex::default(),
+                    &mut Vec::new(),
+                    &mut BTreeMap::new(),
+                )
+            });
+            assert_eq!(result.unwrap(), 3);
+            assert!(work <= 12 * size + 16, "{size}: {work}");
+            let mut forged = functions[1].clone();
+            let CppStatement::Call { callee, .. } = &mut forged.body[0] else {
+                unreachable!()
+            };
+            callee.span.file = "leaf.h".into();
+            let mut index = index.clone();
+            index.insert(forged.declaration_id.clone(), &forged);
+            assert!(
+                validate_reachable_calls(
+                    "root",
+                    &index,
+                    &RecordIndex::default(),
+                    &mut Vec::new(),
+                    &mut BTreeMap::new()
+                )
+                .unwrap_err()
+                .contains("source span")
             );
         }
     }

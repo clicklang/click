@@ -44,6 +44,7 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace {
@@ -314,6 +315,14 @@ private:
   };
 
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
+    auto source = executable_source(declaration->getLocation());
+    if (!source) {
+      fail(declaration->getLocation(), "reachable C++ definitions require a selected or dependency source");
+      return std::nullopt;
+    }
+    llvm::SaveAndRestore<std::string> body_source(function_source_, *source);
+    if (*source != logical_source_)
+      dependency_sources_.insert(*source);
     if (declaration->isDependentContext() ||
         declaration->getType()->isDependentType()) {
       fail(declaration->getLocation(),
@@ -1170,7 +1179,7 @@ private:
         result["span"] = span(conditional->getSourceRange());
         return Json(std::move(result));
       }
-      auto condition = lower_expression(conditional->getCond(), function);
+      auto condition = lower_if_condition(conditional->getCond(), function);
       auto branch_scope = allow_nested_scope
                               ? CleanupScopeKind::Conditional
                               : CleanupScopeKind::None;
@@ -1271,6 +1280,8 @@ private:
         const auto *destructor =
             record == nullptr ? nullptr : record->getDestructor();
         if (destructor != nullptr && !destructor->isImplicit()) {
+          // Moving an effectful predicate outside the catch would change
+          // which handler catches its exception. Keep this shape pure.
           auto condition = lower_expression(conditional->getCond(), function);
           auto live_try_body = lower_branch(conditional->getThen(), function,
                                             CleanupScopeKind::Conditional);
@@ -1841,6 +1852,29 @@ private:
            (field_reads && field_scalar_argument(expression));
   }
 
+  std::optional<Json> lower_if_condition(const clang::Expr *expression,
+                                        const clang::FunctionDecl *function) {
+    const auto *call = llvm::dyn_cast<clang::CallExpr>(expression->IgnoreParens());
+    if (call == nullptr)
+      return lower_expression(expression, function);
+    if (!call->getType()->isBooleanType()) {
+      fail(call->getExprLoc(), "C++ condition calls require a Boolean result");
+      return std::nullopt;
+    }
+    auto operation = lower_call_operation(call, function, true);
+    auto value_type = lower_type(call->getType(), call->getExprLoc());
+    if (!operation || !value_type)
+      return std::nullopt;
+    llvm::json::Object predicate;
+    predicate["callee"] = std::move(operation->callee);
+    predicate["arguments"] = std::move(operation->arguments);
+    predicate["value_type"] = std::move(*value_type);
+    predicate["span"] = std::move(operation->span);
+    llvm::json::Object condition;
+    condition["call"] = std::move(predicate);
+    return Json(std::move(condition));
+  }
+
   std::optional<LoweredCall>
   lower_call_operation(const clang::CallExpr *call,
                        const clang::FunctionDecl *caller,
@@ -1894,9 +1928,9 @@ private:
     }
     const clang::SourceLocation definition_location =
         source_manager_.getSpellingLoc(definition->getLocation());
-    if (!is_in_logical_source(definition_location)) {
+    if (!executable_source(definition_location)) {
       fail(call->getExprLoc(),
-           "the supported C++ call graph requires definitions in the selected file");
+           "the supported C++ call graph requires definitions in selected or dependency sources");
       return std::nullopt;
     }
     if (call->getNumArgs() != definition->getNumParams() + argument_offset) {
@@ -3276,15 +3310,25 @@ private:
     return record_name(destructor->getParent()) + "_destructor";
   }
 
+  std::optional<std::string> executable_source(clang::SourceLocation location) const {
+    if (is_in_logical_source(location))
+      return logical_source_;
+    return dependency_source(location);
+  }
+
   Json span(clang::SourceRange range) {
+    return source_span(range, function_source_.empty() ? logical_source_ : function_source_);
+  }
+
+  Json source_span(clang::SourceRange range, const std::string &source) {
     clang::SourceLocation begin =
         source_manager_.getSpellingLoc(range.getBegin());
     clang::SourceLocation end = source_manager_.getSpellingLoc(range.getEnd());
-    if (!begin.isValid() || !end.isValid() || !is_in_logical_source(begin) ||
-        !is_in_logical_source(end)) {
+    if (!begin.isValid() || !end.isValid() || executable_source(begin) != source ||
+        executable_source(end) != source) {
       fail(
           begin,
-          "the first C++ slice requires source locations in the selected file");
+          "C++ executable source locations must stay within their function source");
       return Json(nullptr);
     }
     clang::SourceLocation after = clang::Lexer::getLocForEndOfToken(
@@ -3296,7 +3340,7 @@ private:
       return Json(nullptr);
     }
     llvm::json::Object result;
-    result["file"] = logical_source_;
+    result["file"] = source;
     result["start_line"] = static_cast<std::int64_t>(start.getLine());
     result["start_column"] = static_cast<std::int64_t>(start.getColumn());
     result["end_line"] = static_cast<std::int64_t>(finish.getLine());
@@ -3305,35 +3349,14 @@ private:
   }
 
   Json declaration_span(clang::SourceRange range) {
-    clang::SourceLocation begin =
-        source_manager_.getSpellingLoc(range.getBegin());
-    clang::SourceLocation end = source_manager_.getSpellingLoc(range.getEnd());
-    if (is_in_logical_source(begin) && is_in_logical_source(end)) {
-      return span(range);
-    }
-    auto dependency = dependency_source(begin);
-    auto end_dependency = dependency_source(end);
-    if (!dependency || !end_dependency || *dependency != *end_dependency) {
-      fail(begin,
-           "reachable C++ declarations must stay within one declared dependency source");
+    const auto source = executable_source(range.getBegin());
+    if (!source || executable_source(range.getEnd()) != source) {
+      fail(range.getBegin(), "reachable C++ declarations must stay within one declared dependency source");
       return Json(nullptr);
     }
-    clang::SourceLocation after = clang::Lexer::getLocForEndOfToken(
-        end, 0, source_manager_, context_.getLangOpts());
-    const clang::PresumedLoc start = source_manager_.getPresumedLoc(begin);
-    const clang::PresumedLoc finish = source_manager_.getPresumedLoc(after);
-    if (start.isInvalid() || finish.isInvalid()) {
-      fail(begin, "Clang could not resolve an alias declaration span");
-      return Json(nullptr);
-    }
-    dependency_sources_.insert(*dependency);
-    llvm::json::Object result;
-    result["file"] = *dependency;
-    result["start_line"] = static_cast<std::int64_t>(start.getLine());
-    result["start_column"] = static_cast<std::int64_t>(start.getColumn());
-    result["end_line"] = static_cast<std::int64_t>(finish.getLine());
-    result["end_column"] = static_cast<std::int64_t>(finish.getColumn());
-    return Json(std::move(result));
+    if (*source != logical_source_)
+      dependency_sources_.insert(*source);
+    return source_span(range, *source);
   }
 
   std::optional<std::string>
@@ -3423,6 +3446,7 @@ private:
   clang::ASTContext &context_;
   clang::SourceManager &source_manager_;
   std::string logical_source_;
+  std::string function_source_;
   std::string logical_source_path_;
   std::string selected_name_;
   std::string dependency_root_;

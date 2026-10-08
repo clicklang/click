@@ -1,6 +1,6 @@
 # A folded composite supplies a dependent composite argument
 
-The first `pair(node)` clause owns `node`'s cell and the first link-sized cell
+The first `pair(node)` clause owns `node`'s `left` link and the `left` link
 of `node`'s left child.  The second clause must load `node->left->left` to form its
 argument; its access comes from the whole entry clause set, including the
 folded body of the first composite.  The clauses are intentionally written
@@ -18,8 +18,8 @@ void probe(struct node *node) { }
 
 ```click
 resource pair(node: struct node*) {
-    owns node[0..1];
-    owns node->left[0..1];
+    owns node->left;
+    owns node->left->left;
 }
 
 verifying "dependent_pair.c";

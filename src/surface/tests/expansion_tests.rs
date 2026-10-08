@@ -4491,7 +4491,7 @@ fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
             }
 
             resource linked_pair(pair: struct pointer_pair*, data: int32*) {
-                owns pair[0..4];
+                owns *pair;
                 fact pair->first == pair->second;
                 fact pair->second == data;
             }
@@ -12342,7 +12342,7 @@ fn outcome_simp_materializes_selected_composite_separation_on_the_checked_proof(
         int32 observe_nested_separate_contains(struct owner* owner) {
             consumes nested_owned_buffer(owner);
             ensures separate(
-                memory(owner[0..3]),
+                memory(*owner),
                 memory(owner->data[0..owner->cap])
             ) by {
                 observe(nested_owned_buffer(owner));
@@ -12902,10 +12902,10 @@ fn source_expander_derives_separation_from_call_postconditions() {
             ) {
                 requires 0 <= length;
                 requires ((uint32)length) <= 1073741823u32;
-                requires separate(memory(owner[0..4]), memory(data[0..length]));
-                consumes owner[0..4];
+                requires separate(memory(*owner), memory(data[0..length]));
+                consumes *owner;
                 views data[0..length];
-                produces owner[0..4];
+                produces *owner;
                 ensures result == 0;
                 ensures owner->pos == 0;
                 ensures owner->len == length;
@@ -12923,18 +12923,18 @@ fn source_expander_derives_separation_from_call_postconditions() {
             ) {
                 requires 1 <= length;
                 requires ((uint32)length) <= 1073741823u32;
-                requires separate(memory(left[0..4]), memory(data[0..length]));
-                requires separate(memory(right[0..4]), memory(data[0..length]));
-                consumes left[0..4];
-                consumes right[0..4];
+                requires separate(memory(*left), memory(data[0..length]));
+                requires separate(memory(*right), memory(data[0..length]));
+                consumes *left;
+                consumes *right;
                 views data[0..length];
-                produces left[0..4];
-                produces right[0..4];
+                produces *left;
+                produces *right;
                 ensures result == 0;
             } by {
                 execute_until(statement(2));
                 have separate(
-                    memory(right[0..4]),
+                    memory(*right),
                     memory(left->data[0..left->len])
                 ) by {
                     simp();

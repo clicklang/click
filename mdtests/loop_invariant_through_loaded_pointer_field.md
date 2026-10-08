@@ -47,13 +47,13 @@ resource task(j: struct job*) {
     owns j->p[j->lo..j->hi];
     fact 0 <= j->lo;
     fact j->lo <= j->hi;
-    fact separate(memory(j[0..6]), memory(j->p[j->lo..j->hi]));
+    fact separate(memory(*j), memory(j->p[j->lo..j->hi]));
 }
 
 int32 probe_contract(struct job *j) {
     requires 0 <= j->lo;
     requires j->lo <= j->hi;
-    requires separate(memory(j[0..6]), memory(j->p[j->lo..j->hi]));
+    requires separate(memory(*j), memory(j->p[j->lo..j->hi]));
     views j->p;
     views j->lo;
     views j->hi;

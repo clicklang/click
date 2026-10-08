@@ -3864,6 +3864,7 @@ mod outcome_case_tests {
                 });
             }
             let provenance = OutcomeProvenance {
+                loop_return: None,
                 call_routes: Vec::new(),
                 branch_decisions: decisions,
                 surface_propositions: SurfacePropositionMap::default(),
@@ -4017,6 +4018,7 @@ mod outcome_case_tests {
                 &root,
                 &mut facts,
                 OutcomeProvenance {
+                    loop_return: None,
                     call_routes: Vec::new(),
                     branch_decisions: ExecutionBranchDecisions::default(),
                     surface_propositions: SurfacePropositionMap::default(),

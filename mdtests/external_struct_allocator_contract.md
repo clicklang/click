@@ -25,7 +25,7 @@ extern struct item* external_alloc(int32 bytes) {
     requires 0 < bytes;
     ensures result != 0;
     produces allocation(result, bytes);
-    produces result[0..2];
+    produces *result;
 }
 
 int32 caller() {

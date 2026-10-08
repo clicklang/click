@@ -16,14 +16,14 @@ void probe(struct node *node, int32 n) { }
 
 ```click
 resource cell(node: struct node*) {
-    owns node[0..1];
+    owns node->left;
 }
 
 verifying "nested_dynamic_dependent_pair.c";
 
 contract void NestedDynamicDependentPair(struct node* node, int32 n) {
     requires node != 0;
-    requires n >= 1 and viewable(node[0..n]);
+    requires n >= 1 and viewable(node->left);
     requires n <= 2147483647;
     owns cell(node->left);
 }

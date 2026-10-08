@@ -1297,7 +1297,72 @@ Automatic snapshot synthesis now probes a bounded neighborhood, with determinist
 scaling coverage for both successful and missing spellings. Explicit snapshot
 references and restricted premise lists retain their checked meaning.
 
-Next establish/preserve
-the derived lane ceilings over the original stored nested iterators. General
+Next preserve the derived lane ceilings over the original stored nested
+iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic
 freedom, and the common full checksum specification remain unproved.
+
+
+### Lane initialization at the original stored iterator head
+
+The four-byte caller now establishes the A/B ceilings for all four lanes at
+the original remainder-vector iterator head. It observes the existing signed
+traversal length, checks the four-byte transition and derived successor index,
+and uses the iterator-indexed ceilings to meet the original A helper's four
+Integer addition requirements. The source slice length is unsigned; the
+adapter's range-checked stored traversal length is signed. No processed count
+or Rust source change is introduced.
+
+Two checked theorem groups supply reduced-lane initialization and the actual
+Integer-sum preconditions for both original lane additions for any batch of at
+most 22208 bytes. They are checked in the same verification unit as the helper
+and computation bodies. Regressions reject false stored lengths, initial
+indices, missing initial lane bounds, and altered bounds/steps; proof-tool
+expansion covers both new groups.
+
+The false byte-order regression exposed unaccounted copying while searching
+historical premise spellings. Scalar-name synthesis now checks the recorded
+load address first. Its borrowed, budgeted declared-slot alias search runs
+only in a smart proof producer; explicit certificate validation uses recorded
+loads and memory epochs directly. It never materializes heap ranges. Each
+inspected slot is charged; deterministic size-series regressions cover local
+counts, expression depth, and large seeded storage. Explicit cursor, size,
+and remaining-length observations provide the caller transition's small checked premise set without changing smart budgets.
+
+The four-byte caller now retains the original lanes across both checked
+`AddAssign` calls and derives the actual B call's Integer sum guards from the
+general iterator contract. Native preservation applies to all eight helper
+results at the real decremented remaining length. Explicit lane observations
+bridge the call snapshots without replacing the preservation argument with
+constructor-zero arithmetic. Negative caller regressions target false first
+and last lane bounds, a too-small B sum guard, and a stale remaining count.
+This proves the original four-byte step's preservation; arbitrary-batch loop
+induction remains open.
+
+Next use these initialization, call-site, and result-preservation obligations
+in inductive loop proofs that preserve the lane bounds and memory views across arbitrary stored
+iterator steps, including outer-loop reduction and reset. The full caller
+contract still covers four constructor-state bytes; larger batches, general
+initial states, whole-loop panic freedom, and the common checksum specification
+remain unproved.
+
+### Compiler storage lifetimes in symbolic record loops
+
+An arbitrary-head trial of the original Adler remainder-vector loop exposed a
+discarded Charon `StorageLive` event. The loop correctly abstracted a temporary
+record's written liveness flag, but the adapter had omitted the operation that
+starts its next lifetime. The next construction consequently lacked its
+dead-storage prerequisite.
+
+The adapter now retains record storage starts. Lowering restarts only plain
+scalar/array records with no destructor; it grants no memory authority and
+does not discard `Drop` or reference-bearing state. The frozen
+`design/charon-trial/plain-record-loop` fixture proves a symbolic constructor
+loop without compiler-flag invariants. Mutations check the missing-storage
+failure, false loop claims, and protection of live `Drop` records. Its expanded
+certificate is checked independently.
+
+The Adler arbitrary-head trial now reaches the original byte-conversion call.
+The chunk-slice view still needs a checked transfer to that call's slice
+binding. The complete Adler caller remains the four-byte constructor boundary;
+this storage-lifetime fix does not claim arbitrary-batch induction.
