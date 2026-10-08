@@ -134,6 +134,7 @@ fn prepare_functions(
     function: &CFunction,
     reachable: &[CFunction],
 ) -> Result<Vec<syntax::C0Function>, String> {
+    let observers = super::schema::observer_callees(import);
     std::iter::once(&import.export().function)
         .chain(&import.export().reachable_functions)
         .zip(std::iter::once(function).chain(reachable))
@@ -186,6 +187,7 @@ fn prepare_functions(
                 locals.remove(&name);
             }
             Ok(function_interface(source, kernel)?
+                .with_read_only_contract(observers.contains(&source.declaration_id))
                 .with_local_struct_values(locals)
                 .with_local_references(references.difference(&objects).cloned().collect()))
         })

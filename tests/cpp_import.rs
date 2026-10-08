@@ -645,6 +645,209 @@ int32 probe(int32& value) {
 }
 
 #[test]
+fn expression_observers_preserve_symbolic_field_reads_offline() {
+    let project = Project::with_fixture(
+        "observe.cpp",
+        "probe",
+        "struct Count { unsigned long value; unsigned long size() const noexcept { return value; } }; unsigned long probe(const Count& count) noexcept { return count.value + count.size(); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "observe.cpp";
+uint64 Count_size(const struct Count* this) {
+ views this->value;
+ ensures result == this->value;
+} by { execute(); simp(); }
+uint64 probe(const struct Count& count) {
+ views count.value;
+ ensures result == count.value + count.value;
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let path = project.directory.join("observe.click");
+    fs::write(&path, source).unwrap();
+    let owning = source
+        .replace("views this->value;", "owns this->value;")
+        .replace("views count.value;", "owns count.value;");
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &owning).unwrap(), &import)
+            .unwrap_err();
+    assert!(
+        error.message().contains("requires a read-only contract"),
+        "{}",
+        error.message()
+    );
+    for hostile in [
+        source.replace("views this->value;", "owns this->value;"),
+        source.replace("views count.value;", ""),
+        source.replace(
+            "result == count.value + count.value;",
+            "result != count.value + count.value;",
+        ),
+    ] {
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        let call = &mut forged["function"]["body"][0]["value"]["right"];
+        match mutation {
+            0 => call["callee"]["declaration_id"] = "missing".into(),
+            1 => call["value_type"]["bits"] = 32.into(),
+            2 => call["span"]["file"] = "unlocked.cpp".into(),
+            3 => forged["reachable_functions"][0]["declared_noexcept"] = false.into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "mutation {mutation}"
+        );
+    }
+}
+
+#[test]
+fn expression_observers_normalize_nested_arguments_and_widened_results() {
+    let project = Project::with_fixture(
+        "observe.cpp",
+        "probe",
+        "struct Count { unsigned long value; unsigned long size() const noexcept { return value; } }; unsigned long echo(unsigned long value) noexcept { return value; } unsigned long probe(const Count& count) noexcept { return count.value + echo(count.size()); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "observe.cpp";
+uint64 Count_size(const struct Count* this) { views this->value; ensures result == this->value; } by { execute(); simp(); }
+uint64 echo(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 probe(const struct Count& count) { views count.value; ensures result == count.value + count.value; } by { execute(); simp(); }
+"#,
+    );
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "int echo(int value) noexcept { return value; } long relay(int value) noexcept { return echo(value) + 1; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "relay.cpp";
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int64 relay(int32 value) { requires value == 0; ensures result == 1i64; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn expression_observers_preserve_short_circuit_read_permissions() {
+    for condition in ["false", "true"] {
+        let project = Project::with_fixture(
+            "observe.cpp",
+            "probe",
+            &format!(
+                "struct Count {{ unsigned long value; }}; bool enabled() noexcept {{ return {condition}; }} bool read(const Count& count) noexcept {{ return count.value == 0; }} bool probe(const Count& count) noexcept {{ return enabled() && read(count); }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let numeric = if condition == "false" { 0 } else { 1 };
+        let source = format!(
+            r#"verifying "observe.cpp";
+bool enabled() {{ ensures result == {numeric}; }} by {{ execute(); simp(); }}
+bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == 1; }} by {{ execute(); simp(); }}
+bool probe(const struct Count& count) {{ ensures result == result; }} by {{ execute(); simp(); }}
+"#
+        );
+        if condition == "false" {
+            check_return_call_sidecar(&project, &import, &source);
+        } else {
+            let path = project.directory.join("observe.click");
+            fs::write(&path, &source).unwrap();
+            assert!(
+                verify_program_prepared_project(
+                    &read_click_project(&path, &source).unwrap(),
+                    &import
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn expression_observers_form_checked_reference_results() {
+    let project = Project::with_fixture(
+        "observe.cpp",
+        "probe",
+        "struct View { int* pointer; int* data() const noexcept { return pointer; } }; int& probe(const View& view) noexcept { return *view.data(); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "observe.cpp";
+int32* View_data(const struct View* this) { views this->pointer; ensures result == this->pointer; } by { execute(); simp(); }
+int32& probe(const struct View& view) { views view.pointer; views view.pointer[0..1]; ensures &result == view.pointer; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let path = project.directory.join("observe.click");
+    fs::write(&path, source).unwrap();
+    let hostile = source.replace("views view.pointer[0..1];", "");
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn expression_observers_refuse_mutation_despite_a_matching_native_signature() {
+    let project = Project::with_fixture(
+        "observe.cpp",
+        "probe",
+        "struct Count { unsigned long value; unsigned long size() noexcept { value = 5; return value; } }; unsigned long probe(Count& count) noexcept { return count.value + count.size(); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "observe.cpp";
+uint64 Count_size(struct Count* this) {
+ views this->value;
+ ensures result == 5u64;
+} by { execute(); simp(); }
+uint64 probe(struct Count& count) {
+ views count.value;
+ ensures result == count.value + 5u64;
+} by { execute(); simp(); }
+"#;
+    let path = project.directory.join("observe.click");
+    fs::write(&path, source).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, source).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
 fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let project = Project::new();
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -7245,8 +7448,8 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
 fn direct_return_calls_reject_unsupported_expression_positions_and_recursive_graphs() {
     for (source, diagnostic) in [
         (
-            "int echo(int value) noexcept { return value; } long relay(int value) noexcept { return echo(value) + 1; }",
-            "unsupported expression",
+            "int echo(int value) { return value; } long relay(int value) noexcept { return echo(value) + 1; }",
+            "must declare noexcept",
         ),
         (
             "int echo(int value) noexcept; int relay(int value) noexcept { return echo(value); }",
@@ -7500,7 +7703,7 @@ fn nested_return_calls_reject_unspecified_order_conversions_and_cycles() {
         ),
         (
             "int echo(int x) noexcept { return x; } long wide(long x) noexcept { return x; } long relay(int x) noexcept { return wide(echo(x)); }",
-            "unsupported expression",
+            "expression observers are supported only in return values and conditions",
         ),
         (
             "int echo(int x) noexcept { return x; } int relay(int x) noexcept { return echo(relay(x)); }",
@@ -8199,6 +8402,7 @@ int32 relay(bool fail) throws int32 { ensures result == 5 by { execute(); simp()
 
 #[test]
 fn normalized_initializer_and_return_work_scales_with_argument_arity() {
+    let mut overhead = None;
     for size in [2usize, 8, 32, 128] {
         let parameters = (0..size)
             .map(|i| format!("int value{i}"))
@@ -8227,15 +8431,17 @@ fn normalized_initializer_and_return_work_scales_with_argument_arity() {
             let lowered = lowered.unwrap();
             assert_eq!(lowered.contract_functions().len(), 3);
             assert!(
-                work >= size && work <= 3 * size + 32,
+                work >= size && work <= 4 * size + 32,
                 "{selected}, arity {size}: {work}"
             );
             measured.push(work);
         }
+        let delta = measured[1].checked_sub(measured[0]).unwrap();
+        assert!((1..=8).contains(&delta), "initializer overhead: {delta}");
         assert_eq!(
-            measured[0] + 1,
-            measured[1],
-            "the initializer adds one lifetime-planning source event at arity {size}"
+            *overhead.get_or_insert(delta),
+            delta,
+            "initializer overhead must remain constant at arity {size}"
         );
     }
 }
@@ -8474,7 +8680,7 @@ fn bounded_constant_forests_scale_without_expanding_dependency_chains() {
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         lowered.unwrap();
         assert!(
-            work >= size && work <= 3 * size + 32,
+            work >= size && work <= 4 * size + 32,
             "{size} constants: {work} lowering work"
         );
         check_return_call_sidecar(
@@ -12617,13 +12823,8 @@ fn condition_calls_validate_target_result_arguments_and_metadata() {
 }
 
 #[test]
-fn condition_calls_refuse_composed_and_non_boolean_effects() {
-    for condition in [
-        "!predicate()",
-        "predicate() && predicate()",
-        "predicate() == true",
-        "number()",
-    ] {
+fn condition_calls_refuse_unsupported_unary_operators() {
+    for condition in ["!predicate()", "+predicate()"] {
         let source = format!(
             "bool predicate() noexcept {{ return true; }} int number() noexcept {{ return 1; }} int choose() noexcept {{ if ({condition}) {{ return 1; }} else {{ return 2; }} }}"
         );
@@ -12632,6 +12833,35 @@ fn condition_calls_refuse_composed_and_non_boolean_effects() {
         assert!(error.len() < 8000, "{error}");
         assert!(!project.artifact().exists());
         assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn expression_observers_admit_composed_boolean_conditions() {
+    for condition in [
+        "predicate() && predicate()",
+        "predicate() == true",
+        "number()",
+    ] {
+        let source = format!(
+            "bool predicate() noexcept {{ return true; }} int number() noexcept {{ return 1; }} int choose() noexcept {{ if ({condition}) {{ return 1; }} else {{ return 2; }} }}"
+        );
+        let project = Project::with_fixture("condition.cpp", "choose", &source);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let helper = if condition == "number()" {
+            "int32 number()"
+        } else {
+            "bool predicate()"
+        };
+        let sidecar = format!(
+            r#"verifying "condition.cpp";
+{helper} {{ ensures result == 1; }} by {{ execute(); simp(); }}
+int32 choose() {{ ensures result == 1; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_arithmetic_sidecar(&project, &import, &sidecar);
     }
 }
 
@@ -13739,23 +13969,25 @@ using Amount = long; inline Amount echo(Amount value) noexcept { return value; }
 }
 
 #[test]
-fn converted_return_calls_keep_composed_effects_bounded() {
-    for (source, diagnostic) in [
-        (
-            "int echo(int value) noexcept { return value; } int relay(int value) noexcept { return static_cast<int>(echo(value) + 1); }",
-            "unsupported expression",
-        ),
-        (
-            "int echo(int value) noexcept { return value; } int relay(int value) noexcept { return echo(value) + echo(value); }",
-            "unsupported expression",
-        ),
+fn converted_return_expression_observers_verify_composed_values() {
+    for (body, result) in [
+        ("static_cast<int>(echo(value) + 1)", 1),
+        ("echo(value) + echo(value)", 0),
     ] {
-        let project = Project::with_fixture("relay.cpp", "relay", source);
-        let error = refresh_import(&project.config()).unwrap_err();
-        assert!(error.contains(diagnostic), "{error}");
-        assert!(error.len() < 8000);
-        assert!(!project.artifact().exists());
-        assert!(!project.lock().exists());
+        let source = format!(
+            "int echo(int value) noexcept {{ return value; }} int relay(int value) noexcept {{ return {body}; }}"
+        );
+        let project = Project::with_fixture("relay.cpp", "relay", &source);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let sidecar = format!(
+            r#"verifying "relay.cpp";
+int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+int32 relay(int32 value) {{ requires value == 0; ensures result == {result}; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_arithmetic_sidecar(&project, &import, &sidecar);
     }
 }
 

@@ -151,6 +151,8 @@ pub struct C0Function {
     source_name: String,
     name: String,
     inline_body: bool,
+    /// Calls used as expression observers must have contracts with views only.
+    requires_read_only_contract: bool,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Function-scope C label spellings resolved to kernel identities and
@@ -2909,6 +2911,15 @@ impl C0Function {
         self
     }
 
+    pub(crate) fn with_read_only_contract(mut self, required: bool) -> Self {
+        self.requires_read_only_contract = required;
+        self
+    }
+
+    pub(crate) fn requires_read_only_contract(&self) -> bool {
+        self.requires_read_only_contract
+    }
+
     pub fn returns_reference(&self) -> bool {
         self.return_reference
     }
@@ -2931,6 +2942,7 @@ impl C0Function {
             source_name: name.clone(),
             name,
             inline_body: false,
+            requires_read_only_contract: false,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -8744,6 +8756,7 @@ impl Parser {
             source_name: header.source_name,
             name: header.name,
             inline_body,
+            requires_read_only_contract: false,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,

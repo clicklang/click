@@ -215,8 +215,17 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    callee could write and restore the value. The pinned `size()`/extent and
    `data()` chains now verify using views alone. Literal-false `do` wrappers
    lower to one execution of their checked body, with runtime/repeated loops,
-   break/continue and unsupported local lifetimes refused. Nested expression
-   calls and the constexpr assertion condition still need admission;
+   break/continue and unsupported local lifetimes refused. Nonthrowing scalar
+   expression calls now use the shared normalizer in return values and ordinary
+   conditions. Their contracts must contain views only, including nested
+   argument calls. Arithmetic, comparisons, pointer offsets, reference-address
+   formation and lazy `&&` preserve evaluation semantics. Offline ordinary,
+   expanded and retained regressions cover symbolic reads, widening and skipped
+   read permissions, with mutation/ownership and forged metadata negatives.
+   Shared storage checks now transport live-range evidence across verified
+   pointer equalities, without granting read or initialization authority;
+   missing, expired and one-past storage still fails.
+   The constexpr assertion condition still needs admission;
    interfering expressions remain
    refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**

@@ -403,6 +403,43 @@ impl PureFactContext {
         {
             return true;
         }
+        // A modular pointer result can name the same storage as a viewed
+        // range under a different symbolic block. Transport its liveness
+        // only through checked pointer equality, keeping the availability
+        // check at the evidence's own address. Visit this equality component,
+        // rather than searching unrelated loadability facts.
+        let spellings = self.equality_graph.pointer_spellings(base);
+        if self
+            .exact_pointer_aliases(base)
+            .chain(spellings.iter())
+            .any(|alias| {
+                crate::instrumentation::record_deterministic_work(1);
+                alias != base
+                    && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        base, alias, self,
+                    )
+                    && self.memory_loadable_candidates_for_base(alias).any(|fact| {
+                        let Proposition::CMemoryLoadable {
+                            memory: before,
+                            base: evidence_base,
+                            bytes: extent,
+                        } = fact
+                        else {
+                            return false;
+                        };
+                        crate::instrumentation::record_deterministic_work(1);
+                        memory_range_still_available(before, memory, evidence_base, self)
+                            && self.proves_loadable_region_from_structural_range(
+                                evidence_base,
+                                extent,
+                                alias,
+                                bytes,
+                            )
+                    })
+            })
+        {
+            return true;
+        }
         if self
             .memory_loadable_candidates_for_base(base)
             .any(|proposition| {
