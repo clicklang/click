@@ -1555,14 +1555,11 @@ impl CppRecord {
                 return Err(format!("C++ record `{}` has a duplicate field", self.name));
             }
             let (size, alignment) = match &field.value_type {
-                CppType::Integer { .. } => {
-                    if require_int32(&field.value_type, false, "record field").is_ok() {
-                        (4, 4)
-                    } else {
-                        require_signed_int64(&field.value_type, false, "record field")?;
-                        (8, 8)
-                    }
-                }
+                CppType::Integer { .. } => match Scalar::mutable_kind(&field.value_type) {
+                    Some(ScalarKind::Int32 | ScalarKind::UInt32) => (4, 4),
+                    Some(ScalarKind::Int64 | ScalarKind::UInt64) => (8, 8),
+                    _ => return Err("record field requires a mutable 32/64-bit integer".into()),
+                },
                 CppType::Pointer { pointee } => {
                     require_int32(pointee, false, "record pointer field")?;
                     (8, 8)
@@ -1621,10 +1618,8 @@ impl CppFunction {
             CppFunctionKind::Free
             | CppFunctionKind::StaticMethod { .. }
             | CppFunctionKind::Method { .. } => {
-                if self.return_type != CppType::Void
-                    && require_scalar_integer(&self.return_type, "function return type").is_err()
-                {
-                    require_bool(&self.return_type, false, "function return type")?;
+                if self.return_type != CppType::Void {
+                    require_return_value_type(&self.return_type, "function return type")?;
                 }
             }
             CppFunctionKind::Constructor {
@@ -1664,9 +1659,7 @@ impl CppFunction {
             {
                 return Err("C++ static helper has a mismatched class identity".into());
             }
-            if require_scalar_integer(&self.return_type, "static helper return type").is_err() {
-                require_bool(&self.return_type, false, "static helper return type")?;
-            }
+            require_return_value_type(&self.return_type, "static helper return type")?;
             for parameter in &self.parameters {
                 if require_scalar_integer(&parameter.value_type, "static helper parameter").is_err()
                 {
@@ -2391,9 +2384,7 @@ impl CppStatement {
             } => {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
-                if require_scalar_integer(value.value_type(), "return value").is_err() {
-                    require_bool(value.value_type(), false, "return value")?;
-                }
+                require_return_value_type(value.value_type(), "return value")?;
                 for cleanup in cleanups {
                     cleanup.validate(places, records, logical_source)?;
                 }
@@ -2409,9 +2400,7 @@ impl CppStatement {
             } => {
                 validate_call(callee, arguments, span, places, records, logical_source)?;
                 validate_scalar_conversions(conversions, value_type, logical_source)?;
-                if require_scalar_integer(value_type, "return-call value").is_err() {
-                    require_bool(value_type, false, "return-call value")?;
-                }
+                require_return_value_type(value_type, "return-call value")?;
                 for cleanup in cleanups {
                     cleanup.validate(places, records, logical_source)?;
                 }
@@ -2982,6 +2971,43 @@ impl CppExpression {
                 value.validate(places, records, logical_source)?;
                 require_integral_scalar(value.value_type(), "integral cast operand")?;
                 require_integral_scalar(value_type, "integral cast result")?;
+                Ok(())
+            }
+            Self::Binary {
+                operator: operator @ (CppBinaryOperator::Add | CppBinaryOperator::Subtract),
+                left,
+                right,
+                value_type: CppType::Pointer { pointee },
+                span,
+            } => {
+                span.validate(logical_source)?;
+                require_int32(pointee, false, "pointer arithmetic pointee")?;
+                left.validate(places, records, logical_source)?;
+                right.validate(places, records, logical_source)?;
+                let result_type = self.value_type();
+                let index = if left.value_type() == result_type {
+                    right.value_type()
+                } else if *operator == CppBinaryOperator::Add && right.value_type() == result_type {
+                    left.value_type()
+                } else {
+                    return Err("C++ pointer arithmetic requires one matching int pointer".into());
+                };
+                if *operator == CppBinaryOperator::Subtract
+                    && !Scalar::is(index, ScalarKind::Int32, false)
+                {
+                    return Err("C++ pointer subtraction currently requires an int32 index".into());
+                }
+                if !Scalar::mutable_kind(index).is_some_and(|kind| {
+                    matches!(
+                        kind,
+                        ScalarKind::Int32
+                            | ScalarKind::UInt32
+                            | ScalarKind::Int64
+                            | ScalarKind::UInt64
+                    )
+                }) {
+                    return Err("C++ pointer arithmetic requires a 32/64-bit integer index".into());
+                }
                 Ok(())
             }
             Self::Binary {
@@ -4342,6 +4368,16 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
         }
     }
     Ok(())
+}
+
+fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
+    if require_scalar_integer(value, label).is_ok()
+        || require_mutable_int32_pointer(value, label).is_ok()
+    {
+        Ok(())
+    } else {
+        require_bool(value, false, label)
+    }
 }
 
 fn require_mutable_int32_pointer(value: &CppType, label: &str) -> Result<(), String> {

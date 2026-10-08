@@ -352,6 +352,7 @@ the case that actually applies:
 
 | Case | What it says |
 | --- | --- |
+| compact recorded cell range | The read is not yet related to the recorded range contents. Establish the index/address relation or preservation needed to compare the reads. A `CellsSeeded` edge also represents input-resource materialization, so it does not identify a source store and offers no speculative index inequality. |
 | one array, two indexes | ``the store to `a[i]` may have written it. If `m` and `i` differ, state `m != i`.`` |
 | one array, a store wider than its element | ``the store to `a[j]` writes 8 bytes where `a` has 4-byte elements, so it covers the 2 elements from `a[j]` up and `i != j` rules out only the first of them. State `i < j`, which puts `a[i]` below every byte the store writes.`` The disequality above is not the repair here, and the *order* is: `one_element_gap_separates_bytes` gets a one-element gap from an address ladder, a bare disequality leaves the direction open so both accesses must fit in it, and a strict order fixes the direction so only the lower access must. Where neither access fits in an element there is no such order and none is offered. |
 | two objects nothing separates | ``the store to `g[0]` may have written it, because `a` may point into `g`. If they are separate, require `separate(memory(a[0..1]), memory(g[0..1]))`; where the contract already transfers `g[0..1]` with `owns` or `consumes`, declaring `views a[0..1]` says the same.`` |

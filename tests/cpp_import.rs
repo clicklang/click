@@ -4490,12 +4490,139 @@ fn cpp_local_aggregate_rejects_partial_default_copy_nested_and_second_objects() 
 }
 
 #[test]
-fn cpp_pointer_slice_rejects_arithmetic_null_multilevel_and_pointer_locals() {
+fn cpp_native_pointer_offsets_preserve_index_width_and_range_authority() {
+    for (cpp_type, click_type, index, expression, expected) in [
+        ("int", "int32", "1", "data + index", "1"),
+        ("int", "int32", "-1", "(data + 2) + index", "1"),
+        ("unsigned int", "uint32", "1u32", "index + data", "1"),
+        ("long", "int64", "1i64", "data + index", "1"),
+        ("int", "int32", "1", "(data + 2) - index", "1"),
+        ("unsigned long", "uint64", "2u64", "data + index", "2"),
+    ] {
+        let project = Project::with_fixture(
+            "offset.cpp",
+            "read",
+            &format!(
+                "int read(int* data, {cpp_type} index) noexcept {{ return *({expression}); }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let rewrite = if matches!(click_type, "int64" | "uint64") {
+            format!("rewrite(index == {index});")
+        } else {
+            String::new()
+        };
+        let sidecar = format!(
+            r#"verifying "offset.cpp";
+int32 read(int32* data, {click_type} index) {{
+ owns data[0..3]; requires index == {index};
+ ensures result == old(data[{expected}]);
+ ensures data[0] == old(data[0]); ensures data[2] == old(data[2]);
+}} by {{ execute(); {rewrite} simp(); }}
+"#
+        );
+        check_arithmetic_sidecar(&project, &import, &sidecar);
+        let hostile = sidecar.replace(" owns data[0..3];", "");
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn cpp_native_size_t_last_load_checks_nonempty_and_actual_backing_bounds() {
+    let project = Project::with_fixture(
+        "last.cpp",
+        "last",
+        "int last(int* data, unsigned long length) noexcept { return *(data + (length - 1UL)); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let unresolved = r#"verifying "last.cpp";
+int32 last(int32* data, uint64 length) {
+ owns data[0..1]; requires length == 1u64;
+ ensures result == old(data[0]);
+} by { execute(); simp(); }
+"#;
+    let path = project.directory.join("unresolved.click");
+    fs::write(&path, unresolved).unwrap();
+    let parsed = read_click_project(&path, unresolved).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    let message = error.message();
+    assert!(message.contains("index/address"), "{message}");
+    assert!(!message.contains("the store to"), "{message}");
+    assert!(
+        !message.contains("state `(length - 1u64) != 0`"),
+        "{message}"
+    );
+    for (length, end, expected) in [("1u64", "1", "0"), ("3u64", "3", "2")] {
+        let sidecar = format!(
+            r#"verifying "last.cpp";
+int32 last(int32* data, uint64 length) {{
+ owns data[0..{end}]; requires length == {length};
+ ensures result == old(data[{expected}]);
+}} by {{ execute(); rewrite(length == {length}); simp(); }}
+"#
+        );
+        check_arithmetic_sidecar(&project, &import, &sidecar);
+    }
+    for (length, end) in [
+        ("0u64", "1"),
+        ("4u64", "3"),
+        ("18446744073709551615u64", "3"),
+    ] {
+        let sidecar = format!(
+            r#"verifying "last.cpp";
+int32 last(int32* data, uint64 length) {{
+ owns data[0..{end}]; requires length == {length}; ensures 0 == 0;
+}} by {{ execute(); rewrite(length == {length}); simp(); }}
+"#
+        );
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &sidecar).unwrap();
+        let parsed = read_click_project(&path, &sidecar).unwrap();
+        assert!(
+            verify_program_prepared_project(&parsed, &import).is_err(),
+            "invalid length {length} must fail even under a trivial postcondition"
+        );
+    }
+}
+
+#[test]
+fn cpp_pointer_offsets_reject_unmodelled_wide_subtraction_and_wider_indices() {
+    for (source, diagnostic) in [
+        (
+            "int read(int* data, long index) noexcept { return *(data - index); }",
+            "pointer subtraction currently requires an int32 index",
+        ),
+        (
+            "int read(int* data, unsigned int index) noexcept { return *(data - index); }",
+            "pointer subtraction currently requires an int32 index",
+        ),
+        (
+            "int read(int* data, unsigned __int128 index) noexcept { return *(data + index); }",
+            "pointer arithmetic requires a 32/64-bit integer index",
+        ),
+    ] {
+        let project = Project::with_fixture("offset.cpp", "read", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn cpp_pointer_slice_rejects_differences_null_multilevel_and_pointer_locals() {
     let project = Project::pointer();
 
     fs::write(
         project.source(),
-        "int bump_reference(int* pointer) noexcept {\n    return *(pointer + 1);\n}\n",
+        "int bump_reference(int* pointer) noexcept {\n    return (int)(pointer - pointer);\n}\n",
     )
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
@@ -5941,12 +6068,120 @@ int32 get_flag() { ensures result == 1; } by { execute(); simp(); }
 }
 
 #[test]
+fn integral_template_values_preserve_exact_type_sign_and_full_width() {
+    let project = Project::with_fixture(
+        "values.cpp",
+        "call",
+        "template<auto N> int identity(int value) noexcept { return value; }\n\
+         int call(int value) noexcept {\n\
+             int a = identity<-1>(value);\n\
+             int b = identity<1U>(a);\n\
+             int c = identity<0UL>(b);\n\
+             int d = identity<18446744073709551615UL>(c);\n\
+             return identity<18446744073709551615ULL>(d);\n\
+         }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helpers = &import.export().reachable_functions;
+    let names = [
+        "identity__value_int_neg_1",
+        "identity__value_unsigned_int_1",
+        "identity__value_unsigned_long_0",
+        "identity__value_unsigned_long_18446744073709551615",
+        "identity__value_unsigned_long_long_18446744073709551615",
+    ];
+    assert_eq!(helpers.len(), names.len());
+    let mut identities = std::collections::BTreeSet::new();
+    let mut sidecar = "verifying \"values.cpp\";\n".to_string();
+    for (helper, name) in helpers.iter().zip(names) {
+        assert_eq!(helper.name, name);
+        assert!(identities.insert(&helper.declaration_id));
+        sidecar.push_str(&format!(
+            "int32 {name}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}\n"
+        ));
+    }
+    sidecar
+        .push_str("int32 call(int32 value) { ensures result == value; } by { execute(); simp(); }");
+    check_arithmetic_sidecar(&project, &import, &sidecar);
+}
+
+#[test]
+fn integral_class_extents_and_unsigned_fields_use_native_typed_cells() {
+    let project = Project::with_fixture(
+        "extent.cpp",
+        "size",
+        "template<unsigned long N> struct Extent { unsigned long length; unsigned int marker; ~Extent() = default; };\n\
+         unsigned long size(Extent<18446744073709551615UL>& span) noexcept {\n\
+             span.marker = 4294967295U;\n\
+             return span.length;\n\
+         }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(
+        import.export().records[0].name,
+        "Extent__value_unsigned_long_18446744073709551615"
+    );
+    let sidecar = r#"verifying "extent.cpp";
+uint64 size(struct Extent__value_unsigned_long_18446744073709551615& span) {
+ owns span.length; owns span.marker;
+ requires span.length == 18446744073709551615u64;
+ ensures result == 18446744073709551615u64;
+ ensures span.length == old(span.length);
+ ensures span.marker == 4294967295u32;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    for denied in [" owns span.length;", " owns span.marker;"] {
+        let hostile = sidecar.replace(denied, "");
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn explicitly_defaulted_trivial_destructor_uses_ordinary_local_lifetime() {
+    let project = Project::with_fixture(
+        "defaulted.cpp",
+        "read",
+        "struct Value { int value; ~Value() = default; };\n\
+         int read(int input) noexcept { Value local{input}; return local.value; }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(import.export().records[0].destructor.is_none());
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"defaulted.cpp\"; int32 read(int32 input) { ensures result == input; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn deleted_destructors_do_not_enter_the_defaulted_trivial_profile() {
+    let project = Project::with_fixture(
+        "deleted.cpp",
+        "read",
+        "struct Value { int value; ~Value() = delete; };\n\
+         int read(const Value& input) noexcept { return input.value; }\n",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("destructor must be public, non-virtual, non-deleted"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+}
+
+#[test]
 fn unsupported_template_arguments_and_dependent_selection_fail_explicitly() {
     for (selected, source, diagnostic) in [
         (
             "call",
-            "template<int N> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<1>(value); return result; }",
-            "template arguments require Boolean",
+            "template<short N> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<1>(value); return result; }",
+            "integral template arguments require",
         ),
         (
             "call",
@@ -6186,8 +6421,8 @@ fn class_template_instances_complete_unused_parameter_types_without_source_edits
 fn class_template_instances_retain_argument_and_layout_boundaries() {
     for (source, diagnostic) in [
         (
-            "template<int N> struct Box { int value; }; int call(const Box<1>& box) noexcept { return box.value; }",
-            "C++ template arguments require Boolean",
+            "template<short N> struct Box { int value; }; int call(const Box<1>& box) noexcept { return box.value; }",
+            "integral template arguments require",
         ),
         (
             "template<class T> struct Box { int value; }; int call(const Box<const int>& box) noexcept { return box.value; }",
@@ -13708,5 +13943,60 @@ bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures resu
             verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
                 .is_err()
         );
+    }
+}
+
+#[test]
+fn cpp_pointer_returns_preserve_identity_and_modular_results_offline() {
+    let project = Project::with_fixture(
+        "return.cpp",
+        "run",
+        "int* identity(int* data) noexcept { return data; }\nint* run(int* data) noexcept { return identity(data); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "return.cpp";
+int32* identity(int32* data) { ensures result == data; } by { execute(); simp(); }
+int32* run(int32* data) { ensures result == data; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace(
+        "ensures result == data; } by",
+        "ensures result == data + 1; } by",
+    );
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+    // Recompute the lock so these exercise semantic validation, not only hashes.
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => forged["function"]["return_type"]["pointee"]["bits"] = 64.into(),
+            1 => forged["function"]["return_type"]["pointee"]["is_const"] = true.into(),
+            2 => forged["function"]["body"][0]["value_type"]["pointee"]["bits"] = 64.into(),
+            3 => forged["reachable_functions"][0]["return_type"]["pointee"]["bits"] = 64.into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.contains("C++"), "{error}");
     }
 }
