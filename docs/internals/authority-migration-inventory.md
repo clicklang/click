@@ -1467,3 +1467,14 @@ replacements are:
 
 The legacy fixtures remain until the switch, where they retire against these
 replacements with `fold_negative_quantity_legacy_control.md`.
+
+#### Chunk 1j: assumed mutex contracts
+
+`mutex_abstract_reserved_call.md` and `mutex_reserved_mutable_contract.md`
+call an assumed external contract that moves mutex resources. Authority
+semantics keep refusing such calls: an assumed contract that consumed a
+guard could leave a deposited control in two places. Their storage checks
+keep authority coverage through verified-helper forms:
+`authority_mutex_verified_helper_requires_separation.md` and
+`authority_mutex_verified_helper_reserved_storage_rejected.md`. At the switch
+the two legacy fixtures expect the assumed-call refusal instead.
