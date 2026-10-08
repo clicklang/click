@@ -3411,10 +3411,24 @@ fn describe_source_range(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Option<String> {
+    // Inside the struct a parameter points at, the source names a field or
+    // the whole struct, never cells: `j[2..3]` there is one whole struct.
+    if let Some(place) = describe_struct_place_range(range, parameters, arguments) {
+        return Some(place);
+    }
     for (parameter, argument) in parameters.iter().zip(arguments) {
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
         };
+        // A range in a struct that is not exactly one place has no source
+        // spelling; cells counted from a struct pointer would read back as
+        // a count of structs.
+        if parameter.array_element_width().is_none()
+            && !parameter.is_struct_value()
+            && (parameter.pointee_struct_layout().is_some() || parameter.struct_layout().is_some())
+        {
+            continue;
+        }
         let Some(base_index) = diagnostic_pointer_element_index_from_base(
             range.base(),
             base,
