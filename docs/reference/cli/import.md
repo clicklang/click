@@ -359,9 +359,9 @@ and argument lowering have deterministic scaling coverage. Artifact validation
 checks every nested callee, capture type, and sibling storage type and rejects
 recursive graphs. Nested calls in integer-local initializers and discarded calls use the same
 normalization and ordering checks as return calls. Calls in general value
-expressions, converted returns/arguments, and returned references or objects
-remain unsupported. Converted integer-local initializers use the ordered
-conversion chain described below.
+expressions, converted arguments, and returned references or objects
+remain unsupported. Converted integer-local initializers and scalar returns
+use the ordered conversion chain described below.
 
 Scalar evaluation is normalized within the C++ frontend into explicit
 statements followed by a typed value. Initializer and return artifact wrappers
@@ -562,10 +562,24 @@ into the declared local. Direct matching-type calls keep their existing lowering
 C++20 narrowing uses the same modulo policy as pure casts; it does not establish
 a mathematical result-fit claim or remove overflow obligations in the callee.
 Modular contracts, memory authority and exception cleanup still apply.
-Converted returns, converted arguments, arithmetic around calls and call-based
-brace initializers remain outside this slice. Converting an original 128-bit
+
+Scalar returns use the same conversion-chain exporter, metadata validator and
+normalizer. This admits implicit return widening and explicit integral/Boolean
+casts around a whole direct call, including same-type alias wrappers. Callee
+contracts keep the original return type; the return node records the final
+converted type, and graph validation checks both ends of the chain. Lowering
+evaluates the call once, converts its capture, then captures the converted
+result before any active destructor runs. Throwing calls use the existing
+exception cleanup edge. Normal and scalar exceptional contracts have offline
+ordinary/expanded/retained proof coverage; resource-bearing exceptional
+contracts remain outside the proof surface.
+
+Both contexts bound a chain to 256 Clang conversion steps in the exporter and
+artifact validator, so a flat artifact cannot build unbounded nested kernel
+casts. Converted arguments, arithmetic around calls and call-based brace
+initializers remain outside this slice. Converting an original 128-bit
 callee result requires native observer normalization and is explicitly refused;
-modular wide observer bounds alone do not establish a native cast observation. Schema 44 requires refreshing
+modular wide observer bounds alone do not establish a native cast observation. Schema 45 requires refreshing
 earlier locks.
 
 The fixture preserves Bitcoin's quotient/remainder correction expression with
@@ -1313,7 +1327,7 @@ functions are pure at runtime.
 The artifact retains the resolved specialization and each metadata factory's
 qualified name and canonical declaration file. Offline validation checks the
 contract kind, bounded metadata inventory, and declaration-file membership in
-the locked preprocessor closure. Artifact schema 44 requires an explicit refresh
+the locked preprocessor closure. Artifact schema 45 requires an explicit refresh
 of earlier locks.
 
 The separate `checked_boolean_statement_with_literal_metadata` kind adds a
