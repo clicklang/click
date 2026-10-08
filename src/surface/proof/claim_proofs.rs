@@ -1731,14 +1731,8 @@ fn path_case_facts(
 /// Serializes retained checked Proof provenance as surface steps. This is a
 /// structural serialization, not a semantic search or reconstruction.
 fn surface_steps_from_checked_proof(proof: &Proof<'_>) -> Result<Vec<ProofStep>, ClickError> {
-    let tactics = proof.certificate().to_proof_tactics();
-    ProofCertificate::from_proof_tactics(&tactics)
-        .map(|certificate| certificate.steps().to_vec())
-        .map_err(|error| {
-            ClickError::new(format!(
-                "checked Proof provenance is not surface-expressible: {error:?}"
-            ))
-        })
+    ProofCertificate::from_steps(proof.certificate().steps().to_vec())
+        .map(ProofCertificate::into_steps)
 }
 
 pub(super) fn proof_case_fact_conflicts(

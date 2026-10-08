@@ -16356,3 +16356,121 @@ fn counted_pthread_whole_claim_expansion_mutex() {
         "increment_twice.contract",
     );
 }
+
+#[test]
+fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
+    let (original, sources) = mdtest_sources("mdtests/pruned_returning_branch_expansion.md");
+    let c = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let tail = "branch then { step(); simp(); } else {}\n    step(); simp();";
+    let original_branch = "branch then { step(); simp(); } else { step(); simp(); }";
+    for (case, source) in [
+        ("then only", original.clone()),
+        (
+            "else only",
+            original
+                .replace("requires n == 5;", "requires n == 0;")
+                .replace(original_branch, tail),
+        ),
+        (
+            "both reachable",
+            original
+                .replace("    requires n == 5;\n", "")
+                .replace(original_branch, tail),
+        ),
+    ] {
+        verify_c0_sources(&source, &c)
+            .unwrap_or_else(|error| panic!("{case}: {}", error.message()));
+        let expanded = expand_c0_claim_source_by_label(&source, &c, "f.contract")
+            .unwrap_or_else(|error| panic!("{case}: {}", error.message()));
+        assert!(
+            c0_smart_tactic_source_sites(&expanded, &c)
+                .unwrap()
+                .is_empty(),
+            "{case}: {expanded}"
+        );
+        verify_c0_sources(&expanded, &c)
+            .unwrap_or_else(|error| panic!("{case}: {}\n{expanded}", error.message()));
+        if case == "then only" {
+            let file = crate::surface::parse(&expanded).unwrap();
+            let SourceProof::Script(tactics) = file.function_blocks()[0].covering_proof().unwrap()
+            else {
+                panic!("expanded grouped proof should be a script");
+            };
+            let branch = tactics
+                .iter()
+                .find_map(|tactic| match tactic {
+                    ProofTactic::If(branch) => Some(branch),
+                    _ => None,
+                })
+                .unwrap();
+            assert!(
+                branch.else_tactics.is_empty(),
+                "pruned arm received outcome tactics: {expanded}"
+            );
+            let missing_entry = expanded.replace("step();", "");
+            assert_ne!(missing_entry, expanded);
+            let result = verify_c0_sources(&missing_entry, &c);
+            assert!(result.is_err(), "expanded arm accepted missing entry steps");
+            let false_closer = expanded.replace("result == 5 or result == 7", "result == 99");
+            assert!(verify_c0_sources(&false_closer, &c).is_err());
+        }
+    }
+}
+
+#[test]
+fn nested_pruned_return_expansion_cold_reverifies() {
+    let c = "int32 f(int32 n) { if (n > 0) { if (n > 1) { return 5; } return 6; } return 7; }";
+    let source = r#"verifying "nested.c";
+int32 f(int32 n) {
+    requires n == 5;
+    ensures result == 5;
+} by {
+    branch then {
+        branch then { step(); simp(); } else { step(); simp(); }
+    } else { step(); simp(); }
+}
+"#;
+    verify_c0_sources(source, &[("nested.c", c)]).unwrap();
+    let expanded = expand_c0_claim_source_by_label(source, &[("nested.c", c)], "f.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(
+        c0_smart_tactic_source_sites(&expanded, &[("nested.c", c)])
+            .unwrap()
+            .is_empty()
+    );
+    verify_c0_sources(&expanded, &[("nested.c", c)])
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+#[test]
+fn pruned_empty_c_arm_expansion_walks_the_tail_iteratively() {
+    for count in [4, 16, 64] {
+        let mut c = String::from("int32 f(int32 n) {\n");
+        for value in 0..count {
+            c.push_str(&format!("if (n == {value}) return {value};\n"));
+        }
+        c.push_str(&format!("return {count}; }}"));
+        let source = format!(
+            r#"verifying "tail.c";
+int32 f(int32 n) {{
+    requires n == {count};
+    ensures result == {count};
+}} by {{ execute(); simp(); }}
+"#
+        );
+        let sources = [("tail.c", c.as_str())];
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "f.contract")
+            .unwrap_or_else(|error| panic!("{count} branches: {}", error.message()));
+        assert!(
+            c0_smart_tactic_source_sites(&expanded, &sources)
+                .unwrap()
+                .is_empty()
+        );
+        verify_c0_sources(&expanded, &sources)
+            .unwrap_or_else(|error| panic!("{count} branches: {}\n{expanded}", error.message()));
+    }
+}

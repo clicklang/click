@@ -106,8 +106,8 @@ Fixed:
   also bounds the named branch-allocation phase for both proof forms through
   64 returns.
 
-Remaining. Checked paths still retain flat facts. Outcome goals still import
-those facts once per path. Legacy execution producers and paths with observable
+Remaining. Checked paths share persistent fact storage, but outcome goals
+still traverse their logical facts once per path. Legacy execution producers and paths with observable
 entry-resource propositions also keep the original certification rebuild to
 preserve resource-fact/path-fact precedence.
 

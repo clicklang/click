@@ -159,6 +159,15 @@ branches. It can be rendered back to surface tactics for expansion. The
 serialization carries no semantic authority of its own and need not exist
 during ordinary verification in the intended architecture.
 
+A checked decided C split marks its unreachable certificate arm for surface
+placement. Suffix assembly skips that arm without traversing each outcome's
+branch history. An ordinary empty proof arm remains a live leaf. This private
+presentation marker is not rendered as a tactic and does not exempt any
+rewritten source from ordinary verification. Expanded C arms with an omitted
+sibling use the checked split, validate their explicit entry steps, and defer
+outcome operations until function exit. A completed empty C arm rejoins before
+its written tail is walked, so these completed splits do not accumulate depth.
+
 No `ProofStep` is smart or internal-only, and both certificate constructors
 apply one admission rule: `from_proof_tactics` classifies source tactics and
 `from_steps` classifies serialized provenance, so a leaf that no explicit

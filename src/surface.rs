@@ -3798,6 +3798,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
 #[derive(Clone, Debug, Eq)]
 pub struct ProofCertificate {
     steps: std::sync::Arc<Vec<ProofStep>>,
+    // Presentation only: the checked C split proved this arm unreachable.
+    pruned_execution_arm: bool,
 }
 
 impl PartialEq for ProofCertificate {
@@ -3969,6 +3971,7 @@ impl ProofCertificate {
     pub fn from_proof_tactics(tactics: &[ProofTactic]) -> Result<Self, CertificateError> {
         validate_certificate_tactics(tactics, &mut Vec::new())?;
         Ok(Self {
+            pruned_execution_arm: false,
             steps: std::sync::Arc::new(
                 tactics
                     .iter()
@@ -3976,6 +3979,18 @@ impl ProofCertificate {
                     .collect(),
             ),
         })
+    }
+
+    /// Only checked, decided execution splits may create this presentation leaf.
+    pub(crate) fn pruned_execution_arm() -> Self {
+        Self {
+            steps: std::sync::Arc::new(Vec::new()),
+            pruned_execution_arm: true,
+        }
+    }
+
+    pub(crate) fn is_pruned_execution_arm(&self) -> bool {
+        self.pruned_execution_arm
     }
 
     pub fn steps(&self) -> &[ProofStep] {
@@ -4021,6 +4036,7 @@ impl ProofCertificate {
             ))
         })?;
         let certificate = Self {
+            pruned_execution_arm: false,
             steps: std::sync::Arc::new(steps),
         };
         if certificate.contains_arithmetic_using() {
@@ -4036,6 +4052,7 @@ impl ProofCertificate {
     /// every enclosing construction would be quadratic in the certificate.
     fn from_validated_steps(steps: Vec<ProofStep>) -> Self {
         Self {
+            pruned_execution_arm: false,
             steps: std::sync::Arc::new(steps),
         }
     }
@@ -4123,6 +4140,7 @@ impl ProofCertificate {
             unreachable!("validated simple proof must be an explicit script")
         };
         Self {
+            pruned_execution_arm: false,
             steps: std::sync::Arc::new(
                 tactics
                     .iter()

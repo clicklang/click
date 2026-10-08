@@ -1435,6 +1435,70 @@ fn try_check_structural_function_proof_inner<'a>(
                     continue;
                 }
                 proof = proof.with_execution_tactic_index(*index)?;
+                if expanded_execution_if_has_pruned_arm(then_branch, else_branch)
+                    && expanded_execution_if_steps(then_branch, else_branch).is_none()
+                    && proof.frontier_is_execution_branch(condition)?
+                {
+                    let owner = proof.clone();
+                    let (split, record) = proof.split_focused_execution_branch()?;
+                    if ensuring.is_none()
+                        && matches!(continuation.as_ref(), InternalProofNode::Done)
+                        && let Some(take_then) = record.sole_feasible_arm()
+                    {
+                        let arm = if take_then { then_branch } else { else_branch };
+                        let (focused, remaining, arm_continuation) =
+                            checked_expanded_execution_arm_prefix(
+                                &split, &record, take_then, condition, arm,
+                            )?;
+                        if focused.is_at_region_boundary() {
+                            let joined = focused
+                                .join_focused_execution_split(&record, false, None)?
+                                .restore_execution_tactic_attribution(&owner)?;
+                            let Some(next) = advance_focused_execution_arm(
+                                joined,
+                                remaining,
+                                staged_expansion_capture.as_mut(),
+                                proof_site.as_ref(),
+                                owning_source_index,
+                            )?
+                            else {
+                                return decline();
+                            };
+                            proof = next;
+                            saw_structure = true;
+                            current = arm_continuation;
+                            continue;
+                        }
+                    }
+                    let Some(arms) = advance_checked_branch_arms(
+                        split,
+                        &record,
+                        Some(condition),
+                        ensuring,
+                        then_branch,
+                        else_branch,
+                        continuation,
+                        staged_expansion_capture.as_mut(),
+                        proof_site.as_ref(),
+                        owning_source_index,
+                        0,
+                    )?
+                    else {
+                        return decline();
+                    };
+                    proof = arms
+                        .advanced
+                        .join_focused_execution_split(&record, arms.empty, arms.join_interface)?
+                        .restore_execution_tactic_attribution(&owner)?;
+                    proof.note_trace_join_continuation_arm(arms.continuation_arm);
+                    saw_structure = true;
+                    current = if arms.consumed_continuation {
+                        &InternalProofNode::Done
+                    } else {
+                        continuation
+                    };
+                    continue;
+                }
                 if let Some((then_steps, else_steps)) =
                     expanded_execution_if_steps(then_branch, else_branch)
                     && proof.frontier_is_execution_branch(condition)?
@@ -3610,6 +3674,68 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 }
                 let owner = proof.clone();
                 let proof_at_if = proof.with_execution_tactic_index(*index)?;
+                if expanded_execution_if_has_pruned_arm(then_branch, else_branch)
+                    && expanded_execution_if_steps(then_branch, else_branch).is_none()
+                    && proof_at_if.frontier_is_execution_branch(condition)?
+                {
+                    let (split, record) = proof_at_if.split_focused_execution_branch()?;
+                    if ensuring.is_none()
+                        && matches!(continuation.as_ref(), InternalProofNode::Done)
+                        && let Some(take_then) = record.sole_feasible_arm()
+                    {
+                        let arm = if take_then { then_branch } else { else_branch };
+                        let (focused, remaining, arm_continuation) =
+                            checked_expanded_execution_arm_prefix(
+                                &split, &record, take_then, condition, arm,
+                            )?;
+                        if focused.is_at_region_boundary() {
+                            let joined = focused
+                                .join_focused_execution_split(&record, false, None)?
+                                .restore_execution_tactic_attribution(&owner)?;
+                            let Some(next) = advance_focused_execution_arm(
+                                joined,
+                                remaining,
+                                expansion_capture.as_deref_mut(),
+                                proof_site,
+                                owning_source_index,
+                            )?
+                            else {
+                                return decline();
+                            };
+                            proof = next;
+                            region = arm_continuation;
+                            continue;
+                        }
+                    }
+                    let Some(arms) = advance_checked_branch_arms(
+                        split,
+                        &record,
+                        Some(condition),
+                        ensuring,
+                        then_branch,
+                        else_branch,
+                        continuation,
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        depth,
+                    )?
+                    else {
+                        return decline();
+                    };
+                    proof = arms
+                        .advanced
+                        .join_focused_execution_split(&record, arms.empty, arms.join_interface)?
+                        .restore_execution_tactic_attribution(&owner)?;
+                    proof.note_trace_join_continuation_arm(arms.continuation_arm);
+                    region = if arms.consumed_continuation {
+                        &InternalProofNode::Done
+                    } else {
+                        continuation
+                    };
+                    branch_continuation = None;
+                    continue;
+                }
                 if let Some((then_steps, else_steps)) =
                     expanded_execution_if_steps(then_branch, else_branch)
                     && proof_at_if.frontier_is_execution_branch(condition)?
@@ -3885,6 +4011,7 @@ fn try_advance_checked_execution_branch<'a>(
     let Some(arms) = advance_checked_branch_arms(
         split,
         &record,
+        None,
         ensuring,
         then_branch,
         else_branch,
@@ -3938,6 +4065,7 @@ struct AdvancedBranchArms<'a> {
 fn advance_checked_branch_arms<'a>(
     split: Proof<'a>,
     record: &ExecutionSplit<'a>,
+    expanded_condition: Option<&ClickProposition>,
     ensuring: &Option<Vec<ProofAssertion>>,
     then_branch: &InternalProofNode,
     else_branch: &InternalProofNode,
@@ -3965,17 +4093,43 @@ fn advance_checked_branch_arms<'a>(
             note_dropped_execution_region(expansion_capture.as_deref_mut(), proof_site, region);
             continue;
         }
-        let Some(next) = advance_focused_execution_region_with_branch_continuation(
-            advanced.focus_split_arm(record, take_then)?,
-            Some(record),
-            region,
-            expansion_capture.as_deref_mut(),
-            proof_site,
-            owning_source_index,
-            depth + 1,
-            Some(continuation),
-        )?
-        else {
+        let next = if let Some(condition) = expanded_condition {
+            let (focused, remaining, arm_continuation) = checked_expanded_execution_arm_prefix(
+                &advanced, record, take_then, condition, region,
+            )?;
+            let Some(after_linear) = advance_focused_execution_arm(
+                focused,
+                remaining,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+            )?
+            else {
+                return decline();
+            };
+            advance_focused_execution_region_with_branch_continuation(
+                after_linear,
+                Some(record),
+                arm_continuation,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                depth + 1,
+                Some(continuation),
+            )?
+        } else {
+            advance_focused_execution_region_with_branch_continuation(
+                advanced.focus_split_arm(record, take_then)?,
+                Some(record),
+                region,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                depth + 1,
+                Some(continuation),
+            )?
+        };
+        let Some(next) = next else {
             return decline();
         };
         advanced = next;
@@ -4114,6 +4268,56 @@ fn steps_advance_execution(steps: &[ProofStep]) -> bool {
         }
         _ => false,
     })
+}
+
+/// An omitted arm is the source form retained by a checked, decided C
+/// branch. Two live source cases keep the ordinary iterative proof-if driver.
+fn expanded_execution_if_has_pruned_arm(
+    then_branch: &InternalProofNode,
+    else_branch: &InternalProofNode,
+) -> bool {
+    (checked_execution_region_is_empty(then_branch)
+        || checked_execution_region_is_empty(else_branch))
+        && [then_branch, else_branch].iter().any(|arm| {
+            execution_region_leading_tactic(arm)
+                .is_some_and(|indexed| matches!(indexed.tactic, ProofTactic::Step))
+        })
+}
+
+/// Borrow the written body after the exact entry operations already checked
+/// by the C split. The split remains the sole authority for selecting an arm.
+fn checked_expanded_execution_arm_prefix<'a, 'r>(
+    proof: &Proof<'a>,
+    record: &ExecutionSplit<'a>,
+    take_then: bool,
+    condition: &ClickProposition,
+    region: &'r InternalProofNode,
+) -> Result<(Proof<'a>, &'r [IndexedTactic], &'r InternalProofNode), ClickError> {
+    let expected =
+        proof.checked_expanded_execution_arm_entry_steps(record, take_then, Some(condition))?;
+    let InternalProofNode::Linear {
+        tactics,
+        continuation,
+    } = region
+    else {
+        return Err(
+            proof.step_error("expanded execution arm is missing its checked branch-entry steps")
+        );
+    };
+    if tactics.len() < expected.len()
+        || !tactics[..expected.len()]
+            .iter()
+            .all(|indexed| matches!(indexed.tactic, ProofTactic::Step))
+    {
+        return Err(
+            proof.step_error("expanded execution arm is missing its checked branch-entry steps")
+        );
+    }
+    Ok((
+        proof.focus_split_arm(record, take_then)?,
+        &tactics[expected.len()..],
+        continuation,
+    ))
 }
 
 fn expanded_execution_if_steps(
@@ -4446,6 +4650,7 @@ fn advance_checked_open_scope<'a>(
     let Some(arms) = advance_checked_branch_arms(
         split,
         &record,
+        None,
         ensuring,
         then_branch,
         else_branch,
