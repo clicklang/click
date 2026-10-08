@@ -1313,14 +1313,25 @@ impl ResourceContext {
                     .into_iter()
                     .flat_map(ResourceEntryIds::iter)
                 {
-                    let support = context
-                        .storage
-                        .support_occurrence_by_projection
-                        .get(entry)
-                        .copied();
-                    *counts
-                        .entry((support, context.storage.supported_by.get(entry).cloned()))
-                        .or_insert(0usize) += 1;
+                    let supported_by = context.storage.supported_by.get(entry).cloned();
+                    // An owned instance is unique by its identity, so the
+                    // fact names the supporting occurrence. Its occurrence
+                    // id is not compared: a rewrite that makes the instance
+                    // and publishes from it allocates a fresh id each time
+                    // it is derived.
+                    let support = if matches!(
+                        supported_by,
+                        Some(CResourceFact::Own(CResource::Instance(_), _))
+                    ) {
+                        None
+                    } else {
+                        context
+                            .storage
+                            .support_occurrence_by_projection
+                            .get(entry)
+                            .copied()
+                    };
+                    *counts.entry((support, supported_by)).or_insert(0usize) += 1;
                 }
                 counts
             };
@@ -5679,6 +5690,33 @@ impl ResourceContext {
             return true;
         }
         false
+    }
+
+    /// Forget the read authority an owned instance publishes for the cells
+    /// its body owns. It is an observation of that instance, derived again
+    /// wherever the instance is made, and carries no capability beyond
+    /// holding it. Loan-bound views stay. The work is the supported entries
+    /// this context holds.
+    pub(in crate::kernel) fn without_owned_instance_read_views(mut self) -> Self {
+        if self.storage.supported_by.is_empty() {
+            return self;
+        }
+        let entries = self
+            .storage
+            .supported_by
+            .iter()
+            .filter_map(|(entry, support)| {
+                crate::instrumentation::record_deterministic_work(1);
+                (matches!(support, CResourceFact::Own(CResource::Instance(_), _))
+                    && self.fact(*entry).memory_view_range().is_some()
+                    && self.loan_dependency(self.occurrence(*entry)).is_none())
+                .then_some(*entry)
+            })
+            .collect::<Vec<_>>();
+        for entry in entries {
+            self.remove_entry(entry);
+        }
+        self
     }
 
     /// Forget only observations and identity expansions of a memory owner.
