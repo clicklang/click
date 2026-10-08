@@ -3,19 +3,19 @@ verifying "arrays.rs";
 fn read(bytes: &[u8; 4], index: usize) -> u8 {
     requires index < 4u64;
     views bytes[0..4];
-    ensures result == bytes[(int32)index];
+    ensures result == bytes[index];
 } by { execute(); simp(); }
 
 fn write(words: &mut [u32; 3], index: usize, value: u32) {
     requires index < 3u64;
-    owns words[(int32)index..(int32)index + 1];
-    ensures words[(int32)index] == value;
+    owns words[index..index + 1];
+    ensures words[index] == value;
 } by { execute(); simp(); }
 
 fn signed(values: &[i32; 2], index: usize) -> i32 {
     requires index < 2u64;
     views values[0..2];
-    ensures result == values[(int32)index];
+    ensures result == values[index];
 } by { execute(); simp(); }
 
 fn length(words: &[u32; 1 + 2]) -> usize {

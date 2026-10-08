@@ -55,12 +55,12 @@ fn sign_extend(x: i32) -> usize {
     ensures result == 18446744073709551615u64;
 } by { execute(); simp(); }
 fn computed(bytes: &[u8], index: usize) -> u8 {
-    requires bytes_len == 2u64;
+    requires bytes.len() == 2u64;
     requires index == 0u64;
     views bytes[0 .. 2];
     ensures result == bytes[1];
 } by { execute(); simp(); }
 fn length(bytes: &[u8]) -> usize {
-    requires bytes_len <= 18446744073709551614u64;
-    ensures result == bytes_len + 1u64;
+    requires bytes.len() <= 18446744073709551614u64;
+    ensures result == bytes.len() + 1u64;
 } by { execute(); simp(); }
