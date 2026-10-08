@@ -26,13 +26,13 @@ void Restore_destructor(struct Restore* self) {
     simp();
 }
 
-int32 conditional_restore(bool construct, bool early, int32* value) {
-    owns value[0..1];
-    requires value[0] == 41;
+int32 conditional_restore(bool construct, bool early, int32& value) {
+    owns value;
+    requires value == 41;
     ensures construct != 0 implies (early != 0 implies result == 7);
     ensures construct != 0 implies (early == 0 implies result == 41);
     ensures construct == 0 implies result == 41;
-    ensures value[0] == 41;
+    ensures value == 41;
 } by {
     execute();
     simp();

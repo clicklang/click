@@ -220,8 +220,7 @@ Today both importers hand Click a C-shaped interface: `int& value` and
 5. **`this`.** A member function's receiver is named `this` and is a pointer,
    as in C++: `this->fee`, `owns *this`. Sidecars spell it `self` today.
 
-A first implementation of 1 to 3 was built and set aside unmerged. What it
-established:
+Items 1 to 4 are implemented. What building them established:
 
 - The flag, the `T&` parameter syntax and the signature check are small and
   mechanical. They follow `const` on a pointee through the same places.
@@ -243,13 +242,17 @@ established:
   The same holds for a struct reference compared with `this`.
 - A member function's receiver arrives from the exporter as a reference
   named `self`. It stays a pointer until item 5 respells it as `this`.
-- About 30 negative tests in `tests/cpp_import.rs` make a false contract by
-  replacing a substring such as `value[0]` in a passing sidecar. Each needs
-  its replacement respelled, and an assertion that the replacement changed
-  the text, or the test silently stops testing anything.
+- Negative tests that make a false contract by replacing a substring of a
+  passing sidecar stop testing anything when the substring is respelled. The
+  conversion was checked by turning every reference-spelling error into a
+  panic and running the whole gate: one test was failing for the wrong
+  reason, and it now asserts the reason.
+- A name that was a pointer and is now a referent changes meaning silently
+  where it was compared as a pointer (`requires self == other`,
+  `requires writable == readable`). Each such use was found by comparing the
+  old text with the new and is written with `&`.
 
-Order of work: the carrier naming with the flag, syntax and signature check,
-for scalar and struct references and their sidecars converted; `this`; then reference locals in C++ bodies, which proofs name
+Still to do: `this`; then reference locals in C++ bodies, which proofs name
 through the lowered program.
 
 Rust is not covered here. Its natural spelling changes the signature syntax
@@ -299,7 +302,9 @@ an accepted clause.
   The parser scales the bounds to cells. A constant count works; a symbolic
   count is not usable, as it was not when the cells were written by hand
   (`bugs/a-symbolic-struct-count-range-is-not-usable.md`).
-- In progress: step 6 for C++, as designed under "Reference parameters".
+- Done: step 6 for C++ reference parameters, as designed under "Reference
+  parameters". Receivers, reference locals and Rust remain
+  (`issues/design-review.md`).
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 

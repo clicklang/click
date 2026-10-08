@@ -860,6 +860,7 @@ fn parses_checked_signature_and_contract_clauses() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
     assert_eq!(
@@ -962,6 +963,7 @@ fn parses_pure_theorem_definition() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
     assert_eq!(theorem.requires().len(), 1);
@@ -3499,6 +3501,7 @@ fn parses_array_parameter_signature_as_pointer() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
 }
@@ -3526,6 +3529,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
             function_pointer_signature: None,
             constant: false,
             pointee_constant: false,
+            reference: false,
         }]
     );
     assert_eq!(
@@ -4440,6 +4444,23 @@ fn a_contract_cannot_return_one_place_twice() {
             "{contract}: {refused}"
         );
     }
+}
+
+/// C has no references, so a C sidecar that declares one does not match its
+/// function.
+#[test]
+fn a_reference_parameter_does_not_match_a_c_pointer() {
+    let c_source = "int32 read(int32* p) { return p[0]; }";
+    let source = "verifying \"read.c\"; int32 read(int32& p) { views p; ensures result == p; } \
+        by { execute(); simp(); }";
+    let error = verify_c0_sources(source, &[("read.c", c_source)])
+        .expect_err("a C parameter is not a reference");
+    assert!(
+        error
+            .message
+            .contains(".click has Int32& p, C has Int32Pointer p"),
+        "{error:?}"
+    );
 }
 
 /// A missing memory fact is reported as the place a clause would name.

@@ -1,18 +1,18 @@
 verifying "relay_value.cpp";
 
-int32 read_value(int32* value) {
-    owns value[0..1];
-    ensures value[0] == old(value[0]);
-    ensures result == value[0];
+int32 read_value(int32& value) {
+    owns value;
+    ensures value == old(value);
+    ensures result == value;
 } by {
     execute();
     simp();
 }
 
-int32 relay_value(int32* value) {
-    requires value[0] < 2147483647;
-    owns value[0..1];
-    ensures result == value[0] + 1;
+int32 relay_value(int32& value) {
+    requires value < 2147483647;
+    owns value;
+    ensures result == value + 1;
 } by {
     execute();
     simp();

@@ -86,6 +86,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
                     function_pointer_signature: None,
                     constant: false,
                     pointee_constant: false,
+                    reference: false,
                 }),
                 ClickType::Algebraic(application) => {
                     substitution.insert(

@@ -24,60 +24,26 @@ position and refused in another without a reason a user could give.
 Design and progress: `design/place-based-resource-clauses.md`. Steps 1 to 5
 are done. These remain.
 
-### A1. C++ reference parameters (in progress)
+### A1. Referents in printed kernel terms
 
-Today a C++ `int& value` is declared in the sidecar as `int32* value` and
-read as `value[0]`. Decided: a reference is a property of the parameter. The
-sidecar writes `int32& value`, `const int64& nValue`, `struct cell& c`; the
-name is the referent (`owns value`, `value == old(value) + 1`, `c.value`,
-`owns c`); the signature check refuses `int32*` for an `int&`.
+C++ reference parameters are done: a sidecar declares `int32& value`, the
+name is the referent, `&value` is its address, and the pointer that carries
+it is named `&value` throughout (`reference_carrier_name` in
+`src/languages/c/syntax.rs`; design section "Reference parameters").
 
-The representation is settled: a reference parameter is an object, and what
-the function receives is that object's address. The pointer that carries
-`int& value` is therefore named `&value`, in the lowered C++ function, in the
-checked interface and in the sidecar's parsed signature
-(`reference_carrier_name` in `src/languages/c/syntax.rs`). The sidecar's
-`value` parses to a read through that pointer and `&value` to the pointer.
-Printers already treat `&x` as the address of a named object, so the referent
-prints as `value`, a field as `c.field`, and the address as `&value`, with no
-parameter list in hand, and printed text parses back to what it came from.
-A dedicated syntax-tree node was tried first and dropped: it fixed printing
-of contract expressions only, not of kernel terms or of a callee's contract
-instantiated at a call.
+One printing gap remains. A contract expression prints a scalar referent as
+`value`. A kernel term for the same read, as in a "C operation" line or a
+condition `click expand` writes, prints `load_int32(&value)`. That parses
+back correctly, but it is not what a sidecar writes. The printer cannot print
+`value` there without the parameter's type: the same shape through a struct
+reference, `load_int64(&box)`, is the struct's first field, not the struct.
 
-The implementation is a stash in the task worktree (`git stash list` in
-`/home/lacker/click-execute-single`, "wip: C++ reference parameters, carrier
-named &value"). On 2026-10-07 it failed 28 of 5,872 tests, all C++ import
-tests, in these groups:
+Regression: `click expand` on a branch over a scalar reference writes the
+condition with the bare name, and on a branch over a struct reference's
+first field writes `box.field`.
 
-- About 14 negative tests in `tests/cpp_import.rs` that make a false
-  contract by replacing a substring such as `value[0]` in a passing sidecar.
-  The replacement no longer matches, so the test verifies the true contract.
-  Respell each, and assert the replacement changed the text.
-- Three sidecars still written with a pointer for a struct reference
-  (`field_first`, `predicate`, `Store`), and one that writes `*` on a
-  reference (`arithmetic.click`).
-- Postconditions that compare a pointer with a reference, which must now
-  take its address: `ensures state.pointer == &value`.
-- `old(nValue)` inside a `theorem ... executes` proof: "unknown old-state
-  variable `nValue`". The old-state lookup needs the carrier's name.
-- Two proofs whose printed `if` or `have` condition does not lower after
-  expansion ("the kernel lowering produced 0 paths"), not yet diagnosed.
-- `const_reference_preserves_qualification_and_may_alias_a_mutable_reference`:
-  a read through a const reference that aliases a mutable one reports
-  `missing resource fact views &readable[0]`. That is both a missing
-  authority to work out and a fact that should print as `readable`.
-- `examples/basic-cpp/increment.click` must match the copy quoted in the
-  documentation.
-
-Regression: the C++ fixtures under `tests/fixtures/cpp-verification` with
-reference parameters, converted; a sidecar that writes `int32*` for an
-`int&`, refused with both spellings named; `click expand` on a proof that
-names a reference parameter, re-verified.
-
-Done when: `scripts/check.sh` and `scripts/check.sh --audit` pass with every
-C++ sidecar in the repository converted, and a C sidecar that writes `&` in a
-signature is refused.
+Done when: no diagnostic or expansion prints `load_...(&name)` for a
+reference parameter.
 
 ### A2. Receivers are `this`
 
