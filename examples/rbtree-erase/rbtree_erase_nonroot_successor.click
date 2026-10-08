@@ -48,7 +48,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     produces node->rb_right;
     produces replacement: rb_at(old(node->rb_right));
     produces remaining: ctx_at(old(node->rb_right), root);
-    ensures replacement.model == rb_erase_immediate_red_model(old(tree.model));
+    ensures replacement.model == rb_erase_immediate_leaf_model(old(tree.model));
     ensures remaining.model == old(up.model);
     ensures is_rb_root(plug(remaining.model, replacement.model)) == 1;
     ensures ctx_consistent(remaining.model, replacement.model, 0) == 1;
@@ -105,9 +105,9 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         rewrite(sl == RbTree::Empty); rewrite(sr == RbTree::Empty); rewrite(sc == Color::Red);
                         unfold(rb_minimum(RbTree::Node(sid, sp, Color::Red, RbTree::Empty, RbTree::Empty))); normalize();
                     }
-                    have rb_erase_immediate_red_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
+                    have rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
                         == rb_successor_splice(sid, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)) by {
-                        unfold(rb_erase_immediate_red_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))); normalize();
+                        unfold(rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))); normalize();
                     }
                     apply(rb_erase_red_successor_splice(identity, sid, parent, color, left_model, right_model, up.model, 0));
                     apply(plug_parent_consistent_ctx(up.model,
@@ -167,11 +167,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     have replacement.model == rb_successor_splice(sid, parent, color, left_model, right_model) by {
                                         rewrite(rb_successor_splice(sid, parent, color, left_model, right_model) == RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Empty)); normalize();
                                     }
-                                    have replacement.model == rb_erase_immediate_red_model(old(tree.model)) by {
+                                    have replacement.model == rb_erase_immediate_leaf_model(old(tree.model)) by {
                                         rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));
 
                                         rewrite(right_model == RbTree::Node(sid, sp, sc, sl, sr));
-                                        rewrite(rb_erase_immediate_red_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
+                                        rewrite(rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
                                             == rb_successor_splice(sid, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)));
                                         rewrite(RbTree::Node(sid, sp, sc, sl, sr) == right_model); assumption();
                                     }
@@ -217,11 +217,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have replacement.model == rb_successor_splice(sid, parent, color, left_model, right_model) by {
                                                 rewrite(rb_successor_splice(sid, parent, color, left_model, right_model) == RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Empty)); normalize();
                                             }
-                                            have replacement.model == rb_erase_immediate_red_model(old(tree.model)) by {
+                                            have replacement.model == rb_erase_immediate_leaf_model(old(tree.model)) by {
                                                 rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));
 
                                                 rewrite(right_model == RbTree::Node(sid, sp, sc, sl, sr));
-                                                rewrite(rb_erase_immediate_red_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
+                                                rewrite(rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
                                             == rb_successor_splice(sid, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)));
                                                 rewrite(RbTree::Node(sid, sp, sc, sl, sr) == right_model); assumption();
                                             }
@@ -252,11 +252,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             have replacement.model == rb_successor_splice(sid, parent, color, left_model, right_model) by {
                                                 rewrite(rb_successor_splice(sid, parent, color, left_model, right_model) == RbTree::Node(sid, parent, color, RbTree::Node(lid, sid, lc, ll, lr), RbTree::Empty)); normalize();
                                             }
-                                            have replacement.model == rb_erase_immediate_red_model(old(tree.model)) by {
+                                            have replacement.model == rb_erase_immediate_leaf_model(old(tree.model)) by {
                                                 rewrite(old(tree.model) == RbTree::Node(identity, parent, color, left_model, right_model));
 
                                                 rewrite(right_model == RbTree::Node(sid, sp, sc, sl, sr));
-                                                rewrite(rb_erase_immediate_red_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
+                                                rewrite(rb_erase_immediate_leaf_model(RbTree::Node(identity, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)))
                                             == rb_successor_splice(sid, parent, color, left_model, RbTree::Node(sid, sp, sc, sl, sr)));
                                                 rewrite(RbTree::Node(sid, sp, sc, sl, sr) == right_model); assumption();
                                             }

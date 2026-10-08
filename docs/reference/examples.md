@@ -641,7 +641,7 @@ sequence:
   that use this model are the `rb_*` mdtests below.
 - `examples/rbtree-erase/`: the unchanged Linux `__rb_erase_augmented` for
   root deletion with zero or one child, every immediate-successor exit at
-  the root, and non-root zero/one-child deletion or immediate red-leaf successor
+  the root, and non-root zero/one-child deletion or immediate leaf-successor
   splicing on either parent link.
   Root exits without a deficit return the exact remaining model, in-order
   contents, and a valid red-black root. Non-root red-leaf deletion retains a
@@ -650,7 +650,7 @@ sequence:
   Black-leaf exits retain the exact deficit context and return
   the non-null fixup parent. Mutations reject skipped parent links, required
   parent/color writes, and incorrect fixup returns. The C is pinned; non-root
-  black-leaf/nonempty-child successors and deeper successors remain. The sidecars
+  nonempty-child successors and deeper successors remain. The sidecars
   import shared ownership resources and independently verified model theorems.
 - `examples/owned-vector/`: composite-resource example over vector metadata and
   dependent backing storage, including viewed reads, runtime-sized allocation,

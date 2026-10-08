@@ -726,14 +726,25 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
     }
 }
 
-# Exact red-successor replacement, retaining the erased node's parent and color.
-function rb_erase_immediate_red_model(tree: RbTree) -> RbTree {
+# Exact leaf-successor replacement, retaining the erased node's parent and color.
+function rb_erase_immediate_leaf_model(tree: RbTree) -> RbTree {
     match tree {
         RbTree::Empty => RbTree::Empty,
         RbTree::Node(node, parent, color, left, right) => match right {
             RbTree::Empty => RbTree::Empty,
             RbTree::Node(successor, sp, sc, sl, sr) =>
                 rb_successor_splice(successor, parent, color, left, right),
+        },
+    }
+}
+
+function rb_erase_immediate_black_context(tree: RbTree, up: Context) -> Context {
+    match tree {
+        RbTree::Empty => up,
+        RbTree::Node(node, parent, color, left, right) => match right {
+            RbTree::Empty => up,
+            RbTree::Node(successor, sp, sc, sl, sr) =>
+                rb_successor_context(successor, parent, color, left, right, up),
         },
     }
 }
