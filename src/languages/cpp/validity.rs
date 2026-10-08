@@ -236,9 +236,25 @@ impl Metadata<'_> {
             CppInitializer::Call {
                 callee,
                 arguments,
+                conversions,
                 span,
+            } => {
+                span.validate(self.logical_source)?;
+                self.callee(callee)?;
+                self.arguments(arguments)?;
+                for conversion in conversions {
+                    crate::instrumentation::record_deterministic_work(1);
+                    conversion.span.validate(self.logical_source)?;
+                    conversion
+                        .source_type
+                        .validate_aliases_in(self.alias_sources)?;
+                    conversion
+                        .value_type
+                        .validate_aliases_in(self.alias_sources)?;
+                }
+                Ok(())
             }
-            | CppInitializer::Constructor {
+            CppInitializer::Constructor {
                 callee,
                 arguments,
                 span,
