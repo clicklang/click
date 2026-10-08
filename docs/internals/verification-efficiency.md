@@ -357,9 +357,14 @@ charged to visible semantic output rather than hidden ambient state:
   forms. At 64 returns, 2,405 logical fact occurrences retain 197 distinct fact
   objects and 328 vector chunks. The kernel storage regression and context
   fork tests check order, arm isolation, metadata edits, and owner lifetime.
-  Terminal joins still assemble distinct flat outcome containers, and outcome
-  processing still traverses each logical fact stream; the bug report records
-  those remaining costs and the whole-work curves.
+  Terminal joins retain immutable candidate records, including their outcome
+  states and obligation payloads, and classify only newly introduced facts.
+  Candidate publication regressions vary record count and payload size
+  independently through 1,024; the terminal-branch regression checks retained
+  outcome identity beside up to 4,096 ambient facts. The joins still assemble
+  distinct flat outcome containers, and outcome processing still traverses
+  each logical fact stream; the bug report records those remaining costs and
+  the whole-work curves.
 
 ## Execution capacity follows selected syntax
 
@@ -792,6 +797,15 @@ Each sample also records deterministic work attributed to named verifier
 operations and tactic kinds. A failed growth curve must report those named
 curves so the aggregate regression points to the responsible checker or phase;
 wall-clock profiler attribution is corroboration, not the scaling authority.
+
+Exact repeated-sample comparisons must measure the named operation itself.
+`choose_projection_walk_is_deterministic_across_selected_body_sizes` measures
+visits and persistent-node allocations inside the selected-body walk at 8,
+32, 128, and 512 leaves. It checks one visit per selected conjunction node,
+identical walk allocations between repetitions, and linear walk growth.
+Proof setup and the checked choice's fact-index updates remain covered by
+separate whole-operation work and indexed-allocation bounds. Those updates
+must not enter an exact comparison of projection-walk allocations.
 
 The scaling suite should cover independent axes:
 
