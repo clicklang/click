@@ -312,6 +312,12 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         final_exit_candidates.extend(result.final_exit_candidates);
                         break_exits.extend(result.break_exits);
                         return_exits.extend(result.return_exits);
+                        if let Some(certificates) = environment.frontier_loop_certificates {
+                            certificates
+                                .borrow_mut()
+                                .returns
+                                .extend(result.return_proofs);
+                        }
                         preservation_path_certificates.push(PathCertificate {
                             case_path: context.case_path.clone(),
                             case_offsets: None,

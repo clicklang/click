@@ -151,9 +151,6 @@ fi
 # issue does:
 # - examples/multifile-registry does not verify; it is quarantined in
 #   tests/examples.rs (issues/static-state-caller-transport.md).
-# - mdtests/search_terminates_by_unmarked_count.md has a loop body `return`
-#   whose closing `simp` cannot be expanded by location
-#   (issues/loop-return-exit-is-closed-by-the-loops-tail.md).
 #
 # examples/basic-cpp is left out for a different reason: its import lock and
 # compilation database are generated per machine by the test harness and are
@@ -165,7 +162,6 @@ if [[ "${1:-}" == "--audit" ]]; then
     exec target/release/click audit --keep-going --time-limit 180m \
         --exclude examples/multifile-registry \
         --exclude examples/basic-cpp \
-        --exclude mdtests/search_terminates_by_unmarked_count.md \
         .
 fi
 
