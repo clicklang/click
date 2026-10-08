@@ -30,7 +30,7 @@ verifying "simp_reads_bounds_before_function_exit.c";
 int32 conjunction(int32 x) {
     requires x >= 0 and x <= 100;
     ensures result >= 0 by {
-        have x + 1 >= 1 by { simp(); }
+        have x + 1 >= 1;
         execute();
         simp();
     }
@@ -40,7 +40,7 @@ int32 separate(int32 x) {
     requires x >= 0;
     requires x <= 100;
     ensures result >= 0 by {
-        have x + 1 >= 1 by { simp(); }
+        have x + 1 >= 1;
         execute();
         simp();
     }
@@ -53,7 +53,7 @@ int32 in_arm(int32 x) {
             step();
             simp();
         } else {
-            have x + 1 >= 1 by { simp(); }
+            have x + 1 >= 1;
         }
         step();
         simp();

@@ -139,7 +139,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == at(before_mark, visited[k]) },
         forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == visited[k] }
     ) using { forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == at(before_mark, visited[k]) }; }
-    have viewable(visited[0..n]) by { simp(); }
+    have viewable(visited[0..n]);
     apply(unmarked_point_update(at(before_mark, visited), visited, 0, n, n, cur));
     apply(unmarked_nonnegative(visited, 0, n, n));
     have unmarked(visited, 0, n) < unmarked(at(before_mark, visited), 0, n) by {
@@ -166,7 +166,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     ) using { forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) }; }
 
     let left_result = step(dfs(left, right, visited, n, left[cur], to), {});
-    have 0 <= to and to < n implies visited[to] == old(visited[to]) by { simp(); }
+    have 0 <= to and to < n implies visited[to] == old(visited[to]);
     have visited[cur] != 0 by {
         instantiate(forall (k: int32) {
             0 <= k and k < n and at(after_mark, visited[k]) != 0 implies visited[k] != 0
@@ -207,12 +207,12 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
             }
         }
-        have 0 <= to and to < n and at(after_mark, visited[to]) == 0 by { simp(); }
+        have 0 <= to and to < n and at(after_mark, visited[to]) == 0;
         step();
         simp();
     } else {}
     observe(bounded_successors(left, right, n));
-    have viewable(visited[0..n]) by { simp(); }
+    have viewable(visited[0..n]);
     apply(unmarked_nonnegative(visited, 0, n, n));
     have unmarked(visited, 0, n) < old(unmarked(visited, 0, n)) by {
         arithmetic() using {
@@ -234,8 +234,8 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
             at(before_right, visited[at(after_mark, left[k])]) != 0 and at(before_right, visited[at(after_mark, right[k])]) != 0
     } by { simp(); }
-    have at(after_mark, left[cur]) == old(left[cur]) by { simp(); }
-    have at(before_right, visited[at(after_mark, left[cur])]) != 0 by { simp(); }
+    have at(after_mark, left[cur]) == old(left[cur]);
+    have at(before_right, visited[at(after_mark, left[cur])]) != 0;
 
     transport(
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) },
@@ -295,7 +295,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to;
             }
         }
-        have 0 <= to and to < n and at(before_right, visited[to]) == 0 by { simp(); }
+        have 0 <= to and to < n and at(before_right, visited[to]) == 0;
         have old(visited[to]) == 0 by {
             if old(visited[to]) != 0 {
                 instantiate(forall (k: int32) {
@@ -312,7 +312,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies
                 visited[at(before_right, left[k])] != 0 and visited[at(before_right, right[k])] != 0
         } by { simp(); }
-        have visited[at(before_right, right[cur])] != 0 by { simp(); }
+        have visited[at(before_right, right[cur])] != 0;
         transport(
             forall (k: int32) {
                 0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies

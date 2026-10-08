@@ -17,11 +17,11 @@ void independent() { ensures 1 == 1; } by {
     fold(authority(slot(&right, _)));
     fold(slot(&left, &member));
     fold(slot(&right, &member));
-    have count(slot(&left, _)) == 1 by simp;
-    have count(slot(&right, _)) == 1 by simp;
+    have count(slot(&left, _)) == 1;
+    have count(slot(&right, _)) == 1;
     unfold(slot(&left, &member));
-    have count(slot(&left, _)) == 0 by simp;
-    have count(slot(&right, _)) == 1 by simp;
+    have count(slot(&left, _)) == 0;
+    have count(slot(&right, _)) == 1;
     unfold(authority(slot(&left, _)));
     unfold(slot(&right, &member));
     unfold(authority(slot(&right, _)));

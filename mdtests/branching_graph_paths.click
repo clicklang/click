@@ -163,9 +163,9 @@ theorem exhausted_zero_entry(left: int32[], right: int32[], before: int32[], aft
             instantiate(forall (k: int32) { 0 <= k and k < n and before[k] == 0 and after[k] != 0 implies after[left[k]] != 0 and after[right[k]] != 0 }, k) using { 0 <= k; k < n; before[k] == 0; after[k] != 0; }
             have k != to by {
                 if k == to {
-                    have 0 <= to by { simp(); }
-                    have to < n by { simp(); }
-                    have 0 <= to and to < n by { assumption(); }
+                    have 0 <= to;
+                    have to < n;
+                    have 0 <= to and to < n by assumption();
                     extract(after[to] == before[to]);
                     have before[to] == 0 by {
                         instantiate(forall (k: int32) { 0 <= k and k < n implies before[k] == 0 }, to) using { 0 <= to; to < n; }

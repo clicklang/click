@@ -42,7 +42,7 @@ uint32 twice() {
     ensures counter_file::increment::calls == (old(counter_file::increment::calls) + 1u32) + 1u32;
 } by {
     step();
-    have counter_file::increment::calls == old(counter_file::increment::calls) + 1u32 by simp;
+    have counter_file::increment::calls == old(counter_file::increment::calls) + 1u32;
     execute();
     simp();
 }
@@ -51,10 +51,10 @@ int main() {
     ensures counter_file::other::calls == 21u32;
     ensures counter_file::calls == 99u32;
 } by {
-    have counter_file::increment::calls == 5u32 by simp;
-    have counter_file::other::calls == 20u32 by simp;
+    have counter_file::increment::calls == 5u32;
+    have counter_file::other::calls == 20u32;
     step();
-    have counter_file::increment::calls == 7u32 by simp;
+    have counter_file::increment::calls == 7u32;
     execute();
     simp();
 }

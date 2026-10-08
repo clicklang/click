@@ -25,18 +25,18 @@ int32 update(int32* pool, int32* p) {
     owns slot(pool, p);
     ensures result == 7;
     ensures p[0] == 7;
-} by { open(slot(pool, p)) { step(); have 0 <= p[0] by simp; } execute(); simp(); }
+} by { open(slot(pool, p)) { step(); have 0 <= p[0]; } execute(); simp(); }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
     branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
-    have 0 <= p[0] by simp;
-    have 0 <= p[1] by simp;
+    have 0 <= p[0];
+    have 0 <= p[1];
     fold(slot(&pool, p));
     fold(slot(&pool, p + 1));
     step();
-    have count(slot(&pool, _)) == 2 by simp;
+    have count(slot(&pool, _)) == 2;
     open(slot(&pool, p)) {
         open(slot(&pool, p + 1)) { step(); step(); }
     }

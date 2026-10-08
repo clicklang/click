@@ -16,8 +16,8 @@ theorem lift(callback: int32 (*)(int32*, int32)) executes callback(int32* cell, 
     requires Exchange(callback);
     ensures Buffered(callback) by {
         unfold(Cell(cell)); step(Exchange);
-        have result == old(cell[0]) by { assumption(); }
-        have cell[0] == item by { assumption(); }
+        have result == old(cell[0]) by assumption();
+        have cell[0] == item by assumption();
         fold(Cell(cell)); simp();
     }
 }

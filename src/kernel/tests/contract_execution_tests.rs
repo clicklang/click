@@ -4,6 +4,7 @@
 use super::*;
 use crate::kernel::LoanRefusalCategory;
 use crate::surface::planning::proposition_search::PropositionSearch;
+use std::sync::Arc;
 
 /// A completed frontier fork must share all sibling data, independently of
 /// the number of paths or facts stored on each path.
@@ -69,6 +70,182 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
             "sharing must preserve complete candidate equality"
         );
     }
+}
+
+/// Distinct frontier publications keep the same candidate records, not merely
+/// the same underlying facts. Vary record count and payload size separately.
+#[test]
+fn terminal_candidate_publications_retain_records_and_payloads() {
+    for (path_count, payload_size) in [(8, 8), (32, 8), (128, 8), (8, 128), (8, 1024)] {
+        let function = c_function(
+            CType::Int32,
+            "retained_candidates",
+            vec![],
+            c_return(c_int32_literal(0)),
+        );
+        let proposition = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(970_000)),
+                Bitvector32Term::Constant(0),
+            ),
+            true,
+        );
+        let obligations = vec![ProofObligation::new(proposition.clone()); payload_size];
+        let original = c_function_execution_candidates_from_outcomes(
+            CState::new(),
+            function,
+            vec![],
+            (0..path_count)
+                .map(|index| {
+                    (
+                        CFunctionOutcome::Return {
+                            value: int32(index as u32),
+                            state: Box::new(CState::new()),
+                        },
+                        vec![ExecutionPureFact::new(proposition.clone()); payload_size],
+                        obligations.clone(),
+                    )
+                })
+                .collect(),
+        );
+        let mut publications = Vec::new();
+        for prefix in 1..=path_count {
+            let retained = original.paths()[..prefix]
+                .iter()
+                .map(|path| {
+                    c_function_execution_candidate_with_additional_facts(
+                        path,
+                        &ExecutionFacts::new(),
+                    )
+                })
+                .collect();
+            let publication = c_function_execution_candidates_from_retained_paths(
+                CState::new(),
+                original.function().clone(),
+                vec![],
+                retained,
+            );
+            for (source, target) in original.paths().iter().zip(publication.paths()) {
+                assert!(Arc::ptr_eq(&source.data, &target.data));
+                assert!(std::ptr::eq(source.outcome(), target.outcome()));
+                assert!(std::ptr::eq(source.obligations(), target.obligations()));
+            }
+            publications.push(publication);
+        }
+        let records = publications
+            .iter()
+            .flat_map(|publication| publication.paths())
+            .map(|path| Arc::as_ptr(&path.data) as usize)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(records.len(), path_count);
+        drop(original);
+        assert_eq!(publications.last().unwrap().paths().len(), path_count);
+        assert_eq!(
+            publications.last().unwrap().paths()[0].obligations().len(),
+            payload_size
+        );
+    }
+}
+
+#[test]
+fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
+    let state = CState::new();
+    let public = ExecutionPureFact::certified(Proposition::ConditionIs(
+        ConditionTerm::equal(
+            Bitvector32Term::Variable(Variable(971_000)),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    ));
+    let effect = ExecutionPureFact::internal(Proposition::CMemoryMutatesOnly {
+        before: state.memory().clone(),
+        after: state.memory().clone(),
+        writes: vec![],
+    });
+    let original = c_function_execution_candidates_from_outcomes_with_loan_evidence(
+        state.clone(),
+        c_function(
+            CType::Int32,
+            "extended_candidate",
+            vec![],
+            c_return(c_int32_literal(0)),
+        ),
+        vec![],
+        vec![(
+            CFunctionOutcome::Return {
+                value: int32(0),
+                state: Box::new(state),
+            },
+            [public.clone(), effect.clone()].into(),
+            vec![ProofObligation::new(public.proposition().clone())],
+            crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        )],
+    );
+    let source = &original.paths()[0];
+    let new_public = ExecutionPureFact::new(Proposition::ConditionIs(
+        ConditionTerm::equal(
+            Bitvector32Term::Variable(Variable(971_001)),
+            Bitvector32Term::Constant(1),
+        ),
+        false,
+    ));
+    let private = ExecutionPureFact::internal(new_public.proposition().clone());
+    let public_effect = ExecutionPureFact::certified(effect.proposition().clone());
+    for additional in [
+        [new_public.clone(), private.clone()].into(),
+        [new_public.clone(), private, public_effect.clone()].into(),
+    ] {
+        let extended = c_function_execution_candidate_with_additional_facts(source, &additional);
+        assert!(std::ptr::eq(source.outcome(), extended.outcome()));
+        assert!(std::ptr::eq(source.obligations(), extended.obligations()));
+        assert!(std::ptr::eq(&source.facts()[0], &extended.facts()[0]));
+        assert_eq!(source.facts().len(), 1);
+        assert_eq!(extended.facts()[1], new_public);
+        assert!(extended.facts()[0].is_certified());
+        let mut combined = source.execution_facts();
+        combined.extend_shared(&additional);
+        let rebuilt = c_function_execution_candidates_from_outcomes_with_loan_evidence(
+            original.state().clone(),
+            original.function().clone(),
+            original.arguments().to_vec(),
+            vec![(
+                source.outcome().clone(),
+                combined,
+                source.obligations().to_vec(),
+                source.loan_evidence().clone(),
+            )],
+        );
+        assert_eq!(
+            &extended,
+            &rebuilt.paths()[0],
+            "retention preserves the original classification and ordering"
+        );
+        let republished =
+            c_function_execution_candidate_with_additional_facts(&extended, &ExecutionFacts::new());
+        let rebuilt_again = c_function_execution_candidates_from_outcomes_with_loan_evidence(
+            original.state().clone(),
+            original.function().clone(),
+            original.arguments().to_vec(),
+            vec![(
+                extended.outcome().clone(),
+                extended.execution_facts(),
+                extended.obligations().to_vec(),
+                extended.loan_evidence().clone(),
+            )],
+        );
+        assert_eq!(&republished, &rebuilt_again.paths()[0]);
+        assert!(std::ptr::eq(extended.outcome(), republished.outcome()));
+        let retained_private = extended
+            .effect_facts()
+            .iter()
+            .find(|fact| !fact.is_public())
+            .unwrap();
+        assert!(std::ptr::eq(&source.effect_facts()[0], retained_private));
+    }
+    let extended =
+        c_function_execution_candidate_with_additional_facts(source, &[public_effect].into());
+    drop(original);
+    assert_eq!(extended.obligations().len(), 1);
 }
 
 /// Each returned path reads its guards, but stores only its own suffix.

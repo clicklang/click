@@ -32,7 +32,7 @@ int32 count_to_bound(int32 n) {
         execute();
         simp();
     } else {
-        have n >= 0 by simp;
+        have n >= 0;
         loop {
             decreases n - i;
             invariant 0 <= i and i <= n;

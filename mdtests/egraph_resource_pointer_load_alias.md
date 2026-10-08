@@ -31,9 +31,9 @@ void check(struct node* p) {
     match c.model {
         Cell::At(id) => {
             unfold(c);
-            have p == id by { simp(); }
-            have &p->next == &id->next by { simp(); }
-            have p->next == id->next by { simp(); }
+            have p == id;
+            have &p->next == &id->next;
+            have p->next == id->next;
             execute();
             simp();
         },

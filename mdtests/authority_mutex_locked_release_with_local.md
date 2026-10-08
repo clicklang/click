@@ -67,7 +67,7 @@ int32 run() {
     step(release(obj), { access: lifetime });
     step(pthread_mutex_destroy(&obj->mu), { lifetime: lifetime });
     unfold(control);
-    have count(reference(obj)) == 0 by simp;
+    have count(reference(obj)) == 0;
     unfold(authority(reference(obj)));
     step();
     step();

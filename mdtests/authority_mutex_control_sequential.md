@@ -41,7 +41,7 @@ int32 run() {
     unfold(control);
     step();
     fold(reference(obj));
-    have count(reference(obj)) == 1 by simp;
+    have count(reference(obj)) == 1;
     let control = fold(control(obj), { refs: 1 });
     unfold(control);
     unfold(reference(obj));

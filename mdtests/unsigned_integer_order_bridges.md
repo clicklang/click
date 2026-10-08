@@ -18,8 +18,8 @@ theorem reflect(left: uint32, right: uint32) {
     }
 }
 theorem observed_range(value: uint32) {
-    ensures 0 <= to_integer(value) by { apply(uint32_to_integer_bounds(value)); }
-    ensures to_integer(value) <= 4294967295 by { apply(uint32_to_integer_bounds(value)); }
+    ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
+    ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
 }
 theorem full_width() {
     ensures to_integer(2147483648u32) == 2147483648 by simp;

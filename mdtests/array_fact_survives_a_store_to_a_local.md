@@ -28,15 +28,15 @@ void bump(int32 a[], int32 n) {
 } by {
     step();
     step();
-    have a[0] == 5 by { simp(); }
-    have 0 <= 0 by { simp(); }
+    have a[0] == 5;
+    have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
     }
     step();
-    have a[0] == 5 by { simp(); }
-    have icount(a, 0, 0) == 0 by { simp(); }
+    have a[0] == 5;
+    have icount(a, 0, 0) == 0;
     execute();
     simp();
 }

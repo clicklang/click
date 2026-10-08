@@ -83,7 +83,7 @@ void bump_n(struct cell* node, int32 n) {
         preserve by {
             match l.model {
                 CellList::Nil => {
-                    have n >= 0 by { simp(); }
+                    have n >= 0;
                     contradiction(l.model == CellList::Nil);
                 },
                 CellList::Cons(identity, value, tail_model) => {

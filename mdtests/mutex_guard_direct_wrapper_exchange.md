@@ -43,7 +43,7 @@ void inner(struct counter *counter) {
     owns h: holding(counter);
 } by {
     unfold(h);
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     fold(h);
     execute();
     simp();
@@ -55,7 +55,7 @@ void keep(struct counter *counter) {
     let packaged = fold(holding(counter), { tag: 0 });
     step(inner(counter), { h: packaged });
     unfold(packaged);
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     step();
     simp();
 }

@@ -40,7 +40,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
             }
             simp();
         } else {
-            have lo < hi by { simp(); }
+            have lo < hi;
             have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
             have lo <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
@@ -52,8 +52,8 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
             have hi - lo <= 1073741823 by {
                 arithmetic() using { 0 <= lo; lo < hi; hi <= 1073741823; }
             }
-            have viewable(v[lo..hi - 1]) by { simp(); }
-            have hi - 1 >= 0 and viewable(v[lo..hi - 1]) by { assumption(); }
+            have viewable(v[lo..hi - 1]);
+            have hi - 1 >= 0 and viewable(v[lo..hi - 1]) by assumption();
             have 0 <= hi - 1 - lo by {
                 arithmetic() using { 0 <= lo; lo < hi; hi <= 1073741823; }
             }

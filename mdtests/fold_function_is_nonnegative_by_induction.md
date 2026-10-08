@@ -28,7 +28,7 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
             }
             simp();
         } else {
-            have lo < hi by { simp(); }
+            have lo < hi;
             have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
             apply(ih(hi - 1)) using {

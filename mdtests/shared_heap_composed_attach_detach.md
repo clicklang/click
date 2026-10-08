@@ -98,7 +98,7 @@ void child_release(struct child* obj) {
 } by {
     unfold(child_control(obj));
     unfold(child_ref(obj));
-    have 1 < obj->refs by { simp(); }
+    have 1 < obj->refs;
     have obj->refs - 1 >= 1 by {
         apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
             1 < obj->refs;

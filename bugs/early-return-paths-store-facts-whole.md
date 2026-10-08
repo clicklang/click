@@ -245,6 +245,26 @@ Retained guards follow source order rather than the former terminal joins'
 inner-to-outer append order. One negative fixture updates its expected case
 list to that order; its C, proof, and expected rejection are unchanged.
 
+### Retained terminal candidate records
+
+Terminal joins now retain each arm's immutable candidate record instead of
+copying its outcome state and obligations and re-classifying its complete
+fact stream. New arm facts are classified as a suffix; unchanged public and
+private effect streams remain shared. Re-publication preserves the former
+public-then-private effect order; when it needs normalization, it partitions
+only the effect stream instead of re-reading every guard fact. Deduplication
+borrows the original outcome and obligation payloads while preserving its structural key,
+loan-evidence check, and loop-return identity check. Candidates still carry no
+theorem and require the same independent trace and contract checks.
+
+A publication regression varies path counts through 128 and payload sizes
+through 1,024. All prefix publications together retain exactly one record per
+original path, rather than one new record per occurrence, and remain usable
+after their original owner is dropped. A suffix regression preserves existing
+certification metadata, outcome and obligation identity, classification,
+ordering, and the original frontier. The actual terminal-branch regression
+checks retained outcome identity beside 16 through 4,096 unrelated facts.
+
 Remaining: terminal joins rebuild distinct outcome containers, and outcome
 processing still reads each logical path's facts. Shared storage does not
 remove those per-outcome traversals or promise that every publication phase

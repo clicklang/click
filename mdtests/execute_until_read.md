@@ -23,7 +23,7 @@ int32 loaded(const uint8* p) {
 } by {
     execute_until(read(0));
     step();
-    have 0 <= x and x <= 255 by { simp(); }
+    have 0 <= x and x <= 255;
     execute(); simp();
 }
 ```

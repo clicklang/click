@@ -41,8 +41,8 @@ int32 later_loop_preserve() {
             simp();
         }
     }
-    have i == 1 by simp;
-    have j == 1 by simp;
+    have i == 1;
+    have j == 1;
     step();
     simp();
 }

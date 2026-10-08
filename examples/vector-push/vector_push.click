@@ -28,7 +28,7 @@ int32 vector_push(struct vector* owner, int32 value) {
     have owner->len <= owner->len by {
         normalize();
     }
-    have owner->len < owner->len + 1 by simp;
+    have owner->len < owner->len + 1;
     step();
     step();
     step();
@@ -47,7 +47,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             at(statement(5).entry, owner->len) < at(statement(5).entry, owner->cap);
         }
     }
-    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
+    have separate(memory(*owner), memory(owner->data[0..owner->cap]));
     fold(nonempty_vector(owner));
     have at(statement(5).entry, owner->len) <= at(statement(5).entry, owner->len) by {
         normalize();

@@ -142,7 +142,7 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            have old(p->kid) == kid by simp;
+            have old(p->kid) == kid;
             if p->kid->refs > 1 {
                 execute();
                 simp();
@@ -169,7 +169,7 @@ int32 caller(struct child* kid) {
         simp();
     } else {}
     let { link: link } = step(parent_attach(p, kid), {});
-    have count(child_ref(kid)) == 2 by { simp(); }
+    have count(child_ref(kid)) == 2;
     step(child_release(kid), {});
     step(parent_detach(p), { link: link });
     step();

@@ -33,8 +33,8 @@ theorem two_witnesses_reach_a_contradiction(x: int32) {
     ensures 0 == 1 by {
         obtain (k: int32) { k > x }
         obtain (m: int32) { m < x }
-        have k > x by { assumption(); }
-        have m < x by { assumption(); }
+        have k > x by assumption();
+        have m < x by assumption();
         instantiate(forall (j: int32) { j > x implies j <= x }, k) using { k > x; }
         contradiction(k > x);
     }

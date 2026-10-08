@@ -39,8 +39,8 @@ int spin(int n) {
         invariant i <= n;
 
         initialize by {
-            have i >= 0 by simp;
-            have i <= n by simp;
+            have i >= 0;
+            have i <= n;
             assumption();
         }
         preserve by simp;

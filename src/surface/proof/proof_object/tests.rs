@@ -9471,6 +9471,7 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             &click_functions,
             &theorems,
         );
+        CHOSEN_PROJECTION_WALK_WORK.with(|count| count.set((0, 0)));
         let chosen = root
             .apply_step(ProofStep::Choose(ProofChoice {
                 name: "candidate".to_string(),
@@ -9481,7 +9482,11 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             .execution()
             .and_then(|execution| execution.presentation.chosen_projection.as_ref())
             .map_or(0, |projection| projection.leaves.len());
-        (leaves, fact_node_allocations() - before)
+        (
+            leaves,
+            CHOSEN_PROJECTION_WALK_WORK.with(std::cell::Cell::get),
+            fact_node_allocations() - before,
+        )
     };
 
     let mut samples = Vec::new();
@@ -9497,17 +9502,38 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             first.0.0, size as usize,
             "all selected leaves must be retained at {size}"
         );
+        // Fact indexing and proof setup are outside the projection walk.
+        // Their AVL shapes can differ between identical semantic samples:
+        // a phased reproduction had totals 3047/3049 at 32 leaves, while
+        // setup used 6 nodes and the walk used 96 nodes in both runs.
         assert_eq!(
             first.0.1, second.0.1,
-            "walk allocation work must be deterministic at {size}"
+            "projection visits and allocations must be deterministic at {size}"
         );
-        samples.push((size, first.1));
+        assert_eq!(
+            first.0.1.0,
+            (2 * size - 1) as usize,
+            "the walk must visit each selected conjunction node once"
+        );
+        samples.push((size, first.1, first.0.1.1, first.0.2));
+        samples.push((size, second.1, second.0.1.1, second.0.2));
     }
-    let (base_size, base_work) = samples[0];
-    for (size, work) in samples {
+    let (base_size, base_work, base_walk_allocations, _) = samples[0];
+    for (size, work, walk_allocations, total_allocations) in samples {
         assert!(
             work <= base_work + 64 * (size - base_size) as usize,
             "selected-body projection work exceeded the linear bound at {size}: {work}"
+        );
+        assert!(
+            walk_allocations <= base_walk_allocations + 8 * (size - base_size) as usize,
+            "projection walk allocations exceeded the linear bound at {size}: {walk_allocations}"
+        );
+        // The complete choose also updates persistent fact indexes; their
+        // logarithmic search paths have a separate size-dependent bound.
+        let index_height = (u32::BITS - size.leading_zeros()) as usize;
+        assert!(
+            total_allocations <= 32 * size as usize * index_height,
+            "proof setup and choose allocations exceeded the indexed bound at {size}: {total_allocations}"
         );
     }
 }
@@ -13775,6 +13801,19 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             .apply_step(ProofStep::Step)
             .expect("else return should check");
         assert!(advanced.split_arms_at_function_exit(&record));
+        let arm_candidates = [true, false].map(|value| {
+            let arm = advanced
+                .focus_split_arm(&record, value)
+                .expect("completed arm remains accessible");
+            arm.execution()
+                .unwrap()
+                .core
+                .frontier
+                .execution()
+                .unwrap()
+                .paths()[0]
+                .clone()
+        });
         let before = fact_node_allocations();
         let joined = advanced
             .join_focused_execution_terminal(&record)
@@ -13811,6 +13850,17 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             .expect("terminal join should retain outcomes")
             .paths();
         assert_eq!(outcome_paths.len(), 2);
+        for (arm, retained) in arm_candidates.iter().zip(outcome_paths) {
+            assert!(
+                std::ptr::eq(arm.outcome(), retained.outcome()),
+                "terminal joins retain the arm's outcome state without copying it"
+            );
+            assert!(
+                std::ptr::eq(arm.obligations(), retained.obligations()),
+                "terminal joins retain the arm's obligation payload"
+            );
+        }
+
         assert_eq!(
             execution.presentation.outcome_provenance.len(),
             outcome_paths.len(),

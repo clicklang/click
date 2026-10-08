@@ -85,7 +85,7 @@ unsigned long peek_at_the_local(struct node* p) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(id, color, left_model) => {
             let { left: l } = unfold(t);
-            have (p->word & 1) == color_bit(color) by { simp(); }
+            have (p->word & 1) == color_bit(color);
             step();
             let t = fold(tree_at(p), { model: Tree::Node(id, color, left_model) },
                 { left: l });
@@ -103,7 +103,7 @@ unsigned long peek_at_the_binding(struct node* p) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(id, color, left_model) => {
             let { left: l } = unfold(t);
-            have (id->word & 1) == color_bit(color) by { simp(); }
+            have (id->word & 1) == color_bit(color);
             step();
             let t = fold(tree_at(p), { model: Tree::Node(id, color, left_model) },
                 { left: l });
@@ -138,7 +138,7 @@ unsigned long spin_over_the_binding(struct node* p, int32 n) {
                             t.model == old(t.model); }
                     }
                     let { left: l } = unfold(t);
-                    have (id->word & 1) == color_bit(color) by { simp(); }
+                    have (id->word & 1) == color_bit(color);
                     step();
                     let t = fold(tree_at(p), { model: Tree::Node(id, color, left_model) },
                         { left: l });

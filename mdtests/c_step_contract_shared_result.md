@@ -30,8 +30,8 @@ int32 invoke(int32 (*callback)(int32*, int32), int32* cell, int32 x) {
 } by {
     step(Buffered);
     execute();
-    have result <= x by { assumption(); }
-    have x <= result by { simp(); }
+    have result <= x by assumption();
+    have x <= result;
     apply(int32_le_antisymmetric(result, x));
     simp();
 }

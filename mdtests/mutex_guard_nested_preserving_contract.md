@@ -43,7 +43,7 @@ void inner(struct counter *counter) {
     owns h: holding(counter);
 } by {
     unfold(h);
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     fold(h);
     execute();
     simp();
@@ -53,11 +53,11 @@ void keep(struct counter *counter) {
     owns h: holding(counter);
 } by {
     unfold(h);
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     fold(h);
     step(inner(counter), { h: h });
     unfold(h);
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     fold(h);
     step();
     simp();

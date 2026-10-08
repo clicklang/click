@@ -10,10 +10,10 @@ theorem integer_contextual_literals(x: Integer) {
     ensures (1 + 2) + z == z + (1 + 2) by {
         simp();
     }
-    ensures int64_boundary == 2147483648 by { simp(); }
-    ensures negative_int64_boundary == -2147483649 by { simp(); }
-    ensures wide_unsigned == 4294967296 by { simp(); }
-    ensures u64_boundary == 18446744073709551615 by { simp(); }
+    ensures int64_boundary == 2147483648 by simp;
+    ensures negative_int64_boundary == -2147483649 by simp;
+    ensures wide_unsigned == 4294967296 by simp;
+    ensures u64_boundary == 18446744073709551615 by simp;
 }
 ```
 

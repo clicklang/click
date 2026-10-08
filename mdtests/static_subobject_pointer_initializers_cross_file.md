@@ -62,9 +62,9 @@ int32 run() {
     requires storage_file::middle[0] == 6 and storage_file::timeout_pointer[0] == 0 and storage_file::byte_pointer[0] == 0;
     ensures result == 6;
 } by {
-    have storage_file::middle[0] == 6 by simp;
-    have storage_file::timeout_pointer[0] == 0 by simp;
-    have storage_file::byte_pointer[0] == 0 by simp;
+    have storage_file::middle[0] == 6;
+    have storage_file::timeout_pointer[0] == 0;
+    have storage_file::byte_pointer[0] == 0;
     step();
     step();
     simp();

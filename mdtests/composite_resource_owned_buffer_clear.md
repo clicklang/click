@@ -38,10 +38,10 @@ int32 buffer_clear(struct owner* owner) {
 } by {
     unfold(owned_buffer(owner));
     execute();
-    have 0 <= owner->len by simp;
-    have owner->len <= owner->cap by simp;
-    have 0 <= owner->cap by simp;
-    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
+    have 0 <= owner->len;
+    have owner->len <= owner->cap;
+    have 0 <= owner->cap;
+    have separate(memory(*owner), memory(owner->data[0..owner->cap]));
     fold(owned_buffer(owner));
     simp();
 }

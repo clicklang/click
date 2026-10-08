@@ -73,7 +73,7 @@ int32 keep_flag(struct cell* node, int32* flag, int32 n) {
 } by {
     step();
     step();
-    have flag[0] == 5 by simp;
+    have flag[0] == 5;
     mark pre;
     step();
     loop {
@@ -111,7 +111,7 @@ int32 keep_flag(struct cell* node, int32* flag, int32 n) {
             flag[0] == at(pre, flag[0])
         ) using { }
     }
-    have at(pre, flag[0]) == 5 by simp;
+    have at(pre, flag[0]) == 5;
     have flag[0] == 5 by {
         rewrite(flag[0] == at(pre, flag[0]));
         assumption();

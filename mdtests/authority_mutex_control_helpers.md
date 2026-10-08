@@ -82,7 +82,7 @@ int32 run() {
     step(release(obj), { access: lifetime, guard: first, state: retained });
     let { guard: second, state: reentered } = step(acquire(obj), { access: lifetime });
     unfold(reentered);
-    have count(reference(obj)) == 1 by simp;
+    have count(reference(obj)) == 1;
     unfold(reference(obj));
     step();
     let released = fold(control(obj), { refs: 0 });

@@ -36,10 +36,10 @@ int32 run() { ensures result == 0 or result == 9; } by {
     let second = fold(ticket(&pool, p + 1), { serial: 2 });
     fold(control(&pool));
     step(bump(&pool, p), { member: first });
-    have first.serial == 1 by simp;
-    have second.serial == 2 by simp;
+    have first.serial == 1;
+    have second.serial == 2;
     unfold(control(&pool));
-    have count(ticket(&pool, _)) == 2 by simp;
+    have count(ticket(&pool, _)) == 2;
     unfold(first); unfold(second);
     unfold(authority(ticket(&pool, _)));
     execute(); simp();

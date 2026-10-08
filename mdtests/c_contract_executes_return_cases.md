@@ -8,11 +8,11 @@ theorem lift(callback: int32 (*)(int32)) executes callback(int32 value) {
     ensures Target(callback) by {
         if value == 0 {
             step(Raw);
-            have result == 0 by { simp(); }
+            have result == 0;
             simp();
         } else {
             step(Raw);
-            have result == value by { assumption(); }
+            have result == value by assumption();
             simp();
         }
     }

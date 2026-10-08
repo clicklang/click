@@ -48,13 +48,13 @@ theorem use_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Intege
     requires bound <= q; requires bound * d <= n;
     requires n == q * d + r;
     requires r < 0;
-    ensures bound + 1 <= q by { apply(integer_lower_correction_bound(n, d, q, r, bound)); }
+    ensures bound + 1 <= q by apply(integer_lower_correction_bound(n, d, q, r, bound));
 }
 theorem use_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, bound: Integer) {
     requires q <= bound; requires n <= bound * d;
     requires n == q * d + r;
     requires 0 < r;
-    ensures q <= bound + -1 by { apply(integer_upper_correction_bound(n, d, q, r, bound)); }
+    ensures q <= bound + -1 by apply(integer_upper_correction_bound(n, d, q, r, bound));
 }
 ```
 

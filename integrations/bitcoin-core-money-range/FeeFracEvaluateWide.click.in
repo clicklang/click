@@ -37,11 +37,11 @@ int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_
     step();
     let rounded = step(FeeFrac_Div(product, denominator, @ROUND@), { });
     execute();
-    have @DIV_BOUND_1@ by { simp(); }
-    have @DIV_BOUND_2@ by { simp(); }
-    have to_integer(result) == to_integer(rounded) by { simp(); }
-    have to_integer(self->fee) * to_integer(at_size) == to_integer(product) by { simp(); }
-    have to_integer(self->size) == to_integer(denominator) by { simp(); }
+    have @DIV_BOUND_1@;
+    have @DIV_BOUND_2@;
+    have to_integer(result) == to_integer(rounded);
+    have to_integer(self->fee) * to_integer(at_size) == to_integer(product);
+    have to_integer(self->size) == to_integer(denominator);
     have @CALLER_BOUND_1@ by {
         rewrite(to_integer(result) == to_integer(rounded));
         rewrite(to_integer(self->size) == to_integer(denominator));

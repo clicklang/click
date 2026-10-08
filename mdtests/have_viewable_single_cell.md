@@ -30,7 +30,7 @@ int32 last_of_range(int32 *p, int32 lo, int32 hi) {
         have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; } }
         have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
         have 0 <= hi - lo by { arithmetic() using { 0 <= lo; lo < hi; } }
-        have viewable(p[hi - 1..hi - 1 + 1]) by { simp(); }
+        have viewable(p[hi - 1..hi - 1 + 1]);
         step();
         simp();
     }

@@ -27,7 +27,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     ensures zeros(v, lo, hi) == old(zeros(v, lo, hi));
 } by {
     mark entry;
-    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by { normalize(); }
+    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by normalize();
     step();
     have zeros(at(entry, v), lo, hi) == zeros(v, lo, hi) by {
         transport(

@@ -37,7 +37,7 @@ int32 equal_reads(struct node* a, struct node* b, struct node* c,
     } else {}
     branch then { step(); simp(); } else {}
     branch then { step(); simp(); } else {}
-    have x == y by { simp(); }
+    have x == y;
     step();
     simp();
 }

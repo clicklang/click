@@ -59,7 +59,7 @@ void inline_reader(struct box* b) {
 } by {
     step();
     step();
-    have first->word == 4294967296 by { simp(); }
+    have first->word == 4294967296;
     execute();
     simp();
 }
@@ -72,7 +72,7 @@ void ordinary_reader(struct box* b) {
 } by {
     step();
     step();
-    have first->word == 4294967296 by { simp(); }
+    have first->word == 4294967296;
     execute();
     simp();
 }

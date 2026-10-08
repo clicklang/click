@@ -36,11 +36,11 @@ int32 run() { ensures result == 0 or result == 9; } by {
     let second = fold(ticket(&pool, p + 1), { model: List<int32>::Cons(2, List<int32>::Nil) });
     fold(control(&pool));
     step(bump(&pool, p), { member: first });
-    have first.model == List<int32>::Cons(1, List<int32>::Nil) by simp;
-    have second.model == List<int32>::Cons(2, List<int32>::Nil) by simp;
+    have first.model == List<int32>::Cons(1, List<int32>::Nil);
+    have second.model == List<int32>::Cons(2, List<int32>::Nil);
     unfold(control(&pool));
-    have count(ticket(&pool, _)) == 2 by simp;
-    have count(ticket(&pool, p)) == 1 by simp;
+    have count(ticket(&pool, _)) == 2;
+    have count(ticket(&pool, p)) == 1;
     unfold(first); unfold(second);
     unfold(authority(ticket(&pool, _)));
     execute(); simp();

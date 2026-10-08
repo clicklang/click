@@ -247,7 +247,7 @@ int32 parent_read_payload(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            have old(p->kid) == kid by { simp(); }
+            have old(p->kid) == kid;
             open(child_control(p->kid)) { execute(); }
             let link = fold(parent(p), { link: ParentLink::Linked(kid) });
             simp();
@@ -273,7 +273,7 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            have old(p->kid) == kid by simp;
+            have old(p->kid) == kid;
             step();
             if kid->refs > 1 {
                 execute();
