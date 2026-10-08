@@ -2625,6 +2625,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
             ) {
                 return Err(CRuntimeError::LoanRefusal(Box::new(refusal)));
             }
+            retire_automatic_storage_owner(&mut state, &range);
             memory = memory.without_local_block(&slot.block);
             state.retire_population_storage(&slot.block)?;
             retired = true;
@@ -4014,6 +4015,7 @@ fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, 
         ) {
             return Err(CRuntimeError::LoanRefusal(Box::new(refusal)));
         }
+        retire_automatic_storage_owner(state, &old_range);
         state.set_memory(state.memory.without_local_block(&previous.block));
         return Ok(fresh_local_object_identity(state, name));
     }
@@ -4024,6 +4026,21 @@ fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, 
         return Ok(fresh_local_object_identity(state, name));
     }
     Ok(unnumbered)
+}
+
+/// Construction authority belongs to the automatic object being retired.
+/// Consume its complete byte owner through the indexed supplier frontier;
+/// ordinary locals with implicit authority have no such fact to consume.
+/// Live loans and protocol reservations must be checked before calling this.
+fn retire_automatic_storage_owner(state: &mut CState, range: &CMemoryRange) {
+    let owner = CResourceFact::own_memory(range.clone());
+    if let Some(resources) = state
+        .resources
+        .clone()
+        .without_fact_incrementally(&owner, &PureFactContext::default())
+    {
+        state.resources = resources;
+    }
 }
 
 /// Takes the next unused generation of `name`'s automatic object.
