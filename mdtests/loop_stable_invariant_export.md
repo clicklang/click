@@ -41,7 +41,7 @@ int32 fill_tail(int32 p[], int32 n, int32 untouched[]) {
         preserve by {
             step();
             step();
-            close_invariants by { simp(); }
+            close_invariants by simp;
         }
     }
     have at(loop(0).exit, n) <= at(loop(0).exit, 10) by assumption();

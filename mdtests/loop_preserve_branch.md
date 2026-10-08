@@ -53,7 +53,7 @@ int32 loop_preserve_branch(int32 n) {
                 }
                 step();
                 step();
-                close_invariants by { simp(); }
+                close_invariants by simp;
             }
         }
     }
