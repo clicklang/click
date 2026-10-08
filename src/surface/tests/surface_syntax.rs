@@ -4583,8 +4583,8 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "a `fn` signature is the Rust spelling",
         ),
         (
-            "verifying \"add.rs\"; fn read(value: &i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
-            "a reference in a `fn` signature is not supported yet",
+            "verifying \"add.rs\"; fn read(bytes: &[u8]) -> u8 { ensures result == result; } by { execute(); simp(); }",
+            "a reference to a reference, slice, array or `()` in a `fn` signature is not supported yet",
         ),
         (
             "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
@@ -4594,6 +4594,22 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         let error = parser::parse(source).expect_err("the signature is refused");
         assert!(error.message.contains(expected), "{source}: {error:?}");
     }
+    // A reference is the pointer that carries it; `&T` has a constant
+    // referent. The contract names the referent `*value`.
+    assert_eq!(
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             fn set(value: &mut i32, seen: &i32) { owns *value; views *seen; \
+             ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             void set(int32* value, const int32* seen) { owns *value; views *seen; \
+             ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
     // `as` before anything but a scalar type is not a cast.
     parser::parse(
         "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",

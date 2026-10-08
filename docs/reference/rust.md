@@ -169,10 +169,58 @@ parameter and return types are the integer and float types, `bool`, `()`,
 and a struct by name; `usize` and `isize` are 64 bits. `expr as T` takes a
 scalar type and binds as in Rust, tighter than a binary operator.
 
-A reference, a slice or an array in a `fn` signature is refused for now, and
-so is `fn` in a C or C++ sidecar. Write those contracts in the C-shaped
-spelling the rest of this page uses. Click's own words (`requires`,
-`ensures`, `owns`, `result`, the tactics) are the same in every language.
+A parameter may be a reference, `&T` or `&mut T`, to a scalar or a struct.
+The contract names what it refers to as Rust does: `*value` for the
+referent and `parent.left` for a field. The type does not grant authority;
+the contract still states `views` or `owns`.
+
+<!-- verified-example: tests/fixtures/rust-verification/references.click -->
+```click
+verifying "borrow.rs";
+
+fn choose(x: i32) -> i32 {
+    requires 0 <= x;
+    ensures result == (if x < 7 { x + 1 } else { 7 });
+} by {
+    execute();
+    simp();
+}
+
+fn set_seven(value: &mut i32) {
+    owns *value;
+    ensures *value == 8;
+} by {
+    execute();
+    simp();
+}
+
+fn update(parent: &mut Pair) -> i32 {
+    owns parent.left;
+    owns parent.right;
+    ensures parent.left == 8;
+    ensures parent.right == old(parent.right);
+    ensures result == 8;
+} by {
+    execute();
+    simp();
+}
+
+fn shared_field(parent: &mut Pair) -> i32 {
+    owns parent.left;
+    views parent.right;
+    ensures parent.left == 7;
+    ensures result == old(parent.right);
+} by {
+    execute();
+    simp();
+}
+```
+
+A slice, an array or a reference to a reference in a `fn` signature is
+refused for now, and so is `fn` in a C or C++ sidecar. Write those contracts
+in the C-shaped spelling the rest of this page uses. Click's own words
+(`requires`, `ensures`, `owns`, `result`, the tactics) are the same in every
+language.
 
 ## Supported semantics
 

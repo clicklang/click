@@ -3369,6 +3369,55 @@ impl Parser {
         })
     }
 
+    /// `&T` and `&mut T` in a signature. The parameter is the pointer that
+    /// carries the reference, as Rust's own `value` is: the contract names
+    /// the referent `*value` and a field `parent.left`. `&T` is a pointer to
+    /// a constant referent. The contract still states `views` or `owns`.
+    #[inline(never)]
+    fn parse_rust_reference_type(&mut self) -> Result<ParsedType, ClickError> {
+        self.expect(Token::Amp)?;
+        let mutable = if self.peek_ident() == Some("mut") {
+            self.position += 1;
+            true
+        } else {
+            false
+        };
+        if matches!(
+            self.peek(),
+            Some(Token::Amp | Token::LBracket | Token::LParen)
+        ) {
+            return Err(self.error(
+                "a reference to a reference, slice, array or `()` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+            ));
+        }
+        let spelling = self.expect_ident("type")?;
+        Ok(match rust_scalar_type(&spelling) {
+            Some(scalar) => {
+                let Some(c_type) = scalar.pointer_type() else {
+                    return Err(self.error(format!(
+                        "a reference to `{spelling}` is not supported in a `fn` signature"
+                    )));
+                };
+                ParsedType {
+                    c_type,
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: !mutable,
+                    reference: false,
+                }
+            }
+            None => ParsedType {
+                c_type: C0Type::Int32Pointer,
+                struct_name: Some(spelling),
+                struct_pointer: true,
+                constant: false,
+                pointee_constant: !mutable,
+                reference: false,
+            },
+        })
+    }
+
     /// A Rust type in a signature: an integer or float type, `bool`, `()`,
     /// or a struct by name.
     fn parse_rust_type(&mut self) -> Result<ParsedType, ClickError> {
@@ -3386,9 +3435,7 @@ impl Parser {
             return Ok(scalar(C0Type::Void));
         }
         if self.peek() == Some(&Token::Amp) {
-            return Err(self.error(
-                "a reference in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
-            ));
+            return self.parse_rust_reference_type();
         }
         if self.peek() == Some(&Token::LBracket) {
             return Err(self.error(

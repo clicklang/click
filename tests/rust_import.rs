@@ -2239,6 +2239,36 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     }
 }
 
+/// `&mut T` and `&T` parameters in a Rust signature. The contract names a
+/// referent `*value` and a field `parent.left`; these are the contracts
+/// `examples/basic-rust` states in C shape.
+#[test]
+fn rust_sidecar_references_in_rust_syntax_verify() {
+    let p = Project::new(SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/references.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let (_, verified) = C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert_eq!(verified.len(), 12);
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures *value == 8;", "ensures *value == 9;"),
+            &prepared
+        )
+        .is_err()
+    );
+    // A store through the reference needs `owns`, not `views`.
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("owns *value;", "views *value;"),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
+}
+
 /// A Rust sidecar states signatures as Rust does and casts with `as`. The
 /// contracts are the ones `examples/rust-unsigned` states in C shape.
 #[test]
