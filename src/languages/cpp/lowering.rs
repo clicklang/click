@@ -28,7 +28,7 @@ use crate::kernel::{
     c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply, c_not_equal, c_parameter,
     c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract, c_try_catch_int32,
     c_try_catch_int32_with_cleanup, c_typed_load, c_typed_load_with_source, c_typed_store,
-    c_variable,
+    c_variable, int32,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -781,6 +781,9 @@ impl LoweringContext<'_> {
         destination: Option<&str>,
     ) -> Result<ScalarEvaluation, String> {
         match input {
+            ScalarInput::Value(value) if expression_contains_observer(value) => {
+                self.normalize_expression(value)
+            }
             ScalarInput::Value(value) => Ok(ScalarEvaluation {
                 prefix: c_skip(),
                 value: self.lower_expression(value)?,
@@ -918,6 +921,110 @@ impl LoweringContext<'_> {
         )
     }
 
+    fn normalize_expression(
+        &mut self,
+        expression: &CppExpression,
+    ) -> Result<ScalarEvaluation, String> {
+        let value_type = if matches!(expression.value_type(), CppType::Pointer { pointee } if is_mutable_int32(pointee) || is_const_int32(pointee))
+        {
+            CType::Int32Pointer
+        } else {
+            cpp_return_scalar_type(expression.value_type())?
+        };
+        let (prefix, value, may_throw) = match expression {
+            CppExpression::ObserverCall {
+                callee,
+                arguments,
+                value_type,
+                ..
+            } => {
+                if self.unwind_cleanups {
+                    return Err("C++ expression observers currently require the normal-only exception profile".into());
+                }
+                return self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                    conversions: &[],
+                });
+            }
+            CppExpression::IntegralCast {
+                value, value_type, ..
+            } => {
+                let input = self.normalize_expression(value)?;
+                let source = Scalar::mutable_kind(value.value_type())
+                    .ok_or("unsupported observer cast operand")?;
+                let target =
+                    Scalar::mutable_kind(value_type).ok_or("unsupported observer cast result")?;
+                (
+                    input.prefix,
+                    scalar::convert(input.value, source, target),
+                    input.may_throw,
+                )
+            }
+            CppExpression::ReferenceBinding { address, .. } => {
+                let input = self.normalize_expression(address)?;
+                let value = if matches!(address.as_ref(), CppExpression::AddressOf { .. }) {
+                    input.value
+                } else {
+                    c_checked_object_address(c_typed_load(input.value, CType::Int32))
+                };
+                (input.prefix, value, input.may_throw)
+            }
+            CppExpression::Dereference { pointer, .. } => {
+                let input = self.normalize_expression(pointer)?;
+                let value = self.lower_typed_load(input.value, CType::Int32)?;
+                (input.prefix, value, input.may_throw)
+            }
+            CppExpression::Binary {
+                operator,
+                left,
+                right,
+                value_type,
+                ..
+            } => {
+                let lhs = self.normalize_expression(left)?;
+                let rhs = self.normalize_expression(right)?;
+                if *operator == CppBinaryOperator::LogicalAnd {
+                    let capture = self.fresh_call_capture()?;
+                    let prefix = evaluate_then(
+                        lhs.prefix,
+                        c_seq(
+                            c_declare(capture.clone(), CType::Bool),
+                            c_if(
+                                lhs.value,
+                                evaluate_then(rhs.prefix, c_assign(capture.clone(), rhs.value)),
+                                c_assign(
+                                    capture.clone(),
+                                    c_cast(CExpression::Value(int32(0)), CType::Bool),
+                                ),
+                            ),
+                        ),
+                    );
+                    return Ok(ScalarEvaluation {
+                        prefix,
+                        value: c_variable(capture),
+                        value_type: CType::Bool,
+                        may_throw: lhs.may_throw || rhs.may_throw,
+                    });
+                }
+                let value = lower_binary_value(*operator, lhs.value, rhs.value, value_type);
+                (
+                    evaluate_then(lhs.prefix, rhs.prefix),
+                    value,
+                    lhs.may_throw || rhs.may_throw,
+                )
+            }
+            _ => (c_skip(), self.lower_expression(expression)?, false),
+        };
+        Ok(ScalarEvaluation {
+            prefix,
+            value,
+            value_type,
+            may_throw,
+        })
+    }
+
     fn fresh_call_capture(&mut self) -> Result<String, String> {
         let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
         self.next_call_capture = self
@@ -988,6 +1095,9 @@ impl LoweringContext<'_> {
 
     fn lower_expression(&mut self, expression: &CppExpression) -> Result<CExpression, String> {
         match expression {
+            CppExpression::ObserverCall { .. } => Err(
+                "C++ expression observers are supported in normalized scalar values only".into(),
+            ),
             CppExpression::IntegerLiteral {
                 value, value_type, ..
             }
@@ -1151,25 +1261,7 @@ impl LoweringContext<'_> {
             } => {
                 let left = self.lower_expression(left)?;
                 let right = self.lower_expression(right)?;
-                let expression = match operator {
-                    CppBinaryOperator::Add => c_add(left, right),
-                    CppBinaryOperator::Subtract => c_subtract(left, right),
-                    CppBinaryOperator::Multiply => c_multiply(left, right),
-                    CppBinaryOperator::Divide => c_divide(left, right),
-                    CppBinaryOperator::Remainder => c_remainder(left, right),
-                    CppBinaryOperator::Equal => c_equal(left, right),
-                    CppBinaryOperator::NotEqual => c_not_equal(left, right),
-                    CppBinaryOperator::LessThan => c_less_than(left, right),
-                    CppBinaryOperator::GreaterThan => c_greater_than(left, right),
-                    CppBinaryOperator::LessEqual => c_less_equal(left, right),
-                    CppBinaryOperator::GreaterEqual => c_greater_equal(left, right),
-                    CppBinaryOperator::LogicalAnd => c_and(left, right),
-                };
-                Ok(if is_mutable_bool(value_type) {
-                    c_cast(expression, CType::Bool)
-                } else {
-                    expression
-                })
+                Ok(lower_binary_value(*operator, left, right, value_type))
             }
         }
     }
@@ -1321,6 +1413,47 @@ fn collect_declared_places<'a>(statements: &'a [CppStatement], places: &mut Vec<
             }
             _ => {}
         }
+    }
+}
+
+fn expression_contains_observer(expression: &CppExpression) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    match expression {
+        CppExpression::ObserverCall { .. } => true,
+        CppExpression::IntegralCast { value, .. }
+        | CppExpression::ReferenceBinding { address: value, .. }
+        | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),
+        CppExpression::Binary { left, right, .. } => {
+            expression_contains_observer(left) || expression_contains_observer(right)
+        }
+        _ => false,
+    }
+}
+
+fn lower_binary_value(
+    operator: CppBinaryOperator,
+    left: CExpression,
+    right: CExpression,
+    value_type: &CppType,
+) -> CExpression {
+    let expression = match operator {
+        CppBinaryOperator::Add => c_add(left, right),
+        CppBinaryOperator::Subtract => c_subtract(left, right),
+        CppBinaryOperator::Multiply => c_multiply(left, right),
+        CppBinaryOperator::Divide => c_divide(left, right),
+        CppBinaryOperator::Remainder => c_remainder(left, right),
+        CppBinaryOperator::Equal => c_equal(left, right),
+        CppBinaryOperator::NotEqual => c_not_equal(left, right),
+        CppBinaryOperator::LessThan => c_less_than(left, right),
+        CppBinaryOperator::GreaterThan => c_greater_than(left, right),
+        CppBinaryOperator::LessEqual => c_less_equal(left, right),
+        CppBinaryOperator::GreaterEqual => c_greater_equal(left, right),
+        CppBinaryOperator::LogicalAnd => c_and(left, right),
+    };
+    if is_mutable_bool(value_type) {
+        c_cast(expression, CType::Bool)
+    } else {
+        expression
     }
 }
 

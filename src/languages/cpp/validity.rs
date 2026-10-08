@@ -163,6 +163,16 @@ impl Metadata<'_> {
             .value_type()
             .validate_aliases_in(self.alias_sources)?;
         let span = match expression {
+            CppExpression::ObserverCall {
+                callee,
+                arguments,
+                span,
+                ..
+            } => {
+                self.callee(callee)?;
+                self.arguments(arguments)?;
+                span
+            }
             CppExpression::IntegerLiteral { span, .. }
             | CppExpression::CompilerConstant { span, .. } => span,
             CppExpression::ConstantReference { constant, span, .. } => {
@@ -518,6 +528,7 @@ mod tests {
             json!({"kind":"member_load","object":reference(),"field":field(),"value_type":ty(),"span":span()}),
             json!({"kind":"integral_cast","value":literal(),"value_type":ty(),"span":span()}),
             json!({"kind":"binary","operator":"add","left":literal(),"right":literal(),"value_type":ty(),"span":span()}),
+            json!({"kind":"observer_call","callee":reference(),"arguments":call_arguments(),"value_type":ty(),"span":span()}),
         ] {
             body.push(
                 json!({"kind":"return","value":expression,"cleanups":[cleanup()],"span":span()}),

@@ -813,6 +813,24 @@ admitted; runtime/repeated loops, break/continue and nested automatic locals
 remain refused. This admits the wrapper shape used by assertion macros without
 assuming their bodies or conditions.
 
+Return values and ordinary `if` conditions may contain direct, nonthrowing
+scalar observer calls inside supported arithmetic, comparisons, pointer offsets
+and reference-address formation. The normal-only profile requires every such
+callee, including nested argument calls, to verify with `views` permissions
+only. Ownership transfer and resource construction are refused. A final
+unchanged-value claim alone does not qualify an observer: writes followed by
+restoration still fail under views. Native `const` is not a substitute for this
+proof.
+
+These calls reuse the scalar-call normalizer and modular contracts. Read-only
+permissions establish that unsequenced operands cannot interfere; short-circuit
+`&&` places the right operand's call prefix inside the conditional branch, so
+an unevaluated operand needs no read permission. Assignment, local initialization,
+constructor arguments and other expression-call contexts remain unsupported.
+Ordinary, expanded and retained proofs cover symbolic field reads, nested
+arguments, signed widening and short-circuit permissions; false claims, writes,
+owning contracts and forged call identities/types/spans are refused.
+
 An ordinary `if` can use a direct Boolean free-function or method call as its
 whole condition. The artifact keeps this effectful call separate from pure
 expressions. The shared scalar-call normalizer evaluates its bounded arguments

@@ -1368,6 +1368,90 @@ fn memory_loadable_candidates_ignore_unrelated_pointer_blocks() {
 }
 
 #[test]
+fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
+    let memory = CMemory::new();
+    let storage = Pointer {
+        block: "viewed-storage".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let result = Pointer {
+        block: PointerBlock::Symbolic(Variable(9_300_100)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(result.clone(), storage.clone()),
+        true,
+    );
+    let view = Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: storage.clone(),
+        bytes: Bitvector32Term::Constant(4),
+    };
+    let goal = Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: result.clone(),
+        bytes: Bitvector32Term::Constant(4),
+    };
+    assert!(
+        !PureFactContext::new()
+            .assume_proposition(equality.clone())
+            .proves(&goal)
+    );
+    assert!(
+        !PureFactContext::new()
+            .assume_proposition(view.clone())
+            .proves(&goal)
+    );
+    let samples = [8, 32, 128].map(|size| {
+        let mut context = PureFactContext::new()
+            .assume_proposition(equality.clone())
+            .assume_proposition(view.clone());
+        for index in 0..size {
+            context = context.assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: Pointer {
+                    block: format!("unrelated-view-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                bytes: Bitvector32Term::Constant(4),
+            });
+        }
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| context.proves(&goal));
+        assert!(proved);
+        assert!(!context.proves(&Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: result.offset_by_bytes(4),
+            bytes: Bitvector32Term::Constant(4),
+        }));
+        work
+    });
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "alias transport work: {samples:?}"
+    );
+
+    let local = CMemory::local_pointer("expired-view");
+    let before = CMemory::new().with_block("local:expired-view", 4);
+    let after = before.without_local_block(&local.block);
+    let context = PureFactContext::new()
+        .assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(result.clone(), local.clone()),
+            true,
+        ))
+        .assume_proposition(Proposition::CMemoryLoadable {
+            memory: before,
+            base: local,
+            bytes: Bitvector32Term::Constant(4),
+        });
+    assert!(!context.proves(&Proposition::CMemoryLoadable {
+        memory: after,
+        base: result,
+        bytes: Bitvector32Term::Constant(4),
+    }));
+}
+
+#[test]
 fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
     let memory = CMemory::new();
     let target = Pointer {

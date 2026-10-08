@@ -7368,6 +7368,18 @@ pub(in crate::surface) fn function_resource_summary(
         }
         ensure_clause_index += 1;
     }
+    if parsed_function.requires_read_only_contract()
+        && (!function_block.constructs().is_empty()
+            || requires
+                .iter()
+                .chain(&ensures)
+                .any(|resource| !resource.is_view()))
+    {
+        return Err(ClickError::new(format!(
+            "expression observer `{}` requires a read-only contract: use views, without ownership transfer or resource construction",
+            parsed_function.name()
+        )));
+    }
     Ok((requires, ensures))
 }
 

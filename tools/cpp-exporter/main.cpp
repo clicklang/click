@@ -2545,6 +2545,24 @@ private:
             llvm::dyn_cast<clang::ParenExpr>(expression)) {
       return lower_expression(parentheses->getSubExpr(), function);
     }
+    if (const auto *call = llvm::dyn_cast<clang::CallExpr>(expression)) {
+      const auto *callee = call->getDirectCallee();
+      if (callee == nullptr || callee->getBuiltinID() != 0 ||
+          callee->getReturnType()->isReferenceType() || callee->getReturnType()->isVoidType()) {
+        fail(call->getExprLoc(), "C++ expression observers require a direct scalar value call; compiler builtins and reference results remain unsupported");
+        return std::nullopt;
+      }
+      auto operation = lower_call_operation(call, function, true);
+      auto value_type = lower_type(call->getType(), call->getExprLoc());
+      if (!operation || !value_type) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "observer_call";
+      result["callee"] = std::move(operation->callee);
+      result["arguments"] = std::move(operation->arguments);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = std::move(operation->span);
+      return Json(std::move(result));
+    }
     if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
       // Retain the semantic conversion checked by Clang; substituting a
       // modulo cast of the written initializer would admit C++ narrowing.
