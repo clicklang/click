@@ -1979,21 +1979,18 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for wrong in [
+        sidecar.replace("ensures *value == old(*value);", "ensures *value == 7;"),
         sidecar.replace(
-            "ensures value[0] == old(value[0]);",
-            "ensures value[0] == 7;",
-        ),
-        sidecar.replace(
-            "ensures self->slot[0] == old(self->saved);",
-            "ensures self->slot[0] == 7;",
+            "ensures *self.slot == old(self.saved);",
+            "ensures *self.slot == 7;",
         ),
         sidecar.replace(
             "ensures result == (if early != 0 { 7 } else { 9 });",
-            "ensures result == old(value[0]);",
+            "ensures result == old(*value);",
         ),
-        sidecar[sidecar.find("int32 restore").unwrap()..]
+        sidecar[sidecar.find("fn restore").unwrap()..]
             .to_string()
-            .replace("int32 restore", "verifying \"borrow.rs\"; int32 restore"),
+            .replace("fn restore", "verifying \"borrow.rs\"; fn restore"),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&wrong, &prepared).is_err());
     }
@@ -2059,7 +2056,7 @@ fn rust_owned_field_loan_recovery_verifies() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2099,7 +2096,7 @@ fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2171,7 +2168,7 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* left,int32* right) {{ owns left[0..1]; owns right[0..1]; ensures left[0] == 17; ensures right[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}void cleanup(int32* left,int32* right) {{ owns left[0..1]; owns right[0..1]; ensures left[0] == 17; ensures right[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
