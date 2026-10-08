@@ -36,7 +36,7 @@ int32 peek(struct cell* node, int32 x) {
     if x <= 0 {
         unfold(c);
     } else {
-        have x > 0 by { simp(); }
+        have x > 0;
     }
     step();
     step();

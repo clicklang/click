@@ -38,7 +38,7 @@ void roundtrip(struct node* p, struct node* q) {
             let { left: l, right: r } = unfold(t);
             mark m;
             step();
-            have p->right == at(m, p->right) by { simp(); }
+            have p->right == at(m, p->right);
             let t = fold(tree(p), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
             execute();
             simp();

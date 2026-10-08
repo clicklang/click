@@ -35,7 +35,7 @@ void mark_prefix(int32 a[], int32 n, int32 m) {
         initialize by { simp(); }
         preserve by {
             step();
-            have a[m] == 7 by { simp(); }
+            have a[m] == 7;
             step();
             close_invariants();
         }

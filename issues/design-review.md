@@ -213,10 +213,6 @@ by a one-step block uses the brace-less form (`by T(args);`, `by simp;`), and
 `have P by simp;` is `have P;`. No `by { simp(); }` remains in examples or
 the standard library. Left in the long spelling:
 
-- Every expected-failure mdtest, because a failing short `have` reports less
-  than the block form
-  (`bugs/a-failing-short-have-reports-less-than-the-block-form.md`). Respell
-  them when that is fixed.
 - The Rust examples and the sidecars under `design/charon-trial`, which are
   hash-pinned in `design/charon-trial/parity.json`.
 - A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,

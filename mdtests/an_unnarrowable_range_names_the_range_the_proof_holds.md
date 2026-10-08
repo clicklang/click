@@ -22,7 +22,7 @@ void walk(int32 *a, int32 *b, int32 n) {
     requires 1 <= n;
     requires n <= 1073741823;
 } by {
-    have viewable(a[0..n + 1]) by { simp(); }
+    have viewable(a[0..n + 1]);
     execute();
     simp();
 }

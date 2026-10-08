@@ -72,5 +72,5 @@ int32 run() {
 ```
 
 ```expect
-fail: `have obj->refs == 1` did not close its checked nested goal
+fail: could not establish `obj->refs == 1`
 ```

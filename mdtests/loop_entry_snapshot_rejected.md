@@ -25,8 +25,8 @@ int32 c(int32 n) {
         invariant x - 1 <= at(L.entry, x);
     }
     step();
-    have at(L.entry, x) == 0 by { simp(); }
-    have result - 1 <= at(L.entry, x) by { simp(); }
+    have at(L.entry, x) == 0;
+    have result - 1 <= at(L.entry, x);
     have result - 1 <= 0 by {
         rewrite(at(L.entry, x) == 0);
         assumption();

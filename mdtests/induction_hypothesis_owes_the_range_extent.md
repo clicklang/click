@@ -24,14 +24,14 @@ theorem hypothesis_owes_the_range_extent(v: int32[], lo: int32, hi: int32) {
         if hi <= lo {
             assumption();
         } else {
-            have lo < hi by { simp(); }
+            have lo < hi;
             have 0 <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
             have lo <= hi - 1 by { arithmetic() using { 0 <= lo; lo < hi; } }
             have hi - 1 <= 1073741823 by {
                 arithmetic() using { 0 <= hi; hi <= 1073741823; }
             }
-            have viewable(v[lo..hi - 1]) by { simp(); }
+            have viewable(v[lo..hi - 1]);
             apply(ih(hi - 1)) using {
                 0 <= hi - 1;
                 hi - 1 < hi;

@@ -62,7 +62,7 @@ int32 caller(int32 a[], int32 n) {
     consumes allocated_int32s(a, n);
 } by {
     unfold(allocated_int32s(a, n));
-    have 0 <= 0 by { simp(); }
+    have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
@@ -76,7 +76,7 @@ int32 caller(int32 a[], int32 n) {
         simp();
     } else {
     }
-    have icount(a, 0, 0) == 0 by { simp(); }
+    have icount(a, 0, 0) == 0;
     execute();
     simp();
 }

@@ -7,7 +7,7 @@ with the spelling to write instead.
 ```click
 theorem reflexive(x: int32) {
     ensures x == x by {
-        have same: x == x by { simp(); }
+        have same: x == x;
         simp() using { x == x; };
     }
 }

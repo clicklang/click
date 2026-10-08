@@ -55,5 +55,5 @@ void pool_checkout(struct pool* pool, struct object* object) {
 ```
 
 ```expect
-fail: Requires 1 <= count(pool_slot(pool))
+fail: could not establish `1 <= count(pool_slot(pool))`
 ```

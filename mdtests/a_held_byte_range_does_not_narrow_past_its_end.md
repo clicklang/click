@@ -19,7 +19,7 @@ int32 first(uint8 *a, int32 n, int32 k) {
     requires 0 <= k;
     ensures result == 0;
 } by {
-    have viewable(a[0..k]) by { simp(); }
+    have viewable(a[0..k]);
     step();
     simp();
 }

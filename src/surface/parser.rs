@@ -238,6 +238,17 @@ fn rust_scalar_type(name: &str) -> Option<C0Type> {
     })
 }
 
+/// `have P by simp;` as the one-step script `have P by { simp(); }`. Out of
+/// line: its caller's frame is on the recursive proof-parsing path.
+#[inline(never)]
+fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
+    if proof == SourceProof::Tactic(SmartTactic::Simp) {
+        SourceProof::Script(vec![ProofTactic::Simp])
+    } else {
+        proof
+    }
+}
+
 fn is_tactic_name(name: &str) -> bool {
     matches!(name, "auto" | "simp")
 }
@@ -6507,41 +6518,54 @@ impl Parser {
         Ok(current.expect("the both tactic chain has a root"))
     }
 
+    /// `have P;`, `have P by simp;` or `have P by { ... }`, after the word
+    /// `have`. Out of line: the tactic dispatcher that calls it is on the
+    /// recursive proof-parsing path and keeps none of this in its frame.
+    #[inline(never)]
+    fn parse_have_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        // A `have` fact has no name: a later step cites it by restating
+        // its proposition. `name:` is never the start of a proposition,
+        // so refuse a label with the spelling to write instead.
+        if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next()) {
+            return Err(self.error(format!(
+                "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
+                 cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
+            )));
+        }
+        let proposition = self.parse_proposition()?;
+        // A `have` states a fact at the current point, so an omitted
+        // proof is `simp` here; it never executes C to reach the fact.
+        if self.peek() == Some(&Token::Semicolon) {
+            self.position += 1;
+            return Ok(ProofTactic::Have(ProofHave {
+                proposition,
+                proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Simp)),
+            }));
+        }
+        let auto_position = self.position;
+        let proof = self.parse_by_clause()?;
+        if proof == SourceProof::Tactic(SmartTactic::Auto) {
+            self.position = auto_position;
+            return Err(self.error(
+                "`auto` executes C to function exit, so it cannot prove a `have`; write `have P;` or `have P by simp;` to prove the fact where it is stated",
+            ));
+        }
+        self.skip_redundant_semicolon();
+        // `have P;`, `have P by simp;` and `have P by { simp(); }` are
+        // one proof step. They are one syntax tree too, so every
+        // consumer proves and reports them the same way.
+        Ok(ProofTactic::Have(ProofHave {
+            proposition,
+            proof: have_proof_as_written_in_full(proof),
+        }))
+    }
+
     // Conjunction spines do not retain the larger frames for loop, resource,
     // and leaf syntax at every child-proof level.
     #[inline(never)]
     fn parse_other_proof_tactic(&mut self, name: String) -> Result<ProofTactic, ClickError> {
         if name == "have" {
-            // A `have` fact has no name: a later step cites it by restating
-            // its proposition. `name:` is never the start of a proposition,
-            // so refuse a label with the spelling to write instead.
-            if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next())
-            {
-                return Err(self.error(format!(
-                    "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
-                     cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
-                )));
-            }
-            let proposition = self.parse_proposition()?;
-            // A `have` states a fact at the current point, so an omitted
-            // proof is `simp` here; it never executes C to reach the fact.
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-                return Ok(ProofTactic::Have(ProofHave {
-                    proposition,
-                    proof: SourceProof::Tactic(SmartTactic::Simp),
-                }));
-            }
-            let auto_position = self.position;
-            let proof = self.parse_by_clause()?;
-            if proof == SourceProof::Tactic(SmartTactic::Auto) {
-                self.position = auto_position;
-                return Err(self.error(
-                    "`auto` executes C to function exit, so it cannot prove a `have`; write `have P;` or `have P by simp;` to prove the fact where it is stated",
-                ));
-            }
-            self.skip_redundant_semicolon();
-            return Ok(ProofTactic::Have(ProofHave { proposition, proof }));
+            return self.parse_have_tactic();
         }
         if name == "mark" {
             let mark = self.expect_ident("mark name")?;

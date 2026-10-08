@@ -2490,7 +2490,7 @@ int32 f(int32 n) {
         verify_c0_sources(&false_arm, &sources)
             .unwrap_err()
             .message()
-            .contains("checked outcome `have`")
+            .contains("could not establish `result == 8`")
     );
     for site in c0_smart_tactic_source_sites(click, &sources).unwrap() {
         let position =

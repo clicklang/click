@@ -496,9 +496,8 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
             || error
                 .message()
                 .contains("(close_erase_spine_link precondition)")
-            || error
-                .message()
-                .contains("checked outcome `have` search did not retain a complete proof")
+            || (error.message().contains("have body tactic")
+                && error.message().contains("could not establish"))
             || error.message().contains("unclosed goal: result == 0")
             || error
                 .message()
