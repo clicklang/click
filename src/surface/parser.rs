@@ -1769,6 +1769,41 @@ impl Parser {
             .map(ContractExpression::ResourceField)
     }
 
+    /// `fact child.field == parent_field;` is the equation that says where a
+    /// named child's field is kept. Once it is written, a later `child.field`
+    /// in the body reads that parent field, so the body may state further
+    /// facts about it, as a resource with a hidden record may.
+    #[inline(never)]
+    fn note_child_field_equation(&mut self, fact: &ClickProposition) {
+        let ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right,
+        } = fact
+        else {
+            return;
+        };
+        let (ContractExpression::ResourceField(one), ContractExpression::ResourceField(other)) =
+            (left, right)
+        else {
+            return;
+        };
+        let is_parent = |access: &ResourceFieldAccess| {
+            access.owner == "__body" && access.identity == Variable(u64::MAX)
+        };
+        let (child, parent) = match (is_parent(one), is_parent(other)) {
+            (false, true) => (one, other),
+            (true, false) => (other, one),
+            _ => return,
+        };
+        if !child.children.is_empty() {
+            return;
+        }
+        self.hidden_child_fields
+            .entry((child.owner.clone(), child.field.clone()))
+            .or_insert_with(|| parent.clone());
+    }
+
     /// Gives a resource that declares no fields one hidden field per field of
     /// the child it names, with the equation that ties the two. A later
     /// `child.field` in the body reads the hidden field, so the body may
@@ -2045,7 +2080,9 @@ impl Parser {
                 }
                 Some("fact") => {
                     self.position += 1;
-                    facts.push(self.parse_proposition()?);
+                    let fact = self.parse_proposition()?;
+                    self.note_child_field_equation(&fact);
+                    facts.push(fact);
                     self.expect(Token::Semicolon)?;
                 }
                 Some("forall") => {

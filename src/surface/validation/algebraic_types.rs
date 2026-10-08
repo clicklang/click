@@ -390,7 +390,11 @@ pub(in crate::surface) fn resource_body_children<'b>(
                     ))
                 })?;
             let [(fact_index, value)] = candidates.as_slice() else {
-                return Err(ClickError::new("duplicate child field equation"));
+                return Err(ClickError::new(format!(
+                    "duplicate child field equation: `{child}.{field}` is equated more than once before the body says where it is kept; write `fact {child}.{field} == parent_field;` before any other fact that reads `{child}.{field}`",
+                    child = binding.name,
+                    field = field.name()
+                )));
             };
             let source = match value {
                 ContractExpression::ResourceField(access)
