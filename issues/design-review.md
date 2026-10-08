@@ -94,38 +94,43 @@ A range has the element type of its base. Some proofs read memory at another
 width, for example a struct as bytes. That needs its own explicit form. Start
 with an inventory of the proofs that rely on it; none has been made.
 
-## B. Contracts and resource declarations (decide)
+## B. Contracts and resource declarations
 
-Found in the third pass and not yet ruled on. Each was checked against the
-tool on 2026-10-07 unless it says otherwise.
+Found in the third pass and ruled on 2026-10-07. Each was checked against the
+tool that day unless it says otherwise.
 
-### B1. Three words for a proposition
-
-A proposition is introduced by `requires` or `ensures` in a contract, `fact`
-in a resource body, and `invariant` in a loop header. Decide whether these
-stay three words or share one.
-
-### B2. Child resources are written two ways
+### B1. Child resources are written two ways
 
 A resource without fields writes a child as `contains inner(p);`. A resource
 with fields writes `owns item: inner(p);`, and that form is refused in a
 resource without fields ("a named child resource requires a field-bearing
 parent resource"). In examples and the standard library there are 18 of the
-first and 53 of the second. Decide whether one spelling serves both.
+first and 53 of the second.
 
-### B3. Labels only on `ensures`
+Decided: one spelling. `owns name: inner(p);` is accepted in any resource and
+`contains` is retired, refused with the spelling to write.
+
+Regression: a resource without fields that holds a named child, used by a
+contract and unfolded in a proof; `contains inner(p);` refused.
+
+Done when: no `contains` child clause remains in the repository and
+`scripts/check.sh` and `scripts/check.sh --audit` pass.
+
+### B2. Labels only on `ensures`
 
 `ensures same: result == p->value;` is accepted. `requires nonnull: p != 0;`
 is a syntax error ("expected comparison operator in `proposition`, got
-`:`"). Decide whether every proposition clause takes a label.
+`:`").
 
-### B4. `diverges` and `decreases`
+Decided: `requires` and `invariant` take a label as `ensures` does.
 
-Termination is stated in two positions: `diverges` on the signature and
-`decreases` as a clause in the body. Decide whether both belong in one
-place.
+Regression: a labelled `requires` and a labelled `invariant`, each cited by
+its label where an `ensures` label can be cited today.
 
-### B5. Reading through a declared resource
+Done when: those pass and the reference documents one label rule for all
+three.
+
+### B3. Reading through a declared resource
 
 Recorded in the third pass: `views outer(p)` let C read the resource's
 memory without an `unfold`, while `owns outer(p)` did not. On 2026-10-07 a
@@ -133,15 +138,20 @@ nested case did not confirm it: with `contains inner(p)` in `outer`, both
 `views outer(p)` and `owns outer(p)` needed the `unfold`. Re-check with a
 resource whose body owns memory directly before deciding anything.
 
-### B6. A contract can be accepted and unusable
+### B4. A contract can be accepted and unusable
 
 Recorded in the third pass: a contract that both owns and produces the same
 place, `owns p->value; produces p->value;`, was accepted, and no caller
 could use it. On 2026-10-07 the same contract is refused where the function
 itself is checked, with "claim Ensure(2) on path 0 has mismatched proposition
 completion evidence; the checked path outcome is a runtime error", which
-does not say what is wrong. Decide whether such a contract is refused when
-it is declared, with a message that names the place held twice.
+does not say what is wrong.
+
+Decided: refuse the contract where it is declared, with a message that names
+the place held twice.
+
+Regression: the contract above, refused at its declaration by that message,
+with and without a proof block.
 
 ## C. Tactics
 
@@ -218,6 +228,10 @@ after such an `intro() as` re-verifies.
   points at.
 - A separate tactic for conjunction and disjunction goals was dropped;
   `assumption()` closes them.
+- `requires`, `ensures`, `fact` and `invariant` stay four words: each says
+  where its proposition holds.
+- `diverges` stays on the signature and `decreases` stays a clause: one is a
+  property of the function, the other a measure with an expression.
 
 ## Related defects
 
