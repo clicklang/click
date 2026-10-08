@@ -1830,13 +1830,14 @@ impl CheckedResourceRewrite {
             }
             // Population accounting covers only `authorized resource`
             // families; any other family keeps its ordinary definition law.
-            let ordinary_family = matches!(
-                selected,
-                CResourceFact::Own(CResource::Composite { name, .. }, _)
-                    if function
-                        .composite_resource_definition(name)
-                        .is_some_and(|definition| !definition.is_authorized())
-            );
+            let ordinary_family = !reaches_population
+                || matches!(
+                    selected,
+                    CResourceFact::Own(CResource::Composite { name, .. }, _)
+                        if function
+                            .composite_resource_definition(name)
+                            .is_some_and(|definition| !definition.is_authorized())
+                );
             if !ordinary_family {
                 let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) =
                     selected

@@ -1400,3 +1400,8 @@ control, and returning the same mutex resources leaves the mutex state as it
 was. Assumed external contracts over mutex resources are still refused.
 Regressions: `authority_mode_verified_helper_borrows_guard.md` and
 `authority_mode_verified_helper_guard_requires_held_mutex.md`.
+
+The kernel's member body-access check applies only to a family that reaches
+a population; an ordinary composite that is not a supported transfer wrapper,
+including a recursive one or a viewed one, opens and unfolds by its
+definition. Regression: `authority_mode_ordinary_recursive_resource_unfolds.md`.
