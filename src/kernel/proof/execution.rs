@@ -127,7 +127,22 @@ pub(crate) enum CheckedExecutionEvent {
 struct CheckedReturnContext {
     origin: CStatementOutcome,
     published: CFunctionOutcome,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
+}
+
+impl CheckedReturnContext {
+    fn from_candidate(
+        origin: CStatementOutcome,
+        candidate: &crate::kernel::CFunctionExecutionCandidate,
+    ) -> Self {
+        let mut facts = candidate.facts().clone();
+        facts.extend_shared(candidate.effect_facts());
+        Self {
+            origin,
+            published: candidate.outcome().clone(),
+            facts,
+        }
+    }
 }
 
 /// A completed proposition; its assumptions are checked against the retained
@@ -10128,16 +10143,7 @@ impl ExecutionProofCore {
                     _ => return Err("return proof has no completing statement".into()),
                 }
             };
-            let context = Arc::new(CheckedReturnContext {
-                origin,
-                published: candidate.outcome().clone(),
-                facts: candidate
-                    .facts()
-                    .iter()
-                    .chain(candidate.effect_facts())
-                    .cloned()
-                    .collect(),
-            });
+            let context = Arc::new(CheckedReturnContext::from_candidate(origin, candidate));
             self.return_proof_contexts = self
                 .return_proof_contexts
                 .with_inserted(path_index, context.clone());
@@ -11530,6 +11536,61 @@ mod tests {
         (function, events)
     }
 
+    #[test]
+    fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
+        for size in [4, 64, 1024] {
+            let facts: ExecutionFacts = (0..size)
+                .map(|index| {
+                    ExecutionPureFact::new(Proposition::ConditionIs(
+                        crate::kernel::ConditionTerm::equal(
+                            crate::kernel::Bitvector32Term::Variable(crate::kernel::Variable(
+                                index,
+                            )),
+                            crate::kernel::Bitvector32Term::Constant(0),
+                        ),
+                        false,
+                    ))
+                })
+                .collect();
+            let state = CState::new();
+            let effects: ExecutionFacts = [ExecutionPureFact::certified(
+                Proposition::CMemoryMutatesOnly {
+                    before: state.memory().clone(),
+                    after: state.memory().clone(),
+                    writes: vec![],
+                },
+            )]
+            .into();
+            let candidate = crate::kernel::CFunctionExecutionCandidate {
+                outcome: CFunctionOutcome::Return {
+                    value: int32(0),
+                    state: Box::new(state.clone()),
+                },
+                facts: facts.clone(),
+                effect_facts: effects.clone(),
+                obligations: vec![],
+                loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            };
+            let context = CheckedReturnContext::from_candidate(
+                CStatementOutcome::Return {
+                    value: int32(0),
+                    state: Box::new(state),
+                },
+                &candidate,
+            );
+            assert_eq!(context.facts.len(), size as usize + 1);
+            for (original, retained) in facts.iter().zip(&context.facts) {
+                assert!(std::ptr::eq(original, retained));
+            }
+            assert!(std::ptr::eq(&effects[0], &context.facts[size as usize]));
+            assert!(context.facts[size as usize].is_certified());
+            drop(candidate);
+            drop(facts);
+            drop(effects);
+            assert_eq!(context.facts.len(), size as usize + 1);
+        }
+    }
+
     fn returned_proposition_context(state: &CState) -> Arc<CheckedReturnContext> {
         Arc::new(CheckedReturnContext {
             origin: CStatementOutcome::Return {
@@ -11540,7 +11601,7 @@ mod tests {
                 value: int32(0),
                 state: Box::new(state.clone()),
             },
-            facts: vec![],
+            facts: ExecutionFacts::new(),
         })
     }
 
@@ -11563,7 +11624,7 @@ mod tests {
                     state: state.clone().into(),
                     store_consequences_available: false,
                     is_exceptional: false,
-                    effect_facts: Arc::new(vec![]),
+                    effect_facts: Arc::new(ExecutionFacts::new()),
                 }),
                 None,
             ),
