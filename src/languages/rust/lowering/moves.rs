@@ -552,6 +552,22 @@ pub(super) fn lower(
                         ),
                     )
                 }
+                S::BeginStorage { local } => {
+                    let record = records
+                        .get(local.as_str())
+                        .ok_or("unknown record storage start")?;
+                    let flag = check(local, record)?;
+                    // Plain values carry no destructor or borrowed authority.
+                    // StorageLive starts a fresh lifetime even when a loop
+                    // summary has abstracted the previous lifetime's flag.
+                    // Drop/reference-bearing records retain their checked
+                    // move/drop protocol; starting storage cannot erase it.
+                    if check_copyable(cx, record).is_ok() {
+                        c_assign(flag, c_int32_literal(0))
+                    } else {
+                        c_skip()
+                    }
+                }
                 S::EndStorage { local } => match records.get(local.as_str()) {
                     Some(record) => {
                         let flag = check(local, record)?;

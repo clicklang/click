@@ -1001,6 +1001,11 @@ impl BodyAdapter<'_, '_> {
             u::StatementKind::StorageDead(id) => Some(S::EndStorage {
                 local: self.local(*id)?,
             }),
+            u::StatementKind::StorageLive(id) if matches!(self.body.locals.locals[*id].ty.kind(), a::TyKind::Adt(r) if self.adapter.records.contains_key(&r.id)) => {
+                Some(S::BeginStorage {
+                    local: self.local(*id)?,
+                })
+            }
             u::StatementKind::StorageLive(_)
             | u::StatementKind::Nop
             | u::StatementKind::Borrowck(_) => None,
@@ -1664,6 +1669,92 @@ pub(super) fn decode_crate(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn charon_plain_record_loop_needs_storage_lifetime_restarts() {
+        let artifact = include_bytes!("../../../design/charon-trial/plain-record-loop/loop.ullbc");
+        let source = include_bytes!("../../../design/charon-trial/plain-record-loop/loop.rs");
+        let claim = include_str!("../../../design/charon-trial/plain-record-loop/loop.click");
+        let export = decode(artifact, "loop.rs", source).unwrap();
+        let prepared = super::super::import::prepared_for_test(export.clone()).unwrap();
+        C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
+        let mut missing = export;
+        let mut removed = 0;
+        for f in &mut missing.functions {
+            if let Some(mir) = &mut f.mir {
+                for block in &mut mir.blocks {
+                    block.statements.retain(|s| {
+                        if matches!(s, S::BeginStorage { .. }) {
+                            removed += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
+            }
+        }
+        assert!(removed > 0);
+        let prepared = super::super::import::prepared_for_test(missing).unwrap();
+        let error = C0VerificationSession::new_program_prepared(claim, &prepared)
+            .err()
+            .expect("loop lost its storage-lifetime prerequisite");
+        assert!(
+            error.message().contains("__rust_owned_live_"),
+            "{}",
+            error.message()
+        );
+    }
+
+    #[test]
+    fn charon_storage_restart_cannot_erase_a_drop_record() {
+        let mut export = decode(
+            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.ullbc"),
+            "loop.rs",
+            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
+        )
+        .unwrap();
+        let function = export
+            .functions
+            .iter_mut()
+            .find(|f| f.name == "guarded_walk")
+            .unwrap();
+        let block = function
+            .mir
+            .as_mut()
+            .unwrap()
+            .blocks
+            .iter_mut()
+            .find(|b| {
+                b.statements
+                    .iter()
+                    .any(|s| matches!(s, S::Initialize { .. }))
+            })
+            .unwrap();
+        let index = block
+            .statements
+            .iter()
+            .position(|s| matches!(s, S::Initialize { .. }))
+            .unwrap();
+        let constructor = block.statements[index].clone();
+        let S::Initialize { target, .. } = &constructor else {
+            unreachable!()
+        };
+        block.statements.insert(
+            index + 1,
+            S::BeginStorage {
+                local: target.clone(),
+            },
+        );
+        block.statements.insert(index + 2, constructor);
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        assert!(
+            C0VerificationSession::new_program_prepared(
+                include_str!("../../../design/charon-trial/borrowed-loop/loop.click"),
+                &prepared,
+            )
+            .is_err()
+        );
+    }
     use super::*;
     use crate::surface::C0VerificationSession;
     const ARTIFACT: &[u8] = include_bytes!("../../../design/charon-trial/trial.ullbc");
