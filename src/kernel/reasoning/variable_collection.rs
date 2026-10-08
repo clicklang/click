@@ -1,5 +1,16 @@
 use super::*;
 
+#[derive(Default)]
+struct SeenTerms {
+    integers: BTreeSet<u64>,
+    pointers: BTreeSet<u64>,
+}
+impl SeenTerms {
+    fn insert(&mut self, id: u64) -> bool {
+        self.integers.insert(id)
+    }
+}
+
 thread_local! {
     static CONNECTION_BLOCKS: std::cell::RefCell<Option<BTreeSet<PointerBlock>>> = const { std::cell::RefCell::new(None) };
 }
@@ -900,14 +911,14 @@ pub(crate) fn collect_spec_integer_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_spec_integer_variables(expression, variables);
-    let mut integer_seen = BTreeSet::new();
+    let mut integer_seen = SeenTerms::default();
     collect_spec_integer_bound_variables_inner(expression, variables, &mut integer_seen);
 }
 
 fn collect_spec_integer_bound_variables_inner(
     expression: &SpecIntegerExpression,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match expression {
         SpecIntegerExpression::ResourceField(projection) => {
@@ -972,7 +983,7 @@ fn collect_spec_integer_bound_variables_inner(
 fn collect_integer_bound_identities(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match term {
         IntegerTerm::Constant(_) => {}
@@ -1035,7 +1046,7 @@ fn collect_integer_bound_identities(
 fn collect_shared_integer_bound_identities(
     term: &SharedIntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if integer_seen.insert(term.id()) {
         collect_integer_bound_identities(term.as_ref(), variables, integer_seen);
@@ -1045,7 +1056,7 @@ fn collect_shared_integer_bound_identities(
 fn collect_pure_argument_bound_identities(
     argument: &PureFunctionArgument,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match argument {
         PureFunctionArgument::Value(value) => {
@@ -1066,7 +1077,7 @@ fn collect_pure_argument_bound_identities(
 fn collect_algebraic_term_bound_identities(
     term: &AlgebraicTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match &term.node {
         AlgebraicTermNode::Variable(variable) => {
@@ -1097,7 +1108,7 @@ fn collect_algebraic_term_bound_identities(
 fn collect_algebraic_value_bound_identities(
     value: &AlgebraicValue,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match value {
         AlgebraicValue::C(value) => {
@@ -1115,10 +1126,19 @@ fn collect_algebraic_value_bound_identities(
 fn collect_c_value_bound_identities(
     value: &CValue,
     variables: &mut BTreeSet<Variable>,
-    _integer_seen: &mut BTreeSet<u64>,
+    _integer_seen: &mut SeenTerms,
 ) {
     match value {
-        CValue::Void | CValue::Pointer(_) => {}
+        CValue::Void => {}
+        CValue::Pointer(pointer) => {
+            if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+                && _integer_seen.pointers.insert(application.id())
+            {
+                for argument in application.arguments() {
+                    collect_pure_argument_bound_identities(argument, variables, _integer_seen);
+                }
+            }
+        }
         CValue::Int8(bits) => {
             collect_bitvector_integer_variables(bits, variables);
         }
@@ -1142,7 +1162,7 @@ fn collect_c_value_bound_identities(
 fn collect_spec_integer_bound_argument(
     argument: &SpecPureFunctionArgument,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match argument {
         SpecPureFunctionArgument::Value(value) => {
@@ -1166,7 +1186,7 @@ fn collect_spec_integer_bound_argument(
 fn collect_spec_integer_bound_expression(
     expression: &SpecExpression,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match expression {
         SpecExpression::Value(value) => {
@@ -1261,7 +1281,7 @@ fn collect_spec_integer_bound_expression(
 fn collect_c_expression_bound_identities(
     expression: &CExpression,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match expression {
         CExpression::Value(value) => {
@@ -1321,7 +1341,7 @@ fn collect_c_expression_bound_identities(
 fn collect_spec_algebraic_bound_identities(
     expression: &SpecAlgebraicExpression,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match &expression.node {
         SpecAlgebraicExpressionNode::Variable(variable) => {
@@ -1361,7 +1381,7 @@ fn collect_spec_algebraic_bound_identities(
 fn collect_spec_sequence_bound_identities(
     sequence: &SpecSequenceExpression,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match sequence {
         SpecSequenceExpression::Literal(values) => {
@@ -1379,7 +1399,7 @@ fn collect_spec_sequence_bound_identities(
 fn collect_spec_memory_bound_identities(
     _memory: &SpecMemory,
     _variables: &mut BTreeSet<Variable>,
-    _integer_seen: &mut BTreeSet<u64>,
+    _integer_seen: &mut SeenTerms,
 ) {
     // A SpecMemory is a captured execution snapshot, not lexical input to
     // the expression.  Its blocks, cells, and union overlays are therefore
@@ -1390,7 +1410,7 @@ fn collect_spec_memory_bound_identities(
 fn collect_spec_resource_bound_identities(
     resource: &SpecResource,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match resource {
         SpecResource::Memory {
@@ -1411,7 +1431,7 @@ fn collect_spec_resource_bound_identities(
 fn collect_spec_proposition_bound_identities(
     proposition: &SpecProposition,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     match proposition {
         SpecProposition::IntegerComparison { left, right, .. } => {
@@ -2136,7 +2156,7 @@ pub(crate) fn collect_condition_bitvector_variables(
 }
 
 pub(crate) fn collect_integer_variables(term: &IntegerTerm, variables: &mut BTreeSet<Variable>) {
-    let mut seen = BTreeSet::new();
+    let mut seen = SeenTerms::default();
     collect_integer_variables_seen(term, variables, &mut seen);
 }
 
@@ -2148,14 +2168,14 @@ pub(crate) fn collect_integer_carrier_variables(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let mut seen = BTreeSet::new();
+    let mut seen = SeenTerms::default();
     collect_integer_carrier_variables_seen(term, variables, &mut seen);
 }
 
 fn collect_integer_carrier_variables_seen(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2246,7 +2266,7 @@ fn collect_integer_carrier_variables_seen(
 fn collect_shared_integer_carrier_variables_seen(
     term: &SharedIntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if crate::instrumentation::checked_collection_exhausted() {
         return;
@@ -2264,14 +2284,14 @@ pub(crate) fn collect_bitvector_integer_variables(
     term: &Bitvector32Term,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let mut seen = BTreeSet::new();
+    let mut seen = SeenTerms::default();
     collect_bitvector_integer_variables_seen(term, variables, &mut seen);
 }
 
 fn collect_bitvector_integer_variables_seen(
     term: &Bitvector32Term,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2428,10 +2448,17 @@ fn collect_bitvector_integer_variables_seen(
 fn collect_pointer_integer_variables(
     pointer: &Pointer,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
+    }
+    if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+        && seen.pointers.insert(application.id())
+    {
+        for argument in application.arguments() {
+            collect_pure_argument_integer_variables(argument, variables, seen);
+        }
     }
     collect_pointer_offset_integer_variables(&pointer.offset, variables, seen);
 }
@@ -2439,7 +2466,7 @@ fn collect_pointer_integer_variables(
 fn collect_pointer_offset_integer_variables(
     offset: &PointerOffsetTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2463,7 +2490,7 @@ fn collect_pointer_offset_integer_variables(
 fn collect_shared_integer_variables_seen(
     term: &SharedIntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2476,7 +2503,7 @@ fn collect_shared_integer_variables_seen(
 fn collect_integer_free_variables_seen(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2532,7 +2559,7 @@ fn collect_integer_free_variables_seen(
                 collect_shared_integer_variables_seen(
                     &arm.body,
                     &mut body_variables,
-                    &mut BTreeSet::new(),
+                    &mut SeenTerms::default(),
                 );
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -2569,7 +2596,11 @@ fn collect_integer_free_variables_seen(
                 return;
             }
             let mut body_variables = BTreeSet::new();
-            collect_shared_integer_variables_seen(body, &mut body_variables, &mut BTreeSet::new());
+            collect_shared_integer_variables_seen(
+                body,
+                &mut body_variables,
+                &mut SeenTerms::default(),
+            );
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
@@ -2585,7 +2616,7 @@ fn collect_integer_free_variables_seen(
 fn collect_algebraic_free_integer_variables(
     term: &AlgebraicTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2671,14 +2702,14 @@ pub(crate) fn collect_integer_free_variables(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let mut seen = BTreeSet::new();
+    let mut seen = SeenTerms::default();
     collect_integer_free_variables_seen(term, variables, &mut seen);
 }
 
 fn collect_condition_integer_variables(
     condition: &ConditionTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2710,7 +2741,7 @@ fn collect_condition_integer_variables(
 fn collect_pure_argument_integer_variables(
     argument: &PureFunctionArgument,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2734,7 +2765,7 @@ fn collect_pure_argument_integer_variables(
 fn collect_c_value_integer_variables(
     value: &CValue,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2763,7 +2794,7 @@ fn collect_c_value_integer_variables(
 fn collect_algebraic_integer_variables(
     term: &AlgebraicTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2813,7 +2844,7 @@ fn collect_algebraic_integer_variables(
 fn collect_algebraic_value_integer_variables(
     value: &AlgebraicValue,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -2832,7 +2863,7 @@ fn collect_algebraic_value_integer_variables(
 fn collect_integer_variables_seen(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     crate::instrumentation::record_deterministic_work(1);
     match term {
@@ -2896,7 +2927,7 @@ fn collect_integer_variables_seen(
             }
             collect_shared_integer_variables(initial, variables, seen);
             let mut body_variables = BTreeSet::new();
-            collect_shared_integer_variables(body, &mut body_variables, &mut BTreeSet::new());
+            collect_shared_integer_variables(body, &mut body_variables, &mut SeenTerms::default());
             body_variables.remove(accumulator);
             body_variables.remove(item);
             variables.extend(body_variables);
@@ -2907,7 +2938,7 @@ fn collect_integer_variables_seen(
 fn collect_shared_integer_variables(
     term: &SharedIntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    seen: &mut BTreeSet<u64>,
+    seen: &mut SeenTerms,
 ) {
     if !seen.insert(term.id()) {
         return;
@@ -3100,7 +3131,7 @@ pub(crate) fn collect_bitvector_variables(
             collect_pointer_bitvector_variables(pointer, variables);
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
-            let mut seen = BTreeSet::new();
+            let mut seen = SeenTerms::default();
             collect_shared_integer_variables(value, variables, &mut seen);
         }
     }
@@ -3109,7 +3140,7 @@ pub(crate) fn collect_bitvector_variables(
 fn collect_bitvector_capture_variables_seen(
     term: &Bitvector32Term,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3219,7 +3250,11 @@ fn collect_bitvector_capture_variables_seen(
                 return;
             }
             let mut body_variables = BTreeSet::new();
-            collect_bitvector_capture_variables_seen(body, &mut body_variables, integer_seen);
+            collect_bitvector_capture_variables_seen(
+                body,
+                &mut body_variables,
+                &mut SeenTerms::default(),
+            );
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
@@ -3282,7 +3317,7 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
     proposition: &Proposition,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let mut integer_seen = BTreeSet::new();
+    let mut integer_seen = SeenTerms::default();
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
@@ -3304,7 +3339,7 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
 fn collect_condition_capture_variables(
     condition: &ConditionTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3390,7 +3425,7 @@ fn collect_condition_capture_variables(
 fn collect_pointer_offset_capture_variables(
     offset: &PointerOffsetTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3414,12 +3449,19 @@ fn collect_pointer_offset_capture_variables(
 fn collect_pointer_capture_variables(
     pointer: &Pointer,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
     }
     match &pointer.block {
+        PointerBlock::PureFunctionApplication(application) => {
+            if integer_seen.pointers.insert(application.id()) {
+                for argument in application.arguments() {
+                    collect_capture_variables_in_pure_argument(argument, variables, integer_seen);
+                }
+            }
+        }
         PointerBlock::Symbolic(variable)
         | PointerBlock::FunctionSymbolic(variable)
         | PointerBlock::ExternalObject(variable) => {
@@ -3444,7 +3486,7 @@ fn collect_pointer_capture_variables(
 fn collect_capture_variables_in_c_value(
     value: &CValue,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3477,7 +3519,7 @@ fn collect_capture_variables_in_c_value(
 fn collect_capture_variables_in_pure_argument(
     argument: &PureFunctionArgument,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3501,7 +3543,7 @@ fn collect_capture_variables_in_pure_argument(
 fn collect_capture_variables_in_algebraic_term(
     term: &AlgebraicTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3551,7 +3593,7 @@ fn collect_capture_variables_in_algebraic_term(
 fn collect_capture_variables_in_algebraic_value(
     value: &AlgebraicValue,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3572,7 +3614,7 @@ fn collect_capture_variables_in_algebraic_value(
 fn collect_shared_integer_bitvector_capture_variables(
     term: &SharedIntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if crate::instrumentation::checked_collection_exhausted() {
         return;
@@ -3585,7 +3627,7 @@ fn collect_shared_integer_bitvector_capture_variables(
 fn collect_integer_bitvector_capture_variables(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -3689,7 +3731,7 @@ fn collect_integer_bitvector_capture_variables(
                 collect_shared_integer_bitvector_capture_variables(
                     body,
                     &mut body_variables,
-                    integer_seen,
+                    &mut SeenTerms::default(),
                 );
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -3711,7 +3753,7 @@ pub(crate) fn collect_integer_capture_bitvector_variables(
     term: &IntegerTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let mut integer_seen = BTreeSet::new();
+    let mut integer_seen = SeenTerms::default();
     collect_integer_bitvector_capture_variables(term, variables, &mut integer_seen);
 }
 
@@ -4294,7 +4336,7 @@ pub(crate) fn collect_integer_binder_variables(
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
 ) {
-    let mut integer_seen = BTreeSet::new();
+    let mut integer_seen = SeenTerms::default();
     collect_integer_binder_variables_seen(
         term,
         integer_variables,
@@ -4307,7 +4349,7 @@ fn collect_integer_binder_variables_seen(
     term: &IntegerTerm,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -4468,7 +4510,7 @@ fn collect_integer_binder_variables_shared(
     term: &SharedIntegerTerm,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if crate::instrumentation::checked_collection_exhausted() {
         return;
@@ -4487,7 +4529,7 @@ fn collect_bitvector_binder_variables_seen(
     term: &Bitvector32Term,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -4721,7 +4763,7 @@ fn collect_condition_binder_variables(
     condition: &ConditionTerm,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -4860,7 +4902,7 @@ fn collect_pointer_offset_binder_variables(
     offset: &PointerOffsetTerm,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -4900,10 +4942,22 @@ fn collect_pointer_binder_variables(
     pointer: &Pointer,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
+    }
+    if let PointerBlock::PureFunctionApplication(application) = &pointer.block
+        && integer_seen.pointers.insert(application.id())
+    {
+        for argument in application.arguments() {
+            collect_binder_variables_in_pure_argument(
+                argument,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+        }
     }
     collect_pointer_offset_binder_variables(
         &pointer.offset,
@@ -4917,7 +4971,7 @@ fn collect_binder_variables_in_c_value(
     value: &CValue,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -4960,7 +5014,7 @@ fn collect_binder_variables_in_pure_argument(
     argument: &PureFunctionArgument,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -4997,7 +5051,7 @@ fn collect_binder_variables_in_algebraic_term(
     term: &AlgebraicTerm,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -5073,7 +5127,7 @@ fn collect_binder_variables_in_algebraic_value(
     value: &AlgebraicValue,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
-    integer_seen: &mut BTreeSet<u64>,
+    integer_seen: &mut SeenTerms,
 ) {
     if checked_collection_checkpoint() {
         return;
@@ -5146,6 +5200,15 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
         }
     });
     match &pointer.block {
+        PointerBlock::PureFunctionApplication(application) => {
+            for argument in application.arguments() {
+                collect_capture_variables_in_pure_argument(
+                    argument,
+                    variables,
+                    &mut SeenTerms::default(),
+                );
+            }
+        }
         PointerBlock::Symbolic(variable)
         | PointerBlock::FunctionSymbolic(variable)
         | PointerBlock::ExternalObject(variable) => {
@@ -5480,6 +5543,15 @@ fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: 
 fn block_variables(block: &PointerBlock, contents: &CBlock) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     match block {
+        PointerBlock::PureFunctionApplication(application) => {
+            for argument in application.arguments() {
+                collect_capture_variables_in_pure_argument(
+                    argument,
+                    &mut variables,
+                    &mut SeenTerms::default(),
+                );
+            }
+        }
         PointerBlock::Symbolic(variable)
         | PointerBlock::FunctionSymbolic(variable)
         | PointerBlock::ExternalObject(variable) => {
@@ -5697,6 +5769,15 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
 
     for (block, contents) in memory.blocks.iter() {
         match block {
+            PointerBlock::PureFunctionApplication(application) => {
+                for argument in application.arguments() {
+                    collect_capture_variables_in_pure_argument(
+                        argument,
+                        variables,
+                        &mut SeenTerms::default(),
+                    );
+                }
+            }
             PointerBlock::Symbolic(variable)
             | PointerBlock::FunctionSymbolic(variable)
             | PointerBlock::ExternalObject(variable) => {

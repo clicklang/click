@@ -1798,6 +1798,10 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
 ) -> Option<AlphaPointerKey> {
     alpha_work_checkpoint(bindings, 1)?;
     let block = match &pointer.block {
+        // Do not flatten a shared pointer-application DAG into a tree key.
+        // Exact identities and the checked substitution fallback remain
+        // available; refusing this optional alpha index cannot prove a fact.
+        PointerBlock::PureFunctionApplication(_) => return None,
         PointerBlock::Concrete(name) => AlphaPointerBlockKey::Concrete(name.clone()),
         PointerBlock::StringLiteral { identity, bytes } => AlphaPointerBlockKey::StringLiteral {
             identity: identity.clone(),

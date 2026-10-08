@@ -7692,7 +7692,7 @@ pub fn integer_range_fold_predecessor_application(
         Bitvector32Term::Constant(1),
     )));
     Some(IntegerTerm::PureFunctionApplication(
-        SharedIntegerApplication::intern(applied.name().to_string(), arguments),
+        SharedPureApplication::intern(applied.name().to_string(), arguments),
     ))
 }
 

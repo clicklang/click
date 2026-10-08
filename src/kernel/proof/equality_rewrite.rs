@@ -458,28 +458,23 @@ fn rewrite_through_loaded_pointer_block(
     })
 }
 
-/// Rewrites every occurrence of a symbolic pointer by its proven-equal
-/// form in a goal the structural pointer rewrite does not handle, such as a
-/// 64-bit comparison over an address (`(uint64)p`). Only an equality whose left side is a whole
-/// symbolic pointer (`p == q`, not `p + 4 == q`) qualifies; the rewrite then
-/// replaces that pointer variable and composes any displacement at each
-/// occurrence, which is exact term congruence bounded by the goal's size.
-/// Reached when the structural rewrite cannot change the goal, including
-/// scalar pure-function applications. A structural rewrite that changed the
-/// goal keeps its result.
-fn pointer_variable_rewrite(
+/// Congruence inside pure-function arguments and other explicit logical
+/// terms missed by the structural address rewrite. A whole symbolic pointer
+/// uses capture-avoiding variable substitution; other pointer equalities use
+/// exact matching and refuse internal binders whose scope is unsupported.
+/// Neither path searches an ambient proof state or changes load snapshots.
+fn pointer_congruence_rewrite(
     goal: &Proposition,
     left: &Pointer,
     right: &Pointer,
 ) -> Option<Proposition> {
-    let PointerBlock::Symbolic(variable) = left.block else {
-        return None;
+    let mut rewrite = if let PointerBlock::Symbolic(variable) = left.block
+        && left.offset == PointerOffsetTerm::Constant(0)
+    {
+        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(variable, right)
+    } else {
+        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_exact(left, right)
     };
-    if left.offset != PointerOffsetTerm::Constant(0) {
-        return None;
-    }
-    let mut rewrite =
-        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(variable, right);
     let rewritten = rewrite.proposition(goal);
     (rewrite.refusal().is_none() && &rewritten != goal).then_some(rewritten)
 }
@@ -1051,6 +1046,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         };
         if &rewritten == goal {
+            let mut rewrite =
+                super::term_rewrite::TermRewrite::for_pointer_offset_exact(left, right);
+            let candidate = rewrite.proposition(goal);
+            if rewrite.refusal().is_none() && &candidate != goal {
+                return Ok(candidate);
+            }
             return Err("`rewrite` equality does not occur in the current goal".to_string());
         }
         return Ok(rewritten);
@@ -1271,7 +1272,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         )
                     }
                     _ => {
-                        return pointer_variable_rewrite(goal, left, right).ok_or_else(|| {
+                        return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
                             "`rewrite` pointer equality does not occur in this goal".to_string()
                         });
                     }
@@ -1295,13 +1296,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             }
             _ => {
-                return pointer_variable_rewrite(goal, left, right).ok_or_else(|| {
+                return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
                     "`rewrite` pointer equality expects a condition goal".to_string()
                 });
             }
         };
         if &rewritten == goal {
-            return pointer_variable_rewrite(goal, left, right).ok_or_else(|| {
+            return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
                 "`rewrite` equality does not occur in the current goal".to_string()
             });
         }
@@ -1709,7 +1710,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         PureFunctionArgument::Value(value)
                     })
                     .collect();
-                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     application.name().to_string(),
                     arguments,
                 ))
@@ -2122,7 +2123,7 @@ mod tests {
             );
         }
         let application = |value: IntegerTerm| {
-            IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+            IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "opaque_integer".into(),
                 vec![PureFunctionArgument::Integer(value.into())],
             ))
@@ -2745,7 +2746,7 @@ mod tests {
                 element_type: CType::UInt8,
             };
             let application = |endpoint| {
-                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "prefix".into(),
                     vec![
                         array.clone(),

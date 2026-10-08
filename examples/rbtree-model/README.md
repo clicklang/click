@@ -716,3 +716,9 @@ The example adds `list_tail` locally rather than to `stdlib/prelude.click`; it
 is used only here. Everything else comes from the prelude: `List`, `Nat`,
 `list_append`, `list_contains`, `list_append_associative`,
 `list_contains_append`, and `list_contains_cons`.
+
+`rb_min_parent` selects the link owner encountered by minimum descent.
+`rb_min_context_cut_child` reconstructs the exact `rb_remove_min` result by
+plugging the successor's right child into that context, reparented to the
+selected parent. It applies to empty and nonempty children at any depth;
+blackening a nonempty child is a separate balance step.

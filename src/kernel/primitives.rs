@@ -36,7 +36,7 @@ pub use machine_integer::{
 mod remainder_rules;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
-    SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm,
+    SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedPureApplication,
 };
 pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWidth};
 mod alias_candidates;
@@ -739,6 +739,10 @@ pub enum PointerBlock {
     /// The value read by a pointer-typed load, independent of the storage
     /// block that held it and of the pointee type used after the read.
     LoadedPointer(PointerLoadId),
+    /// An opaque pointer-valued pure call. This is not an allocation identity
+    /// and grants neither distinctness nor memory access.
+    PureFunctionApplication(SharedPureApplication),
+
     /// A trusted allocation identity. Unlike a symbolic/opaque block, this is
     /// fresh and distinct from every other block identity.
     Heap(u64),
@@ -767,6 +771,10 @@ impl std::hash::Hash for PointerBlock {
         // Pointer hashes feed deterministic load-variable identities, so
         // inserting a new enum variant must not renumber existing blocks.
         match self {
+            Self::PureFunctionApplication(application) => {
+                10u64.hash(state);
+                application.hash(state);
+            }
             Self::Concrete(name) => {
                 0u64.hash(state);
                 name.hash(state);
@@ -832,6 +840,7 @@ impl PointerBlock {
             | Self::ExternalObject(_)
             | Self::Symbolic(_)
             | Self::LoadedPointer(_)
+            | Self::PureFunctionApplication(_)
             | Self::Heap(_)
             | Self::Temporary(_) => None,
         }
@@ -888,9 +897,13 @@ impl PointerBlock {
         // postcondition such as `result == destination` does exactly that).
         // It is therefore never proven distinct by structure alone; only an
         // explicit disequality in the assumptions can separate it.
-        if matches!(self, Self::Symbolic(_) | Self::LoadedPointer(_))
-            || matches!(other, Self::Symbolic(_) | Self::LoadedPointer(_))
-        {
+        if matches!(
+            self,
+            Self::Symbolic(_) | Self::LoadedPointer(_) | Self::PureFunctionApplication(_)
+        ) || matches!(
+            other,
+            Self::Symbolic(_) | Self::LoadedPointer(_) | Self::PureFunctionApplication(_)
+        ) {
             return false;
         }
         // A function's own scalar locals (`local:` blocks) are storage the
@@ -970,6 +983,12 @@ impl From<&str> for PointerBlock {
 impl std::fmt::Display for PointerBlock {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::PureFunctionApplication(application) => write!(
+                formatter,
+                "pure-pointer:{}:{}",
+                application.name(),
+                application.id()
+            ),
             Self::Concrete(name) => formatter.write_str(name),
             Self::StringLiteral { identity, .. } => write!(formatter, "string:{identity}"),
             Self::Function(name) => write!(formatter, "function:{name}"),
@@ -4205,6 +4224,7 @@ pub enum ExecutionLimit {
     LoopUnrolls,
     Paths,
     UnsupportedIntegerExistentialBody,
+    UnsupportedPureFunctionResult(CType),
     /// The execution's fresh-identity counter reached the first identity a
     /// producer outside the execution reserves by a constant base. Every
     /// kernel allocation counts up from one base, and the ranges above it
@@ -4273,6 +4293,9 @@ impl ExecutionLimit {
             // for. The phrase has to cover both without claiming a counter
             // ran out.
             Self::Paths => "no single evaluation path".to_string(),
+            Self::UnsupportedPureFunctionResult(result_type) => {
+                format!("unsupported pure-function result type {result_type:?}")
+            }
             Self::UnsupportedIntegerExistentialBody => {
                 "an Integer existential body that must be pure and total".to_string()
             }

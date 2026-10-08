@@ -1053,7 +1053,12 @@ exit, at the root and on either non-root parent link. No-deficit cases return
 exact remaining models, whole-tree balance, parent consistency, in-order
 contents, and null fixup. Black-leaf cases retain the exact one-black-level
 deficit and return the correct fixup parent for chunk 12. Deeper successors
-and their descent loop remain. Depends on 7 and 10.
+and their descent loop remain. The pointer-valued selector `rb_min_parent`
+and `rb_min_context_cut_child` now verify the exact reconstruction equation
+for an empty or nonempty minimum child at any depth, with reparenting to the
+link owner. The pointer-result lowering defect this exposed is fixed and
+covered by positive, negative, substitution, and scaling regressions; the
+nonempty-child blackening connection remains a separate step. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.
