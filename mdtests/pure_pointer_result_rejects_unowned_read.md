@@ -12,5 +12,5 @@ int32 read_value(int32* p) {
 } by { execute(); }
 ```
 ```expect
-fail: missing resource fact `views p[0..1]`
+fail: missing resource fact `views p[0]`
 ```
