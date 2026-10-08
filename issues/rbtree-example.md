@@ -62,6 +62,10 @@ Matching a rebuilt model now also preserves an existing algebraic payload's
 identity under its new source name. The red-leaf extension exposed this at the
 successor's color check; `proof_match_preserves_algebraic_payload_identity.md`
 and its overwrite negative cover it, alongside indexed constructor checks.
+The deeper black-leaf prototype also exposed missing null-pointer argument
+typing in user tactics. A literal `0` now receives the declared pointer type,
+as it does at resource and pure-function parameters; nonzero integers and
+integer variables remain rejected.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
