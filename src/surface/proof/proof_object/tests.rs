@@ -14666,3 +14666,94 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
         );
     }
 }
+
+#[test]
+fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
+    let predicate_environment = PredicateEnvironment::new(&[]);
+    let click_function_environment = ClickFunctionEnvironment::new(&[]);
+    let theorem_environment = TheoremEnvironment::new(&[]);
+    let x = Bitvector32Term::Variable(Variable(9_920_000));
+    let y = Bitvector32Term::Variable(Variable(9_920_001));
+    let bound = Bitvector32Term::UInt64Constant(22208);
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::Bitvector64Equal(Box::new(x.clone()), Box::new(y.clone())),
+        true,
+    );
+    let known = Proposition::ConditionIs(
+        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(y.clone()), Box::new(bound.clone())),
+        true,
+    );
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::Bitvector64UnsignedLessThan(Box::new(x.clone()), Box::new(bound.clone())),
+        true,
+    );
+    let expression = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+    let equality_surface = ClickProposition::Comparison {
+        left: expression("x"),
+        operator: ComparisonOperator::Equal,
+        right: expression("y"),
+    };
+    let goal_surface = ClickProposition::Comparison {
+        left: expression("x"),
+        operator: ComparisonOperator::LessThan,
+        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(bound))),
+    };
+    let mut costs = Vec::new();
+    for ambient in [0, 16, 64, 256, 1024] {
+        let mut facts = vec![equality.clone(), known.clone()];
+        for i in 0..ambient {
+            facts.push(Proposition::ConditionIs(
+                ConditionTerm::Bitvector64Equal(
+                    Box::new(y.clone()),
+                    Box::new(Bitvector32Term::Variable(Variable(9_921_000 + i))),
+                ),
+                true,
+            ));
+        }
+        let mut surface_requirements = SurfacePropositionMap::default();
+        surface_requirements
+            .record_lowering(&equality_surface, &equality)
+            .unwrap();
+        let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
+            integer_values: crate::persistent::PersistentMap::default(),
+            memory: CMemory::new(),
+            values: BTreeMap::from([
+                ("x".into(), CValue::UInt64(x.clone())),
+                ("y".into(), CValue::UInt64(y.clone())),
+            ]),
+            array_refs: BTreeMap::new(),
+            requires: facts.clone(),
+            surface_requirements,
+        };
+        let root = Proof::for_pure_goal_with_surface(
+            "direct wide bound",
+            &facts,
+            goal.clone(),
+            Some(goal_surface.clone()),
+            &theorem_context,
+            &predicate_environment,
+            &click_function_environment,
+            &theorem_environment,
+        );
+        let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.try_indexed_goal_equality_rewrite_direct_closure(false)
+        });
+        let closed = closed.expect("one checked rewrite should expose the recorded bound");
+        assert!(closed.is_complete());
+        assert_eq!(closed.certificate().steps().len(), 2);
+        assert!(matches!(
+            &closed.certificate().steps()[0],
+            ProofStep::Rewrite(_)
+        ));
+        assert!(matches!(
+            &closed.certificate().steps()[1],
+            ProofStep::Assumption
+        ));
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.iter().all(|cost| *cost <= costs[0]),
+        "{costs:?}"
+    );
+}

@@ -674,6 +674,31 @@ fn expand_program_prepared_claim_source_by_label_context(
         Some(project) => resolve_click_project_context(project, &sources)?,
         None => parse_source_with_c_layouts_context(click_source, &sources)?,
     };
+    for theorem in file.theorem_definitions() {
+        if project.is_some() && !file.theorem_is_selected(theorem.name()) {
+            continue;
+        }
+        for (index, ensure) in theorem.ensures().iter().enumerate() {
+            let label = ensure.name().map_or_else(
+                || format!("{}.ensures_{index}", theorem.name()),
+                |name| format!("{}.{name}", theorem.name()),
+            );
+            if label == claim_label {
+                let verified = match project {
+                    Some(project) => {
+                        verify_click_project_theorem_context(project, &sources, theorem.name())?
+                    }
+                    None => verify_click_theorems_with_context(click_source, &sources)?,
+                };
+                return rewrite_verified_pure_theorem(
+                    click_source,
+                    &verified,
+                    theorem.name(),
+                    index,
+                );
+            }
+        }
+    }
     for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
