@@ -4624,6 +4624,14 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         )
         .expect("the C-shaped spelling parses"),
     );
+    // `*bytes` is the whole slice, and a `usize` parameter written alone
+    // as an index is the 32-bit index a place takes. The importer test
+    // verifies what these mean; here they parse.
+    parser::parse(
+        "verifying \"bytes.rs\"; fn read(bytes: &[u8], index: usize) -> u8 { \
+         views *bytes; ensures result == bytes[index]; } by { execute(); simp(); }",
+    )
+    .expect("the Rust spelling parses");
     // `as` before anything but a scalar type is not a cast.
     parser::parse(
         "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",

@@ -7,15 +7,15 @@ fn length(bytes: &[u8]) -> usize {
 fn read(bytes: &[u8], index: usize) -> u8 {
     requires bytes.len() <= 2147483647u64;
     requires index < bytes.len();
-    views bytes[0..bytes.len() as i32];
-    ensures result == bytes[index as i32];
+    views *bytes;
+    ensures result == bytes[index];
 } by { execute(); simp(); }
 
 fn write(bytes: &mut [u8], index: usize, value: u8) {
     requires bytes.len() <= 2147483647u64;
     requires index < bytes.len();
-    owns bytes[0..bytes.len() as i32];
-    ensures bytes[index as i32] == value;
+    owns *bytes;
+    ensures bytes[index] == value;
 } by { execute(); simp(); }
 
 fn first(bytes: &[u8]) -> u8 {

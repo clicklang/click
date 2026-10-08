@@ -457,6 +457,10 @@ struct Parser {
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
+    /// The `usize` parameters of the Rust signature being parsed, slice
+    /// lengths included. One written alone as an index is converted to the
+    /// 32-bit index a place takes.
+    rust_usize_params: BTreeSet<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -772,6 +776,7 @@ impl Parser {
             hidden_child_fields: BTreeMap::new(),
             verifies_rust: false,
             rust_slice_params: BTreeSet::new(),
+            rust_usize_params: BTreeSet::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -3217,6 +3222,7 @@ impl Parser {
             });
         }
         self.rust_slice_params.clear();
+        self.rust_usize_params.clear();
         if self.peek_ident() == Some("fn") {
             return self.parse_rust_function_signature();
         }
@@ -3327,6 +3333,7 @@ impl Parser {
                 // sidecar names the slice once and reads `bytes.len()`.
                 let length = format!("{parameter_name}_len");
                 self.rust_slice_params.insert(parameter_name.clone());
+                self.rust_usize_params.insert(length.clone());
                 parameters.push(
                     self.parse_parameter_array_suffix(parameter_name, element)?
                         .parameter,
@@ -3348,6 +3355,9 @@ impl Parser {
                 }
                 self.position += 1;
                 continue;
+            }
+            if self.peek_ident() == Some("usize") {
+                self.rust_usize_params.insert(parameter_name.clone());
             }
             let parsed_type = self.parse_rust_type()?;
             let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
@@ -3430,6 +3440,31 @@ impl Parser {
             pointee_constant: !mutable,
             reference: false,
         }))
+    }
+
+    /// An index or range bound in a Rust sidecar. A place takes a 32-bit
+    /// index, so a `usize` parameter or a slice length written alone is the
+    /// cast the C-shaped spelling writes, `(int32)index`. The contract still
+    /// states the bound that makes the cast exact. Any other expression is
+    /// left as written.
+    #[inline(never)]
+    fn rust_place_index(&self, index: ContractExpression) -> ContractExpression {
+        let ContractExpression::CFragment(CExpression::Variable(name)) = &index else {
+            return index;
+        };
+        if !self.rust_usize_params.contains(name) {
+            return index;
+        }
+        let lowered = CExpression::Cast {
+            expression: Box::new(CExpression::Variable(name.clone())),
+            target_type: CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        };
+        crate::surface::lowering::contract_c_unary(index, lowered)
     }
 
     /// `name.len()` where `name` is a slice parameter: consumes `.len()` and
@@ -8417,6 +8452,7 @@ impl Parser {
             if self.peek() == Some(&Token::LBracket) {
                 self.position += 1;
                 let index = self.parse_contract_expression()?;
+                let index = self.rust_place_index(index);
                 self.expect(Token::RBracket)?;
                 let index = contract_expression_as_c_fragment(&index).ok_or_else(|| {
                     self.error("struct array indices must be current C expressions")
@@ -8819,6 +8855,29 @@ impl Parser {
             if !dereferences_pointer {
                 return Err(self.error("`*` expects a pointer"));
             }
+            // `*bytes` on a slice parameter is the whole slice, as `*value`
+            // is the one object a reference refers to.
+            if let CExpression::Variable(name) = &base
+                && self.rust_slice_params.contains(name)
+            {
+                let length =
+                    ContractExpression::CFragment(CExpression::Variable(format!("{name}_len")));
+                let end_expression = self.rust_place_index(length);
+                let end = contract_expression_as_c_fragment(&end_expression)
+                    .expect("a slice length is a C expression");
+                let start = CExpression::Value(int32(0));
+                return Ok(vec![ContractSegment {
+                    state: ContractSegmentState::Current,
+                    base,
+                    start: start.clone(),
+                    end,
+                    surface: ContractSegmentSurface::Range {
+                        base: surface_base,
+                        start: ContractExpression::CFragment(start),
+                        end: end_expression,
+                    },
+                }]);
+            }
             let (start, end) = (CExpression::Value(int32(0)), CExpression::Value(int32(1)));
             let Some(struct_name) = struct_name else {
                 return Ok(vec![ContractSegment {
@@ -8896,6 +8955,7 @@ impl Parser {
         };
         self.expect(Token::LBracket)?;
         let start_expression = self.parse_contract_expression()?;
+        let start_expression = self.rust_place_index(start_expression);
         let mut start = resource_body_c_fragment(&start_expression).ok_or_else(|| {
             self.error(
                 "memory segment start must be a current C expression or a scalar field of the resource being defined",
@@ -8903,6 +8963,7 @@ impl Parser {
         })?;
         self.expect(Token::DotDot)?;
         let end_expression = self.parse_contract_expression()?;
+        let end_expression = self.rust_place_index(end_expression);
         let mut end = resource_body_c_fragment(&end_expression).ok_or_else(|| {
             self.error(
                 "memory segment end must be a current C expression or a scalar field of the resource being defined",
@@ -9976,6 +10037,7 @@ impl Parser {
                 Some(Token::LBracket) => {
                     self.position += 1;
                     let index = self.parse_contract_expression()?;
+                    let index = self.rust_place_index(index);
                     self.expect(Token::RBracket)?;
                     if let Some(element_width) = struct_array_element_width
                         && let Some(base_struct_name) = &struct_name
