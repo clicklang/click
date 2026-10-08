@@ -25,6 +25,7 @@ fn crate_project() -> Project {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
     let p = crate_project();
     refresh_import(&p.config()).unwrap();
@@ -213,6 +214,7 @@ fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_crate_constructor_bodies_return_owned_field_values() {
     let p = Project::new("");
     let source = r#"

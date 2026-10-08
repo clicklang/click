@@ -11,7 +11,7 @@ struct Project {
     root: PathBuf,
 }
 impl Project {
-    fn new(source: &str) -> Self {
+    fn isolated(source: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
             "click-rust-import-{}-{}",
@@ -19,12 +19,17 @@ impl Project {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root).unwrap();
-        let exporter =
-            std::env::var("CLICK_CHARON").expect("build-charon.sh supplies CLICK_CHARON");
         fs::write(root.join("borrow.rs"), source).unwrap();
         fs::write(root.join("borrow.click"), SIDECAR).unwrap();
-        fs::write(root.join("borrow.click.import.json"), serde_json::to_vec(&serde_json::json!({"schema":3,"language":"rust","target":"x86_64-unknown-linux-gnu","source":"borrow.rs","exporter":exporter,"artifact":"borrow.ullbc"})).unwrap()).unwrap();
         Self { root }
+    }
+    fn new(source: &str) -> Self {
+        let p = Self::isolated(source);
+        let root = &p.root;
+        let exporter =
+            std::env::var("CLICK_CHARON").expect("build-charon.sh supplies CLICK_CHARON");
+        fs::write(root.join("borrow.click.import.json"), serde_json::to_vec(&serde_json::json!({"schema":3,"language":"rust","target":"x86_64-unknown-linux-gnu","source":"borrow.rs","exporter":exporter,"artifact":"borrow.ullbc"})).unwrap()).unwrap();
+        p
     }
     fn config(&self) -> PathBuf {
         self.root.join("borrow.click.import.json")
@@ -121,6 +126,7 @@ fn charon_owned_array_fields_check_moves_snapshots_boundaries_and_frames() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_owned_array_fields_cli_tools_recheck_expanded_certificates() {
     let p = charon_owned_array_project();
     for command in ["verify", "profile", "audit"] {
@@ -209,6 +215,7 @@ fn charon_array_snapshots_check_computed_lanes_and_copy_independence() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_snapshots_cli_tools_recheck_expanded_certificates() {
     let p = charon_snapshot_project();
     for command in ["verify", "profile", "audit"] {
@@ -630,6 +637,7 @@ fn charon_array_fields_check_bounds_authority_and_frames() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_fields_cli_tools_recheck_borrowed_field_certificates() {
     let p = charon_fields_project();
     for command in ["verify", "profile", "audit"] {
@@ -752,6 +760,7 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
     let p = charon_arithmetic_project();
     for command in ["verify", "profile", "audit"] {
@@ -1136,6 +1145,7 @@ fn charon_slice_failure_does_not_suggest_unsupported_trace() {
     assert!(!error.contains("--trace-proof"), "{error}");
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_slice_cli_tools_recheck_expanded_certificates() {
     let p = charon_slice_project();
     for command in ["verify", "profile", "audit"] {
@@ -1242,6 +1252,7 @@ fn charon_arrays_compose_with_resolved_conversion_and_drop() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_array_cli_tools_recheck_expanded_certificates() {
     let p = charon_array_project();
     for command in ["verify", "profile", "audit"] {
@@ -1413,6 +1424,7 @@ fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_borrowed_loop_cli_expands_checked_loop_certificate() {
     let p = charon_loop_project();
     for command in ["verify", "profile", "audit"] {
@@ -1501,6 +1513,7 @@ fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn charon_trial_cli_tools_and_expanded_certificate_agree() {
     let p = charon_project();
     for command in ["verify", "profile", "audit"] {
@@ -1576,8 +1589,7 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
 }
 #[test]
 fn rust_typed_import_verifies_borrow_parent_reuse_and_field_frame() {
-    let p = Project::new(SOURCE);
-    refresh_import(&p.config()).unwrap();
+    let p = gate_fixtures::project("basic", SOURCE);
     let prepared = load_import(&p.config()).unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();
     assert_eq!(verified.len(), 12);
@@ -1586,8 +1598,7 @@ fn rust_typed_import_verifies_borrow_parent_reuse_and_field_frame() {
 }
 #[test]
 fn rust_lock_rejects_changed_source_and_artifact() {
-    let p = Project::new(SOURCE);
-    refresh_import(&p.config()).unwrap();
+    let p = gate_fixtures::project("basic", SOURCE);
     fs::write(p.root.join("borrow.rs"), format!("{SOURCE}\n// changed")).unwrap();
     assert!(
         load_import(&p.config())
@@ -1630,6 +1641,7 @@ fn assert_native_boundary_proof(source: &str, sidecar: &str) {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_compiler_and_subset_rejections_are_distinct() {
     for (source, diagnostic) in [
         (
@@ -1673,6 +1685,7 @@ fn rust_ordinary_cli_locks_and_verifies() {
     assert_cli(&p, &["verify"]);
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_cli_profile_and_audit_use_the_shared_engine() {
     let p = Project::new(SOURCE);
     refresh_import(&p.config()).unwrap();
@@ -1680,6 +1693,7 @@ fn rust_cli_profile_and_audit_use_the_shared_engine() {
     assert_cli(&p, &["audit"]);
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_cli_expansion_reverifies_through_ordinary_entry() {
     let p = Project::new(SOURCE);
     refresh_import(&p.config()).unwrap();
@@ -1746,6 +1760,7 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
     );
 }
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
     assert_native_boundary_proof(
         "pub struct S<'a> {pub p:&'a mut i32} pub fn bad(p:&mut i32) {let a=S{p};let moved=a.p;*moved=4;}",
@@ -1772,6 +1787,7 @@ fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
     }
 }
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_move_drop_cli_proofs_expand_and_reverify() {
     let (p, _) = moves_project(MOVE_SOURCE);
     refresh_import(&p.config()).unwrap();
@@ -1818,6 +1834,7 @@ fn rust_owned_field_loan_recovery_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
 fn rust_owned_field_loan_cli_expands_and_reverifies() {
     let p = Project::new(include_str!("../examples/rust-field-borrow/guard.rs"));
     fs::write(
@@ -1863,6 +1880,7 @@ fn rust_owned_disjoint_mutable_fields_verify() {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_owned_field_conflicting_parent_access_is_rejected_by_compiler() {
     let prefix = MOVE_SOURCE.split("pub fn restore").next().unwrap();
     for (suffix, diagnostic) in [
@@ -2073,11 +2091,10 @@ const SLICES_SIDECAR: &str = include_str!("../examples/rust-slices/bytes.click")
 
 #[test]
 fn rust_split_at_metadata_and_reads_verify() {
-    let p = Project::new(include_str!("../examples/rust-split-at/split.rs"));
+    let p = gate_fixtures::project("split", include_str!("../examples/rust-split-at/split.rs"));
     let sidecar =
         include_str!("../examples/rust-split-at/split.click").replace("split.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert!(prepared.export().functions.iter().flat_map(|f| f.mir.as_ref().unwrap().blocks.iter()).flat_map(|b| &b.statements).any(|s|
@@ -2095,17 +2112,6 @@ fn rust_split_at_metadata_and_reads_verify() {
         sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
-    }
-    assert_cli(&p, &["profile"]);
-    assert_cli(&p, &["audit"]);
-    for claim in [
-        "left_length.contract",
-        "right_length.contract",
-        "left_first.contract",
-        "right_first.contract",
-    ] {
-        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
     }
 }
 
@@ -2434,6 +2440,7 @@ uint32 shift(uint32 x, uint64 n) { requires x == 1u32; requires n == 31u64; ensu
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
     assert_native_boundary_proof(
         "pub fn bad(bytes:&[u32])->usize { bytes.len() }",
@@ -2463,25 +2470,13 @@ fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
 
 #[test]
 fn rust_fixed_array_references_indexing_and_reborrows_verify() {
-    let p = Project::new(include_str!("../examples/rust-arrays/arrays.rs"));
+    let p = gate_fixtures::project("arrays", include_str!("../examples/rust-arrays/arrays.rs"));
     let sidecar =
         include_str!("../examples/rust-arrays/arrays.click").replace("arrays.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    assert_cli(&p, &["profile"]);
-    assert_cli(&p, &["audit"]);
-    for claim in [
-        "read.contract",
-        "write.contract",
-        "signed.contract",
-        "first.contract",
-        "update.contract",
-    ] {
-        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
-    }
+
     assert!(
         C0VerificationSession::new_program_prepared(
             &sidecar.replace("ensures words[1] == 7u32", "ensures words[1] == 8u32"),
@@ -2529,8 +2524,12 @@ fn rust_fixed_array_access_requires_memory_authority() {
             "views words[0..3];",
         ),
     ] {
-        let p = Project::new(source);
-        refresh_import(&p.config()).unwrap();
+        let fixture = if source.contains("pub fn read") {
+            "array-read"
+        } else {
+            "array-write"
+        };
+        let p = gate_fixtures::project(fixture, source);
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = format!(
             "verifying \"borrow.rs\"; {signature} {{ {resources} ensures 1 == 1; }} by {{ execute(); simp(); }}"
@@ -2697,6 +2696,7 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
     assert_native_boundary_proof(
         "pub fn bad(words: &[u32; 4]) -> usize { let s: &[u32] = words; s.len() }",
@@ -2734,10 +2734,10 @@ fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
 fn rust_local_array_authority_and_copies_scale_with_array_length() {
     let mut samples = Vec::new();
     for length in [4, 16, 64] {
-        let p = Project::new(&format!(
+        let source = format!(
             "pub fn first(bytes: &[u8]) -> u8 {{ bytes[0] }} pub fn run() -> u8 {{ let bytes = [7u8; {length}]; let copied = bytes; first(&copied) }}"
-        ));
-        refresh_import(&p.config()).unwrap();
+        );
+        let p = gate_fixtures::project(&format!("array-scale-{length}"), &source);
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = "verifying \"borrow.rs\"; uint8 first(const uint8* bytes, uint64 bytes_len) { requires bytes_len > 0u64; requires bytes_len <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } uint8 run() { ensures result == 7; } by { execute(); simp(); }";
         let (result, work) = click::instrumentation::measure_deterministic_work(|| {
@@ -2771,10 +2771,9 @@ const USIZE_SIDECAR: &str = include_str!("../examples/rust-usize/arithmetic.clic
 
 #[test]
 fn rust_usize_arithmetic_casts_and_expansion_verify() {
-    let p = Project::new(USIZE_SOURCE);
+    let p = gate_fixtures::project("usize", USIZE_SOURCE);
     let sidecar = USIZE_SIDECAR.replace("arithmetic.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     let general_mul = sidecar.replace(
@@ -2806,17 +2805,6 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
         )
         .is_err()
     );
-    assert_cli(&p, &["profile"]);
-    assert_cli(&p, &["audit"]);
-    for claim in [
-        "add.contract",
-        "mul.contract",
-        "right.contract",
-        "computed.contract",
-    ] {
-        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
-    }
 }
 
 #[test]
@@ -2950,8 +2938,7 @@ fn rust_usize_boundaries_and_nested_checks() {
 
 #[test]
 fn rust_while_loop_invariants_verify_and_expand() {
-    let p = Project::new(include_str!("../examples/rust-loops/loops.rs"));
-    refresh_import(&p.config()).unwrap();
+    let p = gate_fixtures::project("loops", include_str!("../examples/rust-loops/loops.rs"));
     let prepared = load_import(&p.config()).unwrap();
     let sidecar =
         include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
@@ -2966,12 +2953,6 @@ fn rust_while_loop_invariants_verify_and_expand() {
         assert!(C0VerificationSession::new_program_prepared(&false_claim, &prepared).is_err());
     }
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
-    assert_cli(&p, &["profile"]);
-    assert_cli(&p, &["audit"]);
-    for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
-        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-        assert_cli(&p, &["verify"]);
-    }
 }
 
 #[test]
@@ -3033,6 +3014,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_while_loop_panic_paths_are_rejected() {
     for (source, signature, invariant) in [
         (
@@ -3178,8 +3160,12 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
         let source = format!(
             "pub fn empty(bytes: &[u8]) -> i32 {{ for byte in {expression} {{ let _value = *byte; }} 0 }}"
         );
-        let p = Project::new(&source);
-        refresh_import(&p.config()).unwrap();
+        let fixture = if expression == "bytes" {
+            "empty-direct"
+        } else {
+            "empty-iter"
+        };
+        let p = gate_fixtures::project(fixture, &source);
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = "verifying \"borrow.rs\"; int32 empty(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures result == 0; } by { execute(); simp(); }";
         C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
@@ -3683,6 +3669,7 @@ fn rust_u16_arithmetic_checks_its_own_width() {
 }
 
 #[test]
+#[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
     for (source, diagnostic) in [
         (
@@ -3770,3 +3757,97 @@ mod crate_inputs;
 
 #[path = "rust_import/adler2_helpers.rs"]
 mod adler2_helpers;
+
+#[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
+fn split_gate_fixture_tools_recheck_certificates() {
+    let p = gate_fixtures::project(
+        "split",
+        &fs::read_to_string(gate_fixtures::root().join("split/borrow.rs")).unwrap(),
+    );
+    let proof =
+        include_str!("../examples/rust-split-at/split.click").replace("split.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "left_length.contract",
+        "right_length.contract",
+        "left_first.contract",
+        "right_first.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
+fn arrays_gate_fixture_tools_recheck_certificates() {
+    let p = gate_fixtures::project(
+        "arrays",
+        &fs::read_to_string(gate_fixtures::root().join("arrays/borrow.rs")).unwrap(),
+    );
+    let proof =
+        include_str!("../examples/rust-arrays/arrays.click").replace("arrays.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "read.contract",
+        "write.contract",
+        "signed.contract",
+        "first.contract",
+        "update.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
+fn usize_gate_fixture_tools_recheck_certificates() {
+    let p = gate_fixtures::project(
+        "usize",
+        &fs::read_to_string(gate_fixtures::root().join("usize/borrow.rs")).unwrap(),
+    );
+    let proof = include_str!("../examples/rust-usize/arithmetic.click")
+        .replace("arithmetic.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "add.contract",
+        "mul.contract",
+        "right.contract",
+        "computed.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+#[ignore = "nightly: whole-example proof-tool rechecks"]
+fn loops_gate_fixture_tools_recheck_certificates() {
+    let p = gate_fixtures::project(
+        "loops",
+        &fs::read_to_string(gate_fixtures::root().join("loops/borrow.rs")).unwrap(),
+    );
+    let proof = include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[path = "rust_import/gate_fixtures.rs"]
+mod gate_fixtures;
