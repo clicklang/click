@@ -163,12 +163,9 @@ fn check_upstream_cpp_rounding_phase(
     let refreshed = refresh_import(&config_path);
     if fee_rate_boundary {
         let error =
-            refreshed.expect_err("GetFee must retain the unsupported header executable boundary");
-        assert!(
-            error.contains("call graph requires definitions in the selected file"),
-            "{error}"
-        );
-        assert!(error.contains("feerate.cpp:23:19"), "{error}");
+            refreshed.expect_err("GetFee must retain the unsupported converted-call boundary");
+        assert!(error.contains("unsupported expression"), "{error}");
+        assert!(error.contains("feerate.cpp:24:38"), "{error}");
         assert!(error.len() < 8000);
         assert!(!root.join(format!("{name}.click-cpp.json")).exists());
         assert!(!root.join(format!("{name}.click.import.json.lock")).exists());
@@ -2125,7 +2122,7 @@ fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_
 }
 
 #[test]
-fn pinned_upstream_fee_rate_getfee_retains_header_executable_boundary() {
+fn pinned_upstream_fee_rate_getfee_retains_converted_call_boundary() {
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFee",
         "CFeeRateGetFeeBoundary",

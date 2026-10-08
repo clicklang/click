@@ -908,8 +908,9 @@ place consumers are refused. Deterministic regressions cover increasing path
 depth and sibling populations.
 
 The pinned unchanged `CFeeRate::GetFee` regression now passes the `FeePerVSize`
-record-layout and direct Boolean condition-call boundaries and stops at the
-header-defined `IsEmpty()` callee reached from `policy/feerate.cpp:23`, with a bounded diagnostic and no partial artifact.
+record-layout, direct Boolean condition-call and locked-header executable
+boundaries and stops at the converted `EvaluateFeeUp()` call in
+`policy/feerate.cpp:24:38`, with a bounded diagnostic and no partial artifact.
 The wrapper is not verified yet.
 
 Projected method receivers and record/scalar reference arguments now use the
@@ -984,14 +985,30 @@ cleanup is checked structurally within the existing lifetime profile. Ordinary
 try/catch retains predicate exceptions; the guarded-try condition-hoisting shape
 remains pure-only, including for recomputed artifacts.
 
-Next support executable definitions in explicitly locked headers. The unchanged
-`GetFee` now reaches its `IsEmpty()` callee and refuses the definition outside
-the selected file. Pin the executable graph's source provenance, validate every
-reachable body, and require ordinary verified modular contracts. Retain
-branch-dependent behavior, borrowed memory, checked results and sibling frames
-through ordinary verification, expansion/reverification and retained proofs.
-Automatic objects with embedded records, nontrivial embedded destruction and cross-header executable graphs remain
-separate prerequisites, rather than being inferred from declaration support.
+Reachable ordinary methods/free functions now execute from explicitly locked
+headers. Each function retains one definition/body origin; executable spans and
+callee-use spans stay within their caller's source, while alias declarations
+use the locked declaration inventory. The selected root stays in its configured
+logical source. Every reachable implementation still needs ordinary verified
+contracts. Offline ordinary/expanded/retained proofs cover cross-header
+observers, inherited receivers and mutators, sibling frames, aliases, scalar
+exceptions and calls back into the selected file. Missing dependencies, stale
+header bytes, forged mixed-source metadata, unsupported bodies and recursion
+fail without partial artifacts. Deterministic multi-size graph tests preserve
+linear work and check caller/callee span ownership.
+
+Next normalize scalar call results through explicit conversions. Unchanged
+`GetFee` now resolves the header-defined `IsEmpty()` call and stops at
+`CAmount(m_feerate.EvaluateFeeUp(virtual_bytes))` in `policy/feerate.cpp:24:38`.
+Retain Clang's exact cast kind, source/result widths and qualifiers, evaluate
+the call once, and share initializer/return scalar normalization. Preserve
+modular contracts, conversion/definedness obligations, memory authority,
+cleanup and ordinary/expanded/retained proof agreement; do not erase narrowing
+or infer result bounds. Include same-type alias casts and hostile out-of-range
+or false-result claims. Keep broader composed calls separate.
+Automatic objects with embedded records, nontrivial embedded destruction,
+header constructor/destructor bodies, header constant definitions and mixed-source
+executable macro spans remain separate prerequisites.
 Compose `IsEmpty` and the unified Up contract only after those prerequisites.
 State empty-rate behavior separately from the positive-size result-fit profile.
 Its negative-fee, nonzero-amount case changes a zero rounded result to `-1`, so

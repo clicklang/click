@@ -741,7 +741,14 @@ existing lifetime restrictions. The conditional guarded-try shape remains
 pure-only because its lowering moves the condition outside the catch.
 Compositions such as `!call()`, `call() && other`,
 comparisons of call results and integer-to-Boolean call conversions remain
-unsupported. Executable definitions must still come from the selected file.
+unsupported. Reachable ordinary method/free-function definitions can come from explicitly
+locked dependencies as well as the selected file. The selected function stays
+in its configured logical source. Each reachable function owns one source:
+parameters, statements, expressions, call sites and projected uses must stay
+within it, while type-alias declarations may come from any locked declaration
+source. Every reachable body is exported, validated and verified through its
+ordinary sidecar contract. Dependency-header constructors/destructors and constant
+definitions and executable spans crossing source files remain unsupported.
 
 For `if constexpr`, pinned Clang chooses the instantiated arm in constant
 evaluation context. The artifact retains an ordinary constant Boolean `if`,
@@ -775,7 +782,7 @@ Named standard-layout structs and classes may include private or protected
 fields; Clang checks source access control, while sidecar views and ownership
 provide memory authority. Reachable record and field declarations may originate
 in explicitly locked project headers. Their spans retain that header's identity;
-function bodies and field-use spans must still belong to the selected source.
+each function body and its field-use spans belong to that function's definition source.
 
 Embedded mutable records with trivial destruction retain nominal child
 identities and exact ABI extents, offsets and alignment. Contracts can describe
@@ -790,7 +797,7 @@ share an indexed resolver and exact accumulated byte offsets. Root constness
 applies to the full path; ownership and views apply to the accessed leaf, with
 separate sibling objects retaining separate authority. A const object's pointer
 field may still reference mutable memory; pointee authority is checked separately.
-Projection use spans belong to the selected source. Methods and helpers can
+Projection use spans belong to their enclosing function's source. Methods and helpers can
 receive an embedded record by reference, and helpers can receive a signed-32
 field by reference. These calls use the same checked field path and exact byte
 address. The root's constness controls binding to mutable references, including
