@@ -711,7 +711,23 @@ type arguments are accepted. Each instance keeps its distinct Clang USR.
 Sidecar names append argument tokens in order, such as `choose__bool_true`,
 `identity__unsigned_long`, or `Value_select__bool_false`. Type aliases use the
 canonical builtin token; equal-width types such as `long` and `long long`
-retain different names. Name collisions remain explicit import errors.
+retain different names. Callable name collisions use the existing injective
+Clang-declaration identity names.
+
+Concrete class-template instances reached through ordinary selected callers
+use the same ordered builtin/Boolean argument tokens, plus `__tag_Name` for
+named empty trivial tag types declared in the locked import root. For example, `Box<int, false>` exports as `Box__int__bool_false`,
+while `Box<SizeTag, true>` exports as `Box__tag_SizeTag__bool_true`.
+Qualified tag names include their namespace components. Clang's canonical USR
+keeps each record, field and method nominally distinct even when layouts match;
+aliases share the canonical instance. Method, constructor and destructor names
+use the concrete record name. Record-name collisions are import errors. At most
+32 class arguments are supported. Clang completes reachable specializations
+before layout export, including unused reference parameter types; incomplete
+record declarations fail import without an artifact. Instances must satisfy the ordinary record and executable-body profile: no bases or
+virtual dispatch, and supported fields and destruction. Empty tags serve only
+as type arguments; this does not add empty runtime objects. Click verifies the
+resolved layout and bodies without performing template substitution itself.
 
 For `if constexpr`, pinned Clang chooses the instantiated arm in constant
 evaluation context. The artifact retains an ordinary constant Boolean `if`,
@@ -728,9 +744,9 @@ constant-evaluation context, and unsupported arguments. Its instantiated fee
 fast paths retain the unsigned expressions and cover both rounding directions
 with expansion/reverification and retained audit. They remain synthetic
 prerequisite proofs, not verification of upstream `EvaluateFee`. Selecting a
-dependent template pattern, packs, other non-type arguments, class templates,
-qualified or non-scalar type arguments, and calls in unsupported expression
-positions remain outside this slice. Template substitution and constexpr
+dependent template pattern, packs, other non-type arguments, qualified type
+arguments, non-scalar function-template arguments, nontrivial class tag types,
+and calls in unsupported expression positions remain outside this slice. Template substitution and constexpr
 selection are trusted compiler operations under the locked input profile;
 selected function implementations still require verified sidecar contracts.
 
