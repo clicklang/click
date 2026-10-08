@@ -179,7 +179,12 @@ impl Metadata<'_> {
                 self.reference(place)?;
                 span
             }
-            CppExpression::Dereference { pointer, span, .. } => {
+            CppExpression::Dereference { pointer, span, .. }
+            | CppExpression::ReferenceBinding {
+                address: pointer,
+                span,
+                ..
+            } => {
                 self.expression(pointer)?;
                 span
             }

@@ -158,14 +158,15 @@ reduced lanes at `N(total, total) = 0`. Another theorem exports the exact
 Integer-sum requirements of the original `AddAssign` calls for both `a + byte`
 and `b + (a + byte)`.
 
-The four-byte caller now stops at the actual remainder-vector iterator head,
-establishes all eight lane bounds there, observes the stored four-byte
-transition, and uses the derived index to discharge the original A helper's
-four addition requirements. Its verification unit checks the iterator and lane
-lemma bodies alongside every original helper body. False stored lengths and
-initial indices are rejected independently. The input extent of that caller
-contract remains four bytes; the conditional lemmas cover arbitrary batches,
-but induction over larger batches remains to be supplied.
+The four-byte caller proves a terminating symbolic loop over the original
+remainder-vector iterator. Its invariant uses the actual cursor, remaining
+length and chunk size, preserves both owned lane arrays and the input view,
+and relates every lane to the corresponding original byte at exhaustion.
+The preserve proof executes both original helper calls, checks their numeric
+requirements and closes the back-edge claims. Its verification unit checks
+the iterator and lane lemma bodies alongside every original helper body.
+The contract still covers one four-byte vector; induction over larger batches
+remains to be supplied.
 
 A false byte-order contract exposed expensive premise presentation: each
 attempt to name a scalar atom copied every memory-backed local value across
@@ -179,8 +180,9 @@ million-element seeded range. The caller names its stored cursor, chunk size,
 and remaining length explicitly at the head, so the four-byte transition uses those few checked facts.
 
 These implications match the adapter's stored remaining-byte state and
-four-byte `next` transition. They do not yet prove that the original nested
-loops establish and maintain the numeric bounds, lane bounds, and memory views.
+four-byte `next` transition. The single-vector loop establishes and maintains
+its numeric bounds, lane bounds and memory view; the original nested loops
+over arbitrary batches remain unproved.
 Full checksum correctness and whole-loop panic freedom remain unproved.
 
 Integer equality evidence now works in either orientation for explicit theorem
@@ -332,7 +334,9 @@ ceilings use the real decremented remaining length. Explicit observations
 bridge the two call snapshots; they do not substitute the constructor's zero
 lanes into the preservation argument. Nightly mutations reject false bounds
 on the first and last lanes, a too-small B sum guard, and a stale remaining
-count. This checks preservation at the four-byte caller boundary; it does not
+count. Symbolic-loop mutations also reject a reversed ranking measure, a false
+divisibility invariant, swapped terminal lanes, and a too-small invariant lane
+bound. This checks induction at the four-byte caller boundary; it does not
 yet establish induction over arbitrary batches.
 
 With constructor-state inputs of lengths zero through four checked, next

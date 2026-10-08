@@ -13,7 +13,7 @@ theorem instantiate_at_the_witness(x: int32) {
     requires forall (j: int32) { j > x implies x < 1000 };
     ensures x < 1000 by {
         obtain (k: int32) { k > x }
-        instantiate(forall (j: int32) { j > x implies x < 1000 }, k) using { k > x; }
+        instantiate(forall (j: int32) { j > x implies x < 1000 }, k);
     }
 }
 
@@ -22,7 +22,7 @@ theorem quantifier_binder_shadows_the_witness(x: int32) {
     requires forall (k: int32) { k > x implies x < 1000 };
     ensures x < 1000 by {
         obtain (k: int32) { k > x }
-        instantiate(forall (k: int32) { k > x implies x < 1000 }, k) using { k > x; }
+        instantiate(forall (k: int32) { k > x implies x < 1000 }, k);
     }
 }
 
@@ -35,7 +35,7 @@ theorem two_witnesses_reach_a_contradiction(x: int32) {
         obtain (m: int32) { m < x }
         have k > x by assumption();
         have m < x by assumption();
-        instantiate(forall (j: int32) { j > x implies j <= x }, k) using { k > x; }
+        instantiate(forall (j: int32) { j > x implies j <= x }, k);
         contradiction(k > x);
     }
 }

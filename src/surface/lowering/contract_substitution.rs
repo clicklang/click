@@ -1083,12 +1083,38 @@ fn rewrite_click_proposition_expression(
                 parent_changed || child_changed,
             )
         }
-        ClickProposition::Loadable { segment } => (
-            ClickProposition::Loadable {
-                segment: segment.clone(),
-            },
-            false,
-        ),
+        ClickProposition::Loadable { segment } => {
+            let ContractSegmentSurface::Range { base, start, end } = &segment.surface else {
+                return (proposition.clone(), false);
+            };
+            // Range bases retain a C fragment even when an equality names a
+            // matched model binding. Propose the same fragment substitution;
+            // the caller's kernel comparison still decides whether the names
+            // denote the checked pointer, including under shadowing.
+            let (base, changed) =
+                if contract_expression_as_c_fragment(source).as_ref() == Some(&segment.base) {
+                    (target.clone(), true)
+                } else {
+                    expression(base)
+                };
+            if !changed {
+                return (proposition.clone(), false);
+            }
+            let Some(lowered_base) = contract_expression_as_c_fragment(&base) else {
+                return (proposition.clone(), false);
+            };
+            // Keep the snapshot and both extents exactly as written. This is
+            // only a proposed presentation: finish_rewrite lowers it and asks
+            // the kernel to match its checked successor before retaining it.
+            let mut rewritten = segment.clone();
+            rewritten.base = lowered_base;
+            rewritten.surface = ContractSegmentSurface::Range {
+                base,
+                start: start.clone(),
+                end: end.clone(),
+            };
+            (ClickProposition::Loadable { segment: rewritten }, true)
+        }
         ClickProposition::Defined { expression: value } => {
             let (value, changed) = expression(value);
             (ClickProposition::Defined { expression: value }, changed)

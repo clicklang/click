@@ -6943,6 +6943,86 @@ fn a_byte_range_narrows_by_its_endpoints() {
     assert!(!held.proves_memory_loadable(&memory, &base, &k));
 }
 
+#[test]
+fn shifted_constant_view_extents_match_without_ambient_search() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = CMemory::new();
+    let base = Pointer::symbolic(Variable(9_319_000));
+    let index = Bitvector32Term::Variable(Variable(9_319_001));
+    let count = |length| {
+        Bitvector32Term::Subtract(
+            Box::new(Bitvector32Term::Add(
+                Box::new(index.clone()),
+                Box::new(Bitvector32Term::Constant(length)),
+            )),
+            Box::new(index.clone()),
+        )
+    };
+    let source = |bytes| Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: base.clone(),
+        bytes,
+    };
+    for width in [1, 2, 4, 8, 16] {
+        let bytes = if width == 1 {
+            count(4)
+        } else {
+            Bitvector32Term::Multiply(
+                Box::new(count(4)),
+                Box::new(Bitvector32Term::Constant(width)),
+            )
+        };
+        let mut costs = Vec::new();
+        for size in [0, 16, 64, 256, 1024] {
+            let mut context = PureFactContext::new().assume_proposition(source(bytes.clone()));
+            for offset in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(9_319_100 + offset)),
+                        Bitvector32Term::Constant(offset as u32),
+                    ),
+                    true,
+                );
+            }
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.proves_memory_loadable(
+                    &memory,
+                    &base,
+                    &Bitvector32Term::Constant(4 * width),
+                )
+            });
+            assert!(proved);
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+        let context = PureFactContext::new().assume_proposition(source(bytes));
+        assert!(!context.proves_memory_loadable(
+            &memory,
+            &base,
+            &Bitvector32Term::Constant(4 * width + 1),
+        ));
+        assert!(!context.proves_memory_loadable(
+            &memory,
+            &Pointer::symbolic(Variable(9_319_002)),
+            &Bitvector32Term::Constant(4 * width),
+        ));
+    }
+    assert!(!PureFactContext::new().proves_memory_loadable(
+        &memory,
+        &base,
+        &Bitvector32Term::Constant(4),
+    ));
+    let wrapped = Bitvector32Term::Multiply(
+        Box::new(count(0x4000_0000)),
+        Box::new(Bitvector32Term::Constant(4)),
+    );
+    assert!(
+        !PureFactContext::new()
+            .assume_proposition(source(wrapped))
+            .proves_memory_loadable(&memory, &base, &Bitvector32Term::Constant(4))
+    );
+}
+
 mod loadable_extent_graph_tests {
     use super::*;
 

@@ -67,10 +67,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                             k < (i - 1);
                         }
                     }
-                    instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, i) implies at(statement(3).entry, dst[k]) == old(src[k]) }, k) using {
-                        0 <= k;
-                        k < (i - 1);
-                    }
+                    instantiate(forall (k: int32) { at(statement(3).entry, 0) <= at(statement(3).entry, k) and at(statement(3).entry, k) < at(statement(3).entry, i) implies at(statement(3).entry, dst[k]) == old(src[k]) }, k);
                     transport(at(statement(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
                         at(statement(3).entry, dst[k]) == old(src[k]);
                     }

@@ -1766,3 +1766,28 @@ theorem nested(x: int32) {
         verify_c0_sources(&expanded, &[]).unwrap();
     }
 }
+
+#[test]
+fn inventory_obeys_the_work_and_whole_run_bounds() {
+    let directory = std::env::temp_dir().join(format!(
+        "click-audit-inventory-bounds-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("unit.click");
+    fs::write(
+        &path,
+        "theorem identity() { ensures 0 == 0 by { simp(); } }",
+    )
+    .unwrap();
+    let mut arguments = parse_arguments([path.display().to_string()]).unwrap();
+    arguments.limits.session.work = 1;
+    let error = run_audit(arguments).unwrap_err();
+    assert!(error.contains("smart-site inventory"), "{error}");
+    assert!(error.contains("budget"), "{error}");
+    let mut arguments = parse_arguments([path.display().to_string()]).unwrap();
+    arguments.time_limit = Duration::ZERO;
+    let error = run_audit(arguments).unwrap_err();
+    assert!(error.contains(RUN_LIMIT_EXHAUSTED), "{error}");
+    fs::remove_dir_all(directory).unwrap();
+}
