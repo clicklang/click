@@ -151,9 +151,6 @@ fi
 # issue does:
 # - examples/multifile-registry does not verify; it is quarantined in
 #   tests/examples.rs (issues/static-state-caller-transport.md).
-# - four mdtests with an `exceptional ensures` claim that `click expand
-#   --claim` cannot locate
-#   (bugs/expand-cannot-locate-an-exceptional-ensures-claim.md).
 # - mdtests/loop_invariant_through_loaded_pointer_field.md, whose expansion
 #   writes a cell range inside a struct
 #   (bugs/expansion-writes-a-cell-range-for-a-struct-field.md).
@@ -168,10 +165,6 @@ if [[ "${1:-}" == "--audit" ]]; then
     exec target/release/click audit --keep-going --time-limit 180m \
         --exclude examples/multifile-registry \
         --exclude examples/basic-cpp \
-        --exclude mdtests/execute_splits_a_throwing_call_inside_a_c_if.md \
-        --exclude mdtests/grouped_proof_closes_claims_across_two_throwing_calls.md \
-        --exclude mdtests/grouped_proof_closes_normal_and_exceptional_claims.md \
-        --exclude mdtests/outcomes_routes_a_throw_that_leaves_the_function.md \
         --exclude mdtests/loop_invariant_through_loaded_pointer_field.md \
         .
 fi

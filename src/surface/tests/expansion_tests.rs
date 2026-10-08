@@ -16474,3 +16474,73 @@ int32 f(int32 n) {{
             .unwrap_or_else(|error| panic!("{count} branches: {}\n{expanded}", error.message()));
     }
 }
+
+fn check_exceptional_claim_label_expansion(fixture: &str) {
+    let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "helper.exceptional_ensures_0")
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
+    assert!(
+        expanded.contains("ensures result == x by auto;"),
+        "the normal claim remains unselected: {expanded}"
+    );
+    assert!(
+        !expanded.contains("exceptional ensures exception == 7 by auto;"),
+        "the selected exceptional proof is expanded: {expanded}"
+    );
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.message()));
+}
+
+#[test]
+fn exceptional_claim_label_expands_inside_c_if_fixture() {
+    check_exceptional_claim_label_expansion("execute_splits_a_throwing_call_inside_a_c_if");
+}
+
+#[test]
+fn exceptional_claim_label_expands_two_throwing_calls_fixture() {
+    check_exceptional_claim_label_expansion(
+        "grouped_proof_closes_claims_across_two_throwing_calls",
+    );
+}
+
+#[test]
+fn exceptional_claim_label_expands_grouped_outcomes_fixture() {
+    check_exceptional_claim_label_expansion("grouped_proof_closes_normal_and_exceptional_claims");
+}
+
+#[test]
+fn exceptional_claim_label_expands_routed_throw_fixture() {
+    check_exceptional_claim_label_expansion("outcomes_routes_a_throw_that_leaves_the_function");
+}
+
+#[test]
+fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
+    let c_sources = [("helper.c", "int32 helper(int32 x) { return x; }")];
+    for proof in [" by auto", ""] {
+        let source = format!(
+            "verifying \"helper.c\"; int32 helper(int32 x) throws int32 {{ ensures result == x by auto; exceptional ensures threw: exception == 7{proof}; }}"
+        );
+        let project = |source: &str| {
+            ClickProject::new(
+                "helper.click",
+                [ClickModuleSource::new("helper.click", source, [])],
+            )
+        };
+        let expanded =
+            expand_c0_project_claim_source_by_label(&project(&source), &c_sources, "helper.threw")
+                .unwrap();
+        assert_ne!(expanded, source);
+        verify_c0_project(&project(&expanded), &c_sources).unwrap();
+        expand_c0_project_claim_source_by_label(
+            &project(&source),
+            &c_sources,
+            "helper.exceptional_ensures_0",
+        )
+        .expect_err("an explicitly named claim does not acquire a default label");
+    }
+}
