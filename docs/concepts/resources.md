@@ -228,7 +228,7 @@ any call.
 
 A folded field-bearing instance supplies its sibling clauses the same way
 when its body is unconditional and unmatched. `arena_prefix_region(region)`
-carries the fields `start` and `end` and owns `object(region)`, so a contract
+carries the fields `start` and `end` and owns `*region`, so a contract
 that consumes `freed: arena_prefix_region(region)` may also consume
 `arena_prefix_state(region->arena)`: while the clauses are evaluated, the
 instance's body is evaluated once at its own fields and the cells it owns are
@@ -403,7 +403,7 @@ consume members. A field-valued zero quantity moves no member rights. The
 [symbolic batch helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_helper.md)
 checks direct and nested calls. A cleanup helper can instead consume the
 control and complete entry-sized batch with `consumes`, retire its authority,
-and return ordinary storage with `produces object(pool)`. The
+and return ordinary storage with `produces *pool`. The
 [symbolic cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_cleanup_helper.md)
 checks direct, nested, and zero-sized calls. Call application consumes the
 checked entry quantity even when the helper changes the accounting field.
@@ -671,7 +671,7 @@ member only.
 their owned contents, and neither requires population authority. Missing or
 mismatched children cannot establish the outer member; its child cannot also
 be returned as independent ownership while retained inside the folded member.
-Built-in `owns object(p)` also works inside a member body. This checkpoint
+Built-in `owns *p` also works inside a member body. This checkpoint
 supports unit owned contents in field-free bodies; named proof fields,
 conditional contents, and counted batches with nonempty bodies remain separate.
 Private facts inside each resource layer follow that layer's existing checks.
@@ -713,7 +713,7 @@ void checkout(int32* pool, struct payload* p) {
     owns authority(capacity(pool));
     owns authority(item(pool, _));
     consumes capacity(pool);
-    consumes object(p);
+    consumes *p;
     requires defined(count(item(pool, _)) + 1);
     produces item(pool, p);
     ensures p->value == old(p->value);
@@ -735,7 +735,7 @@ anchor. It does not admit arbitrary batches or authority replacement.
 
 Private external memory can use its checked `viewable(...)` facts together with
 owned body resources. A local struct's implicit storage access currently does
-not supply transferable `owns object(...)`; the preserved
+not supply a transferable `owns *p`; the preserved
 `authority_family_exchange_stack_object_unavailable` regression records that
 separate limitation. The positive caller fixture receives explicit object
 ownership on entry.
@@ -746,7 +746,7 @@ record their totals. A checkout helper borrows that control as one resource:
 <!-- verified-example: mdtests/authority_pool_control_checkout.md -->
 ```click
 resource control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     owns authority(item(pool, _));
     fact 0 <= pool->checked_out;
@@ -756,7 +756,7 @@ resource control(pool: struct pool*) {
 ```
 
 The helper contract uses `owns control(pool)`, `consumes slot(pool)`,
-`consumes object(p)`, and `produces item(pool, p)`. Its proof opens the control,
+`consumes *p`, and `produces item(pool, p)`. Its proof opens the control,
 consumes the slot, increments the C counter, creates the item, and closes the
 control. Closing checks both relationships against the updated ledgers;
 retaining the authority alone cannot restore a false invariant. Nested helpers
@@ -1193,7 +1193,7 @@ A composite resource may put its entire body under one load-free `if`:
 resource list(node: struct node*) {
     if node != 0 {
         owns node->value;
-        owns &node->next;
+        owns node->next;
         contains list(node->next);
     }
 }
@@ -1484,7 +1484,7 @@ is the verified walk that needs both.
 An arm's cells need not hang off the resource's own parameters. A constructor
 field declared `struct tag*` makes its binding a struct base for the whole
 arm, so a frame keyed by one node can own the cells of another node the model
-carries: `owns &parent->left;`, `fact parent->left == child;`, and
+carries: `owns parent->left;`, `fact parent->left == child;`, and
 `owns sibling: tree_at(parent->right);` all resolve against `struct tag`'s
 layout. That is what lets a context frame own its parent's links while being
 indexed by the child it focuses. A binding of any other type is not a base and

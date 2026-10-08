@@ -8,7 +8,7 @@ An owned footprint makes every indirect call a checked memory effect, so the
 call havocs the cells the callee owns. The next field of the callback table is
 read after that havoc, and the contract carried by that field must survive it.
 It does, because the helper requires
-`separate(memory(object(augment)), memory(object(parent)))`: the table is
+`separate(memory(*augment), memory(*parent))`: the table is
 provably outside the written range, its cells are retained across the call, and
 the load resolves to the same value the `open` named. Dropping that requirement
 is what `mdtests/rb_augment_callbacks_helper_owns_rejects_unseparated.md`
@@ -55,29 +55,29 @@ verifying "rb_augment_callbacks.c";
 
 contract void Propagate(struct node* node, struct node* stop) {
     requires node != 0;
-    owns &node->left;
+    owns node->left;
     ensures node->left == old(node->left);
 }
 
 contract void Copy(struct node* old, struct node* new) {
     requires old != 0;
     requires new != 0;
-    owns &new->left;
+    owns new->left;
     ensures new->left == old(new->left);
 }
 
 contract void Rotate(struct node* old, struct node* new) {
     requires new != 0;
-    owns &new->left;
-    owns &new->right;
+    owns new->left;
+    owns new->right;
     ensures new->left == old(new->left);
     ensures new->right == old(new->right);
 }
 
 resource callback_suite(augment: const struct rb_augment_callbacks*) {
-    owns &augment->propagate;
-    owns &augment->copy;
-    owns &augment->rotate;
+    owns augment->propagate;
+    owns augment->copy;
+    owns augment->rotate;
     fact Propagate(augment->propagate);
     fact Copy(augment->copy);
     fact Rotate(augment->rotate);
@@ -88,9 +88,9 @@ void erase_augmented(struct node* node, struct node* parent,
     views callback_suite(augment);
     requires node != 0;
     requires parent != 0;
-    requires separate(memory(object(augment)), memory(object(parent)));
-    owns &parent->left;
-    owns &parent->right;
+    requires separate(memory(*augment), memory(*parent));
+    owns parent->left;
+    owns parent->right;
     ensures parent->left == old(parent->left);
     ensures parent->right == old(parent->right);
 } by {

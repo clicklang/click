@@ -5,7 +5,7 @@ the arena as `region->arena`. The live-region resource `arena_prefix_region`
 owns that descriptor and carries plain fields, the interval endpoints `start`
 and `end`. Its body is unconditional and unmatched, so while the contract's
 clauses are evaluated the folded instance publishes the cells it owns as read
-authority for the sibling clauses: `object(region)` makes `region->arena`
+authority for the sibling clauses: `*region` makes `region->arena`
 readable, and `arena_live_count(region->arena)` evaluates. This is the same
 publication a folded field-free composite makes
 (`mdtests/contract_owns_through_composite_field.md`) and a decided match arm
@@ -46,7 +46,7 @@ void arena_release(struct region* region) {
 ```click
 resource arena_live_count(arena: struct arena*) {
     field live: int32;
-    owns &arena->data;
+    owns arena->data;
     owns arena->live_regions;
     fact arena->live_regions == live;
 }
@@ -54,7 +54,7 @@ resource arena_live_count(arena: struct arena*) {
 resource arena_prefix_region(region: struct region*) {
     field start: int32;
     field end: int32;
-    owns object(region);
+    owns *region;
     owns region->arena->data[start..end];
     fact region->start == start;
     fact region->end == end;
@@ -68,7 +68,7 @@ void arena_release(struct region* region) {
     consumes freed: arena_prefix_region(region);
     consumes before: arena_live_count(region->arena);
     requires 1 <= before.live;
-    produces object(region);
+    produces *region;
     produces region->arena->data[region->start..region->end];
     produces after: arena_live_count(region->arena);
 

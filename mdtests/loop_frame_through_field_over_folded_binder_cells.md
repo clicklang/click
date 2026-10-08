@@ -16,7 +16,7 @@ across the one store the body makes, and the back edge closes it with the
 binder folded again.
 
 The field `arena->occupied` is owned by the function through
-`object(arena)`, outside the loop's havoc, so the loop head copies its cell
+`*arena`, outside the loop's havoc, so the loop head copies its cell
 back unchanged and every read of it names the one pointer the function
 loaded at entry. The back edge's viewability obligation for
 `arena->occupied[k]` is stated over that pointer, and the smart closer
@@ -61,10 +61,10 @@ resource window(occupied: int32*, capacity: int32, start: int32, end: int32) {
 verifying "loop_old_invariant_through_field_pointer.c";
 
 void mark_run(struct arena* arena, int32 start, int32 end) {
-    owns object(arena);
+    owns *arena;
     consumes w: window(arena->occupied, arena->capacity, start, end);
     requires separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
     requires w.next == start;

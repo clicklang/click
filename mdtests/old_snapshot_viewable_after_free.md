@@ -38,14 +38,14 @@ verifying "read_old_element.c";
 resource allocated_buffer(owner: struct buffer*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     contains allocation(owner->data, owner->cap * 4);
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
     fact 1 <= owner->cap;
     fact owner->cap <= 536870911;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 int32 read_old_element(int32 data[], int32 length, int32 index) {

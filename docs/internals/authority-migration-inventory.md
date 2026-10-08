@@ -270,7 +270,7 @@ and nested callers retain another member and preserve the child family's
 population total. Rejections cover missing or wrong children, independent
 return of a child retained in a member, wrong returned identity, and an
 unchanged total promised for a birth. `authority_wildcard_contained_object`
-covers the built-in `owns object(p)` form. The kernel checks the exact body
+covers the built-in `owns *p` form. The kernel checks the exact body
 exchange, and helper custody follows only the explicit contained-resource
 frontier, without scanning the caller frame.
 This discovery group preceded the bounded-pool migration recorded above;

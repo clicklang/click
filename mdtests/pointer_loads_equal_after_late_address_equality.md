@@ -23,8 +23,8 @@ verifying "late_pointer_load_equality.c";
 
 int32 equal_reads(struct node* a, struct node* b, struct node* c,
                   struct node* d) {
-    views &a->next;
-    views &d->next;
+    views a->next;
+    views d->next;
     ensures result == 1;
 } by {
     step();

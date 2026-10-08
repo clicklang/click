@@ -35,7 +35,7 @@ authorized resource child_ref(obj: struct child*) {}
 
 resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
-    owns object(obj);
+    owns *obj;
     owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);
@@ -47,7 +47,7 @@ resource parent(p: struct parent*) {
     match link {
         ParentLink::Empty => {},
         ParentLink::Linked(kid) => {
-            owns &p->kid;
+            owns p->kid;
             fact defined(p->kid);
             fact p->kid == kid;
             fact kid != 0;

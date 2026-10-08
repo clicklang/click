@@ -17,7 +17,7 @@ void link(struct node* node, struct node* tail) {
 
 ```click
 resource packed(node: struct node*) {
-    owns object(node);
+    owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
 }
 
@@ -26,7 +26,7 @@ verifying "resource_witness_fold_infers_origin.c";
 void link(struct node* node, struct node* tail) {
     requires node != 0;
     requires aligned(tail, 8);
-    consumes object(node);
+    consumes *node;
     produces packed(node);
 } by {
     execute();

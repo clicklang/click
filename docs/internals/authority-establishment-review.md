@@ -267,7 +267,7 @@ For example, the intended initializer interface uses existing contract clauses
 ```text
 void object_init(struct object* p) {
     consumes allocation(p, sizeof(struct object));
-    consumes object(p);
+    consumes *p;
     consumes authority(reference(p));
     requires count(reference(p)) == 0;
     produces control(p);

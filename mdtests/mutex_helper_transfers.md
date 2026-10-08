@@ -96,7 +96,7 @@ void increment(struct counter *p) {
 }
 
 void run(struct counter *p) {
-    owns &p->mu;
+    owns p->mu;
     requires aligned(&p->mu, 8);
     owns initial: counter_state(p);
 } by {
@@ -108,7 +108,7 @@ void run(struct counter *p) {
 }
 
 void run_direct(struct counter *p) {
-    owns &p->mu;
+    owns p->mu;
     requires aligned(&p->mu, 8);
     consumes initial: counter_state(p);
     produces restored: counter_state(p);

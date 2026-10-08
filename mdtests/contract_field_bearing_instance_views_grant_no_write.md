@@ -26,8 +26,8 @@ void relink(struct node *node) { node->right = 0; }
 ```click
 resource pair(node: struct node*) {
     field weight: int32;
-    owns &node->left;
-    owns &node->right;
+    owns node->left;
+    owns node->right;
 }
 
 verifying "relink.c";

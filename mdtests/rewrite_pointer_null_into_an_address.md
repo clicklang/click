@@ -34,7 +34,7 @@ resource frame_at(c: struct cell*) {
     field model: Frame;
     match model {
         Frame::Above(up) => {
-            owns &c->up;
+            owns c->up;
             fact c->up == up;
         },
     }

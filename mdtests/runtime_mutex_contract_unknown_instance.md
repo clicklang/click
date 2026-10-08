@@ -24,7 +24,7 @@ resource counter_state(counter: struct counter*) {
 verifying "runtime_mutex_contract_unknown_instance.c";
 
 void initialize(struct counter *counter) {
-    owns &counter->mu;
+    owns counter->mu;
     requires aligned(&counter->mu, 8);
 } by {
     step(pthread_mutex_init(&counter->mu, 0), { state: state });

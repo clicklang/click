@@ -23,7 +23,7 @@ void helper(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by { execute(); simp(); }
 int32 run(struct holder *holder) {
-    owns &holder->mu;
+    owns holder->mu;
     owns holder->value;
     requires aligned(&holder->mu, 8);
     ensures result == old(holder->value);

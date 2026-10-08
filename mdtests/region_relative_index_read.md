@@ -19,7 +19,7 @@ int32 region_read(struct region* region, int32 index) {
 
 ```click
 resource live_region(region: struct region*) {
-    owns object(region);
+    owns *region;
     owns region->data[region->start..region->end];
 }
 

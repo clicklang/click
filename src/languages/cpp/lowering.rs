@@ -1049,7 +1049,11 @@ impl LoweringContext<'_> {
         let place = self.place(object)?;
         let (value_type, offset) = self.records.resolve_path(
             &place.value_type,
-            object.projections.iter().chain(std::iter::once(field)),
+            object
+                .projections
+                .iter()
+                .map(super::schema::CppProjection::as_ref)
+                .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
         )?;
         Ok((
             c_pointer_offset_bytes(c_variable(object.name.clone()), offset),

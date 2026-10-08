@@ -54,7 +54,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
         verifying "mutex.c";
         void *idle(void *arg) { ensures result == 0; } by { execute(); simp(); }
         void start(struct box *box) {
-            owns &box->mu;
+            owns box->mu;
             requires aligned(&box->mu, 8);
             owns state: box_state(box);
             ensures 0 == 0;
@@ -146,19 +146,19 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
         resource storage(owner: struct vector*) {
             owns owner->len;
             owns owner->cap;
-            owns &owner->data;
+            owns owner->data;
             owns owner->data[0..owner->cap];
             fact 0 <= owner->len;
             fact owner->len <= owner->cap;
             fact owner->cap <= 1073741823;
             fact viewable(owner->data[0..owner->len]);
-            fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+            fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
         }
 
         resource allocated(owner: struct vector*) {
             owns owner->len;
             owns owner->cap;
-            owns &owner->data;
+            owns owner->data;
             contains allocation(owner->data, owner->cap * 4);
             owns owner->data[0..owner->cap];
             fact 0 <= owner->len;
@@ -166,7 +166,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
             fact 1 <= owner->cap;
             fact owner->cap <= 1073741823;
             fact viewable(owner->data[0..owner->len]);
-            fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+            fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
         }
 
         verifying "push.c";
@@ -771,7 +771,7 @@ int32 pick(struct node* node) {
 verifying "pick.c";
 
 resource node_storage(p: struct node*) {
-    owns object(p);
+    owns *p;
 }
 
 

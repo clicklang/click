@@ -43,7 +43,7 @@ void caller(struct region* region) {
 ```click
 resource arena_live_count(arena: struct arena*) {
     field live: int32;
-    owns &arena->data;
+    owns arena->data;
     owns arena->live_regions;
     fact arena->live_regions == live;
 }
@@ -51,7 +51,7 @@ resource arena_live_count(arena: struct arena*) {
 resource arena_prefix_region(region: struct region*) {
     field start: int32;
     field end: int32;
-    owns object(region);
+    owns *region;
     owns region->arena->data[start..end];
     fact region->start == start;
     fact region->end == end;
@@ -65,7 +65,7 @@ void arena_release(struct region* region) {
     consumes freed: arena_prefix_region(region);
     consumes before: arena_live_count(region->arena);
     requires 1 <= before.live;
-    produces object(region);
+    produces *region;
     produces region->arena->data[region->start..region->end];
     produces after: arena_live_count(region->arena);
 
@@ -82,7 +82,7 @@ void caller(struct region* region) {
     consumes freed: arena_prefix_region(region);
     consumes before: arena_live_count(region->arena);
     requires 1 <= before.live;
-    produces object(region);
+    produces *region;
     produces region->arena->data[region->start..region->end];
     produces after: arena_live_count(region->arena);
 } by {

@@ -65,10 +65,10 @@ resource clearing(
 verifying "loop_keeps_function_owned_cells.c";
 
 void clear_span(struct span* span, int32* flags, int32* data, int32 n) {
-    owns object(span);
+    owns *span;
     owns w: clearing(flags, data, n, span->start, span->end);
     requires w.next == span->start;
-    requires separate(memory(object(span)), memory(flags[0..n]));
+    requires separate(memory(*span), memory(flags[0..n]));
 } by {
     let { next: first } = unfold(w);
     step();

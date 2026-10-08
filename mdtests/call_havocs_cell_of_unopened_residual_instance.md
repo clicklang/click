@@ -1,7 +1,7 @@
 # A call does not keep a cell of a residual instance it cannot open
 
 `keep_box` keeps `maybe_box(b)` outside the call while it lends `cells`.
-Both arms the premises leave possible own `object(b)`, so `b->v` is readable
+Both arms the premises leave possible own `*b`, so `b->v` is readable
 and the claim is true, but the arm is not decided. The call havoc keeps a
 cell an owned residual member holds only when it can read the member's body
 exactly, and it opens only an unconditional, unmatched instance body one
@@ -35,10 +35,10 @@ resource maybe_box(b: struct box*) {
     match model {
         Slot::Gone => {},
         Slot::Empty => {
-            owns object(b);
+            owns *b;
         },
         Slot::Full => {
-            owns object(b);
+            owns *b;
         },
     }
 }

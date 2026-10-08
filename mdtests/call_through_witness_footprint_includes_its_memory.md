@@ -1,6 +1,6 @@
 # A call's footprint includes memory a resource owns through a witness
 
-`hop(p)` owns `object(p)` and, through an existential witness `next` that
+`hop(p)` owns `*p` and, through an existential witness `next` that
 `p->word` spells, the cell `next->value`. `holder(p, q)` contains `hop(p)`
 and names a `side: tagged(q)` child. `overwrite` holds `holder(p, q)` and
 stores `1` through the witness; its contract says nothing about the cell.
@@ -37,7 +37,7 @@ int32 caller(struct node* p, struct node* q) {
 
 ```click
 resource hop(node: struct node*) {
-    owns object(node);
+    owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
     owns next->value;
 }

@@ -32,7 +32,7 @@ const SOURCE_METADATA: &str = "SOURCE.md";
 const QUARANTINED: &[(&str, &str)] = &[(
     "multifile-registry",
     "`registry_run`'s entry cannot evaluate an owned field path into another module's \
-     function-local static struct array (`owns beta::record_beta::batches[0].value[0..1]`: \
+     function-local static struct array (`owns beta::record_beta::batches[0].value`: \
      no known pointee type, the gap mdtests/initialized_aggregate_static_arrays.md pins); \
      past it, ordinary-entry static-state transport does not yet certify its cross-file \
      caller (issues/static-state-caller-transport.md)",
@@ -259,7 +259,12 @@ fn rbtree_insert_uses_the_unchanged_c_and_the_shared_model() {
 #[ignore = "nightly: audit process regression stays outside the verification gate"]
 fn audit_whole_claim_failure_is_fatal() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for keep_going in [false, true] {
+    for (keep_going, max_sites) in [
+        (false, None),
+        (true, None),
+        (false, Some("1")),
+        (true, Some("100")),
+    ] {
         let mut command = Command::new(env!("CARGO_BIN_EXE_click"));
         command.args([
             "audit",
@@ -270,6 +275,9 @@ fn audit_whole_claim_failure_is_fatal() {
         ]);
         if keep_going {
             command.arg("--keep-going");
+        }
+        if let Some(limit) = max_sites {
+            command.args(["--max-sites", limit]);
         }
         let output = command
             .arg(root.join("mdtests/scalar.md"))
@@ -282,6 +290,89 @@ fn audit_whole_claim_failure_is_fatal() {
         assert!(!stdout.contains("NOTE "), "{stdout}");
         assert!(stdout.contains("--start-at"), "{stdout}");
     }
+}
+
+/// Batching respects both the total site cap and already consumed sites.
+#[test]
+#[ignore = "nightly: audit selection regression stays outside the verification gate"]
+fn bounded_audit_batches_only_claims_that_fit_the_remaining_cap() {
+    let directory =
+        std::env::temp_dir().join(format!("click-audit-cap-selection-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("two.md");
+    fs::write(
+        &path,
+        "# Bounded audit selection\n\n```c filename=two.c\n\
+         int32 first(int32 x) { return x; }\n\
+         int32 second(int32 x) { return x; }\n```\n\n```click\n\
+         verifying \"two.c\";\n\
+         int32 first(int32 x) { ensures result == x; } by { execute(); simp(); }\n\
+         int32 second(int32 x) { ensures result == x; } by { execute(); simp(); }\n\
+         ```\n\n```expect\npass\n```\n",
+    )
+    .unwrap();
+    for (cap, passed, batched_claims) in [(1, 1, 0), (2, 2, 1), (3, 3, 1), (4, 4, 2), (5, 4, 2)] {
+        let output = Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["audit", "--verbose", "--max-sites", &cap.to_string()])
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains(&format!(
+                "SUMMARY: {passed} sites passed; 0 site failures; 0 claim failures"
+            )),
+            "{stdout}"
+        );
+        assert_eq!(
+            stdout.matches("2 sites together:").count(),
+            batched_claims,
+            "{stdout}"
+        );
+        assert_eq!(stdout.contains("RESUME:"), cap < 4, "{stdout}");
+    }
+    let source = fs::read_to_string(&path).unwrap();
+    let (line, text) = source
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.starts_with("int32 first") && line.contains("ensures"))
+        .unwrap();
+    let location = format!(
+        "{}:{}:{}",
+        path.display(),
+        line + 1,
+        text.find("simp()").unwrap() + 1
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_click"))
+        .args([
+            "audit",
+            "--verbose",
+            "--max-sites",
+            "3",
+            "--start-at",
+            &location,
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("SUMMARY: 3 sites passed; 0 site failures; 0 claim failures"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("2 sites together:").count(), 1, "{stdout}");
+    assert!(!stdout.contains("RESUME:"), "{stdout}");
+    fs::remove_dir_all(directory).unwrap();
 }
 
 /// Nested execution matches must retain their own branch's shared tactics.

@@ -15,14 +15,14 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
 
 ```click resource_semantics=authority
 authorized resource slot(pool: struct pool*) {}
-authorized resource item(pool: struct pool*, p: struct payload*) { owns object(p); }
+authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource storage(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     owns authority(item(pool, _));
 }
 resource control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     owns authority(item(pool, _));
     fact 0 <= pool->checked_out;
@@ -57,7 +57,7 @@ void checkout(struct pool* pool, struct payload* p) {
     owns control(pool);
     requires pool->checked_out < 2147483647;
     consumes slot(pool);
-    consumes object(p);
+    consumes *p;
     produces item(pool, p);
     ensures count(slot(pool)) == old(count(slot(pool))) - 1;
     ensures count(item(pool, _)) == old(count(item(pool, _))) + 1;
@@ -84,7 +84,7 @@ void give_back(struct pool* pool, struct payload* p) {
     owns control(pool);
     requires count(item(pool, p)) == 1;
     consumes item(pool, p);
-    produces object(p);
+    produces *p;
     produces slot(pool);
     ensures count(slot(pool)) == old(count(slot(pool))) + 1;
     ensures count(item(pool, _)) == old(count(item(pool, _))) - 1;
@@ -186,7 +186,7 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
  consumes storage(pool);
  requires count(slot(pool)) == 0;
  requires count(item(pool, _)) == 0;
- owns object(first); owns object(second);
+ owns *first; owns *second;
  produces control(pool);
  produces 2 of slot(pool);
  ensures pool->checked_out == 0;

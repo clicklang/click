@@ -27,12 +27,12 @@ void initialize_source(struct pool* source, struct pool* destination) {
 authorized resource pool_slot(pool: struct pool*) {}
 authorized resource pool_object(pool: struct pool*, object: int32*) {}
 resource pool_storage(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
 }
 resource pool_control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
     fact 0 <= pool->checked_out;

@@ -16,7 +16,7 @@ resource src(d: int32*, n: int32) {
 resource box(p: struct s*) {
     owns p->a;
     owns p->b;
-    owns &p->d;
+    owns p->d;
     views src(p->d, p->b);
     fact 0 <= p->b;
 }
@@ -25,7 +25,7 @@ verifying "probe.c";
 
 int32 setup(struct s* p, int32 d[], int32 n) {
     requires 0 <= n;
-    consumes object(p);
+    consumes *p;
     views src(d, n);
     produces box(p);
     ensures p->b == n;
@@ -50,7 +50,7 @@ int32 bump(struct s* p) {
 
 int32 probe(struct s* p, int32 d[], int32 n) {
     requires 0 < n;
-    consumes object(p);
+    consumes *p;
     views src(d, n);
     produces box(p);
     ensures result == n;

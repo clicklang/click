@@ -33,7 +33,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_local_job_external_output.c";
 
 void *worker(void *argument) {
-    views &((struct job *)argument)->output;
+    views ((struct job *)argument)->output;
     views ((struct job *)argument)->value;
     owns ((struct job *)argument)->output[0..1];
     requires separate(memory(((struct job *)argument)[0..3]), memory(((struct job *)argument)->output[0..1]));

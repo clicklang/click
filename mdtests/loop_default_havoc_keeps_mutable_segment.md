@@ -1,6 +1,6 @@
 # A clause-free loop still havocs a separately owned segment
 
-The function owns `&g[0..1]`, so the segment is part of what the loop body may
+The function owns `g`, so the segment is part of what the loop body may
 write. Bounding the default loop havoc by ownership must not drop it: a
 post-loop claim that `g` still holds its pre-loop value has to fail.
 
@@ -22,7 +22,7 @@ verifying "loop_default_havoc_keeps_mutable_segment.c";
 
 void loop_default_havoc_keeps_mutable_segment(int32 n) {
     requires n >= 0 and n <= 100;
-    owns &g[0..1];
+    owns g;
     ensures stale: g == old(g);
 } by {
     step();

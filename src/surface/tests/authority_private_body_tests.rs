@@ -611,7 +611,7 @@ fn authority_final_release_helper_retires_population_and_allocation() {
         authorized resource reference(obj: struct object*) {}
         resource control(obj: struct object*) {
             contains allocation(obj, sizeof(struct object));
-            owns object(obj);
+            owns *obj;
             owns authority(reference(obj));
             fact obj->refs == count(reference(obj));
         }
