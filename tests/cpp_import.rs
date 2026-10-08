@@ -5401,10 +5401,10 @@ int64 quotient(int64 n, int64 d) {
  requires n == 4294967297i64; requires d == 1i64;
  ensures result == 4294967297i64;
 } by { execute(); simp(); }
-int64 relay(int64 n, int64 d, int32* untouched) {
- views untouched[0..1];
+int64 relay(int64 n, int64 d, int32& untouched) {
+ views untouched;
  requires n == 4294967297i64; requires d == 1i64;
- ensures result == 1i64; ensures untouched[0] == old(untouched[0]);
+ ensures result == 1i64; ensures untouched == old(untouched);
 } by { execute(); simp(); }
 "#,
     );
@@ -12864,11 +12864,11 @@ fn converted_call_initializers_evaluate_mutators_once_and_frame_siblings() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "converted.cpp";
-int32 bump(struct Box* box) { owns box->value; requires box->value == 0; ensures box->value == 1; ensures result == 1; } by { execute(); simp(); }
-int64 relay(struct Box* box) { owns box->value; views box->sibling; requires box->value == 0; ensures box->value == 1; ensures result == 1i64; ensures box->sibling == old(box->sibling); } by { execute(); simp(); }
+int32 bump(struct Box& box) { owns box.value; requires box.value == 0; ensures box.value == 1; ensures result == 1; } by { execute(); simp(); }
+int64 relay(struct Box& box) { owns box.value; views box.sibling; requires box.value == 0; ensures box.value == 1; ensures result == 1i64; ensures box.sibling == old(box.sibling); } by { execute(); simp(); }
 "#;
     check_return_call_sidecar(&project, &import, source);
-    let hostile = source.replace("owns box->value; views", "views box->value; views");
+    let hostile = source.replace("owns box.value; views", "views box.value; views");
     let path = project.directory.join("hostile.click");
     fs::write(&path, &hostile).unwrap();
     assert!(
