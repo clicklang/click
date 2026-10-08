@@ -25,22 +25,22 @@ void Restore_destructor(struct Restore* self) {
     simp();
 }
 
-int32 with_restore(bool early, int32* value) {
-    owns value[0..1];
+int32 with_restore(bool early, int32& value) {
+    owns value;
     ensures early != 0 implies result == 7;
     ensures early == 0 implies result == 9;
-    ensures value[0] == old(value[0]);
+    ensures value == old(value);
 } by {
     execute();
     simp();
 }
 
-int32 call_with_restore(bool early, int32* value) {
-    requires value[0] == 41;
-    owns value[0..1];
+int32 call_with_restore(bool early, int32& value) {
+    requires value == 41;
+    owns value;
     ensures early != 0 implies result == 7;
     ensures early == 0 implies result == 9;
-    ensures value[0] == 41;
+    ensures value == 41;
 } by {
     execute();
     simp();

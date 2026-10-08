@@ -68,16 +68,16 @@ int32 helper(bool should_throw) throws int32 {
 }
 
 int32 guarded_before_second(
-    int32* first_cell,
-    int32* second_cell,
+    int32& first_cell,
+    int32& second_cell,
     bool should_throw
 ) {
-    owns first_cell[0..1];
-    owns second_cell[0..1];
-    requires separate(memory(first_cell[0..1]), memory(second_cell[0..1]));
-    ensures result == old(first_cell[0]);
-    ensures first_cell[0] == old(first_cell[0]);
-    ensures second_cell[0] == old(second_cell[0]);
+    owns first_cell;
+    owns second_cell;
+    requires separate(memory(first_cell), memory(second_cell));
+    ensures result == old(first_cell);
+    ensures first_cell == old(first_cell);
+    ensures second_cell == old(second_cell);
 } by {
     step();
     step();
@@ -87,13 +87,13 @@ int32 guarded_before_second(
             step();
             step();
             step();
-            have second_cell[0] == old(second_cell[0]) by { simp(); }
+            have second_cell == old(second_cell) by { simp(); }
             execute();
             simp();
         }
         threw => {
             step();
-            have second_cell[0] == old(second_cell[0]) by { simp(); }
+            have second_cell == old(second_cell) by { simp(); }
             execute();
             simp();
         }

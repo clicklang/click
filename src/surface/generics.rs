@@ -839,6 +839,7 @@ fn instantiate_parameter(
         function_pointer_signature: parameter.function_pointer_signature.clone(),
         constant: parameter.constant,
         pointee_constant: parameter.pointee_constant,
+        reference: false,
     })
 }
 

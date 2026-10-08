@@ -1,7 +1,7 @@
 verifying "bitcoin-src/src/util/feefrac.h";
 
-void FeeFrac_operator_add_assign(struct FeeFrac* self, const struct FeeFrac* other) {
-    requires self == other;
+void FeeFrac_operator_add_assign(struct FeeFrac* self, const struct FeeFrac& other) {
+    requires self == &other;
     owns self->fee;
     owns self->size;
     requires -4611686018427387904 <= self->fee;

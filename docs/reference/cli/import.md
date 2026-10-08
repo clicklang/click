@@ -204,25 +204,32 @@ typed store; signed addition retains the kernel's existing overflow check. The
 lowered value remains paired with the immutable semantic artifact so Clang
 declaration identities and source spans are not discarded.
 
-The first proof-facing interface uses existing Surface Click pointer syntax
-for the reference's one-cell mutable view:
+The sidecar declares a reference as a reference, and its name is the object
+it refers to:
 
 <!-- verified-example: examples/basic-cpp/increment.click -->
 ```click
 verifying "increment.cpp";
 
-int32 increment(int32* value) {
-    requires value[0] < 2147483647;
-    owns value[0..1];
-    ensures value[0] == old(value[0]) + 1;
-    ensures result == value[0];
+int32 increment(int32& value) {
+    requires value < 2147483647;
+    owns value;
+    ensures value == old(value) + 1;
+    ensures result == value;
 } by {
     execute();
     simp();
 }
 ```
 
-This spelling does not translate the C++ body to C. The sidecar signature is
+`owns value` owns the referent, `value` reads it, and `&value` is its address,
+for a contract that says two references alias (`requires &a == &b;`) or that a
+stored pointer points at one. A struct reference names its fields as
+`state.field`. Writing `int32* value` for an `int&` is a signature mismatch
+that names both spellings; a C++ `int*` parameter stays a pointer. A member
+function's receiver is still the pointer `self`.
+
+Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
 uses its direct kernel lowering. `click verify`, `click profile`, `click
 expand`, and `click audit` all load the same locked C++ input; verification and
@@ -251,11 +258,11 @@ with a conditional expression and verifies offline:
 ```click
 verifying "money_nonnegative.cpp";
 
-bool money_nonnegative(const int64* nValue) {
-    owns nValue[0..1];
-    ensures result == (if old(nValue[0]) >= 0i64 { 1 } else { 0 });
+bool money_nonnegative(const int64& nValue) {
+    owns nValue;
+    ensures result == (if old(nValue) >= 0i64 { 1 } else { 0 });
 } by {
-    if nValue[0] >= 0i64 {
+    if nValue >= 0i64 {
         execute();
         simp();
     } else {

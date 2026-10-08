@@ -10,11 +10,11 @@ int32 bump_pointer(int32* pointer) {
     simp();
 }
 
-int32 bump_reference(int32* value) {
-    requires value[0] < 2147483647;
-    owns value[0..1];
-    ensures value[0] == old(value[0]) + 1;
-    ensures result == value[0];
+int32 bump_reference(int32& value) {
+    requires value < 2147483647;
+    owns value;
+    ensures value == old(value) + 1;
+    ensures result == value;
 } by {
     execute();
     simp();

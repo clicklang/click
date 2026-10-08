@@ -1,10 +1,10 @@
 verifying "nested_record.cpp";
 
-void BumpSizeRef(int32* value) {
-    owns value[0..1];
-    requires 0 <= value[0];
-    requires value[0] <= 10;
-    ensures value[0] == old(value[0]) + 1;
+void BumpSizeRef(int32& value) {
+    owns value;
+    requires 0 <= value;
+    requires value <= 10;
+    ensures value == old(value) + 1;
 } by { execute(); simp(); }
 
 void FeeEnvelope_BumpLeftByReference(struct FeeEnvelope* self) {

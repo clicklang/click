@@ -24,10 +24,10 @@ int cleanup(int& value) {
 
 ```click
 verifying "field_drop.cpp";
-void Guard_constructor(struct Guard* self, int32* value) {
+void Guard_constructor(struct Guard* self, int32& value) {
     owns self->slot;
     owns self->saved;
-    ensures self->slot == value;
+    ensures self->slot == &value;
     ensures self->saved == 1;
 } by { execute(); simp(); }
 void Guard_destructor(struct Guard* self) {
@@ -38,9 +38,9 @@ void Guard_destructor(struct Guard* self) {
     ensures self->saved == old(self->saved);
     ensures self->slot[0] == old(self->saved);
 } by { execute(); simp(); }
-int32 cleanup(int32* value) {
-    owns value[0..1];
-    ensures value[0] == 42;
+int32 cleanup(int32& value) {
+    owns value;
+    ensures value == 42;
 } by { execute(); simp(); }
 ```
 
