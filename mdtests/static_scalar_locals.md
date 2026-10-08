@@ -25,14 +25,14 @@ int32 call_twice() {
 verifying "static_scalar_locals.c" as static_local;
 
 int32 increment_twice() {
-    owns &calls[0..1];
+    owns calls;
     requires calls < 1000;
     ensures result == old(calls) + 2 by auto;
     ensures calls == old(calls) + 2 by auto;
 }
 
 int32 call_twice() {
-    owns &static_local::increment_twice::calls[0..1];
+    owns static_local::increment_twice::calls;
     requires static_local::increment_twice::calls == 5;
     ensures result == 9 by auto;
 }

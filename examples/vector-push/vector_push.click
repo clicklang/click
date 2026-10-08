@@ -1,11 +1,11 @@
 resource nonempty_vector(owner: struct vector*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 1 <= owner->len;
     fact owner->len <= owner->cap;
-    fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 verifying "vector_push.c";
@@ -13,10 +13,10 @@ verifying "vector_push.c";
 int32 vector_push(struct vector* owner, int32 value) {
     requires 0 <= owner->len;
     requires owner->len < owner->cap;
-    requires separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+    requires separate(memory(*owner), memory(owner->data[0..owner->cap]));
     consumes owner->len;
     consumes owner->cap;
-    consumes &owner->data;
+    consumes owner->data;
     consumes owner->data[0..owner->cap];
     produces nonempty_vector(owner);
     ensures result == old(owner->len) + 1;
@@ -47,7 +47,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             at(statement(5).entry, owner->len) < at(statement(5).entry, owner->cap);
         }
     }
-    have separate(memory(object(owner)), memory(owner->data[0..owner->cap])) by simp;
+    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
     fold(nonempty_vector(owner));
     have at(statement(5).entry, owner->len) <= at(statement(5).entry, owner->len) by {
         normalize();

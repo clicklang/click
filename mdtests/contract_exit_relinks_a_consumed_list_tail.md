@@ -16,7 +16,7 @@ int32 relink(struct node* a, struct node* b) {
 resource list(node: struct node*) {
     if node != 0 {
         owns node->value;
-        owns &node->next;
+        owns node->next;
         contains list(node->next);
     }
 }

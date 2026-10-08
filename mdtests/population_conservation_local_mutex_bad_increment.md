@@ -37,7 +37,7 @@ void contribute(struct counter* p) {
     requires count(remaining(p)) > 1;
     requires count(remaining(p)) <= 3;
     requires p->value == 3 - count(remaining(p));
-    owns &p->mutex;
+    owns p->mutex;
     requires aligned(&p->mutex, 8);
     ensures p->value == 3 - count(remaining(p));
 } by {

@@ -12,9 +12,9 @@ void caller(struct pool* pool, struct payload* p) { forward(pool, p); }
 
 ```click resource_semantics=authority
 authorized resource slot(pool: struct pool*) {}
-authorized resource item(pool: struct pool*, p: struct payload*) { owns object(p); }
+authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     owns authority(item(pool, _));
     fact 0 <= pool->checked_out;
@@ -83,7 +83,7 @@ void give_back(struct pool* pool, struct payload* p) {
     owns control(pool);
     requires count(item(pool, p)) == 1;
     consumes item(pool, p);
-    produces object(p);
+    produces *p;
     produces slot(pool);
     ensures count(slot(pool)) == old(count(slot(pool))) + 1;
     ensures count(item(pool, _)) == old(count(item(pool, _))) - 1;
@@ -184,7 +184,7 @@ void forward(struct pool* pool, struct payload* p) {
     owns control(pool);
     requires count(item(pool, p)) == 1;
     consumes item(pool, p);
-    produces object(p);
+    produces *p;
     produces slot(pool);
     ensures count(slot(pool)) == old(count(slot(pool))) + 1;
     ensures count(item(pool, _)) == old(count(item(pool, _))) - 1;
@@ -215,7 +215,7 @@ void caller(struct pool* pool, struct payload* p) {
     requires count(item(pool, p)) == 1;
     owns slot(pool);
     consumes item(pool, p);
-    produces object(p);
+    produces *p;
     produces slot(pool);
     ensures count(slot(pool)) == old(count(slot(pool))) + 1;
     ensures count(item(pool, _)) == old(count(item(pool, _))) - 1;

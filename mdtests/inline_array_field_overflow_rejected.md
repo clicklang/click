@@ -16,7 +16,7 @@ int32 spill(struct rec* r) {
 verifying "t.c";
 
 int32 spill(struct rec* r) {
-    owns object(r);
+    owns *r;
     ensures result == 7;
 }
 ```

@@ -44,7 +44,7 @@ void outer(struct holder *holder) {
     simp();
 }
 int32 run(struct holder *holder) {
-    owns &holder->mu;
+    owns holder->mu;
     requires aligned(&holder->mu, 8);
     consumes initial: empty_state(holder);
     ensures result == 0;

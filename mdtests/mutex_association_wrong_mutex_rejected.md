@@ -41,7 +41,7 @@ void touch(struct cell *cell) {
     simp();
 }
 void run(struct cell *cell) {
-    owns &cell->other;
+    owns cell->other;
     requires aligned(&cell->other, 8);
     owns initial: cell_state(cell);
 } by {

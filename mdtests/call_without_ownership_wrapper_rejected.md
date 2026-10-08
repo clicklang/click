@@ -22,7 +22,7 @@ verifying "call_without_ownership_wrapper_rejected.c";
 
 int32 bump() {
     requires g < 100;
-    owns &g[0..1];
+    owns g;
     ensures result == 0;
 }
 

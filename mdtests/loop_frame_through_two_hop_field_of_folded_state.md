@@ -56,13 +56,13 @@ resource window(occupied: int32*, capacity: int32, start: int32, end: int32) {
 
 resource state(arena: struct arena*) {
     field capacity: int32;
-    owns &arena->data;
-    owns &arena->occupied;
+    owns arena->data;
+    owns arena->occupied;
     owns arena->capacity;
     owns arena->live_regions;
     fact arena->capacity == capacity;
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
 }
@@ -70,7 +70,7 @@ resource state(arena: struct arena*) {
 verifying "loop_frame_two_hop_field.c";
 
 void mark_run(struct region* region, int32 start, int32 end) {
-    owns object(region);
+    owns *region;
     owns st: state(region->arena);
     consumes w: window(region->arena->occupied, region->arena->capacity, start, end);
     requires w.next == start;

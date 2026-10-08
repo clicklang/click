@@ -29,7 +29,7 @@ int32 peek(struct slot* s, struct slot* other) {
 ```click
 resource pool_state(pool: struct pool*) {
     field live: int32;
-    owns &pool->data;
+    owns pool->data;
     owns pool->n;
     fact 0 <= live;
 }
@@ -37,7 +37,7 @@ resource pool_state(pool: struct pool*) {
 resource pool_slot(s: struct slot*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     owns s->pool->data[at..end];
     fact s->at == at;
     fact s->end == end;
@@ -47,7 +47,7 @@ resource pool_slot(s: struct slot*) {
 
 resource slot_desc(d: struct slot*) {
     field at: int32;
-    owns object(d);
+    owns *d;
     fact d->at == at;
 }
 

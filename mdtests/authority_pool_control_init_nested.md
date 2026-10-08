@@ -12,14 +12,14 @@ void forward(struct pool* pool) { initialize(pool, 2); }
 
 ```click resource_semantics=authority
 authorized resource slot(pool: struct pool*) {}
-authorized resource item(pool: struct pool*, p: struct payload*) { owns object(p); }
+authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource storage(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     owns authority(item(pool, _));
 }
 resource control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(slot(pool));
     owns authority(item(pool, _));
     fact 0 <= pool->checked_out;

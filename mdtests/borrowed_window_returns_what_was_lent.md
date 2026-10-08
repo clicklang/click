@@ -25,8 +25,8 @@ verifying "borrowed_window_returns_what_was_lent.c";
 void push(struct buffer* owner, int32 value) {
     requires 0 <= owner->len;
     requires owner->len < 1000;
-    requires separate(memory(object(owner)), memory((owner->data + owner->len)[0..1]));
-    views &owner->data;
+    requires separate(memory(*owner), memory((owner->data + owner->len)[0..1]));
+    views owner->data;
     owns owner->len;
     owns (owner->data + owner->len)[0..1];
     ensures owner->len == old(owner->len) + 1;

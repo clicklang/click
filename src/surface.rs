@@ -3064,8 +3064,6 @@ enum ContractSegmentSurface {
         end: ContractExpression,
     },
     Field {
-        /// Explicit address-of distinguishes pointer storage from pointed-to data.
-        address: bool,
         /// How the contract spelled the struct the field belongs to, when the
         /// parse had it. A base reached through a link reads as `old->left`
         /// there, which is what the user wrote; the lowered `CExpression` for

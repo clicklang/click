@@ -10,18 +10,18 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
 resource owned_segmented_buffer(owner: struct owned_segmented_buffer*) {
     owns owner->first_len;
     owns owner->second_len;
-    owns &owner->first_data;
-    owns &owner->second_data;
+    owns owner->first_data;
+    owns owner->second_data;
     owns owner->first_data[0..owner->first_len];
     owns owner->second_data[0..owner->second_len];
     fact 1 <= owner->first_len;
     fact 1 <= owner->second_len;
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->first_data[0..owner->first_len])
     );
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->second_data[0..owner->second_len])
     );
 }
@@ -42,7 +42,7 @@ int32 owned_segmented_buffer_init(
 ) {
     requires 1 <= first_len;
     requires 1 <= second_len;
-    consumes object(owner);
+    consumes *owner;
     consumes first_data[0..first_len];
     consumes second_data[0..second_len];
     produces owned_segmented_buffer(owner);
@@ -141,13 +141,13 @@ int32 owned_segmented_buffer_set_first(
     requires 0 <= index;
     requires index < owner->first_len;
     requires separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->first_data[0..owner->first_len])
     );
     views owner->first_len;
     views owner->second_len;
-    views &owner->first_data;
-    views &owner->second_data;
+    views owner->first_data;
+    views owner->second_data;
     owns owner->first_data[index..index + 1];
     ensures result == value;
     ensures owner->first_data[index] == value;
@@ -169,13 +169,13 @@ int32 owned_segmented_buffer_set_second(
     requires 0 <= index;
     requires index < owner->second_len;
     requires separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->second_data[0..owner->second_len])
     );
     views owner->first_len;
     views owner->second_len;
-    views &owner->first_data;
-    views &owner->second_data;
+    views owner->first_data;
+    views owner->second_data;
     owns owner->second_data[index..index + 1];
     ensures result == value;
     ensures owner->second_data[index] == value;
@@ -264,7 +264,7 @@ int32 owned_segmented_buffer_pipeline(
 ) {
     requires 1 <= first_len;
     requires 1 <= second_len;
-    consumes object(owner);
+    consumes *owner;
     consumes first_data[0..first_len];
     consumes second_data[0..second_len];
     produces owned_segmented_buffer(owner);

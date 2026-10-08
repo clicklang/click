@@ -101,7 +101,7 @@ function read_counter(c: int32, x: int32) -> int32 {
 }
 
 int32 bump() {
-    owns &counter[0..1];
+    owns counter;
     requires counter == 5;
     requires read_counter(counter, 0) == 5;
     ensures counter == 6;

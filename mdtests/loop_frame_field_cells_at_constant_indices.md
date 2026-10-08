@@ -36,10 +36,10 @@ void mark_tail(struct arena* arena, int32 start, int32 end) {
 verifying "mark_tail.c";
 
 void mark_tail(struct arena* arena, int32 start, int32 end) {
-    owns object(arena);
+    owns *arena;
     owns arena->occupied[0..arena->capacity];
     requires separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
     requires 2 <= start;

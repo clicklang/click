@@ -301,7 +301,7 @@ memory ownership authorizes external storage; live automatic objects supply
 implicit storage ownership. Stable views do not authorize this operation, and
 active storage loans block it. The transition forgets the previous byte values
 of the footprint. Addressed opaque union fields can supply ordinary byte
-ownership with `owns &holder->mu`. An indexed byte-span query selects constant
+ownership with `owns holder->mu`. An indexed byte-span query selects constant
 owned storage without scanning unrelated fields. Initialized footprints are now
 reserved against ordinary stores, aggregate writes, call-result assignments,
 modular mutable footprints, and overlapping initializations. The ledger keeps

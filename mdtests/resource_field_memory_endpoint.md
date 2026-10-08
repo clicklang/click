@@ -33,7 +33,7 @@ void claim(int32* data, int32 capacity, int32 start) {
 ```click
 resource suffix_after_prefix(buffer: struct buffer*) {
     field start: int32;
-    owns &buffer->data;
+    owns buffer->data;
     owns buffer->capacity;
     owns buffer->data[start..buffer->capacity];
     fact 0 <= start;

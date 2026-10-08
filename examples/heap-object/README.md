@@ -2,7 +2,7 @@
 
 This project exercises one complete fixed-size allocation lifetime. `malloc`
 returns either null or a fresh, uninitialized `struct item`. On success Click
-tracks two independent resources: `object(item)` authorizes memory access,
+tracks two independent resources: `*item` authorizes memory access,
 while `allocation(item, sizeof(struct item))` is the exclusive authority and
 obligation to end that allocation's lifetime.
 

@@ -29,7 +29,7 @@ verifying "accept_larger_capacity.c";
 verifying "execute_preserves_derived_call_premise.c";
 
 resource owner_storage(p: struct owner*) {
-    owns object(p);
+    owns *p;
 }
 
 int32 accept_larger_capacity(int32 length, int32 capacity) {

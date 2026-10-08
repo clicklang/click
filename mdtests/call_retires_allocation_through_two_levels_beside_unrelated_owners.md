@@ -2,7 +2,7 @@
 
 `box_teardown` calls `box_release`, which calls `box_destroy`, which frees
 `box->data`. Each caller lends `boxed(box)` and keeps owned objects the
-callee never sees: `object(other)` at both levels and `object(third)` at the
+callee never sees: `*other` at both levels and `*third` at the
 outer one. Each call rule reads the lent composite at its own entry, where
 the lent `box->data[0..1]` covers the whole retired allocation, so the owned
 objects each caller keeps are separate from it by the ownership partition
@@ -30,7 +30,7 @@ void box_teardown(struct box* box, struct box* other, struct box* third) {
 
 ```click
 resource boxed(box: struct box*) {
-    owns object(box);
+    owns *box;
     contains allocation(box->data, 4);
     owns box->data[0..1];
 }
@@ -39,7 +39,7 @@ verifying "box.c";
 
 void box_destroy(struct box* box) {
     consumes boxed(box);
-    produces object(box);
+    produces *box;
 } by {
     unfold(boxed(box));
     execute();
@@ -48,8 +48,8 @@ void box_destroy(struct box* box) {
 
 void box_release(struct box* box, struct box* other) {
     consumes boxed(box);
-    produces object(box);
-    owns object(other);
+    produces *box;
+    owns *other;
 } by {
     execute();
     simp();
@@ -57,9 +57,9 @@ void box_release(struct box* box, struct box* other) {
 
 void box_teardown(struct box* box, struct box* other, struct box* third) {
     consumes boxed(box);
-    produces object(box);
-    owns object(other);
-    owns object(third);
+    produces *box;
+    owns *other;
+    owns *third;
 } by {
     execute();
     simp();

@@ -3182,17 +3182,17 @@ fn grouped_proof_finalization_reads_each_path_once() {
 fn a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof() {
     const RESOURCES: &str = "resource box_state(b: struct box*) {
     field len: int32;
-    owns &b->data;
+    owns b->data;
     owns b->len;
     owns b->data[0..len];
     fact b->len == len;
     fact 0 <= len;
-    fact separate(memory(object(b)), memory(b->data[0..b->len]));
+    fact separate(memory(*b), memory(b->data[0..b->len]));
 }
 
 resource holder_state(h: struct holder*) {
     field start: int32;
-    owns object(h);
+    owns *h;
     fact h->start == start;
     fact 0 <= start;
 }
@@ -3366,10 +3366,10 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
     let click_source = format!(
         "verifying \"mark_tail.c\";\n\n\
          void mark_tail(struct arena* arena, int32 start, int32 end) {{\n\
-         \x20   owns object(arena);\n\
+         \x20   owns *arena;\n\
          \x20   owns arena->occupied[0..arena->capacity];\n\
          \x20   requires separate(\n\
-         \x20       memory(object(arena)),\n\
+         \x20       memory(*arena),\n\
          \x20       memory(arena->occupied[0..arena->capacity])\n\
          \x20   );\n\
          \x20   requires 0 <= start;\n\
@@ -3715,10 +3715,10 @@ fn counter_call_chain(call_count: usize) -> (String, String) {
     }
     c_source.push_str("}\n");
     let mut click_source = String::from(
-        "verifying \"drive.c\";\n\nvoid touch(struct range* r) {\n    owns object(r);\n    requires r->end < 1000000;\n    ensures r->end == old(r->end) + 1;\n    ensures r->start == old(r->start);\n} by {\n    execute();\n    simp();\n}\n\n",
+        "verifying \"drive.c\";\n\nvoid touch(struct range* r) {\n    owns *r;\n    requires r->end < 1000000;\n    ensures r->end == old(r->end) + 1;\n    ensures r->start == old(r->start);\n} by {\n    execute();\n    simp();\n}\n\n",
     );
     click_source.push_str(&format!(
-        "void drive(struct range* r) {{\n    owns object(r);\n    requires r->end == 0;\n    ensures r->end == {call_count};\n}} by {{\n"
+        "void drive(struct range* r) {{\n    owns *r;\n    requires r->end == 0;\n    ensures r->end == {call_count};\n}} by {{\n"
     ));
     for _ in 0..call_count {
         click_source.push_str("    step();\n");

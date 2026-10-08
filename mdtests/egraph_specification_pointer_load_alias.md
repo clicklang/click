@@ -13,7 +13,7 @@ void check(struct node *p, struct node *q) {}
 verifying "specification_pointer_load_alias.c";
 
 void check(struct node* p, struct node* q) {
-    owns &p->next;
+    owns p->next;
     requires p != 0;
     requires p == q;
     ensures p->next == q->next;

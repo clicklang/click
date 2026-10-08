@@ -24,8 +24,8 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
 resource arena_state(arena: struct arena*) {
     field live: int32;
     field capacity: int32;
-    owns &arena->data;
-    owns &arena->occupied;
+    owns arena->data;
+    owns arena->occupied;
     owns arena->capacity;
     owns arena->live_regions;
     contains arena_initialized_storage(
@@ -44,11 +44,11 @@ resource arena_state(arena: struct arena*) {
         memory(arena->data[0..arena->capacity])
     );
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->data[0..arena->capacity])
     );
     fact separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
 }
@@ -56,7 +56,7 @@ resource arena_state(arena: struct arena*) {
 resource arena_region(region: struct region*) {
     field start: int32;
     field end: int32;
-    owns object(region);
+    owns *region;
     owns region->arena->data[start..end];
     fact region->start == start;
     fact region->end == end;
@@ -143,7 +143,7 @@ resource arena_init_outcome(arena: struct arena*) {
     field model: ArenaInitOutcome;
     match model {
         ArenaInitOutcome::Failure => {
-            owns object(arena);
+            owns *arena;
         },
         ArenaInitOutcome::Success(live, capacity) => {
             owns state: arena_state(arena);
@@ -156,7 +156,7 @@ resource arena_init_outcome(arena: struct arena*) {
 verifying "arena_init.c";
 
 int32 arena_init(struct arena* arena, int32 capacity) {
-    consumes object(arena);
+    consumes *arena;
     produces outcome: arena_init_outcome(arena);
 
     ensures result == 0 or result == 1;
@@ -315,7 +315,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         }
     }
     have separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->data[0..arena->capacity])
     ) by {
         both {
@@ -325,7 +325,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         }
     }
     have separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     ) by {
         both {
@@ -377,7 +377,7 @@ resource arena_alloc_result(region: struct region*) {
     field model: ArenaAllocOutcome;
     match model {
         ArenaAllocOutcome::Failure => {
-            owns object(region);
+            owns *region;
         },
         ArenaAllocOutcome::Success(start, end) => {
             owns allocated: arena_region(region);
@@ -391,7 +391,7 @@ verifying "arena_alloc.c";
 
 int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     owns st: arena_state(arena);
-    consumes object(region);
+    consumes *region;
     produces outcome: arena_alloc_result(region);
     requires st.live < 2147483647;
 
@@ -1750,7 +1750,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             0 <= k;
             k < arena->capacity;
             separate(
-                memory(object(arena)),
+                memory(*arena),
                 memory(arena->occupied[0..arena->capacity])
             );
         }
@@ -1793,7 +1793,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             0 <= k;
             k < arena->capacity;
             separate(
-                memory(object(arena)),
+                memory(*arena),
                 memory(arena->occupied[0..arena->capacity])
             );
         }
@@ -1836,7 +1836,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             0 <= k;
             k < arena->capacity;
             separate(
-                memory(object(arena)),
+                memory(*arena),
                 memory(arena->occupied[0..arena->capacity])
             );
         }
@@ -2009,7 +2009,7 @@ void arena_free(struct region* region) {
     consumes st: arena_state(region->arena);
     requires 1 <= st.live;
     requires r.end <= st.capacity;
-    produces object(region);
+    produces *region;
     produces after: arena_state(region->arena);
 
     ensures region->arena == old(region->arena);
@@ -2035,7 +2035,7 @@ void arena_free(struct region* region) {
     unfold(arena_cells(region->arena->data, region->arena->occupied, region->arena->capacity));
     have viewable(region->arena->occupied[0..region->arena->capacity]) by simp;
     have separate(
-        memory(object(region)),
+        memory(*region),
         memory(region->arena->occupied[0..region->arena->capacity])
     ) by simp;
     mark unfolded;
@@ -2477,7 +2477,7 @@ void arena_free(struct region* region) {
         ) using {
             at(cleared, arena->occupied[k]) == at(cleared, 0);
             separate(
-                memory(object(arena)),
+                memory(*arena),
                 memory(arena->occupied[0..arena->capacity])
             );
             0 <= k;
@@ -2517,7 +2517,7 @@ void arena_free(struct region* region) {
         ) using {
             at(cleared, arena->occupied[k]) == old(region->arena->occupied[k]);
             separate(
-                memory(object(arena)),
+                memory(*arena),
                 memory(arena->occupied[0..arena->capacity])
             );
             0 <= k;
@@ -2551,7 +2551,7 @@ void arena_free(struct region* region) {
         ) using {
             at(cleared, arena->occupied[k]) == old(region->arena->occupied[k]);
             separate(
-                memory(object(arena)),
+                memory(*arena),
                 memory(arena->occupied[0..arena->capacity])
             );
             0 <= k;
@@ -2772,7 +2772,7 @@ void arena_destroy(struct arena* arena) {
     requires forall (k: int32) {
         0 <= k and k < arena->capacity implies arena->occupied[k] == 0
     };
-    produces object(arena);
+    produces *arena;
 
     ensures arena->data == 0;
     ensures arena->occupied == 0;
@@ -2823,10 +2823,10 @@ int32 arena_pipeline(
     struct region* second,
     struct region* combined
 ) {
-    owns object(arena);
-    owns object(first);
-    owns object(second);
-    owns object(combined);
+    owns *arena;
+    owns *first;
+    owns *second;
+    owns *combined;
 
     ensures result == 0 or result == 33;
 } by {
@@ -5285,7 +5285,7 @@ verifying "arena_reuse.c";
 int32 arena_reuse(struct region* middle, struct region* reused) {
     consumes r: arena_region(middle);
     consumes st: arena_state(middle->arena);
-    consumes object(reused);
+    consumes *reused;
     requires r.start == 2;
     requires r.end == 4;
     requires st.capacity == 6;
@@ -5293,7 +5293,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
     requires forall (k: int32) {
         0 <= k and k < middle->arena->capacity implies middle->arena->occupied[k] == 1
     };
-    produces object(middle);
+    produces *middle;
     produces after: arena_state(middle->arena);
     produces outcome: arena_alloc_result(reused);
 

@@ -1,7 +1,7 @@
 # A call keeps a caller object its flat ranges are separate from
 
 The flat counterpart of `call_keeps_caller_object_beside_folded_state.md`.
-The caller owns `flags[0..n]`, `data[0..n]`, and `object(b)` directly and
+The caller owns `flags[0..n]`, `data[0..n]`, and `*b` directly and
 lends the two ranges to `touch`. Its composition holds each as its own
 member, so the call's havoc keeps `b->v` and `result == 5` verifies.
 
@@ -40,7 +40,7 @@ void touch(int32* flags, int32* data, int32 n) {
 int32 keep_box(int32* flags, int32* data, int32 n, struct box* b) {
     owns flags[0..n];
     owns data[0..n];
-    owns object(b);
+    owns *b;
     ensures result == 5;
 } by {
     execute();

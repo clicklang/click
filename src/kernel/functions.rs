@@ -28143,7 +28143,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 /// - A clause that is not plain memory — a composite, a token, an instance —
 ///   has no `CMemoryRange` to name, and `separate(memory(..), memory(..))`
 ///   cannot express its footprint without expanding it. Such a pair is
-///   skipped outright rather than approximated; `owns object(r)` is *not* one
+///   skipped outright rather than approximated; `owns *r` is *not* one
 ///   of those, because `object(r)` lowers to the plain range `r[0..size/4]`.
 ///
 /// **Cost.** At most `#owned × #viewed` clauses of one contract, built once at
@@ -29380,7 +29380,7 @@ fn instance_arm_read_authority(
 ///
 /// This is the same publication a field-free composite's expansion and a
 /// decided match arm make. The body is evaluated at the instance's own
-/// fields and arguments, so `owns object(region)` in the arena example's
+/// fields and arguments, so `owns *region` in the arena example's
 /// `arena_region` makes `region->arena` readable for a clause that names
 /// `arena_state(region->arena)`. Nothing is owned twice and nothing is
 /// opened: the instance stays folded, and only an explicit `unfold` moves its

@@ -63,7 +63,7 @@ void produce_population_pipeline(struct owner* owner, int32 amount) {
     requires 0 <= amount;
     owns authority(slot(owner));
     requires count(slot(owner)) == 0;
-    owns object(owner);
+    owns *owner;
     produces amount of slot(owner);
 
     ensures valid_capacity(owner);

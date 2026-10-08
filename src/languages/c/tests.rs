@@ -13121,7 +13121,7 @@ fn c0_union_pointer_member_preserves_pointee_constness() {
 #[test]
 fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; int update(struct holder *h, int *p) { *p = 7; return h->value[0]; }";
-    let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views &h->value; owns p[0..1]; requires h->value == p; ensures result == 7 by auto; }";
+    let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires h->value == p; ensures result == 7 by auto; }";
     crate::surface::verify_c0_sources(proof, &[("fields.c", c)]).unwrap();
     let expanded = crate::surface::expand_c0_claim_source_by_label(
         proof,
@@ -13135,7 +13135,7 @@ fn c0_const_pointer_fields_alias_proof_expands_and_reverifies() {
 #[test]
 fn c0_const_pointer_fields_store_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; const int *set(struct holder *h, const int *p) { h->value = p; return h->value; }";
-    let proof = "verifying \"fields.c\"; const int *set(struct holder *h, const int *p) { owns &h->value; ensures result == p by auto; ensures h->value == p by auto; }";
+    let proof = "verifying \"fields.c\"; const int *set(struct holder *h, const int *p) { owns h->value; ensures result == p by auto; ensures h->value == p by auto; }";
     crate::surface::verify_c0_sources(proof, &[("fields.c", c)]).unwrap();
     for label in ["set.ensures_0", "set.ensures_1"] {
         let expanded =
