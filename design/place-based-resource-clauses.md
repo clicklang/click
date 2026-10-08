@@ -303,8 +303,5 @@ an accepted clause.
 
 ## Open questions
 
-- Should a whole slice have a spelling, and which?
-- What is the explicit form for viewing memory at another width, and how many
-  proofs need it?
-- Do resource bodies and `viewable(...)`, `memory(...)` and `separate(...)`
-  move together with contract clauses, or after them?
+Open items are tracked in `issues/design-review.md`.
+
