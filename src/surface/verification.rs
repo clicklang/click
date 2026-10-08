@@ -9389,8 +9389,8 @@ int32 reader(int32 p[]) {
 verifying "reader.c";
 
 int32 copy_pair(struct pair* s, struct pair* t) {
-    views s[0..1];
-    owns t[0..1];
+    views *s;
+    owns *t;
     ensures result == 0;
 } by {
     execute();

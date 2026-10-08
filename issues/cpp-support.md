@@ -908,8 +908,8 @@ place consumers are refused. Deterministic regressions cover increasing path
 depth and sibling populations.
 
 The pinned unchanged `CFeeRate::GetFee` regression now passes the `FeePerVSize`
-record-layout boundary and stops at the method call in its `IsEmpty()` condition
-in `policy/feerate.cpp:23`, with a bounded diagnostic and no partial artifact.
+record-layout and direct Boolean condition-call boundaries and stops at the
+header-defined `IsEmpty()` callee reached from `policy/feerate.cpp:23`, with a bounded diagnostic and no partial artifact.
 The wrapper is not verified yet.
 
 Projected method receivers and record/scalar reference arguments now use the
@@ -972,12 +972,24 @@ artifacts reject equal-layout nominal substitutions, bad spans, reordered or
 incomplete paths and forged const roots; hostile proofs reject missing authority
 and false results/frames. Multi-size checks retain one unit of path work per edge.
 
-Next normalize method/free-function calls in conditions with explicit bounded
-evaluation order and modular contracts. The unchanged `GetFee` refusal remains
-its `IsEmpty()` condition call. Retain branch-dependent behavior, borrowed
-memory, checked results and sibling frames through ordinary verification,
-expansion/reverification and retained proofs. Locked-header executable calls
-remain the next prerequisite after condition normalization.
+Direct Boolean method/free-function calls now normalize once before an `if`
+branch, sharing typed captures, bounded nested argument evaluation and modular
+contracts with initializer/return calls. Pure condition encoding and compiler
+constexpr selection remain unchanged. Offline ordinary/expanded/retained proofs
+cover state changes before both outcomes, inherited receivers, sibling frames,
+fresh captures and scalar exceptional outcomes. Artifact checks reject forged
+callee/result/argument identities and metadata; composed call expressions and
+non-Boolean call conditions remain bounded refusals. Active-object unwind
+cleanup is checked structurally within the existing lifetime profile. Ordinary
+try/catch retains predicate exceptions; the guarded-try condition-hoisting shape
+remains pure-only, including for recomputed artifacts.
+
+Next support executable definitions in explicitly locked headers. The unchanged
+`GetFee` now reaches its `IsEmpty()` callee and refuses the definition outside
+the selected file. Pin the executable graph's source provenance, validate every
+reachable body, and require ordinary verified modular contracts. Retain
+branch-dependent behavior, borrowed memory, checked results and sibling frames
+through ordinary verification, expansion/reverification and retained proofs.
 Automatic objects with embedded records, nontrivial embedded destruction and cross-header executable graphs remain
 separate prerequisites, rather than being inferred from declaration support.
 Compose `IsEmpty` and the unified Up contract only after those prerequisites.

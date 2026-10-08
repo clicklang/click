@@ -28,7 +28,7 @@ resource owned_buffer(owner: struct owner*) {
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
     fact 0 <= owner->cap;
-    fact separate(memory(owner[0..3]), memory(owner->data[0..owner->cap]));
+    fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 }
 
 verifying "len_then_clear_direct.c";
@@ -44,7 +44,7 @@ int32 len_then_clear_direct(struct owner* owner) {
         have 0 <= owner->len by simp;
         have owner->len <= owner->cap by simp;
         have 0 <= owner->cap by simp;
-        have separate(memory(owner[0..3]), memory(owner->data[0..owner->cap])) by simp;
+        have separate(memory(*owner), memory(owner->data[0..owner->cap])) by simp;
         fold(owned_buffer(owner));
     }
 }

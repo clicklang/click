@@ -730,6 +730,19 @@ destruction, and no virtual dispatch. Empty tags serve only as type arguments;
 this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
 
+An ordinary `if` can use a direct Boolean free-function or method call as its
+whole condition. The artifact keeps this effectful call separate from pure
+expressions. The shared scalar-call normalizer evaluates its bounded arguments
+and captures its result once before branching; callee contracts preserve memory
+authority and sibling frames. Supported inherited receivers and the existing
+single nested, order-independent scalar argument profile also apply. Calls
+propagate scalar-int32 exceptional outcomes and unwind active objects under the
+existing lifetime restrictions. The conditional guarded-try shape remains
+pure-only because its lowering moves the condition outside the catch.
+Compositions such as `!call()`, `call() && other`,
+comparisons of call results and integer-to-Boolean call conversions remain
+unsupported. Executable definitions must still come from the selected file.
+
 For `if constexpr`, pinned Clang chooses the instantiated arm in constant
 evaluation context. The artifact retains an ordinary constant Boolean `if`,
 the selected arm, an empty discarded arm, and the original statement and
@@ -909,7 +922,8 @@ and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported
 pointer call, pointer locals, pointer arithmetic, null pointers, multiple
-indirection, call results outside the supported initializer and return-call slices,
+indirection, call results outside the supported initializer, return-call and direct Boolean
+condition slices,
 indirect calls, loops,
 external specifications, and broader C++ syntax also remain outside this
 end-to-end subset.

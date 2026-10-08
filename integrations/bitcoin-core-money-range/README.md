@@ -599,11 +599,13 @@ non-standard layouts, general inheritance and bit-fields.
 
 The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
 its nested `FeePerVSize` layout now imports, and the first refusal is the
-`m_feerate.IsEmpty()` call in the condition at `policy/feerate.cpp:23`.
+header-defined `m_feerate.IsEmpty()` callee reached from the condition at
+`policy/feerate.cpp:23`. Direct Boolean condition calls now normalize; executable
+call graphs still require definitions in the selected file.
 Header-declared records use the explicitly locked dependency mechanism described
 below. The exporter reports the actual source location and writes no partial
-artifact. Condition-call normalization and locked-header executable calls remain
-prerequisites; `GetFee` is not yet verified. Its empty-rate branch and negative-fee minimum
+artifact. Locked-header executable calls remain a
+prerequisite; `GetFee` is not yet verified. Its empty-rate branch and negative-fee minimum
 correction will need contracts of their own when composing the Up proof.
 
 
@@ -653,7 +655,7 @@ Declaration and contract metadata now also support nested C++ source field
 reads, writes, signed compound updates and projected method/reference calls.
 Automatic objects with embedded fields and nontrivial embedded destruction
 remain explicit boundaries. `CFeeRate::GetFee`
-is still a refusal regression at the call in its `IsEmpty()` condition; no Bitcoin source is changed.
+is still a refusal regression at the header-defined `IsEmpty()` callee; no Bitcoin source is changed.
 
 
 ## Nested source field accesses
@@ -687,9 +689,9 @@ empty tags such as `VSizeTag`. Public non-virtual single bases of data-free
 trivial wrappers now retain a separate nominal base layout, exposed as `base`
 in sidecars. Base fields are not copied into the derived declaration, and
 validation rejects forged edges, layouts and cycles. `CFeeRate::GetFee` now
-stops at the call in its `IsEmpty()` condition. Inherited source reads/writes and
+stops at the header-defined `IsEmpty()` callee. Inherited source reads/writes and
 implicit method/reference receivers now use
 ordered nominal base projections, including mixed field/base paths. Root
-constness and sibling authority are retained. Condition-call normalization and
-locked-header executable calls remain prerequisites before composing the wrapper
+constness and sibling authority are retained. Direct Boolean condition calls now normalize once before branching;
+locked-header executable calls remain a prerequisite before composing the wrapper
 proof.

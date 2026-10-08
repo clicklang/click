@@ -28,7 +28,7 @@ verifying "observe_owner.c";
 int32 observe_owner(struct owner* owner) {
     consumes owned_buffer(owner);
 
-    ensures separate(memory(owner[0..2]), memory(owner->data[0..owner->len])) by auto;
+    ensures separate(memory(*owner), memory(owner->data[0..owner->len])) by auto;
 }
 ```
 

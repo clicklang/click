@@ -23,7 +23,15 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
-    format!("{}\n{lemmas}\n{contract}\n{getters}", helper_library())
+    let iterator_lemmas = if contract.contains("adler_lane_iterator_") {
+        flat_iterator_bounds()
+    } else {
+        String::new()
+    };
+    format!(
+        "{}\n{lemmas}\n{iterator_lemmas}\n{contract}\n{getters}",
+        helper_library()
+    )
 }
 
 fn compute_project(contract: &str) -> Project {
@@ -750,9 +758,11 @@ fn flat_iterator_bounds() -> String {
 fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
     use click::surface::verify_click_theorems;
     let source = flat_iterator_bounds();
-    assert_eq!(verify_click_theorems(&source).unwrap().len(), 60);
+    assert_eq!(verify_click_theorems(&source).unwrap().len(), 64);
     for (before, after) in [
         ("requires total <= 22208;", "requires total <= 22212;"),
+        ("requires to_integer(a) <= 65520;", ""),
+        ("requires to_integer(b) <= 65520;", ""),
         ("requires remaining <= total;", ""),
         ("requires 0 <= remaining;", ""),
         ("requires 4 <= remaining;", ""),
@@ -771,6 +781,29 @@ fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
     ] {
         let invalid = source.replace(before, after);
         assert_ne!(source, invalid, "missing mutation: {before}");
+        assert!(
+            verify_click_theorems(&invalid).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+    // Mutate only the iterator-facing contracts, leaving their arithmetic
+    // dependencies checked and unchanged.
+    let (dependencies, contracts) = source
+        .split_once("theorem adler_lane_iterator_add_contracts")
+        .unwrap();
+    for (before, after) in [
+        (
+            "ensures to_integer(a) + to_integer(byte) <= 4294967295",
+            "ensures to_integer(a) + to_integer(byte) <= 1481279",
+        ),
+        (
+            "ensures to_integer(b) + to_integer(a + byte) <= 4294967295",
+            "ensures to_integer(b) + to_integer(a + byte) <= 4294690199",
+        ),
+    ] {
+        let changed = contracts.replacen(before, after, 1);
+        assert_ne!(contracts, changed, "missing mutation: {before}");
+        let invalid = format!("{dependencies}theorem adler_lane_iterator_add_contracts{changed}");
         assert!(
             verify_click_theorems(&invalid).is_err(),
             "accepted {before} -> {after}"
@@ -844,7 +877,7 @@ fn expand_iterator_bounds_claims(claims: &[(&str, usize)]) {
         click::surface::verify_click_theorems(&source)
             .unwrap()
             .len(),
-        60
+        64
     );
 }
 
@@ -873,6 +906,8 @@ fn charon_adler2_iterator_bounds_tools_expand_native_certificates() {
         ("adler_lane_iterator_successor_ceilings", 2),
         ("adler_lane_iterator_native_preservation", 2),
         ("adler_lane_iterator_boundaries", 7),
+        ("adler_lane_iterator_reduced_initial", 2),
+        ("adler_lane_iterator_add_contracts", 2),
     ]);
 }
 
@@ -1119,6 +1154,20 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "have __rust_mir_62_remaining == 4 by",
+        "have __rust_mir_62_remaining == 8 by",
+    );
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "have adler_lane_vectors_consumed(4, __rust_mir_62_remaining) == 0 by",
+        "have adler_lane_vectors_consumed(4, __rust_mir_62_remaining) == 1 by",
+    );
+}
+
+#[test]
 fn charon_adler2_four_byte_compute_rejects_missing_extent_view_and_constructor() {
     for (before, after) in [
         ("requires bytes_len == 4u64;", ""),
@@ -1163,6 +1212,42 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
         FOUR_BYTE_COMPUTE,
         "have av == old((uint32)bytes[3])",
         "have av == old((uint32)bytes[2])",
+    );
+}
+
+#[test]
+#[ignore = "nightly: original vector-step preservation and false bound/state rejections"]
+fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
+    // The complete positive caller is checked by the existing computation
+    // regression. These mutations target the bounds after both original calls,
+    // independently of the final checksum expressions.
+    let post_step = FOUR_BYTE_COMPUTE
+        .split_once("# Both actual helper results satisfy the ceiling at next()'s new state.")
+        .unwrap()
+        .1;
+    for field in ["a", "b"] {
+        for lane in [0, 3] {
+            let bound = format!(
+                "have to_integer({field}_vec._0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by"
+            );
+            let changed = post_step.replacen(
+                &bound,
+                &format!("have to_integer({field}_vec._0[{lane}]) <= 0 by"),
+                1,
+            );
+            assert_ne!(post_step, changed);
+            reject_compute(FOUR_BYTE_COMPUTE, post_step, &changed);
+        }
+    }
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 4294967295 by",
+        "have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 254 by",
+    );
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4 by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) by",
     );
 }
 
