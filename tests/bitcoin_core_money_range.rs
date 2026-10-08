@@ -1066,21 +1066,21 @@ fn pinned_std_span_size_preserves_full_width_extent_offline() {
     );
     let source = r#"verifying "span-probe.cpp";
 uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- owns this->_M_extent_value;
+ views this->_M_extent_value;
  ensures result == this->_M_extent_value;
  ensures this->_M_extent_value == old(this->_M_extent_value);
 } by { execute(); simp(); }
 uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- owns this->_M_extent._M_extent_value;
+ views this->_M_extent._M_extent_value;
  ensures result == this->_M_extent._M_extent_value;
  ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
 } by { execute(); simp(); }
 uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- owns span._M_extent._M_extent_value;
+ views span._M_extent._M_extent_value;
  requires span._M_extent._M_extent_value == 18446744073709551615u64;
  ensures result == 18446744073709551615u64;
  ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
-} by { execute(); rewrite(span._M_extent._M_extent_value == 18446744073709551615u64); simp(); }
+} by { execute(); simp(); }
 "#;
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
@@ -1099,7 +1099,7 @@ uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
-    let hostile = source.replace(" owns span._M_extent._M_extent_value;", "");
+    let hostile = source.replace(" views span._M_extent._M_extent_value;", "");
     let rejected = read_click_project(&path, &hostile).unwrap();
     assert!(verify_program_prepared_project(&rejected, &import).is_err());
     fs::remove_dir_all(root).unwrap();
@@ -1180,12 +1180,12 @@ fn pinned_std_span_data_preserves_pointer_identity_without_backing_authority_off
     );
     let source = r#"verifying "span-probe.cpp";
 int32* span__int__value_unsigned_long_18446744073709551615_data(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- owns this->_M_ptr;
+ views this->_M_ptr;
  ensures result == this->_M_ptr;
  ensures this->_M_ptr == old(this->_M_ptr);
 } by { execute(); simp(); }
 int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- owns span._M_ptr;
+ views span._M_ptr;
  ensures result == span._M_ptr;
  ensures span._M_ptr == old(span._M_ptr);
 } by { execute(); simp(); }
@@ -1207,7 +1207,7 @@ int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
-    let hostile = source.replace(" owns span._M_ptr;", "");
+    let hostile = source.replace(" views span._M_ptr;", "");
     assert!(
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
             .is_err()

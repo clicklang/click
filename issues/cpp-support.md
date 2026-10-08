@@ -205,12 +205,19 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    `SpanPopBack` has not been verified. The unchanged pinned `back()` additionally
    needs its constexpr assertion's single-execution loop wrapper and nested
    observer calls in expressions admitted through ordinary source lowering.
-   The next design choice is admission of nested calls in unsequenced operands:
-   prefer verified observer contracts that establish operand independence, or
-   model every permitted order now. For example, `back()` reads `_M_ptr` and
+   **Expression observers (accepted).** Admit nested calls in unsequenced
+   operands only when verified read-only observer contracts establish operand
+   independence. General interfering calls remain deferred. For example,
+   `back()` reads `_M_ptr` and
    calls `size()` in the same addition. Do not choose an order silently or
-   introduce a span-specific intrinsic. The observer-contract scope is the
-   recommended first implementation; interfering expressions would remain
+   introduce a span-specific intrinsic. Read-only contracts use shared `views`
+   authority: a final unchanged-value claim alone is insufficient because a
+   callee could write and restore the value. The pinned `size()`/extent and
+   `data()` chains now verify using views alone. Literal-false `do` wrappers
+   lower to one execution of their checked body, with runtime/repeated loops,
+   break/continue and unsupported local lifetimes refused. Nested expression
+   calls and the constexpr assertion condition still need admission;
+   interfering expressions remain
    refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep

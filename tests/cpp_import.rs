@@ -570,6 +570,81 @@ impl Drop for Project {
 }
 
 #[test]
+fn literal_false_do_wrappers_execute_once_offline() {
+    for condition in ["false", "0"] {
+        let project = Project::with_fixture(
+            "once.cpp",
+            "probe",
+            &format!(
+                "int probe(int& value) noexcept {{ do {{ value = 7; }} while ({condition}); return value; }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        check_arithmetic_sidecar(
+            &project,
+            &import,
+            r#"verifying "once.cpp";
+int32 probe(int32& value) {
+ owns value;
+ ensures value == 7;
+ ensures result == 7;
+} by { execute(); simp(); }
+"#,
+        );
+    }
+}
+
+#[test]
+fn do_wrappers_refuse_repetition_runtime_conditions_and_control_transfers() {
+    for (body, condition, expected) in [
+        ("value = 7;", "true", "literal false condition"),
+        ("value = 7;", "value == 0", "literal false condition"),
+        ("break;", "false", "unsupported statement"),
+        ("continue;", "false", "unsupported statement"),
+    ] {
+        let project = Project::with_fixture(
+            "once.cpp",
+            "probe",
+            &format!(
+                "int probe(int& value) noexcept {{ do {{ {body} }} while ({condition}); return value; }}"
+            ),
+        );
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(expected), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn observer_contracts_reject_writes_even_when_the_value_is_restored() {
+    let project = Project::with_fixture(
+        "observer.cpp",
+        "probe",
+        "int probe(int& value) noexcept { int saved = value; value = 7; value = saved; return value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "observer.cpp";
+int32 probe(int32& value) {
+ owns value;
+ ensures value == old(value);
+ ensures result == old(value);
+} by { execute(); simp(); }
+"#;
+    let path = project.directory.join("observer.click");
+    fs::write(&path, source).unwrap();
+    verify_program_prepared_project(&read_click_project(&path, source).unwrap(), &import).unwrap();
+    let readonly = source.replace("owns value;", "views value;");
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &readonly).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
 fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let project = Project::new();
     let output = Command::new(env!("CARGO_BIN_EXE_click"))

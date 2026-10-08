@@ -801,6 +801,12 @@ destruction, and no virtual dispatch. Empty tags serve only as type arguments;
 this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
 
+A `do { ... } while (false)` or `do { ... } while (0)` wrapper executes its checked body
+once through the shared conditional model. Only literal false conditions are
+admitted; runtime/repeated loops, break/continue and nested automatic locals
+remain refused. This admits the wrapper shape used by assertion macros without
+assuming their bodies or conditions.
+
 An ordinary `if` can use a direct Boolean free-function or method call as its
 whole condition. The artifact keeps this effectful call separate from pure
 expressions. The shared scalar-call normalizer evaluates its bounded arguments
