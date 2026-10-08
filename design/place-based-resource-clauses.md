@@ -223,9 +223,12 @@ an accepted clause.
 - Done: steps 1, 3 and 4. `&`, `object(p)` and a range on a scalar field are
   refused with the spelling to write, and every proof in the repository uses
   the new forms.
-- Partly done: step 2. A clause's own spelling prints as a place. Facts the
-  kernel reports still print cells: a missing `owns a->n` is still
-  `owns a[2..4]`, and a local's storage is `&second[0..1]`.
+- Done: step 2 for the facts users meet most. A missing or held fact inside
+  a struct a parameter points at prints as `p->field`, `p->inner.field` or
+  `*p`; elements behind a pointer field as `p->data[lo..hi]`; one element of
+  a scalar pointer as `q[i]`; a named object's own storage as its name. A
+  range that is none of these still prints cells, and so do the bounds in a
+  "covers only when" note.
 - Done: step 5. A range on a struct pointer counts structs, and the sites
   that counted cells name the struct (`*p`), its fields, or a struct count.
   The parser scales the bounds to cells. A constant count works; a symbolic

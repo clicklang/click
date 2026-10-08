@@ -24,5 +24,5 @@ uint32 read_value(struct counter* p) {
 ```
 
 ```expect
-fail: missing resource fact `views p[10..11]`
+fail: missing resource fact `views p->value`
 ```

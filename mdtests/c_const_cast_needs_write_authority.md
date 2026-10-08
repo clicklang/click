@@ -21,5 +21,5 @@ int32 set(const int32* view) {
 ```
 
 ```expect
-fail: missing resource fact `owns view[0..1]`
+fail: missing resource fact `owns view[0]`
 ```

@@ -2177,16 +2177,12 @@ pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) ->
             describe_resource_clause(resource)
         ),
         ResourceClause::ViewMemory(segment) => format!(
-            "views {}[{}..{}]",
-            describe_c_expression(&segment.base),
-            describe_c_expression(&segment.start),
-            describe_c_expression(&segment.end)
+            "views {}",
+            crate::surface::diagnostics::describe_contract_segment(segment)
         ),
         ResourceClause::OwnMemory(segment) => format!(
-            "owns {}[{}..{}]",
-            describe_c_expression(&segment.base),
-            describe_c_expression(&segment.start),
-            describe_c_expression(&segment.end)
+            "owns {}",
+            crate::surface::diagnostics::describe_contract_segment(segment)
         ),
         ResourceClause::MemoryAggregate { access, segments } => {
             let verb = match access {

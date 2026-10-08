@@ -22,5 +22,5 @@ void caller(int32* pool, int32* p) {
 ```
 
 ```expect
-fail: missing resource fact `owns p[0..1]`
+fail: missing resource fact `owns p[0]`
 ```

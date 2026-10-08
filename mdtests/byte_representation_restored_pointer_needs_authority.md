@@ -61,5 +61,5 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
 ```
 
 ```expect
-fail: missing resource fact `views p[0..1]`
+fail: missing resource fact `views p[0]`
 ```

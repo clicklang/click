@@ -27,5 +27,5 @@ int32 mint(struct s* o) { return 0; }
 ```
 
 ```expect
-fail: missing resource fact `owns o[0..1]`
+fail: missing resource fact `owns o->x`
 ```

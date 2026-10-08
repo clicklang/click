@@ -38,8 +38,8 @@ void walk(int32 *a, int32 *b, int32 n) {
 ```
 
 ```expect
-fail: missing resource fact `owns b[1..2]`
-  note: held `owns b[0..n]` covers `b[1..2]` only when `2 <= n`
+fail: missing resource fact `owns b[1]`
+  note: held `owns b[0..n]` covers `b[1]` only when `2 <= n`
   C operation: *(b + 1) = 1
   C statement at a_store_refusal_lists_the_contracts_requires.c:2:5: `b[1] = 1;`
 proof context:
