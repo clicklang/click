@@ -787,6 +787,76 @@ fn algebraic_field_is_grounded(field: &AlgebraicFieldType, grounded: &BTreeSet<&
     }
 }
 
+/// Checks each resource definition's field names, field types, witnesses and
+/// parameter types. Declaration expansion runs this before it resolves field
+/// schemas, so a malformed field reports its own cause.
+pub(in crate::surface) fn validate_resource_fields(file: &ClickFile) -> Result<(), ClickError> {
+    let algebraic_definitions = combined_algebraic_type_definitions(file)?;
+    let definitions = algebraic_definitions
+        .iter()
+        .map(|definition| (definition.name(), definition))
+        .collect::<BTreeMap<_, _>>();
+    validate_resource_field_declarations(file, &definitions)
+}
+
+fn validate_resource_field_declarations(
+    file: &ClickFile,
+    definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
+) -> Result<(), ClickError> {
+    for definition in file.resource_definitions() {
+        let mut names = definition
+            .parameters()
+            .iter()
+            .map(|p| p.name())
+            .collect::<BTreeSet<_>>();
+        for field in definition.fields() {
+            if !names.insert(field.name()) {
+                return Err(ClickError::new(format!(
+                    "resource `{}` field `{}` duplicates a field or parameter name",
+                    definition.name(),
+                    field.name()
+                )));
+            }
+            if let ClickType::Algebraic(application) = field.click_type() {
+                validate_type_application(
+                    application,
+                    definitions,
+                    &format!("resource `{}` field `{}`", definition.name(), field.name()),
+                )?;
+            }
+        }
+        let field_names = definition
+            .fields()
+            .iter()
+            .map(|field| field.name())
+            .collect::<BTreeSet<_>>();
+        if let Some(body) = definition.composite_body() {
+            for witness in body.witnesses() {
+                if field_names.contains(witness.name()) {
+                    return Err(ClickError::new(format!(
+                        "resource `{}` witness `{}` shadows a field",
+                        definition.name(),
+                        witness.name()
+                    )));
+                }
+            }
+        }
+        if let Some(parameter) = definition
+            .parameters()
+            .iter()
+            .find(|parameter| matches!(parameter.click_type(), ClickType::Algebraic(_)))
+        {
+            return Err(ClickError::new(format!(
+                "resource `{}` parameter `{}` uses an algebraic type; algebraic resource arguments are not supported yet",
+                definition.name(),
+                parameter.name()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 pub(super) fn validate_algebraic_type_uses(
     file: &ClickFile,
     click_functions: &BTreeMap<String, ClickFunctionType>,
@@ -837,56 +907,7 @@ pub(super) fn validate_algebraic_type_uses(
             )?;
         }
     }
-    for definition in file.resource_definitions() {
-        let mut names = definition
-            .parameters()
-            .iter()
-            .map(|p| p.name())
-            .collect::<BTreeSet<_>>();
-        for field in definition.fields() {
-            if !names.insert(field.name()) {
-                return Err(ClickError::new(format!(
-                    "resource `{}` field `{}` duplicates a field or parameter name",
-                    definition.name(),
-                    field.name()
-                )));
-            }
-            if let ClickType::Algebraic(application) = field.click_type() {
-                validate_type_application(
-                    application,
-                    &definitions,
-                    &format!("resource `{}` field `{}`", definition.name(), field.name()),
-                )?;
-            }
-        }
-        let field_names = definition
-            .fields()
-            .iter()
-            .map(|field| field.name())
-            .collect::<BTreeSet<_>>();
-        if let Some(body) = definition.composite_body() {
-            for witness in body.witnesses() {
-                if field_names.contains(witness.name()) {
-                    return Err(ClickError::new(format!(
-                        "resource `{}` witness `{}` shadows a field",
-                        definition.name(),
-                        witness.name()
-                    )));
-                }
-            }
-        }
-        if let Some(parameter) = definition
-            .parameters()
-            .iter()
-            .find(|parameter| matches!(parameter.click_type(), ClickType::Algebraic(_)))
-        {
-            return Err(ClickError::new(format!(
-                "resource `{}` parameter `{}` uses an algebraic type; algebraic resource arguments are not supported yet",
-                definition.name(),
-                parameter.name()
-            )));
-        }
-    }
+    validate_resource_field_declarations(file, &definitions)?;
 
     for definition in &predicates {
         let variables = definition

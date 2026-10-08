@@ -1629,7 +1629,12 @@ retired setting. The four example and probe project files that only selected
 authority semantics are deleted. `RESOURCE_SEMANTICS_VERSION` is 57, so
 caches and certificates from either earlier mode are rejected and rebuilt.
 The kernel's legacy population machinery remains for now but is unreachable
-from the surface.
+from the surface. A sidecar verified on its own, outside a project, now passes
+through the same declaration rules as a project unit. Only the standard
+library keeps the preliminary expansion. That expansion validates resource
+fields before it resolves their schemas, so a malformed field still reports its
+own cause. The library test for counting a fielded resource now expects the
+unauthorized-family refusal, or the named-member refusal for a quantity.
 
 Retired fixtures, each covered by the authority replacement named earlier:
 

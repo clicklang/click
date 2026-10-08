@@ -673,11 +673,6 @@ mod tests {
             include_str!("../../design/shared-heap-probes/shared_parent.c"),
         )
         .unwrap();
-        fs::write(
-            directory.join("click.project.json"),
-            include_str!("../../design/shared-heap-probes/click.project.json"),
-        )
-        .unwrap();
         let sidecar = directory.join("shared_parent.click");
         let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
         let source = source.replacen(
@@ -710,11 +705,6 @@ mod tests {
         fs::write(
             directory.join("shared_parent.c"),
             include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        fs::write(
-            directory.join("click.project.json"),
-            include_str!("../../design/shared-heap-probes/click.project.json"),
         )
         .unwrap();
         let sidecar = directory.join("shared_parent.click");
@@ -835,8 +825,10 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             report.contains("tactic@19: let r = step(child("),
             "{report}"
         );
+        // The call's implication ensure and the resource composition of its
+        // frame, which authority semantics record at the call.
         assert!(
-            report.contains("1 checked fact(s) with no exact Click spelling"),
+            report.contains("2 checked fact(s) with no exact Click spelling"),
             "{report}"
         );
         assert_eq!(

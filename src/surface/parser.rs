@@ -786,8 +786,8 @@ impl Parser {
 
     fn parse_file(mut self) -> Result<ClickFile, ClickError> {
         let file = self.parse_file_items()?;
-        let mut file =
-            super::validation::expand_declared_resource_clauses(file).map_err(|error| {
+        let mut file = super::validation::expand_declared_resource_clauses_for_project(file)
+            .map_err(|error| {
                 error
                     .with_kind(ClickErrorKind::Type)
                     .located_by_ambient_declaration()

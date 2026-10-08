@@ -208,16 +208,15 @@ fn matched_arm_child_slots(definition: &ResourceDefinition) -> BTreeMap<String, 
     slots
 }
 
-/// The parser's preliminary expansion. It also expands the standard library,
-/// so it applies neither field schemas nor the family rules that need them;
-/// the project expansion below applies both.
-pub(in crate::surface) fn expand_declared_resource_clauses(
-    file: ClickFile,
-) -> Result<ClickFile, ClickError> {
+/// The standard library's expansion. The field schemas and family rules need
+/// the library itself, so it applies neither; every verification unit's
+/// expansion below applies both.
+fn expand_declared_resource_clauses(file: ClickFile) -> Result<ClickFile, ClickError> {
     expand_declared_resource_clauses_with_rules(file, false)
 }
 
-/// The project-level expansion every verification unit passes through. It
+/// The expansion every verification unit passes through, single-file or
+/// project. It
 /// applies the declared field schemas and refuses a count or quantity of a
 /// family that is not `authorized`.
 pub(in crate::surface) fn expand_declared_resource_clauses_for_project(
@@ -234,6 +233,9 @@ fn expand_declared_resource_clauses_with_rules(
     crate::surface::clear_ambient_proof_source();
     // Legacy standard-library expansion must not re-enter its OnceLock.
     // Authority schemas use the same checked algebraic definitions as lowering.
+    if family_rules {
+        super::validate_resource_fields(&file)?;
+    }
     let field_environment = if family_rules
         && file
             .resource_definitions()

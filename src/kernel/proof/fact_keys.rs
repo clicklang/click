@@ -1072,13 +1072,17 @@ impl Drop for AlphaRegisteredLoadRecord {
         // drops no last reference while holding it; if another thread's drop
         // races one, the dead entry stays until that bucket is next interned,
         // which retains only live candidates.
+        //
+        // This charges no work: records also drop while thread-local memo
+        // tables are destroyed, after the instrumentation tables are gone,
+        // and the scan is of the bucket this record's intern already paid
+        // to scan.
         let Ok(mut interner) = self.interner.try_lock() else {
             return;
         };
         let Some(bucket) = interner.buckets.get_mut(&self.fingerprint) else {
             return;
         };
-        crate::instrumentation::record_deterministic_work(bucket.len().max(1));
         bucket.retain(|candidate| candidate.strong_count() != 0);
         if bucket.is_empty() {
             interner.buckets.remove(&self.fingerprint);

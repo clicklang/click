@@ -903,35 +903,30 @@ fn smart_have_inside_an_open_scope_audits_instead_of_reporting_a_missing_tactic(
 void object_retain_many(struct object* obj, int32 amount) {
     obj->refs = obj->refs + amount;
 }"#;
-    let click_source = r#"resource object_ref(obj: struct object*) {
+    let click_source = r#"authorized resource reference(obj: struct object*) {}
+
+resource control(obj: struct object*) {
     owns allocation(obj, sizeof(struct object));
     owns *obj;
-    fact obj->refs == count(object_ref(obj));
+    owns authority(reference(obj));
+    fact obj->refs == count(reference(obj));
 }
 
 verifying "object_retain_many.c";
 
 void object_retain_many(struct object* obj, int32 amount) {
     requires 0 <= amount;
-    requires defined(1 + amount);
-    owns object_ref(obj);
-    produces amount of object_ref(obj);
+    requires defined(obj->refs + amount);
+    owns control(obj);
+    produces amount of reference(obj);
+    ensures defined(obj->refs);
 } by {
-    open(object_ref(obj)) {
-        have 1 == obj->refs by simp;
-        execute();
+    open(control(obj)) {
+        have obj->refs == count(reference(obj)) by simp;
+        step();
+        fold(amount of reference(obj));
     }
-    have 1 <= 1 + amount by {
-        apply(int32_add_nonnegative_right_is_at_least_left(1, amount)) using {
-            0 <= amount;
-            defined(1 + amount);
-        }
-    }
-    have amount <= 1 + amount by {
-        apply(int32_add_nonnegative_left_is_at_least_right(1, amount)) using {
-            defined(1 + amount);
-        }
-    }
+    execute();
     simp();
 }
 "#;
@@ -952,7 +947,10 @@ void object_retain_many(struct object* obj, int32 amount) {
             + 1
     };
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
-    for needle in ["have 1 == obj->refs by simp;", "simp();\n}"] {
+    for needle in [
+        "have obj->refs == count(reference(obj)) by simp;",
+        "simp();\n}",
+    ] {
         let line = line_of(needle);
         let site = sites
             .iter()
