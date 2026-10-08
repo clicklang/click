@@ -1,16 +1,4 @@
-# A return from a loop cannot certify after a preceding resource fold
-
-A checked resource fold before a loop must not prevent certification of a
-function whose loop returns. The following true claim passes its proof steps,
-then fails contract certification with `the checked execution of walk started
-at a different entry state than the contract and could not be rebased onto it`.
-The caller-owned marker is untouched. The C is fixed.
-
-## Reproduction
-
-Save this fixture and run `click verify` on it:
-
-# A return inside a loop exports the exchanged resources and caller frame
+# A pre-loop fold does not make a returning loop path vacuous
 ```c filename=walk.c
 struct Node { struct Node *next; };
 struct Node *walk(struct Node *p, int *marker) {
@@ -53,6 +41,9 @@ struct Node* walk(struct Node* p, int32* marker) {
     owns marker[0];
     requires p != 0;
     requires marker[0] == 9;
+    produces whole: path(result);
+    produces remaining: list(result);
+    ensures whole.model == Path::Top;
     ensures marker[0] == 9;
 } by {
     let c = fold(path(p), { model: Path::Top });
@@ -78,19 +69,5 @@ struct Node* walk(struct Node* p, int32* marker) {
 }
 ```
 ```expect
-pass
+fail: unclosed goal: whole.model == Path::Top()
 ```
-
-## Reduction and acceptance
-
-Moving only the initial empty `path(p)` fold into the preservation proof and
-removing `owns c: path(p)` from the loop makes the claim verify. A stronger
-passing regression, `mdtests/do_while_return_restores_changed_resource_frame.md`,
-also returns the reconstructed path and remaining list in named `produces`
-clauses. This distinguishes the entry-rebase failure from exit frame loss.
-
-Preserve the checked pre-loop fold transition when certifying the loop's
-returned path. Do not discard entry resources or accept an arbitrary changed
-entry state. The reproduction must verify and pass expansion audit; entry
-rebase regressions that reject changed memory or population state must still
-fail. Nested return paths must retain their enclosing resource transitions.

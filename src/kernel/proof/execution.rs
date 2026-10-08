@@ -3563,7 +3563,7 @@ impl CheckedFunctionEntry {
         function: &CFunction,
         arguments: &[CExpression],
     ) -> Option<&CState> {
-        (self.function.as_ref() == function && self.arguments == arguments)
+        (self.function.has_same_entry_and_source(function) && self.arguments == arguments)
             .then_some(&self.entry_state)
     }
 
@@ -10690,9 +10690,9 @@ impl ExecutionProofCore {
         // The checked entry vouches for the published function's entry only
         // when it was checked for that function and those arguments, and
         // either every trace starts at its entry state or that state
-        // rebases onto the published caller state. A proof that bound loop
-        // clauses into its function publishes a different function and
-        // completes as a proof without a checked entry.
+        // rebases onto the published caller state. Checked loop annotations
+        // may refine the function without changing its source or entry
+        // contract; those annotations do not invalidate its checked entry.
         let has_checked_entry = self.function_entry.as_ref().is_some_and(|entry| {
             match entry.trace_entry_state(candidates.function(), candidates.arguments()) {
                 None => false,
@@ -12788,6 +12788,51 @@ mod tests {
                 1,
                 "exact-view lookup should visit only its indexed event at size {event_count}",
             );
+        }
+    }
+
+    #[test]
+    fn checked_entry_accepts_only_body_annotations_with_identical_entry_metadata() {
+        let returned = CStatement::Return(CExpression::Value(CValue::Void));
+        let condition = CExpression::Value(int32(1));
+        let function = c_function(
+            CType::Void,
+            "entry_annotations",
+            Vec::new(),
+            crate::kernel::api::c_while(condition.clone(), Vec::new(), returned.clone()),
+        );
+        let caller = CState::new();
+        let state = crate::kernel::c_function_entry_state(&caller, &function, &[]).unwrap();
+        let entry =
+            CheckedFunctionEntry::check(&caller, &function, &[], &state, PureFactContext::new())
+                .unwrap();
+        let annotated = function.clone().with_body(crate::kernel::api::c_while(
+            condition.clone(),
+            vec![Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::Constant(true),
+                true,
+            )],
+            returned.clone(),
+        ));
+        assert_ne!(annotated, function);
+        assert_eq!(entry.trace_entry_state(&annotated, &[]), Some(&state));
+        assert!(
+            entry
+                .trace_entry_state(&annotated, std::slice::from_ref(&condition))
+                .is_none()
+        );
+        for changed in [
+            annotated.clone().with_source_body(returned),
+            annotated
+                .clone()
+                .with_recursion_measure(crate::kernel::CRankingComponent::CExpression(condition)),
+            annotated.with_global_variables(vec![crate::kernel::CGlobal::new(
+                "g",
+                CType::Int32,
+                int32(7),
+            )]),
+        ] {
+            assert!(entry.trace_entry_state(&changed, &[]).is_none());
         }
     }
 
