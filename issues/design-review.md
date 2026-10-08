@@ -101,13 +101,53 @@ resource declares no fields to hold them; write the child without a name".
 Decide whether a parent without fields should be able to name a child. It
 would need a model for a resource that declares none.
 
-### B3. Reading through a declared resource
+### B3. Reads go through an owned resource
 
-Recorded in the third pass: `views outer(p)` let C read the resource's
-memory without an `unfold`, while `owns outer(p)` did not. On 2026-10-07 a
-nested case did not confirm it: with `contains inner(p)` in `outer`, both
-`views outer(p)` and `owns outer(p)` needed the `unfold`. Re-check with a
-resource whose body owns memory directly before deciding anything.
+Decided 2026-10-08: holding a resource, viewed or owned, lets C read the
+memory it owns directly. A write still needs `unfold`. Depth stays at one
+level: memory a child resource owns is not read through.
+
+Today, with `resource flat(p: struct cell*) { owns p->value; owns p->other; }`
+and a function that reads `p->value`:
+
+- `views flat(p);` verifies with no `unfold`.
+- `owns flat(p);` does not; it needs `unfold(flat(p));` before the read and
+  `fold(flat(p));` after. Unless the proof contains a loop: then the read
+  verifies, because the entry projection that makes a resource's own memory
+  readable (`project_initial_composite_resource_cores` in
+  `src/surface/proof/resources.rs`) is switched on for owned resources only
+  when the function block has a loop (`include_owned_composite_cores` in
+  `src/surface/proof.rs`).
+
+Switching that projection on for every function is not the implementation.
+It makes the read verify and still refuses a write, but it adds view facts
+for the resource's memory at entry, and nothing retires them when the owner
+changes. Tried on 2026-10-08, it failed 12 tests in four ways:
+
+- `unfold` of the owned resource is refused: "authority control has the
+  wrong resource exchange", "transfer wrapper has the wrong resource
+  exchange".
+- A call that frees the resource is refused: "resource would remain usable
+  after its allocation is freed: `views *obj`".
+- An `ensuring` interface is refused: "the interface successor resource
+  context is not exact" (`examples/perpetual-service`).
+- `mdtests/composite_resource_folded_nested_fact_projection.md`, an
+  expected failure, verifies. Whether that is the decision working or a
+  hole has not been examined.
+
+The read has to be authorized where it happens, from the owned head's
+checked one-level expansion, without leaving a view behind; or the projected
+views have to be retired with the owner at every operation that changes it
+(`authority_body_read_projection_retires_only_its_owned_observations` in
+`src/surface/proof/resources.rs` tests the retirement that exists).
+
+Regression: the two contracts above verifying a read with no `unfold` and no
+loop; the same contracts refusing a write; an `unfold`, a freeing call and an
+`ensuring` interface on an owned resource after a read through it.
+
+Done when: those pass, the loop special case is gone, and
+`composite_resource_folded_nested_fact_projection.md` is either still
+refused or re-expected with the reason recorded.
 
 ### B4. Overlapping places returned by one contract
 
