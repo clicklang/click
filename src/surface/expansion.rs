@@ -781,12 +781,15 @@ pub use crate::source::SourcePosition;
 ///
 /// This inventory is purely syntactic: producing it does not execute or verify
 /// any proof. `source_index` uses the same pre-order indexing as tactic timing
-/// and individual source expansion.
+/// and individual source expansion. Tactics inside a `have` share its
+/// claim-level index; `position` identifies each selectable nested site.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SmartTacticSourceSite {
     pub claim_label: String,
     pub source_index: usize,
     pub tactic_name: String,
+    /// Exact source position, including tactics nested inside a `have` body.
+    pub position: SourcePosition,
 }
 
 /// Inventories every source-selectable smart tactic without running proofs.
@@ -820,7 +823,10 @@ pub fn c0_project_smart_tactic_source_sites(
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
     let sources = CSourceContext::bundle(c_sources).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_smart_tactic_source_sites_file(&file)
+    c0_smart_tactic_source_sites_file(
+        project.entry_source().expect("resolved entry source"),
+        &file,
+    )
 }
 
 pub fn c0_prepared_project_smart_tactic_source_sites(
@@ -829,7 +835,10 @@ pub fn c0_prepared_project_smart_tactic_source_sites(
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
     let sources = CSourceContext::prepared(imports).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_smart_tactic_source_sites_file(&file)
+    c0_smart_tactic_source_sites_file(
+        project.entry_source().expect("resolved entry source"),
+        &file,
+    )
 }
 
 pub fn program_prepared_project_smart_tactic_source_sites(
@@ -838,7 +847,10 @@ pub fn program_prepared_project_smart_tactic_source_sites(
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
     let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_smart_tactic_source_sites_file(&file)
+    c0_smart_tactic_source_sites_file(
+        project.entry_source().expect("resolved entry source"),
+        &file,
+    )
 }
 
 fn c0_smart_tactic_source_sites_context(
@@ -846,247 +858,38 @@ fn c0_smart_tactic_source_sites_context(
     sources: &CSourceContext<'_>,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
     let file = parse_source_with_c_layouts_context(click_source, sources)?;
-    c0_smart_tactic_source_sites_file(&file)
+    c0_smart_tactic_source_sites_file(click_source, &file)
 }
 
 fn c0_smart_tactic_source_sites_file(
+    click_source: &str,
     file: &ClickFile,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
     let mut sites = Vec::new();
-    for theorem in file.theorem_definitions() {
-        if !file.theorem_is_selected(theorem.name()) {
+    let mut seen = BTreeSet::new();
+    for entry in source_tactic_entries(click_source, file)? {
+        if !entry.smart {
             continue;
         }
-        // These declarations are checked against kernel axioms, not expanded
-        // by an implicit auto tactic. Keep genuine callback refinement proofs
-        // (which run before the arithmetic-axiom branch) in the inventory.
-        let kernel_axiom_name = proof::is_kernel_standard_theorem_name(theorem.name())
-            && theorem
-                .parameters()
-                .iter()
-                .all(|parameter| parameter.click_type() == &ClickType::C(C0Type::Int32));
-        for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {
-            if kernel_axiom_name
-                && !matches!(
-                    ensure.ensure(),
-                    Ensure::Proposition(ClickProposition::PredicateCall { .. })
-                )
-            {
-                continue;
-            }
-            let label = ensure.name().map_or_else(
-                || format!("{}.ensures_{ensure_index}", theorem.name()),
-                |name| format!("{}.{name}", theorem.name()),
-            );
-            collect_smart_proof_sites(&label, ensure.proof(), &mut sites);
-        }
-    }
-    for function in proof_function_blocks(file) {
-        // An `extern` contract is assumed, not proved: its clauses carry no
-        // proof, so the implicit `auto` of an unproved clause is not a site
-        // there is anything to expand.
-        if function.is_external() {
+        let EntrySelection::Located(located) = entry.selection else {
             continue;
-        }
-        let function_name = function.signature().name();
-        for clause in function.structural_clauses() {
-            if let CodeRegion::Loop(loop_index) = clause.region() {
-                let default = SourceProof::Default;
-                collect_smart_proof_sites(
-                    &format!("{function_name}.loop({loop_index}).initialize"),
-                    clause.initialize_proof().unwrap_or(&default),
-                    &mut sites,
-                );
-                collect_smart_proof_sites(
-                    &format!("{function_name}.loop({loop_index}).preserve"),
-                    clause.preserve_proof().unwrap_or(&default),
-                    &mut sites,
-                );
-            }
-        }
-        if let Some(proof) = function.covering_proof() {
-            collect_smart_proof_sites(&format!("{function_name}.contract"), proof, &mut sites);
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            if function.covers_claim_proof(ensure.proof()) {
-                continue;
-            }
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            collect_smart_proof_sites(&label, ensure.proof(), &mut sites);
+        };
+        // A smart container owns its body's expansion. Its written child
+        // aliases select that same site and must not be counted again.
+        if seen.insert((
+            entry.claim_label.clone(),
+            located.source_index,
+            located.nested,
+        )) {
+            sites.push(SmartTacticSourceSite {
+                claim_label: entry.claim_label,
+                source_index: located.source_index,
+                tactic_name: entry.tactic_name,
+                position: position_at_offset(click_source, entry.anchor),
+            });
         }
     }
     Ok(sites)
-}
-
-fn collect_smart_proof_sites(
-    claim_label: &str,
-    proof: &SourceProof,
-    sites: &mut Vec<SmartTacticSourceSite>,
-) {
-    match proof {
-        SourceProof::Default => sites.push(SmartTacticSourceSite {
-            claim_label: claim_label.to_string(),
-            source_index: 0,
-            tactic_name: "auto".to_string(),
-        }),
-        SourceProof::Tactic(tactic) => sites.push(SmartTacticSourceSite {
-            claim_label: claim_label.to_string(),
-            source_index: 0,
-            tactic_name: match tactic {
-                SmartTactic::Auto => "auto",
-                SmartTactic::Simp => "simp",
-            }
-            .to_string(),
-        }),
-        SourceProof::Script(tactics) => {
-            collect_smart_script_sites(claim_label, tactics, 0, sites);
-        }
-    }
-}
-
-fn collect_smart_script_sites(
-    claim_label: &str,
-    tactics: &[ProofTactic],
-    source_index_offset: usize,
-    sites: &mut Vec<SmartTacticSourceSite>,
-) {
-    let mut source_index = source_index_offset;
-    for tactic in tactics {
-        if source_site_kind(tactic) == SourceSiteKind::ExpandableAutomation {
-            sites.push(SmartTacticSourceSite {
-                claim_label: claim_label.to_string(),
-                source_index,
-                tactic_name: tactic_name(tactic).to_string(),
-            });
-        }
-        match tactic {
-            ProofTactic::Open(open) => {
-                collect_smart_script_sites(claim_label, &open.tactics, source_index + 1, sites);
-            }
-            ProofTactic::If(proof_if) => {
-                collect_smart_script_sites(
-                    claim_label,
-                    &proof_if.then_tactics,
-                    source_index + 1,
-                    sites,
-                );
-                collect_smart_script_sites(
-                    claim_label,
-                    &proof_if.else_tactics,
-                    source_index + 1 + source_tactic_count(&proof_if.then_tactics),
-                    sites,
-                );
-            }
-            ProofTactic::StructuralInduct { arms, .. } => {
-                let mut nested_source_index = source_index + 1;
-                for arm in arms {
-                    collect_smart_script_sites(
-                        claim_label,
-                        &arm.tactics,
-                        nested_source_index,
-                        sites,
-                    );
-                    nested_source_index += source_tactic_count(&arm.tactics);
-                }
-            }
-            ProofTactic::Match(proof_match) => {
-                let arms = &proof_match.arms;
-                let mut nested_source_index = source_index + 1;
-                for arm in arms {
-                    collect_smart_script_sites(
-                        claim_label,
-                        &arm.tactics,
-                        nested_source_index,
-                        sites,
-                    );
-                    nested_source_index += source_tactic_count(&arm.tactics);
-                }
-            }
-            ProofTactic::Branch(proof_branch) => {
-                collect_smart_script_sites(
-                    claim_label,
-                    &proof_branch.then_tactics,
-                    source_index + 1,
-                    sites,
-                );
-                collect_smart_script_sites(
-                    claim_label,
-                    &proof_branch.else_tactics,
-                    source_index + 1 + source_tactic_count(&proof_branch.then_tactics),
-                    sites,
-                );
-            }
-            ProofTactic::Cases(proof_cases) => {
-                let mut arm_index = source_index + 1;
-                for arm in proof_cases.arms() {
-                    collect_smart_script_sites(claim_label, arm.tactics(), arm_index, sites);
-                    arm_index += source_tactic_count(arm.tactics());
-                }
-            }
-            ProofTactic::CallOutcomes(outcomes) => {
-                collect_smart_script_sites(
-                    claim_label,
-                    &outcomes.returned_tactics,
-                    source_index + 1,
-                    sites,
-                );
-                collect_smart_script_sites(
-                    claim_label,
-                    &outcomes.threw_tactics,
-                    source_index + 1 + source_tactic_count(&outcomes.returned_tactics),
-                    sites,
-                );
-            }
-            ProofTactic::Loop(clause) => {
-                let mut nested_source_index = source_index + 1;
-                if let Some(proof) = clause.initialize_proof() {
-                    collect_smart_nested_proof_sites(
-                        claim_label,
-                        proof,
-                        nested_source_index,
-                        sites,
-                    );
-                    nested_source_index += proof_source_tactic_count(proof);
-                }
-                if let Some(proof) = clause.preserve_proof() {
-                    collect_smart_nested_proof_sites(
-                        claim_label,
-                        proof,
-                        nested_source_index,
-                        sites,
-                    );
-                }
-            }
-            _ => {}
-        }
-        source_index += source_tactic_count(std::slice::from_ref(tactic));
-    }
-}
-
-fn collect_smart_nested_proof_sites(
-    claim_label: &str,
-    proof: &SourceProof,
-    source_index: usize,
-    sites: &mut Vec<SmartTacticSourceSite>,
-) {
-    match proof {
-        SourceProof::Default => {}
-        SourceProof::Tactic(tactic) => sites.push(SmartTacticSourceSite {
-            claim_label: claim_label.to_string(),
-            source_index,
-            tactic_name: match tactic {
-                SmartTactic::Auto => "auto",
-                SmartTactic::Simp => "simp",
-            }
-            .to_string(),
-        }),
-        SourceProof::Script(tactics) => {
-            collect_smart_script_sites(claim_label, tactics, source_index, sites)
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3100,7 +2903,20 @@ fn source_tactic_entries(
             continue;
         }
         let source = find_theorem(&tokens, theorem.name())?;
+        let kernel_axiom_name = proof::is_kernel_standard_theorem_name(theorem.name())
+            && theorem
+                .parameters()
+                .iter()
+                .all(|parameter| parameter.click_type() == &ClickType::C(C0Type::Int32));
         for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {
+            if kernel_axiom_name
+                && !matches!(
+                    ensure.ensure(),
+                    Ensure::Proposition(ClickProposition::PredicateCall { .. })
+                )
+            {
+                continue;
+            }
             let edit =
                 find_ensure_proof_edit(&tokens, source.body_open, source.body_close, ensure_index)?;
             let label = ensure.name().map_or_else(
@@ -3115,6 +2931,9 @@ fn source_tactic_entries(
         }
     }
     for function_block in proof_function_blocks(file) {
+        if function_block.is_external() {
+            continue;
+        }
         let function_name = function_block.signature().name();
         let function = find_function(&tokens, function_name)?;
         for clause in function_block.structural_clauses() {

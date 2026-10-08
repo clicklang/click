@@ -2615,7 +2615,7 @@ impl<'a> Proof<'a> {
             ProofContext::FixedState(context) => context.nested_tactic_capture.as_ref()?,
             ProofContext::Pure(_) => return None,
         };
-        if self.site.source_tactic_path().as_deref() != Some(capture.path.as_slice())
+        if self.site.written_source_tactic_path().as_deref() != Some(capture.path.as_slice())
             || !capture.try_begin()
         {
             return None;

@@ -5682,9 +5682,7 @@ impl<'a> Proof<'a> {
             .iter()
             .any(|tactic| matches!(tactic, ProofTactic::Have(_)))
         {
-            self.try_authoritative_linear_script(&tactics)
-                .ok()
-                .flatten()
+            self.try_generated_linear_script(&tactics).ok().flatten()
         } else {
             self.try_planned_explicit_steps(&tactics)
         }
@@ -6598,7 +6596,7 @@ impl<'a> Proof<'a> {
         // Apply those through the same recursive Proof driver used by
         // authoritative source scripts; the plan is provenance input, not an
         // independently interpreted semantic certificate.
-        let proof = attempt::candidate_outcome(self.try_authoritative_linear_script(&tactics))
+        let proof = attempt::candidate_outcome(self.try_generated_linear_script(&tactics))
             .ok()
             .flatten()
             .flatten()?;
@@ -6767,6 +6765,17 @@ impl<'a> Proof<'a> {
             .map(|index| self.site().at_block_position(index))
             .collect::<Vec<_>>();
         self.try_addressed_linear_script(tactics, &sites, declined)
+    }
+
+    /// Checks an explicit planner candidate without attributing its block
+    /// positions to a written source body, then restores the caller's site.
+    fn try_generated_linear_script(
+        &self,
+        tactics: &[ProofTactic],
+    ) -> Result<Option<Self>, ClickError> {
+        self.at_source_tactic(usize::MAX)
+            .try_authoritative_linear_script(tactics)
+            .map(|proof| proof.map(|proof| proof.at_site(self.site())))
     }
 
     /// The linear script runner. `sites[index]` is where `tactics[index]`

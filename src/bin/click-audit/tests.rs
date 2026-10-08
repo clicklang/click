@@ -1723,3 +1723,46 @@ fn a_claims_rewrites_are_verified_in_one_run() {
     }
     assert_eq!(checked, 3, "the corpus has claims with several smart sites");
 }
+
+#[test]
+fn inventory_keeps_distinct_sites_inside_have_bodies() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("nested.click");
+    let source = r#"
+theorem helper(x: int32) {
+    requires 0 <= x;
+    ensures 0 <= x by { assumption(); }
+}
+theorem nested(x: int32) {
+    requires 0 <= x;
+    ensures 0 <= x by {
+        have 0 <= x by {
+            have 0 <= x by { apply(helper(x)); }
+            apply(helper(x));
+            assumption();
+        }
+        assumption();
+    }
+}
+"#;
+    fs::write(&path, source).unwrap();
+    let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+    assert_eq!(sites.len(), 2);
+    assert!(
+        sites
+            .iter()
+            .all(|site| site.claim == "nested.ensures_0" && site.tactic_name == "apply")
+    );
+    assert_ne!(sites[0].position, sites[1].position);
+    for site in sites {
+        assert_eq!(site.position, site.click_position);
+        let expanded = expand_c0_tactic_source_at(
+            source,
+            &[],
+            site.click_position.line,
+            site.click_position.column,
+        )
+        .unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}
