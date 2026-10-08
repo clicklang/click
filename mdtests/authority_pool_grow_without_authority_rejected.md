@@ -25,7 +25,7 @@ authorized resource pool_slot(pool: struct pool*) {}
 verifying "pool_grow.c";
 verifying "grow_caller.c";
 void pool_grow(struct pool* pool, int32 amount) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     requires defined(count(pool_slot(pool)) + amount);
     requires 0 < amount;
@@ -37,7 +37,7 @@ void pool_grow(struct pool* pool, int32 amount) {
     execute(); simp();
 }
 void caller(struct pool* pool, int32 amount) {
-    owns object(pool);
+    owns *pool;
     requires 0 < amount;
     requires defined(pool->capacity + amount);
     produces amount of pool_slot(pool);

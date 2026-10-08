@@ -46,8 +46,8 @@ resource free_suffix(data: int32*, capacity: int32) {
 resource arena_prefix_state(arena: struct arena*) {
     field prefix: int32;
     field live: int32;
-    owns &arena->data;
-    owns &arena->occupied;
+    owns arena->data;
+    owns arena->occupied;
     owns arena->capacity;
     owns arena->live_regions;
     owns marks: occupied_marks(arena->occupied, prefix);

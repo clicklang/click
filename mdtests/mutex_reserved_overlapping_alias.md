@@ -20,7 +20,7 @@ runtime "modeled-pthread";
 verifying "mutex_reserved_overlapping_alias.c";
 struct holder* identity(struct holder* p) { ensures result == p; } by { execute(); simp(); }
 int32 run(struct holder *holder) {
-    owns &holder->mu;
+    owns holder->mu;
     owns holder->value;
     requires aligned(&holder->mu, 8);
     ensures result == 0;

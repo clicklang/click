@@ -5,7 +5,7 @@ while it still owns its region descriptors. This is that call in isolation,
 with the `arena_destroy` contract of the arena's earlier prefix model and the
 lifecycle resources the retired fixed-interval model declared: the caller
 lends `arena_empty(arena)`, which owns both backing arrays and their
-allocation authority, and keeps `object(first)` and `object(second)`.
+allocation authority, and keeps `*first` and `*second`.
 
 `arena_destroy` sets `arena->data` and `arena->occupied` to null, so the
 allocations it frees can only be named through the values those fields had
@@ -74,7 +74,7 @@ resource arena_initialized_access(
 }
 
 resource arena_empty(arena: struct arena*) {
-    owns object(arena);
+    owns *arena;
     contains arena_initialized_storage(
         arena->data,
         arena->occupied,
@@ -94,7 +94,7 @@ verifying "arena_destroy.c";
 
 void arena_destroy(struct arena* arena) {
     consumes arena_empty(arena);
-    produces object(arena);
+    produces *arena;
 
     ensures arena->data == 0;
     ensures arena->occupied == 0;
@@ -124,9 +124,9 @@ void arena_teardown(
     struct region* second
 ) {
     consumes arena_empty(arena);
-    produces object(arena);
-    owns object(first);
-    owns object(second);
+    produces *arena;
+    owns *first;
+    owns *second;
 } by {
     execute();
     simp();

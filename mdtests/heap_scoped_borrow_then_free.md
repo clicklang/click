@@ -37,7 +37,7 @@ verifying "read_item.c";
 verifying "heap_scoped_borrow_then_free.c";
 
 resource item_storage(p: struct item*) {
-    owns object(p);
+    owns *p;
 }
 
 int32 read_item(struct item* item) {

@@ -513,9 +513,9 @@ pub enum CppExpression {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CppPlaceReference {
-    /// Embedded fields from the root place to the object of a member access.
+    /// Ordered field and nominal base edges from the complete root object.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub projections: Vec<CppFieldReference>,
+    pub projections: Vec<CppProjection>,
     pub declaration_id: String,
     pub name: String,
     pub span: CppSpan,
@@ -536,6 +536,55 @@ pub struct CppFieldReference {
     pub declaration_id: String,
     pub name: String,
     pub span: CppSpan,
+}
+
+/// Preserve the original field-reference encoding; a base edge has a distinct
+/// wrapper and identifies both the derived owner and the nominal base target.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum CppProjection {
+    Field(CppFieldReference),
+    Base { base: CppBaseReference },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppBaseReference {
+    pub record_declaration_id: String,
+    pub base_declaration_id: String,
+    pub base_name: String,
+    pub span: CppSpan,
+}
+
+impl CppProjection {
+    fn span(&self) -> &CppSpan {
+        match self {
+            Self::Field(field) => &field.span,
+            Self::Base { base } => &base.span,
+        }
+    }
+    pub(super) fn as_ref(&self) -> ProjectionRef<'_> {
+        self.into()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ProjectionRef<'a> {
+    Field(&'a CppFieldReference),
+    Base(&'a CppBaseReference),
+}
+impl<'a> From<&'a CppProjection> for ProjectionRef<'a> {
+    fn from(value: &'a CppProjection) -> Self {
+        match value {
+            CppProjection::Field(field) => Self::Field(field),
+            CppProjection::Base { base } => Self::Base(base),
+        }
+    }
+}
+impl<'a> From<&'a CppFieldReference> for ProjectionRef<'a> {
+    fn from(value: &'a CppFieldReference) -> Self {
+        Self::Field(value)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -962,10 +1011,10 @@ impl<'a> RecordIndex<'a> {
         }
     }
 
-    pub(super) fn resolve_path<'b, 's>(
+    pub(super) fn resolve_path<'b, 's, P: Into<ProjectionRef<'b>>>(
         &'s self,
         root_type: &'s CppType,
-        path: impl IntoIterator<Item = &'b CppFieldReference>,
+        path: impl IntoIterator<Item = P>,
     ) -> Result<(&'s CppType, u32), String> {
         let mut value_type = match root_type {
             CppType::LvalueReference { pointee } => pointee.as_ref(),
@@ -983,6 +1032,36 @@ impl<'a> RecordIndex<'a> {
                 return Err("C++ field projection requires a record object".into());
             };
             validate_record_reference(self, declaration_id, name)?;
+            let reference = match reference.into() {
+                ProjectionRef::Field(field) => field,
+                ProjectionRef::Base(base) => {
+                    if base.record_declaration_id != *declaration_id {
+                        return Err(
+                            "C++ base projection belongs to the wrong derived record".into()
+                        );
+                    }
+                    let owner = self[declaration_id]
+                        .base
+                        .as_ref()
+                        .ok_or("C++ base projection requires a declared base subobject")?;
+                    let CppType::Record {
+                        declaration_id: target_id,
+                        name: target_name,
+                        ..
+                    } = &owner.value_type
+                    else {
+                        return Err("C++ base projection requires a nominal record base".into());
+                    };
+                    if &base.base_declaration_id != target_id || &base.base_name != target_name {
+                        return Err("C++ base projection has the wrong nominal base target".into());
+                    }
+                    offset = offset
+                        .checked_add(owner.offset_bytes)
+                        .ok_or("C++ base projection offset overflows")?;
+                    value_type = &owner.value_type;
+                    continue;
+                }
+            };
             if reference.record_declaration_id != *declaration_id {
                 return Err(format!(
                     "C++ field `{}` belongs to the wrong record declaration",
@@ -2509,7 +2588,7 @@ impl CppCallArgument {
             Self::Reference { place } => {
                 let root = validate_root_reference(place, places, logical_source)?;
                 for projection in &place.projections {
-                    projection.span.validate(logical_source)?;
+                    projection.span().validate(logical_source)?;
                 }
                 let (value_type, _) = resolve_reference_type(root, place, records)?;
                 if let CppType::Record {
@@ -3957,11 +4036,15 @@ fn validate_member_reference<'a>(
         super::budget::MAX_RECORDS,
     )?;
     for projection in &object.projections {
-        projection.span.validate(logical_source)?;
+        projection.span().validate(logical_source)?;
     }
     let (value_type, _) = records.resolve_path(
         object_type,
-        object.projections.iter().chain(std::iter::once(field)),
+        object
+            .projections
+            .iter()
+            .map(CppProjection::as_ref)
+            .chain(std::iter::once(ProjectionRef::Field(field))),
     )?;
     Ok(value_type)
 }
@@ -5973,7 +6056,7 @@ mod tests {
                 declaration_id: "root".into(),
                 name: "root".into(),
                 span: cleanup_span(),
-                projections: path,
+                projections: path.into_iter().map(CppProjection::Field).collect(),
             };
             let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 resolve_reference_type(&const_root, &reference, &checked)
@@ -6042,7 +6125,7 @@ mod tests {
                 declaration_id: "root".into(),
                 name: "root".into(),
                 span: cleanup_span(),
-                projections: vec![field],
+                projections: vec![CppProjection::Field(field)],
             };
             let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 resolve_reference_type(&root, &reference, &records)
@@ -6180,6 +6263,40 @@ mod tests {
                 record_layout_order(&checked).unwrap().first().unwrap().name,
                 format!("R{}", size - 1)
             );
+            let mut path = (0..size - 1)
+                .map(|index| CppProjection::Base {
+                    base: CppBaseReference {
+                        record_declaration_id: format!("r{index}"),
+                        base_declaration_id: format!("r{}", index + 1),
+                        base_name: format!("R{}", index + 1),
+                        span: cleanup_span(),
+                    },
+                })
+                .collect::<Vec<_>>();
+            path.push(CppProjection::Field(CppFieldReference {
+                record_declaration_id: format!("r{}", size - 1),
+                declaration_id: "leaf".into(),
+                name: "value".into(),
+                span: cleanup_span(),
+            }));
+            let place = CppPlaceReference {
+                declaration_id: "root".into(),
+                name: "root".into(),
+                span: cleanup_span(),
+                projections: path,
+            };
+            for is_const in [false, true] {
+                let root = CppType::Record {
+                    declaration_id: "r0".into(),
+                    name: "R0".into(),
+                    is_const,
+                };
+                let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    resolve_reference_type(&root, &place, &checked)
+                });
+                assert_eq!(resolved.unwrap(), (&signed_integer(32, false), is_const));
+                assert_eq!(work, size);
+            }
             inventory[size - 1].fields.clear();
             inventory[size - 1].base = Some(CppBase {
                 value_type: CppType::Record {

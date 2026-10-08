@@ -218,6 +218,20 @@ form. It needs an inventory of the proofs that rely on it first.
 Steps 1 and 2 stand alone. Step 5 is the only one that changes the meaning of
 an accepted clause.
 
+### Progress
+
+- Done: steps 1, 3 and 4. `&`, `object(p)` and a range on a scalar field are
+  refused with the spelling to write, and every proof in the repository uses
+  the new forms.
+- Partly done: step 2. A clause's own spelling prints as a place. Facts the
+  kernel reports still print cells: a missing `owns a->n` is still
+  `owns a[2..4]`, and a local's storage is `&second[0..1]`.
+- Not started: step 5 and step 6.
+- `views *p` outside a resource definition is still refused, as
+  `views object(p)` was ("whole-struct views require a declared resource").
+  `views g` for a global struct is accepted. That difference is older than
+  this work and is not yet explained.
+
 ## Open questions
 
 - Should a whole slice have a spelling, and which?

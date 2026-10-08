@@ -20,9 +20,9 @@ void pool_checkout(struct pool* pool, struct object* object) {
 
 ```click resource_semantics=authority
 authorized resource pool_slot(pool: struct pool*) {}
-authorized resource pool_object(pool: struct pool*, object: struct object*) { owns object(object); }
+authorized resource pool_object(pool: struct pool*, object: struct object*) { owns *object; }
 resource pool_control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
     fact 0 <= pool->checked_out;
@@ -38,7 +38,7 @@ verifying "pool_checkout.c";
 void pool_checkout(struct pool* pool, struct object* object) {
     owns pool_control(pool);
     requires count(pool_slot(pool)) == 0;
-    consumes object(object);
+    consumes *object;
     produces pool_object(pool, object);
     ensures count(pool_slot(pool)) == old(count(pool_slot(pool))) - 1;
     ensures count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1;

@@ -117,12 +117,12 @@ resource parent(p: struct parent*) {
     field link: ParentLink;
     match link {
         ParentLink::Empty => {
-            owns &p->kid;
+            owns p->kid;
             fact defined(p->kid);
             fact p->kid == 0;
         },
         ParentLink::Linked(kid) => {
-            owns &p->kid;
+            owns p->kid;
             fact defined(p->kid);
             fact p->kid == kid;
             fact kid != 0;
@@ -134,14 +134,14 @@ authorized resource child_ref(obj: struct child*) {}
 
 resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
-    owns object(obj);
+    owns *obj;
     owns authority(child_ref(obj));
     fact obj->refs == count(child_ref(obj));
 }
 
 resource child_storage(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
-    owns object(obj);
+    owns *obj;
     owns authority(child_ref(obj));
 }
 
@@ -215,8 +215,8 @@ void child_release(struct child* obj) {
 void parent_attach(struct parent* p, struct child* kid) {
     requires count(child_ref(kid)) < 2147483647;
     requires kid != 0;
-    requires separate(memory(&p->kid), memory(kid->payload));
-    consumes &p->kid;
+    requires separate(memory(p->kid), memory(kid->payload));
+    consumes p->kid;
     owns child_control(kid);
     owns child_ref(kid);
     produces child_ref(kid);
@@ -263,7 +263,7 @@ void parent_detach(struct parent* p) {
     if old(count(child_ref(p->kid))) > 1 {
         produces child_control(old(p->kid));
     }
-    produces &p->kid;
+    produces p->kid;
 } by {
     match link.link {
         ParentLink::Empty => {

@@ -22,7 +22,7 @@ verifying "cache.c" as cache;
 verifying "main.c";
 
 void reset() {
-    owns &counter::count[0..1];
+    owns counter::count;
     ensures counter::count == 0;
 } by { execute(); simp(); }
 

@@ -890,7 +890,7 @@ void object_retain_many(struct object* obj, int32 amount) {
 }"#;
     let click_source = r#"resource object_ref(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
-    owns object(obj);
+    owns *obj;
     fact obj->refs == count(object_ref(obj));
 }
 
@@ -974,7 +974,7 @@ struct node* unpack(struct node* node) {
     return (struct node*)(node->word & ~1);
 }"#;
     let click_source = r#"resource packed(node: struct node*) {
-    owns object(node);
+    owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
 }
 
@@ -1052,7 +1052,7 @@ uint32 count_live(struct cell *node) {
 }"#;
     let click_source = r#"resource tagged(node: struct cell*) {
     if node != 0 {
-        owns object(node);
+        owns *node;
         fact aligned(node, 8);
         let next: struct cell* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
         contains tagged(next);

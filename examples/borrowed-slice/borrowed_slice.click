@@ -4,13 +4,13 @@ resource owned_borrowable_buffer(
     length: int32
 ) {
     owns owner->len;
-    owns &owner->data;
+    owns owner->data;
     owns data[0..length];
     fact owner->len == length;
     fact owner->data == data;
     fact 1 <= length;
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(data[0..length])
     );
 }
@@ -23,7 +23,7 @@ resource buffer_without_slice(
     end: int32
 ) {
     owns owner->len;
-    owns &owner->data;
+    owns owner->data;
     owns data[0..start];
     owns data[end..length];
     fact owner->len == length;
@@ -32,7 +32,7 @@ resource buffer_without_slice(
     fact start < end;
     fact end <= length;
     fact 1 <= length;
-    fact separate(memory(object(owner)), memory(data[0..length]));
+    fact separate(memory(*owner), memory(data[0..length]));
 }
 
 resource owned_slice(
@@ -58,7 +58,7 @@ int32 borrowed_slice_buffer_init(
     int32 length
 ) {
     requires 1 <= length;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..length];
     produces owned_borrowable_buffer(owner, data, length);
 
@@ -127,7 +127,7 @@ int32 borrowed_slice_buffer_return(
     int32 end
 ) {
     owns owner->len;
-    owns &owner->data;
+    owns owner->data;
 
     ensures result == length;
     ensures owner->len == length;
@@ -162,7 +162,7 @@ int32 borrowed_slice_buffer_pipeline(
     requires start < end;
     requires end <= length;
     requires 1 <= length;
-    consumes object(owner);
+    consumes *owner;
     consumes data[0..length];
     produces owned_borrowable_buffer(owner, data, length);
 

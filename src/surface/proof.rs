@@ -2320,7 +2320,7 @@ fn evaluate_entry_resource_context(
         // safe to expose before evaluation: unlike composite facts, they do
         // not acquire any cells from a resource body.  In particular, a
         // quantity such as `pool->capacity of pool_slot(pool)` may read the
-        // explicitly owned `object(pool)` clause before its containing
+        // explicitly owned `*pool` clause before its containing
         // composite is evaluated.
         .filter(|fact| {
             matches!(

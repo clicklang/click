@@ -26,7 +26,7 @@ resource frame_at(c: struct node*) {
     field model: Frame;
     match model {
         Frame::Up(id, other, value) => {
-            owns &c->up;
+            owns c->up;
             owns id->word;
             owns other->word;
             fact id != 0;

@@ -17,8 +17,8 @@ resource tree(p: struct node*) {
  match model {
   Tree::Empty => { fact p == 0; },
   Tree::Node(id, lm, rm) => {
-   owns &p->left;
-   owns &p->right;
+   owns p->left;
+   owns p->right;
    owns left: tree(p->left);
    owns right: tree(p->right);
    fact p != 0;

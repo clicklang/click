@@ -37,7 +37,7 @@ own(composite(name, arguments))
 kernel-known stronger law: only its owned form exists at the surface, it is an
 exclusive lifetime obligation, and it can be discharged only by the trusted
 heap-free transition. It deliberately grants no memory access; an owning
-wrapper normally contains both allocation authority and `object(base)`.
+wrapper normally contains both allocation authority and `*base`.
 
 Abstract declarations use the token representation. Ordinary resource
 declarations require a body and use the composite representation:

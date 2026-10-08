@@ -32,12 +32,12 @@ void fill(struct buffer* b, int32 from, int32 to) {
 ```click
 resource filled_prefix(b: struct buffer*) {
     field prefix: int32;
-    owns &b->p;
+    owns b->p;
     owns b->n;
     owns b->p[0..b->n];
     fact 0 <= prefix;
     fact prefix <= b->n;
-    fact separate(memory(object(b)), memory(b->p[0..b->n]));
+    fact separate(memory(*b), memory(b->p[0..b->n]));
 }
 
 verifying "resource_unfold_names_unmatched_body_cells.c";

@@ -17,7 +17,7 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_init_view_only.c";
 int32 run(struct holder *holder) {
-    views &holder->mu;
+    views holder->mu;
     requires aligned(&holder->mu, 8);
     ensures result == 0;
 } by { execute(); simp(); }

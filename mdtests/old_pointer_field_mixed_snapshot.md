@@ -17,9 +17,9 @@ verifying "old_pointer_field_mixed_snapshot.c";
 
 void observe_parent(struct parent* p) {
     requires p->kid != 0;
-    owns object(p);
+    owns *p;
     owns p->kid[0..1];
-    requires separate(memory(object(p)), memory(p->kid[0..1]));
+    requires separate(memory(*p), memory(p->kid[0..1]));
     ensures old(p->kid)->payload == old(p->kid->payload);
 } by {
     execute();

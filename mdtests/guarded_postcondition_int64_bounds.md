@@ -51,7 +51,7 @@ long caller(struct box* b) {
 ```click
 resource counted(b: struct box*) {
     field total: int64;
-    owns object(b);
+    owns *b;
 }
 
 verifying "guarded_postcondition_int64_bounds.c";

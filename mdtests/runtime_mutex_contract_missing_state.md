@@ -26,7 +26,7 @@ resource counter_state(counter: struct counter*) {
 verifying "runtime_mutex_contract_missing_state.c";
 
 void initialize(struct counter *counter) {
-    owns &counter->mu;
+    owns counter->mu;
     requires aligned(&counter->mu, 8);
     owns state: counter_state(counter);
 } by {

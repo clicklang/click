@@ -10,7 +10,7 @@ int again(void) { main(); return main(); }
 verifying "main.c";
 int main() { ensures result == 8; } by { execute(); simp(); }
 int again() {
-    owns &state[0..1];
+    owns state;
     ensures result == 8;
 } by { execute(); simp(); }
 ```

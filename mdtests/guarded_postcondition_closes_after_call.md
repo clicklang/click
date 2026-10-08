@@ -54,7 +54,7 @@ int restricted(struct box* b) {
 ```click
 resource counted(b: struct box*) {
     field live: int32;
-    owns object(b);
+    owns *b;
     fact 0 <= live;
     fact live <= 100;
 }

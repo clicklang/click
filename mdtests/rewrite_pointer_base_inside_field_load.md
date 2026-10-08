@@ -20,8 +20,8 @@ resource holder(p: struct holder*) {
     field link: Link;
     match link {
         Link::Linked(kid) => {
-            owns &p->kid;
-            owns &kid->payload;
+            owns p->kid;
+            owns kid->payload;
             fact p->kid == kid;
         },
     }

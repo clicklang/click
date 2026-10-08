@@ -23,7 +23,7 @@ int32 run() {
 ```click
 verifying "heap_pointer.c";
 void put(struct holder* h, int32* p) {
-    owns &h->target;
+    owns h->target;
     ensures h->target == p;
     ensures defined(h->target);
 } by { execute(); simp(); }

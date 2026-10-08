@@ -22,8 +22,8 @@ verifying "right.c" as right;
 verifying "main.c";
 
 resource both() {
-    owns &left::count[0..1];
-    owns &right::count[0..1];
+    owns left::count;
+    owns right::count;
     fact right::count == 19u64;
 }
 

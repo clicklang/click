@@ -43,7 +43,7 @@ uint32 run(struct counter* p) {
     owns authority(member(p));
     requires count(member(p)) == 0;
     owns p->value;
-    owns &p->mutex;
+    owns p->mutex;
     requires aligned(&p->mutex, 8);
     ensures result == 0 or result == 3;
 } by {

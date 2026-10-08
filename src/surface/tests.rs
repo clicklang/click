@@ -292,12 +292,12 @@ fn tree_node_init_rejects_invalid_models_and_ownership() {
         ),
         ("{ left: l, right: r });", "{ left: r, right: l });"),
         ("{ left: l, right: r });", "{ left: l, right: l });"),
-        ("consumes &node->left;", ""),
+        ("consumes node->left;", ""),
         ("consumes r: tree_at(right);", ""),
         ("requires p == 0;", ""),
         // A child address may not be read from an unowned stored link.
-        ("owns &p->left;", ""),
-        ("owns &p->right;", ""),
+        ("owns p->left;", ""),
+        ("owns p->right;", ""),
         // Child ownership has been consumed into root, so it cannot be reused.
         (
             "}, { left: l, right: r });\n    simp();",

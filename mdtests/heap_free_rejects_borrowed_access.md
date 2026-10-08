@@ -15,7 +15,7 @@ int32 heap_free_rejects_borrowed_access(struct item* item) {
 verifying "heap_free_rejects_borrowed_access.c";
 
 resource item_storage(p: struct item*) {
-    owns object(p);
+    owns *p;
 }
 
 int32 heap_free_rejects_borrowed_access(struct item* item) {

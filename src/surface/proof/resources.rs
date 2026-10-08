@@ -5164,7 +5164,7 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     }
 
-    // `object(p)` is one complete struct: its cells take the layout's field
+    // `*p` is one complete struct: its cells take the layout's field
     // types, so a wide integer field reads back as itself. Pointer fields
     // keep the int32 words this projection uses everywhere: a pointer cell
     // must carry its load variable, which the load itself mints, whereas a
@@ -5294,7 +5294,7 @@ mod v11_resource_dependency_tests {
 authorized resource child_ref(obj: struct child*) {}
 resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
-    owns object(obj);
+    owns *obj;
     owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);

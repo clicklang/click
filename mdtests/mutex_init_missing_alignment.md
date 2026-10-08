@@ -17,7 +17,7 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_init_missing_alignment.c";
 int32 run(struct holder *holder) {
-    owns &holder->mu;
+    owns holder->mu;
     ensures result == 0;
 } by { execute(); simp(); }
 ```

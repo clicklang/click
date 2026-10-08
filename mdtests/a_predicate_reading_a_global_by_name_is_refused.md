@@ -23,7 +23,7 @@ predicate counter_is(v: int32) {
 }
 
 int32 bump() {
-    owns &counter[0..1];
+    owns counter;
     requires counter == 5;
     requires counter_is(5);
     ensures counter == 6;
