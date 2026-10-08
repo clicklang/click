@@ -633,11 +633,10 @@ impl<'a> Proof<'a> {
         // the body's facts and the C's own reads of those cells share one
         // load identity. See `materialize_unfolded_instance_arm_cells`.
         //
-        // The naming is decided under the premises the rewrite itself
-        // published, not under the ones standing before it: an `unfold` whose
-        // arm was decided only by refuting the others names that arm's cells
-        // exactly as an arm decided by a `requires` does. That is one arm
-        // publication per frontier, consumed whole.
+        // Select the arm under the premises the rewrite published, including
+        // any refutation that decided it. Spell its pointer bindings under
+        // the entry premises used by the kernel rewrite: a newly published
+        // alias must not rename a cell after its body facts were recorded.
         let after = if unfold {
             crate::surface::proof::resources::materialize_unfolded_instance_arm_cells(
                 context.resource_environment,
@@ -647,6 +646,7 @@ impl<'a> Proof<'a> {
                 after,
                 instance,
                 facts.assumptions(),
+                self.facts().assumptions(),
             )
         } else {
             after

@@ -517,6 +517,7 @@ mod tests {
             signature: FunctionSignature {
                 return_type: C0Type::Int32,
                 return_pointee_constant: false,
+                return_reference: false,
                 name: name.to_string(),
                 parameters: parameter_names
                     .iter()

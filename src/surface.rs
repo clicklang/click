@@ -1217,6 +1217,7 @@ pub enum CFunctionDecrease {
 pub struct FunctionSignature {
     return_type: C0Type,
     return_pointee_constant: bool,
+    return_reference: bool,
     name: String,
     parameters: Vec<FunctionParameter>,
     /// The payload type of the function's declared exceptional outcome.
@@ -6921,6 +6922,7 @@ impl FunctionSignature {
         Self {
             return_type,
             return_pointee_constant: false,
+            return_reference: false,
             name: name.into(),
             parameters,
             exceptional_type: None,
@@ -6932,6 +6934,15 @@ impl FunctionSignature {
     pub fn with_return_pointee_constant(mut self, return_pointee_constant: bool) -> Self {
         self.return_pointee_constant = return_pointee_constant;
         self
+    }
+
+    pub fn with_return_reference(mut self, reference: bool) -> Self {
+        self.return_reference = reference;
+        self
+    }
+
+    pub fn returns_reference(&self) -> bool {
+        self.return_reference
     }
 
     pub fn return_pointee_is_constant(&self) -> bool {

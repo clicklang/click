@@ -1002,47 +1002,60 @@ fn collect_integer_substitution_variables_with_carriers(
     proposition: &Proposition,
     carriers: &mut CarrierVariables,
 ) {
-    match proposition {
-        Proposition::Equal(left, right) => {
-            collect_integer_substitution_term_variables(left, carriers);
-            if carriers.exhausted() {
-                return;
+    // Charge every logical container and avoid recursion through quantifier
+    // chains, including when setup is the first operation to exhaust a budget.
+    let mut pending = vec![proposition];
+    while let Some(proposition) = pending.pop() {
+        if !carriers.visit() {
+            return;
+        }
+        match proposition {
+            Proposition::Predicate { arguments, .. } => {
+                for argument in arguments {
+                    collect_integer_substitution_term_variables(argument, carriers);
+                    if carriers.exhausted() {
+                        return;
+                    }
+                }
             }
-            collect_integer_substitution_term_variables(right, carriers);
-        }
-        Proposition::ConditionIs(condition, _) => {
-            collect_condition_carriers(condition, carriers);
-        }
-        // Loadability obligations produced while lowering a symbolic array
-        // read carry the selected pointer and byte-count terms directly.  The
-        // memory snapshot is intentionally opaque: only these expressions
-        // participate in capture reservation.
-        Proposition::CMemoryReadDefined { pointer, .. } => {
-            collect_pointer_carriers(pointer, carriers);
-        }
-        Proposition::CMemoryLoadable { base, bytes, .. } => {
-            collect_pointer_carriers(base, carriers);
-            if carriers.exhausted() {
-                return;
+            Proposition::Equal(left, right) => {
+                collect_integer_substitution_term_variables(left, carriers);
+                if carriers.exhausted() {
+                    return;
+                }
+                collect_integer_substitution_term_variables(right, carriers);
             }
-            collect_bitvector_carriers(bytes, carriers);
-        }
-        Proposition::And(left, right)
-        | Proposition::Or(left, right)
-        | Proposition::Implies(left, right) => {
-            collect_integer_substitution_variables_with_carriers(left, carriers);
-            if carriers.exhausted() {
-                return;
+            Proposition::ConditionIs(condition, _) => {
+                collect_condition_carriers(condition, carriers);
             }
-            collect_integer_substitution_variables_with_carriers(right, carriers);
+            // Loadability obligations produced while lowering a symbolic array
+            // read carry the selected pointer and byte-count terms directly.  The
+            // memory snapshot is intentionally opaque: only these expressions
+            // participate in capture reservation.
+            Proposition::CMemoryReadDefined { pointer, .. } => {
+                collect_pointer_carriers(pointer, carriers);
+            }
+            Proposition::CMemoryLoadable { base, bytes, .. } => {
+                collect_pointer_carriers(base, carriers);
+                if carriers.exhausted() {
+                    return;
+                }
+                collect_bitvector_carriers(bytes, carriers);
+            }
+            Proposition::And(left, right)
+            | Proposition::Or(left, right)
+            | Proposition::Implies(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            Proposition::Not(body) => {
+                pending.push(body);
+            }
+            Proposition::ForAll { body, .. } | Proposition::Exists { body, .. } => {
+                pending.push(body);
+            }
+            _ => {}
         }
-        Proposition::Not(body) => {
-            collect_integer_substitution_variables_with_carriers(body, carriers);
-        }
-        Proposition::ForAll { body, .. } | Proposition::Exists { body, .. } => {
-            collect_integer_substitution_variables_with_carriers(body, carriers);
-        }
-        _ => {}
     }
 }
 
@@ -3818,6 +3831,18 @@ impl<'a> TermRewrite<'a> {
                 }
             }
         };
+        if let Some(guard) = result.pointer_offset_association_guard() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.push(guard.clone());
+            }
+            if guard == ConditionTerm::Constant(false)
+                || self
+                    .conditions
+                    .is_some_and(|conditions| conditions.get(&guard) == Some(&false))
+            {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if let ConditionTerm::Bitvector64Equal(a, b) = &result {
             let le = ConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
             let lt = ConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());

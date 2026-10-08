@@ -4568,6 +4568,39 @@ fn singleton_substitution_derivation_records_only_its_bound_premises() {
     assert!(!derivation.check(&PureFactContext::new()));
     let context = derivation.context_premises();
     assert_eq!(context, vec![lower, upper]);
+
+    // The planner and checker both refuse an exhausted substitution; a
+    // transient refusal must not become a proof or poison later checks.
+    use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
+    let ((planned, checked), _) = instrumentation::with_tactic_work_limits(
+        TacticWorkLimits {
+            simple: 0,
+            smart: 0,
+            control: 0,
+        },
+        || {
+            instrumentation::collect(|| {
+                let tactic = TacticEvent {
+                    claim: "singleton certificate budget".into(),
+                    tactic_index: 0,
+                    tactic_name: "singleton_certificate_budget".into(),
+                    class: "simple".into(),
+                    statement_index: 0,
+                    source_index: 0,
+                };
+                instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
+                let result = (
+                    assumptions.derive_by_singleton_substitution(&goal, true),
+                    derivation.check(&assumptions),
+                );
+                instrumentation::emit(VerificationEvent::TacticFailed(tactic));
+                result
+            })
+        },
+    );
+    assert!(planned.is_none());
+    assert!(!checked);
+    assert!(derivation.check(&assumptions));
 }
 
 #[test]
@@ -9972,5 +10005,197 @@ fn signed_64_branch_observation_bridges_match_boundary_models() {
                 assert_eq!(native, mathematical);
             }
         }
+    }
+}
+
+#[test]
+fn bounded_byte_pointer_association_uses_checked_signed_addition() {
+    let i = Bitvector32Term::Variable(Variable(198001));
+    let left = PointerOffsetTerm::Add(
+        Box::new(PointerOffsetTerm::scale_int32(i.clone(), 1)),
+        Box::new(PointerOffsetTerm::Constant(4)),
+    );
+    let right = PointerOffsetTerm::scale_int32(
+        Bitvector32Term::add(i.clone(), Bitvector32Term::Constant(4)),
+        1,
+    );
+    let condition = ConditionTerm::pointer_offset_equal(left.clone(), right.clone());
+    let goal = Proposition::ConditionIs(condition.clone(), true);
+    let defined = Proposition::ConditionIs(
+        ConditionTerm::signed_add_overflows(i.clone(), Bitvector32Term::Constant(4)),
+        false,
+    );
+    let facts = PureFactContext::new()
+        .assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), i.clone()),
+            true,
+        ))
+        .assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(i, Bitvector32Term::Constant(22200)),
+            true,
+        ))
+        .assume_proposition(defined.clone());
+    assert!(
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &goal,
+            std::slice::from_ref(&defined),
+            &crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&defined)),
+        )
+        .is_ok()
+    );
+    assert_eq!(facts.decide(&condition), Some(true));
+    assert!(
+        crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
+            &left, &right, &facts
+        )
+    );
+    assert_eq!(facts.decide_condition_for_simp(&condition), Some(true));
+    let proof = facts
+        .derive_simp_proposition(&goal)
+        .expect("exact bounded pointer association");
+    assert!(proof.check(&facts));
+}
+
+#[test]
+fn pointer_association_rejects_wrapping_and_incompatible_displacements() {
+    use crate::kernel::proof::term_rewrite::TermRewrite;
+    use std::collections::HashMap;
+    let i = Bitvector32Term::Variable(Variable(198101));
+    let j = Bitvector32Term::Variable(Variable(198102));
+    let overflow = ConditionTerm::signed_add_overflows(i.clone(), j.clone());
+    for width in [1, 4, 8, i64::from(u32::MAX)] {
+        let left = PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::scale_int32(i.clone(), width)),
+            Box::new(PointerOffsetTerm::scale_int32(j.clone(), width)),
+        );
+        let right =
+            PointerOffsetTerm::scale_int32(Bitvector32Term::add(i.clone(), j.clone()), width);
+        let condition = ConditionTerm::pointer_offset_equal(left.clone(), right.clone());
+        let reversed = ConditionTerm::pointer_offset_equal(right, left.clone());
+        let no_wrap = HashMap::from([(overflow.clone(), false)]);
+        let base = PointerOffsetTerm::Variable(Variable(198103));
+        let based_left = PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(base.clone()),
+                Box::new(PointerOffsetTerm::scale_int32(i.clone(), width)),
+            )),
+            Box::new(PointerOffsetTerm::scale_int32(j.clone(), width)),
+        );
+        let based_right = PointerOffsetTerm::Add(
+            Box::new(base),
+            Box::new(PointerOffsetTerm::scale_int32(
+                Bitvector32Term::add(i.clone(), j.clone()),
+                width,
+            )),
+        );
+        let based = ConditionTerm::pointer_offset_equal(based_left.clone(), based_right);
+        let different_base = ConditionTerm::pointer_offset_equal(
+            based_left,
+            PointerOffsetTerm::Add(
+                Box::new(PointerOffsetTerm::Variable(Variable(198104))),
+                Box::new(PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::add(i.clone(), j.clone()),
+                    width,
+                )),
+            ),
+        );
+        assert_ne!(
+            TermRewrite::for_conditions(&no_wrap).condition(&different_base),
+            ConditionTerm::Constant(true)
+        );
+        for goal in [&condition, &reversed, &based] {
+            assert_eq!(
+                TermRewrite::for_conditions(&no_wrap).condition(goal),
+                ConditionTerm::Constant(true)
+            );
+            assert_ne!(
+                TermRewrite::for_conditions(&HashMap::new()).condition(goal),
+                ConditionTerm::Constant(true)
+            );
+            assert_ne!(
+                TermRewrite::for_conditions(&HashMap::from([(overflow.clone(), true)]))
+                    .condition(goal),
+                ConditionTerm::Constant(true)
+            );
+        }
+        let wrong_stride = ConditionTerm::pointer_offset_equal(
+            left.clone(),
+            PointerOffsetTerm::scale_int32(Bitvector32Term::add(i.clone(), j.clone()), width + 1),
+        );
+        let wrong_index = ConditionTerm::pointer_offset_equal(
+            left,
+            PointerOffsetTerm::scale_int32(
+                Bitvector32Term::add(i.clone(), Bitvector32Term::Constant(5)),
+                width,
+            ),
+        );
+        for goal in [wrong_stride, wrong_index] {
+            assert_ne!(
+                TermRewrite::for_conditions(&no_wrap).condition(&goal),
+                ConditionTerm::Constant(true)
+            );
+        }
+    }
+    // The exact byte sum differs from the wrapped signed scalar at the limit.
+    let max = Bitvector32Term::Constant(i32::MAX as u32);
+    let exact = PointerOffsetTerm::Add(
+        Box::new(PointerOffsetTerm::scale_int32(max.clone(), 1)),
+        Box::new(PointerOffsetTerm::Constant(4)),
+    );
+    let wrapped =
+        PointerOffsetTerm::scale_int32(Bitvector32Term::add(max, Bitvector32Term::Constant(4)), 1);
+    let false_goal = ConditionTerm::pointer_offset_equal(exact, wrapped);
+    assert_ne!(
+        TermRewrite::for_conditions(&HashMap::new()).condition(&false_goal),
+        ConditionTerm::Constant(true)
+    );
+}
+
+#[test]
+fn pointer_association_selected_guard_work_ignores_ambient_facts() {
+    let i = Bitvector32Term::Variable(Variable(198201));
+    let defined = Proposition::ConditionIs(
+        ConditionTerm::signed_add_overflows(i.clone(), Bitvector32Term::Constant(4)),
+        false,
+    );
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::pointer_offset_equal(
+            PointerOffsetTerm::Add(
+                Box::new(PointerOffsetTerm::scale_int32(i.clone(), 1)),
+                Box::new(PointerOffsetTerm::Constant(4)),
+            ),
+            PointerOffsetTerm::scale_int32(
+                Bitvector32Term::add(i, Bitvector32Term::Constant(4)),
+                1,
+            ),
+        ),
+        true,
+    );
+    let mut prior = None;
+    for count in [0, 16, 64, 256, 1024] {
+        let mut ambient = vec![defined.clone()];
+        ambient.extend((0..count).map(|n| {
+            Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(199000 + n)),
+                    Bitvector32Term::Constant(n as u32),
+                ),
+                true,
+            )
+        }));
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&ambient);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                &goal,
+                std::slice::from_ref(&defined),
+                &facts,
+            )
+        });
+        assert!(result.is_ok());
+        assert!(work > 0);
+        if let Some(old) = prior {
+            assert_eq!(work, old);
+        }
+        prior = Some(work);
     }
 }

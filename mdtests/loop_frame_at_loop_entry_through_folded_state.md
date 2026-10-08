@@ -158,10 +158,7 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                         assumption();
                     }
                     have at(opened, arena->occupied[k]) == 1 by {
-                        instantiate(forall (j: int32) { at(opened, start) <= at(opened, j) and at(opened, j) < at(opened, m) implies at(opened, arena->occupied[j]) == at(opened, 1) }, k) using {
-                            start <= k;
-                            k < m;
-                        }
+                        instantiate(forall (j: int32) { at(opened, start) <= at(opened, j) and at(opened, j) < at(opened, m) implies at(opened, arena->occupied[j]) == at(opened, 1) }, k);
                         assumption();
                     }
                     have 0 <= k by {
@@ -201,10 +198,7 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                 intro();
                 intro();
                 have at(opened, arena->occupied[k]) == at(mark.entry, arena->occupied[k]) by {
-                    instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, start) implies at(opened, arena->occupied[j]) == at(mark.entry, arena->occupied[j]) }, k) using {
-                        0 <= k;
-                        k < start;
-                    }
+                    instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, start) implies at(opened, arena->occupied[j]) == at(mark.entry, arena->occupied[j]) }, k);
                     assumption();
                 }
                 have k < at(opened, i) by {

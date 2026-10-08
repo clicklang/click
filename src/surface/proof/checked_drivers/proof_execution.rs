@@ -1435,6 +1435,9 @@ fn try_check_structural_function_proof_inner<'a>(
                     continue;
                 }
                 proof = proof.with_execution_tactic_index(*index)?;
+                if ensuring.is_some() {
+                    proof = proof.prepare_entry_interface()?;
+                }
                 if expanded_execution_if_has_pruned_arm(then_branch, else_branch)
                     && expanded_execution_if_steps(then_branch, else_branch).is_none()
                     && proof.frontier_is_execution_branch(condition)?
@@ -3111,6 +3114,11 @@ fn advance_execution_match<'a>(
     // they are checked once, from the one state every arm ends in. Without
     // any, each arm completes the function proof on its own.
     let rejoins = source.ensuring.is_some() || !matches!(continuation, InternalProofNode::Done);
+    let proof = if source.ensuring.is_some() {
+        proof.prepare_entry_interface()?
+    } else {
+        proof
+    };
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
     let mut plan = proof.plan_execution_match(source, |index| {

@@ -1,7 +1,8 @@
 # A viewed suite's callbacks stay callable after the open closes
 
-The same helper as `rb_augment_callbacks_helper_rejects_call_after_close.md`,
-with the suite viewed instead of owned. The open closes before the third
+The same helper as
+`rb_augment_callbacks_helper_calls_after_close_while_owned.md`, with the suite
+viewed instead of owned. The open closes before the third
 call, as there, but the call is still authorized: the caller's stable view of
 `callback_suite(augment)` lasts the whole function, its one-level projection
 backs the callee's read of `augment->rotate`, and the body's `Rotate` fact is

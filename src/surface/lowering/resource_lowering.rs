@@ -3081,55 +3081,10 @@ pub(in crate::surface) fn symbolic_value_from_load(
     element_type: CType,
     load: Bitvector32Term,
 ) -> CValue {
-    match element_type {
-        CType::Bool => CValue::Bool(Bitvector32Term::if_then_else(
-            ConditionTerm::Bitvector32Equal(Box::new(load), Box::new(Bitvector32Term::Constant(0))),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        )),
-        CType::Int8 => CValue::Int8(load),
-        CType::Int16 => CValue::Int16(load),
-        CType::Int32 => CValue::Int32(load),
-        CType::UInt8 => CValue::UInt8(load),
-        CType::UInt16 => CValue::UInt16(load),
-        CType::UInt32 => CValue::UInt32(load),
-        CType::Int64 => CValue::Int64(load),
-        CType::UInt64 => CValue::UInt64(load),
-        CType::Float32 => CValue::Float32(load),
-        CType::Float64 => CValue::Float64(load),
-        CType::FunctionPointer(_) => {
-            let variable = match &load {
-                Bitvector32Term::Variable(variable)
-                    if crate::kernel::is_load_variable(variable) =>
-                {
-                    *variable
-                }
-                Bitvector32Term::MemoryLoad(_, _, _) => {
-                    crate::kernel::load_variable_for_term(&load)
-                        .map(|(variable, _)| variable)
-                        .expect("exact function-pointer loads have canonical identities")
-                }
-                _ => unreachable!(
-                    "symbolic function-pointer fields use raw or canonical exact loads"
-                ),
-            };
-            CValue::typed_pointer(Pointer::symbolic_function(variable), element_type)
-        }
-        c_type if c_type.is_pointer() => CValue::typed_pointer(
-            Pointer::loaded(
-                pointer.block.clone(),
-                load,
-                i64::from(
-                    c_type
-                        .pointee_type()
-                        .expect("pointer element type has a pointee")
-                        .byte_width(),
-                ),
-            ),
-            c_type,
-        ),
-        _ => unreachable!("memory ranges cannot contain aggregate elements"),
-    }
+    // Share the kernel's seeded-cell constructor, including its retained
+    // typed pointer-load definition. Surface entry cells and lazy cell runs
+    // must name the same value through later model aliases.
+    crate::kernel::cell_run_value(pointer, element_type, load)
 }
 
 pub(in crate::surface) fn requirement_proposition_prop(

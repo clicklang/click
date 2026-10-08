@@ -111,10 +111,7 @@ int32 sum(int32 a[], int32 n) {
         }
         preserve by {
             have -1000 <= a[i] and a[i] <= 1000 by {
-                instantiate(forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 }, i) using {
-                    0 <= i;
-                    i < n;
-                }
+                instantiate(forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 }, i);
                 assumption();
             }
             have -1000 <= to_integer(a[i]) by {

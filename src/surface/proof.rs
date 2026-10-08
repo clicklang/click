@@ -1607,13 +1607,18 @@ pub(super) fn initial_claim_context_with_caller_owner(
         predicate_environment,
         click_function_environment,
     )?;
-    let include_owned_composite_cores = function_block
+    let has_loop = function_block
         .structural_clauses()
         .iter()
         .any(|clause| matches!(clause.region(), CodeRegion::Loop(_)))
         || function_block
             .grouped_proof()
             .is_some_and(proof_contains_frontier_loop);
+    let include_owned_composite_cores = Some(if has_loop {
+        resources::OwnedCores::InstanceArmsStanding
+    } else {
+        resources::OwnedCores::AttachedToOwner
+    });
     let mut projection_state = state.clone();
     for iteration in 0..=function_block.requires().len() {
         if iteration > 0
@@ -1644,7 +1649,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             projection_state.clone(),
             &available_pure_facts,
             claim_label,
-            true,
+            Some(resources::OwnedCores::Standing),
             predicate_environment,
             click_function_environment,
         )?;
@@ -1831,7 +1836,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         state.clone(),
         &requirement_pure_facts,
         claim_label,
-        true,
+        Some(resources::OwnedCores::Standing),
         predicate_environment,
         click_function_environment,
     )?;
@@ -2291,7 +2296,7 @@ fn evaluate_entry_resource_context(
     state: CState,
     arguments: &[CExpression],
     pure_facts: &PureFactList,
-    include_owned_composite_cores: bool,
+    include_owned_composite_cores: Option<resources::OwnedCores>,
     claim_label: &str,
     entry_resources: &ResourceContext,
     entry_memory: &CMemory,

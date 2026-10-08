@@ -47,8 +47,8 @@ theorem marked_transitive(a: int32[], b: int32[], c: int32[], n: int32) {
     ensures forall (k: int32) { 0 <= k and k < n and a[k] != 0 implies c[k] != 0 } by {
         intro();
         intro();
-        instantiate(forall (k: int32) { 0 <= k and k < n and a[k] != 0 implies b[k] != 0 }, k) using { 0 <= k; k < n; a[k] != 0; }
-        instantiate(forall (k: int32) { 0 <= k and k < n and b[k] != 0 implies c[k] != 0 }, k) using { 0 <= k; k < n; b[k] != 0; }
+        instantiate(forall (k: int32) { 0 <= k and k < n and a[k] != 0 implies b[k] != 0 }, k);
+        instantiate(forall (k: int32) { 0 <= k and k < n and b[k] != 0 implies c[k] != 0 }, k);
         assumption();
     }
 }
@@ -89,7 +89,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     branch then {
         have (forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }) implies forall (path: Path) { walk(old(left), old(right), cur, path) != to } by {
             intro();
-            instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur) using { 0 <= cur; cur < n; }
+            instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur);
             contradiction(visited[cur] != 0);
         }
 
@@ -151,7 +151,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have 0 <= left[cur] and left[cur] < n by {
         instantiate(forall (k: int32) {
             0 <= k and k < n implies 0 <= left[k] and left[k] < n
-        }, cur) using { 0 <= cur; cur < n; }
+        }, cur);
         assumption();
     }
     mark after_mark;
@@ -170,7 +170,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have visited[cur] != 0 by {
         instantiate(forall (k: int32) {
             0 <= k and k < n and at(after_mark, visited[k]) != 0 implies visited[k] != 0
-        }, cur) using { 0 <= cur; cur < n; at(after_mark, visited[cur]) != 0; }
+        }, cur);
         assumption();
     }
 
@@ -226,7 +226,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have 0 <= right[cur] and right[cur] < n by {
         instantiate(forall (k: int32) {
             0 <= k and k < n implies 0 <= right[k] and right[k] < n
-        }, cur) using { 0 <= cur; cur < n; }
+        }, cur);
         assumption();
     }
     mark before_right;
@@ -259,7 +259,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have visited[cur] != 0 by {
         instantiate(forall (k: int32) {
             0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
-        }, cur) using { 0 <= cur; cur < n; at(before_right, visited[cur]) != 0; }
+        }, cur);
         assumption();
     }
 
@@ -300,7 +300,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             if old(visited[to]) != 0 {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n and old(visited[k]) != 0 implies at(before_right, visited[k]) != 0
-                }, to) using { 0 <= to; to < n; old(visited[to]) != 0; }
+                }, to);
                 contradiction(at(before_right, visited[to]) == 0);
             } else { simp(); }
         }
@@ -352,10 +352,10 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             extract(old(visited[k]) == 0); extract(visited[k] != 0);
             instantiate(forall (k: int32) {
                 0 <= k and k < n implies 0 <= old(left[k]) and old(left[k]) < n
-            }, k) using { 0 <= k; k < n; }
+            }, k);
             instantiate(forall (k: int32) {
                 0 <= k and k < n implies 0 <= old(right[k]) and old(right[k]) < n
-            }, k) using { 0 <= k; k < n; }
+            }, k);
             if k == cur {
                 have at(before_right, visited[old(left[k])]) != 0 by {
                     rewrite(k == cur);
@@ -367,10 +367,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 }
                 instantiate(forall (k: int32) {
                     0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
-                }, old(left[k])) using {
-                    0 <= old(left[k]); old(left[k]) < n;
-                    at(before_right, visited[old(left[k])]) != 0;
-                }
+                }, old(left[k]));
                 have visited[old(right[k])] != 0 by {
                     rewrite(k == cur);
                     transport(visited[at(before_right, right[cur])] != 0, visited[old(right[cur])] != 0) using {
@@ -384,29 +381,19 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                     instantiate(forall (k: int32) {
                         0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies
                             visited[old(left[k])] != 0 and visited[old(right[k])] != 0
-                    }, k) using {
-                        0 <= k; k < n; at(before_right, visited[k]) == 0; visited[k] != 0;
-                    }
+                    }, k);
                     assumption();
                 } else {
                     instantiate(forall (k: int32) {
                         0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
                             at(before_right, visited[old(left[k])]) != 0 and at(before_right, visited[old(right[k])]) != 0
-                    }, k) using {
-                        0 <= k; k < n; at(after_mark, visited[k]) == 0; at(before_right, visited[k]) != 0;
-                    }
+                    }, k);
                     instantiate(forall (k: int32) {
                         0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
-                    }, old(left[k])) using {
-                        0 <= old(left[k]); old(left[k]) < n;
-                        at(before_right, visited[old(left[k])]) != 0;
-                    }
+                    }, old(left[k]));
                     instantiate(forall (k: int32) {
                         0 <= k and k < n and at(before_right, visited[k]) != 0 implies visited[k] != 0
-                    }, old(right[k])) using {
-                        0 <= old(right[k]); old(right[k]) < n;
-                        at(before_right, visited[old(right[k])]) != 0;
-                    }
+                    }, old(right[k]));
                     assumption();
                 }
             }

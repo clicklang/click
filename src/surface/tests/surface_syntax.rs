@@ -4352,7 +4352,7 @@ fn a_child_resource_is_owned_like_any_other() {
         ),
         (
             "owns item: inner(p);",
-            "this resource declares no fields to hold them; write the child without a name",
+            "resource `inner` has no fields; use ordinary unnamed ownership",
         ),
     ] {
         let source = format!(
@@ -4510,10 +4510,57 @@ fn a_contract_cannot_return_overlapping_places() {
             "{contract}: {error:?}"
         );
     }
+    // An overlap the requirements prove from a symbolic bound is refused the
+    // same way; one they leave open is not.
+    let range_source = "int32 keep(int32* q, int32 n) { return 0; }";
+    for contract in [
+        "int32 keep(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } by { execute(); simp(); }",
+        "contract int32 Range(int32* q, int32 n) { requires n >= 2; owns q[0..n]; produces q[1]; } \
+         int32 keep(int32* q, int32 n) { ensures result == 0; } by { execute(); simp(); }",
+    ] {
+        let source = format!("verifying \"range.c\"; {contract}");
+        let error = verify_c0_sources(&source, &[("range.c", range_source)])
+            .expect_err("the contract returns overlapping places");
+        assert!(
+            error
+                .message
+                .contains("would return overlapping places: `q[0..n]` and `q[1]`"),
+            "{contract}: {error:?}"
+        );
+    }
+    let open = "verifying \"range.c\"; int32 keep(int32* q, int32 n) { requires n >= 0; \
+        owns q[0..n]; produces q[1]; } by { execute(); simp(); }";
+    let error = verify_c0_sources(open, &[("range.c", range_source)])
+        .expect_err("the exit state still refuses what the entry could not decide");
+    assert!(
+        !error.message.contains("would return overlapping places"),
+        "{error:?}"
+    );
     // Two fields of one struct do not overlap.
     let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
         consumes p->other; produces p->other; ensures result == result; } by { execute(); simp(); }";
     verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
+}
+
+/// A resource that declares no fields keeps a named child's fields in a
+/// record the author does not write, so the child must already be declared
+/// for the record to be laid out.
+#[test]
+fn a_hidden_record_needs_its_child_declared_first() {
+    let source = "resource pair(p: struct pair*) { owns p->a; owns first: counted(p->a); } \
+        resource counted(c: struct cell*) { field v: int32; owns c->value; } \
+        verifying \"pair.c\"; \
+        int32 get(struct pair* p) { owns x: pair(p); } by { execute(); simp(); }";
+    let c_source = "struct cell { int32 value; }; struct pair { struct cell* a; }; \
+        int32 get(struct pair* p) { return 0; }";
+    let error = verify_c0_sources(source, &[("pair.c", c_source)])
+        .expect_err("the child is declared after the parent that names it");
+    assert!(
+        error.message.contains(
+            "resource `counted` must be declared before `pair` names it as the child `first`"
+        ),
+        "{error:?}"
+    );
 }
 
 /// A missing memory fact is reported as the place a clause would name.

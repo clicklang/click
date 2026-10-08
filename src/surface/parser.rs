@@ -426,6 +426,11 @@ struct Parser {
     current_resource_fields: BTreeMap<String, ResourceFieldAccess>,
     current_resource_targets: BTreeMap<String, ResourceClause>,
     in_resource_definition: bool,
+    /// The fields of each resource declared so far, hidden ones included.
+    declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
+    /// In a resource that declares no fields and names a child: the hidden
+    /// parent field that holds each `child.field`.
+    hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -456,6 +461,7 @@ struct Parser {
     current_aggregate_objects: BTreeMap<String, String>,
     current_struct_array_params: BTreeSet<String>,
     current_reference_params: BTreeSet<String>,
+    current_reference_result: bool,
     current_global_array_shapes: BTreeMap<String, GlobalArrayShape>,
     current_algebraic_params: BTreeMap<String, (AlgebraicTypeApplication, usize)>,
     current_click_type_parameters: BTreeSet<String>,
@@ -736,6 +742,8 @@ impl Parser {
             current_resource_fields: BTreeMap::new(),
             current_resource_targets: BTreeMap::new(),
             in_resource_definition: false,
+            declared_resource_fields: BTreeMap::new(),
+            hidden_child_fields: BTreeMap::new(),
             tokens,
             positions,
             matching_parentheses,
@@ -758,6 +766,7 @@ impl Parser {
             current_aggregate_objects: BTreeMap::new(),
             current_struct_array_params: BTreeSet::new(),
             current_reference_params: BTreeSet::new(),
+            current_reference_result: false,
             current_global_array_shapes: BTreeMap::new(),
             current_algebraic_params: BTreeMap::new(),
             current_click_type_parameters: BTreeSet::new(),
@@ -1605,6 +1614,7 @@ impl Parser {
         );
         let previous_contract_bindings = std::mem::take(&mut self.current_contract_bindings);
         let previous_definition = std::mem::replace(&mut self.in_resource_definition, true);
+        let previous_hidden = std::mem::take(&mut self.hidden_child_fields);
         let composite_body = match self.peek() {
             Some(Token::Semicolon) if is_abstract => {
                 self.position += 1;
@@ -1626,6 +1636,11 @@ impl Parser {
             }
         };
         self.in_resource_definition = previous_definition;
+        self.hidden_child_fields = previous_hidden;
+        if let Some(body) = &composite_body {
+            self.declared_resource_fields
+                .insert(name.clone(), body.fields.clone());
+        }
         self.current_struct_params = previous_struct_params;
         self.current_struct_array_params = previous_struct_array_params;
         self.current_reference_params = previous_reference_params;
@@ -1674,6 +1689,65 @@ impl Parser {
             self.current_arm_binding_types
                 .insert(binding.clone(), field);
         }
+    }
+
+    /// Gives a resource that declares no fields one hidden field per field of
+    /// the child it names, with the equation that ties the two. A later
+    /// `child.field` in the body reads the hidden field, so the body may
+    /// state any number of facts about it. The child's fields then survive a
+    /// fold of the parent exactly as a declared field's value does.
+    #[inline(never)]
+    fn hold_child_fields_in_a_hidden_record(
+        &mut self,
+        resource_name: &str,
+        clause: &ResourceClause,
+        fields: &mut Vec<ResourceFieldDefinition>,
+        facts: &mut Vec<ClickProposition>,
+    ) -> Result<(), ClickError> {
+        let ResourceClause::Named { binding, resource } = clause else {
+            return Ok(());
+        };
+        let ResourceClause::Declared { name: child, .. } = resource.as_ref() else {
+            return Ok(());
+        };
+        let Some(child_fields) = self.declared_resource_fields.get(child).cloned() else {
+            return Err(self.error(format!(
+                "resource `{child}` must be declared before `{resource_name}` names it as the child `{}`",
+                binding.name
+            )));
+        };
+        for child_field in child_fields {
+            let hidden_name = format!("{}.{}", binding.name, child_field.name);
+            let hidden = ResourceFieldAccess {
+                owner: "__body".into(),
+                resource_name: resource_name.into(),
+                identity: Variable(u64::MAX),
+                children: vec![],
+                field: hidden_name.clone(),
+                field_index: fields.len(),
+                click_type: Some(child_field.click_type.clone()),
+            };
+            fields.push(ResourceFieldDefinition {
+                name: hidden_name,
+                click_type: child_field.click_type.clone(),
+            });
+            facts.push(ClickProposition::Comparison {
+                left: ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner: binding.name.clone(),
+                    resource_name: child.clone(),
+                    identity: binding.identity,
+                    children: vec![],
+                    field: child_field.name.clone(),
+                    field_index: 0,
+                    click_type: None,
+                }),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::ResourceField(hidden.clone()),
+            });
+            self.hidden_child_fields
+                .insert((binding.name.clone(), child_field.name), hidden);
+        }
+        Ok(())
     }
 
     fn parse_composite_resource_body(
@@ -1827,6 +1901,9 @@ impl Parser {
         let mut contains = Vec::new();
         let mut facts = Vec::new();
         let mut witnesses: Vec<ResourceWitness> = Vec::new();
+        // A resource that declares no fields keeps a named child's fields in
+        // a record of its own that the author does not write.
+        let hidden_record = fields.is_empty() && self.match_nesting == 0;
         while self.peek() != Some(&Token::RBrace) {
             match self.peek_ident() {
                 Some("guarded_by") => return Err(self.error("`guarded_by` must appear once before the resource body clauses")),
@@ -1871,14 +1948,16 @@ impl Parser {
                 }
                 Some("owns") => {
                     self.position += 1;
-                    if self.current_resource_fields.is_empty()
-                        && self.peek_next() == Some(&Token::Colon)
-                    {
-                        return Err(self.error(
-                            "a child resource is named so its fields can be read, and this resource declares no fields to hold them; write the child without a name, as in `owns inner(p);`",
-                        ));
+                    let clause = self.parse_owned_resource_binding()?;
+                    if hidden_record {
+                        self.hold_child_fields_in_a_hidden_record(
+                            resource_name,
+                            &clause,
+                            &mut fields,
+                            &mut facts,
+                        )?;
                     }
-                    contains.push(self.parse_owned_resource_binding()?);
+                    contains.push(clause);
                     self.expect(Token::Semicolon)?;
                 }
                 Some("views") => {
@@ -2594,6 +2673,10 @@ impl Parser {
         );
         let previous_reference_params =
             std::mem::replace(&mut self.current_reference_params, reference_params);
+        let previous_reference_result = std::mem::replace(
+            &mut self.current_reference_result,
+            signature.returns_reference(),
+        );
         while self.peek() != Some(&Token::RBrace) {
             match self.peek_ident() {
                 Some("let") => {
@@ -2954,6 +3037,7 @@ impl Parser {
         self.current_global_array_shapes = previous_global_array_shapes;
         self.current_struct_array_params = previous_struct_array_params;
         self.current_reference_params = previous_reference_params;
+        self.current_reference_result = previous_reference_result;
         self.current_integer_params = previous_integer_params;
         self.current_integer_lets = previous_integer_lets;
         self.integer_literal_context = previous_integer_literal_context;
@@ -3087,6 +3171,7 @@ impl Parser {
                 signature: FunctionSignature {
                     return_type: C0Type::Void,
                     return_pointee_constant: false,
+                    return_reference: false,
                     name,
                     parameters: parsed_parameters.parameters,
                     exceptional_type: None,
@@ -3163,6 +3248,7 @@ impl Parser {
             signature: FunctionSignature {
                 return_type,
                 return_pointee_constant: parsed_return_type.pointee_constant,
+                return_reference: parsed_return_type.reference,
                 name,
                 parameters: parsed_parameters.parameters,
                 exceptional_type,
@@ -4383,7 +4469,8 @@ impl Parser {
         }
         if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::Colon)
         {
-            return self.parse_owned_resource_target();
+            let target = self.parse_owned_resource_target()?;
+            return Ok(self.hold_a_hidden_record_unnamed(target));
         }
         let name = self.expect_ident("resource instance name")?;
         self.expect(Token::Colon)?;
@@ -4451,6 +4538,66 @@ impl Parser {
         };
         self.current_resource_targets.insert(name, target.clone());
         Ok(target)
+    }
+
+    /// Whether every field of `resource` is hidden: it declares none and
+    /// holds its named children's fields in a record the author does not
+    /// write.
+    fn is_hidden_record(&self, resource: &str) -> bool {
+        self.declared_resource_fields
+            .get(resource)
+            .is_some_and(|fields| {
+                !fields.is_empty() && fields.iter().all(|field| field.name.contains('.'))
+            })
+    }
+
+    /// The binder an unnamed hidden-record resource is held under, if this
+    /// exact resource is held.
+    fn hidden_binder(&self, resource: &ResourceClause) -> Option<ResourceClause> {
+        self.current_resource_targets
+            .iter()
+            .find(|(name, target)| {
+                name.starts_with('#')
+                    && matches!(target, ResourceClause::Named { resource: held, .. } if held.as_ref() == resource)
+            })
+            .map(|(_, target)| target.clone())
+    }
+
+    /// A resource whose every field is hidden has no field a contract could
+    /// name, so it is held without a name: `owns pair(p);`. It is still an
+    /// instance, and is bound under a name the author cannot write. Naming
+    /// the same resource again, in a loop header or a proof step, is the
+    /// same binder.
+    #[inline(never)]
+    fn hold_a_hidden_record_unnamed(&mut self, target: ResourceClause) -> ResourceClause {
+        let ResourceClause::Declared { name, .. } = &target else {
+            return target;
+        };
+        if !self.is_hidden_record(name) {
+            return target;
+        }
+        if let Some(held) = self.hidden_binder(&target) {
+            return held;
+        }
+        let identity = Variable(self.next_resource_identity);
+        self.next_resource_identity += 1;
+        let binder = format!("#{name}{}", identity.0);
+        self.current_resource_bindings
+            .insert(binder.clone(), (identity, name.clone()));
+        let named = ResourceClause::Named {
+            binding: ResourceInstanceBinding {
+                name: binder.clone(),
+                identity,
+                children: vec![],
+                schema: None,
+                fields: None,
+                fold_fields: None,
+                child_bindings: None,
+            },
+            resource: Box::new(target),
+        };
+        self.current_resource_targets.insert(binder, named.clone());
+        named
     }
 
     fn parse_owned_resource_target(&mut self) -> Result<ResourceClause, ClickError> {
@@ -5499,7 +5646,7 @@ impl Parser {
             "both" => self.parse_both_proof_tactic(),
             "close_invariants" if self.peek_ident() == Some("by") => {
                 self.position += 1;
-                let body = self.parse_possibly_empty_tactic_block()?;
+                let body = self.parse_close_invariants_body()?;
                 self.skip_redundant_semicolon();
                 Ok(ProofTactic::CloseInvariantsBy(body))
             }
@@ -5560,10 +5707,12 @@ impl Parser {
             };
             self.position += 1;
             self.expect(Token::LParen)?;
+            let target = self.parse_owned_resource_target()?;
+            let target = self.hidden_binder(&target).unwrap_or(target);
             let ResourceClause::Named {
                 mut binding,
                 resource,
-            } = self.parse_owned_resource_target()?
+            } = target
             else {
                 return Err(self.error("resource unfold outputs require a named resource"));
             };
@@ -5585,6 +5734,15 @@ impl Parser {
         };
         self.expect_ident_spelling("fold")?;
         self.expect(Token::LParen)?;
+        self.parse_fold_construction(Some(name))
+    }
+
+    /// `fold(resource, { field: value }, { slot: child })` after its opening
+    /// parenthesis. `let name = fold(...)` binds the instance to `name`. A
+    /// resource whose every field is hidden is folded without a name,
+    /// `fold(pair(p), { first: c });`, under the binder it is held by.
+    #[inline(never)]
+    fn parse_fold_construction(&mut self, name: Option<String>) -> Result<ProofTactic, ClickError> {
         let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
         let ResourceClause::Declared {
             name: resource_name,
@@ -5592,6 +5750,13 @@ impl Parser {
         } = &resource
         else {
             return Err(self.error("fold construction requires a declared resource"));
+        };
+        let name = match name {
+            Some(name) => name,
+            None => match self.hidden_binder(&resource) {
+                Some(ResourceClause::Named { binding, .. }) => binding.name,
+                _ => format!("#{resource_name}{}", self.next_resource_identity),
+            },
         };
         if self.current_contract_bindings.contains(&name)
             || self.current_integer_params.contains(&name)
@@ -5611,25 +5776,39 @@ impl Parser {
             identity
         };
         self.expect(Token::Comma)?;
-        self.expect(Token::LBrace)?;
+        // A resource whose every field is hidden has no field the proof
+        // could write, so its one brace is the child map.
+        let declared = self
+            .declared_resource_fields
+            .get(resource_name)
+            .cloned()
+            .unwrap_or_default();
+        let only_hidden =
+            !declared.is_empty() && declared.iter().all(|field| field.name.contains('.'));
         let mut fields = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let field = self.expect_ident("resource field name")?;
-            self.expect(Token::Colon)?;
-            let value = self.parse_contract_expression()?;
-            fields.push((field, value));
-            if self.peek() != Some(&Token::Comma) {
-                break;
+        if !only_hidden {
+            self.expect(Token::LBrace)?;
+            while self.peek() != Some(&Token::RBrace) {
+                let field = self.expect_ident("resource field name")?;
+                self.expect(Token::Colon)?;
+                let value = self.parse_contract_expression()?;
+                fields.push((field, value));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
             }
-            self.position += 1;
+            self.expect(Token::RBrace)?;
         }
-        self.expect(Token::RBrace)?;
-        let child_bindings = if self.peek() == Some(&Token::Comma) {
+        let child_bindings = if only_hidden {
+            self.parse_resource_child_bindings(&resource, false)?
+        } else if self.peek() == Some(&Token::Comma) {
             self.position += 1;
             self.parse_resource_child_bindings(&resource, false)?
         } else {
             Vec::new()
         };
+        self.fill_hidden_fold_fields(&declared, &child_bindings, &mut fields);
         self.expect(Token::RParen)?;
         self.expect(Token::Semicolon)?;
         let binding = ResourceInstanceBinding {
@@ -5658,6 +5837,46 @@ impl Parser {
             },
             resource: Box::new(resource),
         }))
+    }
+
+    /// A hidden field `slot.field` is the field of the child bound to
+    /// `slot`, so a fold supplies it from that child and the proof never
+    /// writes it.
+    #[inline(never)]
+    fn fill_hidden_fold_fields(
+        &self,
+        declared: &[ResourceFieldDefinition],
+        child_bindings: &[(String, String, Variable)],
+        fields: &mut Vec<(String, ContractExpression)>,
+    ) {
+        for field in declared {
+            let Some((slot, child_field)) = field.name.split_once('.') else {
+                continue;
+            };
+            if fields.iter().any(|(name, _)| name == &field.name) {
+                continue;
+            }
+            let Some((_, child, identity)) =
+                child_bindings.iter().find(|(bound, _, _)| bound == slot)
+            else {
+                continue;
+            };
+            let Some((_, family)) = self.current_resource_bindings.get(child) else {
+                continue;
+            };
+            fields.push((
+                field.name.clone(),
+                ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner: child.clone(),
+                    resource_name: family.clone(),
+                    identity: *identity,
+                    children: vec![],
+                    field: child_field.to_string(),
+                    field_index: 0,
+                    click_type: None,
+                }),
+            ));
+        }
     }
 
     /// `obtain (name: Type, ...) { P }` opens an available
@@ -6484,6 +6703,12 @@ impl Parser {
             }
             "fold" => {
                 self.expect(Token::LParen)?;
+                if self
+                    .peek_ident()
+                    .is_some_and(|resource| self.is_hidden_record(resource))
+                {
+                    return self.parse_fold_construction(None);
+                }
                 let resource = self.parse_owned_resource_target()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::FoldResource(resource)
@@ -6739,6 +6964,29 @@ impl Parser {
             self.current_proof_let_names = names;
         }
         result
+    }
+
+    // `close_invariants by T(...);` is the one-step body
+    // `close_invariants by { T(...); }`, as after `have` and `ensures`.
+    #[inline(never)]
+    fn parse_close_invariants_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
+        if self.peek() == Some(&Token::LBrace) {
+            return self.parse_possibly_empty_tactic_block();
+        }
+        // `by simp;` is the step `simp();`, as it is after `have`.
+        if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
+            self.position += 2;
+            return Ok(vec![ProofTactic::Simp]);
+        }
+        match self.peek() {
+            Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
+            Some(token) => Err(self.error(format!(
+                "expected a proof after `close_invariants by`, got {token}: write one tactic call or a block `{{ ... }}`"
+            ))),
+            None => Err(self.error(
+                "expected a proof after `close_invariants by`, got end of input",
+            )),
+        }
     }
 
     fn parse_possibly_empty_tactic_block(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
@@ -9331,14 +9579,25 @@ impl Parser {
         self.parse_contract_postfix_suffix(expression)
     }
 
-    /// The address of a reference parameter's referent, `&value`: the
-    /// pointer that carries it.
-    ///
-    /// Kept out of the recursive expression parser's frame, like the postfix
-    /// suffix: deeply nested expressions parse on a small stack.
+    /// Native parameter and result aliases name their referents.
+    fn is_reference_binding(&self, name: &str) -> bool {
+        self.current_reference_params.contains(name)
+            || (self.current_reference_result && name == "result")
+    }
+
+    fn reference_binding_carrier(&self, name: &str) -> String {
+        if self.current_reference_result && name == "result" {
+            "result".to_string()
+        } else {
+            syntax::reference_carrier_name(name)
+        }
+    }
+
+    /// The address of a reference referent (`&value` or `&result`) is its
+    /// existing pointer carrier. Keep this out of the recursive parser frame.
     #[inline(never)]
     fn at_reference_parameter_address(&self) -> bool {
-        matches!(self.peek_next(), Some(Token::Ident(name)) if self.current_reference_params.contains(name))
+        matches!(self.peek_next(), Some(Token::Ident(name)) if self.is_reference_binding(name))
             && !matches!(
                 self.tokens.get(self.position + 2),
                 Some(Token::Arrow | Token::Dot | Token::LBracket)
@@ -9349,9 +9608,9 @@ impl Parser {
     #[inline(never)]
     fn parse_reference_parameter_address(&mut self) -> Result<ContractExpression, ClickError> {
         let Some(Token::Ident(name)) = self.peek_next() else {
-            return Err(self.error("expected a reference parameter after `&`"));
+            return Err(self.error("expected a reference binding after `&`"));
         };
-        let carrier = syntax::reference_carrier_name(name);
+        let carrier = self.reference_binding_carrier(name);
         self.position += 2;
         Ok(ContractExpression::CFragment(CExpression::Variable(
             carrier,
@@ -9370,10 +9629,10 @@ impl Parser {
     ) -> Result<ContractExpression, ClickError> {
         if let ContractExpression::Binding(name)
         | ContractExpression::CFragment(CExpression::Variable(name)) = &expression
-            && self.current_reference_params.contains(name)
+            && self.is_reference_binding(name)
         {
             let name = name.clone();
-            let carrier = syntax::reference_carrier_name(&name);
+            let carrier = self.reference_binding_carrier(&name);
             let is_struct = self.current_struct_params.contains_key(&carrier);
             if is_struct && !matches!(self.peek(), Some(Token::Arrow | Token::Dot)) {
                 return Err(self.error(format!(
@@ -9384,7 +9643,7 @@ impl Parser {
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
-                        "`{name}` is a reference parameter and names the value it refers to, so it takes no index; write `{name}`"
+                        "`{name}` is a reference and names the value it refers to, so it takes no index; write `{name}`"
                     )));
                 }
                 expression = ContractExpression::Index(
@@ -9705,6 +9964,13 @@ impl Parser {
                         let owner = owner.clone();
                         self.position += 1;
                         let field = self.expect_ident("resource field name")?;
+                        if let Some(hidden) = self
+                            .hidden_child_fields
+                            .get(&(owner.clone(), field.clone()))
+                        {
+                            expression = ContractExpression::ResourceField(hidden.clone());
+                            continue;
+                        }
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
                             owner,
                             resource_name,
@@ -10584,6 +10850,14 @@ impl Parser {
                 self.parse_ensure_unary_at_depth(depth + 1)?,
             )));
         }
+        if self.peek() == Some(&Token::Amp) && self.at_reference_parameter_address() {
+            let Some(Token::Ident(name)) = self.peek_next() else {
+                unreachable!()
+            };
+            let carrier = self.reference_binding_carrier(name);
+            self.position += 2;
+            return Ok(C0Expression::Variable(carrier));
+        }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
@@ -10632,8 +10906,8 @@ impl Parser {
             Some(Token::Ident(name)) if name == "by" => {
                 Err(self.error("expected result expression, got `by`"))
             }
-            Some(Token::Ident(name)) if self.current_reference_params.contains(&name) => {
-                let carrier = syntax::reference_carrier_name(&name);
+            Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
+                let carrier = self.reference_binding_carrier(&name);
                 let is_struct = self.current_struct_params.contains_key(&carrier);
                 let carrier = C0Expression::Variable(carrier);
                 Ok(if is_struct {

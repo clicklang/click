@@ -662,6 +662,13 @@ pub(in crate::surface) fn c_expression_reads_no_memory(expression: &CExpression)
         }
         CExpression::PointerOffsetBytes { pointer, .. } => c_expression_reads_no_memory(pointer),
         CExpression::Cast { expression, .. } => c_expression_reads_no_memory(expression),
+        // `&q[i]` is an address computed from `q` and `i`; nothing is loaded.
+        CExpression::AddressOf(place) => match place.as_ref() {
+            CExpression::Index(base, index) => {
+                c_expression_reads_no_memory(base) && c_expression_reads_no_memory(index)
+            }
+            _ => false,
+        },
         _ => false,
     }
 }

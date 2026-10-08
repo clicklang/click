@@ -6041,8 +6041,9 @@ pub(crate) struct ExecutionFrontier {
     pub(crate) position: FrontierPosition,
     pub(crate) region: ExecutionRegionKind,
     pub(crate) execution_start_state: Option<CState>,
-    /// A checked member exchange has materialized the function entry before
-    /// its first C statement. The first step must use that checked successor.
+    /// A checked member exchange or proof interface has materialized the
+    /// function entry before its first C statement. The first step must use
+    /// that checked successor instead of binding the arguments again.
     pub(crate) entry_member_prefix: bool,
     pub(crate) next_statement_index: usize,
     pub(crate) continuations: PersistentSequence<ProofExecutionContinuation>,
@@ -6487,6 +6488,20 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
         || matches!(fact,
             Proposition::ConditionIs(crate::kernel::ConditionTerm::Bitvector32Equal(left, right), true)
                 if left == right)
+}
+
+/// The pointer congruence fragment may give a field read another spelling
+/// in the same checked arm. This normalizes just the named positive equality;
+/// it neither searches premises nor proves a missing read/safety obligation.
+pub(super) fn checked_interface_pointer_equality(facts: &ProofFacts, goal: &Proposition) -> bool {
+    matches!(
+        goal,
+        Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerOffsetEqual(_, _),
+            true
+        )
+    ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
 }
 
 #[cfg(test)]
@@ -8581,6 +8596,37 @@ impl ExecutionProofCore {
         crate::kernel::c_function_entry_state(&self.state, function, arguments)
             .map(Cow::Owned)
             .ok_or_else(|| EvidenceRefusal::from("the function's arguments do not bind at entry"))
+    }
+
+    /// Materialize the already checked function entry before a proof-only
+    /// interface split. Its arms and successor must use the same bound state
+    /// as the retained trace, even though no C statement has run yet.
+    pub(crate) fn materialize_function_entry(&mut self) -> Result<(), &'static str> {
+        if !self.frontier.is_at_function_entry() || self.frontier.entry_member_prefix {
+            return Ok(());
+        }
+        let entry = self
+            .function_entry
+            .as_ref()
+            .ok_or("an entry interface requires a checked function entry")?;
+        let caller = entry.caller_state().clone();
+        let bound =
+            crate::kernel::c_function_entry_state(&self.state, &entry.function, &entry.arguments)
+                .ok_or("the interface could not bind function arguments")?;
+        let source = Arc::new(entry.function.body().clone());
+        if self
+            .evidence_state
+            .as_ref()
+            .is_some_and(|state| state != &bound)
+        {
+            return Err("the entry interface does not follow its retained state");
+        }
+        self.state = bound.clone().into();
+        self.evidence_state = Some(bound);
+        self.frontier.execution_start_state = Some(caller);
+        self.frontier.entry_member_prefix = true;
+        self.evidence_source = Some(source);
+        Ok(())
     }
 
     /// Advances evidence tracking across an entered `try` where linear
@@ -12875,6 +12921,67 @@ mod tests {
                 "exact-view lookup should visit only its indexed event at size {event_count}",
             );
         }
+    }
+
+    #[test]
+    fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
+        let a = Pointer::symbolic(Variable(95_700));
+        let b = Pointer::symbolic(Variable(95_701));
+        let c = Pointer::symbolic(Variable(95_702));
+        let equal = |a: Pointer, b: Pointer| {
+            Proposition::ConditionIs(crate::kernel::ConditionTerm::pointer_equal(a, b), true)
+        };
+        let parent = ProofFacts::from_ordered(&[equal(a.clone(), b.clone())]);
+        let arm = parent.with_fact(equal(b, c.clone()));
+        let goal = equal(a.clone(), c.clone());
+        assert!(checked_interface_pointer_equality(&arm, &goal));
+        assert!(!checked_interface_pointer_equality(&parent, &goal));
+        assert!(!checked_interface_pointer_equality(
+            &arm,
+            &equal(a.offset_by_bytes(8), c.offset_by_bytes(16))
+        ));
+        assert!(!checked_interface_pointer_equality(
+            &arm,
+            &Proposition::And(Box::new(goal.clone()), Box::new(goal))
+        ));
+        assert!(!checked_interface_pointer_equality(
+            &arm,
+            &Proposition::CMemoryLoadable {
+                memory: CMemory::new(),
+                base: a,
+                bytes: Bitvector32Term::Constant(8),
+            }
+        ));
+    }
+
+    #[test]
+    fn entry_interface_materialization_retains_source_and_does_not_rebind() {
+        let caller = CState::new();
+        let function = c_function(
+            CType::Int32,
+            "entry_interface",
+            vec![crate::kernel::c_parameter("n", CType::Int32)],
+            CStatement::Return(crate::kernel::c_variable("n")),
+        );
+        let arguments = [CExpression::Value(int32(7))];
+        let bound = crate::kernel::c_function_entry_state(&caller, &function, &arguments).unwrap();
+        let mut core = ExecutionProofCore::at_entry(caller.clone(), ExecutionFrontier::default());
+        assert!(core.materialize_function_entry().is_err());
+        core.record_checked_function_entry(&function, &arguments, &bound, PureFactContext::new())
+            .unwrap();
+        let mut unrelated = core.clone();
+        unrelated.evidence_state = Some(CState::new().with_local("different", int32(1)));
+        assert!(unrelated.materialize_function_entry().is_err());
+        core.materialize_function_entry().unwrap();
+        assert_eq!(&*core.state, &bound);
+        assert_eq!(core.reached_state(), &bound);
+        assert_eq!(core.current_source(&function), Some(function.body()));
+        assert_eq!(core.frontier.execution_start_state.as_ref(), Some(&caller));
+        assert!(core.frontier.is_at_function_entry());
+        core.materialize_function_entry().unwrap();
+        assert_eq!(&*core.state, &bound);
+        assert_eq!(core.reached_state(), &bound);
+        assert!(core.execution_evidence.iter().all(|trace| trace.is_empty()));
     }
 
     #[test]

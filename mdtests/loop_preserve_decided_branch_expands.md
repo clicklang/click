@@ -54,10 +54,7 @@ int32 count_zero_run(int32* a, int32 n) {
         preserve by {
             mark iteration;
             have a[i] == 1 by {
-                instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] == 1 }, i) using {
-                    0 <= i;
-                    i < n;
-                }
+                instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] == 1 }, i);
                 assumption();
             }
             have i + 1 <= n by {

@@ -66,10 +66,18 @@ The exact replacement blackens that child and preserves the outer context.
 The contract proves whole-tree balance, parent consistency, in-order contents,
 and null fixup without assuming the erased node's, successor's, or child's color.
 
+`rbtree_erase_spine.click` covers root deletion with a deeper successor whose
+right child is nonempty. Its terminating descent loop retains the exact
+left-only path. Small opening and closing helper contracts expose the splice
+link, so both path shapes use one C continuation. The proof blackens and
+reattaches the replacement child, rebuilds the path, and returns the exact
+successor transplant with red-black validity, parent consistency, preserved
+in-order contents, detached-node ownership, and null fixup.
+
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
 all immediate-successor exits now verify at any tree position. Deeper successors
-remain. The C file retains all branches; each sidecar states its coverage.
+with leaf replacements or a non-root erased node remain. The C file retains all branches; each sidecar states its coverage.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
@@ -84,7 +92,8 @@ example's supported rbtree types and macros and spells the pinned
 `__rb_parent` mask. This is not yet the complete pinned translation-unit
 integration planned in chunks 21–24. The source is GPL-2.0-or-later.
 
-Run `click verify examples/rbtree-erase` and
+The full erase project verifies in about 158 seconds and runs in the nightly
+example suite. Run `click verify examples/rbtree-erase` and
 `click verify examples/rbtree-model`. The latter checks the imported pure
 root-deletion and successor-splice theorems independently. Example regressions
 pin the source and reject skipped parent/color writes, root replacement, or
@@ -125,3 +134,8 @@ reconstructed subtree, that removing and blackening that minimum commutes with
 reconstructing its ancestor frames, and that parent consistency determines the
 focus parent from the spine. These are model lemmas for the deeper transplant;
 they do not yet establish its C postconditions.
+
+Deeper-successor mutations reject a missing parent-left splice, a missing
+right-subtree attachment or parent update, the wrong replacement-child parent,
+and a red replacement. Each check takes about 8–9 seconds and stays in the
+ordinary gate; the pinned-source check also remains there.

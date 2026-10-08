@@ -738,8 +738,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Some(self.closed_focused())
     }
 
-    /// An interface leaf uses indexed premises, direct intrinsic facts, or
-    /// an exact kernel-issued load definition; it never selects a derivation.
+    /// An interface leaf uses indexed premises, pointer congruence, direct
+    /// intrinsic facts, or an exact kernel-issued load definition; it never
+    /// selects a derivation.
     pub(super) fn apply_interface_leaf(
         &self,
         definition: Option<&super::execution::CheckedInterfaceLoadDefinition>,
@@ -747,6 +748,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     ) -> Option<Self> {
         let (goal, facts) = self.focused_proposition()?;
         (super::execution::checked_branch_fact_is_available(facts, goal.proposition())
+            || super::execution::checked_interface_pointer_equality(facts, goal.proposition())
             || definition
                 .is_some_and(|definition| definition.matches_goal_exactly(goal.proposition()))
             || read_premise.is_some_and(|premise| {

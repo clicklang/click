@@ -485,6 +485,12 @@ pub enum CppExpression {
         value_type: CppType,
         span: CppSpan,
     },
+    /// Bind an lvalue reference to an address without reading its referent.
+    ReferenceBinding {
+        address: Box<CppExpression>,
+        value_type: CppType,
+        span: CppSpan,
+    },
     Dereference {
         pointer: Box<CppExpression>,
         value_type: CppType,
@@ -2814,6 +2820,7 @@ impl CppExpression {
             | Self::ConstantReference { value_type, .. }
             | Self::Load { value_type, .. }
             | Self::AddressOf { value_type, .. }
+            | Self::ReferenceBinding { value_type, .. }
             | Self::Dereference { value_type, .. }
             | Self::MemberLoad { value_type, .. }
             | Self::IntegralCast { value_type, .. }
@@ -2829,9 +2836,11 @@ impl CppExpression {
             Self::Load { place, .. } | Self::AddressOf { place, .. } => {
                 place.declaration_id == declaration_id
             }
-            Self::Dereference { pointer, .. } | Self::IntegralCast { value: pointer, .. } => {
-                pointer.references_place(declaration_id)
+            Self::Dereference { pointer, .. }
+            | Self::ReferenceBinding {
+                address: pointer, ..
             }
+            | Self::IntegralCast { value: pointer, .. } => pointer.references_place(declaration_id),
             Self::MemberLoad { object, .. } => object.declaration_id == declaration_id,
             Self::Binary { left, right, .. } => {
                 left.references_place(declaration_id) || right.references_place(declaration_id)
@@ -2922,18 +2931,50 @@ impl CppExpression {
                 span,
             } => {
                 span.validate(logical_source)?;
-                let place_type = validate_place_reference(place, places, logical_source)?;
-                match place_type {
-                    CppType::LvalueReference { pointee } => {
-                        require_int32(pointee, false, "addressed reference pointee")?;
-                    }
-                    _ => {
-                        return Err(
-                            "supported C++ address-of must name a mutable `int&` parameter".into(),
-                        );
-                    }
+                let CppType::LvalueReference { pointee } =
+                    validate_place_reference(place, places, logical_source)?
+                else {
+                    return Err("C++ address-of must name an integer reference".into());
+                };
+                require_int32(pointee, true, "addressed reference pointee")?;
+                let CppType::Pointer { pointee: result } = value_type else {
+                    return Err("C++ address-of result must be a pointer".into());
+                };
+                if !same_scalar_type(pointee, result) {
+                    return Err("C++ address-of changed referent type or qualification".into());
                 }
-                require_mutable_int32_pointer(value_type, "address-of result type")
+                Ok(())
+            }
+            Self::ReferenceBinding {
+                address,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                address.validate(places, records, logical_source)?;
+                if !matches!(address.as_ref(), Self::AddressOf { .. }) {
+                    return Err("C++ reference binding currently requires an existing reference parameter; raw-pointer binding needs live-object validation".into());
+                }
+                let CppType::LvalueReference { pointee } = value_type else {
+                    return Err("C++ reference binding requires a reference result type".into());
+                };
+                require_int32(pointee, true, "reference result pointee")?;
+                let CppType::Pointer { pointee: source } = address.value_type() else {
+                    return Err(
+                        "C++ reference binding requires an address, not a scalar value".into(),
+                    );
+                };
+                require_int32(source, true, "reference binding address pointee")?;
+                // Qualification may be added, never removed; widths remain exact.
+                if !same_scalar_type(source, pointee)
+                    && !(Scalar::is(source, ScalarKind::Int32, false)
+                        && Scalar::is(pointee, ScalarKind::Int32, true))
+                {
+                    return Err(
+                        "C++ reference binding changed referent type or removed const".into(),
+                    );
+                }
+                Ok(())
             }
             Self::Dereference {
                 pointer,
@@ -4145,7 +4186,10 @@ impl CppExpression {
                 referenced_constants.insert(constant.declaration_id.clone());
                 Ok(())
             }
-            Self::Dereference { pointer, .. } => pointer.validate_constant_references(
+            Self::Dereference { pointer, .. }
+            | Self::ReferenceBinding {
+                address: pointer, ..
+            } => pointer.validate_constant_references(
                 logical_source,
                 constants,
                 referenced_constants,
@@ -4373,6 +4417,7 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
 fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
     if require_scalar_integer(value, label).is_ok()
         || require_mutable_int32_pointer(value, label).is_ok()
+        || matches!(value, CppType::LvalueReference { pointee } if require_int32(pointee, true, label).is_ok())
     {
         Ok(())
     } else {

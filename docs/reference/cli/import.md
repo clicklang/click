@@ -227,7 +227,24 @@ for a contract that says two references alias (`requires &a == &b;`) or that a
 stored pointer points at one. A struct reference names its fields as
 `state.field`. Writing `int32* value` for an `int&` is a signature mismatch
 that names both spellings; a C++ `int*` parameter stays a pointer. A member
-function's receiver is still the pointer `self`.
+function's receiver is the pointer `this`, as in C++: `this->fee`,
+`owns *this`.
+
+Native `int&` and `const int&` results use `int32&` and `const int32&`
+sidecar results. `result` reads the returned referent; `&result` identifies its
+address. For example, a helper returning an existing reference parameter can
+state `ensures &result == &value;` without reading backing storage. A value
+claim such as `ensures result == old(value);` additionally needs a resource
+for that storage. Returning an alias grants no new ownership or write authority.
+Reference and pointer results remain distinct during signature checking, and
+const qualification is preserved through modular calls and result temporaries.
+
+The initial result profile returns existing integer reference parameters,
+including direct call forwarding. Binding a new reference through a raw pointer,
+returning a local object, and reference-valued locals remain unsupported.
+Raw-pointer binding needs a live-object check: ordinary pointer formation also
+permits one-past addresses, which cannot denote reference referents. No implicit
+pointee load stands in for that missing check.
 
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
@@ -245,7 +262,8 @@ C++ `const` restricts access through that reference; it does not create a Click
 currently by-value `bool` or signed/unsigned 32/64/128-bit integers, `int&`, `const int&`,
 mutable `int*`, one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
-signed/unsigned 64/128-bit integers, `unsigned int`, `bool`, or `void`.
+signed/unsigned 64/128-bit integers, `unsigned int`, `bool`, mutable `int*`,
+`int&`, `const int&`, or `void`.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
 `MoneyRange`: Clang retains the declaration identity and source span for a
@@ -445,7 +463,7 @@ that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
 `"function": "FeeFrac::operator+="` (or `operator-=`). The proof interface names
 them `FeeFrac_IsEmpty`, `FeeFrac_operator_add_assign`, and
 `FeeFrac_operator_subtract_assign`, with an explicit first
-parameter `self`. Const methods use `const struct FeeFrac* self`; const record
+parameter `this`. Const methods use `const struct FeeFrac* this`; const record
 reference parameters retain the same qualification. This restricts writes
 through that parameter without forbidding an alias through a mutable parameter.
 Unused member functions, constructors, templates, and nested declarations are

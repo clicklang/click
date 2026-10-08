@@ -1,37 +1,37 @@
-int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_size) {
-    views self->fee;
-    views self->size;
+int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* this, int32 at_size) {
+    views this->fee;
+    views this->size;
     requires @WIDE_GUARD@;
-    requires -9223372036854775808 <= to_integer(self->fee);
-    requires to_integer(self->fee) <= 9223372036854775807;
-    requires self->size > 0;
-    requires self->size <= 2147483647;
+    requires -9223372036854775808 <= to_integer(this->fee);
+    requires to_integer(this->fee) <= 9223372036854775807;
+    requires this->size > 0;
+    requires this->size <= 2147483647;
     requires 0 <= at_size;
-    requires at_size <= self->size;
-    ensures self->fee == old(self->fee);
-    ensures self->size == old(self->size);
+    requires at_size <= this->size;
+    ensures this->fee == old(this->fee);
+    ensures this->size == old(this->size);
     ensures -9223372036854775808 <= to_integer(result);
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
 } by {
-    have 1 <= self->size by { arithmetic() using { self->size > 0; } }
-    have at_size <= 2147483647 by { arithmetic() using { at_size <= self->size; self->size <= 2147483647; } }
+    have 1 <= this->size by { arithmetic() using { this->size > 0; } }
+    have at_size <= 2147483647 by { arithmetic() using { at_size <= this->size; this->size <= 2147483647; } }
     apply(int32_less_equal_to_integer(0, at_size));
-    apply(int32_less_equal_to_integer(at_size, self->size));
+    apply(int32_less_equal_to_integer(at_size, this->size));
     apply(int32_less_equal_to_integer(at_size, 2147483647));
     have -2147483648 <= to_integer(at_size) by { arithmetic() using { 0 <= to_integer(at_size); } }
-    apply(integer_scaled_product_bounds(to_integer(self->fee), to_integer(at_size), to_integer(self->size), -9223372036854775808, 9223372036854775807));
+    apply(integer_scaled_product_bounds(to_integer(this->fee), to_integer(at_size), to_integer(this->size), -9223372036854775808, 9223372036854775807));
     step(); step(); step(); step();
     let denominator = step();
     step();
-    let product = step(FeeFrac_Mul(self->fee, at_size), { });
-    have -9223372036854775808 * to_integer(self->size) <= to_integer(product) by {
-        rewrite(to_integer(product) == to_integer(self->fee) * to_integer(at_size));
+    let product = step(FeeFrac_Mul(this->fee, at_size), { });
+    have -9223372036854775808 * to_integer(this->size) <= to_integer(product) by {
+        rewrite(to_integer(product) == to_integer(this->fee) * to_integer(at_size));
         assumption();
     }
-    have to_integer(product) <= 9223372036854775807 * to_integer(self->size) by {
-        rewrite(to_integer(product) == to_integer(self->fee) * to_integer(at_size));
+    have to_integer(product) <= 9223372036854775807 * to_integer(this->size) by {
+        rewrite(to_integer(product) == to_integer(this->fee) * to_integer(at_size));
         assumption();
     }
     step();
@@ -40,34 +40,34 @@ int64 FeeFrac_EvaluateFee__bool_@INSTANCE@(const struct FeeFrac* self, int32 at_
     have @DIV_BOUND_1@;
     have @DIV_BOUND_2@;
     have to_integer(result) == to_integer(rounded);
-    have to_integer(self->fee) * to_integer(at_size) == to_integer(product);
-    have to_integer(self->size) == to_integer(denominator);
+    have to_integer(this->fee) * to_integer(at_size) == to_integer(product);
+    have to_integer(this->size) == to_integer(denominator);
     have @CALLER_BOUND_1@ by {
         rewrite(to_integer(result) == to_integer(rounded));
-        rewrite(to_integer(self->size) == to_integer(denominator));
-        rewrite(to_integer(self->fee) * to_integer(at_size) == to_integer(product));
+        rewrite(to_integer(this->size) == to_integer(denominator));
+        rewrite(to_integer(this->fee) * to_integer(at_size) == to_integer(product));
         assumption();
     }
     have @CALLER_BOUND_2@ by {
         rewrite(to_integer(result) == to_integer(rounded));
-        rewrite(to_integer(self->size) == to_integer(denominator));
-        rewrite(to_integer(self->fee) * to_integer(at_size) == to_integer(product));
+        rewrite(to_integer(this->size) == to_integer(denominator));
+        rewrite(to_integer(this->fee) * to_integer(at_size) == to_integer(product));
         assumption();
     }
     simp();
 }
-int64 FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* self, int32 at_size) {
-    views self->fee;
-    views self->size;
+int64 FeeFrac_EvaluateFee@MODE@(const struct FeeFrac* this, int32 at_size) {
+    views this->fee;
+    views this->size;
     requires @WIDE_GUARD@;
-    requires -9223372036854775808 <= to_integer(self->fee);
-    requires to_integer(self->fee) <= 9223372036854775807;
-    requires self->size > 0;
-    requires self->size <= 2147483647;
+    requires -9223372036854775808 <= to_integer(this->fee);
+    requires to_integer(this->fee) <= 9223372036854775807;
+    requires this->size > 0;
+    requires this->size <= 2147483647;
     requires 0 <= at_size;
-    requires at_size <= self->size;
-    ensures self->fee == old(self->fee);
-    ensures self->size == old(self->size);
+    requires at_size <= this->size;
+    ensures this->fee == old(this->fee);
+    ensures this->size == old(this->size);
     ensures -9223372036854775808 <= to_integer(result);
     ensures to_integer(result) <= 9223372036854775807;
     ensures @CALLER_BOUND_1@;

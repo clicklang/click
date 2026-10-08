@@ -90,12 +90,12 @@ stops at a resumable cursor. Verification inside each phase keeps the tactic
 limits `click verify` applies.
 
 defaults:
-  --session-work-limit 100000000   original-sidecar session initialization
+  --session-work-limit 100000000   smart-site inventory or original-sidecar session initialization
   --expansion-work-limit 50000000  one expansion, and the re-expansion check
   --verification-work-limit 50000000
                                    one retained or cold proof-unit verification
   --performance-slack 10000        minimum expanded-over-original work increase
-  --session-time-limit 10m         crash containment for session initialization
+  --session-time-limit 10m         crash containment for inventory or session initialization
   --expansion-time-limit 10m       crash containment for one expansion
   --verification-time-limit 10m    crash containment for one verification
   --time-limit 10m                 whole-run wall clock; prints the resume cursor
@@ -611,20 +611,25 @@ fn parse_work_units(source: &str) -> Result<usize, String> {
 }
 
 fn run_audit(arguments: Arguments) -> Result<(), String> {
+    let started = Instant::now();
+    let deadline = started + arguments.time_limit;
     let sources = without_excluded(audit_targets(&arguments.path)?, &arguments.exclude)?;
     println!("INVENTORY");
-    for path in &sources {
-        let source = load_audit_source(path)?;
-        let runtime = match &source.project {
-            Some(project) => click::surface::selected_project_thread_runtime(project),
-            None => click::surface::selected_thread_runtime(&source.click_source),
+    let inventory_limit = arguments.limits.session.within(deadline)?;
+    let (sites, _) = run_phase("smart-site inventory", inventory_limit, || {
+        for path in &sources {
+            let source = load_audit_source(path)?;
+            let runtime = match &source.project {
+                Some(project) => click::surface::selected_project_thread_runtime(project),
+                None => click::surface::selected_thread_runtime(&source.click_source),
+            }
+            .map_err(|error| error.report())?;
+            if let Some(assumption) = runtime.assumption() {
+                println!("  {} runtime assumption: {assumption}", path.display());
+            }
         }
-        .map_err(|error| error.report())?;
-        if let Some(assumption) = runtime.assumption() {
-            println!("  {} runtime assumption: {assumption}", path.display());
-        }
-    }
-    let sites = inventory_sites(&sources)?;
+        inventory_sites(&sources)
+    })?;
     let inventory_claims = sites
         .iter()
         .map(|site| (site.click_path.clone(), site.claim.clone()))
@@ -709,9 +714,6 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             .or_default() += 1;
     }
     let mut claim_failures = 0;
-    let started = Instant::now();
-    let deadline = started + arguments.time_limit;
-
     let limits = &arguments.limits;
     println!(
         "\nClick expansion audit (work budgets: session {}, expansion {}, verification {}, \

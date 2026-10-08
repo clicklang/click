@@ -7,11 +7,11 @@ void BumpSizeRef(int32& value) {
     ensures value == old(value) + 1;
 } by { execute(); simp(); }
 
-void FeeEnvelope_BumpLeftByReference(struct FeeEnvelope* self) {
-    owns self->state.left.size;
-    views self->state.right.size;
-    requires 0 <= self->state.left.size;
-    requires self->state.left.size <= 10;
-    ensures self->state.left.size == old(self->state.left.size) + 1;
-    ensures self->state.right.size == old(self->state.right.size);
+void FeeEnvelope_BumpLeftByReference(struct FeeEnvelope* this) {
+    owns this->state.left.size;
+    views this->state.right.size;
+    requires 0 <= this->state.left.size;
+    requires this->state.left.size <= 10;
+    ensures this->state.left.size == old(this->state.left.size) + 1;
+    ensures this->state.right.size == old(this->state.right.size);
 } by { execute(); simp(); }

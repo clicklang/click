@@ -1638,6 +1638,17 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_subtract(left: Self, right: Self) -> Self {
+        if matches!(right, Self::UInt64Constant(0)) {
+            return left;
+        }
+        // Atomic identities avoid comparing arbitrary operand trees on this
+        // constructor's hot path. Compound operands can use the checked lemma
+        // for a symbolic variable through ordinary substitution.
+        if let (Self::Variable(a), Self::Variable(b)) = (&left, &right)
+            && a == b
+        {
+            return Self::UInt64Constant(0);
+        }
         Self::uint64_binary(
             left,
             right,
@@ -2107,6 +2118,62 @@ impl ConditionTerm {
             },
             Self::uint64_less_equal(b.clone(), Bitvector32Term::UInt64Constant(i32::MAX as u64)),
         ])
+    }
+
+    /// Regroup two exact pointer displacements into one signed-word index
+    /// only when that index addition does not wrap. Each displacement is one
+    /// scaled scalar or a representable constant. A shared pointer base may
+    /// precede them; other nested sums and full-width indices are refused.
+    pub(crate) fn pointer_offset_association_guard(&self) -> Option<Self> {
+        fn scalar(offset: &PointerOffsetTerm, width: i64) -> Option<Bitvector32Term> {
+            match offset {
+                PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width == width => {
+                    Some(value.as_ref().clone())
+                }
+                PointerOffsetTerm::Constant(value) if value % width == 0 => {
+                    i32::try_from(value / width)
+                        .ok()
+                        .map(|value| Bitvector32Term::Constant(value as u32))
+                }
+                _ => None,
+            }
+        }
+        let Self::PointerOffsetEqual(left, right) = self else {
+            return None;
+        };
+        for (expanded, indexed) in [
+            (left.as_ref(), right.as_ref()),
+            (right.as_ref(), left.as_ref()),
+        ] {
+            let PointerOffsetTerm::Add(left, right) = expanded else {
+                continue;
+            };
+            // Source pointers can carry a symbolic byte offset before the
+            // selected index. Cancel only an identical leading base, without
+            // consulting aliases or traversing unrelated offset addends.
+            let (left, indexed) = match (left.as_ref(), indexed) {
+                (PointerOffsetTerm::Add(base, index), PointerOffsetTerm::Add(other_base, sum))
+                    if base == other_base =>
+                {
+                    (index.as_ref(), sum.as_ref())
+                }
+                _ => (left.as_ref(), indexed),
+            };
+            let PointerOffsetTerm::Int32Scaled { value, byte_width } = indexed else {
+                continue;
+            };
+            if !(*byte_width > 0 && *byte_width <= i64::from(u32::MAX)) {
+                continue;
+            }
+            let (Some(left), Some(right)) = (scalar(left, *byte_width), scalar(right, *byte_width))
+            else {
+                continue;
+            };
+            if Bitvector32Term::add(left.clone(), right.clone()) == **value {
+                return Some(Self::signed_add_overflows(left, right));
+            }
+        }
+        None
     }
 
     /// A sufficient guard for two non-wrapping unsigned successor rules.
