@@ -3738,18 +3738,7 @@ impl Parser {
         {
             return self.parse_declared_resource_call_with_access(access);
         }
-        let segments = self.parse_current_contract_segments_inner(
-            access != ResourceAccessMode::View || self.in_resource_definition,
-        )?;
-        if access == ResourceAccessMode::View
-            && !self.in_resource_definition
-            && (segments.len() > 1
-                || segments
-                    .iter()
-                    .any(|segment| matches!(segment.surface, ContractSegmentSurface::Object(_))))
-        {
-            return Err(self.error("whole-struct views require a declared resource"));
-        }
+        let segments = self.parse_current_contract_segments_inner(true)?;
         if segments.len() > 1 {
             return Ok(ResourceClause::MemoryAggregate { access, segments });
         }
@@ -8005,9 +7994,9 @@ impl Parser {
                         self.resolve_struct_field_metadata(base_struct_name, &field_name)?;
                     if field.struct_name.is_some() && !field.c_type.is_pointer() {
                         if !allow_aggregates {
-                            return Err(
-                                self.error("whole-struct views require a declared resource")
-                            );
+                            return Err(self.error(
+                                "aggregate contract segments are only supported in resource clauses",
+                            ));
                         }
                         return self.aggregate_field_segments(base, &field_name, &field);
                     }

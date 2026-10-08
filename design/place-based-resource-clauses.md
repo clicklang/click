@@ -227,10 +227,8 @@ an accepted clause.
   kernel reports still print cells: a missing `owns a->n` is still
   `owns a[2..4]`, and a local's storage is `&second[0..1]`.
 - Not started: step 5 and step 6.
-- `views *p` outside a resource definition is still refused, as
-  `views object(p)` was ("whole-struct views require a declared resource").
-  `views g` for a global struct is accepted. That difference is older than
-  this work and is not yet explained.
+- `views *p` and `views p->inner` are accepted in a contract. They were
+  refused outside a resource definition for no recorded reason.
 
 ## Open questions
 
