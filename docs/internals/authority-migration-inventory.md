@@ -1413,3 +1413,9 @@ creation ledger is a different successor than the published one, even when
 neither records anything, so user tactics such as `convert` failed to
 publish. Published outcomes are now compared up to unused creation ledgers.
 Regression: `authority_mode_user_tactic_publishes_its_outcome.md`.
+
+`construct` of a token of an abstract family declared without `authorized`
+creates no population member and now runs under authority semantics; a
+token of an authorized family is still refused. Regressions:
+`authority_mode_ordinary_token_construction.md` and
+`authority_mode_authorized_token_construction_rejected.md`.

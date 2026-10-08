@@ -2371,9 +2371,12 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        // Constructing an ordinary family's token creates no population
+        // member; an authorized family's member needs its authority.
         if self
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+            && !self.names_unauthorized_family(resource)
         {
             return Err(self.step_error(
                 "resource construction may create untracked members in authority mode",

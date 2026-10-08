@@ -1531,7 +1531,14 @@ pub(super) fn construct_c_function_resource(
     constructed: &CResourceFact,
     assumptions: &PureFactContext,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
-    if state.uses_population_authority_semantics() {
+    // Constructing a token of a known ordinary abstract family creates no
+    // population member; any other construction would need its authority.
+    let ordinary_token = matches!(
+        constructed.resource(),
+        CResource::Token { name, .. }
+            if function.contract_interface().is_ordinary_abstract_family(name)
+    );
+    if state.uses_population_authority_semantics() && !ordinary_token {
         return Ok(Err(CRuntimeError::FunctionContract(
             "generic resource construction cannot create members in authority mode".to_string(),
         )));
