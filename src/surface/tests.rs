@@ -1678,18 +1678,32 @@ fn named_resource_field_metadata_is_shared_at_multiple_sizes() {
     }
 }
 
+/// Holding a resource with fields lets C read the memory its body owns
+/// directly, as holding one without fields does. The read does not open the
+/// resource: a store is still refused.
 #[test]
-fn named_resource_binding_does_not_expose_its_memory_body() {
-    let source = r#"verifying "read.c";
+fn named_resource_binding_grants_reads_of_its_memory_body_and_no_writes() {
+    let contract = r#"verifying "cell.c";
         resource cell(p: int32*) { field model: List<int32>; owns p[0..1]; }
-        int32 read(int32* p) {
+        int32 touch(int32* p) {
             owns cell: cell(p);
             ensures cell.model == old(cell.model);
         } by { execute(); simp(); }
     "#;
+    verify_c0_sources(
+        contract,
+        &[("cell.c", "int32 touch(int32* p) { return *p; }")],
+    )
+    .expect("holding the instance authorizes a read of its body");
+    let error = verify_c0_sources(
+        contract,
+        &[("cell.c", "int32 touch(int32* p) { *p = 1; return 0; }")],
+    )
+    .expect_err("holding the instance folded does not authorize a store");
     assert!(
-        verify_c0_sources(source, &[("read.c", "int32 read(int32* p) { return *p; }")]).is_err(),
-        "binding an opaque instance must not grant its unopened memory body"
+        error.message().contains("missing resource fact"),
+        "{}",
+        error.message()
     );
 }
 

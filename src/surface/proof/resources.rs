@@ -1055,12 +1055,14 @@ pub(super) fn project_initial_composite_resource_cores(
             ) else {
                 // An unconditional, unmatched body is the one arm the
                 // instance always has. Its cells are named here as a
-                // selected arm's are -- read authority is not granted, since
-                // the instance stays folded -- so that a C read of one of
-                // them after a store to a separately owned object is the same
-                // load the body spoke about at entry, and an `unfold` after
-                // that store finds the name it was folded at
-                // (`materialize_unfolded_instance_arm_cells`).
+                // selected arm's are, so that a C read of one of them after
+                // a store to a separately owned object is the same load the
+                // body spoke about at entry, and an `unfold` after that
+                // store finds the name it was folded at
+                // (`materialize_unfolded_instance_arm_cells`). Holding the
+                // instance lets C read them, by views attached to it; in a
+                // proof with a loop no read authority is granted, since
+                // nothing derives it again at the loop's exit.
                 if resource.is_own()
                     && let Some(selected) =
                         resource_environment
@@ -1079,8 +1081,8 @@ pub(super) fn project_initial_composite_resource_cores(
                         arguments,
                         state,
                         &assumptions,
-                        false,
-                        None,
+                        attach_instance_arms,
+                        attach_instance_arms.then_some(&resource),
                     );
                 }
                 continue;

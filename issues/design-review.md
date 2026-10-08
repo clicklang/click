@@ -112,11 +112,16 @@ definition read out of memory then would be stale.
 `mdtests/a_freed_cell_is_not_read_through_another_owner_after_a_loop.md` is
 the use after free that keeping them accepted.
 
+A resource with fields follows the rule in a proof without a loop: a plain
+body, or the arm the requirements select, gives views attached to the owner
+(`mdtests/c_reads_through_an_owned_resource_with_fields.md`).
+
 What remains is a resource with fields in a proof that contains a loop
 (`OwnedCores::InstanceArmsStanding` in `src/surface/proof/resources.rs`).
-Its views are free-standing there, as before the decision, because the arm
-that says which memory it owns is selected by facts that hold at the loop's
-exit, and nothing derives attached views again at that point. Attaching them
+A selected arm's views are free-standing there, as before the decision, and
+a plain body gives no read authority at all, because the facts that say
+which memory the resource owns hold at the loop's exit, and nothing derives
+attached views again at that point. Attaching them
 without that step fails 13 mdtests, among them `loop_owns_modeled_instance`,
 `rb_next` and `rb_prev`, with a read after the loop refused.
 
