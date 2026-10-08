@@ -5974,7 +5974,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
         let mut checked_without_ghost_difference = checked.state.clone();
         checked_without_ghost_difference.resources = state.resources.clone();
         checked_without_ghost_difference.counted_populations = state.counted_populations.clone();
-        if checked_without_ghost_difference != *state {
+        if !checked_without_ghost_difference.equal_up_to_unused_creation_ledgers(state) {
             return None;
         }
         let resources_match = crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(

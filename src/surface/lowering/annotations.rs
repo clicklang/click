@@ -1135,6 +1135,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             predicate_environment,
             click_function_environment,
         )?)
+        .with_ordinary_abstract_families(ordinary_abstract_families(resource_environment))
         .with_predicate_unfoldings(predicate_unfoldings)
         .with_contract(
             contract_requires,

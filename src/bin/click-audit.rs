@@ -774,7 +774,8 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
 
         // A wholly selected claim is expanded once, with all its sites
         // together: expanding a site runs its whole claim, so expanding them
-        // one at a time runs the claim once per site.
+        // one at a time runs the claim once per site. A site cap still
+        // selects the whole claim when its remaining allowance covers it.
         let claim_key = (site.click_path.clone(), site.claim.clone());
         let claim_sites = selected[cursor..]
             .iter()
@@ -788,7 +789,9 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                     previous.click_path != site.click_path || previous.claim != site.claim
                 });
         if at_claim_start
-            && arguments.max_sites.is_none()
+            && arguments
+                .max_sites
+                .is_none_or(|limit| claim_sites <= limit.saturating_sub(attempted_sites))
             && inventoried_claim_counts.get(&claim_key) == Some(&claim_sites)
         {
             print!(

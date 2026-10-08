@@ -7097,6 +7097,9 @@ pub(in crate::surface) fn build_function_environment(
                         predicate_environment,
                         click_function_environment,
                     )?)
+                    .with_ordinary_abstract_families(ordinary_abstract_families(
+                        resource_environment,
+                    ))
                     .with_predicate_unfoldings(predicate_unfoldings)
                     .with_contract(
                         contract_requires,
@@ -7386,6 +7389,28 @@ pub(in crate::surface) fn function_resource_constructors(
                 CResourceSnapshot::Current,
             )
         })
+        .collect()
+}
+
+/// The abstract families declared without `authorized`; the kernel treats
+/// every other abstract family as a possible population member.
+pub(in crate::surface) fn ordinary_abstract_families(
+    resource_environment: &ResourceEnvironment,
+) -> Vec<String> {
+    resource_environment
+        .definitions
+        .values()
+        .filter(|definition| {
+            definition.composite_body().is_none()
+                && !definition.is_authorized()
+                // The built-in resources have their own kernel forms.
+                && !matches!(
+                    definition.name(),
+                    "authority" | "mutex_guard" | "mutex_live" | "mutex_use"
+                )
+                && definition.name() != crate::kernel::CResourceFact::ALLOCATION_RESOURCE_NAME
+        })
+        .map(|definition| definition.name().to_string())
         .collect()
 }
 
