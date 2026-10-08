@@ -2048,6 +2048,40 @@ pub(crate) enum IntegerPureSubstitutionError {
     WorkLimitExceeded,
 }
 
+/// Checked singleton substitution for the pure proposition fragment. One
+/// carrier-aware walker owns the entire traversal, including Integer leaves
+/// and quantifier scopes. A refused or exhausted walk never returns a partial
+/// proposition to either the planner or its certificate checker.
+pub(crate) fn substitute_machine_constant_in_pure_proposition(
+    proposition: &Proposition,
+    from: Variable,
+    value: i64,
+) -> Result<Proposition, IntegerPureSubstitutionError> {
+    use crate::kernel::proof::term_rewrite::{TermRewrite, TypedCReplacement};
+
+    let mut collector =
+        crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
+    collector.collect(proposition);
+    if collector.exhausted() {
+        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
+    }
+    let mut reserved = BTreeSet::new();
+    collector.extend_into(&mut reserved);
+    reserved.insert(from);
+    let c = BTreeMap::from([(
+        from,
+        TypedCReplacement::Bitvector(signed_i64_bitvector_constant(value)),
+    )]);
+    let integer = BTreeMap::new();
+    let algebraic = BTreeMap::new();
+    let mut walker = TermRewrite::for_typed_variables(&c, &integer, &algebraic);
+    walker.reserve_integer_substitution_variables(&reserved);
+    walker.enable_registered_load_resolution();
+    let result = substitute_pure_proposition_with_walker(proposition, from, false, &mut walker);
+    integer_substitution_refusal(walker.refusal())?;
+    result
+}
+
 /// Capture-avoiding substitution for the complete pure Integer proposition
 /// fragment. Validation collects the source once, and replacement uses one
 /// carrier-aware walker. Its scoped Integer map gives nested binders lexical
@@ -2087,8 +2121,7 @@ pub(crate) fn substitute_integer_variable_in_pure_proposition(
     // rewritten cell while retaining its original snapshot.
     walker.enable_registered_load_resolution();
     walker.reserve_integer_substitution_variables(&reserved);
-    let result =
-        substitute_integer_pure_proposition_with_walker(proposition, from, false, &mut walker);
+    let result = substitute_pure_proposition_with_walker(proposition, from, false, &mut walker);
     integer_substitution_refusal(walker.refusal())?;
     result
 }
@@ -2284,13 +2317,13 @@ enum IntegerPropositionScope {
     C(crate::kernel::proof::term_rewrite::CSubstitutionScope),
 }
 
-/// Iterative proposition traversal for checked Integer substitution.  The
+/// Iterative proposition traversal for checked pure substitution.  The
 /// caller supplies one walker for the whole proposition. In particular, the
 /// replacement's carrier summary, DAG cache, fresh allocator, and work state
 /// are shared across sibling atomic propositions. An explicit task stack is
 /// used here because nested quantifiers can make the recursive equivalent
 /// exhaust the Rust test thread's stack even at modest source depth.
-fn substitute_integer_pure_proposition_with_walker(
+fn substitute_pure_proposition_with_walker(
     proposition: &Proposition,
     from: Variable,
     shadowed: bool,
@@ -2310,6 +2343,22 @@ fn substitute_integer_pure_proposition_with_walker(
             } => {
                 integer_work(1)?;
                 match proposition {
+                    Proposition::Predicate { name, arguments } => {
+                        let mut result = Vec::with_capacity(arguments.len());
+                        for argument in arguments {
+                            integer_work(1)?;
+                            if !integer_atomic_term_supported(argument) {
+                                return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
+                            }
+                            let value = walker.term(argument);
+                            integer_substitution_refusal(walker.refusal())?;
+                            result.push(value);
+                        }
+                        rewritten.push(Proposition::Predicate {
+                            name: name.clone(),
+                            arguments: result,
+                        });
+                    }
                     Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
                         rewritten.push(Proposition::Equal(
                             Term::Integer(substitute_integer_pure_term_with_walker(left, walker)?),
@@ -9747,5 +9796,174 @@ mod resource_reference_substitution_tests {
         assert!(!bound.contains(&Variable(102)));
         assert!(!bitvectors.contains(&Variable(102)));
         assert!(!bound.contains(&Variable(200)));
+    }
+}
+
+#[cfg(test)]
+mod checked_singleton_substitution_tests {
+    use super::*;
+    use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
+
+    fn observed(variable: Variable) -> IntegerTerm {
+        IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            Bitvector32Term::Variable(variable),
+        ))
+    }
+
+    fn proposition(variable: Variable) -> Proposition {
+        Proposition::Equal(
+            Term::Integer(observed(variable)),
+            Term::Integer(IntegerTerm::var(variable)),
+        )
+    }
+
+    #[test]
+    fn checked_singleton_substitution_preserves_quantifier_carriers() {
+        let variable = Variable(70_100);
+        let leaf = proposition(variable);
+        let replaced = substitute_machine_constant_in_pure_proposition(&leaf, variable, 7)
+            .expect("the free machine variable is supported");
+        assert_eq!(
+            replaced,
+            Proposition::Equal(
+                Term::Integer(IntegerTerm::constant_i64(7)),
+                Term::Integer(IntegerTerm::var(variable)),
+            )
+        );
+        for sort in [Sort::CInt32, Sort::Integer] {
+            for exists in [false, true] {
+                let wrap = |body| {
+                    if exists {
+                        Proposition::Exists {
+                            name: "bound".into(),
+                            var: variable,
+                            sort: sort.clone(),
+                            body: Box::new(body),
+                        }
+                    } else {
+                        Proposition::ForAll {
+                            var: variable,
+                            sort: sort.clone(),
+                            body: Box::new(body),
+                        }
+                    }
+                };
+                let expected = if sort == Sort::CInt32 {
+                    leaf.clone()
+                } else {
+                    replaced.clone()
+                };
+                assert_eq!(
+                    substitute_machine_constant_in_pure_proposition(
+                        &wrap(leaf.clone()),
+                        variable,
+                        7
+                    ),
+                    Ok(wrap(expected)),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn checked_singleton_substitution_returns_budget_refusal_without_a_partial_result() {
+        let variable = Variable(70_101);
+        let mut value = observed(variable);
+        for _ in 0..64 {
+            value = IntegerTerm::add(value.clone(), value.clone());
+        }
+        let source = Proposition::Equal(Term::Integer(value), Term::Integer(observed(variable)));
+        let (complete, work) = instrumentation::measure_deterministic_work(|| {
+            substitute_machine_constant_in_pure_proposition(&source, variable, 7)
+        });
+        assert!(complete.is_ok());
+        for limit in [0, 4, 64, work - 1] {
+            let (result, _) = instrumentation::with_tactic_work_limits(
+                TacticWorkLimits {
+                    simple: limit,
+                    smart: limit,
+                    control: limit,
+                },
+                || {
+                    instrumentation::collect(|| {
+                        let tactic = TacticEvent {
+                            claim: "checked singleton substitution".into(),
+                            tactic_index: 0,
+                            tactic_name: "checked_singleton_substitution".into(),
+                            class: "simple".into(),
+                            statement_index: 0,
+                            source_index: 0,
+                        };
+                        instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
+                        let result =
+                            substitute_machine_constant_in_pure_proposition(&source, variable, 7);
+                        assert!(instrumentation::exceeded_verification_limit_context().is_some());
+                        instrumentation::emit(VerificationEvent::TacticFailed(tactic));
+                        result
+                    })
+                },
+            );
+            assert_eq!(result, Err(IntegerPureSubstitutionError::WorkLimitExceeded));
+        }
+    }
+
+    #[test]
+    fn checked_singleton_substitution_scales_with_shared_integer_dags() {
+        let variable = Variable(70_102);
+        let samples = [8, 16, 32, 64].map(|depth| {
+            let mut value = observed(variable);
+            for _ in 0..depth {
+                value = IntegerTerm::add(value.clone(), value.clone());
+            }
+            let source =
+                Proposition::Equal(Term::Integer(value), Term::Integer(observed(variable)));
+            let (result, work) = instrumentation::measure_deterministic_work(|| {
+                substitute_machine_constant_in_pure_proposition(&source, variable, 7)
+            });
+            assert!(result.is_ok());
+            assert!(
+                work <= 128 * (depth + 1),
+                "depth {depth}: {work} work units"
+            );
+            work
+        });
+        assert!(samples[3] <= samples[0] * 10, "{samples:?}");
+    }
+
+    #[test]
+    fn checked_singleton_substitution_refuses_unsupported_carriers() {
+        let source = Proposition::Predicate {
+            name: "opaque".into(),
+            arguments: vec![Term::CMemory(CMemory::new())],
+        };
+        assert_eq!(
+            substitute_machine_constant_in_pure_proposition(&source, Variable(70_103), 7),
+            Err(IntegerPureSubstitutionError::UnsupportedCarrier),
+        );
+    }
+
+    #[test]
+    fn checked_singleton_substitution_preserves_predicate_arguments() {
+        let variable = Variable(70_104);
+        let source = Proposition::Predicate {
+            name: "opaque".into(),
+            arguments: vec![
+                Term::Integer(observed(variable)),
+                Term::Bitvector32(Bitvector32Term::Variable(variable)),
+                Term::Integer(IntegerTerm::var(variable)),
+            ],
+        };
+        assert_eq!(
+            substitute_machine_constant_in_pure_proposition(&source, variable, 7),
+            Ok(Proposition::Predicate {
+                name: "opaque".into(),
+                arguments: vec![
+                    Term::Integer(IntegerTerm::constant_i64(7)),
+                    Term::Bitvector32(Bitvector32Term::Constant(7)),
+                    Term::Integer(IntegerTerm::var(variable)),
+                ],
+            }),
+        );
     }
 }

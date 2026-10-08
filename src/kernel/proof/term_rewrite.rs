@@ -1003,6 +1003,14 @@ fn collect_integer_substitution_variables_with_carriers(
     carriers: &mut CarrierVariables,
 ) {
     match proposition {
+        Proposition::Predicate { arguments, .. } => {
+            for argument in arguments {
+                collect_integer_substitution_term_variables(argument, carriers);
+                if carriers.exhausted() {
+                    return;
+                }
+            }
+        }
         Proposition::Equal(left, right) => {
             collect_integer_substitution_term_variables(left, carriers);
             if carriers.exhausted() {

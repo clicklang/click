@@ -1127,11 +1127,8 @@ impl PropositionSearch for PureFactContext {
                     .map(|(value, evidence)| (variable, value, evidence))
             })
             .next()?;
-        let instantiated = substitute_bitvector_variable_in_proposition(
-            proposition,
-            variable,
-            &signed_i64_bitvector_constant(value),
-        );
+        let instantiated =
+            substitute_machine_constant_in_pure_proposition(proposition, variable, value).ok()?;
         if instantiated == *proposition {
             return None;
         }
@@ -1275,11 +1272,11 @@ impl PropositionSearch for PureFactContext {
         else {
             return false;
         };
-        let instantiated = substitute_bitvector_variable_in_proposition(
-            proposition,
-            variable,
-            &signed_i64_bitvector_constant(value),
-        );
+        let Ok(instantiated) =
+            substitute_machine_constant_in_pure_proposition(proposition, variable, value)
+        else {
+            return false;
+        };
         if instantiated == *proposition {
             return false;
         }
