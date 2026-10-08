@@ -14260,6 +14260,57 @@ int32& run(int32& value) { owns value; ensures &result == &value; ensures result
     }
 }
 
+/// A proof names a reference local as it names a reference parameter: the
+/// name is the referent, and `&name` is its address.
+#[test]
+fn cpp_reference_locals_read_as_their_referents_in_a_proof_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "run",
+        "int run(int& value) noexcept { int& r = value; r = 1; return r; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "local.cpp";
+int32 run(int32& value) { owns value; ensures result == 1; ensures value == 1; } by {
+    PROOF
+}
+"#;
+    let proof = |body: &str| sidecar.replace("PROOF", body);
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        &proof("step(); step(); step(); have r == 1; have &r == &value; execute(); simp();"),
+    );
+    for (body, expected) in [
+        (
+            "step(); step(); step(); have r == 2; execute(); simp();",
+            "r == 2",
+        ),
+        (
+            "step(); step(); step(); have r[0] == 1; execute(); simp();",
+            "`r` is a reference and names the value it refers to, so it takes no index",
+        ),
+        (
+            "execute_until(assignment(r, 0)); execute(); simp();",
+            "`r` is a reference, and binding a reference is not an assignment",
+        ),
+    ] {
+        let hostile = proof(body);
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        let error =
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .expect_err("the proof misstates or misnames the reference local");
+        assert!(
+            error.message().contains(expected),
+            "{body}: {}",
+            error.message()
+        );
+    }
+}
+
 #[test]
 fn cpp_const_reference_locals_bind_pointer_storage_without_loading_offline() {
     let project = Project::with_fixture(

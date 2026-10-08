@@ -252,6 +252,12 @@ not end the backing object's lifetime. References to local objects, temporary
 lifetime extension, rvalue references and nested reference declarations remain
 unsupported.
 
+A proof names a reference local as it names a reference parameter. For
+`int& r = value;`, `r` is the referent, as in `have r == 1;`, and `&r` is its
+address, as in `have &r == &value;`. `r[0]` is refused with the spelling to
+write. Binding a reference is not an assignment, so `assignment(r, N)` is
+refused; a store through `r` is selected by its statement.
+
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
 uses its direct kernel lowering. `click verify`, `click profile`, `click

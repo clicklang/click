@@ -259,6 +259,16 @@ Rust is not covered here. Its natural spelling changes the signature syntax
 as well (`bytes: &[u8]`, `&mut self`), a slice carries its length, and
 layout is the compiler's. It gets its own proposal.
 
+### Reference locals
+
+Built 2026-10-08. A local `int& r = value;` is carried the same way: the
+lowered pointer is named `&r`, the C++ interface records the function's
+reference locals (`C0Function::local_references`), and the parser adds them
+to the names it resolves as referents in that function's proof. A name
+declared both as a reference and as an object in two scopes is left as
+written. `assignment(r, N)` is refused, since binding a reference is not an
+assignment.
+
 ## Viewing memory at another width
 
 Some proofs read memory at a width other than its declared type, for example
