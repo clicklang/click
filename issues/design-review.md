@@ -95,7 +95,7 @@ Regression: a function with `int& r = x; r = 1;` whose proof states
 Done when: no proof or diagnostic writes `r[0]` or `*r` for a C++ reference
 local.
 
-### A4. Rust sidecars in Rust syntax: the pinned examples and the refusals
+### A4. Rust sidecars in Rust syntax: respelling and the refusals
 
 Decided 2026-10-08: a Rust sidecar looks like Rust, and Click's own words
 (`requires`, `owns`, `result`, the tactics) are the same in every language.
@@ -105,22 +105,13 @@ Built: `fn` signatures with Rust type names, `as` casts, `&T` and `&mut T`
 (`*value`, `parent.left`), slices as one name (`bytes.len()`, `*bytes`, a
 `usize` parameter as an index), references to arrays, and `impl` blocks with
 `self`. `click expand`, `profile` and `audit` address them. Reference:
-`docs/reference/rust.md`, "Signatures in Rust syntax". Eight of the sixteen
-Rust examples are converted.
+`docs/reference/rust.md`, "Signatures in Rust syntax". All sixteen Rust
+examples take their signatures from the Rust source, with their mirrored
+copies under `design/charon-trial`.
 
 Remaining:
 
-- Eight examples keep the C-shaped form: `rust-arrays`, `rust-loops`,
-  `rust-iterators`, `rust-iter-references`, `rust-byte-sum`,
-  `rust-chunks-exact` and `rust-split-at` are compared byte for byte with
-  pinned copies under `design/charon-trial` (`tests/rust_import/parity.rs`,
-  `array_lengths.rs`, `iterator_proof.rs`, `loop_headers.rs`,
-  `src/languages/rust/charon/split_slices_tests.rs`), and three tests split
-  the text of `rust-move-drop` by its function headers. Convert each
-  example with its pinned copy and regenerate
-  `design/charon-trial/parity.json`.
-- The converted examples take their signatures from the Rust source, but
-  their contracts and proofs still write `bytes_len`, `->` and
+- Most of the examples' contracts and proofs still write `bytes_len`, `->` and
   `(int32)index`. Respell them.
 - Then refuse `->` and the C-shaped signature for a Rust source, with the
   spelling to write.

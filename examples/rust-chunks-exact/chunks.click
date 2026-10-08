@@ -1,6 +1,6 @@
 verifying "chunks.rs";
 
-uint64 cover(const uint8* bytes, uint64 bytes_len) {
+fn cover(bytes: &[u8]) -> usize {
     requires bytes_len <= 1000u64;
     views bytes[0..(int32)(uint32)bytes_len];
     ensures result == bytes_len % 4u64;
