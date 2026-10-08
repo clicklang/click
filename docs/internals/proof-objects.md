@@ -237,6 +237,13 @@ complete execution after all outcomes are finished. This preserves coverage
 without re-certifying every sibling for each fold. Indexing and extending one
 path shares the unchanged traces and history.
 
+A proof `if` or `match` interface may rejoin before the first C statement.
+The kernel first materializes the retained function entry, binding its own
+checked arguments without advancing the C source. The arms, abstraction, and
+continuation then share this bound state; resuming execution uses the retained
+source and does not bind the parameters a second time. Interface clauses still
+require checked resources and facts from both arms.
+
 An interface `branch ensuring` may join different heap lifetimes when the
 interface includes an owned, arm-sensitive resource that represents the
 lifetime. The kernel's interface abstraction retains the union of potential

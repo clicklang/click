@@ -36,6 +36,13 @@ application is fixed: guard-false, break, and return exits retain the final
 resource binders and restore the withheld caller frame. Small regressions also
 cover stores through reconstructed node pointers without losing unrelated
 caller-owned fields. The deeper C transplant proof remains in progress.
+The deeper splice also exposed pointer-identity losses at checked reads,
+same-block alias transitivity, and seeded pointer fields at nonzero offsets.
+These now have focused regressions in `stored_pointer_child_survives_resource_unfold.md`,
+`pure_pointer_transitivity_same_block.md`, and
+`model_pointer_alias_nonzero_field_load.md`. Entry-time `if` and `match`
+interfaces now bind the checked function arguments before joining, so a
+proof-only ownership split can rejoin and then start C execution.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
