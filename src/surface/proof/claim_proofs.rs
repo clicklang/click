@@ -326,17 +326,27 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         pure_facts,
         entry_fact_origins,
         surface_propositions,
-    } = initial_claim_context_with_mode(
-        function_block,
-        parsed_function,
-        resource_environment,
-        predicate_environment,
-        click_function_environment,
-        claim_label,
-        Some(&caller_source_owner),
-        function_source_registry.resource_semantics_mode(),
-    )
-    .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+    } = function_source_registry
+        .claim_entries()
+        .get_or_build(source_path, function_block, || {
+            initial_claim_context_with_mode(
+                function_block,
+                parsed_function,
+                resource_environment,
+                predicate_environment,
+                click_function_environment,
+                claim_label,
+                Some(&caller_source_owner),
+                function_source_registry.resource_semantics_mode(),
+            )
+        })
+        .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+    // A shared context was built for an earlier claim; name this function's
+    // parameters for diagnostics as building it would have.
+    crate::surface::proof_diagnostics::render::enter_ambient_naming(
+        parsed_function.parameters(),
+        &arguments,
+    );
     let entry_context = Arc::new(ProofEntryContext {
         state: state.clone(),
         arguments: arguments.clone(),
@@ -602,17 +612,27 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         pure_facts,
         entry_fact_origins,
         surface_propositions,
-    } = initial_claim_context_with_mode(
-        function_block,
-        parsed_function,
-        resource_environment,
-        predicate_environment,
-        click_function_environment,
-        &proof_label,
-        Some(&caller_source_owner),
-        function_source_registry.resource_semantics_mode(),
-    )
-    .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+    } = function_source_registry
+        .claim_entries()
+        .get_or_build(source_path, function_block, || {
+            initial_claim_context_with_mode(
+                function_block,
+                parsed_function,
+                resource_environment,
+                predicate_environment,
+                click_function_environment,
+                &proof_label,
+                Some(&caller_source_owner),
+                function_source_registry.resource_semantics_mode(),
+            )
+        })
+        .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+    // A shared context was built for an earlier claim; name this function's
+    // parameters for diagnostics as building it would have.
+    crate::surface::proof_diagnostics::render::enter_ambient_naming(
+        parsed_function.parameters(),
+        &arguments,
+    );
     let entry_context = Arc::new(ProofEntryContext {
         state: state.clone(),
         arguments: arguments.clone(),

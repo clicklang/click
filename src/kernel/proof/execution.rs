@@ -10707,7 +10707,7 @@ impl ExecutionProofCore {
                 candidate.obligations().to_vec(),
                 &statement_assumptions,
             );
-            if &outcome != candidate.outcome() {
+            if !outcome.equal_up_to_unused_creation_ledgers(candidate.outcome()) {
                 return Err("a published path outcome is not its trace's outcome");
             }
             // The published outcome is the body's. The path's theorem states

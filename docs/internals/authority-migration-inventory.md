@@ -1405,3 +1405,76 @@ The kernel's member body-access check applies only to a family that reaches
 a population; an ordinary composite that is not a supported transfer wrapper,
 including a recursive one or a viewed one, opens and unfolds by its
 definition. Regression: `authority_mode_ordinary_recursive_resource_unfolds.md`.
+
+#### Chunk 1f: published outcomes and unused ledgers
+
+Rechecking a proof's trace up to its publication point rebuilds an outcome whose
+creation ledger is a different successor than the published one, even when
+neither records anything, so user tactics such as `convert` failed to
+publish. Published outcomes are now compared up to unused creation ledgers.
+Regression: `authority_mode_user_tactic_publishes_its_outcome.md`.
+
+`construct` of a token of an abstract family declared without `authorized`
+creates no population member and now runs under authority semantics; a
+token of an authorized family is still refused. Regressions:
+`authority_mode_ordinary_token_construction.md` and
+`authority_mode_authorized_token_construction_rejected.md`.
+
+#### Chunk 1g: ordinary contract exits
+
+Authority semantics sent every contract whose declared resource quantities
+change through the checked transfer exit, which rebuilds the outcome as the
+caller's residual plus the ensured resources. The entry state owns the
+function's own string literals and other storage the contract does not
+mention, so a produced literal gained a second owner and borrowing outputs
+were refused. That exit is now forced only for a contract that reaches a
+population; any other contract takes the ordinary exit, which returns the
+body's own resources, as without authority semantics. Regressions:
+`authority_mode_ordinary_exit_returns_a_string_literal.md` and
+`authority_mode_ordinary_exit_aggregate_parameter_pointee.md`.
+
+#### Chunk 1h: one entry context per function
+
+Every claim proved by its own proof built its own entry context, with fresh
+creation-ledger and stable-view loan identities, so certification could not
+match a claim's completion to the certified entry state when loans were
+involved. The verification run now builds each function's entry context once
+and shares it across the function's claim proofs (a block that differs from
+the cached one under the same name builds its own). Regression:
+`authority_mode_separate_claim_proofs_share_one_entry.md`.
+
+#### Chunk 1i: legacy population-count fixtures
+
+Three fixtures added after milestone 5 read `count(...)` without authority:
+`population_count_alias_consumption_rejected.md`,
+`population_count_distinct_arguments_consumption.md` and
+`modeled_pthread_population_count_alias_rejected.md`. Their legacy property,
+that a count over a population which may alias another is refused, cannot
+arise under authority semantics: a count comes from the authority's ledger,
+not from the owned entries a key happens to spell, and two authorities are
+exclusive, so holding both proves the anchors distinct. Their authority
+replacements are:
+
+- `authority_population_count_distinct_arguments_consumption.md`: spending
+  one member of each of two distinct populations counts each separately
+  (replaces the distinct-arguments fixture).
+- `authority_population_count_alias_spend_requires_authority.md`: spending a
+  possibly aliased member needs its own authority (replaces the sequential
+  alias fixture).
+- `authority_modeled_pthread_alias_worker_requires_authority.md` and its
+  passing companion `authority_modeled_pthread_distinct_workers_spend.md`
+  (replace the worker alias fixture).
+
+The legacy fixtures remain until the switch, where they retire against these
+replacements with `fold_negative_quantity_legacy_control.md`.
+
+#### Chunk 1j: assumed mutex contracts
+
+`mutex_abstract_reserved_call.md` and `mutex_reserved_mutable_contract.md`
+call an assumed external contract that moves mutex resources. Authority
+semantics keep refusing such calls: an assumed contract that consumed a
+guard could leave a deposited control in two places. Their storage checks
+keep authority coverage through verified-helper forms:
+`authority_mutex_verified_helper_requires_separation.md` and
+`authority_mutex_verified_helper_reserved_storage_rejected.md`. At the switch
+the two legacy fixtures expect the assumed-call refusal instead.

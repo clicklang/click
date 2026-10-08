@@ -1531,7 +1531,14 @@ pub(super) fn construct_c_function_resource(
     constructed: &CResourceFact,
     assumptions: &PureFactContext,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
-    if state.uses_population_authority_semantics() {
+    // Constructing a token of a known ordinary abstract family creates no
+    // population member; any other construction would need its authority.
+    let ordinary_token = matches!(
+        constructed.resource(),
+        CResource::Token { name, .. }
+            if function.contract_interface().is_ordinary_abstract_family(name)
+    );
+    if state.uses_population_authority_semantics() && !ordinary_token {
         return Ok(Err(CRuntimeError::FunctionContract(
             "generic resource construction cannot create members in authority mode".to_string(),
         )));
@@ -33036,9 +33043,13 @@ fn contract_exit_outcome_with_boundary_transfer(
         };
         &fallback_transfer
     };
+    // Under authority semantics a quantity change that reaches a population
+    // crosses the checked resource transfer; any other contract keeps the
+    // ordinary exit, which returns the body's own resources.
     if function_needs_outcome_resource_transfer(function)
         || caller_state.uses_population_authority_semantics()
             && function_changes_declared_resource_quantities(function)
+            && contract_reaches_population(function.contract_interface())
     {
         function_outcome_from_body_with_resource_transfer(
             caller_state,

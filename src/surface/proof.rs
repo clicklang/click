@@ -1452,6 +1452,7 @@ impl PartialEq for ProofEntryContext {
 
 impl Eq for ProofEntryContext {}
 
+#[derive(Clone)]
 pub(super) struct InitialClaimContext {
     pub(super) state: CState,
     pub(super) arguments: Vec<CExpression>,
