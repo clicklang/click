@@ -2109,6 +2109,21 @@ mod tests {
             ConditionTerm::Bitvector64Equal(Box::new(x.clone()), Box::new(y.clone())),
             true,
         );
+        // The same immutable ambient sets exercise every order/truth case.
+        // Build them once so fixture setup does not dominate this gate test.
+        let fact_sets: Vec<_> = [0, 16, 64, 256, 1024]
+            .into_iter()
+            .map(|ambient| {
+                let mut facts = ProofFacts::default().with_fact(cited.clone());
+                for i in 0..ambient {
+                    facts = facts.with_fact(equality(
+                        Bitvector32Term::Variable(Variable(194_000 + i)),
+                        Bitvector32Term::Constant(i as u32),
+                    ));
+                }
+                facts
+            })
+            .collect();
         let comparisons = [
             ConditionTerm::Bitvector64SignedLessThan
                 as fn(Box<Bitvector32Term>, Box<Bitvector32Term>) -> ConditionTerm,
@@ -2140,14 +2155,7 @@ mod tests {
                             .is_err()
                     );
                     let mut costs = Vec::new();
-                    for ambient in [0, 16, 64, 256, 1024] {
-                        let mut facts = ProofFacts::default().with_fact(cited.clone());
-                        for i in 0..ambient {
-                            facts = facts.with_fact(equality(
-                                Bitvector32Term::Variable(Variable(194_000 + i)),
-                                Bitvector32Term::Constant(i as u32),
-                            ));
-                        }
+                    for facts in &fact_sets {
                         let (result, work) =
                             crate::instrumentation::measure_deterministic_work(|| {
                                 facts.check_equality_rewrite(&goal, &cited)
