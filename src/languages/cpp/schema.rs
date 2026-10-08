@@ -1555,14 +1555,11 @@ impl CppRecord {
                 return Err(format!("C++ record `{}` has a duplicate field", self.name));
             }
             let (size, alignment) = match &field.value_type {
-                CppType::Integer { .. } => {
-                    if require_int32(&field.value_type, false, "record field").is_ok() {
-                        (4, 4)
-                    } else {
-                        require_signed_int64(&field.value_type, false, "record field")?;
-                        (8, 8)
-                    }
-                }
+                CppType::Integer { .. } => match Scalar::mutable_kind(&field.value_type) {
+                    Some(ScalarKind::Int32 | ScalarKind::UInt32) => (4, 4),
+                    Some(ScalarKind::Int64 | ScalarKind::UInt64) => (8, 8),
+                    _ => return Err("record field requires a mutable 32/64-bit integer".into()),
+                },
                 CppType::Pointer { pointee } => {
                     require_int32(pointee, false, "record pointer field")?;
                     (8, 8)

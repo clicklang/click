@@ -50,7 +50,13 @@ pub(super) fn prepare(
                 let value_type = match &field.value_type {
                     value
                         if Scalar::mutable_kind(value).is_some_and(|kind| {
-                            matches!(kind, ScalarKind::Int32 | ScalarKind::Int64)
+                            matches!(
+                                kind,
+                                ScalarKind::Int32
+                                    | ScalarKind::UInt32
+                                    | ScalarKind::Int64
+                                    | ScalarKind::UInt64
+                            )
                         }) =>
                     {
                         Scalar::mutable_kind(value).unwrap().proof_type()

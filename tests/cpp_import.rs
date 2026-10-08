@@ -5891,12 +5891,120 @@ int32 get_flag() { ensures result == 1; } by { execute(); simp(); }
 }
 
 #[test]
+fn integral_template_values_preserve_exact_type_sign_and_full_width() {
+    let project = Project::with_fixture(
+        "values.cpp",
+        "call",
+        "template<auto N> int identity(int value) noexcept { return value; }\n\
+         int call(int value) noexcept {\n\
+             int a = identity<-1>(value);\n\
+             int b = identity<1U>(a);\n\
+             int c = identity<0UL>(b);\n\
+             int d = identity<18446744073709551615UL>(c);\n\
+             return identity<18446744073709551615ULL>(d);\n\
+         }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helpers = &import.export().reachable_functions;
+    let names = [
+        "identity__value_int_neg_1",
+        "identity__value_unsigned_int_1",
+        "identity__value_unsigned_long_0",
+        "identity__value_unsigned_long_18446744073709551615",
+        "identity__value_unsigned_long_long_18446744073709551615",
+    ];
+    assert_eq!(helpers.len(), names.len());
+    let mut identities = std::collections::BTreeSet::new();
+    let mut sidecar = "verifying \"values.cpp\";\n".to_string();
+    for (helper, name) in helpers.iter().zip(names) {
+        assert_eq!(helper.name, name);
+        assert!(identities.insert(&helper.declaration_id));
+        sidecar.push_str(&format!(
+            "int32 {name}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}\n"
+        ));
+    }
+    sidecar
+        .push_str("int32 call(int32 value) { ensures result == value; } by { execute(); simp(); }");
+    check_arithmetic_sidecar(&project, &import, &sidecar);
+}
+
+#[test]
+fn integral_class_extents_and_unsigned_fields_use_native_typed_cells() {
+    let project = Project::with_fixture(
+        "extent.cpp",
+        "size",
+        "template<unsigned long N> struct Extent { unsigned long length; unsigned int marker; ~Extent() = default; };\n\
+         unsigned long size(Extent<18446744073709551615UL>& span) noexcept {\n\
+             span.marker = 4294967295U;\n\
+             return span.length;\n\
+         }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(
+        import.export().records[0].name,
+        "Extent__value_unsigned_long_18446744073709551615"
+    );
+    let sidecar = r#"verifying "extent.cpp";
+uint64 size(struct Extent__value_unsigned_long_18446744073709551615* span) {
+ owns span->length; owns span->marker;
+ requires span->length == 18446744073709551615u64;
+ ensures result == 18446744073709551615u64;
+ ensures span->length == old(span->length);
+ ensures span->marker == 4294967295u32;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    for denied in [" owns span->length;", " owns span->marker;"] {
+        let hostile = sidecar.replace(denied, "");
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn explicitly_defaulted_trivial_destructor_uses_ordinary_local_lifetime() {
+    let project = Project::with_fixture(
+        "defaulted.cpp",
+        "read",
+        "struct Value { int value; ~Value() = default; };\n\
+         int read(int input) noexcept { Value local{input}; return local.value; }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(import.export().records[0].destructor.is_none());
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"defaulted.cpp\"; int32 read(int32 input) { ensures result == input; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn deleted_destructors_do_not_enter_the_defaulted_trivial_profile() {
+    let project = Project::with_fixture(
+        "deleted.cpp",
+        "read",
+        "struct Value { int value; ~Value() = delete; };\n\
+         int read(const Value& input) noexcept { return input.value; }\n",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("destructor must be public, non-virtual, non-deleted"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+}
+
+#[test]
 fn unsupported_template_arguments_and_dependent_selection_fail_explicitly() {
     for (selected, source, diagnostic) in [
         (
             "call",
-            "template<int N> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<1>(value); return result; }",
-            "template arguments require Boolean",
+            "template<short N> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<1>(value); return result; }",
+            "integral template arguments require",
         ),
         (
             "call",
@@ -6136,8 +6244,8 @@ fn class_template_instances_complete_unused_parameter_types_without_source_edits
 fn class_template_instances_retain_argument_and_layout_boundaries() {
     for (source, diagnostic) in [
         (
-            "template<int N> struct Box { int value; }; int call(const Box<1>& box) noexcept { return box.value; }",
-            "C++ template arguments require Boolean",
+            "template<short N> struct Box { int value; }; int call(const Box<1>& box) noexcept { return box.value; }",
+            "integral template arguments require",
         ),
         (
             "template<class T> struct Box { int value; }; int call(const Box<const int>& box) noexcept { return box.value; }",

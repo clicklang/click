@@ -1285,7 +1285,7 @@ private:
                                        record_type->getDecl()->getDefinition());
         const auto *destructor =
             record == nullptr ? nullptr : record->getDestructor();
-        if (destructor != nullptr && !destructor->isImplicit()) {
+        if (needs_destructor_body(destructor)) {
           // Moving an effectful predicate outside the catch would change
           // which handler catches its exception. Keep this shape pure.
           auto condition = lower_expression(conditional->getCond(), function);
@@ -1494,7 +1494,7 @@ private:
         return std::nullopt;
       }
       const clang::CXXDestructorDecl *destructor = record->getDestructor();
-      const bool destructible = destructor != nullptr && !destructor->isImplicit();
+      const bool destructible = needs_destructor_body(destructor);
       if (function_body_local) {
         if (functions_with_nested_scope_.contains(canonical)) {
           fail(local->getLocation(),
@@ -2192,7 +2192,7 @@ private:
         const clang::CXXDestructorDecl *destructor =
             record == nullptr ? nullptr : record->getDestructor();
         has_direct_destructible_object |=
-            destructor != nullptr && !destructor->isImplicit();
+            needs_destructor_body(destructor);
       }
       if (cleanup_scope != CleanupScopeKind::None &&
           has_direct_destructible_object) {
@@ -2755,6 +2755,14 @@ private:
     return true;
   }
 
+  static bool needs_destructor_body(const clang::CXXDestructorDecl *destructor) {
+    // Clang proves an in-class defaulted trivial destructor has no effects.
+    // Deleted and other explicitly written declarations retain their checks.
+    return destructor != nullptr && !destructor->isImplicit() &&
+           !(destructor->isDefaulted() && !destructor->isDeleted() &&
+             destructor->isTrivial());
+  }
+
   bool validate_record(const clang::CXXRecordDecl *record) {
     if (llvm::isa<clang::ClassTemplateSpecializationDecl>(record)) {
       record_name(record);
@@ -2812,8 +2820,7 @@ private:
     }
     const clang::CXXDestructorDecl *supported_destructor =
         record->getDestructor();
-    if (supported_destructor != nullptr &&
-        !supported_destructor->isImplicit()) {
+    if (needs_destructor_body(supported_destructor)) {
       if (!validate_destructor(supported_destructor, record))
         return false;
     } else if (!record->isTriviallyCopyable() ||
@@ -2827,8 +2834,8 @@ private:
       const auto *pointer = type->getAs<clang::PointerType>();
       const bool mutable_int =
           !type.hasQualifiers() &&
-          (context_.hasSameType(type.getUnqualifiedType(), context_.IntTy) ||
-           (type->isSignedIntegerType() && context_.getTypeSize(type) == 64));
+          type->isIntegerType() && !type->isBooleanType() &&
+          (context_.getTypeSize(type) == 32 || context_.getTypeSize(type) == 64);
       const bool mutable_int_pointer =
           pointer != nullptr && !type.hasQualifiers() &&
           !pointer->getPointeeType().hasQualifiers() &&
@@ -2844,8 +2851,8 @@ private:
           (!mutable_int && !mutable_int_pointer && !mutable_record)) {
         fail(
             field->getLocation(),
-            "the supported C++ record fields must be named mutable int, "
-            "signed 64-bit integer, mutable int*, or embedded record fields without bit-fields");
+            "the supported C++ record fields must be named mutable 32/64-bit "
+            "integers, mutable int*, or embedded record fields without bit-fields");
         return false;
       }
       if (mutable_record) {
@@ -3015,7 +3022,7 @@ private:
       result["base"] = std::move(subobject);
     }
     const clang::CXXDestructorDecl *destructor = record->getDestructor();
-    if (destructor != nullptr && !destructor->isImplicit()) {
+    if (needs_destructor_body(destructor)) {
       const auto *definition = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(
           destructor->getDefinition());
       if (definition == nullptr) {
@@ -3257,6 +3264,23 @@ private:
     return Json(std::move(result));
   }
 
+  const char *builtin_template_type_name(clang::QualType type) const {
+    // Keep exact builtin identities: LP64 long and long long have equal widths.
+    const std::pair<clang::QualType, const char *> supported[] = {
+        {context_.BoolTy, "bool"},
+        {context_.IntTy, "int"},
+        {context_.UnsignedIntTy, "unsigned_int"},
+        {context_.LongTy, "long"},
+        {context_.UnsignedLongTy, "unsigned_long"},
+        {context_.LongLongTy, "long_long"},
+        {context_.UnsignedLongLongTy, "unsigned_long_long"}};
+    for (const auto &[candidate, token] : supported) {
+      if (context_.hasSameType(type, candidate))
+        return token;
+    }
+    return nullptr;
+  }
+
   std::string template_argument_suffix(
       llvm::ArrayRef<clang::TemplateArgument> arguments,
       clang::SourceLocation location, bool allow_tags) {
@@ -3270,6 +3294,20 @@ private:
           argument.getIntegralType()->isBooleanType()) {
         suffix +=
             argument.getAsIntegral().isZero() ? "__bool_false" : "__bool_true";
+      } else if (argument.getKind() == clang::TemplateArgument::Integral) {
+        const auto type = context_.getCanonicalType(argument.getIntegralType());
+        const char *name = builtin_template_type_name(type);
+        if (name == nullptr) {
+          fail(location, "C++ integral template arguments require bool or "
+                         "32/64-bit builtin integers");
+          return {};
+        }
+        llvm::SmallString<32> decimal;
+        argument.getAsIntegral().toString(decimal, 10);
+        std::string value = std::string(decimal);
+        if (!value.empty() && value.front() == '-')
+          value.replace(0, 1, "neg_");
+        suffix += "__value_" + std::string(name) + "_" + value;
       } else if (argument.getKind() == clang::TemplateArgument::Type) {
         const auto type = context_.getCanonicalType(argument.getAsType());
         if (type.hasQualifiers()) {
@@ -3277,23 +3315,7 @@ private:
                "qualified C++ template type arguments are unsupported");
           return {};
         }
-        // Exact builtin identities, rather than widths, keep long and long
-        // long (both 64 bits in this profile) separate. Aliases canonicalize.
-        const std::pair<clang::QualType, const char *> supported[] = {
-            {context_.BoolTy, "__bool"},
-            {context_.IntTy, "__int"},
-            {context_.UnsignedIntTy, "__unsigned_int"},
-            {context_.LongTy, "__long"},
-            {context_.UnsignedLongTy, "__unsigned_long"},
-            {context_.LongLongTy, "__long_long"},
-            {context_.UnsignedLongLongTy, "__unsigned_long_long"}};
-        const char *name = nullptr;
-        for (const auto &[candidate, token] : supported) {
-          if (context_.hasSameType(type, candidate)) {
-            name = token;
-            break;
-          }
-        }
+        const char *name = builtin_template_type_name(type);
         if (name == nullptr && allow_tags) {
           const auto *tag = type->getAsCXXRecordDecl();
           if (tag != nullptr && tag->getDefinition() != nullptr) {
@@ -3323,9 +3345,9 @@ private:
                          "bool or 32/64-bit builtin integers");
           return {};
         }
-        suffix += name;
+        suffix += "__" + std::string(name);
       } else {
-        fail(location, "C++ template arguments require Boolean "
+        fail(location, "C++ template arguments require Boolean or 32/64-bit integral "
                        "values or supported scalar types");
         return {};
       }

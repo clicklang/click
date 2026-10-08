@@ -65,6 +65,30 @@ C++20 target. A fixture translation unit may instantiate the original header
 template; it must identify that harness separately from Bitcoin source and
 retain the pinned compiler profile. No proof is delivered for this target yet.
 
+### Implemented prerequisites
+
+Integral template values now retain the canonical builtin type and exact
+signed decimal value in their contract-facing names, alongside Clang's
+canonical declaration identity. For example, dynamic extent is
+`__value_unsigned_long_18446744073709551615`; negative values use `neg_`.
+Equal-width `unsigned long` and `unsigned long long` remain distinct, while
+aliases canonicalize. Existing Boolean names are unchanged. Narrow integral,
+enum and pack arguments remain outside this slice.
+
+Unsigned 32/64-bit descriptor fields use the existing shared typed cells and
+explicit C layout validation. Explicitly defaulted trivial destructors need
+no executable cleanup; nontrivial destructor checks still apply. The pinned
+`std::span<int>::size()` and nested extent-storage method now have offline
+ordinary, expanded and retained proof coverage through a separately identified
+harness with unchanged archived headers and compile flags. Their contracts
+require only the extent field's authority and retain its native uint64 type.
+The full-width scalar regression does not claim that a backing allocation of
+that size can be constructed. `SpanPopBack` itself remains unverified.
+
+The next decision is the backing-range profile below: the descriptor can
+already retain full `size_t`, but the proposed first range proof uses the
+existing int32-bounded range interface.
+
 ### Intended contract
 
 This is a semantic draft, not accepted Click syntax. Let the incoming
@@ -105,8 +129,9 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    `f1e67ea2c1e2e0faef697f37d995abb59eeb7fb0c0cf13a586fe2799ed9196bd`.
    Its descriptor contains `_M_ptr` and nested `_M_extent._M_extent_value`.
    Source layout and provenance must come from Clang, not these spellings or
-   hard-coded offsets. Dynamic extent also requires admitting a non-Boolean
-   integral template argument and deciding its exact identity encoding.
+   hard-coded offsets. Integral template identity and unsigned descriptor
+   storage prerequisites are implemented above; the remaining operations
+   still need frontend admission and source proofs.
 2. **Descriptor values and reference returns.** Decide how aggregate results,
    trivial copy/assignment and their temporary lifetimes fit the shared
    execution model. Copy only descriptor cells and pointer identity, never
@@ -119,8 +144,8 @@ the contract; do not promise a recoverable error or rely on debug assertions.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
-and embedded record layouts already have C++ support; unsigned size fields,
-local reference binding, pointer arithmetic, reference/aggregate returns and
+and embedded record layouts already have C++ support, as do unsigned size
+fields. Local reference binding, pointer arithmetic, reference/aggregate returns and
 automatic embedded descriptor objects still need frontend admission. Some of
 those are implementation work once the profiles above are chosen; they do not
 justify a separate C++ memory model.
