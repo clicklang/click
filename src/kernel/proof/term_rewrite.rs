@@ -3831,6 +3831,18 @@ impl<'a> TermRewrite<'a> {
                 }
             }
         };
+        if let Some(guard) = result.pointer_offset_association_guard() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.push(guard.clone());
+            }
+            if guard == ConditionTerm::Constant(false)
+                || self
+                    .conditions
+                    .is_some_and(|conditions| conditions.get(&guard) == Some(&false))
+            {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if let ConditionTerm::Bitvector64Equal(a, b) = &result {
             let le = ConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
             let lt = ConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());
