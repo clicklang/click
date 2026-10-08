@@ -25,6 +25,6 @@ void walk(int32 *b, int32 i, int32 n) {
 ```
 
 ```expect
-fail: missing resource fact `owns b[0..1]`
-  note: held `owns b[i..n]` covers `b[0..1]` only when `i <= 0` and `1 <= n`
+fail: missing resource fact `owns b[0]`
+  note: held `owns b[i..n]` covers `b[0]` only when `i <= 0` and `1 <= n`
 ```

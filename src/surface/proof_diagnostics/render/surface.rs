@@ -466,7 +466,7 @@ mod tests {
     fn named_pure_function_facts_keep_their_surface_arguments() {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(7), "r".into());
-        let application = crate::kernel::SharedIntegerApplication::intern(
+        let application = crate::kernel::SharedPureApplication::intern(
             "size".into(),
             vec![PureFunctionArgument::Value(CValue::Int32(
                 Bitvector32Term::Variable(Variable(7)),

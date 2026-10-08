@@ -28,5 +28,5 @@ uint32 read_without_lock(struct counter* p) {
 ```
 
 ```expect
-fail: missing resource fact `owns p[10..12]`
+fail: missing resource fact `owns p->value`
 ```

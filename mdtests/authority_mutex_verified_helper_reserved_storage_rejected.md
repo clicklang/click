@@ -34,5 +34,5 @@ int32 run(struct holder *holder) {
 ```
 
 ```expect
-fail: Requires separate(memory(holder[0..40]), memory(holder[0..40])); initialized mutex storage is reserved
+fail: Requires separate(memory(*holder), memory(*holder)); initialized mutex storage is reserved
 ```

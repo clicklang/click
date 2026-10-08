@@ -3957,6 +3957,14 @@ impl C0StructLayout {
     fn aggregate_fields(&self) -> &[C0AggregateField] {
         &self.aggregate_fields
     }
+
+    /// Each scalar leaf of the struct with its byte offset, embedded struct
+    /// fields flattened to qualified paths such as `inner.count`.
+    pub(crate) fn leaf_field_offsets(&self) -> impl Iterator<Item = (&str, u32)> {
+        self.aggregate_fields
+            .iter()
+            .map(|field| (field.name.as_str(), field.offset_bytes))
+    }
 }
 
 impl C0EnumDefinition {

@@ -1,0 +1,1 @@
+pub fn write(words: &mut [u32; 3]) { words[1] = 7; }

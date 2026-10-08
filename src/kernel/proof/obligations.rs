@@ -8,7 +8,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use super::storage::SharedValue;
-use crate::kernel::{CResourceFact, CState, CValue, ExecutionPureFact, Proposition};
+use crate::kernel::{CResourceFact, CState, CValue, Proposition};
 
 /// Diagnostic evidence returned when an allocation-lifetime obligation could
 /// not be discharged. The allocation is semantic evidence; the optional
@@ -164,7 +164,7 @@ pub(crate) struct OutcomeProofCore {
     pub(crate) store_consequences_available: bool,
     pub(crate) state: SharedValue<CState>,
     pub(crate) is_exceptional: bool,
-    pub(crate) effect_facts: Arc<Vec<ExecutionPureFact>>,
+    pub(crate) effect_facts: Arc<crate::kernel::ExecutionFacts>,
 }
 
 /// Durable kernel evidence that one exact proposition judgment was closed.

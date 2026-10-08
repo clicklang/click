@@ -67,7 +67,8 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         }
         CFunctionOutcome::RuntimeError(error) => {
             return Err(format!(
-                "the checked path outcome is a runtime error: {error:?}"
+                "the checked path outcome is a runtime error: {}",
+                super::describe_certification_runtime_error(error)
             ));
         }
     };
@@ -195,9 +196,9 @@ pub fn c_function_outcomes_program_state_definitionally_equal(
 pub fn c_function_outcomes_equal_by_execution_provenance(
     function: &CFunction,
     left: &CFunctionOutcome,
-    left_facts: &[ExecutionPureFact],
+    left_facts: &(impl ExecutionFactSource + ?Sized),
     right: &CFunctionOutcome,
-    right_facts: &[ExecutionPureFact],
+    right_facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
     if !c_function_outcomes_program_state_equal_by_execution_provenance(
@@ -247,9 +248,9 @@ pub fn c_function_outcomes_equal_by_execution_provenance(
 /// responsibility of the separate resource certificate.
 pub fn c_function_outcomes_program_state_equal_by_execution_provenance(
     left: &CFunctionOutcome,
-    left_facts: &[ExecutionPureFact],
+    left_facts: &(impl ExecutionFactSource + ?Sized),
     right: &CFunctionOutcome,
-    right_facts: &[ExecutionPureFact],
+    right_facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
     let (
@@ -276,20 +277,20 @@ pub fn c_function_outcomes_program_state_equal_by_execution_provenance(
 
 fn memories_equal_by_execution_provenance(
     left_final: &CMemory,
-    left_facts: &[ExecutionPureFact],
+    left_facts: &(impl ExecutionFactSource + ?Sized),
     right_final: &CMemory,
-    right_facts: &[ExecutionPureFact],
+    right_facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> bool {
     if memories_equal_by_matching_derivations(left_final, right_final, assumptions) {
         return true;
     }
     let left_stores = left_facts
-        .iter()
+        .fact_iter()
         .filter_map(ExecutionPureFact::certified_store_data)
         .collect::<Vec<_>>();
     let right_stores = right_facts
-        .iter()
+        .fact_iter()
         .filter_map(ExecutionPureFact::certified_store_data)
         .collect::<Vec<_>>();
     if left_stores.is_empty() || left_stores.len() != right_stores.len() {
@@ -836,7 +837,7 @@ struct CertifiedFunctionClaimPath {
     post_state: Option<CState>,
     post_resources: Option<ResourceContext>,
     assumptions: PureFactContext,
-    effect_facts: Vec<ExecutionPureFact>,
+    effect_facts: ExecutionFacts,
     checked_resource_claims: Vec<CFunctionContractClaimKey>,
     checked_resource_transition: bool,
 }
@@ -3111,8 +3112,8 @@ mod checked_proposition_index_tests {
             completion_origin: None,
             assumptions: PureFactContext::new(),
             post_assumptions: Some(PureFactContext::new().assume_proposition(body_fact.clone())),
-            facts: vec![fact.clone()],
-            effect_facts: Vec::new(),
+            facts: vec![fact.clone()].into(),
+            effect_facts: Vec::new().into(),
             obligations: Vec::new(),
             theorem: Theorem::new(wrap_proof_facts(
                 proposition,

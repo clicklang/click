@@ -1,0 +1,16 @@
+int64 CFeeRate_GetFeePerK(const struct CFeeRate* self) {
+    views self->m_feerate.base.fee;
+    views self->m_feerate.base.size;
+    requires self->m_feerate.base.size > 0;
+    requires self->m_feerate.base.size <= 2147483647;
+    requires -9223372036854775808 <= to_integer(self->m_feerate.base.fee);
+    requires to_integer(self->m_feerate.base.fee) <= 9223372036854775807;
+    requires -9223372036854775808 * to_integer(self->m_feerate.base.size) <= to_integer(self->m_feerate.base.fee) * 1000;
+    requires to_integer(self->m_feerate.base.fee) * 1000 < 9223372036854775808 * to_integer(self->m_feerate.base.size);
+    ensures self->m_feerate.base.fee == old(self->m_feerate.base.fee);
+    ensures self->m_feerate.base.size == old(self->m_feerate.base.size);
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures to_integer(result) * to_integer(self->m_feerate.base.size) <= to_integer(self->m_feerate.base.fee) * 1000;
+    ensures to_integer(self->m_feerate.base.fee) * 1000 < (to_integer(result) + 1) * to_integer(self->m_feerate.base.size);
+} by { execute(); simp(); }

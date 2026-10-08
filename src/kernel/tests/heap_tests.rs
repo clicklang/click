@@ -739,7 +739,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
     );
     assert!(freed.resources().facts().is_empty());
     assert!(matches!(
-        free_facts.as_slice(),
+        free_facts.to_vec().as_slice(),
         [ExecutionPureFact {
             proposition: Proposition::CHeapAllocationFreed {
                 after,
@@ -1902,7 +1902,7 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
         state.memory(),
         pointer.pointer().clone(),
         CType::Int32,
-        Vec::new(),
+        Vec::new().into(),
         Vec::new(),
         &PureFactContext::new(),
     );

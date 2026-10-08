@@ -66,10 +66,6 @@ impl<T: Clone> SharedVec<T> {
         }
         Some(&self.0[ancestor.0.len()..])
     }
-
-    pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
 }
 
 /// Clone-on-write storage for one proof-state value.

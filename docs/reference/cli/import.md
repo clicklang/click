@@ -359,8 +359,9 @@ and argument lowering have deterministic scaling coverage. Artifact validation
 checks every nested callee, capture type, and sibling storage type and rejects
 recursive graphs. Nested calls in integer-local initializers and discarded calls use the same
 normalization and ordering checks as return calls. Calls in general value
-expressions, converted call results, and returned references or objects remain
-unsupported.
+expressions, converted arguments, and returned references or objects
+remain unsupported. Converted integer-local initializers and scalar returns
+use the ordered conversion chain described below.
 
 Scalar evaluation is normalized within the C++ frontend into explicit
 statements followed by a typed value. Initializer and return artifact wrappers
@@ -551,9 +552,48 @@ conversion and signed reinterpretation. Boolean conversion preserves the
 nonzero meaning of all 64 bits. Division truncates towards zero, and remainder
 has the dividend's sign. Zero divisors and the `MIN / -1` and `MIN % -1`
 overflow pair fail verification. Addition, subtraction, multiplication, and
-negation retain their signed-overflow obligations. Scalar local call captures
-require the same return width as the declaration; casts around calls remain
-outside this slice.
+negation retain their signed-overflow obligations. Scalar local call initializers
+also accept an ordered chain of Clang-resolved integral and Boolean conversions,
+including explicit same-type alias casts. Each conversion retains its exact
+cast kind, explicit/implicit origin, source and result types, alias provenance,
+and executable source span. The shared scalar normalizer calls the helper once
+into a temporary of its original return type, then converts that captured value
+into the declared local. Direct matching-type calls keep their existing lowering.
+C++20 narrowing uses the same modulo policy as pure casts; it does not establish
+a mathematical result-fit claim or remove overflow obligations in the callee.
+Modular contracts, memory authority and exception cleanup still apply.
+
+Scalar returns use the same conversion-chain exporter, metadata validator and
+normalizer. This admits implicit return widening and explicit integral/Boolean
+casts around a whole direct call, including same-type alias wrappers. Callee
+contracts keep the original return type; the return node records the final
+converted type, and graph validation checks both ends of the chain. Lowering
+evaluates the call once, converts its capture, then captures the converted
+result before any active destructor runs. Throwing calls use the existing
+exception cleanup edge. Normal and scalar exceptional contracts have offline
+ordinary/expanded/retained proof coverage; resource-bearing exceptional
+contracts remain outside the proof surface.
+
+Both contexts bound a chain to 256 Clang conversion steps in the exporter and
+artifact validator, so a flat artifact cannot build unbounded nested kernel
+casts. Converted arguments, arithmetic around calls and call-based brace
+initializers remain outside this slice. Original 128-bit callee results retain their typed capture through conversion.
+For a value-preserving narrowing proof, name the captured result, transport both
+destination bounds from its modular contract, and apply the existing checked
+cast certificate to that value. This also checks initializer and return proofs
+offline; no automatic observer normalization or range inference is implied.
+Schema 45 requires refreshing earlier locks.
+
+The pinned unchanged Bitcoin `CFeeRate::GetFeePerK` separately composes the
+unified Down contract at 1000 bytes, with positive size and explicit result fit.
+It has no empty-rate branch or minimum correction.
+
+The pinned unchanged Bitcoin `CFeeRate::GetFee` integration composes the
+read-only `IsEmpty` contract and the unified Up result-fit contract through
+these calls and conversions. It proves zero for an empty rate without fee or
+fit premises, ceiling rounding on the nonempty profile, the negative minimum
+correction, int64 result bounds and both field frames. See the
+[integration proof and explicit assumptions](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#getfee-composition).
 
 The fixture preserves Bitcoin's quotient/remainder correction expression with
 a signed 64-bit dividend. It checks both rounding directions for positive and
@@ -1300,7 +1340,7 @@ functions are pure at runtime.
 The artifact retains the resolved specialization and each metadata factory's
 qualified name and canonical declaration file. Offline validation checks the
 contract kind, bounded metadata inventory, and declaration-file membership in
-the locked preprocessor closure. Artifact schema 43 requires an explicit refresh
+the locked preprocessor closure. Artifact schema 45 requires an explicit refresh
 of earlier locks.
 
 The separate `checked_boolean_statement_with_literal_metadata` kind adds a

@@ -1639,9 +1639,13 @@ stay pointers; there is no conversion to an integer and the payload carries no
 ownership. The regression is
 `mdtests/model_identity_pointer_payload.md`, with
 `mdtests/model_identity_pointer_payload_rejects_other_cell.md` as its negative.
-A pure function may not yet *return* a pointer type; its application has no
-kernel pointer term, so such a call cannot be lowered. Fold/unfold requires constructor
-evidence for the actual instance field (for example,
+A pure function may return a pointer type. Its opaque application retains the
+function and argument values until checked unfolding; equality rewriting can
+enter those arguments. The result has the declared pointer type and grants no
+ownership or separation from another pointer. See `mdtests/pure_pointer_result.md`
+and its unequal-pointer, distinct-call, and unowned-read negatives.
+
+Resource fold/unfold requires constructor evidence for the actual instance field (for example,
 `c.model == Maybe<int32>::Some(expected)`); an unknown field does not cause
 implicit proof-by-cases. Only the selected arm's memory and facts are exposed.
 

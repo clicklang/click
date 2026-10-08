@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 43;
+pub(crate) const EXPORT_SCHEMA: u32 = 45;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -707,6 +707,79 @@ impl CppCondition {
     }
 }
 
+/// Ordered inner-to-outer conversions of an already captured scalar result.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppScalarConversion {
+    pub cast_kind: CppScalarCastKind,
+    pub explicit: bool,
+    pub source_type: CppType,
+    pub value_type: CppType,
+    pub span: CppSpan,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CppScalarCastKind {
+    NoOp,
+    IntegralCast,
+    IntegralToBoolean,
+    BooleanToSignedIntegral,
+}
+
+impl CppScalarConversion {
+    fn validate(&self, source: &CppType, logical_source: &str) -> Result<(), String> {
+        self.span.validate(logical_source)?;
+        let from = Scalar::mutable_kind(&self.source_type)
+            .ok_or("unsupported C++ call conversion operand")?;
+        let to = Scalar::mutable_kind(&self.value_type)
+            .ok_or("unsupported C++ call conversion result")?;
+        if !same_scalar_type(source, &self.source_type) {
+            return Err("C++ call conversion chain has a mismatched source type".into());
+        }
+        let valid = match self.cast_kind {
+            CppScalarCastKind::NoOp => from == to,
+            CppScalarCastKind::IntegralCast => to.is_integer(),
+            CppScalarCastKind::IntegralToBoolean => from.is_integer() && to == ScalarKind::Bool,
+            CppScalarCastKind::BooleanToSignedIntegral => {
+                from == ScalarKind::Bool
+                    && matches!(
+                        to,
+                        ScalarKind::Int32 | ScalarKind::Int64 | ScalarKind::Int128
+                    )
+            }
+        };
+        if !valid {
+            return Err("C++ call conversion kind disagrees with its scalar types".into());
+        }
+        Ok(())
+    }
+}
+
+fn validate_scalar_conversions(
+    conversions: &[CppScalarConversion],
+    result_type: &CppType,
+    logical_source: &str,
+) -> Result<(), String> {
+    super::budget::limit(
+        "scalar call-result conversions",
+        conversions.len(),
+        super::budget::MAX_SCALAR_CONVERSIONS,
+    )?;
+    let mut source = conversions
+        .first()
+        .map_or(result_type, |cast| &cast.source_type);
+    for cast in conversions {
+        crate::instrumentation::record_deterministic_work(1);
+        cast.validate(source, logical_source)?;
+        source = &cast.value_type;
+    }
+    if !same_scalar_type(source, result_type) {
+        return Err("C++ converted call result disagrees with its destination type".into());
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppInitializer {
@@ -716,6 +789,8 @@ pub enum CppInitializer {
     Call {
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        conversions: Vec<CppScalarConversion>,
         span: CppSpan,
     },
     Aggregate {
@@ -762,6 +837,8 @@ pub enum CppStatement {
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
         value_type: CppType,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        conversions: Vec<CppScalarConversion>,
         cleanups: Vec<CppCleanup>,
         span: CppSpan,
     },
@@ -2326,10 +2403,12 @@ impl CppStatement {
                 callee,
                 arguments,
                 value_type,
+                conversions,
                 cleanups,
                 span,
             } => {
                 validate_call(callee, arguments, span, places, records, logical_source)?;
+                validate_scalar_conversions(conversions, value_type, logical_source)?;
                 if require_scalar_integer(value_type, "return-call value").is_err() {
                     require_bool(value_type, false, "return-call value")?;
                 }
@@ -2464,10 +2543,14 @@ impl CppInitializer {
                 Self::Call {
                     callee,
                     arguments,
+                    conversions,
                     span,
                 },
                 CppType::Integer { .. },
-            ) => validate_call(callee, arguments, span, places, records, logical_source),
+            ) => {
+                validate_call(callee, arguments, span, places, records, logical_source)?;
+                validate_scalar_conversions(conversions, local_type, logical_source)
+            }
             (
                 Self::Aggregate { fields, span },
                 CppType::Record {
@@ -3411,10 +3494,22 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 local,
                 initializer:
                     CppInitializer::Call {
-                        callee, arguments, ..
+                        callee,
+                        arguments,
+                        conversions,
+                        ..
                     },
                 ..
-            } => collect_scalar_call(callee, arguments, Some(&local.value_type), calls),
+            } => collect_scalar_call(
+                callee,
+                arguments,
+                Some(
+                    conversions
+                        .first()
+                        .map_or(&local.value_type, |cast| &cast.source_type),
+                ),
+                calls,
+            ),
             CppStatement::Declare {
                 local,
                 initializer:
@@ -3465,10 +3560,20 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 callee,
                 arguments,
                 value_type,
+                conversions,
                 cleanups,
                 ..
             } => {
-                collect_scalar_call(callee, arguments, Some(value_type), calls);
+                collect_scalar_call(
+                    callee,
+                    arguments,
+                    Some(
+                        conversions
+                            .first()
+                            .map_or(value_type, |cast| &cast.source_type),
+                    ),
+                    calls,
+                );
                 for cleanup in cleanups {
                     let CppCleanup::Destructor { object, callee, .. } = cleanup;
                     calls.push(CollectedCall::Destructor { object, callee });
@@ -4290,6 +4395,7 @@ mod tests {
             },
             arguments: vec![],
             value_type: signed_integer(32, false),
+            conversions: vec![],
             cleanups: vec![],
             span: cleanup_span(),
         }
@@ -4938,6 +5044,7 @@ mod tests {
                 initializer: CppInitializer::Call {
                     callee: reference("outer"),
                     arguments: arguments.clone(),
+                    conversions: vec![],
                     span: cleanup_span(),
                 },
                 span: cleanup_span(),
@@ -5939,6 +6046,7 @@ mod tests {
                             callee: reference(index - 1),
                             arguments: vec![],
                             value_type: signed_integer(32, false),
+                            conversions: vec![],
                             cleanups: vec![],
                             span: cleanup_span(),
                         }]
@@ -6499,6 +6607,102 @@ mod tests {
                 .unwrap_err()
                 .contains("source span")
             );
+        }
+    }
+    #[test]
+    fn converted_call_chain_validation_has_linear_work() {
+        for size in [4, 16, 64, 128] {
+            let conversions = (0..size)
+                .map(|index| CppScalarConversion {
+                    cast_kind: CppScalarCastKind::IntegralCast,
+                    explicit: index % 2 == 0,
+                    source_type: signed_integer(if index % 2 == 0 { 32 } else { 64 }, false),
+                    value_type: signed_integer(if index % 2 == 0 { 64 } else { 32 }, false),
+                    span: cleanup_span(),
+                })
+                .collect();
+            let initializer = CppInitializer::Call {
+                callee: CppFunctionReference {
+                    declaration_id: "echo".into(),
+                    name: "echo".into(),
+                    span: cleanup_span(),
+                },
+                arguments: vec![],
+                conversions,
+                span: cleanup_span(),
+            };
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                initializer.validate_for_local(
+                    &signed_integer(32, false),
+                    &ValidationPlaces::default(),
+                    &RecordIndex::default(),
+                    "fixture.cpp",
+                )
+            });
+            result.unwrap();
+            assert!(work >= size && work <= 4 * size + 8, "{size}: {work}");
+        }
+    }
+    #[test]
+    fn converted_return_chain_validation_has_linear_work_and_bounded_nesting() {
+        for size in [4, 16, 64, 128, 256, 257] {
+            let conversions = vec![
+                CppScalarConversion {
+                    cast_kind: CppScalarCastKind::NoOp,
+                    explicit: true,
+                    source_type: signed_integer(32, false),
+                    value_type: signed_integer(32, false),
+                    span: cleanup_span(),
+                };
+                size
+            ];
+            let callee = CppFunctionReference {
+                declaration_id: "echo".into(),
+                name: "echo".into(),
+                span: cleanup_span(),
+            };
+            let returned = CppStatement::ReturnCall {
+                callee: callee.clone(),
+                arguments: vec![],
+                value_type: signed_integer(32, false),
+                conversions: conversions.clone(),
+                cleanups: vec![],
+                span: cleanup_span(),
+            };
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                returned.validate(
+                    &ValidationPlaces::default(),
+                    &RecordIndex::default(),
+                    "fixture.cpp",
+                )
+            });
+            if size <= super::super::budget::MAX_SCALAR_CONVERSIONS {
+                result.unwrap();
+                assert!(work >= size && work <= 4 * size + 8, "{size}: {work}");
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .contains("scalar call-result conversions")
+                );
+                let initializer = CppInitializer::Call {
+                    callee,
+                    arguments: vec![],
+                    conversions,
+                    span: cleanup_span(),
+                };
+                assert!(
+                    initializer
+                        .validate_for_local(
+                            &signed_integer(32, false),
+                            &ValidationPlaces::default(),
+                            &RecordIndex::default(),
+                            "fixture.cpp",
+                        )
+                        .unwrap_err()
+                        .contains("scalar call-result conversions")
+                );
+            }
         }
     }
 }

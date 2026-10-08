@@ -1285,6 +1285,36 @@ int32 identity(int32 x) {
 }
 
 #[test]
+fn return_fold_retains_post_return_proof_through_expansion() {
+    let sources = [("fold.c", "int f(int *p) { return 0; }")];
+    let source = r#"
+verifying "fold.c";
+function reflexive(p: int32*) -> int32 { if p == p { 1 } else { 0 } }
+resource Cell(p: int32*) {
+    field tag: int32;
+    owns p[0..1];
+    fact reflexive(p) == 1;
+}
+int32 f(int32* p) {
+    consumes p[0..1];
+    produces out: Cell(p);
+    ensures result == 0;
+} by {
+    execute();
+    have reflexive(p) == 1 by { unfold(reflexive(p)); normalize(); }
+    let out = fold(Cell(p), { tag: 1 });
+    simp();
+}
+"#;
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_top_level_tactic_for_test(source, &sources, "f", CProofClaim::Grouped, 3)
+        .expect("the returned fold's final closer expands");
+    verify_c0_sources(&expanded, &sources).expect("the checked have survives explicit closers");
+    let false_body = source.replace("if p == p { 1 }", "if p == p { 0 }");
+    assert!(verify_c0_sources(&false_body, &sources).is_err());
+}
+
+#[test]
 fn grouped_simp_expansion_preserves_resource_scalar_and_quantified_transitions() {
     let c_source = "int32 inspect(int32 p[1], int32 x) { return 0; }";
     let click_source = r#"

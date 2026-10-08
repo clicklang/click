@@ -410,8 +410,8 @@ fn application(
     base: &Pointer,
     start: Bitvector32Term,
     end: Bitvector32Term,
-) -> SharedIntegerApplication {
-    SharedIntegerApplication::intern(
+) -> SharedPureApplication {
+    SharedPureApplication::intern(
         "unmarked".into(),
         vec![
             PureFunctionArgument::ArrayRef {
@@ -455,8 +455,8 @@ fn register_unmarked() {
 }
 
 fn frame(
-    left: &SharedIntegerApplication,
-    right: &SharedIntegerApplication,
+    left: &SharedPureApplication,
+    right: &SharedPureApplication,
     facts: &[Proposition],
 ) -> Result<usize, FoldFrameRefusal> {
     frame_fold_applications(left, right, &context(facts))
@@ -1142,7 +1142,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
         offset: PointerOffsetTerm::scale_int32(bv(V), 1),
     };
     let at = |memory: &CMemory, element_type| {
-        SharedIntegerApplication::intern(
+        SharedPureApplication::intern(
             "byte_sum".into(),
             vec![
                 PureFunctionArgument::ArrayRef {

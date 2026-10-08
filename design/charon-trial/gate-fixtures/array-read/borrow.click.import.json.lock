@@ -1,0 +1,9 @@
+{
+  "schema": 8,
+  "config": "0c7ebf03a570d34e4e994afca7a153bbcee955eae11bfc8af76ec0f8b5b54a10",
+  "source": "2cc9afb99caeb348848302cfead702668b8382824e31e67c0f85dd103f0e19d9",
+  "exporter": "e022313f794c7e324a8704d76df04d99a4fa84b509c0b5f3e4940e94dffe655b",
+  "artifact": "ef3ecd358bab886de5a4893cf7cb7fd697f942606c93d46dbc6ef30d8cca5f04",
+  "identity": "6e76d72f26f01a788f6a48cb4719c3bb70647b699a2c2054a4edc3402847f04a",
+  "charon_driver": "9690974df0ebd5515919e754ae99d8634d2476a4af9ba2b05a8e5efa40906919"
+}

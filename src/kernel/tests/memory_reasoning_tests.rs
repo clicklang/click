@@ -477,7 +477,7 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
     );
 
     let recorded = |assumptions: &PureFactContext, value: bool| {
-        let mut facts = Vec::new();
+        let mut facts = crate::kernel::ExecutionFacts::new();
         crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
             &mut facts,
             assumptions,
@@ -512,7 +512,7 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
 
     // One scaled index on each side folds with no add at all, so it is the
     // index exactly and the disequality is recorded with no premise.
-    let mut facts = Vec::new();
+    let mut facts = crate::kernel::ExecutionFacts::new();
     crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
         &mut facts,
         &empty,

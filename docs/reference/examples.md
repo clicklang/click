@@ -639,6 +639,15 @@ sequence:
   `ctx_insert_root_exit` theorems restate every fixup branch as a step of that
   loop. The project has no C of its own; the proofs about verbatim Linux bodies
   that use this model are the `rb_*` mdtests below.
+- `examples/rbtree-erase/`: the unchanged Linux `__rb_erase_augmented` for
+  zero/one-child deletion and every immediate-successor exit, at the root and
+  on either non-root parent link. No-deficit cases return exact models,
+  whole-tree balance, parent consistency, in-order contents, and null fixup.
+  Black-leaf cases retain the exact deficit context and the correct fixup
+  parent. Mutations reject skipped links and parent/color writes, missed child
+  blackening, and incorrect fixup returns. The C is pinned; deeper successors
+  remain. The sidecars import shared ownership resources and independently
+  verified model theorems.
 - `examples/owned-vector/`: composite-resource example over vector metadata and
   dependent backing storage, including viewed reads, runtime-sized allocation,
   malloc-copy-free growth, and a resource-neutral in-capacity push shared by

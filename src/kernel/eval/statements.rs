@@ -393,7 +393,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     state: &CState,
     lvalue: CLValue,
     value: CValue,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -1042,7 +1042,7 @@ pub(super) fn execute_c_heap_allocate_paths(
         return Ok(vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -1380,7 +1380,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 expected: 2,
                 actual: arguments.len(),
             }),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -1410,7 +1410,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
         return Ok(vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -2469,7 +2469,7 @@ fn execute_c_return_expression_paths(
 
 fn pending_allocation_outcome_paths(
     pointer: Pointer,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CTruthinessPath> {
@@ -2881,7 +2881,7 @@ fn execute_c_statement_leaf_paths(
                         "resolve the pending pthread create status before this C operation"
                             .to_string(),
                     )),
-                    facts: Vec::new(),
+                    facts: Vec::new().into(),
                     obligations: Vec::new(),
                     loan_evidence: empty_checked_loan_evidence_sequence(),
                 }]);
@@ -2898,7 +2898,7 @@ fn execute_c_statement_leaf_paths(
         CStatement::Skip => vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::Normal(Box::new(state.clone())),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -2906,7 +2906,7 @@ fn execute_c_statement_leaf_paths(
         CStatement::Break => vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::Break(Box::new(state.clone())),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -2914,7 +2914,7 @@ fn execute_c_statement_leaf_paths(
         CStatement::Continue => vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::Continue(Box::new(state.clone())),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -2925,7 +2925,7 @@ fn execute_c_statement_leaf_paths(
                 target: *target,
                 state: Box::new(state.clone()),
             },
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -2941,7 +2941,7 @@ fn execute_c_statement_leaf_paths(
                     return Ok(vec![CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
                         outcome: CStatementOutcome::RuntimeError(refusal),
-                        facts: Vec::new(),
+                        facts: Vec::new().into(),
                         obligations: Vec::new(),
                         loan_evidence: empty_checked_loan_evidence_sequence(),
                     }]);
@@ -3007,7 +3007,7 @@ fn execute_c_statement_leaf_paths(
             vec![CStatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
                 outcome,
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
 
                 loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -3031,7 +3031,7 @@ fn execute_c_statement_leaf_paths(
             vec![CStatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
                 outcome,
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
 
                 loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -3119,7 +3119,7 @@ fn execute_c_statement_leaf_paths(
             vec![CStatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
                 outcome,
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
 
                 loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -3456,7 +3456,7 @@ fn execute_c_switch_dispatch_paths(
     selector: &Bitvector32Term,
     cases: &[CSwitchCase],
     case_index: usize,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
@@ -3548,7 +3548,7 @@ fn execute_c_switch_suffix_paths(
     state: &CState,
     cases: &[CSwitchCase],
     case_index: usize,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
@@ -3707,7 +3707,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     struct PendingLoopPath {
         state: CState,
-        facts: Vec<ExecutionPureFact>,
+        facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
         check_condition: bool,
     }
@@ -3715,7 +3715,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
     let body_declared = scope_declared_names(body);
     let mut pending = vec![PendingLoopPath {
         state: state.clone(),
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: Vec::new(),
         check_condition: !do_while,
     }];
@@ -3758,7 +3758,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
         } else {
             vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(1))),
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
             }]
         };

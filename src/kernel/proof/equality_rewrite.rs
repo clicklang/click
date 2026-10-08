@@ -458,29 +458,25 @@ fn rewrite_through_loaded_pointer_block(
     })
 }
 
-/// Rewrites every occurrence of a symbolic pointer by its proven-equal
-/// form in a goal the structural pointer rewrite does not handle, such as a
-/// 64-bit comparison over an address (`(uint64)p`). Only an equality whose left side is a whole
-/// symbolic pointer (`p == q`, not `p + 4 == q`) qualifies; the rewrite then
-/// replaces that pointer variable and composes any displacement at each
-/// occurrence, which is exact term congruence bounded by the goal's size.
-/// Reached only for a goal shape the structural rewrite does not handle at
-/// all, so every goal it rewrites keeps its result.
-fn pointer_variable_rewrite(
+/// Congruence inside pure-function arguments and other explicit logical
+/// terms missed by the structural address rewrite. A whole symbolic pointer
+/// uses capture-avoiding variable substitution; other pointer equalities use
+/// exact matching and refuse internal binders whose scope is unsupported.
+/// Neither path searches an ambient proof state or changes load snapshots.
+fn pointer_congruence_rewrite(
     goal: &Proposition,
     left: &Pointer,
     right: &Pointer,
 ) -> Option<Proposition> {
-    let PointerBlock::Symbolic(variable) = left.block else {
-        return None;
-    };
-    if left.offset != PointerOffsetTerm::Constant(0) {
-        return None;
-    }
-    let rewritten =
+    let mut rewrite = if let PointerBlock::Symbolic(variable) = left.block
+        && left.offset == PointerOffsetTerm::Constant(0)
+    {
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(variable, right)
-            .proposition(goal);
-    (&rewritten != goal).then_some(rewritten)
+    } else {
+        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_exact(left, right)
+    };
+    let rewritten = rewrite.proposition(goal);
+    (rewrite.refusal().is_none() && &rewritten != goal).then_some(rewritten)
 }
 
 fn rewrite_atomic_proposition_by_exact_equality(
@@ -1050,6 +1046,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         };
         if &rewritten == goal {
+            let mut rewrite =
+                super::term_rewrite::TermRewrite::for_pointer_offset_exact(left, right);
+            let candidate = rewrite.proposition(goal);
+            if rewrite.refusal().is_none() && &candidate != goal {
+                return Ok(candidate);
+            }
             return Err("`rewrite` equality does not occur in the current goal".to_string());
         }
         return Ok(rewritten);
@@ -1270,7 +1272,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         )
                     }
                     _ => {
-                        return pointer_variable_rewrite(goal, left, right).ok_or_else(|| {
+                        return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
                             "`rewrite` pointer equality does not occur in this goal".to_string()
                         });
                     }
@@ -1294,13 +1296,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             }
             _ => {
-                return pointer_variable_rewrite(goal, left, right).ok_or_else(|| {
+                return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
                     "`rewrite` pointer equality expects a condition goal".to_string()
                 });
             }
         };
         if &rewritten == goal {
-            return Err("`rewrite` equality does not occur in the current goal".to_string());
+            return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
+                "`rewrite` equality does not occur in the current goal".to_string()
+            });
         }
         return Ok(rewritten);
     }
@@ -1706,7 +1710,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         PureFunctionArgument::Value(value)
                     })
                     .collect();
-                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     application.name().to_string(),
                     arguments,
                 ))
@@ -2119,7 +2123,7 @@ mod tests {
             );
         }
         let application = |value: IntegerTerm| {
-            IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+            IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "opaque_integer".into(),
                 vec![PureFunctionArgument::Integer(value.into())],
             ))
@@ -2494,6 +2498,88 @@ mod tests {
     }
 
     #[test]
+    fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
+        let variable = Variable(920);
+        let source = Pointer::symbolic(variable);
+        let target = Pointer::symbolic(Variable(921));
+        let cited = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(source.clone(), target.clone()),
+            true,
+        );
+        let memory = CMemory::new().with_block("unchanged", 4);
+        let goal_at = |pointer: Pointer, count: usize| {
+            equality(
+                Bitvector32Term::ClickFunctionApplication {
+                    name: "observes".into(),
+                    arguments: vec![
+                        PureFunctionArgument::ArrayRef {
+                            memory: memory.clone(),
+                            pointer: CValue::typed_pointer(pointer, CType::Int32Pointer),
+                            element_type: CType::Int32,
+                        };
+                        count
+                    ],
+                },
+                Bitvector32Term::Constant(1),
+            )
+        };
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let goal = goal_at(source.clone(), 1);
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&goal, &cited)
+                .unwrap()
+                .proposition(),
+            &goal_at(target.clone(), 1)
+        );
+        assert!(
+            ProofFacts::default()
+                .check_equality_rewrite(&goal, &cited)
+                .is_err()
+        );
+        for bound in [variable, Variable(921)] {
+            let quantified = Proposition::ForAll {
+                var: bound,
+                sort: Sort::CPointer(CType::Int32Pointer),
+                body: Box::new(goal.clone()),
+            };
+            assert!(
+                facts.check_equality_rewrite(&quantified, &cited).is_err(),
+                "the equality cannot rewrite a shadowed source or capture the target"
+            );
+        }
+        let displaced = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(
+                Pointer {
+                    block: source.block.clone(),
+                    offset: PointerOffsetTerm::Constant(4),
+                },
+                target.clone(),
+            ),
+            true,
+        );
+        assert!(
+            ProofFacts::from_ordered(std::slice::from_ref(&displaced))
+                .check_equality_rewrite(&goal, &displaced)
+                .is_err(),
+            "equality at an offset does not identify the whole pointer"
+        );
+        let costs = [16, 32, 64, 128].map(|size| {
+            let goal = goal_at(source.clone(), size);
+            let (checked, cost) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &cited).unwrap()
+            });
+            assert_eq!(checked.proposition(), &goal_at(target.clone(), size));
+            cost
+        });
+        assert!(costs[0] > 0);
+        assert!(
+            costs.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 8),
+            "scalar-call rewrite rescanned its argument list: {costs:?}"
+        );
+    }
+
+    #[test]
     fn checked_rewrite_does_not_scan_or_rebuild_ambient_facts() {
         let x = Bitvector32Term::Variable(Variable(921));
         let cited = equality(x.clone(), Bitvector32Term::Constant(7));
@@ -2660,7 +2746,7 @@ mod tests {
                 element_type: CType::UInt8,
             };
             let application = |endpoint| {
-                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "prefix".into(),
                     vec![
                         array.clone(),

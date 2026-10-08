@@ -1419,7 +1419,7 @@ fn spec_pointer_order_lowers_same_block_offsets() {
 fn symbolic_pointer_truthiness_keeps_null_and_nonnull_paths() {
     let paths = c_truthiness_paths(
         CValue::pointer(Pointer::symbolic(Variable(22_000))),
-        Vec::new(),
+        Vec::new().into(),
         Vec::new(),
         &PureFactContext::new(),
     );

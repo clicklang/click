@@ -32,6 +32,20 @@ The annotation is optional when the value's type is already clear:
 let next = x + 1;
 ```
 
+## Pointer results
+
+A pure function can return a pointer, including one selected from a model:
+
+<!-- verified-example: mdtests/pure_pointer_result.md -->
+```click
+function identity(p: int32*) -> int32* { p }
+```
+
+The result stays opaque until `unfold(identity(p))` establishes its defining
+equation. It retains its pointer type and arguments, and equality rewriting
+can enter nested calls. Returning a pointer grants no ownership of the memory
+it names and does not make it distinct from other pointers.
+
 ## Functions versus predicates
 
 A pure Click function returns a value:

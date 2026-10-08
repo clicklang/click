@@ -53,5 +53,5 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
 ```
 
 ```expect
-fail: missing resource fact `owns p[0..1]`
+fail: missing resource fact `owns p[0]`
 ```

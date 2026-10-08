@@ -4144,6 +4144,26 @@ fn advance_linear_open_scope<'a>(
         if closes_loop_invariants(&indexed.tactic) {
             return decline();
         }
+        // After execution reached function exit inside the scope, an ordered
+        // outcome operation (`simp`, `fold`, a `have` naming `result`, ...)
+        // is deferred on the scope body and follows the scope's join.
+        //
+        // A `have` written here is such an operation: only the outcome binds
+        // `result`, so lowering it at the scope's frontier would produce no
+        // path at all for the very proposition a smart tactic's expansion
+        // renders. The flat driver already defers a post-exit `have`; the
+        // scope driver defers the same tactic through its own body.
+        if scope.is_at_function_exit()
+            && let Some(post_tactic) = flat_post_execution_tactic(&indexed.tactic)
+        {
+            scope = scope.defer_post_execution_source_tactic(
+                indexed.index,
+                indexed.source_index,
+                post_tactic,
+                expansion_capture.as_deref_mut(),
+            )?;
+            continue;
+        }
         if let Some(step) = linear_execution_proof_step(&indexed.tactic) {
             scope = scope.apply_step(step)?;
             continue;
@@ -4222,26 +4242,6 @@ fn advance_linear_open_scope<'a>(
                     &certificate.to_proof_tactics(),
                 );
             }
-            continue;
-        }
-        // After execution reached function exit inside the scope, an ordered
-        // outcome operation (`simp`, `fold`, a `have` naming `result`, ...)
-        // is deferred on the scope body and follows the scope's join.
-        //
-        // A `have` written here is such an operation: only the outcome binds
-        // `result`, so lowering it at the scope's frontier would produce no
-        // path at all for the very proposition a smart tactic's expansion
-        // renders. The flat driver already defers a post-exit `have`; the
-        // scope driver defers the same tactic through its own body.
-        if scope.is_at_function_exit()
-            && let Some(post_tactic) = flat_post_execution_tactic(&indexed.tactic)
-        {
-            scope = scope.defer_post_execution_source_tactic(
-                indexed.index,
-                indexed.source_index,
-                post_tactic,
-                expansion_capture.as_deref_mut(),
-            )?;
             continue;
         }
         let ProofTactic::Have(have) = &indexed.tactic else {
