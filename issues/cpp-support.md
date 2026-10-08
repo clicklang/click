@@ -7,6 +7,57 @@ which source, properties, compiler profile, and dependencies it covers.
 Importing C++ syntax or proving one helper does not establish verification of
 Bitcoin Core as a whole.
 
+## Current remaining work
+
+The original design cleanup and selected fee arithmetic proofs are delivered.
+`GetFeePerK` is also verified on the unchanged pinned header: it delegates to
+`EvaluateFeeDown(1000)`, requires positive size and the Down result-fit profile,
+and does not use `GetFee`'s empty-rate or minimum-correction behavior.
+Wide call-result conversions use the existing callee-typed capture and checked
+cast certificates. Named captures make modular observer bounds available to
+those certificates; no new kernel rule or automatic range inference is needed.
+These were the selected implementation steps that required no new design.
+
+The remaining work needs a concrete source/contract selection or a semantic
+profile decision before implementation:
+
+- **Further fee methods and construction.** The remaining `CFeeRate` methods
+  involve embedded construction/assignment, aggregate returns, comparison-category
+  values, serialization, or strings. `FeeFrac` addition and subtraction, including
+  self-aliasing, are already verified. Select an exact claim before extending
+  constructors, free operator selection, or aggregate results.
+- **Expression and lifetime profiles.** Converted call arguments, call-based
+  brace initialization, arithmetic/composed expressions around calls, broader
+  memory-reading siblings, embedded automatic records and nontrivial destruction,
+  and header constructor/destructor bodies need explicit sequencing, aliasing,
+  lifetime, or admission choices. Broader cleanup/unwind remains owned by
+  [control-flow.md](control-flow.md).
+- **Remaining scalar and import coverage.** Original wide call conversions are
+  admitted, but automatic observer normalization/range inference remains separate
+  from explicit proofs. Select source requiring additional native wide arithmetic,
+  wide mutable references/memory/aggregates/callbacks, byte reinterpretation,
+  header constants, mixed-source executable macros, namespaced method selection,
+  overload signature selectors, or same-named record layouts before widening a
+  profile. The portable `DivFallback` path is a separate target, not a substitute
+  for the pinned `__int128` implementation.
+- **Bounded bytes and serialization.** Select an unchanged span/cursor or
+  serialization helper and specify bounds, consumed/produced length, byte meaning,
+  and malformed-input behavior. Returned views must remain tied to live storage.
+- **Owning containers.** Select one `prevector` operation with explicit content,
+  ownership, allocation, copy/move, destruction, small-buffer transition, and
+  invalidation claims.
+- **Larger Bitcoin components.** Choose a bounded script, transaction, or
+  validation component and specify safety and functional behavior separately.
+  General inheritance, virtual dispatch, RTTI, arbitrary standard-library
+  verification, full exception semantics, concurrency, and cross-target coverage
+  remain deferred until a selected proof needs them.
+
+## Delivery history
+
+The notes below record successive supported profiles. Earlier refusal and
+"next" statements describe their point in that history and can be superseded
+by later deliveries; the remaining-work list above is the current roadmap.
+
 ## Delivered baseline and current gap
 
 The [basic C++ example](../examples/basic-cpp/README.md) verifies reference
@@ -251,7 +302,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Current schema 43
+arrangement restrictions remain semantic-profile limitations. Current schema 45
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -399,7 +450,7 @@ mutable locals, full-width compiler constants, C++20 integral casts, Boolean
 conversion of all bits, and checked signed multiplication. The existing scalar
 interpretation maps directly to shared formats and kernel types; no C++ numeric
 carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
-Exporter and schema both reject unsupported wide operations. Current schema 43
+Exporter and schema both reject unsupported wide operations. Current schema 45
 requires refreshing older artifacts. High-bit products and modulo casts verify
 through execute/simp, expansion, and retained audit; narrow and wide overflow
 remain obligations even under a trivial postcondition. Shared wide-to-Boolean
@@ -417,7 +468,7 @@ both destination bounds. Negative full-range literals retain their Integer
 context through reverse conversions. Regressions cover extrema, hostile
 high-bit claims, cast round trips, modular calls with framed narrow memory,
 expansion/reverification, audit, and deterministic signature scaling at
-2/8/32/128 parameters. Current schema 43 requires refreshing earlier locks.
+2/8/32/128 parameters. Current schema 45 requires refreshing earlier locks.
 
 The nested-call regression records a bounded search limitation: `simp` closes
 a direct observer equality but does not chain two Integer equalities. Keep
@@ -534,7 +585,7 @@ pin, and canonical declaration file. Offline checks bind that file to the exact
 pinned dependency and closure; diagnostics expose both assumptions. Proofs,
 expansion/reverification, retained audit, cleanup, caller framing, hostile pins
 and artifacts, and 4/16/64/256-statement scaling have coverage. This slice uses
-artifact schema 43; previous locks require an explicit refresh.
+artifact schema 45; previous locks require an explicit refresh.
 
 The unchanged `FeeFrac::Div` now imports and lowers its complete body under the
 explicit assertion and standard-library constructor assumptions. The real
@@ -908,10 +959,10 @@ place consumers are refused. Deterministic regressions cover increasing path
 depth and sibling populations.
 
 The pinned unchanged `CFeeRate::GetFee` regression now passes the `FeePerVSize`
-record-layout, direct Boolean condition-call and locked-header executable
-boundaries and stops at the converted `EvaluateFeeUp()` call in
-`policy/feerate.cpp:24:38`, with a bounded diagnostic and no partial artifact.
-The wrapper is not verified yet.
+record-layout, direct Boolean condition-call, locked-header executable and
+converted `EvaluateFeeUp()` initializer boundaries. Its complete graph imports
+and lowers with explicit header dependencies; the composition proof below
+verifies the wrapper.
 
 Projected method receivers and record/scalar reference arguments now use the
 same ordered field paths. Call validation resolves the projected nominal type
@@ -997,25 +1048,64 @@ header bytes, forged mixed-source metadata, unsupported bodies and recursion
 fail without partial artifacts. Deterministic multi-size graph tests preserve
 linear work and check caller/callee span ownership.
 
-Next normalize scalar call results through explicit conversions. Unchanged
-`GetFee` now resolves the header-defined `IsEmpty()` call and stops at
-`CAmount(m_feerate.EvaluateFeeUp(virtual_bytes))` in `policy/feerate.cpp:24:38`.
-Retain Clang's exact cast kind, source/result widths and qualifiers, evaluate
-the call once, and share initializer/return scalar normalization. Preserve
-modular contracts, conversion/definedness obligations, memory authority,
-cleanup and ordinary/expanded/retained proof agreement; do not erase narrowing
-or infer result bounds. Include same-type alias casts and hostile out-of-range
-or false-result claims. Keep broader composed calls separate.
+Converted scalar-call initializers now retain an inner-to-outer chain of
+Clang's exact cast kinds, explicit/implicit origins, source/result widths and
+qualifiers, alias provenance and executable spans. The shared scalar normalizer
+captures the callee's original result once before applying the existing C++20
+modulo/Boolean conversion policy. Offline ordinary/expanded/retained proofs
+cover header alias casts, implicit widening, Boolean chains, narrowing and
+mutating helpers with sibling frames. Hostile type/kind/origin, false-fit,
+authority and source-overflow claims fail. Scalar exception contracts still
+verify offline; active-guard rethrow cleanup has structural coverage. No new
+kernel conversion policy or inferred fit bounds were added. Schema 45 requires
+refreshing earlier locks.
+
+Unchanged `CFeeRate::GetFee` now imports its complete reachable executable graph
+with explicit dependencies on `consensus/amount.h`, `policy/feerate.h` and
+`util/feefrac.h`. The composition proof is delivered below.
+Converted scalar returns now reuse the initializer conversion-chain exporter,
+metadata validation and scalar normalizer. Callee contracts retain their
+original result type; the selected return retains its converted type, which
+is captured before destruction. Offline ordinary/expanded/retained proofs cover
+implicit widening, explicit modulo/Boolean chains, header alias provenance,
+once-only mutators with sibling frames, normal destruction and scalar
+exceptions. Forged chains/types/origins, false result/fit/authority claims and
+callee source overflow fail;
+active-object exceptional cleanup has structural coverage. Exporter and artifact
+validation bound both initializer and return chains to 256 Clang conversion
+steps; multi-size checks preserve linear validation work.
+Converted call arguments, call-based brace initialization and broader composed
+expressions remain separate.
+Converted original 128-bit call results now use the same typed capture and
+conversion chain. Explicit named captures transport modular observer bounds
+to the existing checked cast certificate; preservation requires both destination
+endpoints. Mathematical bounds never silently retag the native result. Automatic
+observer normalization remains separate from these explicit proofs.
+The unchanged `GetFee` now composes read-only `IsEmpty` and the unified Up
+result-fit contract. Empty size returns zero without fee observer or product
+fit premises. Nonempty size uses the caller-stated Up fit endpoints and full
+fee observer bounds, exports the ceiling interval with the explicit negative
+minimum correction, excludes zero for nonzero negative-fee calls, and preserves
+both field views. Explicit helper-result captures and zero-observer rewrites
+use existing shared proof rules. Execution-theorem proof blocks retain the
+executed arguments' record metadata, including nested field paths, within
+their clause scope; a small independent regression covers expansion, retained
+checking, omitted premises and invalid fields. Ordinary verification, expansion/reverification,
+retained certificates and modular empty/negative/zero/oversize callers have
+offline coverage. Missing authority/domain/fee/fit bounds, weakened strict fit,
+false empty/correction claims and stale reachable headers fail promptly.
+The unchanged `GetFeePerK` wrapper now composes the unified Down contract at
+1000 bytes with explicit positive-size and result-fit assumptions. Unlike
+`GetFee`, its source does not check emptiness or apply a minimum correction.
+Offline ordinary/expanded/retained checks and positive, negative, zero-fee and
+wide modular callers are delivered. Missing size/authority/fit premises and
+false rounding claims fail promptly.
 Automatic objects with embedded records, nontrivial embedded destruction,
 header constructor/destructor bodies, header constant definitions and mixed-source
-executable macro spans remain separate prerequisites.
-Compose `IsEmpty` and the unified Up contract only after those prerequisites.
-State empty-rate behavior separately from the positive-size result-fit profile.
-Its negative-fee, nonzero-amount case changes a zero rounded result to `-1`, so
-specify that minimum correction explicitly. Keep object construction and the
-other `CFeeRate` methods separate until their own contracts are selected.
-Continue bounded ordinary/expanded/retained and hostile provenance, authority,
-fit, empty-branch and correction checks without editing Bitcoin.
+executable macro spans remain separate work.
+Keep object construction and the other `CFeeRate` methods separate until their
+own contracts are selected. Continue bounded ordinary/expanded/retained and
+hostile provenance, authority, fit and correction checks without editing Bitcoin.
 The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
@@ -1025,7 +1115,7 @@ an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
-machine observer ranges, general range inference, `CFeeRate` composition and
+machine observer ranges, general range inference, further `CFeeRate` methods and
 the portable `DivFallback` implementation remain open.
 
 Before implementing the upstream proof, freeze a small regression that
@@ -1045,18 +1135,15 @@ next unchanged source and exact contract before implementation; update this issu
 
 | Slice | Candidate and useful claim | Concepts it forces |
 | --- | --- | --- |
-| Fee arithmetic | `FeeFrac::EvaluateFeeDown/Up`: correct rounding and no undefined arithmetic under stated input bounds. | Compiler-resolved template instances, `if constexpr`, signed/unsigned conversions, division/remainder, and the selected target's wide integer path. |
 | Bounded bytes and serialization | Select one unchanged span/cursor or serialization helper; prove bounds, consumed/produced length, and byte meaning or round trip. | C++ loops, array/range authority, representation and endianness, returned references, and explicit malformed-input behavior. |
 | Owning containers | Select one bounded operation of Bitcoin's `prevector`; prove content preservation and ownership on each accepted outcome. | Allocation, object initialization, copy/move, destruction, small-buffer transitions, and iterator/reference invalidation. |
 | Larger Bitcoin subsystem | Choose a bounded script, transaction, or validation component and state its safety and functional claims separately. | Composition of verified helpers, explicit external/library contracts, and domain specifications beyond language support. |
 
-Fee rounding is nearby but materially harder than `IsEmpty`: in this pinned
-profile `FeeFrac::Mul`/`Div` select `__int128`, and `CFeeRate` uses the inherited
-`FeePerUnit` template wrapper. Do not replace these with the fallback path or
-change project flags to avoid wide integers or inheritance. Establish the
-individual arithmetic contracts first. Bitcoin's `Assume` annotations must
-be exposed as contract obligations or explicit assumptions, not silently
-counted as proved checks.
+The selected fee rounding and `CFeeRate` evaluation proofs are delivered for
+the pinned `__int128` profile, with explicit fit/domain assumptions. Further
+fee methods must preserve the same unchanged-source boundary. Bitcoin's `Assume`
+annotations remain exposed as contract obligations or explicit assumptions,
+not silently counted as proved checks.
 
 For spans, object-copying a view must not duplicate pointee ownership; returned
 references must stay tied to the backing object's live storage. For containers,

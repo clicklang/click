@@ -371,7 +371,7 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
         unfolded_predicates: &'a [String],
-        effect_facts: &'a [ExecutionPureFact],
+        effect_facts: &(impl ExecutionFactSource + ?Sized),
     ) -> Self {
         Self::for_fixed_state(
             claim_label,
@@ -413,7 +413,7 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
         unfolded_predicates: &'a [String],
-        effect_facts: &'a [ExecutionPureFact],
+        effect_facts: &(impl ExecutionFactSource + ?Sized),
     ) -> Self {
         Self::for_fixed_state(
             claim_label,
@@ -456,7 +456,7 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
         unfolded_predicates: &'a [String],
-        effect_facts: &'a [ExecutionPureFact],
+        effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
     ) -> Self {
         Self::for_fixed_state_goal_with_requirements_inner(
@@ -500,7 +500,7 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
         unfolded_predicates: &'a [String],
-        effect_facts: &'a [ExecutionPureFact],
+        effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
     ) -> Self {
         Self::for_fixed_state(
@@ -541,7 +541,7 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
         unfolded_predicates: &'a [String],
-        effect_facts: &'a [ExecutionPureFact],
+        effect_facts: &(impl ExecutionFactSource + ?Sized),
     ) -> Self {
         Self::for_fixed_state(
             claim_label,
@@ -583,7 +583,7 @@ impl<'a> Proof<'a> {
         click_function_environment: &'a ClickFunctionEnvironment,
         theorem_environment: &'a TheoremEnvironment,
         unfolded_predicates: &'a [String],
-        effect_facts: &'a [ExecutionPureFact],
+        effect_facts: &(impl ExecutionFactSource + ?Sized),
         original_requirements: &'a [Requirement],
     ) -> Self {
         let facts = ProofFacts::from_ordered(available);
@@ -622,7 +622,7 @@ impl<'a> Proof<'a> {
                 click_function_environment,
                 theorem_environment,
                 unfolded_predicates,
-                effect_facts,
+                effect_facts: effect_facts.persistent_facts(),
                 lowering_context: Arc::new(lowering_context),
                 original_requirements,
                 requirement_facts: available,

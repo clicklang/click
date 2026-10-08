@@ -90,14 +90,17 @@ macro_rules! iterator_checks {
             preserves_source_and_checks_obligations($fixture);
         }
         #[test]
+        #[ignore = "nightly: whole-example proof-tool rechecks"]
         fn $profile() {
             profile_agrees($fixture);
         }
         #[test]
+        #[ignore = "nightly: whole-example proof-tool rechecks"]
         fn $expand() {
             expansion_rechecks($fixture);
         }
         #[test]
+        #[ignore = "nightly: whole-example proof-tool rechecks"]
         fn $audit() {
             audits_checked_frontiers($fixture);
         }

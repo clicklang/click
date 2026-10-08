@@ -13,6 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
 mod graph_condition_tests;
+#[cfg(test)]
+mod pointer_application_tests;
 mod spec_rewrite;
 
 #[derive(Clone, Default)]
@@ -68,6 +70,7 @@ struct CarrierVariables {
     budgeted: bool,
     work_exhausted: bool,
     registered_loads: BTreeSet<Variable>,
+    pointer_applications: BTreeSet<u64>,
 }
 
 impl CarrierVariables {
@@ -522,6 +525,17 @@ fn collect_pointer_carriers(pointer: &Pointer, variables: &mut CarrierVariables)
     match &pointer.block {
         PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
             variables.c.insert(*variable);
+        }
+        PointerBlock::PureFunctionApplication(application)
+            if variables.pointer_applications.insert(application.id()) =>
+        {
+            let mut seen = BTreeSet::new();
+            for argument in application.arguments() {
+                collect_argument_carriers(argument, variables, &mut seen);
+                if variables.exhausted() {
+                    return;
+                }
+            }
         }
         _ => {}
     }
@@ -1197,10 +1211,13 @@ pub(crate) struct TermRewrite<'a> {
     bitvector: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
+    pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
+    pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
+    pointer_application_cache: HashMap<(u64, u64, bool), PointerBlock>,
     scope_renaming_max: u64,
     integer_body_summaries: HashMap<u64, crate::kernel::prelude::IntegerScopeSummary>,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
@@ -1322,6 +1339,7 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
+            pointer_application_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -1348,6 +1366,8 @@ impl<'a> TermRewrite<'a> {
             refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             pointer_variable: None,
+            pointer_exact: None,
+            pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
             #[cfg(test)]
@@ -1389,6 +1409,7 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
+            pointer_application_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: Some(integer_replacement_variables),
@@ -1415,6 +1436,8 @@ impl<'a> TermRewrite<'a> {
             refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: replacement_work_exhausted,
             pointer_variable: None,
+            pointer_exact: None,
+            pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
             #[cfg(test)]
@@ -1499,6 +1522,7 @@ impl<'a> TermRewrite<'a> {
             collected_conditions: None,
             changed: false,
             integer_cache: HashMap::new(),
+            pointer_application_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -1525,6 +1549,8 @@ impl<'a> TermRewrite<'a> {
             refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             pointer_variable: None,
+            pointer_exact: None,
+            pointer_offset_exact: None,
             #[cfg(test)]
             visits: 0,
             #[cfg(test)]
@@ -1543,16 +1569,36 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    pub(crate) fn for_pointer_offset_exact(
+        from: &'a PointerOffsetTerm,
+        to: &'a PointerOffsetTerm,
+    ) -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.pointer_offset_exact = Some((from, to));
+        rewrite.enforce_integer_work_limit = true;
+        rewrite
+    }
+
+    pub(crate) fn for_pointer_exact(from: &'a Pointer, to: &'a Pointer) -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.pointer_exact = Some((from, to));
+        rewrite.enforce_integer_work_limit = true;
+        rewrite
+    }
+
     pub(crate) fn for_pointer_variable(from: Variable, to: &'a Pointer) -> Self {
         Self {
             algebraic: None,
             bitvector: None,
             integer_exact: None,
             pointer_variable: Some((from, to)),
+            pointer_exact: None,
+            pointer_offset_exact: None,
             conditions: None,
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            pointer_application_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -1629,10 +1675,13 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             integer_exact: None,
             pointer_variable: None,
+            pointer_exact: None,
+            pointer_offset_exact: None,
             conditions: None,
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            pointer_application_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: Some(integer_replacement_variables),
@@ -1803,10 +1852,13 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             integer_exact: None,
             pointer_variable: None,
+            pointer_exact: None,
+            pointer_offset_exact: None,
             conditions: None,
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            pointer_application_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
             integer_replacement_variables: None,
@@ -2438,7 +2490,7 @@ impl<'a> TermRewrite<'a> {
                         return exhausted_integer(shared.as_ref());
                     }
                 }
-                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     application.name().to_string(),
                     arguments,
                 ))
@@ -2552,7 +2604,10 @@ impl<'a> TermRewrite<'a> {
         original_item: Variable,
         body: &SharedIntegerTerm,
     ) -> IntegerTerm {
-        if self.integer_exact.is_some() {
+        if self.integer_exact.is_some()
+            || self.pointer_exact.is_some()
+            || self.pointer_offset_exact.is_some()
+        {
             self.unsupported_integer_scope = true;
             return IntegerTerm::constant_i64(0);
         }
@@ -3044,7 +3099,11 @@ impl<'a> TermRewrite<'a> {
         bindings: &mut [AlgebraicValue],
         changes: &mut Vec<ScopeChange>,
     ) -> bool {
-        if self.integer_exact.is_some() && !bindings.is_empty() {
+        if (self.integer_exact.is_some()
+            || self.pointer_exact.is_some()
+            || self.pointer_offset_exact.is_some())
+            && !bindings.is_empty()
+        {
             self.unsupported_integer_scope = true;
             return false;
         }
@@ -3086,7 +3145,11 @@ impl<'a> TermRewrite<'a> {
         variable: Variable,
         changes: &mut Vec<ScopeChange>,
     ) -> Option<Variable> {
-        if self.integer_exact.is_some() || self.has_composite_bitvector_source() {
+        if self.integer_exact.is_some()
+            || self.pointer_exact.is_some()
+            || self.pointer_offset_exact.is_some()
+            || self.has_composite_bitvector_source()
+        {
             self.unsupported_integer_scope = true;
             return None;
         }
@@ -3381,6 +3444,13 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_pointer();
         }
+        if let Some((from, to)) = self.pointer_exact
+            && p == from
+            && !self.source_disabled
+        {
+            self.changed = true;
+            return to.clone();
+        }
         if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
             &p.block
             && let Some(mapped) = self.scope.c.get(variable)
@@ -3431,11 +3501,41 @@ impl<'a> TermRewrite<'a> {
             return exhausted_pointer();
         }
         Pointer {
-            block: p.block.clone(),
+            block: match &p.block {
+                PointerBlock::PureFunctionApplication(application) => {
+                    self.charge_rewrite_work(1);
+                    let key = (application.id(), self.scope_id, self.source_disabled);
+                    if let Some(result) = self.pointer_application_cache.get(&key) {
+                        result.clone()
+                    } else {
+                        let mut arguments = Vec::with_capacity(application.arguments().len());
+                        for argument in application.arguments() {
+                            arguments.push(self.argument(argument));
+                            if self.checked_work_exhausted() {
+                                return exhausted_pointer();
+                            }
+                        }
+                        let result =
+                            PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                                application.name().to_string(),
+                                arguments,
+                            ));
+                        self.pointer_application_cache.insert(key, result.clone());
+                        result
+                    }
+                }
+                other => other.clone(),
+            },
             offset,
         }
     }
     fn offset(&mut self, v: &PointerOffsetTerm) -> PointerOffsetTerm {
+        if let Some((from, to)) = self.pointer_offset_exact
+            && v == from
+        {
+            self.changed = true;
+            return to.clone();
+        }
         if self.checked_work_exhausted() {
             return exhausted_offset();
         }
@@ -4577,11 +4677,10 @@ mod tests {
                     item,
                     body: Box::new(Bitvector32Term::Variable(accumulator)),
                 };
-                let observed =
-                    IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
-                        "observe_fold".into(),
-                        vec![PureFunctionArgument::Value(CValue::Int32(fold))],
-                    ));
+                let observed = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+                    "observe_fold".into(),
+                    vec![PureFunctionArgument::Value(CValue::Int32(fold))],
+                ));
                 let body = IntegerTerm::Add(observed.into(), expression.into());
                 expression = IntegerTerm::AlgebraicMatch {
                     scrutinee: Box::new(AlgebraicTerm {
@@ -4836,7 +4935,7 @@ mod tests {
         };
         let observed_array = |memory: CMemory, pointer: Pointer| {
             Term::Integer(IntegerTerm::PureFunctionApplication(
-                SharedIntegerApplication::intern(
+                SharedPureApplication::intern(
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
                         memory,
@@ -5077,7 +5176,7 @@ mod tests {
                 ],
             },
         };
-        let body = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(bound_integer).into()),
@@ -5115,7 +5214,7 @@ mod tests {
             &algebraic_replacements,
         );
         let output = rewrite.integer(&input);
-        let expected = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        let expected = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(field_integer).into()),
@@ -5376,7 +5475,7 @@ mod tests {
         integer_replacements.insert(replacement, IntegerTerm::constant_i64(7));
         let mut algebraic_replacements = BTreeMap::new();
         algebraic_replacements.insert(algebraic_source, algebraic_to.clone());
-        let body = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(integer_source).into()),
@@ -6723,7 +6822,7 @@ mod tests {
                     AlgebraicValue::Integer(IntegerTerm::var(integer_x)),
                     AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(c_x))),
                 ],
-                body: IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                body: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_typed_capture".into(),
                     vec![
                         PureFunctionArgument::Integer(IntegerTerm::var(integer_x).into()),

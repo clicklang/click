@@ -299,7 +299,7 @@ fn authority_consuming_helper_cannot_return_the_wrong_private_body() {
     assert!(
         error
             .message()
-            .contains("missing resource fact `owns p[1..2]`"),
+            .contains("missing resource fact `owns p[1]`"),
         "{error:?}"
     );
 }

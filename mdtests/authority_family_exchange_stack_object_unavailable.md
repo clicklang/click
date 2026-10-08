@@ -63,5 +63,5 @@ int32 lifecycle() { ensures result == 3; } by {
 ```
 
 ```expect
-fail: missing resource fact `owns &second[0..1]`
+fail: missing resource fact `owns second`
 ```

@@ -38,6 +38,9 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: PointerBlock) {
     match block {
+        PointerBlock::PureFunctionApplication(application) => {
+            let _ = write!(identity, "bpure{};", application.id());
+        }
         PointerBlock::Concrete(name) => write_havoc_string(identity, "bc", &name),
         PointerBlock::StringLiteral {
             identity: name,

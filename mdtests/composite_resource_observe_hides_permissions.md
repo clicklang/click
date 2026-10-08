@@ -29,5 +29,5 @@ int32 write_flag_observed(int32* flag) {
 ```
 
 ```expect
-fail: missing resource fact `owns flag[0..1]`
+fail: missing resource fact `owns flag[0]`
 ```

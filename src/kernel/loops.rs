@@ -439,7 +439,7 @@ fn authority_mode_call_refusal_path() -> CStatementExecutionPath {
         outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
             "C calls are not yet supported by authority resource semantics".to_string(),
         )),
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: Vec::new(),
         loan_evidence: empty_checked_loan_evidence_sequence(),
     }
@@ -537,7 +537,7 @@ pub(super) fn execute_c_call_assign_paths(
                 outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                     "step(Contract) requires a function-pointer call".to_string(),
                 )),
-                facts: Vec::new(),
+                facts: Vec::new().into(),
                 obligations: Vec::new(),
 
                 loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -566,7 +566,7 @@ pub(super) fn execute_c_call_assign_paths(
             outcome: CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
                 function_name.to_string(),
             )),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -874,7 +874,7 @@ pub(super) fn execute_c_call_paths(
             outcome: CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
                 function_name.to_string(),
             )),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -933,7 +933,7 @@ fn unbound_modeled_pthread_call(
         outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
             "modeled-pthread `{function_name}` has no checked C transition yet"
         ))),
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: Vec::new(),
         loan_evidence: empty_checked_loan_evidence_sequence(),
     })
@@ -1048,7 +1048,7 @@ fn execute_modeled_pthread_mutex_paths(
             outcome: refusal(
                 "modeled-pthread mutex call has unsupported arguments or pending thread authority",
             ),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }]);
@@ -1492,7 +1492,7 @@ fn execute_modeled_pthread_create_paths(
             outcome: refusal(
                 "modeled-pthread create requires a direct, assigned four-argument call with no unresolved earlier create",
             ),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }]);
@@ -1701,7 +1701,7 @@ fn execute_modeled_pthread_join_paths(
         return Ok(vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: refusal("modeled-pthread join requires its direct two-argument C call"),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }]);
@@ -1859,7 +1859,7 @@ fn execute_c_indirect_call_paths(
             outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "indirect calls require a supported callback signature".into(),
             )),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -1931,7 +1931,7 @@ fn execute_c_indirect_call_paths(
                             budget,
                         )? {
                             let mut merged_facts = facts.clone();
-                            merged_facts.extend(call_path.facts);
+                            merged_facts.extend_shared(&call_path.facts);
                             let mut merged_obligations = obligations.clone();
                             merged_obligations.extend(call_path.obligations);
                             call_path.facts = merged_facts;
@@ -2016,7 +2016,7 @@ fn execute_c_indirect_call_paths(
                 budget,
             )? {
                 let mut merged_facts = facts.clone();
-                merged_facts.extend(call_path.facts);
+                merged_facts.extend_shared(&call_path.facts);
                 let mut merged_obligations = obligations.clone();
                 merged_obligations.extend(call_path.obligations);
                 call_path.facts = merged_facts;
@@ -2040,7 +2040,7 @@ pub(super) fn execute_c_statement_paths_with_prefix(
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
     budget: &mut ExecutionBudget,
@@ -2083,7 +2083,7 @@ fn execute_statement_suffix_with_loan_evidence(
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
     budget: &mut ExecutionBudget,
@@ -2395,7 +2395,7 @@ pub(super) fn execute_c_statement_verification_paths_with_prefix(
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
@@ -2620,8 +2620,11 @@ fn c_loop_condition_feasibility(
     Ok((may_continue, may_exit))
 }
 
-fn condition_path_is_ruled_out(facts: &[ExecutionPureFact], assumptions: &PureFactContext) -> bool {
-    facts.iter().any(|fact| {
+fn condition_path_is_ruled_out(
+    facts: &(impl ExecutionFactSource + ?Sized),
+    assumptions: &PureFactContext,
+) -> bool {
+    facts.fact_iter().any(|fact| {
         let Proposition::ConditionIs(condition, value) = fact.proposition() else {
             return false;
         };
@@ -2902,7 +2905,7 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
 fn join_loop_exit_paths(
     mut exits: Vec<LoopExitFacts>,
 ) -> Option<(
-    Vec<ExecutionPureFact>,
+    ExecutionFacts,
     Vec<ProofObligation>,
     CheckedLoanCallEvidenceSequence,
 )> {
@@ -2981,7 +2984,7 @@ fn join_loop_exit_paths(
             }
         }
     }
-    Some((facts, obligations, loan_evidence))
+    Some((facts.into(), obligations, loan_evidence))
 }
 
 /// The facts every exit states about the successor's merged binder names.
@@ -3006,19 +3009,19 @@ fn join_loop_exit_paths(
 /// times a logarithmic lookup, not exits squared.
 fn facts_every_exit_restates(
     exits: &[LoopExitFacts],
-    already_shared: &[ExecutionPureFact],
-) -> Vec<ExecutionPureFact> {
+    already_shared: &(impl ExecutionFactSource + ?Sized),
+) -> ExecutionFacts {
     let Some((first, others)) = exits.split_first() else {
-        return Vec::new();
+        return Vec::new().into();
     };
     if first.restated.is_empty() || others.iter().any(|exit| exit.restated.is_empty()) {
-        return Vec::new();
+        return Vec::new().into();
     }
     crate::instrumentation::record_deterministic_work(
         exits.iter().map(|exit| exit.restated.len()).sum(),
     );
     let shared = already_shared
-        .iter()
+        .fact_iter()
         .map(ExecutionPureFact::proposition)
         .collect::<BTreeSet<_>>();
     let mut kept = BTreeSet::new();
@@ -3064,7 +3067,7 @@ fn positions_in_every_set<'a, T: Ord + 'a>(
 /// abstracted it is that path's own description of the fresh names instead of
 /// names the loop left behind.
 struct LoopExitFacts {
-    stated: Vec<ExecutionPureFact>,
+    stated: ExecutionFacts,
     disjunct: Vec<Proposition>,
     /// The stated facts that mention this exit's value for a binder the join
     /// renamed, with that value replaced by the successor's name; see
@@ -3080,7 +3083,7 @@ impl LoopExitFacts {
     /// An exit whose state the join did not have to abstract: it describes the
     /// successor in the names it already used.
     fn unabstracted(
-        facts: Vec<ExecutionPureFact>,
+        facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
         loan_evidence: CheckedLoanCallEvidenceSequence,
     ) -> Self {
@@ -3125,7 +3128,7 @@ fn join_loop_exits(
     binders: &[CLoopBinder],
     exits: Vec<(
         CState,
-        Vec<ExecutionPureFact>,
+        ExecutionFacts,
         Vec<ProofObligation>,
         CheckedLoanCallEvidenceSequence,
     )>,
@@ -3145,7 +3148,7 @@ fn join_loop_exits(
     } else {
         let facts = exits
             .iter()
-            .map(|(_, facts, _, _)| facts.as_slice())
+            .map(|(_, facts, _, _)| facts)
             .collect::<Vec<_>>();
         match abstract_loop_exit_states(
             head,
@@ -3200,14 +3203,14 @@ fn join_loop_exits(
 /// facts never consume a clause slot. Work is confined to the output delta.
 fn retained_loop_invariant_correspondence(
     declarations: &crate::kernel::proof::PersistentSequence<Proposition>,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> LoopInvariantCorrespondence {
     if declarations.is_empty() {
         return Default::default();
     }
     let correspondence = retained_loop_invariant_declarations(
         declarations.iter(),
-        facts.iter().map(ExecutionPureFact::proposition),
+        facts.fact_iter().map(ExecutionPureFact::proposition),
     )
     .into_iter()
     .map(|(index, proposition)| (index, proposition.clone()))
@@ -3345,7 +3348,7 @@ mod loop_exit_shared_fact_tests {
 
     fn exit(restated: Vec<Proposition>) -> LoopExitFacts {
         LoopExitFacts {
-            stated: Vec::new(),
+            stated: Vec::new().into(),
             disjunct: Vec::new(),
             restated,
             successor_equations: Vec::new(),
@@ -3368,7 +3371,7 @@ mod loop_exit_shared_fact_tests {
             let mut restatement = LoopExitRestatement::default();
             restatement.pin(&fresh, &CValue::Int32(Bitvector32Term::Constant(value)));
             restatement.restate(
-                vec![ExecutionPureFact::new(fact(1, guard))],
+                vec![ExecutionPureFact::new(fact(1, guard))].into(),
                 Vec::new(),
                 crate::kernel::loans::empty_checked_loan_evidence_sequence(),
             )
@@ -3388,7 +3391,7 @@ mod loop_exit_shared_fact_tests {
         );
         // An exit with no equation cannot be silently omitted from the join.
         let unknown = LoopExitFacts::unabstracted(
-            vec![ExecutionPureFact::new(fact(1, 2))],
+            vec![ExecutionPureFact::new(fact(1, 2))].into(),
             Vec::new(),
             crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         );
@@ -3415,7 +3418,7 @@ mod loop_exit_shared_fact_tests {
                             &CValue::Int32(Bitvector32Term::Constant(value as u32)),
                         );
                         restatement.restate(
-                            vec![ExecutionPureFact::new(fact(1, value as i64))],
+                            vec![ExecutionPureFact::new(fact(1, value as i64))].into(),
                             Vec::new(),
                             crate::kernel::loans::empty_checked_loan_evidence_sequence(),
                         )
@@ -3630,7 +3633,7 @@ fn abstract_loop_exit_states(
     head: &CLoopHead,
     binders: &[CLoopBinder],
     states: &[&CState],
-    exit_facts: &[&[ExecutionPureFact]],
+    exit_facts: &[&ExecutionFacts],
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -3711,7 +3714,7 @@ fn abstract_loop_exit_states(
 /// for a C store, initialization, or additional memory authority.
 fn retain_proven_loop_exit_cells(
     states: &mut [CState],
-    facts: &[&[ExecutionPureFact]],
+    facts: &[&ExecutionFacts],
     assumptions: &PureFactContext,
     no_binders: bool,
 ) -> Result<(), String> {
@@ -3957,7 +3960,7 @@ mod contract_exit_join_tests {
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 retain_proven_loop_exit_cells(
                     &mut exits,
-                    &[&[], &[]],
+                    &[&ExecutionFacts::new(), &ExecutionFacts::new()],
                     &PureFactContext::new(),
                     true,
                 )
@@ -3992,8 +3995,13 @@ mod contract_exit_join_tests {
             CState::new().with_memory(memory.clone().store(pointer.clone(), zero)),
             CState::new().with_memory(memory),
         ];
-        retain_proven_loop_exit_cells(&mut states, &[&[], &facts], &PureFactContext::new(), true)
-            .unwrap();
+        retain_proven_loop_exit_cells(
+            &mut states,
+            &[&ExecutionFacts::new(), &facts.clone().into()],
+            &PureFactContext::new(),
+            true,
+        )
+        .unwrap();
         assert!(states[1].memory().known_value(&pointer).is_none());
     }
 
@@ -4133,7 +4141,7 @@ impl LoopExitRestatement {
     /// spell it.
     fn restate(
         self,
-        facts: Vec<ExecutionPureFact>,
+        facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
         loan_evidence: CheckedLoanCallEvidenceSequence,
     ) -> LoopExitFacts {
@@ -5176,7 +5184,7 @@ fn execute_c_while_exit_paths(
                     .iter()
                     .cloned()
                     .map(ExecutionPureFact::certified)
-                    .collect::<Vec<_>>();
+                    .collect::<ExecutionFacts>();
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &candidate_facts,
                     &[],
@@ -5267,7 +5275,7 @@ fn execute_c_while_exit_paths(
                     .iter()
                     .cloned()
                     .map(ExecutionPureFact::certified)
-                    .collect::<Vec<_>>(),
+                    .collect::<ExecutionFacts>(),
                 loop_check_obligations.clone(),
                 exit.loan_evidence().clone(),
             )
@@ -5406,7 +5414,7 @@ fn execute_c_while_exit_paths(
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::VerificationDiverges,
-            facts: whole_loop_effect_facts,
+            facts: whole_loop_effect_facts.into(),
             obligations,
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -5529,7 +5537,11 @@ fn collect_invariant_check_obligations_with_mode(
     // bare proposition is equivalent there, and guarding with the wrapped
     // member instead would nest every earlier member inside every later one,
     // doubling the bundle with each declaration.
-    let mut contexts = vec![(Vec::new(), Vec::new(), Vec::<ProofObligation>::new())];
+    let mut contexts = vec![(
+        ExecutionFacts::new(),
+        Vec::new(),
+        Vec::<ProofObligation>::new(),
+    )];
     let mut all_obligations = Vec::new();
     for (declaration_index, check) in invariant_checks.iter().enumerate() {
         let mut next_contexts = Vec::new();
@@ -7672,7 +7684,7 @@ pub(super) fn collect_loop_effect_check_obligations(
     before_state: &CState,
     after_state: &CState,
     effect_checks: &[CLoopEffectCheck],
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     path_obligations: &[ProofObligation],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -7688,7 +7700,7 @@ pub(super) fn collect_loop_effect_check_obligations(
         .into_iter()
         .filter(is_loop_effect_relevant_pointer)
         .filter(|pointer| {
-            let has_disjoint_effect_summary = facts.iter().any(|fact| {
+            let has_disjoint_effect_summary = facts.fact_iter().any(|fact| {
                 matches!(
                     fact.proposition(),
                     Proposition::CMemoryEffectSummary { mutable_ranges, .. }
@@ -7734,7 +7746,7 @@ pub(super) fn collect_loop_effect_check_obligations(
         })
         .collect::<BTreeMap<_, _>>();
     for (pointer, bytes) in facts
-        .iter()
+        .fact_iter()
         .filter_map(|fact| match fact.proposition() {
             Proposition::CMemoryMutatesOnly { writes, .. } => Some(writes.as_slice()),
             _ => None,
@@ -7747,7 +7759,7 @@ pub(super) fn collect_loop_effect_check_obligations(
             .or_insert(*bytes);
     }
     let effect_summary_ranges = facts
-        .iter()
+        .fact_iter()
         .filter_map(|fact| match fact.proposition() {
             Proposition::CMemoryEffectSummary { mutable_ranges, .. } => {
                 Some(mutable_ranges.as_slice())
@@ -7938,7 +7950,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     segment: &CMemorySegment,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(EvaluatedMemorySegment, Vec<ExecutionPureFact>), String>> {
+) -> ExecutionResult<Result<(EvaluatedMemorySegment, ExecutionFacts), String>> {
     let mut facts = Vec::new();
     let mut evaluate = |expression: &CExpression, label: &str| {
         let local_assumptions = assumptions_with_path_context(assumptions, &facts, &[]);
@@ -7998,7 +8010,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             end,
             element_width,
         },
-        facts,
+        facts.into(),
     )))
 }
 
@@ -8031,7 +8043,7 @@ fn evaluate_loop_effect_segment_value_with_facts(
     assumptions: &PureFactContext,
     label: &str,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(CValue, Vec<ExecutionPureFact>), String>> {
+) -> ExecutionResult<Result<(CValue, ExecutionFacts), String>> {
     let paths = evaluate_c_expression_paths(state, expression, assumptions, budget)?;
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
@@ -8205,12 +8217,12 @@ pub(super) fn assume_invariant_checks(
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
     assumptions: &PureFactContext,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<
     Vec<(
-        Vec<ExecutionPureFact>,
+        ExecutionFacts,
         Vec<ProofObligation>,
         crate::kernel::proof::PersistentSequence<Proposition>,
     )>,
@@ -8219,7 +8231,7 @@ pub(super) fn assume_invariant_checks(
     // persistent so a loop with many explicit invariants does not clone the
     // whole preceding clause vector at every declaration.
     let mut contexts = vec![(
-        prefix_facts.to_vec(),
+        prefix_facts.persistent_facts(),
         prefix_obligations.to_vec(),
         crate::kernel::proof::PersistentSequence::default(),
     )];
@@ -8307,7 +8319,7 @@ pub(super) enum CConditionBranch {
 #[derive(Clone, Debug)]
 pub(super) struct CConditionAssumption {
     pub(super) branch: CConditionBranch,
-    pub(super) facts: Vec<ExecutionPureFact>,
+    pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
 
@@ -8339,7 +8351,7 @@ pub(super) fn assume_condition_branches(
     condition: &CExpression,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CConditionAssumption>> {
@@ -8407,12 +8419,12 @@ fn assume_guard_conjunct_branches(
     conjuncts: &[&CExpression],
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CConditionAssumption>> {
     let mut branches = Vec::new();
-    let mut live = vec![(prefix_facts.to_vec(), prefix_obligations.to_vec())];
+    let mut live = vec![(prefix_facts.persistent_facts(), prefix_obligations.to_vec())];
     for (index, conjunct) in conjuncts.iter().enumerate() {
         let is_last = index + 1 == conjuncts.len();
         let mut next = Vec::new();
@@ -8456,7 +8468,7 @@ fn with_guard_prefix_arm_views(
     state: &CState,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
 ) -> CState {
     let prefix_assumptions = assumptions_with_path_context(assumptions, facts, obligations);
@@ -8480,7 +8492,7 @@ fn assume_condition_branches_at_state(
     state: &CState,
     condition: &CExpression,
     assumptions: &PureFactContext,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CConditionAssumption>> {
@@ -8547,7 +8559,7 @@ pub(super) fn assume_condition_truthiness(
     condition: &CExpression,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
-    prefix_facts: &[ExecutionPureFact],
+    prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     desired_truthiness: bool,
     budget: &mut ExecutionBudget,

@@ -10,7 +10,7 @@ use crate::surface::planning::proposition_search::PropositionSearch;
 pub(in crate::surface) fn prove_empty_write_footprint(
     claim_label: &str,
     path_index: usize,
-    execution_pure_facts: &[crate::kernel::ExecutionPureFact],
+    execution_pure_facts: &(impl crate::kernel::ExecutionFactSource + ?Sized),
     available_pure_facts: &PureFactList,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
@@ -23,7 +23,7 @@ pub(in crate::surface) fn prove_empty_write_footprint(
             describe_function_outcome(outcome, parameters, arguments)
         )));
     };
-    let mut effect_facts = execution_pure_facts.to_vec();
+    let mut effect_facts = execution_pure_facts.persistent_facts();
     effect_facts.extend(
         available_pure_facts
             .iter()

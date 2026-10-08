@@ -255,6 +255,7 @@ enum ScalarInput<'a> {
         callee: &'a super::CppFunctionReference,
         arguments: &'a [CppCallArgument],
         value_type: &'a CppType,
+        conversions: &'a [super::CppScalarConversion],
     },
 }
 
@@ -300,18 +301,37 @@ impl LoweringContext<'_> {
                 (
                     CppType::Integer { .. },
                     CppInitializer::Call {
-                        callee, arguments, ..
+                        callee,
+                        arguments,
+                        conversions,
+                        ..
                     },
                 ) => {
+                    let raw_type = conversions
+                        .first()
+                        .map_or(&local.value_type, |cast| &cast.source_type);
                     let evaluation = self.normalize_scalar_into(
                         ScalarInput::Call {
                             callee,
                             arguments,
-                            value_type: &local.value_type,
+                            value_type: raw_type,
+                            conversions,
                         },
-                        Some(&local.name),
+                        conversions.is_empty().then_some(local.name.as_str()),
                     )?;
-                    Ok(evaluation.prefix)
+                    if conversions.is_empty() {
+                        return Ok(evaluation.prefix);
+                    }
+                    Ok(c_seq(
+                        c_declare(
+                            local.name.clone(),
+                            cpp_return_scalar_type(&local.value_type)?,
+                        ),
+                        evaluate_then(
+                            evaluation.prefix,
+                            c_assign(local.name.clone(), evaluation.value),
+                        ),
+                    ))
                 }
                 (
                     CppType::Record {
@@ -544,12 +564,16 @@ impl LoweringContext<'_> {
                 callee,
                 arguments,
                 value_type,
+                conversions,
                 ..
             } => {
                 let evaluation = self.normalize_scalar(ScalarInput::Call {
                     callee,
                     arguments,
-                    value_type,
+                    value_type: conversions
+                        .first()
+                        .map_or(value_type, |cast| &cast.source_type),
+                    conversions,
                 })?;
                 self.lower_scalar_return(
                     evaluation,
@@ -573,6 +597,7 @@ impl LoweringContext<'_> {
                         callee: &call.callee,
                         arguments: &call.arguments,
                         value_type: &call.value_type,
+                        conversions: &[],
                     },
                 })?;
                 let prefix = if evaluation.may_throw {
@@ -670,18 +695,32 @@ impl LoweringContext<'_> {
                 callee,
                 arguments,
                 value_type,
+                conversions,
             } => {
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
-                let capture = match destination {
+                // A converted result always has a callee-typed temporary.
+                let capture = match destination.filter(|_| conversions.is_empty()) {
                     Some(name) => name.to_owned(),
                     None => self.fresh_call_capture()?,
                 };
-                let value_type = cpp_return_scalar_type(value_type)?;
+                let capture_type = cpp_return_scalar_type(value_type)?;
+                let mut value = c_variable(capture.clone());
+                let mut result_type = capture_type;
+                for conversion in conversions {
+                    let source = Scalar::mutable_kind(&conversion.source_type)
+                        .ok_or("unsupported C++ call conversion operand")?;
+                    let target = Scalar::mutable_kind(&conversion.value_type)
+                        .ok_or("unsupported C++ call conversion result")?;
+                    if source != target {
+                        value = scalar::convert(value, source, target);
+                    }
+                    result_type = target.kernel_type();
+                }
                 Ok(ScalarEvaluation {
                     prefix: evaluate_then(
                         prefix,
                         c_seq(
-                            c_declare(capture.clone(), value_type),
+                            c_declare(capture.clone(), capture_type),
                             c_call_assign(
                                 capture.clone(),
                                 self.names.require(&callee.declaration_id)?.to_owned(),
@@ -689,8 +728,8 @@ impl LoweringContext<'_> {
                             ),
                         ),
                     ),
-                    value: c_variable(capture),
-                    value_type,
+                    value,
+                    value_type: result_type,
                     may_throw: true,
                 })
             }
@@ -745,6 +784,7 @@ impl LoweringContext<'_> {
                     callee,
                     arguments,
                     value_type,
+                    conversions: &[],
                 })?;
                 evaluation = evaluate_then(evaluation, inner.prefix);
                 lowered.push(inner.value);

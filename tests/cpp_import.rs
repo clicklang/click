@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 43);
+    assert_eq!(prepared.export().schema, 45);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1744,7 +1744,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1861,7 +1861,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1972,7 +1972,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2033,7 +2033,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2079,7 +2079,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2709,7 +2709,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2787,7 +2787,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2905,7 +2905,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3043,7 +3043,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3145,7 +3145,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3245,7 +3245,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3384,7 +3384,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3534,7 +3534,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let destructor = import
         .export()
         .reachable_functions
@@ -3720,7 +3720,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3823,7 +3823,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 43);
+    assert_eq!(import.export().schema, 45);
     let destructor = import
         .export()
         .reachable_functions
@@ -5341,8 +5341,23 @@ fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
         "relay",
         "long quotient(long n, long d) noexcept { return n / d; }\nlong relay(long n, long d, int& untouched) noexcept { int captured = quotient(n, d); return captured; }",
     );
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("call capture requires matching"), "{error}");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "arithmetic.cpp";
+int64 quotient(int64 n, int64 d) {
+ requires n == 4294967297i64; requires d == 1i64;
+ ensures result == 4294967297i64;
+} by { execute(); simp(); }
+int64 relay(int64 n, int64 d, int32* untouched) {
+ views untouched[0..1];
+ requires n == 4294967297i64; requires d == 1i64;
+ ensures result == 1i64; ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#,
+    );
 }
 
 #[test]
@@ -6648,11 +6663,13 @@ fn direct_return_calls_verify_modular_contracts_and_frame_memory() {
             value_type,
             cleanups,
             span,
+            conversions,
         },
     ] = import.export().function.body.as_slice()
     else {
         panic!("retain a typed direct return call");
     };
+    assert!(conversions.is_empty());
     assert_eq!(callee.name, "echo");
     assert_eq!(
         callee.declaration_id,
@@ -6768,7 +6785,7 @@ fn direct_return_calls_preserve_fee_method_template_wrappers() {
 fn direct_return_calls_reject_unsupported_expression_positions_and_recursive_graphs() {
     for (source, diagnostic) in [
         (
-            "int echo(int value) noexcept { return value; } long relay(int value) noexcept { return echo(value); }",
+            "int echo(int value) noexcept { return value; } long relay(int value) noexcept { return echo(value) + 1; }",
             "unsupported expression",
         ),
         (
@@ -9077,7 +9094,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 43);
+        assert_eq!(import.export().schema, 45);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -9260,7 +9277,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 43);
+            assert_eq!(import.export().schema, 45);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -12671,5 +12688,973 @@ fn locked_header_graph_retains_object_constant_and_macro_boundaries() {
         assert!(error.len() < 8000);
         assert!(!project.artifact().exists());
         assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn converted_call_initializers_preserve_aliases_and_header_contracts_offline() {
+    let mut project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "#include \"converted.h\"\nAmount relay(Amount value) noexcept { Amount captured = Amount(echo(value)); return captured; }",
+    );
+    fs::write(project.directory.join("converted.h"), "#pragma once\nusing Amount = long; inline Amount echo(Amount value) noexcept { return value; }").unwrap();
+    project.dependencies.push("converted.h".into());
+    project.write_config("relay");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let cast = &artifact["function"]["body"][0]["initializer"]["conversions"][0];
+    assert_eq!(cast["cast_kind"], "no_op");
+    assert_eq!(cast["explicit"], true);
+    assert_eq!(cast["span"]["file"], "converted.cpp");
+    assert_eq!(
+        cast["value_type"]["source_aliases"][0]["span"]["file"],
+        "converted.h"
+    );
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "converted.cpp";
+int64 echo(int64 value) { ensures result == value; } by { execute(); simp(); }
+int64 relay(int64 value) { ensures result == value; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn converted_call_initializers_preserve_modulo_narrowing_and_reject_false_fit() {
+    let project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "unsigned long echo(unsigned long value) noexcept { return value; } int relay(unsigned long value) noexcept { int captured = static_cast<int>(echo(value)); return captured; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "converted.cpp";
+uint64 echo(uint64 value) { ensures result == value; } by { execute(); simp(); }
+int32 relay(uint64 value) { requires value == 18446744073709551615u64; ensures result == -1; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace(
+        "ensures result == -1",
+        "ensures to_integer(result) == to_integer(value)",
+    );
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn converted_call_initializers_keep_implicit_and_boolean_conversion_order() {
+    for (body, expected, kinds) in [
+        (
+            "long captured = echo(value);",
+            "value",
+            vec!["integral_cast"],
+        ),
+        (
+            "long captured = static_cast<bool>(echo(value));",
+            "1i64",
+            vec!["integral_to_boolean", "no_op", "integral_cast"],
+        ),
+    ] {
+        let project = Project::with_fixture(
+            "converted.cpp",
+            "relay",
+            &format!(
+                "int echo(int value) noexcept {{ return value; }} long relay(int value) noexcept {{ {body} return captured; }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let conversions = artifact["function"]["body"][0]["initializer"]["conversions"]
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            conversions
+                .iter()
+                .map(|cast| cast["cast_kind"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            kinds
+        );
+        assert_eq!(conversions.last().unwrap()["explicit"], false);
+        check_return_call_sidecar(
+            &project,
+            &import,
+            &format!(
+                r#"verifying "converted.cpp";
+int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+int64 relay(int32 value) {{ requires value == 7; ensures result == {expected}; }} by {{ execute(); simp(); }}
+"#
+            ),
+        );
+    }
+}
+
+#[test]
+fn converted_call_initializers_evaluate_mutators_once_and_frame_siblings() {
+    let project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "struct Box { int value; int sibling; }; int bump(Box& box) noexcept { box.value = box.value + 1; return box.value; } long relay(Box& box) noexcept { long captured = static_cast<long>(bump(box)); return captured; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "converted.cpp";
+int32 bump(struct Box* box) { owns box->value; requires box->value == 0; ensures box->value == 1; ensures result == 1; } by { execute(); simp(); }
+int64 relay(struct Box* box) { owns box->value; views box->sibling; requires box->value == 0; ensures box->value == 1; ensures result == 1i64; ensures box->sibling == old(box->sibling); } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace("owns box->value; views", "views box->value; views");
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn converted_call_initializers_reject_forged_conversion_types_kinds_and_origins() {
+    use sha2::{Digest, Sha256};
+    let mut project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "#include \"converted.h\"\nint relay(Amount value) noexcept { int captured = static_cast<int>(echo(value)); return captured; }",
+    );
+    fs::write(project.directory.join("converted.h"), "#pragma once\nusing Amount = long; inline Amount echo(Amount value) noexcept { return value; }").unwrap();
+    project.dependencies.push("converted.h".into());
+    project.write_config("relay");
+    refresh_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..8 {
+        let mut forged = artifact.clone();
+        let cast = &mut forged["function"]["body"][0]["initializer"]["conversions"][0];
+        match mutation {
+            0 => cast["source_type"]["bits"] = 32.into(),
+            1 => cast["value_type"]["bits"] = 64.into(),
+            2 => cast["cast_kind"] = "integral_to_boolean".into(),
+            3 => cast["span"]["file"] = "converted.h".into(),
+            4 => cast["source_type"]["source_aliases"][0]["span"]["file"] = "unlocked.h".into(),
+            5 => cast["source_type"]["is_const"] = true.into(),
+            6 => cast["cast_kind"] = "reinterpret_cast".into(),
+            7 => cast["source_type"]["bits"] = 128.into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&forged_lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{mutation}: {error}");
+    }
+}
+
+#[test]
+fn converted_call_initializers_keep_composed_effects_and_brace_narrowing_unsupported() {
+    for source in [
+        "int echo(int value) noexcept { return value; } int relay(int value) noexcept { int captured = echo(value) + 1; return captured; }",
+        "long echo(long value) noexcept { return value; } int relay(long value) noexcept { int captured{echo(value)}; return captured; }",
+    ] {
+        let project = Project::with_fixture("converted.cpp", "relay", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000);
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
+    let project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "struct Guard { int* slot; explicit Guard(int* value) noexcept : slot(value) { *slot = 1; } ~Guard() noexcept { *slot = 2; } }; int helper(bool fail) { if (fail) { throw 7; } return 5; } int relay(int* slot, bool fail) { Guard guard(slot); long captured = static_cast<long>(helper(fail)); return 5; }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "converted.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
+    fn has_cleanup(statement: &CStatement) -> bool {
+        match statement {
+            CStatement::Seq(first, second) => has_cleanup(first) || has_cleanup(second),
+            CStatement::TryCatchInt32 {
+                try_body,
+                handler,
+                cleanup_unwind: true,
+                ..
+            } => {
+                contains_call(try_body, "helper")
+                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
+                    if contains_call(cleanup, "Guard_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+            }
+            _ => false,
+        }
+    }
+    assert!(has_cleanup(lowered.kernel_function().body()));
+}
+
+#[test]
+fn converted_call_initializers_preserve_scalar_exception_contracts_offline() {
+    let project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "int helper(bool fail) { if (fail) { throw 7; } return 5; } long relay(bool fail) { long captured = static_cast<long>(helper(fail)); return captured; }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "converted.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let source = r#"verifying "converted.cpp";
+int32 helper(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int64 relay(bool fail) throws int32 { ensures result == 5i64 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace("exception == 7 by", "exception == 8 by");
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn converted_call_initializers_keep_source_overflow_before_widening() {
+    let project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "int next(int value) noexcept { return value + 1; } long relay(int value) noexcept { long captured = static_cast<long>(next(value)); return captured; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "converted.cpp";
+int32 next(int32 value) { requires value == 7; ensures result == 8; } by { execute(); simp(); }
+int64 relay(int32 value) { requires value == 7; ensures result == 8i64; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source
+        .replace("value == 7", "value == 2147483647")
+        .replace("result == 8;", "result == -2147483648;")
+        .replace("result == 8i64", "result == -2147483648i64");
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.message().contains("overflow"), "{}", error.message());
+}
+
+#[test]
+fn converted_call_initializers_preserve_boolean_results() {
+    let project = Project::with_fixture(
+        "converted.cpp",
+        "relay",
+        "bool echo(bool value) noexcept { return value; } int relay(bool value) noexcept { int captured = static_cast<int>(echo(value)); return captured; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "converted.cpp";
+bool echo(bool value) { ensures result == value; } by { execute(); simp(); }
+int32 relay(bool value) { requires value == 1; ensures result == 1; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn converted_return_calls_preserve_implicit_widening_and_original_refused_source() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "int echo(int value) noexcept { return value; } long relay(int value) noexcept { return echo(value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "relay.cpp";
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int64 relay(int32 value) { ensures result == value; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
+    for (cpp_type, proof_type, result_type, body, requirement, expected) in [
+        (
+            "unsigned long",
+            "uint64",
+            "int32",
+            "static_cast<int>(echo(value))",
+            "value == 18446744073709551615u64",
+            "-1",
+        ),
+        (
+            "long",
+            "int64",
+            "bool",
+            "static_cast<bool>(echo(value))",
+            "value == 4294967296i64",
+            "1",
+        ),
+        (
+            "bool",
+            "bool",
+            "uint64",
+            "static_cast<unsigned long>(echo(value))",
+            "value == 1",
+            "1u64",
+        ),
+        (
+            "long",
+            "int64",
+            "int64",
+            "static_cast<long>(static_cast<unsigned>(echo(value)))",
+            "value == 4294967297i64",
+            "1i64",
+        ),
+    ] {
+        let result_cpp = match result_type {
+            "int32" => "int",
+            "bool" => "bool",
+            "uint64" => "unsigned long",
+            _ => "long",
+        };
+        let project = Project::with_fixture(
+            "relay.cpp",
+            "relay",
+            &format!(
+                "{cpp_type} echo({cpp_type} value) noexcept {{ return value; }} {result_cpp} relay({cpp_type} value) noexcept {{ return {body}; }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            r#"verifying "relay.cpp";
+{proof_type} echo({proof_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+{result_type} relay({proof_type} value) {{ requires {requirement}; ensures result == {expected}; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace(
+            &format!("ensures result == {expected}"),
+            "ensures result == 0",
+        );
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+        if proof_type == "uint64" {
+            let false_fit = source.replace(
+                &format!("ensures result == {expected}"),
+                "ensures to_integer(result) == to_integer(value)",
+            );
+            fs::write(&path, &false_fit).unwrap();
+            assert!(
+                verify_program_prepared_project(
+                    &read_click_project(&path, &false_fit).unwrap(),
+                    &import,
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn converted_return_calls_preserve_locked_header_aliases_offline() {
+    let mut project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        r#"#include "relay.h"
+Amount relay(Amount value) noexcept { return Amount(echo(value)); }"#,
+    );
+    fs::write(
+        project.directory.join("relay.h"),
+        "#pragma once
+using Amount = long; inline Amount echo(Amount value) noexcept { return value; }",
+    )
+    .unwrap();
+    project.dependencies.push("relay.h".into());
+    project.write_config("relay");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let cast = &artifact["function"]["body"][0]["conversions"][0];
+    assert_eq!(cast["cast_kind"], "no_op");
+    assert_eq!(cast["explicit"], true);
+    assert_eq!(cast["span"]["file"], "relay.cpp");
+    assert_eq!(
+        cast["value_type"]["source_aliases"][0]["span"]["file"],
+        "relay.h"
+    );
+    fs::remove_file(&project.exporter).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "relay.cpp";
+int64 echo(int64 value) { ensures result == value; } by { execute(); simp(); }
+int64 relay(int64 value) { ensures result == value; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn converted_return_calls_capture_converted_results_before_destructors() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        r#"
+struct Restore {
+ int* p; int saved;
+ explicit Restore(int* slot) noexcept : p(slot), saved(*slot) { *p = 7; }
+ ~Restore() noexcept { *p = saved; }
+};
+long read(int* slot) noexcept { return static_cast<long>(*slot) + 4294967296L; }
+int relay(int& value) noexcept { Restore guard(&value); return static_cast<int>(read(&value)); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let source = r#"verifying "relay.cpp";
+void Restore_constructor(struct Restore* self, int32* slot) {
+ owns self->p; owns self->saved; owns slot[0..1];
+ ensures self->p == slot; ensures self->saved == old(slot[0]); ensures slot[0] == 7;
+ ensures separate(memory(*self), memory(self->p[0..1]));
+} by { execute(); simp(); }
+void Restore_destructor(struct Restore* self) {
+ requires separate(memory(*self), memory(self->p[0..1]));
+ owns self->p; owns self->saved; owns self->p[0..1];
+ ensures self->p == old(self->p); ensures self->saved == old(self->saved);
+ ensures self->p[0] == old(self->saved);
+} by { execute(); simp(); }
+int64 read(int32* slot) {
+ views slot[0..1]; requires slot[0] == 7; ensures result == 4294967303i64;
+ ensures slot[0] == old(slot[0]);
+} by { execute(); simp(); }
+int32 relay(int32* value) {
+ owns value[0..1]; ensures result == 7; ensures value[0] == old(value[0]);
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    for hostile in [
+        source.replace("ensures result == 7;", "ensures result == 0;"),
+        source.replace(
+            "ensures value[0] == old(value[0]);",
+            "ensures value[0] == 7;",
+        ),
+    ] {
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn converted_return_calls_evaluate_mutators_once_and_preserve_sibling_authority() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "struct Box { int value; int sibling; }; long bump(Box& box) noexcept { box.value = box.value + 1; return box.value; } int relay(Box& box) noexcept { return static_cast<int>(bump(box)); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "relay.cpp";
+int64 bump(struct Box* box) { owns box->value; requires box->value == 0; ensures box->value == 1; ensures result == 1i64; } by { execute(); simp(); }
+int32 relay(struct Box* box) { owns box->value; views box->sibling; requires box->value == 0; ensures box->value == 1; ensures result == 1; ensures box->sibling == old(box->sibling); } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace("owns box->value; views", "views box->value; views");
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn converted_return_calls_preserve_scalar_exceptions_offline() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "int helper(bool fail) { if (fail) { throw 7; } return 5; } long relay(bool fail) { return static_cast<long>(helper(fail)); }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "relay.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let source = r#"verifying "relay.cpp";
+int32 helper(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int64 relay(bool fail) throws int32 { ensures result == 5i64 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace("exception == 7 by", "exception == 8 by");
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn converted_return_calls_reject_forged_cast_chains_and_source_origins() {
+    use sha2::{Digest, Sha256};
+    let mut project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        r#"#include "relay.h"
+int relay(Amount value) noexcept { return static_cast<int>(echo(value)); }"#,
+    );
+    fs::write(
+        project.directory.join("relay.h"),
+        "#pragma once
+using Amount = long; inline Amount echo(Amount value) noexcept { return value; }",
+    )
+    .unwrap();
+    project.dependencies.push("relay.h".into());
+    project.write_config("relay");
+    refresh_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..9 {
+        let mut forged = artifact.clone();
+        let returned = &mut forged["function"]["body"][0];
+        match mutation {
+            0 => returned["conversions"][0]["source_type"]["bits"] = 32.into(),
+            1 => returned["conversions"][0]["value_type"]["bits"] = 64.into(),
+            2 => returned["conversions"][0]["cast_kind"] = "integral_to_boolean".into(),
+            3 => returned["conversions"][0]["span"]["file"] = "relay.h".into(),
+            4 => {
+                returned["conversions"][0]["source_type"]["source_aliases"][0]["span"]["file"] =
+                    "unlocked.h".into()
+            }
+            5 => returned["conversions"][0]["source_type"]["is_const"] = true.into(),
+            6 => returned["conversions"] = serde_json::json!([]),
+            7 => returned["value_type"]["bits"] = 64.into(),
+            8 => returned["conversions"][0]["source_type"]["bits"] = 128.into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&forged_lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "{mutation}: {error}");
+    }
+}
+
+#[test]
+fn converted_return_calls_keep_composed_effects_bounded() {
+    for (source, diagnostic) in [
+        (
+            "int echo(int value) noexcept { return value; } int relay(int value) noexcept { return static_cast<int>(echo(value) + 1); }",
+            "unsupported expression",
+        ),
+        (
+            "int echo(int value) noexcept { return value; } int relay(int value) noexcept { return echo(value) + echo(value); }",
+            "unsupported expression",
+        ),
+    ] {
+        let project = Project::with_fixture("relay.cpp", "relay", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(error.len() < 8000);
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn converted_return_calls_and_initializers_bound_exported_conversion_chains() {
+    for body in [
+        format!("return {}echo();", "(int)".repeat(257)),
+        format!(
+            "int captured = {}echo(); return captured;",
+            "(int)".repeat(257)
+        ),
+    ] {
+        let project = Project::with_fixture(
+            "relay.cpp",
+            "relay",
+            &format!("int echo() noexcept {{ return 7; }} int relay() noexcept {{ {body} }}"),
+        );
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains("scalar call-result conversions"), "{error}");
+        assert!(error.len() < 8000);
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn converted_return_calls_emit_active_object_cleanup_on_exception() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "struct Guard { int* slot; explicit Guard(int* value) noexcept : slot(value) { *slot = 1; } ~Guard() noexcept { *slot = 2; } }; int helper(bool fail) { if (fail) { throw 7; } return 5; } long relay(int* slot, bool fail) { Guard guard(slot); return static_cast<long>(helper(fail)); }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "relay.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
+    fn has_cleanup(statement: &CStatement) -> bool {
+        match statement {
+            CStatement::Seq(first, second) => has_cleanup(first) || has_cleanup(second),
+            CStatement::TryCatchInt32 {
+                try_body,
+                handler,
+                cleanup_unwind: true,
+                ..
+            } => {
+                contains_call(try_body, "helper")
+                    && matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow)
+                    if contains_call(cleanup, "Guard_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+            }
+            _ => false,
+        }
+    }
+    assert!(has_cleanup(lowered.kernel_function().body()));
+}
+
+#[test]
+fn converted_return_calls_keep_source_overflow_before_widening() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "int next(int value) noexcept { return value + 1; } long relay(int value) noexcept { return static_cast<long>(next(value)); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "relay.cpp";
+int32 next(int32 value) { requires value == 7; ensures result == 8; } by { execute(); simp(); }
+int64 relay(int32 value) { requires value == 7; ensures result == 8i64; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source
+        .replace("value == 7", "value == 2147483647")
+        .replace("result == 8;", "result == -2147483648;")
+        .replace("result == 8i64", "result == -2147483648i64");
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, &hostile).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.message().contains("overflow"), "{}", error.message());
+}
+
+#[test]
+fn execution_theorem_proof_retains_struct_argument_field_metadata() {
+    let project = Project::with_fixture(
+        "read.cpp",
+        "read",
+        "struct Child { int value; }; struct State { long sibling; Child child; }; int read(const State& state) noexcept { return state.child.value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "read.cpp";
+int32 read(const struct State* state) {
+    views state->child.value;
+    ensures result == state->child.value;
+} by { execute(); simp(); }
+contract int32 PositiveRead(const struct State* state) {
+    views state->child.value;
+    requires state->child.value == 2;
+    ensures result == 2;
+}
+theorem read_application() executes read(const struct State* state) {
+    ensures PositiveRead(&read) by {
+        have state->child.value > 0 by { arithmetic() using { state->child.value == 2; } }
+        execute(); simp();
+    }
+}
+"#;
+    let path = project.directory.join("read.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let first = sites
+        .iter()
+        .find(|site| site.claim_label.starts_with("read_application."))
+        .unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        &import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    let path = project.directory.join("hostile.click");
+    let hostile = source.replace("requires state->child.value == 2;", "");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+    let (definitions, application) = source.split_once("theorem read_application()").unwrap();
+    let wrong_field = format!(
+        "{definitions}theorem read_application(){}",
+        application.replace("child.value", "child.missing")
+    );
+    fs::write(&path, &wrong_field).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &wrong_field).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.message().len() < 8000);
+}
+
+fn check_converted_wide_call_results(initializer: bool) {
+    for (cpp_source, source, cpp_result, result, lo, hi) in [
+        (
+            "__int128",
+            "int128",
+            "long",
+            "int64",
+            "-9223372036854775808",
+            "9223372036854775807",
+        ),
+        (
+            "__int128",
+            "int128",
+            "int",
+            "int32",
+            "-2147483648",
+            "2147483647",
+        ),
+        (
+            "__int128",
+            "int128",
+            "unsigned long",
+            "uint64",
+            "0",
+            "18446744073709551615",
+        ),
+        (
+            "__int128",
+            "int128",
+            "unsigned",
+            "uint32",
+            "0",
+            "4294967295",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "long",
+            "int64",
+            "0",
+            "9223372036854775807",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "int",
+            "int32",
+            "0",
+            "2147483647",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "unsigned long",
+            "uint64",
+            "0",
+            "18446744073709551615",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "unsigned",
+            "uint32",
+            "0",
+            "4294967295",
+        ),
+    ] {
+        let body = if initializer {
+            format!(
+                "{cpp_result} narrowed = static_cast<{cpp_result}>(echo(value)); return narrowed;"
+            )
+        } else {
+            format!("return static_cast<{cpp_result}>(echo(value));")
+        };
+        let project = Project::with_fixture(
+            "wide.cpp",
+            "relay",
+            &format!(
+                "{cpp_source} echo({cpp_source} value) noexcept {{ return value; }} {cpp_result} relay({cpp_source} value) noexcept {{ {body} }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let declarations = if initializer {
+            "step(); step();"
+        } else {
+            "step();"
+        };
+        let cert = cast_identity_certificate("to_integer(captured)", lo, hi);
+        let proof = format!(
+            r#"verifying "wide.cpp";
+{source} echo({source} value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+{result} relay({source} value) {{
+ requires {lo} <= to_integer(value); requires to_integer(value) <= {hi};
+ ensures to_integer(result) == to_integer(value);
+}} by {{
+ {declarations}
+ let captured = step(echo(value), {{}});
+ have {lo} <= to_integer(captured) by {{ arithmetic() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
+ have to_integer(captured) <= {hi} by {{ arithmetic() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
+ execute();
+ have to_integer(result) == to_integer(captured) by {{ {cert} }}
+ arithmetic() using {{ to_integer(result) == to_integer(captured); to_integer(captured) == to_integer(value); }}
+}}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        if source == "int128" && result == "int64" {
+            for hostile in [
+                proof.replacen("ensures result == value;", "", 1),
+                proof.replace(
+                    "integer_cast_identity bounds [0, 1]",
+                    "integer_cast_identity bounds [0, 0]",
+                ),
+                proof.replacen(
+                    "ensures to_integer(result) == to_integer(value);",
+                    "ensures to_integer(result) == to_integer(value) + 1;",
+                    1,
+                ),
+            ] {
+                let path = project.directory.join("hostile.click");
+                fs::write(&path, &hostile).unwrap();
+                let error = verify_program_prepared_project(
+                    &read_click_project(&path, &hostile).unwrap(),
+                    &import,
+                )
+                .unwrap_err();
+                assert!(error.message().len() < 8000);
+            }
+        }
+        for missing in [
+            format!("requires {lo} <= to_integer(value);"),
+            format!("requires to_integer(value) <= {hi};"),
+        ] {
+            let hostile = proof.replace(&missing, "");
+            let path = project.directory.join("hostile.click");
+            fs::write(&path, &hostile).unwrap();
+            let error = verify_program_prepared_project(
+                &read_click_project(&path, &hostile).unwrap(),
+                &import,
+            )
+            .unwrap_err();
+            assert!(error.message().len() < 8000);
+        }
+    }
+}
+#[test]
+fn converted_wide_return_calls_preserve_values_with_checked_destination_bounds() {
+    check_converted_wide_call_results(false);
+}
+#[test]
+fn converted_wide_call_initializers_preserve_values_with_checked_destination_bounds() {
+    check_converted_wide_call_results(true);
+}
+
+#[test]
+fn converted_wide_boolean_calls_observe_high_bits() {
+    for (point, answer) in [("0", "0"), ("18446744073709551616", "1")] {
+        let project = Project::with_fixture(
+            "wide.cpp",
+            "relay",
+            "unsigned __int128 echo(unsigned __int128 value) noexcept { return value; } bool relay(unsigned __int128 value) noexcept { return static_cast<bool>(echo(value)); }",
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let zero_fact = if answer == "0" {
+            String::new()
+        } else {
+            format!(
+                "have not (to_integer(captured) == 0) by {{ rewrite(to_integer(captured) == {point}); normalize(); }}"
+            )
+        };
+        let proof = format!(
+            r#"verifying "wide.cpp";
+uint128 echo(uint128 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures result == {answer}; }} by {{
+ step(); let captured = step(echo(value), {{}});
+ have to_integer(captured) == {point} by {{ arithmetic() using {{ to_integer(value) == {point}; to_integer(captured) == to_integer(value); }} }}
+ {zero_fact}
+ execute(); simp();
+}}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        let hostile = proof.replace(
+            &format!("ensures result == {answer};"),
+            &format!(
+                "ensures result == {};",
+                if answer == "0" { "1" } else { "0" }
+            ),
+        );
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
     }
 }

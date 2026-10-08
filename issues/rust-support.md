@@ -1366,3 +1366,56 @@ The Adler arbitrary-head trial now reaches the original byte-conversion call.
 The chunk-slice view still needs a checked transfer to that call's slice
 binding. The complete Adler caller remains the four-byte constructor boundary;
 this storage-lifetime fix does not claim arbitrary-batch induction.
+
+
+### Shared chunk views across symbolic loop heads
+
+The frozen `design/charon-trial/chunk-view-loop` fixture now proves a stored
+`ChunksExact` loop that passes each shared subslice to an unchanged byte-reading
+helper. The loop uses the imported iterator's cursor and remaining count, with
+an inductive preservation proof and no generated processed count. This fixture
+covers sixteen input bytes in four-byte chunks; it is a view-transfer regression,
+not a checksum specification or an arbitrary-length Adler proof.
+
+The shared kernel planner now selects view occurrences through the existing
+indexed pointer-equality frontier, including its sole affine-class supplier
+fallback. Selection preserves the occurrence used to resolve the live loan
+binding. Range coverage, participant/scope validation, and recovery still check
+that authority; an alias equality or a bare view descriptor grants none.
+Regressions reject absent alias evidence, overlong child views, missing live
+bindings, and false cursor/result claims. Deterministic work remains bounded
+across increasing unrelated frames.
+
+The original Adler arbitrary-head trial now passes the byte-conversion call
+that previously lacked its chunk-view backing. Its next incomplete obligation
+is transporting the converted vector's lane values back to the chunk's byte
+reads; broad `simp` reaches its deterministic search budget there. Next provide
+explicit helper-result/snapshot transports and finish lane-invariant
+preservation. The complete Adler caller still covers only the established
+four-byte constructor boundary; arbitrary-batch induction remains open.
+
+
+### Interior byte transport for returned lane records
+
+The frozen `design/charon-trial/chunk-lane-results` crate now proves all four
+returned lane values at a symbolic stored-chunk loop head. A reduced trial
+showed why byte zero worked while interior lanes failed: an exact alias of a
+symbolic base was used to frame its zero-offset read but not its interior
+reads past stores to local temporaries.
+
+The shared kernel now also queries the exact alias of an interior pointer's
+zero-offset base, solely to establish structural separation of whole objects.
+It adds no authority and does not use address inequality to frame overlapping
+byte spans. Negative tests cover missing/withdrawn aliases, wrong lanes,
+missing views, and same-object overlap; indexed lookup work stays constant
+across unrelated frames of sixteen through 1,024 facts. The fixture's loop
+uses the native cursor and remaining count and checks its expanded certificate.
+
+The unchanged Adler arbitrary-head trial now passes the original byte-conversion
+call and all four lane value/bound obligations. It next fails on the snapshot
+copy into temporary array `__rust_mir_72`, whose owned backing is missing from
+the symbolic loop body. A smaller crate trial reproduces the same refusal for
+`let array = lanes.lanes;`; see
+`bugs/rust-loop-local-array-copy-lacks-backing.md`. Next retain and check that
+array's local storage/ownership boundary, then resume invariant preservation.
+Arbitrary batches and the full checksum specification remain unproved.

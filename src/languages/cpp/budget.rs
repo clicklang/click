@@ -10,6 +10,7 @@ pub(super) const MAX_RECORD_LAYOUT_LEAVES: usize = 65_536;
 pub(super) const MAX_CONSTANTS: usize = 1024;
 pub(super) const MAX_FUNCTIONS: usize = 1024;
 pub(super) const MAX_CALL_DEPTH: usize = 64;
+pub(super) const MAX_SCALAR_CONVERSIONS: usize = 256;
 pub(super) const MAX_LOCAL_DECLARATIONS: usize = 1024;
 pub(super) const MAX_CLEANUP_SCOPES: usize = 256;
 const MAX_JSON_CONTAINERS: usize = 65_536;

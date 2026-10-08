@@ -1,0 +1,1 @@
+pub fn empty(bytes: &[u8]) -> i32 { for byte in bytes.iter() { let _value = *byte; } 0 }

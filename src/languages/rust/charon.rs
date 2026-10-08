@@ -1841,6 +1841,12 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    #[ignore = "nightly: assignment-operator whole-sidecar proof measured at 13 s"]
+    fn charon_assignment_operator_source_bodies_verify() {
+        let export = decode(OPERATOR_ARTIFACT, "operators.rs", OPERATOR_SOURCE).unwrap();
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         C0VerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/assignment-operators/operators.click"),

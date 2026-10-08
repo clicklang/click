@@ -577,7 +577,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
                     &memory,
                     heap_cell(TARGET_HEAP, offset),
                     CType::UInt32,
-                    Vec::new(),
+                    Vec::new().into(),
                     Vec::new(),
                     &assumptions,
                     false,

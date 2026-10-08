@@ -339,8 +339,27 @@ charged to visible semantic output rather than hidden ambient state:
   add their local resource observations after that shared prefix, and carry
   the context to return preparation; duplicate or dropped cases keep the
   ordered fold. The same regression now bounds whole-verification context
-  construction in both proof forms. Flat path storage and terminal-join work
-  remain violations; the bug report records the whole-work curve.
+  construction in both proof forms. Logical proof cases also retain their
+  ordered branch decision when the checked arm opens, using the frozen C
+  spelling for a source-successor split. Returned paths share that prefix,
+  and terminal joins keep the nested history instead of copying
+  and indexing it again. The same regression now bounds whole-verification
+  work in both proof forms through 64 returns. Completed candidate collections
+  also share their immutable source, input state, arguments, and path storage
+  across frontier clones. The candidate-fork regression varies path counts and
+  facts per path independently through 1,024, without a timing threshold.
+  Certification still checks these untrusted candidates against execution.
+  Individual paths now retain ordered persistent fact streams, including
+  guard prefixes and effect metadata. Exact merges keep accepted source fact
+  objects, and checked completion shares its context's ordered projection.
+  The same whole-verification regression bounds retained fact objects and
+  vector chunks at candidate publication and checked completion in both proof
+  forms. At 64 returns, 2,405 logical fact occurrences retain 197 distinct fact
+  objects and 328 vector chunks. The kernel storage regression and context
+  fork tests check order, arm isolation, metadata edits, and owner lifetime.
+  Terminal joins still assemble distinct flat outcome containers, and outcome
+  processing still traverses each logical fact stream; the bug report records
+  those remaining costs and the whole-work curves.
 
 ## Execution capacity follows selected syntax
 

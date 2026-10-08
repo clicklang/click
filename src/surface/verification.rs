@@ -3199,7 +3199,6 @@ fn verify_c0_sources_in_context(
         certification_state
             .resources()
             .synchronize_memory_equalities(&assumptions_from_propositions(&certification_facts));
-        let has_frontier_loop_rules = frontier_loop_artifacts.is_some();
         let contract_function = annotated_function_with_assumptions(
             &certification_function_block,
             parsed_function,
@@ -3509,18 +3508,7 @@ fn verify_c0_sources_in_context(
                             contract_function.clone(),
                             certification_arguments.clone(),
                             certification_function_environment,
-                            if has_frontier_loop_rules {
-                                CExecutionSemantics::APPLY_VERIFIED_RULES
-                            } else {
-                                match contract_execution_mode {
-                                    CFunctionContractExecutionMode::VerifyLoops => {
-                                        CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS
-                                    }
-                                    CFunctionContractExecutionMode::ExecuteLoops => {
-                                        CExecutionSemantics::APPLY_VERIFIED_RULES
-                                    }
-                                }
-                            },
+                            CExecutionSemantics::APPLY_VERIFIED_RULES,
                             contract_execution_mode,
                             &checked_artifacts,
                             &certification_pure_theorems,
@@ -9158,7 +9146,7 @@ int32 reader(int32 p[], int32 q[]) {
             error.message()
         );
         assert!(
-            error.message().contains("`views p[0..1]`")
+            error.message().contains("`views p[0]`")
                 && error.message().contains("is already supported by `owns "),
             "{}",
             error.message()
@@ -9270,7 +9258,8 @@ int32 read_retargeted(struct buffer* owner, int32* other) {
         // The view the state still holds is anchored at the pointer field's
         // entry load, not at whatever `owner->data` points at now.
         assert!(
-            error.message().contains("views owner[") && !error.message().contains("arg-memory"),
+            error.message().contains("views owner->data[")
+                && !error.message().contains("arg-memory"),
             "{}",
             error.message()
         );
@@ -9415,7 +9404,7 @@ int32 copy_pair(struct pair* s, struct pair* t) {
         assert!(
             error
                 .message()
-                .contains("missing resource fact `owns s[0..1]`"),
+                .contains("missing resource fact `owns s->a`"),
             "{}",
             error.message()
         );

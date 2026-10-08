@@ -220,6 +220,7 @@ mod prelude {
     pub(super) use super::primitives::*;
     pub(super) use super::reasoning::*;
     pub(super) use super::spec::*;
+    pub(super) use super::{ExecutionFactSource, ExecutionFacts};
     pub(super) use std::collections::{BTreeMap, BTreeSet};
 }
 
@@ -438,3 +439,6 @@ impl Drop for VerificationSession {
         VERIFICATION_SESSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
     }
 }
+
+mod execution_facts;
+pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIter};

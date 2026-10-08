@@ -100,8 +100,7 @@ Specification and proof:
 
 ## P2: after launch (20)
 
-- [Use the short proof forms in the existing proofs](short-proof-forms-in-existing-proofs.md)
-- [Let `intro() as name` name a range quantifier's variable](intro-as-on-range-quantifiers.md)
+- [Design review of the proof language: open items](design-review.md)
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
 

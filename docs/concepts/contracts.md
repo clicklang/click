@@ -142,6 +142,11 @@ refined by an explicit theorem instead. See
 for the list and for the pairing a contract with resource proof parameters
 needs.
 
+In an `executes` theorem, the executed function's parameters are available in
+the guarantee's proof block with their declared struct types. Field paths,
+including nested fields, use those layouts in `have` propositions and other
+proof steps. This scope ends with the guarantee; it grants no memory authority.
+
 ## Write footprints
 
 Memory-modifying functions declare the memory they own:

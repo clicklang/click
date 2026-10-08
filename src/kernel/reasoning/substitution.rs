@@ -317,10 +317,10 @@ pub fn resolve_load_variables_from_registry(proposition: &Proposition) -> Propos
 
 pub fn resolve_minted_load_variables(
     proposition: &Proposition,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) -> Proposition {
     let mut resolved = proposition.clone();
-    for fact in facts {
+    for fact in facts.fact_iter() {
         if !fact.certified {
             continue;
         }
@@ -1448,6 +1448,18 @@ fn collect_expression_outcome_bound_variables(
 
 fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<Variable>) {
     match &pointer.block {
+        PointerBlock::PureFunctionApplication(_) => {
+            collect_proposition_capture_variables(
+                &Proposition::ConditionIs(
+                    ConditionTerm::PointerEqual(
+                        Box::new(pointer.clone()),
+                        Box::new(pointer.clone()),
+                    ),
+                    true,
+                ),
+                variables,
+            );
+        }
         PointerBlock::FunctionSymbolic(variable)
         | PointerBlock::Symbolic(variable)
         | PointerBlock::ExternalObject(variable) => {
@@ -5141,6 +5153,16 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
     from: Variable,
     to: &Bitvector32Term,
 ) -> Pointer {
+    if matches!(pointer.block, PointerBlock::PureFunctionApplication(_)) {
+        let source = Bitvector32Term::Variable(from);
+        let term = Term::CValue(CValue::pointer(pointer.clone()));
+        let Term::CValue(CValue::Pointer(result)) =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to).term(&term)
+        else {
+            unreachable!()
+        };
+        return result.into_pointer();
+    }
     Pointer {
         block: pointer.block.clone(),
         offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
@@ -5815,26 +5837,15 @@ fn pointer_capture_avoiding_quantifier_body(
     from: Variable,
     replacement: &Pointer,
 ) -> (Proposition, Variable) {
-    let replacement_variable = match replacement.block {
-        PointerBlock::FunctionSymbolic(variable)
-        | PointerBlock::Symbolic(variable)
-        | PointerBlock::ExternalObject(variable) => Some(variable),
-        PointerBlock::Concrete(_)
-        | PointerBlock::StringLiteral { .. }
-        | PointerBlock::Function(_)
-        | PointerBlock::ExternalArgument
-        | PointerBlock::LoadedPointer(_)
-        | PointerBlock::Heap(_)
-        | PointerBlock::Temporary(_) => None,
-    };
-    if replacement_variable != Some(binder) || !matches!(sort, Sort::CPointer(_)) {
+    let mut replacement_variables = BTreeSet::new();
+    collect_pointer_bound_variables(replacement, &mut replacement_variables);
+    if !replacement_variables.contains(&binder) || !matches!(sort, Sort::CPointer(_)) {
         return (body.clone(), binder);
     }
-
     let mut reserved = crate::kernel::proposition_variables(body);
     reserved.insert(from);
     reserved.insert(binder);
-    reserved.insert(replacement_variable.expect("checked above"));
+    reserved.extend(replacement_variables);
     let fresh = KernelVariableGenerator::fresh_for(0, reserved).next();
     let pointer = match sort {
         Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
@@ -6054,6 +6065,16 @@ fn substitute_pointer_variable_in_pointer(
     from: Variable,
     to: &Pointer,
 ) -> Pointer {
+    if matches!(&pointer.block, PointerBlock::PureFunctionApplication(_)) {
+        let term = Term::CValue(CValue::pointer(pointer.clone()));
+        let Term::CValue(CValue::Pointer(result)) =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
+                .term(&term)
+        else {
+            unreachable!()
+        };
+        return result.into_pointer();
+    }
     if matches!(pointer.block, PointerBlock::ExternalObject(variable) if variable == from) {
         let identity = to.object_identity();
         return Pointer {
@@ -7050,6 +7071,17 @@ fn substitute_pointer_variable_in_block(
     to: &Pointer,
 ) -> PointerBlock {
     match block {
+        PointerBlock::PureFunctionApplication(_) => {
+            substitute_pointer_variable_in_pointer(
+                &Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                from,
+                to,
+            )
+            .block
+        }
         PointerBlock::ExternalObject(variable) if *variable == from => to.object_identity().block,
         PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable)
             if *variable == from =>
@@ -8340,7 +8372,7 @@ mod integer_function_traversal_tests {
         let from = Variable(817);
         let machine = Bitvector32Term::Variable(from);
         let make = |machine: Bitvector32Term| {
-            IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+            IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observed".into(),
                 vec![
                     PureFunctionArgument::Value(CValue::Int32(machine.clone())),
@@ -8384,7 +8416,7 @@ mod integer_function_traversal_tests {
             .unwrap()
             .into();
             for _ in 0..depth {
-                term = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                term = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "pair".into(),
                     vec![
                         PureFunctionArgument::Integer(term.clone()),
@@ -8432,7 +8464,7 @@ mod integer_function_traversal_tests {
         let make = |memory: CMemory| {
             Proposition::Equal(
                 Term::Integer(IntegerTerm::PureFunctionApplication(
-                    SharedIntegerApplication::intern(
+                    SharedPureApplication::intern(
                         "observe_array".into(),
                         vec![
                             PureFunctionArgument::Integer(IntegerTerm::var(source).into()),
@@ -8550,7 +8582,7 @@ mod integer_match_substitution_scope_tests {
     fn substitution_freshens_match_binder_while_preserving_free_replacement() {
         let x = Variable(9001);
         let y = Variable(9002);
-        let body = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![
                 PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(y))),
@@ -8644,7 +8676,7 @@ mod integer_match_substitution_scope_tests {
     fn substitution_does_not_rewrite_a_match_binder_or_its_bound_body() {
         let y = Variable(9010);
         let z = Variable(9011);
-        let body = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![PureFunctionArgument::Value(CValue::Int32(
                 Bitvector32Term::Variable(y),
@@ -8689,7 +8721,7 @@ mod integer_match_substitution_scope_tests {
             CValue::UInt64(Bitvector32Term::Variable(replacement)),
         ];
         for carrier in carriers {
-            let body = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+            let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observe".into(),
                 vec![PureFunctionArgument::Value(CValue::Int32(
                     Bitvector32Term::Variable(source),
@@ -8717,7 +8749,7 @@ mod integer_match_substitution_scope_tests {
             )
             .unwrap();
             for _ in 0..depth {
-                body = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "pair".into(),
                     vec![
                         PureFunctionArgument::Integer(body.clone().into()),
@@ -8795,7 +8827,7 @@ mod integer_mixed_quantifier_tests {
     use super::*;
 
     fn application(integer: IntegerTerm, machine: Bitvector32Term) -> IntegerTerm {
-        IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "opaque".into(),
             vec![
                 PureFunctionArgument::Integer(integer.into()),
@@ -8884,7 +8916,7 @@ mod integer_mixed_quantifier_tests {
             let mut value = IntegerTerm::var(from);
             for _ in 0..depth {
                 let child: SharedIntegerTerm = value.into();
-                value = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "pair".into(),
                     vec![
                         PureFunctionArgument::Integer(child.clone()),

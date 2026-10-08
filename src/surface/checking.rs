@@ -28,7 +28,6 @@ pub(super) struct CheckedResourceClaim<'e> {
     returned_resources: crate::kernel::ResourceContext,
     borrowed: bool,
     deferred_guard: bool,
-    inactive_guard: bool,
 }
 
 impl CheckedResourceClaim<'_> {
@@ -45,7 +44,6 @@ impl CheckedResourceClaim<'_> {
             returned_resources: crate::kernel::ResourceContext::new(),
             borrowed,
             deferred_guard: false,
-            inactive_guard: true,
         }
     }
 
@@ -62,7 +60,6 @@ impl CheckedResourceClaim<'_> {
             returned_resources: crate::kernel::ResourceContext::new(),
             borrowed,
             deferred_guard: true,
-            inactive_guard: false,
         }
     }
 
@@ -88,9 +85,6 @@ impl CheckedResourceClaim<'_> {
     }
     pub(super) fn defers_resource_transition(&self) -> bool {
         self.deferred_guard
-    }
-    pub(super) fn has_inactive_guard(&self) -> bool {
-        self.inactive_guard
     }
 }
 
@@ -156,7 +150,7 @@ pub(super) fn prove_ensure_resource<'e>(
     claim_label: &str,
     path_index: usize,
     _allocation_lifetime: &crate::kernel::proof::AllocationLifetimeObligation,
-    execution_pure_facts: &[crate::kernel::ExecutionPureFact],
+    execution_pure_facts: &(impl crate::kernel::ExecutionFactSource + ?Sized),
     available_pure_facts: &(impl PropositionSource + ?Sized),
     resource: &ResourceClause,
     borrowed: bool,
@@ -280,7 +274,6 @@ pub(super) fn prove_ensure_resource<'e>(
                 .unchecked_with_facts(expected.iter().cloned()),
             borrowed,
             deferred_guard: false,
-            inactive_guard: false,
         });
     }
     let expected = expected

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::ExecutionFactSource;
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
 
@@ -8,7 +9,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     source: &Proposition,
     target: &Proposition,
     available: &[Proposition],
-    effect_facts: &[ExecutionPureFact],
+    effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     view: ExecutionView<'_>,
@@ -66,7 +67,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
             return true;
         }
         let transport_assumptions = effect_facts
-            .iter()
+            .fact_iter()
             .fold(selected_assumptions, |assumptions, fact| {
                 assumptions.assume_proposition(fact.proposition().clone())
             })
@@ -206,7 +207,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     claim_label: &str,
     tactic_index: usize,
     available: &ProofFacts,
-    effect_facts: &[ExecutionPureFact],
+    effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     pre_state: &CState,
@@ -445,7 +446,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
             // They are certified facts, not user premises.
             chain_facts.extend(
                 effect_facts
-                    .iter()
+                    .fact_iter()
                     .map(|fact| fact.proposition().clone())
                     .filter(|fact| matches!(fact, Proposition::ConditionIs(_, _))),
             );
@@ -553,14 +554,14 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
                         .observable_facts_assuming_valid(available.assumptions());
                     let mut context_variables = std::collections::BTreeSet::new();
                     for fact in effect_facts
-                        .iter()
+                        .fact_iter()
                         .map(ExecutionPureFact::proposition)
                         .chain(resource_facts.iter())
                     {
                         context_variables.extend(crate::kernel::proposition_variables(fact));
                     }
                     let context = effect_facts
-                        .iter()
+                        .fact_iter()
                         .map(|fact| fact.proposition().clone())
                         .chain(resource_facts)
                         .fold(
@@ -679,7 +680,7 @@ fn describe_unreachable_fact_transport(
     tactic_index: usize,
     surface_source: &ClickProposition,
     surface_target: &ClickProposition,
-    transition_facts: &[ExecutionPureFact],
+    transition_facts: &(impl ExecutionFactSource + ?Sized),
     labels: &mut render::SnapshotLabels,
 ) -> String {
     let mut rendered = format!(
@@ -706,7 +707,7 @@ fn describe_unreachable_fact_transport(
         total.min(LISTED)
     ));
     let mut omitted = false;
-    for fact in transition_facts.iter().take(LISTED) {
+    for fact in transition_facts.fact_iter().take(LISTED) {
         match render::render_simple_click_fact_labeled(fact.proposition(), labels) {
             Some(text) => {
                 rendered.push_str("\n    ");
@@ -1001,7 +1002,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
     target: &Proposition,
     after: &CMemory,
     assumptions: &PureFactContext,
-    transitions: &[ExecutionPureFact],
+    transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
     crate::kernel::closure_memoized_fact_check(
         crate::kernel::ClosureFactCheck::Reachability,
@@ -1026,7 +1027,7 @@ fn certified_fact_transport_reaches_through_unmemoized(
     target: &Proposition,
     after: &CMemory,
     assumptions: &PureFactContext,
-    transitions: &[ExecutionPureFact],
+    transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
     if certified_fact_transport_reaches(source, target, Some(after), assumptions) {
         return true;

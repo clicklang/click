@@ -4352,6 +4352,106 @@ fn pointer_storage_views_name_the_field_alone() {
     );
 }
 
+/// A function cannot return two owners of one place. The contract is refused
+/// where it is declared, whether or not it has a proof.
+#[test]
+fn a_contract_cannot_return_one_place_twice() {
+    let c_source = "struct cell { int32 value; int32 other; int32* data; }; \
+        int32 get(struct cell* p) { return p->value; }";
+    for (contract, expected) in [
+        (
+            "int32 get(struct cell* p) { owns p->value; produces p->value; ensures result == result; } by { execute(); simp(); }",
+            "`get` both owns and produces `p->value`; `owns` already returns it",
+        ),
+        (
+            "int32 get(struct cell* p) { owns p->value; produces p->value; ensures result == result; }",
+            "`get` both owns and produces `p->value`; `owns` already returns it",
+        ),
+        (
+            "contract int32 Twice(struct cell* p) { owns p->value; produces p->value; }",
+            "`Twice` both owns and produces `p->value`; `owns` already returns it",
+        ),
+        (
+            "int32 get(struct cell* p) { views p->value; produces p->other; produces p->other; ensures result == result; } by { execute(); simp(); }",
+            "`get` produces `p->other` twice",
+        ),
+        (
+            "int32 get(struct cell* p) { owns *p; produces *p; ensures result == result; } by { execute(); simp(); }",
+            "`get` both owns and produces `*p`",
+        ),
+    ] {
+        let source = format!("verifying \"cell.c\"; {contract}");
+        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+            .expect_err("the contract returns one place twice");
+        assert!(error.message.contains(expected), "{contract}: {error:?}");
+        assert!(
+            error.message.contains("two owners of one place"),
+            "{contract}: {error:?}"
+        );
+    }
+    // Giving a place up and returning it is not twice, and a place reached
+    // through a pointer the function may replace is left to the proof.
+    for contract in [
+        "int32 get(struct cell* p) { consumes p->value; produces p->value; ensures result == result; } by { execute(); simp(); }",
+        "contract int32 Swap(struct cell* p) { owns p->data; owns p->data[0..1]; produces p->data[0..1]; }",
+        "contract int32 Fields(struct cell* p) { consumes p->value; consumes p->data; produces p->value; produces p->data; }",
+    ] {
+        let source = format!("verifying \"cell.c\"; {contract}");
+        let refused = match verify_c0_sources(&source, &[("cell.c", c_source)]) {
+            Err(error) => error.message,
+            Ok(_) => String::new(),
+        };
+        assert!(
+            !refused.contains("two owners of one place"),
+            "{contract}: {refused}"
+        );
+    }
+}
+
+/// A missing memory fact is reported as the place a clause would name.
+#[test]
+fn a_missing_memory_fact_is_reported_as_a_place() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        struct pad { int32* data; int32 n; }; \
+        struct outer { int32 head; struct cell inner; }; \
+        int32 read_n(struct pad* a) { return a->n; } \
+        int32 read_data(struct pad* a) { return a->data[0]; } \
+        int32 write_other(struct cell* p) { p->other = 1; return 0; } \
+        int32 read_inner(struct outer* o) { return o->inner.other; } \
+        int32 read_q(int32* q) { return q[1]; }";
+    for (contract, expected) in [
+        (
+            "int32 read_n(struct pad* a) { owns a->data; }",
+            "missing resource fact `views a->n`",
+        ),
+        (
+            "int32 read_data(struct pad* a) { views a->n; }",
+            "missing resource fact `views a->data`",
+        ),
+        (
+            "int32 read_data(struct pad* a) { views a->data; }",
+            "missing resource fact `views a->data[0..1]`",
+        ),
+        (
+            "int32 write_other(struct cell* p) { views *p; }",
+            "missing resource fact `owns p->other`",
+        ),
+        (
+            "int32 read_inner(struct outer* o) { views o->head; }",
+            "missing resource fact `views o->inner.other`",
+        ),
+        (
+            "int32 read_q(int32* q) { views q[0]; }",
+            "held `views q[0]` does not cover `q[1]`",
+        ),
+    ] {
+        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
+        let error = verify_c0_sources(&source, &[("place.c", c_source)])
+            .expect_err("the access is not authorized");
+        assert!(error.message.contains(expected), "{contract}: {error:?}");
+    }
+}
+
 /// A range on a struct pointer counts structs, and `*link` for a
 /// `struct T**` is one pointer slot, not a struct.
 #[test]

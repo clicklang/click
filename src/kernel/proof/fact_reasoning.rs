@@ -596,7 +596,7 @@ pub(crate) fn separation_bridged_fact_is_available(
     required: &Proposition,
     available: &[Proposition],
     assumptions: &PureFactContext,
-    framing: &[ExecutionPureFact],
+    framing: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
     matches!(required, Proposition::CResourceSeparate { .. })
         && separation_bridged_available(required, available, assumptions, framing)
@@ -2298,10 +2298,10 @@ fn separation_bridged_available(
     required: &Proposition,
     available: &[Proposition],
     assumptions: &PureFactContext,
-    framing: &[ExecutionPureFact],
+    framing: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
     let assumptions = framing
-        .iter()
+        .fact_iter()
         .fold(assumptions.clone(), |assumptions, fact| {
             assumptions.assume_proposition(fact.proposition().clone())
         });

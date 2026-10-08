@@ -43,7 +43,7 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) click_function_environment: &'a ClickFunctionEnvironment,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
     pub(in crate::surface::proof) unfolded_predicates: &'a [String],
-    pub(in crate::surface::proof) effect_facts: &'a [ExecutionPureFact],
+    pub(in crate::surface::proof) effect_facts: ExecutionFacts,
     pub(in crate::surface::proof) lowering_context: Arc<Vec<Proposition>>,
     pub(in crate::surface::proof) original_requirements: &'a [Requirement],
     pub(in crate::surface::proof) requirement_facts: &'a [Proposition],

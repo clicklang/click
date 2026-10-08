@@ -175,7 +175,7 @@ pub(in crate::surface) fn offset_pointer_by_elements(
     // same terms kernel execution does. Names are content-addressed, so no
     // fact stream is needed here — the defining equation is emitted wherever
     // the kernel evaluates the same load.
-    let mut discarded_facts = Vec::new();
+    let mut discarded_facts = crate::kernel::ExecutionFacts::new();
     let elements = crate::kernel::canonicalized_offset_index_term(elements, &mut discarded_facts);
     Pointer {
         block: pointer.block,

@@ -1346,6 +1346,12 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.block {
+            crate::kernel::PointerBlock::PureFunctionApplication(application) => {
+                self.push(application.name());
+                self.push("(");
+                self.pure_arguments(application.arguments());
+                self.push(")");
+            }
             crate::kernel::PointerBlock::Concrete(s) | crate::kernel::PointerBlock::Function(s) => {
                 self.push(s)
             }

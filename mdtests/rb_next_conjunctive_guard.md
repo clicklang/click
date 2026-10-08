@@ -174,5 +174,5 @@ struct rb_node* rb_next(struct rb_node* node) {
 ```
 
 ```expect
-fail: the read requires `views node[2..3]`, which is not available
+fail: the read requires `views node[2]`, which is not available
 ```

@@ -219,7 +219,9 @@ impl AliasCandidates {
         };
         let intervals = match block {
             // A symbolic block may be constrained to any address.
-            PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_) => vec![BlockInterval {
+            PointerBlock::Symbolic(_)
+            | PointerBlock::LoadedPointer(_)
+            | PointerBlock::PureFunctionApplication(_) => vec![BlockInterval {
                 start: None,
                 end: Upper::Unbounded,
             }],
@@ -527,6 +529,14 @@ mod tests {
             PointerBlock::ExternalObject(Variable(5)),
             PointerBlock::Symbolic(Variable(0)),
             PointerBlock::Symbolic(Variable(7)),
+            PointerBlock::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
+                "pick".into(),
+                vec![],
+            )),
+            PointerBlock::PureFunctionApplication(crate::kernel::SharedPureApplication::intern(
+                "other".into(),
+                vec![],
+            )),
             PointerBlock::Heap(0),
             PointerBlock::Heap(1),
             PointerBlock::Heap(9),

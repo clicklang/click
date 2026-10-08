@@ -2363,7 +2363,7 @@ fn spec_integer_to_term(
         crate::kernel::SpecIntegerExpression::Term(term) => Some(term.clone()),
         crate::kernel::SpecIntegerExpression::PureFunctionApplication { name, arguments } => {
             Some(crate::kernel::IntegerTerm::PureFunctionApplication(
-                crate::kernel::SharedIntegerApplication::intern(
+                crate::kernel::SharedPureApplication::intern(
                     name.clone(),
                     arguments
                         .iter()
@@ -4233,7 +4233,7 @@ impl AnnotationLowerer<'_> {
                 {
                     return Ok(SpecIntegerExpression::Term(
                         crate::kernel::IntegerTerm::PureFunctionApplication(
-                            crate::kernel::SharedIntegerApplication::intern(
+                            crate::kernel::SharedPureApplication::intern(
                                 definition.name().to_string(),
                                 arguments,
                             ),

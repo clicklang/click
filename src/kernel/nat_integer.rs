@@ -55,7 +55,7 @@ fn converted_integer(term: &AlgebraicTerm) -> Option<&IntegerTerm> {
 }
 
 fn observe(term: AlgebraicTerm) -> IntegerTerm {
-    IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+    IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
         "to_integer".into(),
         vec![PureFunctionArgument::Algebraic(term)],
     ))
@@ -276,7 +276,7 @@ mod tests {
             assert!(check_nat_integer_law("integer_nat_round_trip", &conclusion).is_none());
             assert_eq!(holds(&conclusion), z.to_i64() != Some(-1));
         }
-        let ordinary = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        let ordinary = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "nat_to_integer".into(),
             vec![PureFunctionArgument::Algebraic(nat(0))],
         ));

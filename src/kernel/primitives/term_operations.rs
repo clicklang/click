@@ -3401,6 +3401,7 @@ impl Pointer {
             PointerBlock::ExternalArgument
                 | PointerBlock::Symbolic(_)
                 | PointerBlock::LoadedPointer(_)
+                | PointerBlock::PureFunctionApplication(_)
         )
     }
 

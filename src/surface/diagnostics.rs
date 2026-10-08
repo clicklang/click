@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedCMemory;
 use crate::kernel::resource_tracker;
 use crate::kernel::{CComparisonOperator, CFloatBinaryOperator, CFloatCondition, CUpdateOperator};
@@ -131,7 +132,7 @@ pub(super) fn diagnostic_item_limit() -> usize {
 
 fn describe_context_pure_and_execution_facts(
     pure_facts: &[Proposition],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
@@ -144,7 +145,7 @@ fn describe_context_pure_and_execution_facts(
         .iter()
         .chain(
             execution_pure_facts
-                .iter()
+                .fact_iter()
                 .map(ExecutionPureFact::proposition),
         )
         .take(item_limit)
@@ -483,14 +484,22 @@ fn describe_unclassified_pure_fact(
     )
 }
 
-pub(super) fn describe_execution_pure_facts(facts: &[ExecutionPureFact]) -> String {
+pub(super) fn describe_execution_pure_facts(facts: &(impl ExecutionFactSource + ?Sized)) -> String {
     if facts.is_empty() {
         return "[]".to_string();
     }
 
-    describe_bounded_list(facts, |fact| {
-        describe_pure_fact(fact.proposition(), &[], &[])
-    })
+    let limit = diagnostic_item_limit();
+    let mut entries = facts
+        .fact_iter()
+        .take(limit)
+        .map(|fact| describe_pure_fact(fact.proposition(), &[], &[]))
+        .collect::<Vec<_>>();
+    compact_unspelled_facts(&mut entries);
+    if facts.len() > limit {
+        entries.push(format!("… {} more omitted", facts.len() - limit));
+    }
+    format!("[{}]", entries.join(", "))
 }
 
 pub(super) fn describe_available_facts(
@@ -498,7 +507,7 @@ pub(super) fn describe_available_facts(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     format!(
         "available pure facts: {}\n  available resource facts: {}",
@@ -538,7 +547,7 @@ pub(super) fn describe_missing_pure_fact(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     format!(
         "missing pure fact: {}\n  {}",
@@ -559,7 +568,7 @@ pub(super) fn describe_missing_resource_fact(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     let mut note = String::new();
     if let CResource::Iterated(required_iterated) = required.resource()
@@ -781,7 +790,7 @@ pub(super) fn describe_proof_context(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     format!(
         "proof context:\n  pure facts: {}\n  resource facts: {}",
@@ -938,7 +947,7 @@ pub(super) fn describe_missing_proof_obligations(
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
-    execution_pure_facts: &[ExecutionPureFact],
+    execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
     let item_limit = diagnostic_item_limit();
     let mut required = obligations
@@ -1671,11 +1680,109 @@ pub(super) fn format_declared_resource(
     )
 }
 
+/// The place a range covers inside the struct a parameter points at: the
+/// whole struct as `*p`, or one field as `p->field`. A clause names places,
+/// so a fact about one reads the way the clause for it is written. A range
+/// that is not exactly one of these keeps its cell spelling.
+fn describe_struct_place_range(
+    range: &CMemoryRange,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let start = u64::from(range.start().as_const()?);
+    let end = u64::from(range.end().as_const()?);
+    let width = u64::from(range.element_width());
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        let CExpression::Value(CValue::Pointer(base)) = argument else {
+            continue;
+        };
+        if parameter.array_element_width().is_some() || parameter.is_struct_value() {
+            continue;
+        }
+        let Some(layout) = parameter
+            .pointee_struct_layout()
+            .or_else(|| parameter.struct_layout())
+        else {
+            continue;
+        };
+        let Some(offset) = diagnostic_pointer_element_index_from_base(range.base(), base, 1)
+            .and_then(|offset| offset.as_const())
+        else {
+            continue;
+        };
+        let low = u64::from(offset) + start * width;
+        let high = u64::from(offset) + end * width;
+        let size = u64::from(layout.size_bytes());
+        if low == 0 && high == size {
+            return Some(format!("*{}", parameter.name()));
+        }
+        for (name, field) in layout.fields() {
+            let field_low = u64::from(field.offset_bytes());
+            if field_low != low {
+                continue;
+            }
+            // A field's slot runs to the next field or the end of the struct.
+            let slot_high = layout
+                .fields()
+                .values()
+                .map(|other| u64::from(other.offset_bytes()))
+                .filter(|other| *other > field_low)
+                .min()
+                .unwrap_or(size);
+            // A pointer field is read as the word at its start.
+            let pointer_word = field.c_type().is_pointer() && low < high && high <= slot_high;
+            if high == slot_high
+                || high == field_low + u64::from(field.byte_width())
+                || pointer_word
+            {
+                return Some(format!("{}->{name}", parameter.name()));
+            }
+        }
+        // A leaf of an embedded struct: `o->inner.count`.
+        let leaf_high = |leaf_low: u64| {
+            layout
+                .leaf_field_offsets()
+                .map(|(_, other)| u64::from(other))
+                .filter(|other| *other > leaf_low)
+                .min()
+                .unwrap_or(size)
+        };
+        if let Some((name, _)) = layout.leaf_field_offsets().find(|(name, leaf_low)| {
+            name.contains('.')
+                && u64::from(*leaf_low) == low
+                && low < high
+                && high <= leaf_high(low)
+        }) {
+            return Some(format!("{}->{name}", parameter.name()));
+        }
+    }
+    None
+}
+
 pub(super) fn describe_memory_range(
     range: &CMemoryRange,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
+    if let Some(place) = describe_struct_place_range(range, parameters, arguments) {
+        return place;
+    }
+    // Elements behind a pointer field are spelled from the field:
+    // `a->data[0..n]`.
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        let CExpression::Value(CValue::Pointer(base)) = argument else {
+            continue;
+        };
+        if let Some(field) =
+            describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
+        {
+            return format!(
+                "{field}[{}..{}]",
+                describe_bitvector_with_context(range.start(), parameters, arguments),
+                describe_bitvector_with_context(range.end(), parameters, arguments)
+            );
+        }
+    }
     if let Some(description) = describe_parameter_relative_range(range, parameters, arguments) {
         return description;
     }
@@ -1692,9 +1799,20 @@ pub(super) fn describe_memory_range(
                 || cell.contains("->")
                 || cell.contains("].")
                 || cell.ends_with(']');
-            if compound && range.start().as_const() == Some(0) && range.end().as_const() == Some(1)
-            {
+            let one_element =
+                range.start().as_const() == Some(0) && range.end().as_const() == Some(1);
+            if compound && one_element {
                 return cell;
+            }
+            // One element at a named object's address is that object, as a
+            // clause writes it: `second`, not `&second[0..1]`.
+            if one_element
+                && let Some(name) = cell.strip_prefix('&')
+                && name
+                    .chars()
+                    .all(|character| character.is_alphanumeric() || "_:".contains(character))
+            {
+                return name.to_string();
             }
             cell
         }
@@ -1729,6 +1847,15 @@ pub(super) fn describe_parameter_relative_range(
 ) -> Option<String> {
     let (parameter, base_index) = parameter_relative_base(range, parameters, arguments)?;
     let (start, end) = parameter_relative_endpoints(&base_index, range);
+    // One element is the place `q[i]`. A struct pointer keeps its cell
+    // range: `p[i]` there is a whole struct.
+    if let (Some(low), Some(high)) = (start.as_const(), end.as_const())
+        && low.checked_add(1) == Some(high)
+        && parameter.pointee_struct_layout().is_none()
+        && parameter.struct_layout().is_none()
+    {
+        return Some(format!("{}[{low}]", parameter.name()));
+    }
     Some(format!(
         "{}[{}..{}]",
         parameter.name(),
@@ -4042,11 +4169,17 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
         } if *start == int32(0) && *end == int32(1) => describe_c_expression(place),
         ContractSegmentSurface::Range { base, start, end } => {
             let rendered_base = describe_contract_expression(base);
-            format!(
-                "{rendered_base}[{}..{}]",
+            let (start, end) = (
                 describe_contract_expression(start),
-                describe_contract_expression(end)
-            )
+                describe_contract_expression(end),
+            );
+            // The same place once its base is an address value.
+            match rendered_base.strip_prefix('&') {
+                Some(name) if start == "0" && end == "1" && is_place_spelling(name) => {
+                    name.to_string()
+                }
+                _ => format!("{rendered_base}[{start}..{end}]"),
+            }
         }
         ContractSegmentSurface::Field {
             base: surface_base,
@@ -4058,6 +4191,12 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             }
             None => format!("{base}->{name}"),
         },
+        // The object at a named object's address is that object.
+        ContractSegmentSurface::Object(_)
+            if base.strip_prefix('&').is_some_and(is_place_spelling) =>
+        {
+            base[1..].to_string()
+        }
         ContractSegmentSurface::Object(_) if is_place_spelling(&base) => format!("*{base}"),
         ContractSegmentSurface::Object(_) => format!("*({base})"),
     };

@@ -54,6 +54,7 @@ constexpr std::size_t kMaxConstantDeclarations = 1024;
 constexpr std::size_t kMaxFunctionDeclarations = 1024;
 constexpr unsigned kMaxLocalDeclarations = 1024;
 constexpr unsigned kMaxCleanupScopes = 256;
+constexpr std::size_t kMaxScalarConversions = 256;
 
 constexpr const char *kClangVersion = "19.1.7";
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
@@ -272,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 43;
+    artifact["schema"] = 45;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1100,23 +1101,28 @@ private:
         return std::nullopt;
       }
       llvm::json::Object result;
-      const auto *call = llvm::dyn_cast<clang::CallExpr>(
-          returned->getRetValue()->IgnoreParens());
-      if (call != nullptr && !is_numeric_limits_max_call(call)) {
+      auto scalar_call = lower_scalar_call_source(returned->getRetValue());
+      if (!scalar_call) return std::nullopt;
+      const auto *call = scalar_call->call;
+      if (call != nullptr) {
         const auto *callee = call->getDirectCallee();
         if (callee == nullptr ||
-            !context_.hasSameType(callee->getReturnType(),
+            !context_.hasSameType(returned->getRetValue()->getType(),
                                   function->getReturnType())) {
-          fail(call->getExprLoc(), "C++ return call requires matching callee "
+          fail(call->getExprLoc(), "C++ return call requires matching final value "
                                    "and caller return types");
           return std::nullopt;
         }
         auto lowered = lower_call_operation(call, function, true);
-        auto value_type = lower_type(call->getType(), call->getExprLoc());
+        auto value_type = lower_type(returned->getRetValue()->getType(),
+                                     returned->getRetValue()->getExprLoc(),
+                                     direct_source_alias(function->getTypeSourceInfo()));
         if (!lowered || !value_type) {
           return std::nullopt;
         }
         result["kind"] = "return_call";
+        if (!scalar_call->conversions.empty())
+          result["conversions"] = std::move(scalar_call->conversions);
         result["callee"] = std::move(lowered->callee);
         result["arguments"] = std::move(lowered->arguments);
         result["value_type"] = std::move(*value_type);
@@ -1360,6 +1366,75 @@ private:
     return true;
   }
 
+  struct ScalarCallSource {
+    const clang::CallExpr *call;
+    llvm::json::Array conversions;
+  };
+
+  // Preserve the resolved conversions around a whole call, without admitting
+  // arbitrary effectful expressions. Initializers and returns share this path.
+  std::optional<ScalarCallSource>
+  lower_scalar_call_source(const clang::Expr *expression) {
+    const clang::Expr *call_candidate = expression->IgnoreParens();
+    llvm::json::Array call_conversions;
+    std::vector<const clang::CastExpr *> casts;
+    while (const auto *cast = llvm::dyn_cast<clang::CastExpr>(call_candidate)) {
+      casts.push_back(cast);
+      call_candidate = cast->getSubExpr()->IgnoreParens();
+    }
+    const auto *call = llvm::dyn_cast<clang::CallExpr>(call_candidate);
+    if (call != nullptr && !is_numeric_limits_max_call(call)) {
+      if (casts.size() > kMaxScalarConversions) {
+        fail(expression->getExprLoc(),
+             "C++ artifact budget exhausted: scalar call-result conversions (limit " +
+                 std::to_string(kMaxScalarConversions) + ")");
+        return std::nullopt;
+      }
+      for (auto it = casts.rbegin(); it != casts.rend(); ++it) {
+        const clang::CastExpr *cast = *it;
+        std::string kind;
+        switch (cast->getCastKind()) {
+        case clang::CK_NoOp:
+          if (!context_.hasSameType(cast->getType(), cast->getSubExpr()->getType())) {
+            fail(cast->getExprLoc(), "unsupported C++ call-result no-op conversion");
+            return std::nullopt;
+          }
+          kind = "no_op";
+          break;
+        case clang::CK_IntegralCast: kind = "integral_cast"; break;
+        case clang::CK_IntegralToBoolean: kind = "integral_to_boolean"; break;
+        case clang::CK_BooleanToSignedIntegral: kind = "boolean_to_signed_integral"; break;
+        default:
+          fail(cast->getExprLoc(), "unsupported C++ call-result conversion");
+          return std::nullopt;
+        }
+        auto source_alias = [this](const clang::Expr *value) {
+          value = value->IgnoreParens();
+          if (const auto *explicit_cast = llvm::dyn_cast<clang::ExplicitCastExpr>(value))
+            return direct_source_alias(explicit_cast->getTypeInfoAsWritten());
+          if (const auto *call = llvm::dyn_cast<clang::CallExpr>(value);
+              call != nullptr && call->getDirectCallee() != nullptr)
+            return direct_source_alias(call->getDirectCallee()->getTypeSourceInfo());
+          return static_cast<const clang::TypedefNameDecl *>(nullptr);
+        };
+        auto source_type = lower_type(cast->getSubExpr()->getType(), cast->getExprLoc(),
+                                      source_alias(cast->getSubExpr()));
+        auto value_type = lower_type(cast->getType(), cast->getExprLoc(), source_alias(cast));
+        if (!source_type || !value_type) return std::nullopt;
+        llvm::json::Object conversion;
+        conversion["cast_kind"] = kind;
+        conversion["explicit"] = llvm::isa<clang::ExplicitCastExpr>(cast);
+        conversion["source_type"] = std::move(*source_type);
+        conversion["value_type"] = std::move(*value_type);
+        conversion["span"] = span(cast->getSourceRange());
+        call_conversions.push_back(std::move(conversion));
+      }
+    }
+    return ScalarCallSource{
+        call != nullptr && !is_numeric_limits_max_call(call) ? call : nullptr,
+        std::move(call_conversions)};
+  }
+
   std::optional<Json>
   lower_local_declaration(const clang::DeclStmt *statement,
                           const clang::FunctionDecl *function,
@@ -1470,6 +1545,9 @@ private:
     const clang::Expr *source_initializer = local->getInit();
     const clang::Expr *semantic_initializer =
         source_initializer->IgnoreParenImpCasts();
+    auto scalar_call = lower_scalar_call_source(source_initializer);
+    if (!scalar_call) return std::nullopt;
+    const auto *initializer_call = scalar_call->call;
     if (record_object && record->isAggregate()) {
       const auto *semantic_list =
           llvm::dyn_cast<clang::InitListExpr>(source_initializer);
@@ -1549,14 +1627,12 @@ private:
       initializer["callee"] = std::move(reference);
       initializer["arguments"] = std::move(arguments);
       initializer["span"] = span(source_initializer->getSourceRange());
-    } else if (const auto *call =
-            llvm::dyn_cast<clang::CallExpr>(semantic_initializer);
+    } else if (const auto *call = initializer_call;
                call != nullptr && !is_numeric_limits_max_call(call)) {
       if (call->getDirectCallee() == nullptr ||
-          !context_.hasSameType(call->getDirectCallee()->getReturnType(),
-                                local->getType())) {
+          !context_.hasSameType(source_initializer->getType(), local->getType())) {
         fail(call->getExprLoc(),
-             "C++ call capture requires matching return and local types");
+             "C++ call capture requires matching final initializer and local types");
         return std::nullopt;
       }
       auto lowered = lower_call_operation(call, function, true);
@@ -1564,6 +1640,8 @@ private:
         return std::nullopt;
       }
       initializer["kind"] = "call";
+      if (!scalar_call->conversions.empty())
+        initializer["conversions"] = std::move(scalar_call->conversions);
       initializer["callee"] = std::move(lowered->callee);
       initializer["arguments"] = std::move(lowered->arguments);
       initializer["span"] = std::move(lowered->span);

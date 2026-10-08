@@ -1249,7 +1249,7 @@ pub(crate) struct CCheckedResourceFact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CFunctionMemoryEffectProjection {
     ranges: Vec<CMemoryRange>,
-    evidence_facts: Vec<ExecutionPureFact>,
+    evidence_facts: ExecutionFacts,
     /// The owned requirement each projected range came out of, for the ranges
     /// a checked resource transition produced. An explicit effect segment
     /// names no requirement and appears here not at all; the call site reads
@@ -1662,7 +1662,7 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -1893,13 +1893,13 @@ pub(super) fn execute_c_function_paths_with_contract_resources(
 /// Callee execution has its own bindings and cannot update these by name.
 fn refresh_returned_local_bindings_from_stores(
     outcome: &mut CFunctionOutcome,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
 ) {
     let state = match outcome {
         CFunctionOutcome::Return { state, .. } | CFunctionOutcome::Throw { state, .. } => state,
         _ => return,
     };
-    for fact in facts {
+    for fact in facts.fact_iter() {
         let Some(store) = fact.certified_store_data() else {
             continue;
         };
@@ -1975,7 +1975,7 @@ pub(super) fn execute_c_function_verification_paths(
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -4653,7 +4653,7 @@ pub(super) fn execute_c_function_call_paths(
     {
         return Ok(vec![CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }]);
@@ -4663,7 +4663,7 @@ pub(super) fn execute_c_function_call_paths(
             outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "step(Contract) requires a function-pointer call".to_string(),
             )),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -4741,7 +4741,7 @@ pub(super) fn execute_c_function_call_paths(
                     };
                     return Ok(vec![CFunctionPath {
                         outcome: CFunctionOutcome::RuntimeError(error),
-                        facts: Vec::new(),
+                        facts: Vec::new().into(),
                         obligations: Vec::new(),
 
                         loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -4766,7 +4766,7 @@ pub(super) fn execute_c_function_call_paths(
                 expected: function.parameters().len(),
                 actual: arguments.len(),
             }),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -4974,7 +4974,7 @@ pub(super) fn execute_c_function_call_paths(
 #[derive(Clone)]
 pub(crate) struct TacticRuleTransition {
     pub(crate) state: CState,
-    pub(crate) facts: Vec<ExecutionPureFact>,
+    pub(crate) facts: ExecutionFacts,
     /// The execution's kernel-variable mark after the application, which
     /// the caller installs so later steps cannot reuse an identity it minted.
     pub(crate) next_kernel_variable: u64,
@@ -5454,7 +5454,7 @@ fn execute_verified_function_applications_with_suspension(
             outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "call requires at least one contract application".to_string(),
             )),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -5479,7 +5479,7 @@ fn execute_verified_function_applications_with_suspension(
             outcome: CFunctionOutcome::RuntimeError(
                 CRuntimeError::UnsupportedOpaqueFunctionContract(application.name.to_string()),
             ),
-            facts: Vec::new(),
+            facts: Vec::new().into(),
             obligations: Vec::new(),
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }]);
@@ -5535,7 +5535,7 @@ fn execute_verified_function_applications_with_suspension(
             outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                 "calls with named resource instances require checked binder transport: `{unbound_function}` has an unbound instance binder `{unbound_binder}`; bind it in `step(..., {{ {unbound_binder}: instance }})`"
             ))),
-            facts: vec![],
+            facts: vec![].into(),
             obligations: vec![],
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -7354,7 +7354,7 @@ fn exceptional_direct_function_path(
     entry_state: &CState,
     entry_contract_state: &CState,
     transfer: &CFunctionResourceTransfer,
-    mut facts: Vec<ExecutionPureFact>,
+    mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: &PureFactContext,
     payload_identity: Variable,
@@ -7428,7 +7428,7 @@ struct PreparedVerifiedFunctionCall<'a> {
     entry_state: CState,
     entry_contract_state: CState,
     transfer: CFunctionResourceTransfer,
-    facts: Vec<ExecutionPureFact>,
+    facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     effective_assumptions: PureFactContext,
     /// The binder map this interface was selected with, if any. A `produces`
@@ -8943,7 +8943,7 @@ fn loadability_obligation_shape(proposition: &Proposition) -> bool {
 fn resource_call_failure(message: &str) -> CFunctionPath {
     CFunctionPath {
         outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message.into())),
-        facts: vec![],
+        facts: vec![].into(),
         obligations: vec![],
 
         loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -10079,7 +10079,7 @@ pub(crate) enum StorageWriteOutsideFootprint {
 pub(crate) fn storage_writes_outside_owned_footprint(
     contract: &CFunction,
     entry: &CState,
-    facts: &[ExecutionPureFact],
+    facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
     transition_resources: Option<&[CCheckedResourceFact]>,
     prepared_projection: Option<&CFunctionMemoryEffectProjection>,
@@ -10093,7 +10093,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
             .filter(|(pointer, _)| is_storage(pointer))
             .collect();
     let storage_summaries: Vec<&CMemoryRange> = facts
-        .iter()
+        .fact_iter()
         .filter_map(|fact| match fact.proposition() {
             Proposition::CMemoryEffectSummary { mutable_ranges, .. } => Some(mutable_ranges),
             _ => None,
@@ -10413,7 +10413,7 @@ fn project_explicit_memory_segments(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_decided_guards: bool,
-) -> ExecutionResult<Result<(Vec<CMemoryRange>, Vec<ExecutionPureFact>), String>> {
+) -> ExecutionResult<Result<(Vec<CMemoryRange>, ExecutionFacts), String>> {
     let mut projection_assumptions = assumptions.clone();
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
@@ -10450,7 +10450,7 @@ fn project_explicit_memory_segments(
             Err(message) => return Ok(Err(message)),
         }
     }
-    Ok(Ok((ranges.into_iter().collect(), evidence_facts)))
+    Ok(Ok((ranges.into_iter().collect(), evidence_facts.into())))
 }
 
 /// The canonical owned memory ranges one checked owned fact denotes, derived
@@ -12020,7 +12020,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     evidence_facts.extend(explicit_evidence);
     Ok(Ok(CFunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
-        evidence_facts,
+        evidence_facts: evidence_facts.into(),
         range_sources,
     }))
 }
@@ -13052,7 +13052,7 @@ fn project_refinement_effects(
         }
         return Ok(Ok(CFunctionMemoryEffectProjection {
             ranges,
-            evidence_facts,
+            evidence_facts: evidence_facts.into(),
             // Explicit segments carry no requirement provenance.
             range_sources: Vec::new(),
         }));
@@ -15209,7 +15209,7 @@ fn modified_by_value_aggregate_parameter_with_current_ensure(
 
 #[cfg(test)]
 fn add_verified_function_ensure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     obligations: &[ProofObligation],
     post_contract_state: &CState,
     entry_contract_state: &CState,
@@ -15230,7 +15230,7 @@ fn add_verified_function_ensure_facts(
 }
 
 fn add_verified_function_ensure_facts_selected_with_interface<'a>(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     obligations: &[ProofObligation],
     post_contract_state: &CState,
     entry_contract_state: &CState,
@@ -15294,7 +15294,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     .iter()
                     .filter(|fact| !fact.certified)
                     .cloned()
-                    .collect::<Vec<_>>()
+                    .collect::<ExecutionFacts>()
             } else {
                 ensure_path.facts.clone()
             };
@@ -15422,7 +15422,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 }
             }
         }
-        let published = &facts[published_before..];
+        let published = facts.iter().skip(published_before);
         crate::instrumentation::record_deterministic_work(published.len());
         for fact in published {
             ensure_assumptions = ensure_assumptions.assume_proposition(fact.proposition().clone());
@@ -15441,10 +15441,10 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// pre-havoc cell. Read-only calls also publish these consequences: a named
 /// load of a known input cell must remain usable by later arithmetic checks.
 fn add_normalized_verified_ensure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
     ensure: &Proposition,
     ensure_assumptions: &PureFactContext,
-    ensure_facts: &[ExecutionPureFact],
+    ensure_facts: &(impl ExecutionFactSource + ?Sized),
     ensure_obligations: &[ProofObligation],
 ) {
     if !ensure_obligations.is_empty()
@@ -15975,7 +15975,7 @@ fn apply_verified_heap_allocation_delta(
     ledger: Option<&LoanLedger>,
     mutex_state: &CState,
     output_state: &CState,
-) -> Result<(CMemory, Vec<ExecutionPureFact>, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
+) -> Result<(CMemory, ExecutionFacts, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
     let mut retired_creations = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
@@ -16224,7 +16224,7 @@ fn apply_verified_heap_allocation_delta(
                 ))
             })?;
     }
-    Ok((memory, effects, retired_creations))
+    Ok((memory, effects.into(), retired_creations))
 }
 
 fn with_contract_argument_views(state: &CState, function: &CFunction, values: &[CValue]) -> CState {
@@ -16590,7 +16590,7 @@ pub(super) fn evaluate_c_arguments_paths(
     let mut paths = vec![CArgumentsPath {
         values: Vec::new(),
         outcome: None,
-        facts: Vec::new(),
+        facts: Vec::new().into(),
         obligations: Vec::new(),
     }];
 
@@ -16719,7 +16719,7 @@ fn contract_argument_binding_error(
 fn append_string_literal_loadable_facts(
     function: &CFunction,
     outcome: &CFunctionOutcome,
-    facts: &mut Vec<ExecutionPureFact>,
+    facts: &mut ExecutionFacts,
 ) {
     let state = match outcome {
         CFunctionOutcome::Return { state, .. } | CFunctionOutcome::Throw { state, .. } => state,
@@ -23951,9 +23951,17 @@ pub(in crate::kernel) fn child_composite_definition<'a>(
 /// with. The order is total and the choice is always the smaller element, so
 /// two spellings collapse to the same one whichever side the query starts
 /// from, and a spelling the program already uses is never traded away for a
-/// proof name.
+/// proof name. An opaque pure call is also a logical spelling, even when
+/// unfolding proves it equal to a program pointer. The block order puts it
+/// after symbolic variables, so it cannot displace a havocked C local.
 fn pointer_spelling_rank(pointer: &Pointer) -> (bool, &Pointer) {
-    (matches!(pointer.block, PointerBlock::Symbolic(_)), pointer)
+    (
+        matches!(
+            pointer.block,
+            PointerBlock::Symbolic(_) | PointerBlock::PureFunctionApplication(_)
+        ),
+        pointer,
+    )
 }
 
 /// The spelling a matched arm's pointer binding denotes.
@@ -33761,7 +33769,7 @@ mod provisional_ensure_obligation_tests {
                     arguments: Vec::new(),
                 });
             }
-            let mut facts = Vec::new();
+            let mut facts = crate::kernel::ExecutionFacts::new();
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 add_verified_function_ensure_facts(
                     &mut facts,
@@ -36728,7 +36736,7 @@ mod verified_read_normalization_tests {
                 ));
             let result = Bitvector32Term::Variable(Variable(930_401));
             let ensure = Proposition::ConditionIs(ConditionTerm::equal(result.clone(), load), true);
-            let mut facts = Vec::new();
+            let mut facts = crate::kernel::ExecutionFacts::new();
             add_normalized_verified_ensure_facts(
                 &mut facts,
                 &ensure,

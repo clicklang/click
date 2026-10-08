@@ -13,5 +13,5 @@ void update(int32* pool, int32* p) {
 ```
 
 ```expect
-fail: missing resource fact `owns p[1..2]`
+fail: missing resource fact `owns p[1]`
 ```

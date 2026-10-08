@@ -572,6 +572,8 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             }
         }
 
+        refuse_a_place_returned_twice(&function)?;
+
         if function.ensures().is_empty()
             && !function
                 .requires()
@@ -587,6 +589,81 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 
     crate::surface::clear_ambient_proof_source();
     Ok(())
+}
+
+/// A function cannot hand back two owners of one place. `owns X` already
+/// returns `X`, so `owns X; produces X;` returns it twice, and so does
+/// `produces X; produces X;`. The kernel refuses such an exit state, but only
+/// while checking a proof and without naming the place, and a contract with
+/// no body to check would be accepted and then be unusable at every call.
+///
+/// The check is by spelling, on unconditional clauses. An `owns` clause is
+/// read at entry and a `produces` clause at exit, so the two name the same
+/// place for certain only when the place does not depend on memory the
+/// function may change. A place reached through a loaded pointer
+/// (`owns p->data[0..n]; produces p->data[0..n];`) can be a different
+/// allocation at exit, and is left to the proof.
+fn refuse_a_place_returned_twice(function: &FunctionBlock) -> Result<(), ClickError> {
+    let returned = function
+        .ensures()
+        .iter()
+        .filter(|clause| clause.condition().is_none())
+        .filter_map(|clause| match clause.ensure() {
+            Ensure::Resource(ResourceClause::OwnMemory(segment)) => {
+                Some((segment, clause.borrowed()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for (index, (left, left_borrowed)) in returned.iter().enumerate() {
+        for (right, right_borrowed) in &returned[index + 1..] {
+            // The whole clause, not its range alone: fields of different
+            // widths share a range index and differ in their element.
+            if left != right {
+                continue;
+            }
+            let same_state = left_borrowed == right_borrowed;
+            if *left_borrowed && *right_borrowed {
+                // Two `owns` clauses collide at entry, where the entry
+                // resources are checked.
+                continue;
+            }
+            let fixed_place = [&left.base, &left.start, &left.end]
+                .into_iter()
+                .all(c_expression_reads_no_memory);
+            if !same_state && !fixed_place {
+                continue;
+            }
+            let place = crate::surface::diagnostics::describe_contract_segment(left);
+            let how = if same_state {
+                format!("produces `{place}` twice")
+            } else {
+                format!("both owns and produces `{place}`; `owns` already returns it")
+            };
+            return Err(ClickError::new(format!(
+                "`{}` {how}, so it would return two owners of one place",
+                function.signature().name()
+            ))
+            .with_kind(ClickErrorKind::Type));
+        }
+    }
+    Ok(())
+}
+
+/// Whether an expression is built from parameters and constants alone, so
+/// that it denotes the same value at a function's entry and exit.
+fn c_expression_reads_no_memory(expression: &CExpression) -> bool {
+    match expression {
+        CExpression::Variable(_) | CExpression::Value(_) => true,
+        CExpression::Add(left, right)
+        | CExpression::Subtract(left, right)
+        | CExpression::Multiply(left, right) => {
+            c_expression_reads_no_memory(left) && c_expression_reads_no_memory(right)
+        }
+        CExpression::PointerOffsetBytes { pointer, .. } => c_expression_reads_no_memory(pointer),
+        CExpression::Cast { expression, .. } => c_expression_reads_no_memory(expression),
+        _ => false,
+    }
 }
 
 fn validate_contract_applications_in_proposition(

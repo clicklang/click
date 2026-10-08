@@ -191,6 +191,69 @@ exclusively, or moved. Deriving default `views`, `owns` and `consumes`
 clauses from them is a separate question from how a clause is spelled, and is
 not part of this proposal (`design/rust-resource-correspondence.md`).
 
+## Reference parameters
+
+Decided 2026-10-07: references are a property of the parameter that the
+parser, the signature check and the printers all know. They are not a
+rewrite of the sidecar's text.
+
+Today both importers hand Click a C-shaped interface: `int& value` and
+`int* value` are the same `int32*` parameter, and the sidecar writes
+`value[0]` for the referent.
+
+1. **The interface records it.** A parameter of the imported function is
+   marked a reference when the source declares one. A C++ `int*` stays a
+   pointer.
+2. **The sidecar declares it.** `int32& value`, `const int32& value` and
+   `struct cell& c` are parameter types. The signature check compares
+   reference-ness the way it compares `const`: writing `int32*` for an `int&`
+   is a mismatch that names both spellings. A C source has no reference
+   parameters, so `&` in its sidecar is refused.
+3. **The name is the referent.** Wherever an expression names a reference
+   parameter, in a contract, a proof or a loop header, it denotes the object
+   referred to: `value` is the `int`, `c.value` is a field, and `owns value`
+   and `owns c` own the referent. The parser resolves identifiers to C
+   variables at one point, and that is where a reference parameter becomes a
+   read through its pointer. The pointer itself has no spelling, as in C++.
+4. **Printing inverts it.** A fact about the referent prints as `value`, not
+   `value[0]`.
+5. **`this`.** A member function's receiver is named `this` and is a pointer,
+   as in C++: `this->fee`, `owns *this`. Sidecars spell it `self` today.
+
+A first implementation of 1 to 3 was built and set aside unmerged. What it
+established:
+
+- The flag, the `T&` parameter syntax and the signature check are small and
+  mechanical. They follow `const` on a pointee through the same places.
+- Click has two expression parsers, one for contract expressions and one for
+  C fragments in clause targets. Both must resolve a reference.
+- **The referent needs its own syntax-tree node.** Building it as the same
+  node an explicit `value[0]` produces verifies, but that node prints as
+  `value[0]`. Expansion and several proof steps print an expression and parse
+  it again, and the second parse reads `value` as the referent and indexes it
+  once more. So printing (item 4) is not a later refinement; items 3 and 4
+  land together, on a node that prints as the bare name.
+- **The address of a referent needs a spelling.** `state.pointer = &value` in
+  the source gives a postcondition that compares pointers. With `value`
+  meaning the `int`, that is `state->pointer == &value`, which the parser
+  must accept for a reference parameter and lower to the carrying pointer.
+  The same holds for a struct reference compared with `this`.
+- A member function's receiver arrives from the exporter as a reference
+  named `self`. It stays a pointer until item 5 respells it as `this`.
+- About 30 negative tests in `tests/cpp_import.rs` make a false contract by
+  replacing a substring such as `value[0]` in a passing sidecar. Each needs
+  its replacement respelled, and an assertion that the replacement changed
+  the text, or the test silently stops testing anything.
+
+Order of work: the node, its printing and `&name`, with the flag, syntax and
+signature check, for scalar and struct references and their sidecars
+converted; `this`; then reference locals in C++ bodies, which proofs name
+through the lowered program.
+
+Rust is not covered here. Its natural spelling changes the signature syntax
+as well (`bytes: &[u8]`, `&mut self`), a slice carries its length, and
+layout is the compiler's. It gets its own proposal.
+
 ## Viewing memory at another width
 
 Some proofs read memory at a width other than its declared type, for example
@@ -223,22 +286,22 @@ an accepted clause.
 - Done: steps 1, 3 and 4. `&`, `object(p)` and a range on a scalar field are
   refused with the spelling to write, and every proof in the repository uses
   the new forms.
-- Partly done: step 2. A clause's own spelling prints as a place. Facts the
-  kernel reports still print cells: a missing `owns a->n` is still
-  `owns a[2..4]`, and a local's storage is `&second[0..1]`.
+- Done: step 2 for the facts users meet most. A missing or held fact inside
+  a struct a parameter points at prints as `p->field`, `p->inner.field` or
+  `*p`; elements behind a pointer field as `p->data[lo..hi]`; one element of
+  a scalar pointer as `q[i]`; a named object's own storage as its name. A
+  range that is none of these still prints cells, and so do the bounds in a
+  "covers only when" note.
 - Done: step 5. A range on a struct pointer counts structs, and the sites
   that counted cells name the struct (`*p`), its fields, or a struct count.
   The parser scales the bounds to cells. A constant count works; a symbolic
   count is not usable, as it was not when the cells were written by hand
   (`bugs/a-symbolic-struct-count-range-is-not-usable.md`).
-- Not started: step 6.
+- In progress: step 6 for C++, as designed under "Reference parameters".
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
 
 ## Open questions
 
-- Should a whole slice have a spelling, and which?
-- What is the explicit form for viewing memory at another width, and how many
-  proofs need it?
-- Do resource bodies and `viewable(...)`, `memory(...)` and `separate(...)`
-  move together with contract clauses, or after them?
+Open items are tracked in `issues/design-review.md`.
+
