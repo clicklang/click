@@ -76,11 +76,34 @@ syntax.
 Rust slice. Whether a whole slice gets a spelling, and which, belongs with
 A4.
 
-### A6. Memory at another width (decide)
+### A6. Memory at another width (decide: close?)
 
-A range has the element type of its base. Some proofs read memory at another
-width, for example a struct as bytes. That needs its own explicit form. Start
-with an inventory of the proofs that rely on it; none has been made.
+A range has the element type of its base. The question was whether proofs
+that read memory at another width need an explicit form.
+
+Inventory, 2026-10-08, by text search over `mdtests`, `examples`,
+`integrations`, `design/charon-trial` and `stdlib`; nothing was run:
+
+- No Click source names a second width for a range. There is no pointer
+  cast to `uint8*`, `char*`, `int32*` or `void*` in any clause, contract
+  expression or resource body. The only casts are `(struct T*)argument` on a
+  `void*` parameter (about 97 files, thread workers), which retype and do not
+  change width.
+- Reading at another width happens in C, about 48 files: `(unsigned
+  char*)(void*) q`, `(int64*)(void*) &a[j]`, and `memcpy` called on a wider
+  object. The sidecar states the range once at the declared width and the
+  kernel's byte view does the rest (`docs/internals/byte-representation.md`).
+- A specification cannot read at another width: "Specification loads read a
+  snapshot's cells without the byte view". The nearest spelling is the
+  explicit load `load_uint8(p)`, `load_int32(byte_offset(p, 16))`, in about
+  nine files.
+- `owns allocation(p, n * 4); owns p[0..n];` states one extent in bytes and
+  in elements, in about 94 files. That is two resources, not two widths of
+  one range.
+
+So nothing written today needs a range at another width. Decide whether to
+close this, or keep it for a specification that must state a byte of a wider
+cell, which today has only the `load_uint8(byte_offset(...))` spelling.
 
 ## B. Contracts and resource declarations
 
@@ -116,20 +139,6 @@ owns p->other; }` and a function that reads `p->value`:
 
 So a view reads one level through a declared resource and ownership reads
 none. Decide whether the two should agree, and at what depth.
-
-### B4. Overlap that depends on a symbolic bound
-
-A contract that returns one place twice, or two places that overlap by
-layout (`owns *p; produces p->value;`), is refused where it is declared or
-set up, with a message naming the places.
-
-An overlap that depends on a symbolic bound is not: `requires n >= 2;
-owns q[0..n]; produces q[1];`. With a proof it is refused when the exit state
-is checked, with "two owned memory resource clauses overlap", which does not
-name them. A `contract` declaration with no proof is accepted.
-
-Regression: that contract refused at setup by a message naming `q[0..n]` and
-`q[1]`, in a function with a proof and in a `contract` with none.
 
 ## C. Tactics
 
