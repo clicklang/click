@@ -4490,12 +4490,122 @@ fn cpp_local_aggregate_rejects_partial_default_copy_nested_and_second_objects() 
 }
 
 #[test]
-fn cpp_pointer_slice_rejects_arithmetic_null_multilevel_and_pointer_locals() {
+fn cpp_native_pointer_offsets_preserve_index_width_and_range_authority() {
+    for (cpp_type, click_type, index, expression, expected) in [
+        ("int", "int32", "1", "data + index", "1"),
+        ("int", "int32", "-1", "(data + 2) + index", "1"),
+        ("unsigned int", "uint32", "1u32", "index + data", "1"),
+        ("long", "int64", "1i64", "data + index", "1"),
+        ("int", "int32", "1", "(data + 2) - index", "1"),
+        ("unsigned long", "uint64", "2u64", "data + index", "2"),
+    ] {
+        let project = Project::with_fixture(
+            "offset.cpp",
+            "read",
+            &format!(
+                "int read(int* data, {cpp_type} index) noexcept {{ return *({expression}); }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let rewrite = if matches!(click_type, "int64" | "uint64") {
+            format!("rewrite(index == {index});")
+        } else {
+            String::new()
+        };
+        let sidecar = format!(
+            r#"verifying "offset.cpp";
+int32 read(int32* data, {click_type} index) {{
+ owns data[0..3]; requires index == {index};
+ ensures result == old(data[{expected}]);
+ ensures data[0] == old(data[0]); ensures data[2] == old(data[2]);
+}} by {{ execute(); {rewrite} simp(); }}
+"#
+        );
+        check_arithmetic_sidecar(&project, &import, &sidecar);
+        let hostile = sidecar.replace(" owns data[0..3];", "");
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn cpp_native_size_t_last_load_checks_nonempty_and_actual_backing_bounds() {
+    let project = Project::with_fixture(
+        "last.cpp",
+        "last",
+        "int last(int* data, unsigned long length) noexcept { return *(data + (length - 1UL)); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    for (length, end, expected) in [("1u64", "1", "0"), ("3u64", "3", "2")] {
+        let sidecar = format!(
+            r#"verifying "last.cpp";
+int32 last(int32* data, uint64 length) {{
+ owns data[0..{end}]; requires length == {length};
+ ensures result == old(data[{expected}]);
+}} by {{ execute(); rewrite(length == {length}); simp(); }}
+"#
+        );
+        check_arithmetic_sidecar(&project, &import, &sidecar);
+    }
+    for (length, end) in [
+        ("0u64", "1"),
+        ("4u64", "3"),
+        ("18446744073709551615u64", "3"),
+    ] {
+        let sidecar = format!(
+            r#"verifying "last.cpp";
+int32 last(int32* data, uint64 length) {{
+ owns data[0..{end}]; requires length == {length}; ensures 0 == 0;
+}} by {{ execute(); rewrite(length == {length}); simp(); }}
+"#
+        );
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &sidecar).unwrap();
+        let parsed = read_click_project(&path, &sidecar).unwrap();
+        assert!(
+            verify_program_prepared_project(&parsed, &import).is_err(),
+            "invalid length {length} must fail even under a trivial postcondition"
+        );
+    }
+}
+
+#[test]
+fn cpp_pointer_offsets_reject_unmodelled_wide_subtraction_and_wider_indices() {
+    for (source, diagnostic) in [
+        (
+            "int read(int* data, long index) noexcept { return *(data - index); }",
+            "pointer subtraction currently requires an int32 index",
+        ),
+        (
+            "int read(int* data, unsigned int index) noexcept { return *(data - index); }",
+            "pointer subtraction currently requires an int32 index",
+        ),
+        (
+            "int read(int* data, unsigned __int128 index) noexcept { return *(data + index); }",
+            "pointer arithmetic requires a 32/64-bit integer index",
+        ),
+    ] {
+        let project = Project::with_fixture("offset.cpp", "read", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn cpp_pointer_slice_rejects_differences_null_multilevel_and_pointer_locals() {
     let project = Project::pointer();
 
     fs::write(
         project.source(),
-        "int bump_reference(int* pointer) noexcept {\n    return *(pointer + 1);\n}\n",
+        "int bump_reference(int* pointer) noexcept {\n    return (int)(pointer - pointer);\n}\n",
     )
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();

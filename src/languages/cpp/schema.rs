@@ -2982,6 +2982,43 @@ impl CppExpression {
                 Ok(())
             }
             Self::Binary {
+                operator: operator @ (CppBinaryOperator::Add | CppBinaryOperator::Subtract),
+                left,
+                right,
+                value_type: CppType::Pointer { pointee },
+                span,
+            } => {
+                span.validate(logical_source)?;
+                require_int32(pointee, false, "pointer arithmetic pointee")?;
+                left.validate(places, records, logical_source)?;
+                right.validate(places, records, logical_source)?;
+                let result_type = self.value_type();
+                let index = if left.value_type() == result_type {
+                    right.value_type()
+                } else if *operator == CppBinaryOperator::Add && right.value_type() == result_type {
+                    left.value_type()
+                } else {
+                    return Err("C++ pointer arithmetic requires one matching int pointer".into());
+                };
+                if *operator == CppBinaryOperator::Subtract
+                    && !Scalar::is(index, ScalarKind::Int32, false)
+                {
+                    return Err("C++ pointer subtraction currently requires an int32 index".into());
+                }
+                if !Scalar::mutable_kind(index).is_some_and(|kind| {
+                    matches!(
+                        kind,
+                        ScalarKind::Int32
+                            | ScalarKind::UInt32
+                            | ScalarKind::Int64
+                            | ScalarKind::UInt64
+                    )
+                }) {
+                    return Err("C++ pointer arithmetic requires a 32/64-bit integer index".into());
+                }
+                Ok(())
+            }
+            Self::Binary {
                 operator:
                     operator @ (CppBinaryOperator::Add
                     | CppBinaryOperator::Subtract

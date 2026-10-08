@@ -85,9 +85,32 @@ require only the extent field's authority and retain its native uint64 type.
 The full-width scalar regression does not claim that a backing allocation of
 that size can be constructed. `SpanPopBack` itself remains unverified.
 
-The next decision is the backing-range profile below: the descriptor can
-already retain full `size_t`, but the proposed first range proof uses the
-existing int32-bounded range interface.
+The user accepted an int32-bounded first backing-range proof, preserving native
+`size_t` storage and arithmetic. Implementation exposed a further bound:
+shared segment resources use a 32-bit byte extent, so a single four-byte
+`int` range requires `N <= UINT32_MAX / 4`, or **1,073,741,823 elements**.
+The proposed `INT32_MAX` bound alone is not the full usable range profile.
+The next decision is whether to state that narrower first limit explicitly or
+extend the shared byte-extent representation first. Do not silently narrow the
+source length or assume the unsigned index equals a truncated range endpoint.
+
+Native pointer addition now admits signed/unsigned 32/64-bit offsets through
+existing common execution rules, retaining the original index type and pointer
+identity. Pointer subtraction currently admits only signed int32 offsets;
+wide subtraction and pointer differences remain bounded import refusals.
+Offline ordinary, expanded and retained checks cover concrete forward/backward
+positions, singleton and three-element last loads, frame preservation and
+missing authority. Empty, one-past dereferences and full-width invalid offsets
+fail under trivial postconditions. These are explicitly synthetic arithmetic
+prerequisites, not a source proof of `SpanPopBack` or its symbolic length.
+The symbolic native-index/range-endpoint bridge still needs checked evidence.
+
+A reproduced diagnostic bug is tracked separately in
+[read-only wide-index store attribution](../bugs/read-only-wide-index-reports-source-store.md).
+A read-only wide-index proof refusal invents a source store and suggests an
+inequality contradicted by its precondition. Relevant explicit equality
+rewrites already give checked proofs, but the misleading diagnostic needs
+repair before further target proof work.
 
 ### Intended contract
 
@@ -97,7 +120,7 @@ descriptor denote pointer `p` and mathematical length `N`:
 ```text
 requires:
   authority to update the span descriptor
-  1 <= N <= INT32_MAX                         // proposed first bounded profile
+  1 <= N <= INT32_MAX                         // accepted direction; byte-extent limit pending
   p[0..N] is live, initialized and readable
   descriptor storage is separate from that backing range
 
@@ -137,16 +160,18 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    execution model. Copy only descriptor cells and pointer identity, never
    pointee ownership. A returned C++ reference must retain its backing pointer
    and allocation lifetime, without introducing Rust-exclusive borrow rules.
-3. **Initial bounds profile.** Decide whether the first proof explicitly uses
-   the proposed int32-range length or extends specification ranges to full
-   `size_t` immediately. In either case, preserve native unsigned arithmetic
-   and prove nonempty subtraction and pointer formation from the actual range.
+3. **Initial bounds profile (accepted direction, refined limit pending).**
+   The user chose a bounded first proof. Choose between the actual single-range
+   limit above and extending shared byte extents before implementation. Keep
+   native unsigned arithmetic and prove the cross-width range/index bridge,
+   nonempty subtraction and pointer formation from the actual backing range.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields. Local reference binding, pointer arithmetic, reference/aggregate returns and
-automatic embedded descriptor objects still need frontend admission. Some of
+fields and the pointer-offset forms above. Local reference binding,
+reference/aggregate returns and automatic embedded descriptor objects still
+need frontend admission. Some of
 those are implementation work once the profiles above are chosen; they do not
 justify a separate C++ memory model.
 

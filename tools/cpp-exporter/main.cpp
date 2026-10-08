@@ -2665,19 +2665,35 @@ private:
              "C++ wide arithmetic supports checked signed multiplication and signed/unsigned division/remainder only; wide comparisons support ==, !=, <, >, <=, >=");
         return std::nullopt;
       }
+      const bool pointer_offset =
+          binary->getType()->isPointerType() &&
+          ((binary->getOpcode() == clang::BO_Add &&
+            (binary->getLHS()->getType()->isPointerType() ||
+             binary->getRHS()->getType()->isPointerType())) ||
+           (binary->getOpcode() == clang::BO_Sub &&
+            binary->getLHS()->getType()->isPointerType() &&
+            binary->getRHS()->getType()->isIntegerType()));
+      if (binary->getOpcode() == clang::BO_Sub &&
+          binary->getLHS()->getType()->isPointerType() &&
+          binary->getRHS()->getType()->isPointerType()) {
+        fail(binary->getOperatorLoc(),
+             "C++ pointer arithmetic does not support pointer differences");
+        return std::nullopt;
+      }
       if (binary->getOpcode() == clang::BO_Add ||
           binary->getOpcode() == clang::BO_Sub ||
           binary->getOpcode() == clang::BO_Mul ||
           binary->getOpcode() == clang::BO_Div ||
           binary->getOpcode() == clang::BO_Rem) {
-        if (!binary->getType()->isIntegerType() ||
-            (context_.getTypeSize(binary->getType()) != 32 &&
-             context_.getTypeSize(binary->getType()) != 64 &&
-             !supported_wide_arithmetic)) {
+        if (!pointer_offset &&
+            (!binary->getType()->isIntegerType() ||
+             (context_.getTypeSize(binary->getType()) != 32 &&
+              context_.getTypeSize(binary->getType()) != 64 &&
+              !supported_wide_arithmetic))) {
           fail(binary->getOperatorLoc(),
-               "C++ arithmetic requires signed/unsigned 32/64-bit operands; "
-               "pointer "
-               "arithmetic is unsupported");
+               "C++ arithmetic requires signed/unsigned 32/64-bit operands or "
+               "int pointer addition with a 32/64-bit index or subtraction "
+               "with an int32 index; pointer differences remain unsupported");
           return std::nullopt;
         }
       }
