@@ -357,9 +357,14 @@ charged to visible semantic output rather than hidden ambient state:
   forms. At 64 returns, 2,405 logical fact occurrences retain 197 distinct fact
   objects and 328 vector chunks. The kernel storage regression and context
   fork tests check order, arm isolation, metadata edits, and owner lifetime.
-  Terminal joins still assemble distinct flat outcome containers, and outcome
-  processing still traverses each logical fact stream; the bug report records
-  those remaining costs and the whole-work curves.
+  Terminal joins retain immutable candidate records, including their outcome
+  states and obligation payloads, and classify only newly introduced facts.
+  Candidate publication regressions vary record count and payload size
+  independently through 1,024; the terminal-branch regression checks retained
+  outcome identity beside up to 4,096 ambient facts. The joins still assemble
+  distinct flat outcome containers, and outcome processing still traverses
+  each logical fact stream; the bug report records those remaining costs and
+  the whole-work curves.
 
 ## Execution capacity follows selected syntax
 

@@ -13775,6 +13775,19 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             .apply_step(ProofStep::Step)
             .expect("else return should check");
         assert!(advanced.split_arms_at_function_exit(&record));
+        let arm_candidates = [true, false].map(|value| {
+            let arm = advanced
+                .focus_split_arm(&record, value)
+                .expect("completed arm remains accessible");
+            arm.execution()
+                .unwrap()
+                .core
+                .frontier
+                .execution()
+                .unwrap()
+                .paths()[0]
+                .clone()
+        });
         let before = fact_node_allocations();
         let joined = advanced
             .join_focused_execution_terminal(&record)
@@ -13811,6 +13824,17 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             .expect("terminal join should retain outcomes")
             .paths();
         assert_eq!(outcome_paths.len(), 2);
+        for (arm, retained) in arm_candidates.iter().zip(outcome_paths) {
+            assert!(
+                std::ptr::eq(arm.outcome(), retained.outcome()),
+                "terminal joins retain the arm's outcome state without copying it"
+            );
+            assert!(
+                std::ptr::eq(arm.obligations(), retained.obligations()),
+                "terminal joins retain the arm's obligation payload"
+            );
+        }
+
         assert_eq!(
             execution.presentation.outcome_provenance.len(),
             outcome_paths.len(),

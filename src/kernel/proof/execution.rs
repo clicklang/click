@@ -11732,14 +11732,17 @@ mod tests {
             )]
             .into();
             let candidate = crate::kernel::CFunctionExecutionCandidate {
-                outcome: CFunctionOutcome::Return {
-                    value: int32(0),
-                    state: Box::new(state.clone()),
-                },
-                facts: facts.clone(),
-                effect_facts: effects.clone(),
-                obligations: vec![],
-                loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                data: Arc::new(crate::kernel::CFunctionExecutionCandidateData {
+                    outcome: Arc::new(CFunctionOutcome::Return {
+                        value: int32(0),
+                        state: Box::new(state.clone()),
+                    }),
+                    facts: facts.clone(),
+                    effect_facts: effects.clone(),
+                    effects_public_first: true,
+                    obligations: Arc::new(vec![]),
+                    loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                }),
             };
             let context = CheckedReturnContext::from_candidate(
                 CStatementOutcome::Return {

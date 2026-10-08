@@ -1715,17 +1715,18 @@ impl<'a> Proof<'a> {
                     }
                     None => arm.introduced_facts.clone(),
                 };
+                let mut additional_facts = crate::kernel::ExecutionFacts::new();
                 for proposition in &introduced {
                     let fact = ExecutionPureFact::new(proposition.clone());
                     if !path_facts.contains(&fact) {
+                        additional_facts.push(fact.clone());
                         path_facts.push(fact);
                     }
                 }
-                let obligations = path.obligations().to_vec();
                 let path_key = (
-                    path.outcome().clone(),
+                    path.outcome(),
                     path_facts.clone(),
-                    obligations.clone(),
+                    path.obligations(),
                     provenance.call_routes.clone(),
                 );
                 let path_loan_evidence = path.loan_evidence().clone();
@@ -1759,12 +1760,12 @@ impl<'a> Proof<'a> {
                         .entry(path_key)
                         .or_default()
                         .push((path_loan_evidence.clone(), paths.len()));
-                    paths.push((
-                        path.outcome().clone(),
-                        path_facts,
-                        obligations,
-                        path_loan_evidence,
-                    ));
+                    paths.push(
+                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                            path,
+                            &additional_facts,
+                        ),
+                    );
                     execution_evidence
                         .push(arm.execution.core.execution_evidence[arm_path_index].clone());
                     // Proof cases retain their decision when the checked arm
@@ -1785,13 +1786,12 @@ impl<'a> Proof<'a> {
             }
         }
 
-        let outcomes =
-            crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
-                execution_start_state.clone(),
-                context.function.clone(),
-                context.arguments.to_vec(),
-                paths,
-            );
+        let outcomes = crate::kernel::c_function_execution_candidates_from_retained_paths(
+            execution_start_state.clone(),
+            context.function.clone(),
+            context.arguments.to_vec(),
+            paths,
+        );
         let mut execution = parent_execution.clone();
         execution.core.has_empty_execution_branch_leaf |= arms
             .iter()
