@@ -33035,9 +33035,13 @@ fn contract_exit_outcome_with_boundary_transfer(
         };
         &fallback_transfer
     };
+    // Under authority semantics a quantity change that reaches a population
+    // crosses the checked resource transfer; any other contract keeps the
+    // ordinary exit, which returns the body's own resources.
     if function_needs_outcome_resource_transfer(function)
         || caller_state.uses_population_authority_semantics()
             && function_changes_declared_resource_quantities(function)
+            && contract_reaches_population(function.contract_interface())
     {
         function_outcome_from_body_with_resource_transfer(
             caller_state,

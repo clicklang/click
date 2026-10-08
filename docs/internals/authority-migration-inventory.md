@@ -1419,3 +1419,16 @@ creates no population member and now runs under authority semantics; a
 token of an authorized family is still refused. Regressions:
 `authority_mode_ordinary_token_construction.md` and
 `authority_mode_authorized_token_construction_rejected.md`.
+
+#### Chunk 1g: ordinary contract exits
+
+Authority semantics sent every contract whose declared resource quantities
+change through the checked transfer exit, which rebuilds the outcome as the
+caller's residual plus the ensured resources. The entry state owns the
+function's own string literals and other storage the contract does not
+mention, so a produced literal gained a second owner and borrowing outputs
+were refused. That exit is now forced only for a contract that reaches a
+population; any other contract takes the ordinary exit, which returns the
+body's own resources, as without authority semantics. Regressions:
+`authority_mode_ordinary_exit_returns_a_string_literal.md` and
+`authority_mode_ordinary_exit_aggregate_parameter_pointee.md`.
