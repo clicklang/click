@@ -1390,12 +1390,6 @@ private:
                  std::to_string(kMaxScalarConversions) + ")");
         return std::nullopt;
       }
-      if (!casts.empty() && call->getType()->isIntegerType() &&
-          context_.getTypeSize(call->getType()) == 128) {
-        fail(call->getExprLoc(),
-             "wide C++ call-result conversions require native observer normalization");
-        return std::nullopt;
-      }
       for (auto it = casts.rbegin(); it != casts.rend(); ++it) {
         const clang::CastExpr *cast = *it;
         std::string kind;

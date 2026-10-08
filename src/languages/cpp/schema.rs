@@ -766,15 +766,6 @@ fn validate_scalar_conversions(
         conversions.len(),
         super::budget::MAX_SCALAR_CONVERSIONS,
     )?;
-    if conversions
-        .first()
-        .and_then(|cast| Scalar::mutable_kind(&cast.source_type))
-        .is_some_and(ScalarKind::is_wide)
-    {
-        return Err(
-            "wide C++ call-result conversions require native observer normalization".into(),
-        );
-    }
     let mut source = conversions
         .first()
         .map_or(result_type, |cast| &cast.source_type);

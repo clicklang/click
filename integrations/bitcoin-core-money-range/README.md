@@ -639,6 +639,31 @@ results; and change a reachable locked header. The selected Bitcoin sources and
 input archive are unchanged.
 
 
+## GetFeePerK composition
+
+[`CFeeRateGetFeePerK.click.in`](CFeeRateGetFeePerK.click.in) verifies the unchanged
+inline header method. It calls `EvaluateFeeDown(1000)` directly, not `GetFee`.
+It therefore requires positive stored size and applies neither the empty-rate
+branch nor the negative minimum-fee correction. For Integer fee/size observers
+`F`, `D`, its fit profile is `MIN * D <= F * 1000 < (MAX + 1) * D`.
+The result satisfies `R * D <= F * 1000 < (R + 1) * D`, full int64 bounds, and
+both receiver field frames. The proof reuses the unified Down contract and
+existing execution rules without a Bitcoin or kernel change.
+
+Hermetic tests remove the exporter before locked verification. Ordinary,
+expanded/reverified and retained checks agree. Modular callers cover positive,
+negative and zero fees, amount 1000 above stored size, and the wide fee branch.
+Missing positive-size, field authority or fit assumptions, an inclusive upper
+fit endpoint and false rounding claims are rejected.
+
+Original signed/unsigned 128-bit call-result conversions also use the shared
+callee-typed capture and ordered conversion chain. Naming that result lets an
+explicit proof transport modular bounds to a checked cast certificate. Both
+destination endpoints are required for value preservation; this does not add
+automatic observer normalization or infer ranges. Offline initializer/return
+regressions cover all signedness combinations and 32/64-bit destinations.
+
+
 ## Record declarations in locked headers
 
 The [`header-record` fixture](../../tests/fixtures/cpp-verification/header-record/header_record.cpp)
