@@ -26,8 +26,10 @@ one child, and for immediate red- and black-leaf successors at the root. The
 red-leaf successor has a no-deficit model theorem, with immediate and deep
 concrete checks. Non-root red- and black-leaf C unlink now verify on either parent
 link. Non-root one-child deletion also verifies in both directions; non-root
-two-child cases and deeper C successors remain. Immediate successors with a
-nonempty replacement child now have an exact splice theorem and a C sidecar. The deeper replacement-child
+immediate red-leaf successors also verify on both parent links. Non-root
+black-leaf/nonempty-child successors and deeper C successors remain. Immediate
+successors with a nonempty replacement child now have an exact splice theorem
+and a C sidecar. The deeper replacement-child
 case has a balance exit theorem and concrete check in `rbtree_erase_child.click`
 and `successor_child_checks.click`; its exact splice sequence and
 parent-consistency connection remain.
@@ -97,6 +99,13 @@ unchanged context, and prove whole-tree balance, parent consistency, in-order
 contents, and null fixup. `rbtree_erase_one_child.click` supplies the balance,
 local symmetry, and parent-consistency theorems. Mutation tests reject unchanged
 parent links, skipped parent/color writes, a red replacement, and non-null fixup.
+
+`rbtree_erase_nonroot_successor.click` extends immediate red-leaf successor
+splicing to both non-root parent links. It preserves the outer context and
+returns the exact replacement subtree, whole-tree balance, parent consistency,
+and in-order contents with null fixup. The erased node's color is not assumed.
+Six mutation tests cover both parent links, left-subtree attachment and parent
+updates, the successor's parent/color write, and the no-fixup return.
 
 The broader example gate exposed two post-return certification regressions in
 `arena_write` and `arena_region_length`. Exact-width readability of a
@@ -1037,7 +1046,8 @@ the parent for fixup. Non-root red leaves also verify, preserving balance and
 returning null.
 Non-root one-child cases now verify in both directions and on both parent
 links, including exact replacement, whole-tree balance, and parent consistency.
-Non-root two-child deletion and deeper successors remain. The immediate red-leaf
+Non-root immediate red-leaf successors also verify on either parent link.
+Non-root black-leaf/nonempty-child successors and deeper successors remain. The immediate red-leaf
 successor at the root is now covered, including its exact model, balance,
 parent consistency, and in-order contents. The immediate black-leaf case at
 the root returns the exact deficit context and non-null fixup parent for

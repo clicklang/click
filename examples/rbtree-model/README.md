@@ -337,6 +337,11 @@ level, and excluded successor states. It also checks immediate and deep red
 leaf successors against the no-deficit theorem. These are model proofs; the
 deeper C successor branches are not yet verified.
 
+`rb_erase_immediate_red_model` names the exact immediate red-successor
+replacement while preserving the erased node's parent and color. The non-root
+C sidecar uses the existing general-context `rb_erase_red_successor_splice`
+theorem to prove its balance, parent consistency, and in-order contents.
+
 ## Context and `plug`
 
 `plug(ctx, sub)` rebuilds the whole model from a context and the focused

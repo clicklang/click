@@ -750,6 +750,62 @@ fn rbtree_erase_left_child_requires_no_fixup() {
 }
 
 #[test]
+fn rbtree_erase_nonroot_successor_requires_left_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_right_parent_link() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_left_subtree_link() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_left_subtree_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\trb_set_parent(tmp, successor);\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_successor_parent_color() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\tsuccessor->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_nonroot_successor_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_nonroot_successor.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = parent;\n",
+    );
+}
+
+#[test]
 fn rbtree_erase_black_successor_requires_root_replacement() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_successor.click",

@@ -48,9 +48,15 @@ child. The proofs return that exact replacement model and the unchanged context,
 with whole-tree red-black validity, parent consistency, preserved child in-order
 contents, and a null fixup parent. Both use exclusive callback-table ownership.
 
+`rbtree_erase_nonroot_successor.click` extends the immediate red-leaf successor
+case below the root, on either parent link. It returns the exact successor
+subtree and unchanged outer context, whole-tree balance, parent consistency,
+and the old left/right in-order contents, with null fixup. The erased node's
+color is not assumed. It holds and returns exclusive callback-table ownership.
+
 These are C increments of chunk 11 in
-[the rbtree issue](../../issues/rbtree-example.md). Non-root two-child deletion
-and deeper successors remain. The C file retains all branches; each sidecar
+[the rbtree issue](../../issues/rbtree-example.md). Non-root immediate black-leaf and nonempty-child successors, and deeper
+successors, remain. The C file retains all branches; each sidecar
 states its current coverage explicitly.
 
 The callback contracts describe the non-augmented case: callbacks cannot
@@ -82,3 +88,7 @@ fixup return for black leaves, and a non-null fixup return for red leaves.
 
 One-child mutations reject unchanged parent links, missing parent/color writes,
 leaving the replacement red, and a non-null fixup return.
+
+Non-root red-successor mutations reject unchanged parent links, missing left
+subtree attachment or parent updates, missing successor parent/color writes,
+and a non-null fixup return.

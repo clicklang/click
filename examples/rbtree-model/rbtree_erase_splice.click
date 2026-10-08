@@ -725,3 +725,15 @@ theorem rb_erase_red_successor_splice(erased: struct rb_node*, successor: struct
         assumption();
     }
 }
+
+# Exact red-successor replacement, retaining the erased node's parent and color.
+function rb_erase_immediate_red_model(tree: RbTree) -> RbTree {
+    match tree {
+        RbTree::Empty => RbTree::Empty,
+        RbTree::Node(node, parent, color, left, right) => match right {
+            RbTree::Empty => RbTree::Empty,
+            RbTree::Node(successor, sp, sc, sl, sr) =>
+                rb_successor_splice(successor, parent, color, left, right),
+        },
+    }
+}
