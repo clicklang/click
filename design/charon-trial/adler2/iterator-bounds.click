@@ -340,3 +340,64 @@ theorem adler_lane_iterator_boundaries() {
     ensures adler_lane_vectors_consumed(22208, 4) == 5551 by { unfold(adler_lane_vectors_consumed(22208, 4)); normalize(); }
     ensures adler_lane_vectors_consumed(22208, 0) == 5552 by { unfold(adler_lane_vectors_consumed(22208, 0)); normalize(); }
 }
+
+# Initialization after construction or MOD reduction uses only the real lengths.
+theorem adler_lane_iterator_reduced_initial(total: int32, a: uint32, b: uint32) {
+    requires to_integer(a) <= 65520;
+    requires to_integer(b) <= 65520;
+    ensures to_integer(a) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(total, total)) by {
+        apply(adler_lane_iterator_initial(total));
+        apply(adler_lane_initial_ceiling());
+        rewrite(adler_lane_vectors_consumed(total, total) == 0);
+        rewrite(adler_lane_a_ceiling(0) == 65520); simp();
+    }
+    ensures to_integer(b) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, total)) by {
+        apply(adler_lane_iterator_initial(total));
+        apply(adler_lane_initial_ceiling());
+        rewrite(adler_lane_vectors_consumed(total, total) == 0);
+        rewrite(adler_lane_b_ceiling(0) == 65520); simp();
+    }
+}
+
+# Match both Integer-sum preconditions of the unchanged AddAssign helper.
+theorem adler_lane_iterator_add_contracts(total: int32, remaining: int32, a: uint32, b: uint32, byte: uint32) {
+    requires 0 <= remaining;
+    requires 4 <= remaining;
+    requires remaining <= total;
+    requires total <= 22208;
+    requires 0 <= to_integer(a);
+    requires to_integer(a) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining));
+    requires 0 <= to_integer(b);
+    requires to_integer(b) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining));
+    requires 0 <= to_integer(byte);
+    requires to_integer(byte) <= 255;
+    ensures to_integer(a) + to_integer(byte) <= 4294967295 by {
+        have 0 <= adler_lane_vectors_consumed(total, remaining) by {
+            apply(adler_lane_iterator_index_bounds(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; }
+        }
+        have adler_lane_vectors_consumed(total, remaining) <= 5551 by {
+            apply(adler_lane_iterator_index_before_next(total, remaining)) using { 0 <= remaining; 4 <= remaining; remaining <= total; total <= 22208; }
+        }
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by { arithmetic() using { adler_lane_vectors_consumed(total, remaining) <= 5551; } }
+        apply(adler_lane_native_a_sum_fits(adler_lane_vectors_consumed(total, remaining), a, byte)) using {
+            0 <= adler_lane_vectors_consumed(total, remaining); adler_lane_vectors_consumed(total, remaining) < 5552;
+            0 <= to_integer(a); to_integer(a) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining));
+            0 <= to_integer(byte); to_integer(byte) <= 255;
+        }
+    }
+    ensures to_integer(b) + to_integer(a + byte) <= 4294967295 by {
+        have 0 <= adler_lane_vectors_consumed(total, remaining) by {
+            apply(adler_lane_iterator_index_bounds(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; }
+        }
+        have adler_lane_vectors_consumed(total, remaining) <= 5551 by {
+            apply(adler_lane_iterator_index_before_next(total, remaining)) using { 0 <= remaining; 4 <= remaining; remaining <= total; total <= 22208; }
+        }
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by { arithmetic() using { adler_lane_vectors_consumed(total, remaining) <= 5551; } }
+        apply(adler_lane_native_b_sum_fits(adler_lane_vectors_consumed(total, remaining), a, b, byte)) using {
+            0 <= adler_lane_vectors_consumed(total, remaining); adler_lane_vectors_consumed(total, remaining) < 5552;
+            0 <= to_integer(a); to_integer(a) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining));
+            0 <= to_integer(b); to_integer(b) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining));
+            0 <= to_integer(byte); to_integer(byte) <= 255;
+        }
+    }
+}

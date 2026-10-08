@@ -16,9 +16,10 @@ use super::scalar::{self, Scalar, ScalarKind};
 use std::collections::BTreeMap;
 
 use super::{
-    CppBinaryOperator, CppCallArgument, CppCleanup, CppConstant, CppExceptionBehavior,
-    CppExpression, CppFieldReference, CppFunction, CppFunctionKind, CppInitializer, CppPlace,
-    CppPlaceReference, CppRecord, CppStatement, CppType, PreparedCppImport,
+    CppBinaryOperator, CppCallArgument, CppCleanup, CppCondition, CppConstant,
+    CppExceptionBehavior, CppExpression, CppFieldReference, CppFunction, CppFunctionKind,
+    CppInitializer, CppPlace, CppPlaceReference, CppRecord, CppStatement, CppType,
+    PreparedCppImport,
 };
 use crate::kernel::{
     CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
@@ -566,7 +567,19 @@ impl LoweringContext<'_> {
                 else_branch,
                 ..
             } => {
-                let condition = self.lower_expression(condition)?;
+                let evaluation = self.normalize_scalar(match condition {
+                    CppCondition::Expression(value) => ScalarInput::Value(value),
+                    CppCondition::Call { call } => ScalarInput::Call {
+                        callee: &call.callee,
+                        arguments: &call.arguments,
+                        value_type: &call.value_type,
+                    },
+                })?;
+                let prefix = if evaluation.may_throw {
+                    self.lower_throwing_statement(evaluation.prefix, state.exit(unwind_base))?
+                } else {
+                    evaluation.prefix
+                };
                 let mark = state.mark();
                 let then_branch =
                     self.lower_sequence_with_lifetimes(then_branch, plan, state, unwind_base)?;
@@ -574,7 +587,10 @@ impl LoweringContext<'_> {
                 let else_branch =
                     self.lower_sequence_with_lifetimes(else_branch, plan, state, unwind_base)?;
                 state.restore(mark);
-                Ok(c_if(condition, then_branch, else_branch))
+                Ok(evaluate_then(
+                    prefix,
+                    c_if(evaluation.value, then_branch, else_branch),
+                ))
             }
             CppStatement::TryCatchInt32 {
                 try_body,

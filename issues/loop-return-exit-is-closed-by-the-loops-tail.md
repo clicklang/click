@@ -18,8 +18,8 @@ is where the exit is reached, are dropped.
 
 It also breaks expansion. With two exits at one place in the proof and no
 source-level branch between them, `click expand` has nowhere to write each
-exit's own closing steps, so it fails for these claims, by site and for the
-whole claim.
+exit's own closing steps. Expanding by location fails for these claims, and
+whole-claim expansion works only where a workaround applies.
 
 ## Reproduction
 
@@ -68,22 +68,37 @@ the `have result == 5` failure above is unchanged by it. A `have` in that arm
 after the returning steps is refused: "`have` did not verify as a checked
 preservation operation. The preservation driver declined it".
 
-Expansion fails. On current master each of these verifies and fails to expand:
+Expansion by location fails. On current master each of these verifies and
+fails to expand, with "two execution paths require different tactic expansions
+at one surface leaf":
 
 ```sh
-click expand --claim f.contract mdtests/a_summarized_loop_body_return_is_certified_with_its_value.md
 click expand mdtests/a_summarized_loop_body_return_is_certified_with_its_value.md:38
 click expand mdtests/natural_goto_forward_exit_and_return.md:32
 click expand mdtests/search_terminates_by_unmarked_count.md:232
 ```
 
-The whole-claim form reports "surface/certificate path coverage diverged at
-p1: surface has 1 paths but frame certificate has 2"; the by-line form reports
-"two execution paths require different tactic expansions at one surface
-leaf". `click audit` reports all three claims as site failures.
-`search.contract` expanded before #339: the commit before "Certify a return
-inside a summarized loop body as a function exit" (`a0207cc76`) expands line
-232 and that commit does not.
+Whole-claim expansion works for two of the three and fails for the third:
+
+```sh
+click expand --claim search.contract mdtests/search_terminates_by_unmarked_count.md
+```
+
+reports "surface/certificate path coverage diverged at p1: surface has 1 paths
+but frame certificate has 2". `search.contract` expanded before #339: the
+commit before "Certify a return inside a summarized loop body as a function
+exit" (`a0207cc76`) expands line 232 and that commit does not.
+
+The two that work do so through #365, which makes whole-claim expansion write
+a post-execution `if` on one side of a disjunctive postcondition when the
+checker establishes opposite sides of it on the two exits. `f.contract`
+expands to `if result == 5 { ... } else { ... }` after the loop. That covers a
+disjunctive postcondition whose sides tell the exits apart. It does not cover
+`search`, whose postconditions are implications, or exits that return the same
+value, and it leaves the tail running once per exit.
+
+`scripts/check.sh --audit`, the nightly audit, excludes
+`mdtests/search_terminates_by_unmarked_count.md` for this issue.
 
 A proof-level `if` after the loop does separate the exits, verifies, and
 expands:
@@ -94,8 +109,9 @@ step();
 if result == 7 { simp(); } else { have result == 5 by simp; simp(); }
 ```
 
-It is a workaround, not the fix: the two exits can return the same value, so
-no condition the tool invents separates them in general.
+It is what #365 emits, and it is a workaround, not the fix: the two exits can
+return the same value, so no condition the tool invents separates them in
+general.
 
 ## Where the tactics are lost
 
@@ -143,11 +159,9 @@ to the checking phase, matched to the pending paths by position.
 - #339's soundness property stays: every returned path is checked against the
   postcondition and the resource obligations, once.
 
-The same applies to a natural cycle's `return` exit. The whole-claim half of
-this for a cycle with both a `return` and a forward `goto` is already filed as
-`bugs/natural-goto-mixed-return-exit-expansion-loses-path-coverage.md`, with a
-test that pins the gap
-(`natural_goto_mixed_return_retains_paths_and_reports_expansion_gap`).
+The same applies to a natural cycle's `return` exit. When each exit's steps
+are written where the exit is reached, the post-execution `if` from #365 is no
+longer needed for these proofs.
 
 ## Intended regression
 
@@ -168,9 +182,9 @@ claim, and rechecks each result.
 - The two mdtests and the expansion test above are in the gate.
 - Every `click expand` command in "Reproduction" succeeds and its output
   verifies, and `click audit` reports no site failure for the three claims.
+- `scripts/check.sh --audit` no longer excludes
+  `mdtests/search_terminates_by_unmarked_count.md`.
 - An expanded proof of such a claim holds no smart tactic and closes the
   returned exit with explicit steps in the `preserve` arm.
-- `bugs/natural-goto-mixed-return-exit-expansion-loses-path-coverage.md` is
-  resolved or updated to what remains.
 - `docs/concepts/loops-and-invariants.md` says where a returning body path is
   closed.

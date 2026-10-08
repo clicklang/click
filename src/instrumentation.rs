@@ -604,6 +604,17 @@ pub(crate) fn in_uncharged_debug_check() -> bool {
     }
 }
 
+/// Speculative presentation searches belong to a smart proof producer, not
+/// to explicit certificate validation or proof finalization.
+pub(crate) fn smart_tactic_active() -> bool {
+    ACTIVE_TACTICS.with(|active| {
+        active
+            .borrow()
+            .last()
+            .is_some_and(|tactic| tactic.event.class == "smart")
+    })
+}
+
 #[cfg(debug_assertions)]
 thread_local! {
     static DEBUG_CHECKS_SKIPPED: Cell<bool> = const { Cell::new(false) };

@@ -404,7 +404,15 @@ impl Metadata<'_> {
                     else_branch,
                     span,
                 } => {
-                    self.expression(condition)?;
+                    match condition {
+                        CppCondition::Expression(value) => self.expression(value)?,
+                        CppCondition::Call { call } => {
+                            self.callee(&call.callee)?;
+                            self.arguments(&call.arguments)?;
+                            call.value_type.validate_aliases(self.logical_source)?;
+                            call.span.validate(self.logical_source)?;
+                        }
+                    }
                     self.body(then_branch)?;
                     self.body(else_branch)?;
                     span
