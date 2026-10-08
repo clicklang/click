@@ -4542,6 +4542,23 @@ fn cpp_native_size_t_last_load_checks_nonempty_and_actual_backing_bounds() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
+    let unresolved = r#"verifying "last.cpp";
+int32 last(int32* data, uint64 length) {
+ owns data[0..1]; requires length == 1u64;
+ ensures result == old(data[0]);
+} by { execute(); simp(); }
+"#;
+    let path = project.directory.join("unresolved.click");
+    fs::write(&path, unresolved).unwrap();
+    let parsed = read_click_project(&path, unresolved).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    let message = error.message();
+    assert!(message.contains("index/address"), "{message}");
+    assert!(!message.contains("the store to"), "{message}");
+    assert!(
+        !message.contains("state `(length - 1u64) != 0`"),
+        "{message}"
+    );
     for (length, end, expected) in [("1u64", "1", "0"), ("3u64", "3", "2")] {
         let sidecar = format!(
             r#"verifying "last.cpp";
@@ -13874,5 +13891,60 @@ bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures resu
             verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
                 .is_err()
         );
+    }
+}
+
+#[test]
+fn cpp_pointer_returns_preserve_identity_and_modular_results_offline() {
+    let project = Project::with_fixture(
+        "return.cpp",
+        "run",
+        "int* identity(int* data) noexcept { return data; }\nint* run(int* data) noexcept { return identity(data); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "return.cpp";
+int32* identity(int32* data) { ensures result == data; } by { execute(); simp(); }
+int32* run(int32* data) { ensures result == data; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace(
+        "ensures result == data; } by",
+        "ensures result == data + 1; } by",
+    );
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+    // Recompute the lock so these exercise semantic validation, not only hashes.
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => forged["function"]["return_type"]["pointee"]["bits"] = 64.into(),
+            1 => forged["function"]["return_type"]["pointee"]["is_const"] = true.into(),
+            2 => forged["function"]["body"][0]["value_type"]["pointee"]["bits"] = 64.into(),
+            3 => forged["reachable_functions"][0]["return_type"]["pointee"]["bits"] = 64.into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.contains("C++"), "{error}");
     }
 }

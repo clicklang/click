@@ -1618,10 +1618,8 @@ impl CppFunction {
             CppFunctionKind::Free
             | CppFunctionKind::StaticMethod { .. }
             | CppFunctionKind::Method { .. } => {
-                if self.return_type != CppType::Void
-                    && require_scalar_integer(&self.return_type, "function return type").is_err()
-                {
-                    require_bool(&self.return_type, false, "function return type")?;
+                if self.return_type != CppType::Void {
+                    require_return_value_type(&self.return_type, "function return type")?;
                 }
             }
             CppFunctionKind::Constructor {
@@ -1661,9 +1659,7 @@ impl CppFunction {
             {
                 return Err("C++ static helper has a mismatched class identity".into());
             }
-            if require_scalar_integer(&self.return_type, "static helper return type").is_err() {
-                require_bool(&self.return_type, false, "static helper return type")?;
-            }
+            require_return_value_type(&self.return_type, "static helper return type")?;
             for parameter in &self.parameters {
                 if require_scalar_integer(&parameter.value_type, "static helper parameter").is_err()
                 {
@@ -2388,9 +2384,7 @@ impl CppStatement {
             } => {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
-                if require_scalar_integer(value.value_type(), "return value").is_err() {
-                    require_bool(value.value_type(), false, "return value")?;
-                }
+                require_return_value_type(value.value_type(), "return value")?;
                 for cleanup in cleanups {
                     cleanup.validate(places, records, logical_source)?;
                 }
@@ -2406,9 +2400,7 @@ impl CppStatement {
             } => {
                 validate_call(callee, arguments, span, places, records, logical_source)?;
                 validate_scalar_conversions(conversions, value_type, logical_source)?;
-                if require_scalar_integer(value_type, "return-call value").is_err() {
-                    require_bool(value_type, false, "return-call value")?;
-                }
+                require_return_value_type(value_type, "return-call value")?;
                 for cleanup in cleanups {
                     cleanup.validate(places, records, logical_source)?;
                 }
@@ -4376,6 +4368,16 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
         }
     }
     Ok(())
+}
+
+fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
+    if require_scalar_integer(value, label).is_ok()
+        || require_mutable_int32_pointer(value, label).is_ok()
+    {
+        Ok(())
+    } else {
+        require_bool(value, false, label)
+    }
 }
 
 fn require_mutable_int32_pointer(value: &CppType, label: &str) -> Result<(), String> {

@@ -6,7 +6,7 @@ use std::process::Command;
 
 use click::cli::read_click_project;
 use click::instrumentation::{self, VerificationEvent};
-use click::languages::cpp::{load_import, refresh_import};
+use click::languages::cpp::{PreparedCppImport, load_import, refresh_import};
 use click::surface::{
     C0VerificationSession, expand_program_prepared_project_claim_source_by_label,
     expand_program_prepared_project_tactic_source_at,
@@ -1052,67 +1052,10 @@ fn pinned_upstream_fee_frac_subtractself_reexports_and_verifies() {
 
 #[test]
 fn pinned_std_span_size_preserves_full_width_extent_offline() {
-    assert_eq!(
-        sha256(ARCHIVE),
-        "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
-    );
-    let root = std::env::temp_dir().join(format!("click-bitcoin-span-size-{}", std::process::id()));
-    fs::create_dir(&root).unwrap();
-    let archive = root.join("input-closure.tar.gz");
-    fs::write(&archive, ARCHIVE).unwrap();
-    assert!(
-        Command::new("tar")
-            .args([
-                "-xzf",
-                archive.to_str().unwrap(),
-                "-C",
-                root.to_str().unwrap()
-            ])
-            .status()
-            .unwrap()
-            .success()
-    );
-    for (header, digest) in [
-        (
-            "bitcoin-src/src/span.h",
-            "485dc37ba8ed9b0e8d8212061122a5c1cd4e71e6ecc5380ac1a2277de395b0e3",
-        ),
-        (
-            "sysroot/usr/include/c++/12/span",
-            "f1e67ea2c1e2e0faef697f37d995abb59eeb7fb0c0cf13a586fe2799ed9196bd",
-        ),
-    ] {
-        assert_eq!(sha256(&fs::read(root.join(header)).unwrap()), digest);
-    }
-    fs::create_dir_all(root.join("bitcoin-build/src")).unwrap();
-    // Only the harness TU changes; the archived sources and compile flags do not.
-    fs::write(
-        root.join("span-probe.cpp"),
+    let (root, import) = pinned_span_fixture(
+        "size",
         "#include <span.h>\nunsigned long probe(std::span<int>& span) { return span.size(); }\n",
-    )
-    .unwrap();
-    let clang = pinned_clang();
-    let database = COMMAND
-        .replace("@ROOT@", root.to_str().unwrap())
-        .replace("@CLANGXX@", clang.to_str().unwrap())
-        .replace("@RESOURCE_DIR@", &output(&clang, &["-print-resource-dir"]))
-        .replace("bitcoin-src/src/policy/feerate.cpp", "span-probe.cpp");
-    fs::write(root.join("compile_commands.json"), database).unwrap();
-    let exporter = root.join("click-cpp-exporter");
-    fs::copy(std::env::var("CLICK_CPP_EXPORTER").unwrap(), &exporter).unwrap();
-    let config = serde_json::json!({
-        "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
-        "exceptions": true, "rtti": true, "exporter": exporter,
-        "compilation_database": "compile_commands.json", "working_directory": ".",
-        "source": "span-probe.cpp", "logical_source": "span-probe.cpp",
-        "dependencies": ["sysroot/usr/include/c++/12/span", "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"],
-        "function": "probe", "artifact": "span.click-cpp.json"
-    });
-    let config_path = root.join("span.click.import.json");
-    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-    refresh_import(&config_path).unwrap();
-    fs::remove_file(exporter).unwrap();
-    let import = load_import(&config_path).unwrap();
+    );
     assert_eq!(import.export().reachable_functions.len(), 2);
     assert!(
         import
@@ -1159,6 +1102,116 @@ uint64 probe(struct span__int__value_unsigned_long_18446744073709551615* span) {
     let hostile = source.replace(" owns span->_M_extent._M_extent_value;", "");
     let rejected = read_click_project(&path, &hostile).unwrap();
     assert!(verify_program_prepared_project(&rejected, &import).is_err());
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn pinned_span_fixture(name: &str, harness: &str) -> (PathBuf, PreparedCppImport) {
+    assert_eq!(
+        sha256(ARCHIVE),
+        "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
+    );
+    let root =
+        std::env::temp_dir().join(format!("click-bitcoin-span-{name}-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    let archive = root.join("input-closure.tar.gz");
+    fs::write(&archive, ARCHIVE).unwrap();
+    assert!(
+        Command::new("tar")
+            .args([
+                "-xzf",
+                archive.to_str().unwrap(),
+                "-C",
+                root.to_str().unwrap()
+            ])
+            .status()
+            .unwrap()
+            .success()
+    );
+    for (header, digest) in [
+        (
+            "bitcoin-src/src/span.h",
+            "485dc37ba8ed9b0e8d8212061122a5c1cd4e71e6ecc5380ac1a2277de395b0e3",
+        ),
+        (
+            "sysroot/usr/include/c++/12/span",
+            "f1e67ea2c1e2e0faef697f37d995abb59eeb7fb0c0cf13a586fe2799ed9196bd",
+        ),
+    ] {
+        assert_eq!(sha256(&fs::read(root.join(header)).unwrap()), digest);
+    }
+    fs::create_dir_all(root.join("bitcoin-build/src")).unwrap();
+    // Only the harness TU changes; the archived sources and compile flags do not.
+    fs::write(root.join("span-probe.cpp"), harness).unwrap();
+    let clang = pinned_clang();
+    let database = COMMAND
+        .replace("@ROOT@", root.to_str().unwrap())
+        .replace("@CLANGXX@", clang.to_str().unwrap())
+        .replace("@RESOURCE_DIR@", &output(&clang, &["-print-resource-dir"]))
+        .replace("bitcoin-src/src/policy/feerate.cpp", "span-probe.cpp");
+    fs::write(root.join("compile_commands.json"), database).unwrap();
+    let exporter = root.join("click-cpp-exporter");
+    fs::copy(std::env::var("CLICK_CPP_EXPORTER").unwrap(), &exporter).unwrap();
+    let config = serde_json::json!({
+        "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
+        "exceptions": true, "rtti": true, "exporter": exporter,
+        "compilation_database": "compile_commands.json", "working_directory": ".",
+        "source": "span-probe.cpp", "logical_source": "span-probe.cpp",
+        "dependencies": ["sysroot/usr/include/c++/12/span", "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"],
+        "function": "probe", "artifact": "span.click-cpp.json"
+    });
+    let config_path = root.join("span.click.import.json");
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    refresh_import(&config_path).unwrap();
+    fs::remove_file(exporter).unwrap();
+    let import = load_import(&config_path).unwrap();
+    (root, import)
+}
+
+#[test]
+fn pinned_std_span_data_preserves_pointer_identity_without_backing_authority_offline() {
+    let (root, import) = pinned_span_fixture(
+        "data",
+        "#include <span.h>\nint* probe(std::span<int>& span) { return span.data(); }\n",
+    );
+    assert_eq!(import.export().reachable_functions.len(), 1);
+    assert_eq!(
+        import.export().reachable_functions[0].span.file,
+        "sysroot/usr/include/c++/12/span"
+    );
+    let source = r#"verifying "span-probe.cpp";
+int32* span__int__value_unsigned_long_18446744073709551615_data(const struct span__int__value_unsigned_long_18446744073709551615* self) {
+ owns self->_M_ptr;
+ ensures result == self->_M_ptr;
+ ensures self->_M_ptr == old(self->_M_ptr);
+} by { execute(); simp(); }
+int32* probe(struct span__int__value_unsigned_long_18446744073709551615* span) {
+ owns span->_M_ptr;
+ ensures result == span->_M_ptr;
+ ensures span->_M_ptr == old(span->_M_ptr);
+} by { execute(); simp(); }
+"#;
+    let path = root.join("span.click");
+    fs::write(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&project, &import).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract")
+            .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&rewritten, &import, "probe.contract", 0)
+            .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    let hostile = source.replace(" owns span->_M_ptr;", "");
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

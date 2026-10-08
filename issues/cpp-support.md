@@ -82,6 +82,13 @@ no executable cleanup; nontrivial destructor checks still apply. The pinned
 ordinary, expanded and retained proof coverage through a separately identified
 harness with unchanged archived headers and compile flags. Their contracts
 require only the extent field's authority and retain its native uint64 type.
+Ordinary mutable `int*` returns now use shared typed C call results, including
+modular direct return calls. Pinned unchanged `std::span<int>::data()` has offline
+ordinary, expanded and retained proof coverage. Reading the descriptor pointer
+requires its field authority but no backing element authority, and returning it
+preserves identity without granting new storage authority. Other pointer types,
+C++ reference returns and aggregate results remain outside this increment.
+
 The full-width scalar regression does not claim that a backing allocation of
 that size can be constructed. `SpanPopBack` itself remains unverified.
 
@@ -90,8 +97,8 @@ The user accepted an int32-bounded first backing-range proof, preserving native
 shared segment resources use a 32-bit byte extent, so a single four-byte
 `int` range requires `N <= UINT32_MAX / 4`, or **1,073,741,823 elements**.
 The proposed `INT32_MAX` bound alone is not the full usable range profile.
-The next decision is whether to state that narrower first limit explicitly or
-extend the shared byte-extent representation first. Do not silently narrow the
+The user accepted that explicit narrower limit for the first proof; wider
+shared byte extents are deferred. Do not silently narrow the
 source length or assume the unsigned index equals a truncated range endpoint.
 
 Native pointer addition now admits signed/unsigned 32/64-bit offsets through
@@ -105,12 +112,12 @@ fail under trivial postconditions. These are explicitly synthetic arithmetic
 prerequisites, not a source proof of `SpanPopBack` or its symbolic length.
 The symbolic native-index/range-endpoint bridge still needs checked evidence.
 
-A reproduced diagnostic bug is tracked separately in
-[read-only wide-index store attribution](../bugs/read-only-wide-index-reports-source-store.md).
-A read-only wide-index proof refusal invents a source store and suggests an
-inequality contradicted by its precondition. Relevant explicit equality
-rewrites already give checked proofs, but the misleading diagnostic needs
-repair before further target proof work.
+Read-only wide-index refusals now distinguish compact recorded cell ranges from
+individual source stores in the shared resource tracker. C0 and offline C++
+regressions reject invented source-store attribution and speculative unequal-index
+repairs. They request the unresolved address relation or preservation instead;
+relevant explicit equality rewrites still give ordinary, expanded and retained
+proofs. Actual individual-store alias/frame diagnostics remain covered.
 
 ### Intended contract
 
@@ -120,7 +127,7 @@ descriptor denote pointer `p` and mathematical length `N`:
 ```text
 requires:
   authority to update the span descriptor
-  1 <= N <= INT32_MAX                         // accepted direction; byte-extent limit pending
+  1 <= N <= 1073741823                        // accepted single-range byte-extent limit
   p[0..N] is live, initialized and readable
   descriptor storage is separate from that backing range
 
@@ -160,9 +167,8 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    execution model. Copy only descriptor cells and pointer identity, never
    pointee ownership. A returned C++ reference must retain its backing pointer
    and allocation lifetime, without introducing Rust-exclusive borrow rules.
-3. **Initial bounds profile (accepted direction, refined limit pending).**
-   The user chose a bounded first proof. Choose between the actual single-range
-   limit above and extending shared byte extents before implementation. Keep
+3. **Initial bounds profile (accepted).**
+   The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
    nonempty subtraction and pointer formation from the actual backing range.
 

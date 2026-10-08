@@ -174,6 +174,10 @@ fn function_interface(
 ) -> Result<syntax::C0Function, String> {
     let return_type = if source.return_type == CppType::Void {
         C0Type::Void
+    } else if matches!(&source.return_type, CppType::Pointer { pointee }
+        if Scalar::is(pointee, ScalarKind::Int32, false))
+    {
+        C0Type::Int32Pointer
     } else {
         Scalar::mutable_kind(&source.return_type)
             .map(ScalarKind::proof_type)
