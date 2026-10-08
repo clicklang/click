@@ -334,6 +334,20 @@ impl LoweringContext<'_> {
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
+                (CppType::LvalueReference { pointee }, CppInitializer::Value { value }) => {
+                    let address = self.lower_expression(value)?;
+                    Ok(c_seq(
+                        c_declare_with_all_qualifiers(
+                            local.name.clone(),
+                            CType::Int32Pointer,
+                            false,
+                            false,
+                            false,
+                            is_const_int32(pointee),
+                        ),
+                        c_assign(local.name.clone(), address),
+                    ))
+                }
                 (CppType::Integer { .. }, CppInitializer::Value { value }) => {
                     let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                     Ok(c_seq(
@@ -345,7 +359,7 @@ impl LoweringContext<'_> {
                     ))
                 }
                 (
-                    CppType::Integer { .. },
+                    CppType::Integer { .. } | CppType::LvalueReference { .. },
                     CppInitializer::Call {
                         callee,
                         arguments,

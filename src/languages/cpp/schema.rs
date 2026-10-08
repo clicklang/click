@@ -1903,6 +1903,9 @@ impl CppFunction {
                     CppType::Integer { .. } => {
                         require_scalar_integer(&local.value_type, "automatic local")?;
                     }
+                    CppType::LvalueReference { pointee } => {
+                        require_int32(pointee, true, "automatic reference local")?;
+                    }
                     CppType::Record {
                         declaration_id,
                         name,
@@ -1929,7 +1932,7 @@ impl CppFunction {
                     }
                     _ => {
                         return Err(
-                            "the supported automatic C++ local must be mutable `int` or one simple aggregate object"
+                            "the supported automatic C++ local must be a mutable integer, an int32 lvalue reference, or one simple aggregate object"
                                 .into(),
                         );
                     }
@@ -2525,6 +2528,31 @@ impl CppInitializer {
         logical_source: &str,
     ) -> Result<(), String> {
         match (self, local_type) {
+            (Self::Value { value }, CppType::LvalueReference { .. }) => {
+                value.validate(places, records, logical_source)?;
+                if !same_scalar_type(local_type, value.value_type()) {
+                    return Err(
+                        "C++ reference local initializer changed its native reference type".into(),
+                    );
+                }
+                Ok(())
+            }
+            (
+                Self::Call {
+                    callee,
+                    arguments,
+                    conversions,
+                    span,
+                },
+                CppType::LvalueReference { .. },
+            ) => {
+                if !conversions.is_empty() {
+                    return Err(
+                        "C++ reference local call capture cannot convert the referent".into(),
+                    );
+                }
+                validate_call(callee, arguments, span, places, records, logical_source)
+            }
             (Self::Value { value }, CppType::Integer { .. }) => {
                 value.validate(places, records, logical_source)?;
                 if !same_scalar_type(local_type, value.value_type()) {

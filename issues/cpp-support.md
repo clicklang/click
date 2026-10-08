@@ -189,10 +189,21 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    shared checked object addresses. Formation requires live storage for the
    complete referent and excludes null, expired and one-past addresses without
    reading or initializing it. This reuses the shared bounds/lifetime predicate;
-   reading still requires separate authority and defined contents. Local
-   reference bindings and shared aggregate results,
-   construction and copies remain implementation work; `SpanPopBack` has not
-   been verified.
+   reading still requires separate authority and defined contents. Automatic
+   mutable/const int32 reference locals now preserve direct aliases and matching
+   modular reference call results. Writes target the referent under existing
+   authority; ending the local alias does not destroy its backing allocation.
+   Shared aggregate results, construction and copies remain implementation work;
+   `SpanPopBack` has not been verified. The unchanged pinned `back()` additionally
+   needs its constexpr assertion's single-execution loop wrapper and nested
+   observer calls in expressions admitted through ordinary source lowering.
+   The next design choice is admission of nested calls in unsequenced operands:
+   prefer verified observer contracts that establish operand independence, or
+   model every permitted order now. For example, `back()` reads `_M_ptr` and
+   calls `size()` in the same addition. Do not choose an order silently or
+   introduce a span-specific intrinsic. The observer-contract scope is the
+   recommended first implementation; interfering expressions would remain
+   refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
@@ -201,8 +212,8 @@ the contract; do not promise a recoverable error or rely on debug assertions.
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields and the pointer-offset forms above. Local reference binding,
-reference/aggregate returns and automatic embedded descriptor objects still
+fields and the pointer-offset forms above. Shared aggregate returns and
+automatic embedded descriptor objects still
 need frontend admission. Some of
 those are implementation work once the profiles above are chosen; they do not
 justify a separate C++ memory model.
