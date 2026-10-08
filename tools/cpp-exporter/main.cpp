@@ -915,6 +915,29 @@ private:
                                       bool allow_nested_scope) {
     statement = without_branch_weights(statement);
     if (!statement) return std::nullopt;
+    if (const auto *loop = llvm::dyn_cast<clang::DoStmt>(statement)) {
+      // A literal-false do loop executes its body once. Do not fold runtime
+      // conditions or erase control transfers; lower_branch still rejects
+      // unsupported break/continue and local-lifetime arrangements.
+      const auto *condition = loop->getCond()->IgnoreParenImpCasts();
+      const auto *boolean = llvm::dyn_cast<clang::CXXBoolLiteralExpr>(condition);
+      const auto *integer = llvm::dyn_cast<clang::IntegerLiteral>(condition);
+      if (!((boolean && !boolean->getValue()) ||
+            (integer && integer->getValue().isZero()))) {
+        fail(loop->getDoLoc(),
+             "C++ do loops require a literal false condition; runtime and repeated loops remain unsupported");
+        return std::nullopt;
+      }
+      auto body = lower_branch(loop->getBody(), function, CleanupScopeKind::None);
+      if (!body) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "if";
+      result["condition"] = boolean_constant(true, loop->getCond()->getSourceRange(), true);
+      result["then_branch"] = std::move(*body);
+      result["else_branch"] = llvm::json::Array();
+      result["span"] = span(loop->getSourceRange());
+      return Json(std::move(result));
+    }
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
@@ -989,6 +1012,28 @@ private:
       return lower_scope(compound, function, false);
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(statement)) {
+      if (const auto *operation = llvm::dyn_cast<clang::CXXOperatorCallExpr>(call);
+          operation != nullptr && operation->getOperator() == clang::OO_Equal) {
+        const auto *method =
+            llvm::dyn_cast_or_null<clang::CXXMethodDecl>(operation->getDirectCallee());
+        if (method != nullptr && method->isCopyAssignmentOperator() &&
+            method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
+            method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
+            operation->getArg(0)->isLValue() && operation->getArg(1)->isLValue()) {
+          auto target = lower_place_reference(operation->getArg(0)->IgnoreParenImpCasts(), function);
+          auto source = lower_place_reference(operation->getArg(1)->IgnoreParenImpCasts(), function);
+          if (!target || !source) return std::nullopt;
+          llvm::json::Object result;
+          result["kind"] = "trivial_copy";
+          result["target"] = std::move(*target);
+          result["source"] = std::move(*source);
+          result["span"] = span(operation->getSourceRange());
+          return Json(std::move(result));
+        }
+        fail(operation->getExprLoc(),
+             "C++ record assignment requires a trivial copy assignment with live record lvalues and trivial destruction");
+        return std::nullopt;
+      }
       const auto *callee = call->getDirectCallee();
       if (callee != nullptr) {
         auto contract = library_assertions_.find(callee->getQualifiedNameAsString());
@@ -1464,6 +1509,9 @@ private:
                               context_.getTypeSize(local->getType()) == 64 ||
                               context_.getTypeSize(local->getType()) == 128) &&
                              !local->getType().hasQualifiers();
+    const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
+    const bool int_reference = local_reference != nullptr &&
+        context_.hasSameType(local_reference->getPointeeType().getUnqualifiedType(), context_.IntTy);
     const auto *record_type = local->getType()->getAs<clang::RecordType>();
     const auto *record =
         record_type == nullptr
@@ -1479,11 +1527,11 @@ private:
            "not local object construction");
       return std::nullopt;
     }
-    if (!mutable_int && !record_object) {
+    if (!mutable_int && !record_object && !int_reference) {
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to mutable "
            "signed/unsigned "
-           "32/64/128-bit integer or one simple record object");
+           "32/64/128-bit integer, an int lvalue reference, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit()) {
@@ -1635,7 +1683,10 @@ private:
     } else if (const auto *call = initializer_call;
                call != nullptr && !is_numeric_limits_max_call(call)) {
       if (call->getDirectCallee() == nullptr ||
-          !context_.hasSameType(source_initializer->getType(), local->getType())) {
+          !(int_reference
+              ? source_initializer->isLValue() && scalar_call->conversions.empty() &&
+                context_.hasSameType(call->getDirectCallee()->getReturnType(), local->getType())
+              : context_.hasSameType(source_initializer->getType(), local->getType()))) {
         fail(call->getExprLoc(),
              "C++ call capture requires matching final initializer and local types");
         return std::nullopt;
@@ -1651,7 +1702,9 @@ private:
       initializer["arguments"] = std::move(lowered->arguments);
       initializer["span"] = std::move(lowered->span);
     } else {
-      auto value = lower_expression(source_initializer, function);
+      auto value = int_reference
+          ? lower_reference_binding(source_initializer, local->getType(), function)
+          : lower_expression(source_initializer, function);
       if (!value) {
         return std::nullopt;
       }
@@ -2138,14 +2191,17 @@ private:
     }
     const auto *source = expression->IgnoreParenImpCasts();
     std::optional<Json> address;
-    {
+    if (const auto *dereference = llvm::dyn_cast<clang::UnaryOperator>(source);
+        dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
+      address = lower_expression(dereference->getSubExpr(), function);
+    } else {
       const auto *declaration = llvm::dyn_cast<clang::DeclRefExpr>(source);
       const auto *parameter = declaration == nullptr ? nullptr :
-          llvm::dyn_cast<clang::ParmVarDecl>(declaration->getDecl());
+          llvm::dyn_cast<clang::VarDecl>(declaration->getDecl());
       const auto *parameter_reference = parameter == nullptr ? nullptr :
           parameter->getType()->getAs<clang::LValueReferenceType>();
       if (parameter_reference == nullptr || parameter->getDeclContext() != function) {
-        fail(expression->getExprLoc(), "C++ reference results currently bind existing reference parameters; raw-pointer binding needs live-object validation");
+        fail(expression->getExprLoc(), "C++ references currently bind existing references or pointer dereferences");
         return std::nullopt;
       }
       auto place = lower_place_reference(source, function);
@@ -2489,6 +2545,24 @@ private:
             llvm::dyn_cast<clang::ParenExpr>(expression)) {
       return lower_expression(parentheses->getSubExpr(), function);
     }
+    if (const auto *call = llvm::dyn_cast<clang::CallExpr>(expression)) {
+      const auto *callee = call->getDirectCallee();
+      if (callee == nullptr || callee->getBuiltinID() != 0 ||
+          callee->getReturnType()->isReferenceType() || callee->getReturnType()->isVoidType()) {
+        fail(call->getExprLoc(), "C++ expression observers require a direct scalar value call; compiler builtins and reference results remain unsupported");
+        return std::nullopt;
+      }
+      auto operation = lower_call_operation(call, function, true);
+      auto value_type = lower_type(call->getType(), call->getExprLoc());
+      if (!operation || !value_type) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "observer_call";
+      result["callee"] = std::move(operation->callee);
+      result["arguments"] = std::move(operation->arguments);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = std::move(operation->span);
+      return Json(std::move(result));
+    }
     if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
       // Retain the semantic conversion checked by Clang; substituting a
       // modulo cast of the written initializer would admit C++ narrowing.
@@ -2627,7 +2701,7 @@ private:
       const auto *parameter =
           reference == nullptr
               ? nullptr
-              : llvm::dyn_cast<clang::ParmVarDecl>(reference->getDecl());
+              : llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
       const auto *reference_type =
           parameter == nullptr
               ? nullptr
@@ -2638,7 +2712,7 @@ private:
               reference_type->getPointeeType().getUnqualifiedType(),
               context_.IntTy)) {
         fail(address->getOperatorLoc(),
-             "supported C++ address-of must name an int reference parameter");
+             "supported C++ address-of must name an int reference in the current function");
         return std::nullopt;
       }
       auto place = lower_place_reference(operand, function);

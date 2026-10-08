@@ -21,7 +21,7 @@ theorem last_cell(p: int32[], lo: int32, hi: int32) {
             have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; } }
             arithmetic() using { 0 <= lo; 0 < hi; }
         }
-        have viewable(p[hi - 1..hi]) by { simp(); }
+        have viewable(p[hi - 1..hi]);
         assumption();
     }
 }

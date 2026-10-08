@@ -460,6 +460,13 @@ pub enum CppBinaryOperator {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppExpression {
+    /// A modular call whose contract must provide only read-only authority.
+    ObserverCall {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
+        span: CppSpan,
+    },
     IntegerLiteral {
         value: String,
         value_type: CppType,
@@ -813,6 +820,12 @@ pub enum CppInitializer {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppStatement {
+    /// A Clang-resolved trivial copy assignment; no user-defined body is erased.
+    TrivialCopy {
+        target: CppPlaceReference,
+        source: CppPlaceReference,
+        span: CppSpan,
+    },
     Declare {
         local: CppPlace,
         initializer: CppInitializer,
@@ -1903,6 +1916,9 @@ impl CppFunction {
                     CppType::Integer { .. } => {
                         require_scalar_integer(&local.value_type, "automatic local")?;
                     }
+                    CppType::LvalueReference { pointee } => {
+                        require_int32(pointee, true, "automatic reference local")?;
+                    }
                     CppType::Record {
                         declaration_id,
                         name,
@@ -1929,7 +1945,7 @@ impl CppFunction {
                     }
                     _ => {
                         return Err(
-                            "the supported automatic C++ local must be mutable `int` or one simple aggregate object"
+                            "the supported automatic C++ local must be a mutable integer, an int32 lvalue reference, or one simple aggregate object"
                                 .into(),
                         );
                     }
@@ -2313,6 +2329,76 @@ impl CppStatement {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
+            Self::Assign { value, .. }
+            | Self::MemberStore { value, .. }
+            | Self::Throw { value, .. }
+            | Self::Assume {
+                condition: value, ..
+            }
+            | Self::LibraryAssert {
+                condition: value, ..
+            } => value.require_pure_context()?,
+            Self::Store { pointer, value, .. } => {
+                pointer.require_pure_context()?;
+                value.require_pure_context()?;
+            }
+            _ => {}
+        }
+        match self {
+            Self::TrivialCopy {
+                target,
+                source,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                let target_root = validate_root_reference(target, places, logical_source)?;
+                if matches!(target_root, CppType::Record { is_const: true, .. })
+                    || matches!(target_root, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }))
+                {
+                    return Err("C++ trivial copy cannot write through a const record".into());
+                }
+                let source_root = validate_root_reference(source, places, logical_source)?;
+                let (target_type, _) = records.resolve_path(target_root, &target.projections)?;
+                let (source_type, _) = records.resolve_path(source_root, &source.projections)?;
+                let CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                } = target_type
+                else {
+                    return Err("C++ trivial copy requires a mutable record target".into());
+                };
+                if !matches!(source_type, CppType::Record { declaration_id: source_id, name: source_name, .. } if source_id == declaration_id && source_name == name)
+                {
+                    return Err(
+                        "C++ trivial copy requires the same nominal source and target record"
+                            .into(),
+                    );
+                }
+                let mut pending = vec![validate_record_reference(records, declaration_id, name)?];
+                let mut checked = BTreeSet::new();
+                while let Some(record) = pending.pop() {
+                    if !checked.insert(&record.declaration_id) {
+                        continue;
+                    }
+                    crate::instrumentation::record_deterministic_work(1);
+                    if record.base.is_some() || record.destructor.is_some() {
+                        return Err("C++ trivial copies require records without base subobjects or nontrivial destruction".into());
+                    }
+                    for field in &record.fields {
+                        crate::instrumentation::record_deterministic_work(1);
+                        if let CppType::Record {
+                            declaration_id,
+                            name,
+                            ..
+                        } = &field.value_type
+                        {
+                            pending.push(validate_record_reference(records, declaration_id, name)?);
+                        }
+                    }
+                }
+                Ok(())
+            }
             Self::Declare { .. } => {
                 Err("automatic C++ locals are currently supported only in the function body".into())
             }
@@ -2524,7 +2610,41 @@ impl CppInitializer {
         records: &RecordIndex<'_>,
         logical_source: &str,
     ) -> Result<(), String> {
+        match self {
+            Self::Value { value } => value.require_pure_context()?,
+            Self::Aggregate { fields, .. } => {
+                for field in fields {
+                    field.value.require_pure_context()?;
+                }
+            }
+            _ => {}
+        }
         match (self, local_type) {
+            (Self::Value { value }, CppType::LvalueReference { .. }) => {
+                value.validate(places, records, logical_source)?;
+                if !same_scalar_type(local_type, value.value_type()) {
+                    return Err(
+                        "C++ reference local initializer changed its native reference type".into(),
+                    );
+                }
+                Ok(())
+            }
+            (
+                Self::Call {
+                    callee,
+                    arguments,
+                    conversions,
+                    span,
+                },
+                CppType::LvalueReference { .. },
+            ) => {
+                if !conversions.is_empty() {
+                    return Err(
+                        "C++ reference local call capture cannot convert the referent".into(),
+                    );
+                }
+                validate_call(callee, arguments, span, places, records, logical_source)
+            }
             (Self::Value { value }, CppType::Integer { .. }) => {
                 value.validate(places, records, logical_source)?;
                 if !same_scalar_type(local_type, value.value_type()) {
@@ -2762,7 +2882,10 @@ impl CppCallArgument {
                 }
                 validate_call(callee, arguments, span, places, records, logical_source)
             }
-            Self::Value { value } => value.validate(places, records, logical_source),
+            Self::Value { value } => {
+                value.require_pure_context()?;
+                value.validate(places, records, logical_source)
+            }
             Self::Reference { place } => {
                 let root = validate_root_reference(place, places, logical_source)?;
                 for projection in &place.projections {
@@ -2790,6 +2913,29 @@ impl CppCallArgument {
 }
 
 impl CppExpression {
+    fn contains_observer(&self) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        match self {
+            Self::ObserverCall { .. } => true,
+            Self::IntegralCast { value, .. }
+            | Self::ReferenceBinding { address: value, .. }
+            | Self::Dereference { pointer: value, .. } => value.contains_observer(),
+            Self::Binary { left, right, .. } => {
+                left.contains_observer() || right.contains_observer()
+            }
+            _ => false,
+        }
+    }
+    fn require_pure_context(&self) -> Result<(), String> {
+        if self.contains_observer() {
+            Err(
+                "C++ expression observers are supported only in return values and conditions"
+                    .into(),
+            )
+        } else {
+            Ok(())
+        }
+    }
     // Only a closed, typed Boolean conversion participates in return analysis.
     // The selected constexpr arm is retained as an ordinary constant if; an
     // unknown runtime condition must still return on both paths.
@@ -2815,7 +2961,8 @@ impl CppExpression {
     }
     pub(crate) fn value_type(&self) -> &CppType {
         match self {
-            Self::IntegerLiteral { value_type, .. }
+            Self::ObserverCall { value_type, .. }
+            | Self::IntegerLiteral { value_type, .. }
             | Self::CompilerConstant { value_type, .. }
             | Self::ConstantReference { value_type, .. }
             | Self::Load { value_type, .. }
@@ -2830,6 +2977,9 @@ impl CppExpression {
 
     fn references_place(&self, declaration_id: &str) -> bool {
         match self {
+            Self::ObserverCall { arguments, .. } => arguments
+                .iter()
+                .any(|argument| argument.references_place(declaration_id)),
             Self::IntegerLiteral { .. }
             | Self::CompilerConstant { .. }
             | Self::ConstantReference { .. } => false,
@@ -2855,6 +3005,18 @@ impl CppExpression {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
+            Self::ObserverCall {
+                callee,
+                arguments,
+                value_type,
+                span,
+            } => {
+                require_return_value_type(value_type, "expression observer result")?;
+                if matches!(value_type, CppType::Void | CppType::LvalueReference { .. }) {
+                    return Err("C++ expression observers require a scalar value result".into());
+                }
+                validate_call(callee, arguments, span, places, records, logical_source)
+            }
             Self::IntegerLiteral {
                 value,
                 value_type,
@@ -2952,9 +3114,6 @@ impl CppExpression {
             } => {
                 span.validate(logical_source)?;
                 address.validate(places, records, logical_source)?;
-                if !matches!(address.as_ref(), Self::AddressOf { .. }) {
-                    return Err("C++ reference binding currently requires an existing reference parameter; raw-pointer binding needs live-object validation".into());
-                }
                 let CppType::LvalueReference { pointee } = value_type else {
                     return Err("C++ reference binding requires a reference result type".into());
                 };
@@ -3359,6 +3518,7 @@ impl CppStatement {
             | Self::Assign { .. }
             | Self::Store { .. }
             | Self::MemberStore { .. }
+            | Self::TrivialCopy { .. }
             | Self::Assume { .. }
             | Self::LibraryAssert { .. }
             | Self::Call { .. } => false,
@@ -3434,7 +3594,14 @@ fn validate_reachable_calls(
             ));
         }
         match call {
-            CollectedCall::Ordinary { destination, .. } => {
+            CollectedCall::Ordinary {
+                destination,
+                observer,
+                ..
+            } => {
+                if observer && !target.declared_noexcept {
+                    return Err("C++ expression observers require nonthrowing callees".into());
+                }
                 if destination.is_some_and(|value| !same_scalar_type(value, &target.return_type)) {
                     return Err("C++ call result does not match its capture or return type".into());
                 }
@@ -3542,6 +3709,7 @@ enum CollectedCall<'a> {
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
         destination: Option<&'a CppType>,
+        observer: bool,
     },
     Constructor {
         local: &'a CppPlace,
@@ -3556,6 +3724,7 @@ enum CollectedCall<'a> {
 
 fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCall<'a>>) {
     for statement in statements {
+        collect_statement_expression_calls(statement, calls);
         match statement {
             CppStatement::Declare {
                 local,
@@ -3657,9 +3826,104 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
             | CppStatement::Store { .. }
-            | CppStatement::MemberStore { .. } => {}
+            | CppStatement::MemberStore { .. }
+            | CppStatement::TrivialCopy { .. } => {}
         }
     }
+}
+
+fn collect_statement_expression_calls<'a>(
+    statement: &'a CppStatement,
+    calls: &mut Vec<CollectedCall<'a>>,
+) {
+    match statement {
+        CppStatement::Return { value, .. }
+        | CppStatement::Throw { value, .. }
+        | CppStatement::Assign { value, .. }
+        | CppStatement::MemberStore { value, .. }
+        | CppStatement::Declare {
+            initializer: CppInitializer::Value { value },
+            ..
+        }
+        | CppStatement::Assume {
+            condition: value, ..
+        }
+        | CppStatement::LibraryAssert {
+            condition: value, ..
+        } => collect_expression_calls(value, calls),
+        CppStatement::Store { pointer, value, .. } => {
+            collect_expression_calls(pointer, calls);
+            collect_expression_calls(value, calls);
+        }
+        CppStatement::If {
+            condition: CppCondition::Expression(value),
+            ..
+        } => collect_expression_calls(value, calls),
+        CppStatement::Declare {
+            initializer: CppInitializer::Aggregate { fields, .. },
+            ..
+        } => {
+            for field in fields {
+                collect_expression_calls(&field.value, calls);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<CollectedCall<'a>>) {
+    crate::instrumentation::record_deterministic_work(1);
+    match value {
+        CppExpression::ObserverCall {
+            callee,
+            arguments,
+            value_type,
+            ..
+        } => {
+            calls.push(CollectedCall::Ordinary {
+                callee,
+                arguments,
+                destination: Some(value_type),
+                observer: true,
+            });
+            let first = calls.len();
+            collect_nested_calls(arguments, calls);
+            for call in &mut calls[first..] {
+                if let CollectedCall::Ordinary { observer, .. } = call {
+                    *observer = true;
+                }
+            }
+        }
+        CppExpression::ReferenceBinding { address: value, .. }
+        | CppExpression::Dereference { pointer: value, .. }
+        | CppExpression::IntegralCast { value, .. } => collect_expression_calls(value, calls),
+        CppExpression::Binary { left, right, .. } => {
+            collect_expression_calls(left, calls);
+            collect_expression_calls(right, calls);
+        }
+        _ => {}
+    }
+}
+
+pub(super) fn observer_callees(import: &super::PreparedCppImport) -> BTreeSet<String> {
+    let mut result = BTreeSet::new();
+    for function in
+        std::iter::once(&import.export().function).chain(&import.export().reachable_functions)
+    {
+        let mut calls = Vec::new();
+        collect_calls(&function.body, &mut calls);
+        for call in calls {
+            if let CollectedCall::Ordinary {
+                callee,
+                observer: true,
+                ..
+            } = call
+            {
+                result.insert(callee.declaration_id.clone());
+            }
+        }
+    }
+    result
 }
 
 fn collect_scalar_call<'a>(
@@ -3672,12 +3936,16 @@ fn collect_scalar_call<'a>(
         callee,
         arguments,
         destination,
+        observer: false,
     });
     collect_nested_calls(arguments, calls);
 }
 
 fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<CollectedCall<'a>>) {
     for argument in arguments {
+        if let CppCallArgument::Value { value } = argument {
+            collect_expression_calls(value, calls);
+        }
         if let CppCallArgument::Call {
             callee,
             arguments,
@@ -3689,6 +3957,7 @@ fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<Co
                 callee,
                 arguments,
                 destination: Some(value_type),
+                observer: false,
             });
             collect_nested_calls(arguments, calls);
         }
@@ -3993,6 +4262,7 @@ fn validate_statement_constant_references(
 ) -> Result<(), String> {
     for statement in statements {
         match statement {
+            CppStatement::TrivialCopy { .. } => {}
             CppStatement::Declare { initializer, .. } => {
                 initializer.validate_constant_references(
                     logical_source,
@@ -4126,6 +4396,15 @@ impl CppInitializer {
 }
 
 impl CppCallArgument {
+    fn references_place(&self, declaration_id: &str) -> bool {
+        match self {
+            Self::Value { value } => value.references_place(declaration_id),
+            Self::Reference { place } => place.declaration_id == declaration_id,
+            Self::Call { arguments, .. } => arguments
+                .iter()
+                .any(|argument| argument.references_place(declaration_id)),
+        }
+    }
     fn validate_constant_references(
         &self,
         logical_source: &str,
@@ -4159,6 +4438,16 @@ impl CppExpression {
         referenced_constants: &mut BTreeSet<String>,
     ) -> Result<(), String> {
         match self {
+            Self::ObserverCall { arguments, .. } => {
+                for argument in arguments {
+                    argument.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+                Ok(())
+            }
             Self::ConstantReference {
                 constant,
                 value_type,

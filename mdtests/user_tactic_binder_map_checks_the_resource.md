@@ -38,7 +38,7 @@ tactic divide(p: struct pr*) {
     unfold(x);
     let y = fold(first(p), { tag: 7 });
     let z = fold(second(p), { tag: 0 });
-    have y.tag == 7 by { simp(); }
+    have y.tag == 7;
 }
 
 void user(struct pr* p) {

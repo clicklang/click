@@ -415,6 +415,42 @@ fn expand_c0_prepared_claim_source(
     Ok(splice_source(click_source, &tokens, span, &replacement))
 }
 
+/// Use the same claim labels for every source/import route. A selected
+/// exceptional ensure must remain exceptional through lookup; covering_claim
+/// subsequently selects the grouped proof when that is its producer.
+fn function_expansion_claim_by_label(
+    function: &FunctionBlock,
+    claim_label: &str,
+) -> Option<CProofClaim> {
+    let name = function.signature().name();
+    if claim_label == format!("{name}.contract") && function.covering_proof().is_some() {
+        return Some(CProofClaim::Grouped);
+    }
+    for (clauses, prefix, claim) in [
+        (
+            function.ensures(),
+            "ensures",
+            CProofClaim::Ensure as fn(usize) -> CProofClaim,
+        ),
+        (
+            function.exceptional_ensures(),
+            "exceptional_ensures",
+            CProofClaim::ExceptionalEnsure as fn(usize) -> CProofClaim,
+        ),
+    ] {
+        for (index, ensure) in clauses.iter().enumerate() {
+            let label = ensure.name().map_or_else(
+                || format!("{name}.{prefix}_{index}"),
+                |label| format!("{name}.{label}"),
+            );
+            if label == claim_label {
+                return Some(claim(index));
+            }
+        }
+    }
+    None
+}
+
 /// Expands one function claim selected by the same stable label used by
 /// profiling and diagnostics.
 pub fn expand_c0_claim_source_by_label(
@@ -435,29 +471,13 @@ pub fn expand_c0_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_claim_source(
                 click_source,
                 c_sources,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_claim_source(
-                    click_source,
-                    c_sources,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -495,29 +515,13 @@ pub fn expand_c0_project_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_project_claim_source(
                 project,
                 c_sources,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_project_claim_source(
-                    project,
-                    c_sources,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -549,29 +553,13 @@ pub fn expand_c0_prepared_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_prepared_claim_source(
                 click_source,
                 imports,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_prepared_claim_source(
-                    click_source,
-                    imports,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -606,29 +594,13 @@ pub fn expand_c0_prepared_project_claim_source_by_label(
         }
     }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_c0_prepared_project_claim_source(
                 project,
                 imports,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_c0_prepared_project_claim_source(
-                    project,
-                    imports,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -674,47 +646,40 @@ fn expand_program_prepared_claim_source_by_label_context(
         Some(project) => resolve_click_project_context(project, &sources)?,
         None => parse_source_with_c_layouts_context(click_source, &sources)?,
     };
+    for theorem in file.theorem_definitions() {
+        if project.is_some() && !file.theorem_is_selected(theorem.name()) {
+            continue;
+        }
+        for (index, ensure) in theorem.ensures().iter().enumerate() {
+            let label = ensure.name().map_or_else(
+                || format!("{}.ensures_{index}", theorem.name()),
+                |name| format!("{}.{name}", theorem.name()),
+            );
+            if label == claim_label {
+                let verified = match project {
+                    Some(project) => {
+                        verify_click_project_theorem_context(project, &sources, theorem.name())?
+                    }
+                    None => verify_click_theorems_with_context(click_source, &sources)?,
+                };
+                return rewrite_verified_pure_theorem(
+                    click_source,
+                    &verified,
+                    theorem.name(),
+                    index,
+                );
+            }
+        }
+    }
     for function in proof_function_blocks(&file) {
-        let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
-        {
+        if let Some(claim) = function_expansion_claim_by_label(function, claim_label) {
             return expand_program_prepared_claim_source_context(
                 project,
                 click_source,
                 import,
-                function_name,
-                CProofClaim::Grouped,
+                function.signature().name(),
+                claim,
             );
-        }
-        for (index, ensure) in function.ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_program_prepared_claim_source_context(
-                    project,
-                    click_source,
-                    import,
-                    function_name,
-                    CProofClaim::Ensure(index),
-                );
-            }
-        }
-        for (index, ensure) in function.exceptional_ensures().iter().enumerate() {
-            let label = ensure.name().map_or_else(
-                || format!("{function_name}.exceptional_ensures_{index}"),
-                |name| format!("{function_name}.{name}"),
-            );
-            if label == claim_label {
-                return expand_program_prepared_claim_source_context(
-                    project,
-                    click_source,
-                    import,
-                    function_name,
-                    CProofClaim::ExceptionalEnsure(index),
-                );
-            }
         }
     }
     Err(ClickError::new(format!(
@@ -1989,14 +1954,64 @@ fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBloc
     )
 }
 
+/// The token after a Rust signature's return type, `-> T` or `-> ()`, when
+/// one starts at `index`; `index` itself otherwise.
+fn after_rust_return_type(tokens: &[SourceToken], index: usize) -> usize {
+    let text = |at: usize| tokens.get(at).map(|token| token.text.as_str());
+    if text(index) != Some("-") || text(index + 1) != Some(">") {
+        return index;
+    }
+    if text(index + 2) == Some("(") {
+        index + 4
+    } else {
+        index + 3
+    }
+}
+
+/// The token range of the `impl Type { ... }` or `impl Trait for Type { ... }`
+/// block whose methods are the functions `Type_name`, and the method's own
+/// name, when `name` is such a function.
+fn rust_impl_method<'a>(
+    tokens: &[SourceToken],
+    name: &'a str,
+) -> Result<Option<(Range<usize>, &'a str)>, ClickError> {
+    let mut index = 0;
+    while index < tokens.len() {
+        if tokens[index].text != "impl" {
+            index += 1;
+            continue;
+        }
+        let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") else {
+            return Ok(None);
+        };
+        let close = matching_delimiter(tokens, open, "{", "}")?;
+        let impl_type = tokens[open - 1].text.as_str();
+        if let Some(method) = name
+            .strip_prefix(impl_type)
+            .and_then(|rest| rest.strip_prefix('_'))
+        {
+            return Ok(Some((open + 1..close, method)));
+        }
+        index = close + 1;
+    }
+    Ok(None)
+}
+
 fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
+    if let Some((block, method)) = rust_impl_method(tokens, name)? {
+        let found = find_function(&tokens[block.clone()], method)?;
+        return Ok(FunctionSource {
+            body_open: found.body_open + block.start,
+            body_close: found.body_close + block.start,
+        });
+    }
     for (index, token) in tokens.iter().enumerate() {
         if token.text != name || tokens.get(index + 1).map(|token| token.text.as_str()) != Some("(")
         {
             continue;
         }
         let parameters_close = matching_delimiter(tokens, index + 1, "(", ")")?;
-        let mut body_open = parameters_close + 1;
+        let mut body_open = after_rust_return_type(tokens, parameters_close + 1);
         if tokens.get(body_open).map(|token| token.text.as_str()) == Some("throws") {
             body_open += 2;
         }
@@ -2932,10 +2947,26 @@ fn declaration_source_index(
 ) -> Result<std::collections::HashMap<String, FunctionSource>, ClickError> {
     let mut result = std::collections::HashMap::new();
     let mut candidate = None;
+    // Inside a Rust `impl` block a method `name` is the function `Type_name`.
+    let mut impl_block: Option<(String, usize)> = None;
     let mut index = 0;
     while index < tokens.len() {
         crate::instrumentation::record_deterministic_work(1);
+        if impl_block
+            .as_ref()
+            .is_some_and(|(_, close)| index >= *close)
+        {
+            impl_block = None;
+        }
         match tokens[index].text.as_str() {
+            "impl" if impl_block.is_none() && candidate.is_none() => {
+                if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
+                    let close = matching_delimiter(tokens, open, "{", "}")?;
+                    impl_block = Some((tokens[open - 1].text.clone(), close));
+                    index = open + 1;
+                    continue;
+                }
+            }
             "theorem" | "tactic" => {
                 candidate = tokens.get(index + 1).map(|token| token.text.clone());
             }
@@ -2950,6 +2981,10 @@ fn declaration_source_index(
             "{" => {
                 let body_close = matching_delimiter(tokens, index, "{", "}")?;
                 if let Some(name) = candidate.take() {
+                    let name = match &impl_block {
+                        Some((impl_type, _)) => format!("{impl_type}_{name}"),
+                        None => name,
+                    };
                     result.insert(
                         name,
                         FunctionSource {
@@ -3694,6 +3729,48 @@ pub fn program_prepared_project_tactic_source_position(
     )
 }
 
+pub fn c0_project_tactic_source_positions(
+    project: &ClickProject,
+    c_sources: &[(&str, &str)],
+    claim_label: &str,
+) -> Result<Vec<SourcePosition>, ClickError> {
+    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+    let file = resolve_click_project_context(project, &sources)?;
+    c0_tactic_source_positions_file(
+        &file,
+        project.entry_source().expect("resolved entry source"),
+        claim_label,
+    )
+}
+
+pub fn c0_prepared_project_tactic_source_positions(
+    project: &ClickProject,
+    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    claim_label: &str,
+) -> Result<Vec<SourcePosition>, ClickError> {
+    let sources = CSourceContext::prepared(imports).with_click_project(project);
+    let file = resolve_click_project_context(project, &sources)?;
+    c0_tactic_source_positions_file(
+        &file,
+        project.entry_source().expect("resolved entry source"),
+        claim_label,
+    )
+}
+
+pub fn program_prepared_project_tactic_source_positions(
+    project: &ClickProject,
+    import: &impl crate::languages::PreparedProgramSource,
+    claim_label: &str,
+) -> Result<Vec<SourcePosition>, ClickError> {
+    let sources = CSourceContext::program(import)?.with_click_project(project);
+    let file = resolve_click_project_context(project, &sources)?;
+    c0_tactic_source_positions_file(
+        &file,
+        project.entry_source().expect("resolved entry source"),
+        claim_label,
+    )
+}
+
 fn c0_tactic_source_position_context(
     c_sources: &CSourceContext<'_>,
     click_source: &str,
@@ -3710,6 +3787,54 @@ fn c0_tactic_source_position_file(
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
+    c0_tactic_source_positions_file(file, click_source, claim_label)?
+        .get(source_index)
+        .cloned()
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "`{claim_label}` has no source tactic occurrence {source_index}"
+            ))
+        })
+}
+
+/// Resolve many byte offsets with one source walk, preserving request order.
+/// In particular, a long line containing many tactics must not be rescanned
+/// from its start for each tactic's character column.
+fn positions_at_offsets(
+    source: &str,
+    offsets: impl IntoIterator<Item = usize>,
+) -> Vec<SourcePosition> {
+    let mut ordered: Vec<_> = offsets.into_iter().enumerate().collect();
+    ordered.sort_unstable_by_key(|(_, offset)| *offset);
+    let mut positions = vec![SourcePosition::new(1, 1); ordered.len()];
+    let mut chars = source.char_indices().peekable();
+    let mut line = 1;
+    let mut column = 1;
+    for (index, offset) in ordered {
+        crate::instrumentation::record_deterministic_work(1);
+        while let Some(&(at, character)) = chars.peek() {
+            if at >= offset {
+                break;
+            }
+            chars.next();
+            crate::instrumentation::record_deterministic_work(1);
+            if character == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+        positions[index] = SourcePosition::new(line, column);
+    }
+    positions
+}
+
+fn c0_tactic_source_positions_file(
+    file: &ClickFile,
+    click_source: &str,
+    claim_label: &str,
+) -> Result<Vec<SourcePosition>, ClickError> {
     let tokens = scan_source_tokens(click_source)?;
     for theorem in file.theorem_definitions() {
         if !file.theorem_is_selected(theorem.name()) {
@@ -3729,7 +3854,7 @@ fn c0_tactic_source_position_file(
             }
             let edit =
                 find_ensure_proof_edit(&tokens, source.body_open, source.body_close, ensure_index)?;
-            return proof_source_position(
+            return proof_source_positions(
                 click_source,
                 &tokens,
                 match &edit {
@@ -3740,7 +3865,6 @@ fn c0_tactic_source_position_file(
                 Some(ensure.proof()),
                 edit.selector(),
                 claim_label,
-                source_index,
             );
         }
     }
@@ -3749,14 +3873,13 @@ fn c0_tactic_source_position_file(
             continue;
         }
         let function = find_tactic(&tokens, tactic.name())?;
-        return proof_source_position(
+        return proof_source_positions(
             click_source,
             &tokens,
             Some(&find_grouped_proof_span(&tokens, &function)?),
             tactic.function_block().grouped_proof(),
             tokens[function.body_close].span.start,
             claim_label,
-            source_index,
         );
     }
     for function_block in proof_function_blocks(file) {
@@ -3792,14 +3915,13 @@ fn c0_tactic_source_position_file(
             };
             let (fallback, proof_span, _) =
                 find_loop_phase_proof_span(&tokens, &function, loop_index, phase)?;
-            return proof_source_position(
+            return proof_source_positions(
                 click_source,
                 &tokens,
                 proof_span.as_ref(),
                 proof,
                 fallback,
                 claim_label,
-                source_index,
             );
         }
         let selected = if claim_label == format!("{function_name}.contract") {
@@ -3854,14 +3976,13 @@ fn c0_tactic_source_position_file(
                 find_claim_proof_span(&tokens, &function, function_block, claim).ok()
             }
         };
-        return proof_source_position(
+        return proof_source_positions(
             click_source,
             &tokens,
             proof_span.as_ref(),
             Some(proof),
             fallback,
             claim_label,
-            source_index,
         );
     }
     Err(ClickError::new(format!(
@@ -3869,15 +3990,14 @@ fn c0_tactic_source_position_file(
     )))
 }
 
-fn proof_source_position(
+fn proof_source_positions(
     click_source: &str,
     tokens: &[SourceToken],
     proof_span: Option<&Range<usize>>,
     proof: Option<&SourceProof>,
     fallback: usize,
     claim_label: &str,
-    source_index: usize,
-) -> Result<SourcePosition, ClickError> {
+) -> Result<Vec<SourcePosition>, ClickError> {
     if let Some(tactics) = proof.and_then(SourceProof::tactics) {
         let proof_span = proof_span.ok_or_else(|| {
             ClickError::new(format!(
@@ -3885,17 +4005,10 @@ fn proof_source_position(
             ))
         })?;
         let spans = collect_source_tactic_spans(tokens, proof_span, tactics)?;
-        let span = spans.get(source_index).ok_or_else(|| {
-            ClickError::new(format!(
-                "`{claim_label}` has no source tactic occurrence {source_index}"
-            ))
-        })?;
-        return Ok(position_at_offset(click_source, span.start));
-    }
-    if source_index != 0 {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` has no source tactic occurrence {source_index}"
-        )));
+        return Ok(positions_at_offsets(
+            click_source,
+            spans.iter().map(|span| span.start),
+        ));
     }
     if let Some(proof_span) = proof_span {
         let by = tokens
@@ -3904,10 +4017,10 @@ fn proof_source_position(
             .filter(|index| tokens[*index].text == "by")
             .ok_or_else(|| ClickError::new("could not locate source `by` clause"))?;
         if let Some(tactic) = tokens.get(by + 1) {
-            return Ok(position_at_offset(click_source, tactic.span.start));
+            return Ok(vec![position_at_offset(click_source, tactic.span.start)]);
         }
     }
-    Ok(position_at_offset(click_source, fallback))
+    Ok(vec![position_at_offset(click_source, fallback)])
 }
 
 fn find_claim_clause_offset(

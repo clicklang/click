@@ -173,11 +173,12 @@ Each step is a pull request that leaves every example verifying.
    accepted, because the C-shaped sidecars use it; it is refused in step 5.
 3. Done. Slices: one parameter, `.len()`, `*bytes`, `usize` indices by the
    surface-only route.
-4. `impl` blocks and `self`.
-5. Convert the 16 Rust examples under `examples/` and the sidecars under
-   `design/charon-trial`, regenerate `design/charon-trial/parity.json`,
-   refuse `->` and the C-shaped grammar for Rust sources, and print Rust
-   spellings in diagnostics and `click expand`.
+4. Done. `impl` blocks and `self`.
+5. In part. The 16 Rust examples under `examples/` and their mirrored
+   copies under `design/charon-trial` take their signatures from the Rust
+   source. Still to do: respell their contracts and proofs (`bytes_len`,
+   `->`, `(int32)index`), then refuse `->` and the C-shaped grammar for Rust
+   sources, and print Rust spellings in diagnostics and `click expand`.
 
 Steps 1 to 3 are in pull request #435 and documented in `docs/reference/rust.md`, "Signatures in Rust syntax", with
 fixtures under `tests/fixtures/rust-verification`.

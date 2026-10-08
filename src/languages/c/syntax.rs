@@ -151,6 +151,8 @@ pub struct C0Function {
     source_name: String,
     name: String,
     inline_body: bool,
+    /// Calls used as expression observers must have contracts with views only.
+    requires_read_only_contract: bool,
     parameters: Vec<C0Parameter>,
     body: C0Statement,
     /// Function-scope C label spellings resolved to kernel identities and
@@ -177,6 +179,10 @@ pub struct C0Function {
     /// Struct type of each unambiguous automatic struct value, indexed by
     /// the spelling a Click sidecar uses.
     local_struct_values: BTreeMap<String, String>,
+    /// The automatic locals of reference type, by the name the source gives
+    /// each. Its carrying pointer is the local [`reference_carrier_name`]
+    /// names.
+    local_references: BTreeSet<String>,
     string_literals: Vec<C0StringLiteral>,
 }
 
@@ -2701,6 +2707,22 @@ pub enum C0FloatClassification {
     Nan,
 }
 
+/// Struct indexing scales an element index as pointer arithmetic, not as a
+/// source int32 multiplication. Widen before generating the byte stride.
+fn struct_byte_stride(index: C0Expression, width: u32) -> C0Expression {
+    C0Expression::Multiply(
+        Box::new(C0Expression::Cast {
+            expression: Box::new(index),
+            c_type: C0Type::Int64,
+            struct_name: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        }),
+        Box::new(C0Expression::Int64Literal(i64::from(width))),
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum C0Expression {
     Void,
@@ -2905,6 +2927,15 @@ impl C0Function {
         self
     }
 
+    pub(crate) fn with_read_only_contract(mut self, required: bool) -> Self {
+        self.requires_read_only_contract = required;
+        self
+    }
+
+    pub(crate) fn requires_read_only_contract(&self) -> bool {
+        self.requires_read_only_contract
+    }
+
     pub fn returns_reference(&self) -> bool {
         self.return_reference
     }
@@ -2927,6 +2958,7 @@ impl C0Function {
             source_name: name.clone(),
             name,
             inline_body: false,
+            requires_read_only_contract: false,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters,
@@ -2945,6 +2977,7 @@ impl C0Function {
             static_aggregate_arrays: BTreeMap::new(),
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
+            local_references: BTreeSet::new(),
             string_literals: Vec::new(),
         }
     }
@@ -3042,6 +3075,17 @@ impl C0Function {
 
     pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
         &self.local_struct_values
+    }
+
+    pub(crate) fn with_local_references(mut self, references: BTreeSet<String>) -> Self {
+        self.local_references = references;
+        self
+    }
+
+    /// The automatic locals of reference type, by source name. A proof names
+    /// one as it names a reference parameter: the name is the referent.
+    pub fn local_references(&self) -> &BTreeSet<String> {
+        &self.local_references
     }
 
     pub fn static_arrays(&self) -> &BTreeMap<String, C0StaticArray> {
@@ -4124,6 +4168,18 @@ pub fn referent_of_carrier(carrier: &str) -> Option<&str> {
 }
 
 impl C0Parameter {
+    /// Retain a declared pointer's nominal pointee for source presentation.
+    pub(crate) fn with_pointee_struct_layout(
+        mut self,
+        name: String,
+        layout: C0StructLayout,
+    ) -> Self {
+        assert!(self.c_type.is_pointer());
+        self.struct_name = Some(name);
+        self.pointee_struct_layout = Some(layout);
+        self
+    }
+
     pub(crate) fn with_struct_value(mut self, name: String, layout: C0StructLayout) -> Self {
         self.c_type = struct_value_type(&layout);
         self.struct_name = Some(name);
@@ -8728,6 +8784,7 @@ impl Parser {
             source_name: header.source_name,
             name: header.name,
             inline_body,
+            requires_read_only_contract: false,
             program_entry_state: None,
             prelowered_kernel_function: None,
             parameters: header.parameters,
@@ -8746,6 +8803,7 @@ impl Parser {
             static_aggregate_arrays: std::mem::take(&mut self.static_aggregate_arrays),
             local_struct_pointers,
             local_struct_values,
+            local_references: BTreeSet::new(),
             string_literals,
         })
     }
@@ -17934,10 +17992,7 @@ impl Parser {
             pointee_constant: false,
             explicit_qualification: false,
         };
-        let byte_offset = C0Expression::Multiply(
-            Box::new(offset),
-            Box::new(C0Expression::Int32Literal(element_width)),
-        );
+        let byte_offset = struct_byte_stride(offset, element_width);
         Ok(constructor(Box::new(byte_pointer), Box::new(byte_offset)))
     }
 
@@ -18497,10 +18552,7 @@ impl Parser {
                             )));
                         }
                         let offset = flatten_array_indices(indexes, &shape, false);
-                        let stride = C0Expression::Multiply(
-                            Box::new(offset),
-                            Box::new(C0Expression::Int32Literal(element_width)),
-                        );
+                        let stride = struct_byte_stride(offset, element_width);
                         expression = C0Expression::AggregateAddress {
                             pointer: Box::new(C0Expression::Add(
                                 Box::new(expression),
@@ -18595,10 +18647,7 @@ impl Parser {
                                 .get(struct_name)
                                 .expect("struct array has a declaration")
                                 .size_bytes;
-                            C0Expression::Multiply(
-                                Box::new(offset),
-                                Box::new(C0Expression::Int32Literal(element_width)),
-                            )
+                            struct_byte_stride(offset, element_width)
                         } else {
                             offset
                         };
@@ -18628,10 +18677,7 @@ impl Parser {
                                 pointee_constant: false,
                                 explicit_qualification: false,
                             };
-                            let offset = C0Expression::Multiply(
-                                Box::new(first_index),
-                                Box::new(C0Expression::Int32Literal(element_width)),
-                            );
+                            let offset = struct_byte_stride(first_index, element_width);
                             expression =
                                 C0Expression::Index(Box::new(byte_pointer), Box::new(offset));
                             if self.peek() != Some(&Token::Dot) {

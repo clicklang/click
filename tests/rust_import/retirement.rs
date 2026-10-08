@@ -51,6 +51,60 @@ fn rust_default_conditional_simp_expansion_reverifies() {
 }
 
 #[test]
+fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
+    use click::surface::{ClickModuleSource, ClickProject};
+
+    let p = gate_fixtures::project("basic", SOURCE);
+    let prepared = load_import(&p.config()).unwrap();
+    let source = format!(
+        "{SIDECAR}\ntheorem mixed(n: int32) {{\n\
+         ensures n == n by {{ simp(); }}\n\
+         ensures ordered: n <= n by {{ simp(); }}\n\
+         }}\n"
+    );
+    C0VerificationSession::new_program_prepared(&source, &prepared).unwrap();
+    let project_for = |source: &str| {
+        ClickProject::new(
+            "borrow.click",
+            [ClickModuleSource::new("borrow.click", source, [])],
+        )
+    };
+    for label in ["mixed.ensures_0", "mixed.ordered"] {
+        let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+            &source, &prepared, label,
+        )
+        .unwrap();
+        assert_ne!(expanded, source);
+        C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+        let expanded = click::surface::expand_program_prepared_project_claim_source_by_label(
+            &project_for(&source),
+            &prepared,
+            label,
+        )
+        .unwrap();
+        C0VerificationSession::new_program_prepared_project(&project_for(&expanded), &prepared)
+            .unwrap();
+    }
+    let invalid = source.replace("ensures n == n", "ensures n == n + 1");
+    assert!(
+        click::surface::expand_program_prepared_claim_source_by_label(
+            &invalid,
+            &prepared,
+            "mixed.ensures_0",
+        )
+        .is_err()
+    );
+    assert!(
+        click::surface::expand_program_prepared_project_claim_source_by_label(
+            &project_for(&invalid),
+            &prepared,
+            "mixed.ensures_0",
+        )
+        .is_err()
+    );
+}
+
+#[test]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_native_aliases_use_the_same_backend_and_unknown_backends_fail_closed() {
     let p = Project::new(SOURCE);

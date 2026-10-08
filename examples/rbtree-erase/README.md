@@ -66,18 +66,20 @@ The exact replacement blackens that child and preserves the outer context.
 The contract proves whole-tree balance, parent consistency, in-order contents,
 and null fixup without assuming the erased node's, successor's, or child's color.
 
-`rbtree_erase_spine.click` covers root deletion with a deeper successor whose
-right child is nonempty. Its terminating descent loop retains the exact
-left-only path. Small opening and closing helper contracts expose the splice
-link, so both path shapes use one C continuation. The proof blackens and
-reattaches the replacement child, rebuilds the path, and returns the exact
-successor transplant with red-black validity, parent consistency, preserved
-in-order contents, detached-node ownership, and null fixup.
+`rbtree_erase_spine.click` covers root deletion with a deeper successor that
+is a red leaf or has a nonempty right child. Its terminating descent loop
+retains the exact left-only path. Small opening and closing helper contracts
+expose the splice link. The replacement branches join with one owned subtree
+and its exact model, then share the path rebuild and root reconstruction.
+The nonempty child is blackened; a red leaf needs no color repair. Both cases
+return the exact successor transplant with red-black validity, parent
+consistency, preserved in-order contents, detached-node ownership, and null
+fixup. A shared model theorem connects the leaf and nonempty-child splices.
 
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
 all immediate-successor exits now verify at any tree position. Deeper successors
-with leaf replacements or a non-root erased node remain. The C file retains all branches; each sidecar states its coverage.
+with black-leaf replacements or a non-root erased node remain. The C file retains all branches; each sidecar states its coverage.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is

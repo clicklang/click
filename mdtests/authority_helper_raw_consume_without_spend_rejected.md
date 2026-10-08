@@ -23,7 +23,7 @@ int32 run(void* p) {
     ensures result == 1;
 } by {
     step();
-    have count(ticket(p)) == 0 by { simp(); }
+    have count(ticket(p)) == 0;
     step(); simp();
 }
 ```

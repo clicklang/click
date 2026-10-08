@@ -23,5 +23,5 @@ uint8 read_byte(uint8 s[], int32 i, int32 n) {
 ```
 
 ```expect
-fail: missing resource fact `views s[i..(i + 1)]`
+fail: missing resource fact `views s[i]`
 ```

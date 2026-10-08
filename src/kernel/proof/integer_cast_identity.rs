@@ -61,7 +61,29 @@ pub(super) fn check(
                     | crate::kernel::MachineIntegerType::UInt64
             )
         };
-        if legacy_type(operand.ty()) && legacy_type(machine.ty()) {
+        // Sub-word byte stores retain an unsigned low-bit mask in their
+        // 32-bit carrier. Promoting that canonical carrier to a word keeps
+        // its mathematical value. An arbitrary sub-word-tagged variable is
+        // insufficient: its carrier has not established the narrow range.
+        let masked_unsigned_source = match (operand.ty(), operand.value()) {
+            (
+                crate::kernel::MachineIntegerType::UInt8
+                | crate::kernel::MachineIntegerType::UInt16,
+                Bitvector32Term::BitwiseAnd(left, right),
+            ) => {
+                let mask = (1u32 << operand.ty().format().bits()) - 1;
+                matches!(left.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
+                    || matches!(right.as_ref(), Bitvector32Term::Constant(value) if *value == mask)
+            }
+            _ => false,
+        };
+        let promoted_unsigned_source = masked_unsigned_source
+            && matches!(
+                machine.ty(),
+                crate::kernel::MachineIntegerType::Int32
+                    | crate::kernel::MachineIntegerType::UInt32
+            );
+        if (legacy_type(operand.ty()) && legacy_type(machine.ty())) || promoted_unsigned_source {
             let legacy = machine
                 .ty()
                 .convert_modulo_value(operand.ty().value_from_term(operand.value().clone()));
@@ -155,6 +177,82 @@ mod tests {
             nodes: vec![SpecialArithmeticNode::IntegerCastIdentity { bounds, result }],
             conclusion: 0,
         }
+    }
+
+    #[test]
+    fn integer_cast_identity_promotes_only_canonical_unsigned_subword_carriers() {
+        let word = Bitvector32Term::Variable(Variable(168_010));
+        let observation = |ty, value| IntegerTerm::from_machine(ty, value).unwrap();
+        let claim = |source, destination, carrier: Bitvector32Term| {
+            let original = observation(source, carrier.clone());
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_equal(observation(destination, carrier), original.clone()),
+                true,
+            );
+            let premises = vec![
+                le(IntegerTerm::constant_i64(0), original.clone()),
+                le(original, IntegerTerm::constant_i64(65535)),
+            ];
+            (premises, goal)
+        };
+        for source in [Ty::UInt8, Ty::UInt16] {
+            let mask = (1u32 << source.format().bits()) - 1;
+            for destination in [Ty::Int32, Ty::UInt32] {
+                for reversed in [false, true] {
+                    let carrier = if reversed {
+                        Bitvector32Term::bitwise_and(Bitvector32Term::Constant(mask), word.clone())
+                    } else {
+                        Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask))
+                    };
+                    let (mut premises, goal) = claim(source, destination, carrier);
+                    let mut costs = Vec::new();
+                    for ambient in [0, 16, 64, 256, 1024] {
+                        premises.resize_with(ambient + 2, || {
+                            Proposition::ConditionIs(
+                                ConditionTerm::Variable(Variable(168_011)),
+                                true,
+                            )
+                        });
+                        let cert = certificate(goal.clone(), vec![0, 1]);
+                        let (result, work) =
+                            crate::instrumentation::measure_deterministic_work(|| {
+                                cert.check(&goal, &premises)
+                            });
+                        result.unwrap();
+                        costs.push(work);
+                        assert!(
+                            certificate(goal.clone(), vec![0, 2])
+                                .check(&goal, &premises)
+                                .is_err()
+                        );
+                    }
+                    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+                }
+                for carrier in [
+                    word.clone(),
+                    Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask + 1)),
+                ] {
+                    let (premises, goal) = claim(source, destination, carrier);
+                    assert!(
+                        certificate(goal.clone(), vec![0, 1])
+                            .check(&goal, &premises)
+                            .is_err()
+                    );
+                }
+            }
+        }
+        // A signed sub-word observation of 0xffff is negative, while a raw
+        // word promotion of that mask is positive. Never admit that retagging.
+        let (premises, goal) = claim(
+            Ty::Int16,
+            Ty::Int32,
+            Bitvector32Term::bitwise_and(word, Bitvector32Term::Constant(65535)),
+        );
+        assert!(
+            certificate(goal.clone(), vec![0, 1])
+                .check(&goal, &premises)
+                .is_err()
+        );
     }
 
     #[test]

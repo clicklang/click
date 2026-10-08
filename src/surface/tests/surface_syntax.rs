@@ -4563,6 +4563,111 @@ fn a_hidden_record_needs_its_child_declared_first() {
     );
 }
 
+/// A Rust sidecar states a signature as Rust does. It declares the same
+/// function as the C-shaped spelling, and `expr as T` is the scalar cast.
+#[test]
+fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
+    let c_shaped = "verifying \"arithmetic.rs\"; \
+        uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
+        ensures result == sum + (uint32)byte; } by { execute(); simp(); } \
+        bool touch(uint64 count, bool flag) { ensures result == flag; } by { execute(); simp(); }";
+    let rust = "verifying \"arithmetic.rs\"; \
+        fn add_byte(sum: u32, byte: u8) -> u32 { requires sum <= 4294967040u32; \
+        ensures result == sum + byte as u32; } by { execute(); simp(); } \
+        fn touch(count: usize, flag: bool) -> bool { ensures result == flag; } by { execute(); simp(); }";
+    assert_eq!(
+        parser::parse(rust).expect("the Rust spelling parses"),
+        parser::parse(c_shaped).expect("the C-shaped spelling parses"),
+    );
+    for (source, expected) in [
+        (
+            "verifying \"add.c\"; fn add(a: i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "a `fn` signature is the Rust spelling",
+        ),
+        (
+            "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
+            "a reference to a reference or `()` in a `fn` signature is not supported yet",
+        ),
+        (
+            "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
+            "an array or slice in a `fn` signature is not supported yet",
+        ),
+    ] {
+        let error = parser::parse(source).expect_err("the signature is refused");
+        assert!(error.message.contains(expected), "{source}: {error:?}");
+    }
+    // A reference is the pointer that carries it; `&T` has a constant
+    // referent. The contract names the referent `*value`.
+    assert_eq!(
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             fn set(value: &mut i32, seen: &i32) { owns *value; views *seen; \
+             ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"borrow.rs\"; \
+             void set(int32* value, const int32* seen) { owns *value; views *seen; \
+             ensures *value == *seen; } by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
+    // A slice is one name over the pointer and length Rust passes.
+    assert_eq!(
+        parser::parse(
+            "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
+             ensures result == bytes.len() + out.len(); } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"bytes.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
+             uint32* out, uint64 out_len) { ensures result == bytes_len + out_len; } \
+             by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
+    // `*bytes` is the whole slice, and a `usize` parameter written alone
+    // as an index is the 32-bit index a place takes. The importer test
+    // verifies what these mean; here they parse.
+    parser::parse(
+        "verifying \"bytes.rs\"; fn read(bytes: &[u8], index: usize) -> u8 { \
+         views *bytes; ensures result == bytes[index]; } by { execute(); simp(); }",
+    )
+    .expect("the Rust spelling parses");
+    // An `impl` block holds `fn` contracts and nothing else, and is Rust.
+    for (source, expected) in [
+        (
+            "verifying \"g.rs\"; impl Guard { resource r() { } }",
+            "an `impl` block holds `fn` contracts",
+        ),
+        (
+            "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); simp(); } }",
+            "unknown C type `impl`",
+        ),
+    ] {
+        let error = parser::parse(source).expect_err("the impl block is refused");
+        assert!(error.message.contains(expected), "{source}: {error:?}");
+    }
+    // A reference to an array is the pointer to its first element.
+    assert_eq!(
+        parser::parse(
+            "verifying \"arrays.rs\"; fn first(bytes: &[u8; 4], words: &mut [u32; 1 + 2]) -> u8 { \
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"arrays.rs\"; uint8 first(const uint8* bytes, uint32* words) { \
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
+    // `as` before anything but a scalar type is not a cast.
+    parser::parse(
+        "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",
+    )
+    .expect("a C sidecar is unchanged");
+}
+
 /// A missing memory fact is reported as the place a clause would name.
 #[test]
 fn a_missing_memory_fact_is_reported_as_a_place() {
@@ -4605,6 +4710,90 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
             .expect_err("the access is not authorized");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
     }
+}
+
+#[test]
+fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
+    use crate::kernel::{
+        Bitvector32Term, CMemoryRange, CPointerValue, CType, Pointer, PointerBlock,
+        PointerOffsetTerm,
+    };
+    let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
+    let functions = syntax::parse_functions(c_source).unwrap();
+    let parameters = functions[0].parameters();
+    let base = Pointer {
+        block: PointerBlock::Concrete("range_base".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let arguments = [CExpression::Value(CValue::Pointer(CPointerValue::new(
+        base.clone(),
+        CType::Int32Pointer,
+    )))];
+    for (low, high, width, expected) in [
+        (0, 2, 4, "{p->head, p->inner.a}"),
+        (1, 3, 4, "{p->inner.a, p->inner.b}"),
+        (1, 4, 4, "p->inner"),
+        (0, 5, 4, "*p"),
+        (5, 6, 4, "p[1].head"),
+        (5, 10, 4, "p[1]"),
+        (1, 6, 4, "((char *)p)[4..24]"),
+        (0, 10, 4, "p[0..2]"),
+        (1, 3, 1, "((char *)p)[1..3]"),
+    ] {
+        let range = CMemoryRange::new_with_element_width(
+            base.clone(),
+            Bitvector32Term::Constant(low),
+            Bitvector32Term::Constant(high),
+            width,
+        );
+        assert_eq!(
+            super::diagnostics::describe_memory_range(&range, parameters, &arguments),
+            expected
+        );
+    }
+}
+
+#[test]
+fn held_recursive_struct_range_and_bound_load_name_their_fields() {
+    let c_source = "struct node { struct node* left; struct node* right; int32 augmented; }; void relink(struct node* node) { node->right = 0; }";
+    let click_source = r#"
+resource pair(node: struct node*) { field weight: int32; owns node->left; owns node->right; }
+verifying "relink.c";
+void relink(struct node* node) { requires node != 0; owns links: pair(node); owns node->right->augmented; } by { execute(); }
+"#;
+    let error = verify_c0_sources(click_source, &[("relink.c", c_source)]).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("missing resource fact `owns node->right`"),
+        "{error:?}"
+    );
+    assert!(
+        error.message.contains("held `owns node->right->augmented`"),
+        "{error:?}"
+    );
+    assert!(error.message.contains("load(node->right)"), "{error:?}");
+    assert!(
+        error.message.contains("byte offsets from `node`"),
+        "{error:?}"
+    );
+    assert!(!error.message.contains("node[2]"), "{error:?}");
+    assert!(!error.message.contains("right[4..6]"), "{error:?}");
+}
+
+#[test]
+fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
+    let c_source = "struct cell { int32 a; int32 b; }; int32 release(struct cell* p) { return 0; }";
+    let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; } by { execute(); simp(); }"#;
+    let error = verify_c0_sources(source, &[("cell.c", c_source)]).unwrap_err();
+    assert!(
+        error.message.contains("missing resource fact `owns *p`"),
+        "{error:?}"
+    );
+    assert!(
+        error.message.contains("Requires produces owns *p"),
+        "{error:?}"
+    );
 }
 
 /// A range on a struct pointer counts structs, and `*link` for a

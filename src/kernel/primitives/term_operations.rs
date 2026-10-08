@@ -1887,6 +1887,30 @@ impl PointerOffsetTerm {
     }
 
     pub(crate) fn scale_int64(value: Bitvector32Term, byte_width: i64, unsigned: bool) -> Self {
+        // A widened int32 index times a u32 stride fits in signed int64.
+        // Recover its exact pointer scale without interpreting a modular
+        // int32 product as an address displacement.
+        if !unsigned {
+            if let Bitvector32Term::Int64From32(index) = &value
+                && u32::try_from(byte_width).is_ok()
+            {
+                return Self::scale_int32(index.as_ref().clone(), byte_width);
+            }
+            if let Bitvector32Term::Int64Multiply(left, right) = &value {
+                for (index, stride) in [(left, right), (right, left)] {
+                    if let (
+                        Bitvector32Term::Int64From32(index),
+                        Bitvector32Term::Int64Constant(stride),
+                    ) = (index.as_ref(), stride.as_ref())
+                        && let Ok(stride) = u32::try_from(*stride)
+                        && let Some(width) = i64::from(stride).checked_mul(byte_width)
+                        && u32::try_from(width).is_ok()
+                    {
+                        return Self::scale_int32(index.as_ref().clone(), width);
+                    }
+                }
+            }
+        }
         let constant = if unsigned {
             value.uint64_as_const().and_then(|value| {
                 i64::try_from(value)

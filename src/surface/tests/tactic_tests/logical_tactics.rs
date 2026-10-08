@@ -367,12 +367,13 @@ fn parses_local_have_proof_tactic() {
         .tactics()
         .expect("expected tactics");
 
+    // `have P by simp;` is the one-step script `have P by { simp(); }`.
     assert!(matches!(
         &tactics[0],
         ProofTactic::Have(ProofHave {
-            proof: SourceProof::Tactic(SmartTactic::Simp),
+            proof: SourceProof::Script(script),
             ..
-        })
+        }) if script.as_slice() == [ProofTactic::Simp]
     ));
     assert_eq!(
         &tactics[1..],

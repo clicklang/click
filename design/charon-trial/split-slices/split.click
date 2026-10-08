@@ -1,18 +1,18 @@
 verifying "split.rs";
 
-uint64 left_length(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+fn left_length(bytes: &[u8], mid: usize) -> usize {
     requires mid <= bytes_len;
     requires mid <= 2147483647u64;
     ensures result == mid;
 } by { execute(); simp(); }
 
-uint64 right_length(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+fn right_length(bytes: &[u8], mid: usize) -> usize {
     requires mid <= bytes_len;
     requires mid <= 2147483647u64;
     ensures result == bytes_len - mid;
 } by { execute(); simp(); }
 
-uint8 left_first(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+fn left_first(bytes: &[u8], mid: usize) -> u8 {
     requires bytes_len <= 2147483647u64;
     requires mid <= bytes_len;
     requires 0u64 < mid;
@@ -26,7 +26,7 @@ uint8 left_first(const uint8* bytes, uint64 bytes_len, uint64 mid) {
     execute(); simp();
 }
 
-uint8 right_first(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+fn right_first(bytes: &[u8], mid: usize) -> u8 {
     requires bytes_len <= 2147483647u64;
     requires mid < bytes_len;
     views bytes[0..(int32)(uint32)bytes_len];

@@ -181,6 +181,7 @@ impl<'a> Proof<'a> {
                 "`{}` tactic {}: `branch`",
                 context.claim_label, context.tactic_index
             ),
+            Some(context.parsed_function),
         )?;
         // A `branch` has one arm per truth value. A condition that reaches one
         // value along several checked paths -- a short-circuit, or a load
@@ -3628,6 +3629,7 @@ impl<'a> Proof<'a> {
                 "`{}` tactic {}: planned case split",
                 context.claim_label, context.tactic_index
             ),
+            Some(context.parsed_function),
         )?;
         Ok([true, false].into_iter().any(|value| {
             transitions

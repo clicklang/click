@@ -4,7 +4,7 @@ function prefix(bytes: const uint8*, end: int32) -> Integer {
         acc + to_integer((int32)bytes[k])
     })
 }
-int32 sum(const uint8* bytes, uint64 bytes_len) {
+fn sum(bytes: &[u8]) -> i32 {
     requires bytes_len <= 1000u64;
     views bytes[0..(int32)(uint32)bytes_len];
     ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));

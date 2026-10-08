@@ -170,11 +170,11 @@ int32 caller(struct child* kid) {
         simp();
     } else {}
     let { link: link } = step(parent_attach(p, kid), {});
-    have count(child_ref(kid)) == 2 by { simp(); }
-    have kid->refs == count(child_ref(kid)) by { simp(); }
+    have count(child_ref(kid)) == 2;
+    have kid->refs == count(child_ref(kid));
     step(child_release(kid), {});
-    have count(child_ref(kid)) == 1 by { simp(); }
-    have kid->refs == count(child_ref(kid)) by { simp(); }
+    have count(child_ref(kid)) == 1;
+    have kid->refs == count(child_ref(kid));
     step(child_release(kid), {});
     step(parent_detach(p), { link: link });
     step();

@@ -33,5 +33,5 @@ int32 run(struct holder *holder) {
 ```
 
 ```expect
-fail: did not close its checked nested goal
+fail: could not establish `held(byte_offset(holder, 0))`
 ```

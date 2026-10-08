@@ -48,7 +48,7 @@ void set_up_word(struct node* c) {
             step();
             step();
             step();
-            have other->word == 5 by { simp(); }
+            have other->word == 5;
             execute();
             simp();
         },

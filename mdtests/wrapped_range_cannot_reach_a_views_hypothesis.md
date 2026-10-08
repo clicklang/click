@@ -20,9 +20,9 @@ theorem a_cell_from_a_wrapped_views_hypothesis(v: int32[], n: int32) {
     requires 1073741825 <= n;
     ensures viewable(v[0..1]) by {
         induct(n) as ih;
-        have 0 <= 1073741824 by { simp(); }
+        have 0 <= 1073741824;
         have 1073741824 < n by { simp() using { 1073741825 <= n; } }
-        have viewable(v[0..1073741824]) by { simp(); }
+        have viewable(v[0..1073741824]);
         apply(ih(1073741824)) using {
             0 <= 1073741824;
             1073741824 < n;

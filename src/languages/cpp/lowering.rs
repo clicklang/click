@@ -18,17 +18,17 @@ use std::collections::BTreeMap;
 use super::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppCondition, CppConstant,
     CppExceptionBehavior, CppExpression, CppFieldReference, CppFunction, CppFunctionKind,
-    CppInitializer, CppPlace, CppPlaceReference, CppRecord, CppStatement, CppType,
-    PreparedCppImport,
+    CppInitializer, CppPlace, CppPlaceReference, CppStatement, CppType, PreparedCppImport,
 };
 use crate::kernel::{
-    CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
-    LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
-    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_declare_with_all_qualifiers, c_divide,
-    c_equal, c_function, c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal,
-    c_less_than, c_multiply, c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder,
-    c_return, c_seq, c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup,
-    c_typed_load_with_source, c_typed_store, c_variable,
+    CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId, LoadSourceOwnerId,
+    c_add, c_and, c_assign, c_begin_aggregate_construction, c_call, c_call_assign, c_cast,
+    c_checked_object_address, c_copy_aggregate, c_declare, c_declare_aggregate,
+    c_declare_with_all_qualifiers, c_divide, c_equal, c_function, c_greater_equal, c_greater_than,
+    c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply, c_not_equal, c_parameter,
+    c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract, c_try_catch_int32,
+    c_try_catch_int32_with_cleanup, c_typed_load, c_typed_load_with_source, c_typed_store,
+    c_variable, int32,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -106,23 +106,26 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             (constant.declaration_id.as_str(), constant)
         })
         .collect::<BTreeMap<_, _>>();
+    let layouts = super::interface::prepare_layouts(import)?;
     let function = lower_function(
         import,
         &import.export().function,
         &names,
         &records,
         &constants,
+        &layouts,
     )?;
     let reachable_functions = import
         .export()
         .reachable_functions
         .iter()
-        .map(|source| lower_function(import, source, &names, &records, &constants))
+        .map(|source| lower_function(import, source, &names, &records, &constants, &layouts))
         .collect::<Result<Vec<_>, _>>()?;
     let execution = std::sync::Arc::new(super::interface::prepare(
         import,
         &function,
         &reachable_functions,
+        layouts,
     )?);
     Ok(LoweredCppFunction {
         execution,
@@ -139,6 +142,7 @@ fn lower_function(
     names: &ResolvedNames,
     records: &super::schema::RecordIndex<'_>,
     constants: &BTreeMap<&str, &CppConstant>,
+    layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
 ) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
@@ -154,6 +158,15 @@ fn lower_function(
         .enumerate()
         .filter(|(index, parameter)| is_reference_parameter(*index, parameter))
         .map(|(_, parameter)| parameter.declaration_id.as_str())
+        // A local of reference type is carried the same way: the pointer is
+        // named for the address it holds, and the local's own name is the
+        // referent a proof reads.
+        .chain(
+            places
+                .values()
+                .filter(|place| is_reference_local(place))
+                .map(|place| place.declaration_id.as_str()),
+        )
         .collect::<std::collections::BTreeSet<_>>();
     let parameters = source
         .parameters
@@ -188,6 +201,7 @@ fn lower_function(
         places,
         records,
         constants,
+        layouts,
         next_load_occurrence: 0,
         return_capture_name: return_capture_name(source),
         nested_capture_name: fresh_internal_name(source, "__click_cpp_nested_value"),
@@ -229,6 +243,12 @@ pub(super) const RECEIVER_NAME: &str = "this";
 /// delivers it first, as a reference named `self`.
 pub(super) fn is_receiver(index: usize, parameter: &CppPlace) -> bool {
     index == 0 && parameter.name == "self"
+}
+
+/// Whether a declared local is a reference, which a proof names by its
+/// referent as it names a reference parameter.
+pub(super) fn is_reference_local(local: &CppPlace) -> bool {
+    matches!(local.value_type, CppType::LvalueReference { .. })
 }
 
 /// Whether a parameter is a reference the sidecar names by its referent. A
@@ -318,6 +338,7 @@ struct LoweringContext<'a> {
     places: BTreeMap<&'a str, &'a CppPlace>,
     records: &'a super::schema::RecordIndex<'a>,
     constants: &'a BTreeMap<&'a str, &'a CppConstant>,
+    layouts: &'a BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
     next_load_occurrence: u32,
     return_capture_name: String,
     nested_capture_name: String,
@@ -330,9 +351,38 @@ struct LoweringContext<'a> {
 impl LoweringContext<'_> {
     fn lower_statement(&mut self, statement: &CppStatement) -> Result<CStatement, String> {
         match statement {
+            CppStatement::TrivialCopy { target, source, .. } => {
+                let root = self.place(target)?;
+                let (CppType::Record { name, .. }, _) = self
+                    .records
+                    .resolve_path(&root.value_type, &target.projections)?
+                else {
+                    return Err("C++ trivial copy requires a record target".into());
+                };
+                Ok(c_copy_aggregate(
+                    self.lower_place(target)?,
+                    self.lower_place(source)?,
+                    self.record_layout(name)?,
+                ))
+            }
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
+                (CppType::LvalueReference { pointee }, CppInitializer::Value { value }) => {
+                    let address = self.lower_expression(value)?;
+                    let carrier = reference_carrier_name(&local.name);
+                    Ok(c_seq(
+                        c_declare_with_all_qualifiers(
+                            carrier.clone(),
+                            CType::Int32Pointer,
+                            false,
+                            false,
+                            false,
+                            is_const_int32(pointee),
+                        ),
+                        c_assign(carrier, address),
+                    ))
+                }
                 (CppType::Integer { .. }, CppInitializer::Value { value }) => {
                     let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                     Ok(c_seq(
@@ -344,7 +394,7 @@ impl LoweringContext<'_> {
                     ))
                 }
                 (
-                    CppType::Integer { .. },
+                    CppType::Integer { .. } | CppType::LvalueReference { .. },
                     CppInitializer::Call {
                         callee,
                         arguments,
@@ -355,6 +405,13 @@ impl LoweringContext<'_> {
                     let raw_type = conversions
                         .first()
                         .map_or(&local.value_type, |cast| &cast.source_type);
+                    // A reference bound to a call's result is carried by a
+                    // pointer named for the address it holds.
+                    let name = if is_reference_local(local) {
+                        reference_carrier_name(&local.name)
+                    } else {
+                        local.name.clone()
+                    };
                     let evaluation = self.normalize_scalar_into(
                         ScalarInput::Call {
                             callee,
@@ -362,20 +419,14 @@ impl LoweringContext<'_> {
                             value_type: raw_type,
                             conversions,
                         },
-                        conversions.is_empty().then_some(local.name.as_str()),
+                        conversions.is_empty().then_some(name.as_str()),
                     )?;
                     if conversions.is_empty() {
                         return Ok(evaluation.prefix);
                     }
                     Ok(c_seq(
-                        c_declare(
-                            local.name.clone(),
-                            cpp_return_scalar_type(&local.value_type)?,
-                        ),
-                        evaluate_then(
-                            evaluation.prefix,
-                            c_assign(local.name.clone(), evaluation.value),
-                        ),
+                        c_declare(name.clone(), cpp_return_scalar_type(&local.value_type)?),
+                        evaluate_then(evaluation.prefix, c_assign(name, evaluation.value)),
                     ))
                 }
                 (
@@ -394,7 +445,7 @@ impl LoweringContext<'_> {
                             "C++ aggregate initializer for `{name}` disagrees with its record"
                         ));
                     }
-                    let layout = cpp_record_layout(record)?;
+                    let layout = self.record_layout(&record.name)?;
                     let members = record
                         .fields
                         .iter()
@@ -440,7 +491,7 @@ impl LoweringContext<'_> {
                             "C++ constructor initializer for `{name}` disagrees with its record"
                         ));
                     }
-                    let layout = cpp_record_layout(record)?;
+                    let layout = self.record_layout(&record.name)?;
                     let mut lowered_arguments =
                         vec![c_cast(c_variable(local.name.clone()), CType::Int32Pointer)];
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
@@ -730,6 +781,9 @@ impl LoweringContext<'_> {
         destination: Option<&str>,
     ) -> Result<ScalarEvaluation, String> {
         match input {
+            ScalarInput::Value(value) if expression_contains_observer(value) => {
+                self.normalize_expression(value)
+            }
             ScalarInput::Value(value) => Ok(ScalarEvaluation {
                 prefix: c_skip(),
                 value: self.lower_expression(value)?,
@@ -867,6 +921,110 @@ impl LoweringContext<'_> {
         )
     }
 
+    fn normalize_expression(
+        &mut self,
+        expression: &CppExpression,
+    ) -> Result<ScalarEvaluation, String> {
+        let value_type = if matches!(expression.value_type(), CppType::Pointer { pointee } if is_mutable_int32(pointee) || is_const_int32(pointee))
+        {
+            CType::Int32Pointer
+        } else {
+            cpp_return_scalar_type(expression.value_type())?
+        };
+        let (prefix, value, may_throw) = match expression {
+            CppExpression::ObserverCall {
+                callee,
+                arguments,
+                value_type,
+                ..
+            } => {
+                if self.unwind_cleanups {
+                    return Err("C++ expression observers currently require the normal-only exception profile".into());
+                }
+                return self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                    conversions: &[],
+                });
+            }
+            CppExpression::IntegralCast {
+                value, value_type, ..
+            } => {
+                let input = self.normalize_expression(value)?;
+                let source = Scalar::mutable_kind(value.value_type())
+                    .ok_or("unsupported observer cast operand")?;
+                let target =
+                    Scalar::mutable_kind(value_type).ok_or("unsupported observer cast result")?;
+                (
+                    input.prefix,
+                    scalar::convert(input.value, source, target),
+                    input.may_throw,
+                )
+            }
+            CppExpression::ReferenceBinding { address, .. } => {
+                let input = self.normalize_expression(address)?;
+                let value = if matches!(address.as_ref(), CppExpression::AddressOf { .. }) {
+                    input.value
+                } else {
+                    c_checked_object_address(c_typed_load(input.value, CType::Int32))
+                };
+                (input.prefix, value, input.may_throw)
+            }
+            CppExpression::Dereference { pointer, .. } => {
+                let input = self.normalize_expression(pointer)?;
+                let value = self.lower_typed_load(input.value, CType::Int32)?;
+                (input.prefix, value, input.may_throw)
+            }
+            CppExpression::Binary {
+                operator,
+                left,
+                right,
+                value_type,
+                ..
+            } => {
+                let lhs = self.normalize_expression(left)?;
+                let rhs = self.normalize_expression(right)?;
+                if *operator == CppBinaryOperator::LogicalAnd {
+                    let capture = self.fresh_call_capture()?;
+                    let prefix = evaluate_then(
+                        lhs.prefix,
+                        c_seq(
+                            c_declare(capture.clone(), CType::Bool),
+                            c_if(
+                                lhs.value,
+                                evaluate_then(rhs.prefix, c_assign(capture.clone(), rhs.value)),
+                                c_assign(
+                                    capture.clone(),
+                                    c_cast(CExpression::Value(int32(0)), CType::Bool),
+                                ),
+                            ),
+                        ),
+                    );
+                    return Ok(ScalarEvaluation {
+                        prefix,
+                        value: c_variable(capture),
+                        value_type: CType::Bool,
+                        may_throw: lhs.may_throw || rhs.may_throw,
+                    });
+                }
+                let value = lower_binary_value(*operator, lhs.value, rhs.value, value_type);
+                (
+                    evaluate_then(lhs.prefix, rhs.prefix),
+                    value,
+                    lhs.may_throw || rhs.may_throw,
+                )
+            }
+            _ => (c_skip(), self.lower_expression(expression)?, false),
+        };
+        Ok(ScalarEvaluation {
+            prefix,
+            value,
+            value_type,
+            may_throw,
+        })
+    }
+
     fn fresh_call_capture(&mut self) -> Result<String, String> {
         let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
         self.next_call_capture = self
@@ -937,6 +1095,9 @@ impl LoweringContext<'_> {
 
     fn lower_expression(&mut self, expression: &CppExpression) -> Result<CExpression, String> {
         match expression {
+            CppExpression::ObserverCall { .. } => Err(
+                "C++ expression observers are supported in normalized scalar values only".into(),
+            ),
             CppExpression::IntegerLiteral {
                 value, value_type, ..
             }
@@ -1041,7 +1202,18 @@ impl LoweringContext<'_> {
                 }
                 _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
-            CppExpression::ReferenceBinding { address, .. } => self.lower_expression(address),
+            CppExpression::ReferenceBinding { address, .. } => {
+                let pointer = self.lower_expression(address)?;
+                if matches!(address.as_ref(), CppExpression::AddressOf { .. }) {
+                    // An existing reference parameter already denotes its referent.
+                    Ok(pointer)
+                } else {
+                    Ok(c_checked_object_address(c_typed_load(
+                        pointer,
+                        CType::Int32,
+                    )))
+                }
+            }
             CppExpression::Dereference {
                 pointer,
                 value_type,
@@ -1089,27 +1261,16 @@ impl LoweringContext<'_> {
             } => {
                 let left = self.lower_expression(left)?;
                 let right = self.lower_expression(right)?;
-                let expression = match operator {
-                    CppBinaryOperator::Add => c_add(left, right),
-                    CppBinaryOperator::Subtract => c_subtract(left, right),
-                    CppBinaryOperator::Multiply => c_multiply(left, right),
-                    CppBinaryOperator::Divide => c_divide(left, right),
-                    CppBinaryOperator::Remainder => c_remainder(left, right),
-                    CppBinaryOperator::Equal => c_equal(left, right),
-                    CppBinaryOperator::NotEqual => c_not_equal(left, right),
-                    CppBinaryOperator::LessThan => c_less_than(left, right),
-                    CppBinaryOperator::GreaterThan => c_greater_than(left, right),
-                    CppBinaryOperator::LessEqual => c_less_equal(left, right),
-                    CppBinaryOperator::GreaterEqual => c_greater_equal(left, right),
-                    CppBinaryOperator::LogicalAnd => c_and(left, right),
-                };
-                Ok(if is_mutable_bool(value_type) {
-                    c_cast(expression, CType::Bool)
-                } else {
-                    expression
-                })
+                Ok(lower_binary_value(*operator, left, right, value_type))
             }
         }
+    }
+
+    fn record_layout(&self, name: &str) -> Result<CAggregateLayout, String> {
+        self.layouts
+            .get(name)
+            .map(crate::languages::c::syntax::C0StructLayout::to_kernel_aggregate_layout)
+            .ok_or_else(|| format!("C++ lowering found no checked layout for `{name}`"))
     }
 
     fn lower_place(&self, place: &CppPlaceReference) -> Result<CExpression, String> {
@@ -1255,23 +1416,45 @@ fn collect_declared_places<'a>(statements: &'a [CppStatement], places: &mut Vec<
     }
 }
 
-fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
-    let fields = record
-        .fields
-        .iter()
-        .map(|field| {
-            Ok(CAggregateField::new(
-                field.name.clone(),
-                field.offset_bytes,
-                cpp_scalar_kernel_type(&field.value_type)?,
-            ))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    Ok(CAggregateLayout::new(
-        record.size_bytes,
-        record.alignment_bytes,
-        fields,
-    ))
+fn expression_contains_observer(expression: &CppExpression) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    match expression {
+        CppExpression::ObserverCall { .. } => true,
+        CppExpression::IntegralCast { value, .. }
+        | CppExpression::ReferenceBinding { address: value, .. }
+        | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),
+        CppExpression::Binary { left, right, .. } => {
+            expression_contains_observer(left) || expression_contains_observer(right)
+        }
+        _ => false,
+    }
+}
+
+fn lower_binary_value(
+    operator: CppBinaryOperator,
+    left: CExpression,
+    right: CExpression,
+    value_type: &CppType,
+) -> CExpression {
+    let expression = match operator {
+        CppBinaryOperator::Add => c_add(left, right),
+        CppBinaryOperator::Subtract => c_subtract(left, right),
+        CppBinaryOperator::Multiply => c_multiply(left, right),
+        CppBinaryOperator::Divide => c_divide(left, right),
+        CppBinaryOperator::Remainder => c_remainder(left, right),
+        CppBinaryOperator::Equal => c_equal(left, right),
+        CppBinaryOperator::NotEqual => c_not_equal(left, right),
+        CppBinaryOperator::LessThan => c_less_than(left, right),
+        CppBinaryOperator::GreaterThan => c_greater_than(left, right),
+        CppBinaryOperator::LessEqual => c_less_equal(left, right),
+        CppBinaryOperator::GreaterEqual => c_greater_equal(left, right),
+        CppBinaryOperator::LogicalAnd => c_and(left, right),
+    };
+    if is_mutable_bool(value_type) {
+        c_cast(expression, CType::Bool)
+    } else {
+        expression
+    }
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {

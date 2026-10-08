@@ -73,5 +73,5 @@ uint32 run(struct counter* p) {
 ```
 
 ```expect
-fail: `have count(member(p)) == 2` did not close its checked nested goal
+fail: could not establish `count(member(p)) == 2`
 ```

@@ -1918,6 +1918,14 @@ impl<'a> Proof<'a> {
             if derivation.disjunction_choice().is_some() {
                 return None;
             }
+            // A goal-local checked rewrite may close from one recorded fact.
+            // Try that before spelling a whole connected component. This probe
+            // never recursively invokes the broad atomic closer for a candidate.
+            if let Some(closed) =
+                self.try_indexed_goal_equality_rewrite_direct_closure(exclude_exact_goal)
+            {
+                return Some(closed);
+            }
             anchored_pairs =
                 self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
             let premise_pairs = &anchored_pairs;
@@ -4275,6 +4283,67 @@ impl<'a> Proof<'a> {
         exclude_goal_fact: bool,
         allow_function_unfold: bool,
     ) -> Option<Self> {
+        self.try_indexed_goal_equality_rewrite_direct_closure(exclude_goal_fact)
+            .or_else(|| {
+                self.try_indexed_goal_equality_rewrite_with_options(
+                    exclude_goal_fact,
+                    allow_function_unfold,
+                    false,
+                )
+            })
+    }
+
+    pub(super) fn try_indexed_goal_equality_rewrite_direct_closure(
+        &self,
+        exclude_goal_fact: bool,
+    ) -> Option<Self> {
+        // Probe the scalar bounds and remainder identities that need folded
+        // equality congruence. Memory-frame equalities already have a checked
+        // transport path; probing their snapshot aliases first repeats costly
+        // premise spelling and changes the intended transport certificate.
+        let scalar_goal = match self.goal()? {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector64SignedLessThan(..)
+                | ConditionTerm::Bitvector64SignedLessEqual(..)
+                | ConditionTerm::Bitvector64SignedGreaterThan(..)
+                | ConditionTerm::Bitvector64SignedGreaterEqual(..)
+                | ConditionTerm::Bitvector64UnsignedLessThan(..)
+                | ConditionTerm::Bitvector64UnsignedLessEqual(..)
+                | ConditionTerm::Bitvector64UnsignedGreaterThan(..)
+                | ConditionTerm::Bitvector64UnsignedGreaterEqual(..)
+                | ConditionTerm::IntegerLessThan(..)
+                | ConditionTerm::IntegerLessEqual(..)
+                | ConditionTerm::IntegerGreaterThan(..)
+                | ConditionTerm::IntegerGreaterEqual(..),
+                _,
+            ) => true,
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(left, right)
+                | ConditionTerm::Bitvector64Equal(left, right),
+                _,
+            ) => [left.as_ref(), right.as_ref()].into_iter().any(|term| {
+                matches!(
+                    term,
+                    Bitvector32Term::Remainder(..)
+                        | Bitvector32Term::UnsignedRemainder(..)
+                        | Bitvector32Term::Int64Remainder(..)
+                        | Bitvector32Term::UInt64Remainder(..)
+                )
+            }),
+            _ => false,
+        };
+        if !scalar_goal {
+            return None;
+        }
+        self.try_indexed_goal_equality_rewrite_with_options(exclude_goal_fact, false, true)
+    }
+
+    fn try_indexed_goal_equality_rewrite_with_options(
+        &self,
+        exclude_goal_fact: bool,
+        allow_function_unfold: bool,
+        direct_only: bool,
+    ) -> Option<Self> {
         if matches!(
             self.goal(),
             Some(Proposition::Implies(..) | Proposition::ForAll { .. })
@@ -4364,6 +4433,34 @@ impl<'a> Proof<'a> {
                 // denoting it, so only the orientation is open here.
                 let reverse = reverse_surface_equality(&surface);
                 for oriented in std::iter::once(surface).chain(reverse) {
+                    // Automatic refinement reduces symbolic operands to known
+                    // literals. Expanding a literal into an alias creates
+                    // irrelevant branches, especially after a folded cast or
+                    // unsigned-order bias. An explicit `rewrite` still permits
+                    // that checked direction.
+                    if equality_has_literal_endpoint {
+                        let literal_endpoint = |kernel: &Proposition, source: bool| {
+                            matches!(kernel, Proposition::ConditionIs(
+                                ConditionTerm::Bitvector32Equal(left, right) | ConditionTerm::Bitvector64Equal(left, right), true
+                            ) if matches!(if source { left.as_ref() } else { right.as_ref() },
+                                Bitvector32Term::Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
+                        };
+                        // A retained source spelling may be a proxy for a
+                        // symbolic operand. Trust its recorded lowering, not
+                        // the spelling's apparent literal syntax.
+                        let source_is_literal = surface_facts
+                            .available_kernel_matching(&oriented, |fact| proof.facts().contains(fact))
+                            .map(|kernel| literal_endpoint(kernel, true))
+                            .or_else(|| {
+                                let reverse = reverse_surface_equality(&oriented)?;
+                                surface_facts.available_kernel_matching(&reverse, |fact| proof.facts().contains(fact))
+                                    .map(|kernel| literal_endpoint(kernel, false))
+                            })
+                            .unwrap_or_else(|| matches!(&oriented, ClickProposition::Comparison { left, .. } if surface_expression_is_constant(left)));
+                        if source_is_literal {
+                            continue;
+                        }
+                    }
                     // Every candidate is a checked rewrite followed by three
                     // closers, for each equality mentioning the goal, at
                     // each link of the chain. Observe the tactic's deadline
@@ -4376,11 +4473,18 @@ impl<'a> Proof<'a> {
                     let Ok(rewritten) = rewrite else {
                         continue;
                     };
+                    if rewritten.goal() == proof.goal() {
+                        continue;
+                    }
                     if let Some(closed) = rewritten
                         .try_direct_logical_closure()
                         .ok()
                         .flatten()
-                        .or_else(|| rewritten.try_typed_atomic_simp_closure())
+                        .or_else(|| {
+                            (!direct_only)
+                                .then(|| rewritten.try_typed_atomic_simp_closure())
+                                .flatten()
+                        })
                         .or_else(|| {
                             allow_function_unfold
                                 .then(|| {
@@ -4421,7 +4525,15 @@ impl<'a> Proof<'a> {
         let mut proof = self.clone();
         let mut used = BTreeSet::new();
         loop {
-            let refinements = match level(&proof, &used, MAX_EQUALITY_REWRITE_BRANCHES) {
+            let refinements = match level(
+                &proof,
+                &used,
+                if direct_only {
+                    0
+                } else {
+                    MAX_EQUALITY_REWRITE_BRANCHES
+                },
+            ) {
                 Ok(closed) => return closed,
                 Err(refinements) => refinements,
             };
@@ -6994,7 +7106,8 @@ impl<'a> Proof<'a> {
                 }
                 ProofTactic::Have(have) => {
                     let scope = proof.begin_have(have.proposition.clone())?;
-                    let selected = match &have.proof {
+                    let source_proof = have.checking_proof();
+                    let selected = match source_proof.as_ref() {
                         SourceProof::Default
                         | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
                             scope.try_simp_closure()?

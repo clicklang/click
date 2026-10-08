@@ -185,12 +185,49 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    negative checks for false alias/value claims, missing authority, signature
    and const mismatches, and rehashed artifact mutations.
 
-   New bindings through raw pointers are deliberately refused until shared
-   live-object validation distinguishes real referents from null, expired or
-   one-past addresses without an implicit pointee load. This check is required
-   for `span.back()`. Local reference bindings and shared aggregate results,
-   construction and copies remain implementation work; `SpanPopBack` has not
-   been verified.
+   New integer reference results can bind through pointer dereferences using
+   shared checked object addresses. Formation requires live storage for the
+   complete referent and excludes null, expired and one-past addresses without
+   reading or initializing it. This reuses the shared bounds/lifetime predicate;
+   reading still requires separate authority and defined contents. Automatic
+   mutable/const int32 reference locals now preserve direct aliases and matching
+   modular reference call results. Writes target the referent under existing
+   authority; ending the local alias does not destroy its backing allocation.
+   Trivial copy assignment between already-live records now reuses shared C
+   aggregate field copies and the same checked layout used by proof metadata.
+   The pinned `std::span<int>` assignment copies its pointer and nested native
+   uint64 extent offline, without backing authority. Const sources, projected
+   record assignment and self-assignment are covered; missing read/write
+   authority, user-defined copy bodies, move assignment, const destination and
+   hostile artifact paths are refused. Ordinary, expanded and retained proofs
+   agree. Shared aggregate results, construction and copy initialization remain
+   implementation work;
+   `SpanPopBack` has not been verified. The unchanged pinned `back()` additionally
+   needs its constexpr assertion's single-execution loop wrapper and nested
+   observer calls in expressions admitted through ordinary source lowering.
+   **Expression observers (accepted).** Admit nested calls in unsequenced
+   operands only when verified read-only observer contracts establish operand
+   independence. General interfering calls remain deferred. For example,
+   `back()` reads `_M_ptr` and
+   calls `size()` in the same addition. Do not choose an order silently or
+   introduce a span-specific intrinsic. Read-only contracts use shared `views`
+   authority: a final unchanged-value claim alone is insufficient because a
+   callee could write and restore the value. The pinned `size()`/extent and
+   `data()` chains now verify using views alone. Literal-false `do` wrappers
+   lower to one execution of their checked body, with runtime/repeated loops,
+   break/continue and unsupported local lifetimes refused. Nonthrowing scalar
+   expression calls now use the shared normalizer in return values and ordinary
+   conditions. Their contracts must contain views only, including nested
+   argument calls. Arithmetic, comparisons, pointer offsets, reference-address
+   formation and lazy `&&` preserve evaluation semantics. Offline ordinary,
+   expanded and retained regressions cover symbolic reads, widening and skipped
+   read permissions, with mutation/ownership and forged metadata negatives.
+   Shared storage checks now transport live-range evidence across verified
+   pointer equalities, without granting read or initialization authority;
+   missing, expired and one-past storage still fails.
+   The constexpr assertion condition still needs admission;
+   interfering expressions remain
+   refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
@@ -199,8 +236,8 @@ the contract; do not promise a recoverable error or rely on debug assertions.
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields and the pointer-offset forms above. Local reference binding,
-reference/aggregate returns and automatic embedded descriptor objects still
+fields and the pointer-offset forms above. Shared aggregate returns and
+automatic embedded descriptor objects still
 need frontend admission. Some of
 those are implementation work once the profiles above are chosen; they do not
 justify a separate C++ memory model.

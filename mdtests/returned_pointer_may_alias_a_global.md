@@ -51,7 +51,7 @@ void f() {
     step();
     step();
     step();
-    have a[0] == 5 by { simp(); }
+    have a[0] == 5;
     execute();
     simp();
 }

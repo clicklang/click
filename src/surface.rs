@@ -122,22 +122,23 @@ pub use expansion::{
     CProofClaim, ClickImportSite, SmartTacticCandidate, SmartTacticSelectionError,
     SmartTacticSourceSite, SourcePosition, c0_prepared_project_select_smart_tactic,
     c0_prepared_project_smart_tactic_source_sites, c0_prepared_project_tactic_source_position,
-    c0_prepared_select_smart_tactic, c0_prepared_smart_tactic_source_sites,
-    c0_prepared_tactic_source_position, c0_project_select_smart_tactic,
-    c0_project_smart_tactic_source_sites, c0_project_tactic_source_position,
-    c0_select_smart_tactic, c0_smart_tactic_source_sites, c0_tactic_source_position,
-    click_declaration_source_position, click_import_sites, expand_c0_claim_source,
-    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
-    expand_c0_prepared_project_claim_source_by_label, expand_c0_prepared_project_tactic_source_at,
-    expand_c0_prepared_tactic_source_at, expand_c0_project_claim_source_by_label,
-    expand_c0_project_tactic_source_at, expand_c0_tactic_source_at,
-    expand_program_prepared_claim_source_by_label,
+    c0_prepared_project_tactic_source_positions, c0_prepared_select_smart_tactic,
+    c0_prepared_smart_tactic_source_sites, c0_prepared_tactic_source_position,
+    c0_project_select_smart_tactic, c0_project_smart_tactic_source_sites,
+    c0_project_tactic_source_position, c0_project_tactic_source_positions, c0_select_smart_tactic,
+    c0_smart_tactic_source_sites, c0_tactic_source_position, click_declaration_source_position,
+    click_import_sites, expand_c0_claim_source, expand_c0_claim_source_by_label,
+    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_project_claim_source_by_label,
+    expand_c0_prepared_project_tactic_source_at, expand_c0_prepared_tactic_source_at,
+    expand_c0_project_claim_source_by_label, expand_c0_project_tactic_source_at,
+    expand_c0_tactic_source_at, expand_program_prepared_claim_source_by_label,
     expand_program_prepared_project_claim_source_by_label,
     expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
     map_verifying_source_paths, nested_tactic_source_position,
     program_prepared_project_select_smart_tactic,
     program_prepared_project_smart_tactic_source_sites,
-    program_prepared_project_tactic_source_position, program_prepared_select_smart_tactic,
+    program_prepared_project_tactic_source_position,
+    program_prepared_project_tactic_source_positions, program_prepared_select_smart_tactic,
     program_prepared_smart_tactic_source_sites, program_prepared_tactic_source_position,
     selected_c_target, selected_project_c_target, selected_project_thread_runtime,
     selected_thread_runtime, tactic_arm_containing_position, tactic_have_body_contains_position,
@@ -1916,6 +1917,7 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
             collect_c_expression_variables(else_branch, names);
         }
         CExpression::AddressOf(inner)
+        | CExpression::CheckedObjectAddress(inner)
         | CExpression::PointerOffsetBytes { pointer: inner, .. }
         | CExpression::Not(inner)
         | CExpression::BitwiseNot(inner)
@@ -3040,6 +3042,12 @@ enum ContractSegmentSurface {
         start: ContractExpression,
         end: ContractExpression,
     },
+    StructRange {
+        base: ContractExpression,
+        start: ContractExpression,
+        end: ContractExpression,
+        layout: std::sync::Arc<StructRangeLayout>,
+    },
     Field {
         /// How the contract spelled the struct the field belongs to, when the
         /// parse had it. A base reached through a link reads as `old->left`
@@ -3051,6 +3059,22 @@ enum ContractSegmentSurface {
         element_type: Option<CType>,
     },
     Object(String),
+}
+
+/// The imported ABI retained by one range of whole struct objects. Hash the
+/// nominal name and size without walking every field; equality still checks
+/// the complete ABI, so different layouts cannot be conflated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StructRangeLayout {
+    name: String,
+    layout: syntax::C0StructLayout,
+}
+
+impl std::hash::Hash for StructRangeLayout {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.name, state);
+        std::hash::Hash::hash(&self.layout.size_bytes(), state);
+    }
 }
 
 impl ContractSegment {
@@ -3067,7 +3091,10 @@ impl ContractSegment {
         &ContractExpression,
     )> {
         match &self.surface {
-            ContractSegmentSurface::Range { base, start, end } => Some((base, start, end)),
+            ContractSegmentSurface::Range { base, start, end }
+            | ContractSegmentSurface::StructRange {
+                base, start, end, ..
+            } => Some((base, start, end)),
             ContractSegmentSurface::Field { .. } | ContractSegmentSurface::Object(_) => None,
         }
     }
@@ -3075,6 +3102,7 @@ impl ContractSegment {
     pub(crate) fn field_element_width(&self) -> Option<u32> {
         match &self.surface {
             ContractSegmentSurface::Field { element_width, .. } => *element_width,
+            ContractSegmentSurface::StructRange { layout, .. } => Some(layout.layout.size_bytes()),
             ContractSegmentSurface::Range { .. } | ContractSegmentSurface::Object(_) => None,
         }
     }
@@ -3082,7 +3110,9 @@ impl ContractSegment {
     pub(crate) fn field_element_type(&self) -> Option<CType> {
         match &self.surface {
             ContractSegmentSurface::Field { element_type, .. } => *element_type,
-            ContractSegmentSurface::Range { .. } | ContractSegmentSurface::Object(_) => None,
+            ContractSegmentSurface::Range { .. }
+            | ContractSegmentSurface::StructRange { .. }
+            | ContractSegmentSurface::Object(_) => None,
         }
     }
 }
@@ -5053,6 +5083,20 @@ impl SmartTactic {
 pub struct ProofHave {
     proposition: ClickProposition,
     proof: SourceProof,
+}
+
+impl ProofHave {
+    /// Check the short forms as the same single simp step as the block form,
+    /// so a failed step retains its diagnostic. Keep the written source proof
+    /// unchanged for inventory, capture, and source locations.
+    fn checking_proof(&self) -> std::borrow::Cow<'_, SourceProof> {
+        match &self.proof {
+            SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
+                std::borrow::Cow::Owned(SourceProof::Script(vec![ProofTactic::Simp]))
+            }
+            _ => std::borrow::Cow::Borrowed(&self.proof),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -78,11 +78,11 @@ tactic convert(p: struct node*) {
         Links::Nil => {
             unfold(x);
             let y = fold(list2_at(p), { model: Links::Nil });
-            have y.model == old(x.model) by { simp(); }
+            have y.model == old(x.model);
         },
         Links::Cons(rest_model) => {
             let { y: y } = convert(p, { x: x });
-            have y.model == old(x.model) by { simp(); }
+            have y.model == old(x.model);
         },
     }
 }

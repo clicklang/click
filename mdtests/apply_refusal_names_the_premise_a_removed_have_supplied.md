@@ -39,7 +39,7 @@ int32 first(int32 *a, int32 n) {
     requires forall (k: int32) { 0 <= k and k < n implies a[k] >= 0 };
     ensures result >= 0;
 } by {
-    have n > 1 by { simp(); }
+    have n > 1;
     apply(head_nonnegative(a, n));
     execute();
     simp();

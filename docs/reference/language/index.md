@@ -1750,6 +1750,25 @@ before it. Because it has no field a contract could name, it is held without
 a name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
 and folded with `fold(pair(p), { first: c });`, which takes only the child
 map. Holding it by name, `owns x: pair(p);`, is also accepted.
+
+A resource that declares fields of its own says where a named child's field
+is kept with one equation,
+`fact first.v == first_v;`. After it, `first.v` in the body reads that
+parent field, so later facts may mention it; a fact that reads `first.v`
+before the equation is refused with the equation to write.
+
+<!-- verified-example: mdtests/a_parent_with_fields_states_facts_about_a_childs_field.md -->
+```click
+resource pair(p: struct pair*) {
+    field first_v: int32;
+    owns p->a;
+    owns p->n;
+    owns first: counted(p->a);
+    fact first.v == first_v;
+    fact p->n == first.v;
+}
+```
+
 The new parent need not have existed before; `consumes l: tree(left);` names
 an input child without promising to return it separately.
 
@@ -2339,7 +2358,10 @@ measure is refused, and so is a structural or parameter measure: those read
 recursive calls in a C body, and a tactic's recursion is in its proof.
 
 Tactic parameters use Click's `name: type` spelling and are C scalars and
-pointers in this release. A tactic may not take the name of a built-in tactic
+pointers in this release. The literal `0` supplies a typed null pointer at a
+pointer parameter; other integers and integer variables do not implicitly
+convert to pointers (`mdtests/user_tactic_accepts_null_pointer_arguments.md`).
+A tactic may not take the name of a built-in tactic
 or a C function, may not declare `diverges`, `throws`, or `constructs`, and
 applies only itself and tactics declared before it, in the module that
 declares it. An application runs at an execution frontier before the function

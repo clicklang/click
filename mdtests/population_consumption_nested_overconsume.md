@@ -30,7 +30,7 @@ uint32 contribute_early(struct counter* p) {
     consumes remaining(p);
     requires count(remaining(p)) > 1;
 } by {
-    open(control(p)) { have count(remaining(p)) <= 3 by { simp(); } }
+    open(control(p)) { have count(remaining(p)) <= 3; }
     open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {
@@ -60,7 +60,7 @@ uint32 overconsume(struct counter* p) {
     requires count(remaining(p)) > 2;
 } by {
     have count(remaining(p)) > 1 by { arithmetic() using { count(remaining(p)) > 2; } }
-    open(control(p)) { have count(remaining(p)) <= 3 by { simp(); } }
+    open(control(p)) { have count(remaining(p)) <= 3; }
     open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {

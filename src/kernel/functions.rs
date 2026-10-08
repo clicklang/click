@@ -13780,6 +13780,7 @@ fn c_expression_supports_stateful_memory_refinement(expression: &CExpression) ->
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -14040,6 +14041,7 @@ pub(super) fn c_expression_is_state_independent(expression: &CExpression) -> boo
             c_expression_is_state_independent(left) && c_expression_is_state_independent(right)
         }
         CExpression::AddressOf(_)
+        | CExpression::CheckedObjectAddress(_)
         | CExpression::Load(_)
         | CExpression::TypedLoad { .. }
         | CExpression::Index(_, _) => false,
@@ -14367,6 +14369,7 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -14414,7 +14417,9 @@ fn c_expression_mentions_variable(expression: &CExpression, name: &str) -> bool 
 
 fn c_expression_takes_address_of_variable(expression: &CExpression, name: &str) -> bool {
     match expression {
-        CExpression::AddressOf(expression) => c_expression_mentions_variable(expression, name),
+        CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
+            c_expression_mentions_variable(expression, name)
+        }
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => false,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -14557,12 +14562,14 @@ fn c_expression_uses_object_address(expression: &CExpression, name: &str) -> boo
             ..
         } => c_expression_uses_object_address(pointer, name),
         CExpression::Load(_) | CExpression::TypedLoad { .. } => false,
-        CExpression::AddressOf(expression) => match expression.as_ref() {
-            CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
-                c_expression_uses_object_address(pointer, name)
+        CExpression::AddressOf(expression) | CExpression::CheckedObjectAddress(expression) => {
+            match expression.as_ref() {
+                CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+                    c_expression_uses_object_address(pointer, name)
+                }
+                expression => c_expression_uses_object_address(expression, name),
             }
-            expression => c_expression_uses_object_address(expression, name),
-        },
+        }
 
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -16841,7 +16848,9 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
                 values(then_branch, reads);
                 values(else_branch, reads);
             }
-            CExpression::AddressOf(target) => lvalue_address(target, reads),
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+                lvalue_address(target, reads)
+            }
             CExpression::Load(pointer) => {
                 reads.push(expression.clone());
                 values(pointer, reads);
@@ -16991,6 +17000,7 @@ fn c_expression_mentions_pointer_parameter(
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::PointerOffsetBytes {
             pointer: expression,
             ..
@@ -24082,6 +24092,36 @@ pub(crate) fn arm_binding_program_spelling(
     Some(CValue::Pointer(aliased))
 }
 
+/// Reuse an immutable algebraic payload when a constructor is matched again.
+/// The caller must have checked this constructor case; injectivity then makes
+/// its fresh binding equal to this payload. Only variables representable by
+/// Surface's algebraic binder encoding are returned. This reads one field,
+/// never follows model children or searches the premise context.
+pub(crate) fn arm_algebraic_payload_spelling<'a>(
+    scrutinee: &'a AlgebraicTerm,
+    variant: &str,
+    field_index: usize,
+) -> Option<&'a AlgebraicTerm> {
+    crate::instrumentation::record_deterministic_work(1);
+    let AlgebraicTermNode::Constructor {
+        variant: known,
+        fields,
+    } = &scrutinee.node
+    else {
+        return None;
+    };
+    if known != variant {
+        return None;
+    }
+    let AlgebraicValue::Algebraic(payload) = fields.get(field_index)? else {
+        return None;
+    };
+    let AlgebraicTermNode::Variable(variable) = payload.node else {
+        return None;
+    };
+    (variable.0 >= 4_000_000 && (variable.0 - 4_000_000).is_multiple_of(65_536)).then_some(payload)
+}
+
 pub(in crate::kernel) fn arm_pointer_program_spelling(
     pointer: &Pointer,
     assumptions: &PureFactContext,
@@ -24678,6 +24718,16 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             ),
         });
     }
+    // What a fold consumes is what holding the folded instance lets C read.
+    let folded_cells = if unfold {
+        Vec::new()
+    } else {
+        body.facts()
+            .iter()
+            .filter_map(CResourceFact::memory_own_range)
+            .map(|range| CResourceFact::view_memory(range.clone()))
+            .collect::<Vec<_>>()
+    };
     facts.push(Proposition::CResourceComposition(body));
     let mut body_assumptions = assumptions
         .clone()
@@ -24770,6 +24820,34 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                     slot: (*slot).into(),
                 }),
             );
+        }
+    }
+    // Holding an instance lets C read the cells its body owns. A fold makes
+    // the instance, so it publishes that read authority here, attached to
+    // the new occurrence: it retires when the instance is unfolded, consumed
+    // or freed. The checker derives the rewrite again and gets the same
+    // views, so a checked execution and its record agree.
+    if !unfold && let Some(folded) = next.resources.owned_instance(instance.identity).cloned() {
+        let owner = CResourceFact::own(CResource::Instance(folded.clone()));
+        if let Some((occurrence, _)) = next.resources.unique_owned_occurrence_for_fact(&owner) {
+            // The cells are the ones this fold just consumed: the body the
+            // rewrite evaluated, with the selected arm's constructor
+            // bindings in scope.
+            let views = folded_cells
+                .into_iter()
+                .filter(|view| !next.resources.contains_exact_representation(view))
+                .collect::<Vec<_>>();
+            if !views.is_empty() {
+                next.resources = next
+                    .resources
+                    .clone()
+                    .unchecked_with_supported_facts_from_occurrence_with_memory(
+                        occurrence,
+                        &owner,
+                        views,
+                        next.memory(),
+                    );
+            }
         }
     }
     Ok(ResourceInstanceRewriteResult {
@@ -29417,7 +29495,7 @@ fn instance_arm_views(
 /// arm's clauses. An instance whose model carries no variant evidence at all,
 /// or whose arms name a constructor binding in a memory clause, publishes
 /// nothing.
-fn instance_arm_read_authority(
+pub(super) fn instance_arm_read_authority(
     instance: &ResourceInstance,
     definitions: &[CCompositeResourceDefinition],
     state: &CState,
@@ -30574,7 +30652,7 @@ fn resolve_retained_aggregate_fields(
     }
     match expression {
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
-        CExpression::AddressOf(inner) => {
+        CExpression::AddressOf(inner) | CExpression::CheckedObjectAddress(inner) => {
             resolve_retained_aggregate_fields(entry, state, inner, false, assumptions, budget)?
         }
         CExpression::Cast {

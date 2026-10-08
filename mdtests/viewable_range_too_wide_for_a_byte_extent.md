@@ -23,7 +23,7 @@ verifying "loadable_range_too_wide_for_a_byte_extent.c";
 
 int32 identity(int32 *p, int32 n) {
     ensures result == n by {
-        have viewable(p[-2000000000..2000000000]) by { simp(); }
+        have viewable(p[-2000000000..2000000000]);
         step();
         simp();
     }

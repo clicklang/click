@@ -52,114 +52,60 @@ first field writes `box.field`.
 Done when: no diagnostic or expansion prints `load_...(&name)` for a
 reference parameter.
 
-### A3. Reference locals in C++ bodies
+### A4. Rust sidecars in Rust syntax: respelling and the refusals
 
-Not actionable today. The C++ importer does not lower a local of reference
-type: `int& r = x;` is refused with "C++ local `r` has an initializer
-outside direct lowering" (`lower_statement` in
-`src/languages/cpp/lowering.rs` lowers scalar locals and records only). So
-no proof can name one yet.
+Decided 2026-10-08: a Rust sidecar looks like Rust, and Click's own words
+(`requires`, `owns`, `result`, the tactics) are the same in every language.
+Design and order of work: `design/rust-sidecar-signatures.md`.
 
-When the importer learns to lower one, it names the carrying pointer `&r`,
-as `reference_carrier_name` does for a parameter, so that a proof reads `r`
-as the referent with no further change.
+Built: `fn` signatures with Rust type names, `as` casts, `&T` and `&mut T`
+(`*value`, `parent.left`), slices as one name (`bytes.len()`, `*bytes`, a
+`usize` parameter as an index), references to arrays, and `impl` blocks with
+`self`. `click expand`, `profile` and `audit` address them. Reference:
+`docs/reference/rust.md`, "Signatures in Rust syntax". All sixteen Rust
+examples take their signatures from the Rust source, with their mirrored
+copies under `design/charon-trial`.
 
-Regression, for that change: a function with `int& r = x; r = 1;` whose
-proof states `have r == 1;` and whose expansion re-verifies.
+Remaining:
 
-### A4. Rust sidecars in Rust syntax
+- Most of the examples' contracts and proofs still write `bytes_len`, `->` and
+  `(int32)index`. Respell them.
+- Then refuse `->` and the C-shaped signature for a Rust source, with the
+  spelling to write.
+- Diagnostics and `click expand` print C-shaped spellings for a Rust
+  sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
+  the sidecar writes.
+- A 32-bit index is the memory model's limit, so a slice contract states
+  `requires bytes.len() <= 2147483647u64`. Dropping it needs range bounds
+  wider than 32 bits in the kernel (A5).
+- An array by value, a reference to a reference, generics and lifetimes in
+  a `fn` signature are refused.
 
-Decided 2026-10-08: a Rust sidecar states its signature in Rust syntax, and
-each language spells a place its own way, so a Rust `c: &mut Cell` is
-`owns *c` and `c.value`. Not designed. Today the sidecar restates signatures
-in C shape (`const uint8* bytes, uint64 bytes_len` for `bytes: &[u8]`), a
-slice carries its length as a second parameter, tuple fields are `_0`, and
-layout is the compiler's.
+Done when: every Rust example and trial sidecar is in Rust syntax, the
+C-shaped form is refused for a Rust source, and no diagnostic for one
+prints a C-shaped place.
 
-Next step: a proposal under `design/` covering the signature grammar, how a
-slice and its length are named, the spelling for a whole slice (today only
-`views bytes[0..(int32)(uint32)bytes_len]`), tuple and enum fields, and the
-migration of the hash-pinned sidecars under `design/charon-trial`.
+### A5. An index keeps its type until it is an offset
+
+Direction accepted 2026-10-08; design, kernel survey and order of work in
+`design/typed-indices.md`. Not started.
+
+An index or range bound of any integer type is accepted and converted to an
+offset in its own way: `int32` by sign extension, `uint64` and `usize` by
+value. Stage 1 keeps the 32-bit cap on a range's extent and removes the
+casts from C and Rust contracts. Stage 2 widens the extent to `isize::MAX`
+and removes `requires n <= 2147483647`. Stage 3 brings order reasoning over
+64-bit terms up to the 32-bit level.
+
+Start stage 1 after the Rust sidecar work in A4 has landed.
+
+Done when: no contract casts an index, and a slice contract states no bound
+on its length.
 
 ## B. Contracts and resource declarations
 
-Found in the third pass and ruled on 2026-10-07. Each was checked against the
-tool that day unless it says otherwise.
-
-### B1. A child with fields in a resource without fields
-
-A resource holds a child resource with `owns inner(p);`, the clause it uses
-for memory; `contains inner(p);` is retired and refused with that spelling.
-
-A child can also be named, `owns item: inner(p);`, so the parent's facts can
-read the child's fields as `item.field`. That is accepted only in a parent
-that declares fields of its own, because the parent's model is where the
-child's model is kept. In a parent without fields it is refused: "this
-resource declares no fields to hold them; write the child without a name".
-
-Decided 2026-10-08: it should be allowed. Today a resource without fields
-cannot hold a child that has fields at all, and the two refusals point at
-each other: the unnamed form `owns counted(p->a);` is refused with "resource
-`counted` has fields; bind it with `owns name: counted(...);`".
-
-Intended reading: the parent does not keep the child's fields. Holding the
-parent means some values of the child's fields exist for which the child is
-held and the parent's facts are true; unfolding gives the child with fresh
-values and those facts. A parent that needs a value tracked across a fold
-declares a field for it. The parent stays fieldless and is held without a
-name. Not yet checked against how the kernel unfolds and folds a resource
-without fields; if this reading does not fit, report what does before
-building another.
-
-Regression: `resource pair(p) { owns p->n; owns first: counted(p->a); fact
-p->n == first.v; }` with no field in `pair`, folded and unfolded, with a
-claim that follows from the fact verifying and one that needs the lost value
-refused; the unnamed form accepted.
-
-### B3. Reads through an owned resource with fields, across a loop
-
-Decided 2026-10-08 and built: holding a resource, viewed or owned, lets C
-read the memory it owns directly. A write still needs `unfold`. Depth stays
-at one level: memory a child resource owns is not read through.
-
-For a resource without fields this is one mechanism. The views of its memory
-are attached to the owner's occurrence, so they retire when the owner is
-unfolded, consumed, freed or handed to an interface, and a loop head derives
-them again for each owner the loop declares, from the definition over the
-head's memory (`with_owner_read_authority_rederived` in
-`src/kernel/loops.rs`). They are never kept across a loop: at exit the kernel
-restores the frame from before the loop, and a view of an address the
-definition read out of memory then would be stale.
-`mdtests/a_freed_cell_is_not_read_through_another_owner_after_a_loop.md` is
-the use after free that keeping them accepted.
-
-A resource with fields follows the rule in a proof without a loop: a plain
-body, or the arm the requirements select, gives views attached to the owner
-(`mdtests/c_reads_through_an_owned_resource_with_fields.md`).
-
-What remains is a resource with fields in a proof that contains a loop
-(`OwnedCores::InstanceArmsStanding` in `src/surface/proof/resources.rs`).
-A selected arm's views are free-standing there, as before the decision, and
-a plain body gives no read authority at all, because the facts that say
-which memory the resource owns hold at the loop's exit, and nothing derives
-attached views again at that point. Attaching them
-without that step fails 13 mdtests, among them `loop_owns_modeled_instance`,
-`rb_next` and `rb_prev`, with a read after the loop refused.
-
-Free-standing views of owned memory are not retired with their owner, which
-is what blocks a later `free` of that memory. Whether one can go stale as
-the fieldless case did has not been examined.
-
-Regression: `loop_owns_modeled_instance.md` verifying with attached views;
-a resource with fields whose arm owns a cell at an address read from its
-model, saved before a loop that changes the model, not readable through the
-saved pointer afterwards.
-
-Done when: read authority for a resource with fields is derived at a loop's
-exit under the exit's facts, `InstanceArmsStanding` is gone, and a `free`
-after a loop of memory one owner held is accepted while another owner stays
-folded (today refused: "resource would remain usable after its allocation
-is freed").
+Found in the third pass and ruled on 2026-10-07. Nothing is open; the
+rulings are under "Decided and closed".
 
 ## C. Tactics
 
@@ -170,10 +116,6 @@ by a one-step block uses the brace-less form (`by T(args);`, `by simp;`), and
 `have P by simp;` is `have P;`. No `by { simp(); }` remains in examples or
 the standard library. Left in the long spelling:
 
-- Every expected-failure mdtest, because a failing short `have` reports less
-  than the block form
-  (`bugs/a-failing-short-have-reports-less-than-the-block-form.md`). Respell
-  them when that is fixed.
 - The Rust examples and the sidecars under `design/charon-trial`, which are
   hash-pinned in `design/charon-trial/parity.json`.
 - A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,
@@ -200,6 +142,22 @@ the standard library. Left in the long spelling:
   handles it (`docs/internals/byte-representation.md`). A specification that
   must state one byte of a wider cell writes the explicit load,
   `load_uint8(byte_offset(p, n))`.
+- Holding a resource, viewed or owned, lets C read the memory it owns
+  directly; a write needs `unfold`, and a child's memory is not read
+  through. The views are attached to the owner and retire with it. The
+  kernel derives them again wherever it makes the owner anew: at a loop
+  head, from the definition or under the invariants, and at a fold of a
+  resource with fields, as views of the cells the fold consumed.
+- A C++ reference local reads in a proof as a reference parameter does:
+  `r` is the referent and `&r` its address. A struct reference local waits
+  on the importer admitting one.
+- A resource without fields holds a child that has them by a hidden
+  record, which remembers the child's values across a fold. A rule under
+  which each unfold yields fresh values was considered and dropped: the
+  kernel treats a fieldless resource's body as a function of its arguments
+  and memory in about thirty places.
+- A call binds a callee's instance binder automatically when only one
+  binding is possible, and never chooses between two.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a
   property of the function, the other a measure with an expression.
 

@@ -403,6 +403,43 @@ impl PureFactContext {
         {
             return true;
         }
+        // A modular pointer result can name the same storage as a viewed
+        // range under a different symbolic block. Transport its liveness
+        // only through checked pointer equality, keeping the availability
+        // check at the evidence's own address. Visit this equality component,
+        // rather than searching unrelated loadability facts.
+        let spellings = self.equality_graph.pointer_spellings(base);
+        if self
+            .exact_pointer_aliases(base)
+            .chain(spellings.iter())
+            .any(|alias| {
+                crate::instrumentation::record_deterministic_work(1);
+                alias != base
+                    && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        base, alias, self,
+                    )
+                    && self.memory_loadable_candidates_for_base(alias).any(|fact| {
+                        let Proposition::CMemoryLoadable {
+                            memory: before,
+                            base: evidence_base,
+                            bytes: extent,
+                        } = fact
+                        else {
+                            return false;
+                        };
+                        crate::instrumentation::record_deterministic_work(1);
+                        memory_range_still_available(before, memory, evidence_base, self)
+                            && self.proves_loadable_region_from_structural_range(
+                                evidence_base,
+                                extent,
+                                alias,
+                                bytes,
+                            )
+                    })
+            })
+        {
+            return true;
+        }
         if self
             .memory_loadable_candidates_for_base(base)
             .any(|proposition| {
@@ -3008,6 +3045,29 @@ impl PureFactContext {
                 .unwrap_or_else(|| pointer.clone())
         };
         let pointer = &resolved;
+        if byte_width > 0 && byte_width < element_width {
+            let available = CMemoryRange::new_with_element_width(
+                base.clone(),
+                start.clone(),
+                end.clone(),
+                element_width,
+            );
+            let required = CMemoryRange::new_with_element_width(
+                pointer.clone(),
+                0u32.into(),
+                byte_width.into(),
+                1,
+            );
+            if crate::kernel::primitives::memory_range_covers_interior_element(
+                &available, &required, self,
+            ) && !self
+                .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                    &available, &required,
+                )
+            {
+                return true;
+            }
+        }
         let proves_order = |left: &Bitvector32Term, right: &Bitvector32Term, strict: bool| {
             let condition = if strict {
                 ConditionTerm::signed_less_than(left.clone(), right.clone())

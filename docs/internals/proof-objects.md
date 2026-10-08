@@ -237,6 +237,15 @@ complete execution after all outcomes are finished. This preserves coverage
 without re-certifying every sibling for each fold. Indexing and extending one
 path shares the unchanged traces and history.
 
+When a proof matches an already constructed model, an algebraic payload that
+already has a Surface variable keeps that identity under the new source name.
+The kernel still allocates fresh constructor witnesses and checks the case;
+constructor injectivity justifies the retained payload spelling. The checked
+case also publishes its equation in that spelling. This keeps unfolded scalar
+facts attached to the same model value across a fold and another match, without
+changing memory snapshots or transferring ownership. Selection reads only the
+constructor's requested field, with no search through unrelated premises.
+
 A proof `if` or `match` interface may rejoin before the first C statement.
 The kernel first materializes the retained function entry, binding its own
 checked arguments without advancing the C source. The arms, abstraction, and

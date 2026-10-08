@@ -27,5 +27,5 @@ void inspect(struct pool* pool) {
 ```
 
 ```expect
-fail: Requires defined((count(item(pool, _)) + 1))
+fail: could not establish `defined((count(item(pool, _)) + 1))`
 ```

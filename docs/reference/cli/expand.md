@@ -32,7 +32,8 @@ Replace the following:
 - `PATH`: a destination for the complete rewritten sidecar or mdtest.
 - `LINE` and `COLUMN`: one-based coordinates selecting a smart tactic. The
   column may be omitted when the line starts exactly one smart tactic.
-- `LABEL`: one function-claim label whose smart tactics are all selected.
+- `LABEL`: one function or pure-theorem claim label whose smart tactics are all
+  selected.
 
 ## Selection
 
@@ -66,9 +67,11 @@ rewrites exactly that tactic's source, leaving its neighbors as written. The
 same holds for a smart tactic in a proof `if` or `cases` arm written inside a
 `have` body, and inside the body of a `have` in a loop's `initialize` phase.
 
-The claim form expands every smart tactic in one named function claim and is
+The claim form expands every smart tactic in one named claim and is
 useful when aggregate smart work matters even though no individual site is
-slow.
+slow. Pure theorem labels use `theorem.ensures_0` or `theorem.named_ensure`,
+including in compiler-prepared Rust sidecars. Source-cursor and claim-label
+expansion use the same checked theorem verification path.
 
 Generated execution arms may retain logical proof operations after their last
 C step, such as unfolding a predicate on the returned state. Their checked

@@ -301,6 +301,14 @@ fn authority_consuming_helper_cannot_return_the_wrong_private_body() {
             .contains("missing resource fact `owns p[1]`"),
         "{error:?}"
     );
+    assert!(
+        error.message().contains("Requires produces owns p[1]"),
+        "{error:?}"
+    );
+    assert!(
+        !error.message().contains("Requires produces owns p[1..2]"),
+        "{error:?}"
+    );
 }
 
 #[test]

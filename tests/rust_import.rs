@@ -6,6 +6,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const SOURCE: &str = include_str!("../examples/basic-rust/borrow.rs");
+const FIELD_BORROW_GUARD_SOURCE: &str = include_str!("../examples/rust-field-borrow/guard.rs");
 const SIDECAR: &str = include_str!("../examples/basic-rust/borrow.click");
 struct Project {
     root: PathBuf,
@@ -1978,21 +1979,18 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for wrong in [
+        sidecar.replace("ensures *value == old(*value);", "ensures *value == 7;"),
         sidecar.replace(
-            "ensures value[0] == old(value[0]);",
-            "ensures value[0] == 7;",
-        ),
-        sidecar.replace(
-            "ensures self->slot[0] == old(self->saved);",
-            "ensures self->slot[0] == 7;",
+            "ensures *self.slot == old(self.saved);",
+            "ensures *self.slot == 7;",
         ),
         sidecar.replace(
             "ensures result == (if early != 0 { 7 } else { 9 });",
-            "ensures result == old(value[0]);",
+            "ensures result == old(*value);",
         ),
-        sidecar[sidecar.find("int32 restore").unwrap()..]
+        sidecar[sidecar.find("fn restore").unwrap()..]
             .to_string()
-            .replace("int32 restore", "verifying \"borrow.rs\"; int32 restore"),
+            .replace("fn restore", "verifying \"borrow.rs\"; fn restore"),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&wrong, &prepared).is_err());
     }
@@ -2058,7 +2056,7 @@ fn rust_owned_field_loan_recovery_verifies() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2098,7 +2096,7 @@ fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2170,7 +2168,7 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let sidecar = format!("{}void cleanup(int32* left,int32* right) {{ owns left[0..1]; owns right[0..1]; ensures left[0] == 17; ensures right[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    let sidecar = format!("{}void cleanup(int32* left,int32* right) {{ owns left[0..1]; owns right[0..1]; ensures left[0] == 17; ensures right[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("fn restore").next().unwrap()).replace("guard.rs", "borrow.rs");
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
@@ -2237,6 +2235,126 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
         assert_cli(&p, &["verify"]);
     }
+}
+
+/// A method's contract sits in an `impl` block and its receiver is `self`.
+/// This is the contract `examples/rust-field-borrow` states for the free
+/// function `Guard_drop(struct Guard* self)`.
+#[test]
+fn rust_sidecar_impl_blocks_verify() {
+    let p = Project::new(FIELD_BORROW_GUARD_SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/impl_blocks.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace(
+                "ensures *self.slot == old(self.saved);",
+                "ensures *self.slot == old(self.saved) + 1;"
+            ),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
+    // The tools address a method by the function it is.
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(
+        &p,
+        &["expand", "--claim", "Guard_drop.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+/// A slice parameter in a Rust signature is one name: `bytes.len()` is its
+/// length. These are the contracts `examples/rust-slices` states in C shape,
+/// where the slice is a pointer and a `bytes_len` parameter.
+#[test]
+fn rust_sidecar_slices_in_rust_syntax_verify() {
+    let p = Project::new(SLICES_SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/slices.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    // A read past the stated length is still refused.
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace(
+                "requires index < bytes.len();",
+                "requires index <= bytes.len();"
+            ),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "read.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+/// `&mut T` and `&T` parameters in a Rust signature. The contract names a
+/// referent `*value` and a field `parent.left`; these are the contracts
+/// `examples/basic-rust` states in C shape.
+#[test]
+fn rust_sidecar_references_in_rust_syntax_verify() {
+    let p = Project::new(SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/references.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let (_, verified) = C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert_eq!(verified.len(), 12);
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures *value == 8;", "ensures *value == 9;"),
+            &prepared
+        )
+        .is_err()
+    );
+    // A store through the reference needs `owns`, not `views`.
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("owns *value;", "views *value;"),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+/// A Rust sidecar states signatures as Rust does and casts with `as`. The
+/// contracts are the ones `examples/rust-unsigned` states in C shape.
+#[test]
+fn rust_sidecar_signatures_in_rust_syntax_verify() {
+    let p = Project::new(UNSIGNED_SOURCE);
+    let sidecar = include_str!("fixtures/rust-verification/fn_signatures.click");
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let (_, verified) = C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert_eq!(verified.len(), 3);
+    // The signature is still checked against the imported function.
+    let error = C0VerificationSession::new_program_prepared(
+        &sidecar.replace("byte: u8", "byte: u32"),
+        &prepared,
+    )
+    .err()
+    .expect("the sidecar states another parameter type");
+    assert!(error.message().contains("add_byte"), "{}", error.message());
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("value * 3u32", "value * 4u32"),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]

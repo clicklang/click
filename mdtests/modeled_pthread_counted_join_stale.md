@@ -31,7 +31,7 @@ int32 run(void* p) {
     step();
     branch then { unfold(ticket(p)); step(); simp(); } else {}
     step();
-    have count(ticket(p)) == 1 by { simp(); }
+    have count(ticket(p)) == 1;
     step();
     simp();
 }

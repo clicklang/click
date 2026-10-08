@@ -5502,7 +5502,7 @@ pub(in crate::surface) fn parse_c_layouts(
         BTreeMap<String, BTreeSet<String>>,
         BTreeMap<String, BTreeMap<String, parser::GlobalArrayShape>>,
         BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-        BTreeMap<String, BTreeMap<String, String>>,
+        BTreeMap<String, parser::FunctionLocals>,
     ),
     ClickError,
 > {
@@ -5528,7 +5528,7 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
         BTreeMap<String, BTreeSet<String>>,
         BTreeMap<String, BTreeMap<String, parser::GlobalArrayShape>>,
         BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>,
-        BTreeMap<String, BTreeMap<String, String>>,
+        BTreeMap<String, parser::FunctionLocals>,
     ),
     ClickError,
 > {
@@ -5559,7 +5559,10 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
             );
             local_struct_pointers.insert(
                 function.source_name().to_string(),
-                function.local_struct_pointers().clone(),
+                parser::FunctionLocals {
+                    struct_pointers: function.local_struct_pointers().clone(),
+                    references: function.local_references().clone(),
+                },
             );
         }
         return Ok((
@@ -5904,13 +5907,17 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
             // locals and read an eight-byte member as a four-byte one. Two
             // definitions sharing one source spelling leave no layouts rather
             // than guessing between them.
+            let locals = parser::FunctionLocals {
+                struct_pointers: function.local_struct_pointers().clone(),
+                references: function.local_references().clone(),
+            };
             match local_struct_pointers.entry(function.source_name().to_string()) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(function.local_struct_pointers().clone());
+                    entry.insert(locals);
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    if entry.get() != function.local_struct_pointers() {
-                        entry.insert(BTreeMap::new());
+                    if entry.get() != &locals {
+                        entry.insert(parser::FunctionLocals::default());
                     }
                 }
             }
@@ -7319,6 +7326,18 @@ pub(in crate::surface) fn function_resource_summary(
         }
         ensure_clause_index += 1;
     }
+    if parsed_function.requires_read_only_contract()
+        && (!function_block.constructs().is_empty()
+            || requires
+                .iter()
+                .chain(&ensures)
+                .any(|resource| !resource.is_view()))
+    {
+        return Err(ClickError::new(format!(
+            "expression observer `{}` requires a read-only contract: use views, without ownership transfer or resource construction",
+            parsed_function.name()
+        )));
+    }
     Ok((requires, ensures))
 }
 
@@ -8239,12 +8258,26 @@ pub(in crate::surface) fn substitute_contract_segment(
             start: substitute_contract_expression_in(start, substitutions)?,
             end: substitute_contract_expression_in(end, substitutions)?,
         },
+        ContractSegmentSurface::StructRange {
+            base,
+            start,
+            end,
+            layout,
+        } => ContractSegmentSurface::StructRange {
+            base: substitute_contract_expression_in(base, substitutions)?,
+            start: substitute_contract_expression_in(start, substitutions)?,
+            end: substitute_contract_expression_in(end, substitutions)?,
+            layout: layout.clone(),
+        },
         surface => surface.clone(),
     };
     // Preserve resolved C spellings unless a component actually refers to
     // the return name. Its surface form then distinguishes `c(result)`.
     if substitutions.is_contract_result_binding()
-        && let ContractSegmentSurface::Range { base, start, end } = &surface
+        && let ContractSegmentSurface::Range { base, start, end }
+        | ContractSegmentSurface::StructRange {
+            base, start, end, ..
+        } = &surface
     {
         let lower = |original: &CExpression, source: &ContractExpression| {
             let rewritten = substitute_c_fragment_in(original, substitutions)?;

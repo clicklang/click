@@ -676,11 +676,14 @@ pub(super) fn plan_explicit_loadability_transport(
             matches!(
                 proposition.as_ref(),
                 ClickProposition::Loadable { segment }
-                    if matches!(segment.surface, ContractSegmentSurface::Range { .. })
+                    if matches!(segment.surface, ContractSegmentSurface::Range { .. } | ContractSegmentSurface::StructRange { .. })
             )
         }
         ClickProposition::Loadable { segment } => {
-            matches!(segment.surface, ContractSegmentSurface::Range { .. })
+            matches!(
+                segment.surface,
+                ContractSegmentSurface::Range { .. } | ContractSegmentSurface::StructRange { .. }
+            )
         }
         _ => false,
     };

@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn batch_source_positions_preserve_unicode_columns_and_request_order() {
+    let source = "αβ;\n\tγδ;\nlast";
+    let offsets = [source.len(), 2, 0, 9, 2];
+    assert_eq!(
+        positions_at_offsets(source, offsets),
+        offsets.map(|offset| position_at_offset(source, offset))
+    );
+}
+
+#[test]
+fn batch_source_positions_walk_a_long_line_once() {
+    let mut measurements = Vec::new();
+    for size in [16, 64, 256] {
+        let source = "α ".repeat(size);
+        let (positions, work) = crate::instrumentation::measure_deterministic_work(|| {
+            positions_at_offsets(&source, (0..size).map(|index| index * 3))
+        });
+        assert_eq!(
+            positions.last(),
+            Some(&SourcePosition::new(1, size * 2 - 1))
+        );
+        assert!(work <= size * 3);
+        measurements.push(work);
+    }
+    for pair in measurements.windows(2) {
+        assert!(pair[1] <= pair[0] * 5, "{measurements:?}");
+    }
+}
+
+#[test]
 fn execute_until_in_proof_if_arms_expands_and_rechecks() {
     let c = "int32 identity(int32 x) { int32 y = x; return y; }";
     let source = r#"

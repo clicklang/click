@@ -931,6 +931,42 @@ pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, 
     value_naming_tables(&values)
 }
 
+/// Name current locals with their source declarations, when available.
+/// Layouts describe the local's type; its address still comes from `state`,
+/// so reassigning a pointer never reuses its function-entry address.
+/// A pointer without a source declaration is named in explicit byte units:
+/// compatible kernel pointer types cannot establish a nominal struct type.
+pub(super) fn local_naming_tables_with_source(
+    state: &CState,
+    function: Option<&syntax::C0Function>,
+) -> (Vec<syntax::C0Parameter>, Vec<CExpression>) {
+    let (mut parameters, arguments) = local_naming_tables(state);
+    let source_parameters = function
+        .into_iter()
+        .flat_map(|function| function.parameters())
+        .map(|parameter| (parameter.name(), parameter))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for parameter in &mut parameters {
+        if let Some(source) = source_parameters.get(parameter.name()) {
+            *parameter = (**source).clone();
+        } else if let Some((name, layout)) = function.and_then(|function| {
+            let name = function.local_struct_pointers().get(parameter.name())?;
+            Some((name, function.structs().get(name)?))
+        }) {
+            *parameter = parameter
+                .clone()
+                .with_pointee_struct_layout(name.clone(), layout.clone());
+        } else if parameter.c_type().is_pointer() {
+            *parameter = syntax::C0Parameter::new(
+                C0Type::CharPointer,
+                format!("((char *){})", parameter.name()),
+                None,
+            );
+        }
+    }
+    (parameters, arguments)
+}
+
 /// A runtime error spelled over `state`'s locals, so an address a loop head
 /// minted a variable for reads as the index the source wrote.
 pub(super) fn describe_runtime_error_over_locals(
@@ -1680,10 +1716,83 @@ pub(super) fn format_declared_resource(
     )
 }
 
-/// The place a range covers inside the struct a parameter points at: the
-/// whole struct as `*p`, or one field as `p->field`. A clause names places,
-/// so a fact about one reads the way the clause for it is written. A range
-/// that is not exactly one of these keeps its cell spelling.
+/// Recover whole structs or contiguous field slots from byte coordinates.
+fn describe_layout_place_range(
+    layout: &syntax::C0StructLayout,
+    name: &str,
+    low: u64,
+    high: u64,
+) -> Option<String> {
+    let size = u64::from(layout.size_bytes());
+    if size == 0 || low >= high {
+        return None;
+    }
+    if low.is_multiple_of(size) && high.is_multiple_of(size) {
+        return Some(if low == 0 && high == size {
+            describe_pointee_place(name)
+        } else if high - low == size {
+            format!("{name}[{}]", low / size)
+        } else {
+            format!("{name}[{}..{}]", low / size, high / size)
+        });
+    }
+    let index = low / size;
+    if (high - 1) / size != index {
+        return None;
+    }
+    let (low, high) = (low % size, high - index * size);
+    let member = |field: &str| {
+        if index == 0 {
+            describe_field_place(name, field)
+        } else {
+            format!("{name}[{index}].{field}")
+        }
+    };
+    let mut fields = layout.fields().iter().collect::<Vec<_>>();
+    fields.sort_by_key(|(_, field)| field.offset_bytes());
+    for (position, (field_name, field)) in fields.iter().enumerate() {
+        let field_low = u64::from(field.offset_bytes());
+        let slot_high = fields
+            .get(position + 1)
+            .map_or(size, |(_, next)| u64::from(next.offset_bytes()));
+        if low == field_low
+            && (high == slot_high
+                || high == field_low + u64::from(field.byte_width())
+                || (field.c_type().is_pointer() && low < high && high <= slot_high))
+        {
+            return Some(member(field_name));
+        }
+    }
+    // Leaf slots preserve dotted names for a partial embedded aggregate.
+    let mut leaves = layout.leaf_field_offsets().collect::<Vec<_>>();
+    leaves.sort_by_key(|(_, offset)| *offset);
+    let mut places = Vec::new();
+    let mut cursor = low;
+    for (position, (field, offset)) in leaves.iter().enumerate() {
+        let start = u64::from(*offset);
+        let end = leaves
+            .get(position + 1)
+            .map_or(size, |(_, next)| u64::from(*next));
+        if start == cursor && end <= high {
+            places.push(member(field));
+            cursor = end;
+        }
+    }
+    if cursor != high || places.is_empty() {
+        return None;
+    }
+    Some(if places.len() == 1 {
+        places.remove(0)
+    } else {
+        let limit = diagnostic_item_limit();
+        let mut shown = places.iter().take(limit).cloned().collect::<Vec<_>>();
+        if places.len() > limit {
+            shown.push(format!("… {} more omitted", places.len() - limit));
+        }
+        format!("{{{}}}", shown.join(", "))
+    })
+}
+
 fn describe_struct_place_range(
     range: &CMemoryRange,
     parameters: &[syntax::C0Parameter],
@@ -1696,7 +1805,7 @@ fn describe_struct_place_range(
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
         };
-        if parameter.array_element_width().is_some() || parameter.is_struct_value() {
+        if parameter.is_struct_value() {
             continue;
         }
         let Some(layout) = parameter
@@ -1705,55 +1814,31 @@ fn describe_struct_place_range(
         else {
             continue;
         };
-        let Some(offset) = diagnostic_pointer_element_index_from_base(range.base(), base, 1)
+        if let Some(offset) = diagnostic_pointer_element_index_from_base(range.base(), base, 1)
             .and_then(|offset| offset.as_const())
-        else {
-            continue;
-        };
-        let low = u64::from(offset) + start * width;
-        let high = u64::from(offset) + end * width;
-        let size = u64::from(layout.size_bytes());
-        if low == 0 && high == size {
-            return Some(describe_pointee_place(parameter.name()));
+            && let Some(place) = describe_layout_place_range(
+                layout,
+                parameter.name(),
+                u64::from(offset) + start * width,
+                u64::from(offset) + end * width,
+            )
+        {
+            return Some(place);
         }
-        for (name, field) in layout.fields() {
-            let field_low = u64::from(field.offset_bytes());
-            if field_low != low {
-                continue;
-            }
-            // A field's slot runs to the next field or the end of the struct.
-            let slot_high = layout
+        // A recursive struct pointer field has the same known layout as its
+        // parent. Do not infer that layout for pointers to another type.
+        if let Some(field_name) =
+            describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
+            && let Some((_, field)) = layout
                 .fields()
-                .values()
-                .map(|other| u64::from(other.offset_bytes()))
-                .filter(|other| *other > field_low)
-                .min()
-                .unwrap_or(size);
-            // A pointer field is read as the word at its start.
-            let pointer_word = field.c_type().is_pointer() && low < high && high <= slot_high;
-            if high == slot_high
-                || high == field_low + u64::from(field.byte_width())
-                || pointer_word
-            {
-                return Some(describe_field_place(parameter.name(), name));
-            }
-        }
-        // A leaf of an embedded struct: `o->inner.count`.
-        let leaf_high = |leaf_low: u64| {
-            layout
-                .leaf_field_offsets()
-                .map(|(_, other)| u64::from(other))
-                .filter(|other| *other > leaf_low)
-                .min()
-                .unwrap_or(size)
-        };
-        if let Some((name, _)) = layout.leaf_field_offsets().find(|(name, leaf_low)| {
-            name.contains('.')
-                && u64::from(*leaf_low) == low
-                && low < high
-                && high <= leaf_high(low)
-        }) {
-            return Some(describe_field_place(parameter.name(), name));
+                .iter()
+                .find(|(name, _)| field_name == describe_field_place(parameter.name(), name))
+            && field.struct_name().is_some()
+            && field.struct_name() == parameter.struct_name()
+            && let Some(place) =
+                describe_layout_place_range(layout, &field_name, start * width, end * width)
+        {
+            return Some(place);
         }
     }
     None
@@ -1776,10 +1861,42 @@ pub(super) fn describe_memory_range(
         if let Some(field) =
             describe_parameter_struct_field_pointer(range.base(), parameter, base.pointer())
         {
+            let layout = parameter
+                .pointee_struct_layout()
+                .or_else(|| parameter.struct_layout());
+            let slot = layout.and_then(|layout| {
+                layout.fields().iter().find_map(|(name, slot)| {
+                    (field == describe_field_place(parameter.name(), name)).then_some(slot)
+                })
+            });
+            let width = slot
+                .filter(|slot| slot.struct_name().is_none())
+                .and_then(|slot| {
+                    slot.c_type()
+                        .pointee_type()
+                        .map(|pointee| diagnostic_c0_type_byte_width(pointee, slot.byte_width()))
+                })
+                .and_then(|width| u32::try_from(width).ok())
+                .unwrap_or(1);
+            let start = rescale_range_index(range.start(), range.element_width(), width);
+            let end = rescale_range_index(range.end(), range.element_width(), width);
+            let (field, start, end) = match (start, end) {
+                (Some(start), Some(end))
+                    if slot.is_some_and(|slot| slot.struct_name().is_none()) =>
+                {
+                    (field, start, end)
+                }
+                _ => (
+                    format!("((char *){field})"),
+                    rescale_range_index(range.start(), range.element_width(), 1)
+                        .expect("byte scale"),
+                    rescale_range_index(range.end(), range.element_width(), 1).expect("byte scale"),
+                ),
+            };
             return format!(
                 "{field}[{}..{}]",
-                describe_bitvector_with_context(range.start(), parameters, arguments),
-                describe_bitvector_with_context(range.end(), parameters, arguments)
+                describe_bitvector_with_context(&start, parameters, arguments),
+                describe_bitvector_with_context(&end, parameters, arguments)
             );
         }
     }
@@ -1847,25 +1964,36 @@ pub(super) fn describe_parameter_relative_range(
 ) -> Option<String> {
     let (parameter, base_index) = parameter_relative_base(range, parameters, arguments)?;
     let (start, end) = parameter_relative_endpoints(&base_index, range);
-    // One element is the place `q[i]`. A struct pointer keeps its cell
-    // range: `p[i]` there is a whole struct.
+    let from = range.element_width();
+    let to = u32::try_from(diagnostic_parameter_element_width(parameter)).ok()?;
+    let (name, start, end) = match (
+        rescale_range_index(&start, from, to),
+        rescale_range_index(&end, from, to),
+    ) {
+        (Some(start), Some(end)) => (parameter.name().to_string(), start, end),
+        _ => (
+            format!("((char *){})", parameter.name()),
+            rescale_range_index(&start, from, 1)?,
+            rescale_range_index(&end, from, 1)?,
+        ),
+    };
     if let (Some(low), Some(high)) = (start.as_const(), end.as_const())
         && low.checked_add(1) == Some(high)
-        && parameter.pointee_struct_layout().is_none()
-        && parameter.struct_layout().is_none()
     {
-        // The one element behind a reference parameter is its referent.
+        // A whole element behind a reference parameter is its referent.
+        // An explicit byte slice keeps its exact extent and cast spelling.
         if low == 0
+            && name == parameter.name()
             && parameter.is_reference()
             && let Some(referent) = syntax::referent_of_carrier(parameter.name())
         {
             return Some(referent.to_string());
         }
-        return Some(format!("{}[{low}]", parameter.name()));
+        return Some(format!("{}[{low}]", name));
     }
     Some(format!(
         "{}[{}..{}]",
-        parameter.name(),
+        name,
         describe_bitvector_with_context(&start, parameters, arguments),
         describe_bitvector_with_context(&end, parameters, arguments)
     ))
@@ -1892,7 +2020,7 @@ fn parameter_relative_base<'a>(
         let Some(base_index) = diagnostic_pointer_element_index_from_base(
             range.base(),
             base,
-            diagnostic_parameter_element_width(parameter),
+            i64::from(range.element_width()),
         ) else {
             continue;
         };
@@ -1902,6 +2030,20 @@ fn parameter_relative_base<'a>(
         symbolic.get_or_insert((parameter, base_index));
     }
     symbolic
+}
+
+fn rescale_range_index(index: &Bitvector32Term, from: u32, to: u32) -> Option<Bitvector32Term> {
+    if to == 0 {
+        return None;
+    }
+    if from.is_multiple_of(to) {
+        return Some(super::lowering::bitvector32_multiply(
+            index.clone(),
+            Bitvector32Term::Constant(from / to),
+        ));
+    }
+    let bytes = i64::from(index.as_const()? as i32) * i64::from(from);
+    (bytes % i64::from(to) == 0).then(|| Bitvector32Term::Constant((bytes / i64::from(to)) as u32))
 }
 
 fn parameter_relative_endpoints(
@@ -1956,11 +2098,16 @@ pub(super) fn describe_missing_range_end_note(
         None => (resource_facts, String::new()),
     };
     let required_parameter = parameter_relative_base(required, parameters, arguments);
+    let byte_coordinates = required_parameter.as_ref().is_some_and(|(parameter, _)| {
+        parameter.pointee_struct_layout().is_some()
+            || parameter.struct_layout().is_some()
+            || diagnostic_parameter_element_width(parameter) != i64::from(required.element_width())
+    });
     // Endpoints of the held range and of the required one, on one scale.
     let comparable = |held: &CMemoryRange| {
         let held_index = if held.base() == required.base() {
             match &required_parameter {
-                Some((_, index)) => index.clone(),
+                Some(_) => parameter_relative_base(held, parameters, arguments)?.1,
                 None => {
                     return Some((
                         held.start().clone(),
@@ -1981,8 +2128,24 @@ pub(super) fn describe_missing_range_end_note(
         let (_, required_index) = required_parameter.as_ref()?;
         let (held_start, held_end) = parameter_relative_endpoints(&held_index, held);
         let (required_start, required_end) = parameter_relative_endpoints(required_index, required);
-        Some((held_start, held_end, required_start, required_end))
+        let unit = if byte_coordinates {
+            1
+        } else {
+            required.element_width()
+        };
+        Some((
+            rescale_range_index(&held_start, held.element_width(), unit)?,
+            rescale_range_index(&held_end, held.element_width(), unit)?,
+            rescale_range_index(&required_start, required.element_width(), unit)?,
+            rescale_range_index(&required_end, required.element_width(), unit)?,
+        ))
     };
+    let coordinate_note = required_parameter
+        .as_ref()
+        .filter(|_| byte_coordinates)
+        .map_or(String::new(), |(parameter, _)| {
+            format!(" (byte offsets from `{}`)", parameter.name())
+        });
     let candidates = resource_facts
         .iter()
         .filter_map(|fact| {
@@ -2033,7 +2196,7 @@ pub(super) fn describe_missing_range_end_note(
             .find(|(lower, upper)| decided(lower, upper) == Some(false))
             .expect("found a refuted side above");
         return format!(
-            "\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false",
+            "\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false{coordinate_note}",
             describe_resource_fact(held_fact, parameters, arguments),
             describe_memory_range(required, parameters, arguments),
             describe_bitvector_with_context(lower, parameters, arguments),
@@ -2055,7 +2218,7 @@ pub(super) fn describe_missing_range_end_note(
         return String::new();
     }
     format!(
-        "\n  note: {reserved_prefix}held `{}` covers `{}` only when {}",
+        "\n  note: {reserved_prefix}held `{}` covers `{}` only when {}{coordinate_note}",
         describe_resource_fact(held_fact, parameters, arguments),
         describe_memory_range(required, parameters, arguments),
         conditions.join(" and "),
@@ -3436,44 +3599,13 @@ fn describe_source_range(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Option<String> {
-    // Inside the struct a parameter points at, the source names a field or
-    // the whole struct, never cells: `j[2..3]` there is one whole struct.
-    if let Some(place) = describe_struct_place_range(range, parameters, arguments) {
-        return Some(place);
-    }
-    for (parameter, argument) in parameters.iter().zip(arguments) {
-        let CExpression::Value(CValue::Pointer(base)) = argument else {
-            continue;
-        };
-        // A range in a struct that is not exactly one place has no source
-        // spelling; cells counted from a struct pointer would read back as
-        // a count of structs.
-        if parameter.array_element_width().is_none()
-            && !parameter.is_struct_value()
-            && (parameter.pointee_struct_layout().is_some() || parameter.struct_layout().is_some())
+    if let Some((_, base_index)) = parameter_relative_base(range, parameters, arguments) {
+        let (start, end) = parameter_relative_endpoints(&base_index, range);
+        if bitvector_is_source_spelled(&start, parameters, arguments)
+            && bitvector_is_source_spelled(&end, parameters, arguments)
         {
-            continue;
+            return Some(describe_memory_range(range, parameters, arguments));
         }
-        let Some(base_index) = diagnostic_pointer_element_index_from_base(
-            range.base(),
-            base,
-            diagnostic_parameter_element_width(parameter),
-        ) else {
-            continue;
-        };
-        let start = bitvector32_add(base_index.clone(), range.start().clone());
-        let end = bitvector32_add(base_index, range.end().clone());
-        if !bitvector_is_source_spelled(&start, parameters, arguments)
-            || !bitvector_is_source_spelled(&end, parameters, arguments)
-        {
-            continue;
-        }
-        return Some(format!(
-            "{}[{}..{}]",
-            parameter.name(),
-            describe_bitvector_with_context(&start, parameters, arguments),
-            describe_bitvector_with_context(&end, parameters, arguments)
-        ));
     }
     if range.base().offset != PointerOffsetTerm::Constant(0)
         || !bitvector_is_source_spelled(range.start(), parameters, arguments)
@@ -3970,6 +4102,21 @@ fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
 }
 
 pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter) -> i64 {
+    if let Some(width) = parameter.array_element_width() {
+        return i64::from(width);
+    }
+    if let Some(layout) = parameter.pointee_struct_layout() {
+        return i64::from(layout.size_bytes());
+    }
+    if !parameter.is_struct_value()
+        && parameter
+            .c_type()
+            .pointee_type()
+            .is_some_and(|pointee| !pointee.is_pointer())
+        && let Some(layout) = parameter.struct_layout()
+    {
+        return i64::from(layout.size_bytes());
+    }
     // A pointer to (or array of) one scalar type is indexed by that scalar's
     // width, whatever the pointer itself occupies.
     if let Some(width) = scalar_element_width(parameter.c_type()) {
@@ -4206,7 +4353,10 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             start: ContractExpression::CFragment(CExpression::Value(start)),
             end: ContractExpression::CFragment(CExpression::Value(end)),
         } if *start == int32(0) && *end == int32(1) => describe_c_expression(place),
-        ContractSegmentSurface::Range { base, start, end } => {
+        ContractSegmentSurface::Range { base, start, end }
+        | ContractSegmentSurface::StructRange {
+            base, start, end, ..
+        } => {
             let rendered_base = describe_contract_expression(base);
             let (start, end) = (
                 describe_contract_expression(start),
@@ -4325,6 +4475,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             describe_c_expression(else_branch)
         ),
         CExpression::AddressOf(target) => format!("&{}", describe_c_expression(target)),
+        CExpression::CheckedObjectAddress(target) => {
+            format!("address of live object `{}`", describe_c_expression(target))
+        }
         CExpression::PointerOffsetBytes { pointer, bytes } => {
             format!("byte_offset({}, {bytes})", describe_c_expression(pointer))
         }

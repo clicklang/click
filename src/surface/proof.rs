@@ -1607,18 +1607,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         predicate_environment,
         click_function_environment,
     )?;
-    let has_loop = function_block
-        .structural_clauses()
-        .iter()
-        .any(|clause| matches!(clause.region(), CodeRegion::Loop(_)))
-        || function_block
-            .grouped_proof()
-            .is_some_and(proof_contains_frontier_loop);
-    let include_owned_composite_cores = Some(if has_loop {
-        resources::OwnedCores::InstanceArmsStanding
-    } else {
-        resources::OwnedCores::AttachedToOwner
-    });
+    let include_owned_composite_cores = Some(resources::OwnedCores::AttachedToOwner);
     let mut projection_state = state.clone();
     for iteration in 0..=function_block.requires().len() {
         if iteration > 0
@@ -2524,63 +2513,6 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::PredicateCall { .. } => false,
-    }
-}
-
-pub(super) fn proof_contains_frontier_loop(proof: &SourceProof) -> bool {
-    proof
-        .tactics()
-        .is_some_and(|tactics| tactics.iter().any(tactic_contains_frontier_loop))
-}
-
-/// Whether a loop appears anywhere a checked execution can reach it.
-///
-/// Every proof form that carries nested tactics is walked, because the entry
-/// projection this answers for is the one the whole claim starts from: a
-/// ranked loop inside a proof `match` arm needs the same entry read authority
-/// as one written flat (A26, gap 56). Missing a nesting form leaves the
-/// checked execution starting at a state the contract cannot be rebased onto.
-fn tactic_contains_frontier_loop(tactic: &ProofTactic) -> bool {
-    match tactic {
-        ProofTactic::Loop(_) => true,
-        ProofTactic::Have(have) => proof_contains_frontier_loop(&have.proof),
-        ProofTactic::Open(open) => open.tactics.iter().any(tactic_contains_frontier_loop),
-        ProofTactic::CloseInvariantsBy(tactics) => {
-            tactics.iter().any(tactic_contains_frontier_loop)
-        }
-        ProofTactic::If(proof_if) => proof_if
-            .then_tactics
-            .iter()
-            .chain(&proof_if.else_tactics)
-            .any(tactic_contains_frontier_loop),
-        ProofTactic::Branch(proof_branch) => proof_branch
-            .then_tactics
-            .iter()
-            .chain(&proof_branch.else_tactics)
-            .any(tactic_contains_frontier_loop),
-        ProofTactic::CallOutcomes(outcomes) => outcomes
-            .returned_tactics
-            .iter()
-            .chain(&outcomes.threw_tactics)
-            .any(tactic_contains_frontier_loop),
-        ProofTactic::Both(both) => both
-            .left_tactics
-            .iter()
-            .chain(&both.right_tactics)
-            .any(tactic_contains_frontier_loop),
-        ProofTactic::Cases(cases) => cases
-            .arms()
-            .iter()
-            .flat_map(|arm| arm.tactics())
-            .any(tactic_contains_frontier_loop),
-        ProofTactic::Match(proof_match) => proof_match
-            .arms
-            .iter()
-            .any(|arm| arm.tactics.iter().any(tactic_contains_frontier_loop)),
-        ProofTactic::StructuralInduct { arms, .. } => arms
-            .iter()
-            .any(|arm| arm.tactics.iter().any(tactic_contains_frontier_loop)),
-        _ => false,
     }
 }
 

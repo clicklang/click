@@ -56,13 +56,13 @@ int32 bubble_pass3(int32 p[3]) {
                 step();
                 step();
                 step();
-                have p[j] <= p[j + 1] by { simp(); }
+                have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
                     simp();
                 }
             } else {
-                have p[j] <= p[j + 1] by { simp(); }
+                have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
                     simp();

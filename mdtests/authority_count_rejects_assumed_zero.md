@@ -29,5 +29,5 @@ void assumed_zero(struct object* obj) {
 ```
 
 ```expect
-fail: `have count(reference(obj)) == 0` did not close its checked nested goal
+fail: could not establish `count(reference(obj)) == 0`
 ```

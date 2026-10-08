@@ -36,7 +36,7 @@ tactic check_first(p: struct pr*) {
     requires p->a == 1;
     ensures 1 == 1;
 } by {
-    have 1 == 1 by { simp(); }
+    have 1 == 1;
 }
 
 void user(struct pr* p) {

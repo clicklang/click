@@ -1066,21 +1066,21 @@ fn pinned_std_span_size_preserves_full_width_extent_offline() {
     );
     let source = r#"verifying "span-probe.cpp";
 uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- owns this->_M_extent_value;
+ views this->_M_extent_value;
  ensures result == this->_M_extent_value;
  ensures this->_M_extent_value == old(this->_M_extent_value);
 } by { execute(); simp(); }
 uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- owns this->_M_extent._M_extent_value;
+ views this->_M_extent._M_extent_value;
  ensures result == this->_M_extent._M_extent_value;
  ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
 } by { execute(); simp(); }
 uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- owns span._M_extent._M_extent_value;
+ views span._M_extent._M_extent_value;
  requires span._M_extent._M_extent_value == 18446744073709551615u64;
  ensures result == 18446744073709551615u64;
  ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
-} by { execute(); rewrite(span._M_extent._M_extent_value == 18446744073709551615u64); simp(); }
+} by { execute(); simp(); }
 "#;
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
@@ -1099,7 +1099,7 @@ uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
-    let hostile = source.replace(" owns span._M_extent._M_extent_value;", "");
+    let hostile = source.replace(" views span._M_extent._M_extent_value;", "");
     let rejected = read_click_project(&path, &hostile).unwrap();
     assert!(verify_program_prepared_project(&rejected, &import).is_err());
     fs::remove_dir_all(root).unwrap();
@@ -1180,12 +1180,12 @@ fn pinned_std_span_data_preserves_pointer_identity_without_backing_authority_off
     );
     let source = r#"verifying "span-probe.cpp";
 int32* span__int__value_unsigned_long_18446744073709551615_data(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- owns this->_M_ptr;
+ views this->_M_ptr;
  ensures result == this->_M_ptr;
  ensures this->_M_ptr == old(this->_M_ptr);
 } by { execute(); simp(); }
 int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- owns span._M_ptr;
+ views span._M_ptr;
  ensures result == span._M_ptr;
  ensures span._M_ptr == old(span._M_ptr);
 } by { execute(); simp(); }
@@ -1207,11 +1207,70 @@ int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
-    let hostile = source.replace(" owns span._M_ptr;", "");
+    let hostile = source.replace(" views span._M_ptr;", "");
     assert!(
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
             .is_err()
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_std_span_trivial_assignment_copies_nested_descriptor_offline() {
+    let (root, import) = pinned_span_fixture(
+        "copy-assignment",
+        "#include <span.h>\nint probe(std::span<int>& target, const std::span<int>& source) { target = source; return 0; }\n",
+    );
+    assert!(import.export().reachable_functions.is_empty());
+    let source = r#"verifying "span-probe.cpp";
+int32 probe(struct span__int__value_unsigned_long_18446744073709551615& target, const struct span__int__value_unsigned_long_18446744073709551615& source) {
+ owns target._M_ptr;
+ owns target._M_extent._M_extent_value;
+ views source._M_ptr;
+ views source._M_extent._M_extent_value;
+ ensures result == 0;
+ ensures target._M_ptr == source._M_ptr;
+ ensures target._M_extent._M_extent_value == source._M_extent._M_extent_value;
+ ensures source._M_ptr == old(source._M_ptr);
+ ensures source._M_extent._M_extent_value == old(source._M_extent._M_extent_value);
+} by { execute(); simp(); }
+"#;
+    let path = root.join("span.click");
+    fs::write(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&project, &import).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&project, &import, "probe.contract")
+            .unwrap();
+    let rewritten = project.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&rewritten, &import, "probe.contract", 0)
+            .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    for hostile in [
+        source.replace(" views source._M_ptr;", ""),
+        source.replace(" owns target._M_extent._M_extent_value;", ""),
+        source.replace(" owns target._M_ptr;", " views target._M_ptr;"),
+        source.replace("ensures result == 0;", "ensures result == 1;"),
+        source.replace(
+            "ensures target._M_ptr == source._M_ptr;",
+            "ensures target._M_ptr != source._M_ptr;",
+        ),
+        source.replace(
+            "ensures target._M_extent._M_extent_value == source._M_extent._M_extent_value;",
+            "ensures target._M_extent._M_extent_value != source._M_extent._M_extent_value;",
+        ),
+    ] {
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
     fs::remove_dir_all(root).unwrap();
 }
 

@@ -24,6 +24,7 @@ pub(in crate::surface) fn c_expression_uses_variable(
                 || c_expression_uses_variable(else_branch, variable)
         }
         CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression)
         | CExpression::Load(expression)
@@ -1577,7 +1578,10 @@ fn validate_recursive_calls_in_segment(
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
     let expressions = match &segment.surface {
-        ContractSegmentSurface::Range { base, start, end } => vec![base, start, end],
+        ContractSegmentSurface::Range { base, start, end }
+        | ContractSegmentSurface::StructRange {
+            base, start, end, ..
+        } => vec![base, start, end],
         ContractSegmentSurface::Field { .. } | ContractSegmentSurface::Object(_) => Vec::new(),
     };
     for expression in expressions {

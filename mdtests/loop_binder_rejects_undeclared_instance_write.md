@@ -1,10 +1,10 @@
 # A loop body cannot write through an instance the loop withheld
 
 The function holds two counters. The loop declares only `owns c: counter(p);`,
-so `d` stays with the enclosing frame and the cell it owns is neither the
-loop's to read nor the loop's to write. The body's access to `q->value` fails
-for want of that authority: all the body holds is the instance the header
-named.
+so `d` stays with the enclosing frame. The body may read what the frame
+withheld, as it may read any resource it views, but the cell `d` owns is not
+the loop's to write. The body's store to `q->value` fails for want of that
+authority: all the body owns is the instance the header named.
 
 ```c filename=loop_binder_rejects_undeclared_instance_write.c
 struct cell { int32 value; };
@@ -13,7 +13,7 @@ void bump_other(struct cell* p, struct cell* q, int32 n) {
     int32 i;
     i = 0;
     while (i < n) {
-        q->value = q->value + 1;
+        q->value = 7;
         i = i + 1;
     }
 }

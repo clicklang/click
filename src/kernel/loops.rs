@@ -2699,12 +2699,24 @@ fn c_loop_state_components_match_at_back_edge_inner(
     {
         changed.push("heap allocation lifetime");
     }
+    // The read authority an owned instance publishes is an observation of
+    // that instance, which the head derives again on every visit. Ownership
+    // is what a back edge has to return, so the two contexts are compared
+    // without it.
+    let top_resources = top_state
+        .resources()
+        .clone()
+        .without_owned_instance_read_views();
+    let next_resources = next_state
+        .resources()
+        .clone()
+        .without_owned_instance_read_views();
     if !crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(
         composite_resource_definitions,
         top_state.memory(),
-        top_state.resources(),
+        &top_resources,
         next_state.memory(),
-        next_state.resources(),
+        &next_resources,
         assumptions,
     ) {
         changed.push("resource ownership");
@@ -6943,6 +6955,36 @@ pub(super) fn prepare_loop_top_state(
         assumptions,
         budget,
     )?;
+    // The loop's exit outcome is `top`. Holding an instance lets C read the
+    // cells of the arm its model selects, and after the loop the invariants
+    // are what select it, so `top` carries those views too: attached to the
+    // owned instance, so that they leave the head only with their owner and
+    // retire with it.
+    let guard_state = with_selected_arm_views_attached(
+        guard_state,
+        &top_state,
+        invariant_checks,
+        definitions,
+        assumptions,
+        budget,
+    )?;
+    let body_state = with_selected_arm_views_attached(
+        body_state,
+        &top_state,
+        invariant_checks,
+        definitions,
+        assumptions,
+        budget,
+    )?;
+    let premise_state = top_state.clone();
+    let top_state = with_selected_arm_views_attached(
+        top_state,
+        &premise_state,
+        invariant_checks,
+        definitions,
+        assumptions,
+        budget,
+    )?;
     Ok(CLoopHead {
         top: top_state,
         body: body_state,
@@ -6951,6 +6993,96 @@ pub(super) fn prepare_loop_top_state(
         summaries,
         resource_failures,
         effect_checks,
+    })
+}
+
+/// `state` with the cells of each owned instance's selected arm published as
+/// views attached to that instance, under this loop's invariants.
+///
+/// The decision is the one [`with_selected_arm_views`] makes; only the form
+/// differs. A view attached to its owner retires when the owner is unfolded,
+/// consumed or freed, so it may outlive the loop head where a free-standing
+/// one may not. Cost is one pass over the instances the state holds, as the
+/// free-standing publication is.
+fn with_selected_arm_views_attached(
+    state: CState,
+    premise_state: &CState,
+    invariant_checks: &[CLoopInvariantCheck],
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<CState> {
+    if definitions.is_empty() {
+        return Ok(state);
+    }
+    let contexts = assume_invariant_checks(
+        premise_state,
+        premise_state,
+        invariant_checks,
+        assumptions,
+        &[],
+        &[],
+        budget,
+    )?;
+    let [(facts, obligations, _)] = contexts.as_slice() else {
+        return Ok(state);
+    };
+    let head_assumptions = assumptions_with_path_context(assumptions, facts, obligations);
+    let decided = crate::kernel::publish_instance_arms(
+        state.resources(),
+        definitions,
+        &state,
+        &head_assumptions,
+    )
+    .model_facts
+    .into_iter()
+    .fold(head_assumptions, PureFactContext::assume_proposition);
+    let owners = state
+        .resources()
+        .facts()
+        .iter()
+        .filter(|fact| matches!(fact, CResourceFact::Own(CResource::Instance(_), _)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut resources = state.resources().clone();
+    let mut changed = false;
+    for owner in owners {
+        crate::instrumentation::record_deterministic_work(1);
+        let CResource::Instance(instance) = owner.resource() else {
+            continue;
+        };
+        let Some((occurrence, _)) = resources.unique_owned_occurrence_for_fact(&owner) else {
+            continue;
+        };
+        // A matched body publishes its selected arm; a plain body publishes
+        // its own cells.
+        let views =
+            super::functions::instance_arm_read_authority(instance, definitions, &state, &decided)
+                .into_iter()
+                .chain(crate::kernel::unmatched_instance_body_views(
+                    &owner,
+                    definitions,
+                    &state,
+                    &decided,
+                ))
+                .filter(|view| view.memory_view_range().is_some())
+                .filter(|view| !resources.contains_exact_representation(view))
+                .collect::<Vec<_>>();
+        if views.is_empty() {
+            continue;
+        }
+        resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
+            occurrence,
+            &owner,
+            views,
+            state.memory(),
+        );
+        changed = true;
+    }
+    Ok(if changed {
+        state.with_resource_context(resources)
+    } else {
+        state
     })
 }
 
@@ -7065,9 +7197,8 @@ fn loop_declared_and_withheld_resources(
 /// claim to it.
 ///
 /// A resource without fields is expanded one level. A resource with fields
-/// is left as it is: its arm is selected by facts that hold at the loop's
-/// exit, and its read authority is not attached to it in a proof with a
-/// loop. Cost is each declared owner's own clauses.
+/// is left to [`with_selected_arm_views_attached`], which needs the loop's
+/// invariants to select its arm. Cost is each declared owner's own clauses.
 fn with_owner_read_authority_rederived(
     mut resources: ResourceContext,
     declared: &[CResourceFact],
@@ -9207,7 +9338,9 @@ pub(super) fn collect_address_taken_in_expression(
     match expression {
         // `&target`: any local reachable in the target may have its address
         // escape, so conservatively record every variable it mentions.
-        CExpression::AddressOf(target) => collect_variable_names(target, names),
+        CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+            collect_variable_names(target, names)
+        }
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Cast { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
@@ -9283,9 +9416,10 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
             collect_variable_names(expression, names)
         }
         CExpression::PointerOffsetBytes { pointer, .. } => collect_variable_names(pointer, names),
-        CExpression::AddressOf(inner) | CExpression::Not(inner) | CExpression::Load(inner) => {
-            collect_variable_names(inner, names)
-        }
+        CExpression::AddressOf(inner)
+        | CExpression::CheckedObjectAddress(inner)
+        | CExpression::Not(inner)
+        | CExpression::Load(inner) => collect_variable_names(inner, names),
         CExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
         CExpression::LessThan(left, right)
         | CExpression::LessEqual(left, right)

@@ -239,12 +239,24 @@ for that storage. Returning an alias grants no new ownership or write authority.
 Reference and pointer results remain distinct during signature checking, and
 const qualification is preserved through modular calls and result temporaries.
 
-The initial result profile returns existing integer reference parameters,
-including direct call forwarding. Binding a new reference through a raw pointer,
-returning a local object, and reference-valued locals remain unsupported.
-Raw-pointer binding needs a live-object check: ordinary pointer formation also
-permits one-past addresses, which cannot denote reference referents. No implicit
-pointee load stands in for that missing check.
+The result profile returns existing integer reference parameters, including
+direct call forwarding, and binds references through supported integer pointer
+dereferences. New bindings use the shared kernel's checked object address:
+the complete referent must occupy live storage, excluding null, expired and
+one-past addresses. This check neither reads nor initializes the referent and
+grants no access authority. Automatic `int&` and `const int&` locals can bind
+existing references, supported pointer dereferences, and direct calls with
+matching native reference results. Assignment through a mutable reference local
+writes its referent; it does not rebind the alias. Ending the local binding does
+not end the backing object's lifetime. References to local objects, temporary
+lifetime extension, rvalue references and nested reference declarations remain
+unsupported.
+
+A proof names a reference local as it names a reference parameter. For
+`int& r = value;`, `r` is the referent, as in `have r == 1;`, and `&r` is its
+address, as in `have &r == &value;`. `r[0]` is refused with the spelling to
+write. Binding a reference is not an assignment, so `assignment(r, N)` is
+refused; a store through `r` is selected by its statement.
 
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
@@ -795,6 +807,30 @@ destruction, and no virtual dispatch. Empty tags serve only as type arguments;
 this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
 
+A `do { ... } while (false)` or `do { ... } while (0)` wrapper executes its checked body
+once through the shared conditional model. Only literal false conditions are
+admitted; runtime/repeated loops, break/continue and nested automatic locals
+remain refused. This admits the wrapper shape used by assertion macros without
+assuming their bodies or conditions.
+
+Return values and ordinary `if` conditions may contain direct, nonthrowing
+scalar observer calls inside supported arithmetic, comparisons, pointer offsets
+and reference-address formation. The normal-only profile requires every such
+callee, including nested argument calls, to verify with `views` permissions
+only. Ownership transfer and resource construction are refused. A final
+unchanged-value claim alone does not qualify an observer: writes followed by
+restoration still fail under views. Native `const` is not a substitute for this
+proof.
+
+These calls reuse the scalar-call normalizer and modular contracts. Read-only
+permissions establish that unsequenced operands cannot interfere; short-circuit
+`&&` places the right operand's call prefix inside the conditional branch, so
+an unevaluated operand needs no read permission. Assignment, local initialization,
+constructor arguments and other expression-call contexts remain unsupported.
+Ordinary, expanded and retained proofs cover symbolic field reads, nested
+arguments, signed widening and short-circuit permissions; false claims, writes,
+owning contracts and forged call identities/types/spans are refused.
+
 An ordinary `if` can use a direct Boolean free-function or method call as its
 whole condition. The artifact keeps this effectful call separate from pure
 expressions. The shared scalar-call normalizer evaluates its bounded arguments
@@ -987,13 +1023,23 @@ Explicit casts, automatic derived objects and base constructor/destructor
 execution remain unsupported. Multiple or virtual bases, empty bases, own
 derived fields and tail-padding reuse remain outside this profile.
 
-Copies and moves, default or partial aggregate initialization, multiple
+Discarded-result trivial copy assignment between live lvalues of the same
+nominal record lowers to shared C aggregate field copies. Clang must resolve a
+non-deleted, non-virtual trivial copy assignment; the record and embedded
+records require trivial destruction and no base subobjects. Const sources and
+nested record projections are supported. The destination requires write
+authority and the source requires read authority for every scalar leaf. Checked
+Clang layouts preserve native pointer and unsigned extent values; copying a
+descriptor transfers no backing-storage authority. Self-assignment preserves
+the fields. User-defined assignment bodies and move assignment remain refused.
+
+Copy construction and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
 virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
-Uninitialized or nested scalar locals, local references, shadowing,
-address-taking other than a current mutable reference parameter for a supported
-pointer call, pointer locals, pointer arithmetic, null pointers, multiple
+Uninitialized or nested scalar locals, references to local objects, shadowing,
+broader address-taking, pointer locals, pointer arithmetic outside the supported
+indexed `int*` slice, null pointers, multiple
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
 indirect calls, loops,

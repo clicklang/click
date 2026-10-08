@@ -162,142 +162,167 @@ pub(super) fn prove_ensure_resource<'e>(
     guard_active: Option<bool>,
     guard_deferred: bool,
 ) -> Result<CheckedResourceClaim<'e>, ClickError> {
-    // Post-return resource folds can extend the checked path before final
-    // contract certification. Its typed outcome Proof supplies the returning
-    // state checked below; the original artifact supplies stable path identity.
-    if checked_execution.paths().get(path_index).is_none() {
-        return Err(ClickError::new(
-            "resource claim has no checked execution path",
-        ));
-    }
-    let CFunctionOutcome::Return {
-        value: result,
-        state: post_state,
-    } = outcome
-    else {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` failed on path {path_index}: {}\n{}",
-            describe_function_outcome(outcome, parameters, arguments),
-            describe_proof_context(
+    let mut requirement = None;
+    let checked = (|| {
+        // Post-return resource folds can extend the checked path before final
+        // contract certification. Its typed outcome Proof supplies the returning
+        // state checked below; the original artifact supplies stable path identity.
+        if checked_execution.paths().get(path_index).is_none() {
+            return Err(ClickError::new(
+                "resource claim has no checked execution path",
+            ));
+        }
+        let CFunctionOutcome::Return {
+            value: result,
+            state: post_state,
+        } = outcome
+        else {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` failed on path {path_index}: {}\n{}",
+                describe_function_outcome(outcome, parameters, arguments),
+                describe_proof_context(
+                    &available_pure_facts
+                        .propositions()
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    pre_state.resources().facts(),
+                    parameters,
+                    arguments,
+                    execution_pure_facts
+                )
+            )));
+        };
+        if guard_deferred {
+            return Ok(CheckedResourceClaim::deferred(
+                checked_execution,
+                path_index,
+                claim_key,
+                borrowed,
+            ));
+        }
+        if guard_active == Some(false) {
+            return Ok(CheckedResourceClaim::inactive(
+                checked_execution,
+                path_index,
+                claim_key,
+                borrowed,
+            ));
+        }
+        // A borrowed resource is returned as it was lent: its clause is read at
+        // entry, where address expressions still see the caller's values.
+        let clause_state = if borrowed && !matches!(resource, ResourceClause::Named { .. }) {
+            pre_state
+        } else {
+            post_state
+        };
+        let assumptions = assumptions_from_propositions(available_pure_facts);
+        let lower_at = |clause_state: &CState| {
+            lower_resource_clause_facts_at_state_with_result_and_entry(
+                resource,
+                parameters,
+                arguments,
+                entry_state,
+                clause_state,
+                result,
+                &assumptions,
+            )
+        };
+        let expected = match lower_at(clause_state) {
+            Ok(expected) => expected,
+            Err(error) => {
+                // A clause whose argument loads a cell inside a folded
+                // field-bearing instance the function holds at this state reads
+                // it through the cells that instance's unmatched body owns, as
+                // the contract's clauses do everywhere else they are evaluated.
+                // Views grant reads only; nothing is opened.
+                let definitions = checked_execution
+                    .function()
+                    .composite_resource_definitions();
+                let published = clause_state
+                    .resources()
+                    .facts()
+                    .iter()
+                    .flat_map(|fact| {
+                        crate::kernel::unmatched_instance_body_views(
+                            fact,
+                            definitions,
+                            clause_state,
+                            &assumptions,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if published.is_empty() {
+                    return Err(error);
+                }
+                let published_state = clause_state.clone().with_resource_context(
+                    clause_state
+                        .resources()
+                        .clone()
+                        .unchecked_with_facts(published),
+                );
+                lower_at(&published_state).map_err(|_| error)?
+            }
+        };
+        if expected.iter().all(|expected| {
+            post_state
+                .resources()
+                .satisfies_fact(expected, &assumptions)
+        }) {
+            return Ok(CheckedResourceClaim {
+                execution: checked_execution,
+                path_index,
+                key: claim_key,
+                returned_resources: crate::kernel::ResourceContext::new_with_equalities(
+                    &assumptions,
+                )
+                .unchecked_with_facts(expected.iter().cloned()),
+                borrowed,
+                deferred_guard: false,
+            });
+        }
+        let expected = expected
+            .iter()
+            .find(|expected| {
+                !post_state
+                    .resources()
+                    .satisfies_fact(expected, &assumptions)
+            })
+            .expect("resource ensure has an unsatisfied fact");
+        if matches!(
+            resource,
+            ResourceClause::OwnMemory(_)
+                | ResourceClause::ViewMemory(_)
+                | ResourceClause::MemoryAggregate { .. }
+        ) {
+            requirement = Some(describe_resource_fact(expected, parameters, arguments));
+        }
+        Err(ClickError::new(format!(
+            "`{claim_label}` failed on path {path_index}: {}",
+            describe_missing_resource_fact(
+                expected,
                 &available_pure_facts
                     .propositions()
                     .cloned()
                     .collect::<Vec<_>>(),
-                pre_state.resources().facts(),
+                post_state.resources().facts(),
                 parameters,
                 arguments,
                 execution_pure_facts
             )
-        )));
-    };
-    if guard_deferred {
-        return Ok(CheckedResourceClaim::deferred(
-            checked_execution,
-            path_index,
-            claim_key,
-            borrowed,
-        ));
-    }
-    if guard_active == Some(false) {
-        return Ok(CheckedResourceClaim::inactive(
-            checked_execution,
-            path_index,
-            claim_key,
-            borrowed,
-        ));
-    }
-    // A borrowed resource is returned as it was lent: its clause is read at
-    // entry, where address expressions still see the caller's values.
-    let clause_state = if borrowed && !matches!(resource, ResourceClause::Named { .. }) {
-        pre_state
-    } else {
-        post_state
-    };
-    let assumptions = assumptions_from_propositions(available_pure_facts);
-    let lower_at = |clause_state: &CState| {
-        lower_resource_clause_facts_at_state_with_result_and_entry(
-            resource,
-            parameters,
-            arguments,
-            entry_state,
-            clause_state,
-            result,
-            &assumptions,
-        )
-    };
-    let expected = match lower_at(clause_state) {
-        Ok(expected) => expected,
-        Err(error) => {
-            // A clause whose argument loads a cell inside a folded
-            // field-bearing instance the function holds at this state reads
-            // it through the cells that instance's unmatched body owns, as
-            // the contract's clauses do everywhere else they are evaluated.
-            // Views grant reads only; nothing is opened.
-            let definitions = checked_execution
-                .function()
-                .composite_resource_definitions();
-            let published = clause_state
-                .resources()
-                .facts()
-                .iter()
-                .flat_map(|fact| {
-                    crate::kernel::unmatched_instance_body_views(
-                        fact,
-                        definitions,
-                        clause_state,
-                        &assumptions,
-                    )
-                })
-                .collect::<Vec<_>>();
-            if published.is_empty() {
-                return Err(error);
-            }
-            let published_state = clause_state.clone().with_resource_context(
-                clause_state
-                    .resources()
-                    .clone()
-                    .unchecked_with_facts(published),
-            );
-            lower_at(&published_state).map_err(|_| error)?
+        )))
+    })();
+    checked.map_err(|error: ClickError| {
+        if borrowed {
+            error
+        } else {
+            let requirement = requirement
+                .unwrap_or_else(|| crate::surface::validation::describe_resource_clause(resource));
+            ClickError::new(format!(
+                "{}\nRequires produces {requirement}",
+                error.raw_summary()
+            ))
         }
-    };
-    if expected.iter().all(|expected| {
-        post_state
-            .resources()
-            .satisfies_fact(expected, &assumptions)
-    }) {
-        return Ok(CheckedResourceClaim {
-            execution: checked_execution,
-            path_index,
-            key: claim_key,
-            returned_resources: crate::kernel::ResourceContext::new_with_equalities(&assumptions)
-                .unchecked_with_facts(expected.iter().cloned()),
-            borrowed,
-            deferred_guard: false,
-        });
-    }
-    let expected = expected
-        .iter()
-        .find(|expected| {
-            !post_state
-                .resources()
-                .satisfies_fact(expected, &assumptions)
-        })
-        .expect("resource ensure has an unsatisfied fact");
-    Err(ClickError::new(format!(
-        "`{claim_label}` failed on path {path_index}: {}",
-        describe_missing_resource_fact(
-            expected,
-            &available_pure_facts
-                .propositions()
-                .cloned()
-                .collect::<Vec<_>>(),
-            post_state.resources().facts(),
-            parameters,
-            arguments,
-            execution_pure_facts
-        )
-    )))
+    })
 }
 
 pub(super) fn evaluate_witness_tactic_value(

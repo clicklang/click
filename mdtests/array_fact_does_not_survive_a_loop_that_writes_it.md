@@ -32,7 +32,7 @@ void wipe(int32 a[], int32 n) {
     produces a[0..n];
 } by {
     step();
-    have 0 <= 0 by { simp(); }
+    have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
@@ -55,7 +55,7 @@ void wipe(int32 a[], int32 n) {
             close_invariants();
         }
     }
-    have icount(a, 0, 1) == 5 by { simp(); }
+    have icount(a, 0, 1) == 5;
     execute();
     simp();
 }

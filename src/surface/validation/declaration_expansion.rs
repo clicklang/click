@@ -1151,22 +1151,48 @@ fn expand_declared_resource_tactic_with_plain_scripts(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
-    let expand = |tactics: Vec<ProofTactic>| {
-        tactics
-            .into_iter()
-            .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-            .collect::<Result<Vec<_>, ClickError>>()
-    };
-    match tactic {
-        ProofTactic::Both(proof_both) => Ok(ProofTactic::Both(ProofBoth {
-            left_tactics: expand(proof_both.left_tactics)?,
-            right_tactics: expand(proof_both.right_tactics)?,
-        })),
-        ProofTactic::CloseInvariantsBy(tactics) => {
-            Ok(ProofTactic::CloseInvariantsBy(expand(tactics)?))
-        }
-        _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
+    enum Frame {
+        Visit(ProofTactic),
+        Both { left: usize, right: usize },
+        Close { count: usize },
     }
+    let mut pending = vec![Frame::Visit(tactic)];
+    let mut expanded = Vec::new();
+    while let Some(frame) = pending.pop() {
+        match frame {
+            Frame::Visit(ProofTactic::Both(both)) => {
+                pending.push(Frame::Both {
+                    left: both.left_tactics.len(),
+                    right: both.right_tactics.len(),
+                });
+                pending.extend(both.right_tactics.into_iter().rev().map(Frame::Visit));
+                pending.extend(both.left_tactics.into_iter().rev().map(Frame::Visit));
+            }
+            Frame::Visit(ProofTactic::CloseInvariantsBy(tactics)) => {
+                pending.push(Frame::Close {
+                    count: tactics.len(),
+                });
+                pending.extend(tactics.into_iter().rev().map(Frame::Visit));
+            }
+            Frame::Visit(tactic) => expanded.push(expand_declared_resource_tactic(
+                tactic,
+                resource_definitions,
+            )?),
+            Frame::Both { left, right } => {
+                let right_tactics = expanded.split_off(expanded.len() - right);
+                let left_tactics = expanded.split_off(expanded.len() - left);
+                expanded.push(ProofTactic::Both(ProofBoth {
+                    left_tactics,
+                    right_tactics,
+                }));
+            }
+            Frame::Close { count } => {
+                let tactics = expanded.split_off(expanded.len() - count);
+                expanded.push(ProofTactic::CloseInvariantsBy(tactics));
+            }
+        }
+    }
+    Ok(expanded.pop().expect("a plain script expansion has a root"))
 }
 
 #[inline(never)]

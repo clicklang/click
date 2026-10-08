@@ -54,7 +54,7 @@ void caller(int32 a[], int32 n) {
     owns vecbox(a, n);
 } by {
     unfold(vecbox(a, n));
-    have 0 <= 0 by { simp(); }
+    have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         peel(icount(a, 0, 0)) using { 0 <= 0; }
         normalize();
@@ -66,7 +66,7 @@ void caller(int32 a[], int32 n) {
     }
     fold(vecbox(a, n));
     step();
-    have icount(a, 0, 1) == 5 by { simp(); }
+    have icount(a, 0, 1) == 5;
     execute();
     simp();
 }

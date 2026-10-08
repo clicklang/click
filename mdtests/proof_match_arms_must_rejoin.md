@@ -47,7 +47,7 @@ int32 peek(struct cell* node) {
             unfold(c);
         },
         Sign::Pos(value) => {
-            have value < 0 or value >= 0 by { simp(); }
+            have value < 0 or value >= 0;
         },
     }
     step();

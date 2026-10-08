@@ -1,6 +1,6 @@
 verifying "accumulator.rs";
 
-void update(struct Accumulator* state, uint8 byte) {
+fn update(state: &mut Accumulator, byte: u8) {
     requires state->a == 65520;
     requires state->b == 65520;
     requires byte == 255;
@@ -10,19 +10,19 @@ void update(struct Accumulator* state, uint8 byte) {
     ensures state->b == 253;
 } by { execute(); simp(); }
 
-uint32 widen(const uint16* value) {
+fn widen(value: &u16) -> u32 {
     views value[0..1];
     ensures result == old((uint32)value[0]);
     ensures value[0] == old(value[0]);
 } by { execute(); simp(); }
 
-void bump(uint16* value) {
+fn bump(value: &mut u16) {
     requires value[0] <= 65534;
     owns value[0..1];
     ensures ((uint32)value[0]) == old((uint32)value[0]) + 1u32;
 } by { execute(); simp(); }
 
-void bump_a(struct Accumulator* state) {
+fn bump_a(state: &mut Accumulator) {
     requires state->a <= 65534;
     owns state->a;
     views state->b;

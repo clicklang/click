@@ -472,3 +472,63 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
             .is_err()
     );
 }
+
+#[test]
+fn checked_object_address_accepts_uninitialized_storage_without_reading_it() {
+    let state = normal(CState::new(), c_declare("items", CType::Int32Array(2)));
+    let pointer = c_checked_object_address(c_index(c_variable("items"), c_int32_literal(1)));
+    let address = value(&state, pointer);
+    assert_eq!(address, value(&state, element_address(1)));
+    assert!(matches!(
+        outcome(
+            &state,
+            c_typed_load(CExpression::Value(address), CType::Int32)
+        ),
+        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+    ));
+}
+
+#[test]
+fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserves_it() {
+    let state = normal(CState::new(), c_declare("items", CType::Int32Array(2)));
+    assert!(matches!(
+        outcome(&state, element_address(2)),
+        CExpressionOutcome::Value(CValue::Pointer(_))
+    ));
+    assert!(matches!(
+        outcome(
+            &state,
+            c_checked_object_address(c_index(c_variable("items"), c_int32_literal(2)))
+        ),
+        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+    ));
+    assert!(matches!(
+        outcome(
+            &state,
+            c_checked_object_address(c_typed_load(
+                CExpression::Value(CValue::typed_pointer(Pointer::null(), CType::Int32Pointer)),
+                CType::Int32
+            ))
+        ),
+        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+    ));
+}
+
+#[test]
+fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
+    let state = normal(CState::new(), c_declare("items", CType::Int32Array(2)));
+    let address = value(&state, element_address(0));
+    let CValue::Pointer(pointer) = &address else {
+        unreachable!()
+    };
+    let retired = state
+        .clone()
+        .with_memory(state.memory().without_local_block(&pointer.pointer().block));
+    assert!(matches!(
+        outcome(
+            &retired,
+            c_checked_object_address(c_typed_load(CExpression::Value(address), CType::Int32))
+        ),
+        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+    ));
+}

@@ -917,14 +917,10 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
 pub(super) enum OwnedCores {
     /// Views attached to the exact owned occurrence, retired when the owner
     /// is unfolded, consumed or freed, and limited to memory: a child
-    /// resource stays folded. A loop head derives them again for the owners
-    /// it declares (`with_owner_read_authority_rederived` in the kernel).
+    /// resource stays folded. The kernel derives them again wherever it
+    /// makes the owner anew: at a loop head, and at a fold of a resource
+    /// with fields.
     AttachedToOwner,
-    /// As `AttachedToOwner` for a resource without fields. A resource with
-    /// fields gets free-standing views of its selected arm, for a proof that
-    /// contains a loop: the arm is selected by facts that hold at the loop's
-    /// exit, where nothing derives attached views again yet.
-    InstanceArmsStanding,
     /// Free-standing views for every owner, for a temporary state that is
     /// only read from.
     Standing,
@@ -942,11 +938,8 @@ pub(super) fn project_initial_composite_resource_cores(
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<CState, ClickError> {
     let include_owned = owned.is_some();
-    let attach_to_owner = matches!(
-        owned,
-        Some(OwnedCores::AttachedToOwner | OwnedCores::InstanceArmsStanding)
-    );
-    let attach_instance_arms = owned == Some(OwnedCores::AttachedToOwner);
+    let attach_to_owner = owned == Some(OwnedCores::AttachedToOwner);
+    let attach_instance_arms = attach_to_owner;
     let assumptions = assumptions_from_propositions(available_pure_facts);
     for resource in state.resources().facts().to_vec() {
         // A matched instance exposes the arm its section selects, and nothing
@@ -967,9 +960,7 @@ pub(super) fn project_initial_composite_resource_cores(
                 // body spoke about at entry, and an `unfold` after that
                 // store finds the name it was folded at
                 // (`materialize_unfolded_instance_arm_cells`). Holding the
-                // instance lets C read them, by views attached to it; in a
-                // proof with a loop no read authority is granted, since
-                // nothing derives it again at the loop's exit.
+                // instance lets C read them, by views attached to it.
                 if resource.is_own()
                     && let Some(selected) =
                         resource_environment
@@ -5121,6 +5112,17 @@ fn instantiate_contract_segment(
             base: substitute_contract_expression(base, substitutions)?,
             start: substitute_contract_expression(start, substitutions)?,
             end: substitute_contract_expression(end, substitutions)?,
+        },
+        ContractSegmentSurface::StructRange {
+            base,
+            start,
+            end,
+            layout,
+        } => ContractSegmentSurface::StructRange {
+            base: substitute_contract_expression(base, substitutions)?,
+            start: substitute_contract_expression(start, substitutions)?,
+            end: substitute_contract_expression(end, substitutions)?,
+            layout: layout.clone(),
         },
         surface => surface.clone(),
     };
