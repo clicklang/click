@@ -15369,8 +15369,12 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     )),
                     _ => None,
                 };
+                // A closed premise, such as the constant condition left by
+                // a decided argument comparison, settles without the call
+                // context under either semantics.
                 let available = if authority_semantics {
-                    specialized_assumptions.states_required_goal(&premise)
+                    crate::kernel::reasoning::path_facts::solve_builtin_prop(&premise)
+                        || specialized_assumptions.states_required_goal(&premise)
                         || reversed_order.as_ref().is_some_and(|premise| {
                             specialized_assumptions.states_required_goal(premise)
                         })
