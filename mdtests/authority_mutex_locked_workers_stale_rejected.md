@@ -118,5 +118,5 @@ int32 run() {
 ```
 
 ```expect
-fail: `have count(reference(obj)) == 2` did not close its checked nested goal
+fail: could not establish `count(reference(obj)) == 2`
 ```

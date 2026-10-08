@@ -32,7 +32,7 @@ theorem a_wrapped_extent_is_free(v: int32[], n: int32) {
     requires n == 1073741824;
     ensures n >= 0 and viewable(v[0..n]) by {
         have n >= 0 by { arithmetic() using { n == 1073741824; } }
-        have viewable(v[0..n]) by { simp(); }
+        have viewable(v[0..n]);
         assumption();
     }
 }
@@ -41,10 +41,10 @@ theorem a_wrapped_extent_yields_a_cell(v: int32[], n: int32) {
     requires n == 1073741824;
     ensures n >= 0 by {
         have n >= 0 by { arithmetic() using { n == 1073741824; } }
-        have viewable(v[0..n]) by { simp(); }
-        have 0 <= 0 by { simp(); }
+        have viewable(v[0..n]);
+        have 0 <= 0;
         have 0 < n by { arithmetic() using { n == 1073741824; } }
-        have defined(v[0]) by { simp(); }
+        have defined(v[0]);
         assumption();
     }
 }

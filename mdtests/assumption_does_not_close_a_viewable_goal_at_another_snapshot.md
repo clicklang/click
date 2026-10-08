@@ -22,7 +22,7 @@ int32 probe(int32 b[], int32 n) {
     owns b[0..n];
     ensures result == 0;
 } by {
-    have viewable(b[0..n]) by { simp(); }
+    have viewable(b[0..n]);
     step();
     have viewable(b[0..n]) by { assumption(); }
     step();

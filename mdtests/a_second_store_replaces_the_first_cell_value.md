@@ -22,9 +22,9 @@ void mark_twice(int32 a[], int32 n, int32 i) {
     produces a[0..n];
 } by {
     step();
-    have a[i] == 1 by { simp(); }
+    have a[i] == 1;
     step();
-    have a[i] == 1 by { simp(); }
+    have a[i] == 1;
     execute();
     simp();
 }

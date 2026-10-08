@@ -28,7 +28,7 @@ int32 alias_read(struct cell* root) {
     ensures result == old(root->value);
 } by {
     step();
-    have p->value == root->value by { simp(); }
+    have p->value == root->value;
     step();
     step();
     simp();

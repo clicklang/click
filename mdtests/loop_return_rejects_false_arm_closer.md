@@ -49,5 +49,5 @@ int32 f(int32 n) {
 ```
 
 ```expect
-fail: checked outcome `have` search did not retain a complete proof
+fail: could not establish `result == 5`
 ```

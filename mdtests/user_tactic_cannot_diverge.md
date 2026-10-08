@@ -33,7 +33,7 @@ resource second(p: struct pr*) {
 tactic forever(p: struct pr*) diverges {
     owns x: both(p);
 } by {
-    have 1 == 1 by { simp(); }
+    have 1 == 1;
 }
 
 void user(struct pr* p) {

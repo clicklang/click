@@ -48,7 +48,7 @@ void v4() {
     step();
     step();
     step();
-    have q[0] == 5 by { simp(); }
+    have q[0] == 5;
     execute();
     simp();
 }

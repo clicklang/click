@@ -39,14 +39,14 @@ void probe(struct node *p, struct node *q, struct node *value) {
         Tag::Top => {
             unfold(a);
             let b = fold(frame(p), {model: Tag::Top});
-            have p->next == value by { simp(); }
+            have p->next == value;
         },
         Tag::At(id) => {
             unfold(a);
-            have p->next == id->next by { simp(); }
-            have p->next == value by { simp(); }
+            have p->next == id->next;
+            have p->next == value;
             let b = fold(frame(p), {model: Tag::At(id)});
-            have p->next == value by { simp(); }
+            have p->next == value;
         },
     }
     execute(); simp();

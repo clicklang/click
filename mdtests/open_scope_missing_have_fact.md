@@ -20,5 +20,5 @@ void touch(int32* p) {
 ```
 
 ```expect
-fail: Requires p[0] == 0
+fail: could not establish `p[0] == 0`
 ```

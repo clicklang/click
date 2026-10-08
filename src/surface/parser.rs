@@ -227,6 +227,17 @@ fn rust_scalar_type(name: &str) -> Option<C0Type> {
     })
 }
 
+/// `have P by simp;` as the one-step script `have P by { simp(); }`. Out of
+/// line: its caller's frame is on the recursive proof-parsing path.
+#[inline(never)]
+fn have_proof_as_written_in_full(proof: SourceProof) -> SourceProof {
+    if proof == SourceProof::Tactic(SmartTactic::Simp) {
+        SourceProof::Script(vec![ProofTactic::Simp])
+    } else {
+        proof
+    }
+}
+
 fn is_tactic_name(name: &str) -> bool {
     matches!(name, "auto" | "simp")
 }
@@ -6500,7 +6511,7 @@ impl Parser {
                 self.position += 1;
                 return Ok(ProofTactic::Have(ProofHave {
                     proposition,
-                    proof: SourceProof::Tactic(SmartTactic::Simp),
+                    proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Simp)),
                 }));
             }
             let auto_position = self.position;
@@ -6512,7 +6523,13 @@ impl Parser {
                 ));
             }
             self.skip_redundant_semicolon();
-            return Ok(ProofTactic::Have(ProofHave { proposition, proof }));
+            // `have P;`, `have P by simp;` and `have P by { simp(); }` are
+            // one proof step. They are one syntax tree too, so every
+            // consumer proves and reports them the same way.
+            return Ok(ProofTactic::Have(ProofHave {
+                proposition,
+                proof: have_proof_as_written_in_full(proof),
+            }));
         }
         if name == "mark" {
             let mark = self.expect_ident("mark name")?;

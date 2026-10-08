@@ -20,7 +20,7 @@ theorem narrowed_byte_range_owes_its_extent(v: uint8[], lo: int32, n: int32, k: 
     requires lo <= k;
     requires k <= n;
     ensures 0 <= k - lo by {
-        have viewable(v[lo..k]) by { simp(); }
+        have viewable(v[lo..k]);
         apply(stated_byte_range_extent_is_nonnegative(v, lo, k)) using {
             viewable(v[lo..k]);
         }
