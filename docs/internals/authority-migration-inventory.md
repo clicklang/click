@@ -1492,3 +1492,86 @@ population, matching the call-site rule from chunk 1a. Regression:
 `authority_mode_ordinary_exit_refolds_a_consumed_family.md`. This clears the
 four reallocating-box fixtures and
 `grouped_fold_after_simp_closes_definitionally.md` in the trial switch.
+
+#### Chunk 1l: closed ensure premises at calls
+
+The call rule publishes an ensure's consequent once its premise is settled.
+Authority mode accepted only a premise stated in the call context, so a
+premise that lowering had already decided, such as `1 == 0` from a constant
+selector argument, kept the ensure as an implication. Authority mode now also
+accepts a closed premise that the builtin solver settles, as legacy does.
+This needs no context search. Regression:
+`authority_mode_call_discharges_a_constant_ensure_premise.md`. It clears
+`struct_conditional_value.md` in the trial switch.
+
+#### Chunk 1m: views of an ordinary fold's children
+
+A fold consumes the contained children. Under legacy semantics the folded
+head then supports views of those children. Authority mode kept only the
+checked exchange for every family, so a branch interface that viewed a
+child of a freshly folded bundle was rejected. For a family whose kernel
+definition reaches no population, the fold now keeps exactly the child views
+the context already held, supported by the new head. It invents no view, so
+a fold that leaves another unit of the same child beside the head
+(`counted_resource_transfer.md`) is unchanged. Regression:
+`authority_mode_folded_ordinary_composite_supports_child_views.md`. This
+clears `proof_branch_guarded_composite_child.md` in the trial switch.
+
+#### Chunk 1n: legacy exposed population bodies
+
+`resource_population_split_body_survives_view.md` returns `owns *pair` while
+it holds the `wrapper(pair)` that `wrap_pair` produced. Under legacy
+semantics `wrapper` is a counted population whose body stays exposed, so the
+return needs no unfold. Under authority semantics `wrapper` is an ordinary
+family and linear: the caller holds it folded and unfolds it to return the
+object. `authority_resource_split_body_survives_view.md` keeps the fixture's
+property, that a split body stays one body across a viewing call, with the
+explicit unfold. At the switch the legacy fixture's proof gains the same
+`unfold`. Its C is unchanged.
+
+`population_transfer_may_alias_tracked_population_rejected.md` reads
+`count(...)` without authority. It retires at the switch with the chunk 1i
+fixtures, whose authority replacements cover a possibly aliased transfer.
+
+`wrapped_range_cannot_reach_a_composite.md` is a negative whose refusal is
+the legacy count witness on `observe`. An ordinary family has no count
+witness, so under authority semantics the observation at a vacuous entry
+succeeds. The fixture's soundness argument is that no composite can be held at a
+wrapped extent, because the fold that would create one has no lowering path.
+`authority_wrapped_range_cannot_be_folded_into_a_composite.md` checks that
+refusal under authority semantics. The legacy fixture retires at the switch.
+
+#### Chunk 1o: loop exit joins
+
+Two changes clear both loop-break fixtures in the trial switch.
+
+- **Ledger identity.** Each storage transition mints a fresh creation-ledger
+  identity. An exit that declares, takes the address of and then ends a
+  local holds a ledger that records the same state as an exit that never
+  declared it, under a different name. The loop join compared ledgers by
+  identity and refused the pair as differing in "the symbolic state". It now
+  compares recorded ledger state. Records that carry identities of their own,
+  opaque imports and symbolic batches, must still be the same records.
+  Regression: `authority_mode_loop_exit_join_after_an_ended_local.md`.
+  `loop_break_exit_stale_alias_after_join_is_not_read.md` now reaches its
+  intended refusal of the read through the ended local.
+- **Closed true conjuncts.** The join orders an exit disjunction by how many
+  facts each path states. Under authority semantics one exit stated the
+  closed fact `true == true`, which reordered the disjuncts and changed which
+  conjunct narrowing dropped. A closed true conjunct is no longer counted.
+  Regression: `authority_mode_loop_exit_disjunction_ignores_a_closed_guard.md`.
+
+#### Chunk 1p: outcome folds of ordinary wrappers
+
+Under authority semantics a fold of a wrapper on a function outcome recorded
+a checked transfer-wrapper exchange on the completed C path. A
+callback execution proof (`executes`) has no completed C path, so folding
+an ordinary wrapper there was refused with "return resource rewrite requires
+completed execution". The fold's exchange is now recorded only for a family
+that reaches a population. Any other family keeps its ordinary law. An
+outcome unfold is still recorded for every family: the certificate of
+`c_contract_executes_acquire_nonnull.md` relies on it. Regression:
+`authority_mode_executes_theorem_folds_an_ordinary_wrapper.md`. With the
+earlier chunks of this step, this clears `c_contract_executes_composition.md`,
+`c_named_function_contract_refinement_theorem.md` and
+`c_step_contract_frontier_branch.md` in the trial switch.
