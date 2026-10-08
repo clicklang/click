@@ -24,11 +24,12 @@ use super::{
 use crate::kernel::{
     CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
     LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
-    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_declare_with_all_qualifiers, c_divide,
-    c_equal, c_function, c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal,
-    c_less_than, c_multiply, c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder,
-    c_return, c_seq, c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup,
-    c_typed_load_with_source, c_typed_store, c_variable,
+    c_call_assign, c_cast, c_checked_object_address, c_declare, c_declare_aggregate,
+    c_declare_with_all_qualifiers, c_divide, c_equal, c_function, c_greater_equal, c_greater_than,
+    c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply, c_not_equal, c_parameter,
+    c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract, c_try_catch_int32,
+    c_try_catch_int32_with_cleanup, c_typed_load, c_typed_load_with_source, c_typed_store,
+    c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -333,6 +334,20 @@ impl LoweringContext<'_> {
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
+                (CppType::LvalueReference { pointee }, CppInitializer::Value { value }) => {
+                    let address = self.lower_expression(value)?;
+                    Ok(c_seq(
+                        c_declare_with_all_qualifiers(
+                            local.name.clone(),
+                            CType::Int32Pointer,
+                            false,
+                            false,
+                            false,
+                            is_const_int32(pointee),
+                        ),
+                        c_assign(local.name.clone(), address),
+                    ))
+                }
                 (CppType::Integer { .. }, CppInitializer::Value { value }) => {
                     let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                     Ok(c_seq(
@@ -344,7 +359,7 @@ impl LoweringContext<'_> {
                     ))
                 }
                 (
-                    CppType::Integer { .. },
+                    CppType::Integer { .. } | CppType::LvalueReference { .. },
                     CppInitializer::Call {
                         callee,
                         arguments,
@@ -1041,7 +1056,18 @@ impl LoweringContext<'_> {
                 }
                 _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
-            CppExpression::ReferenceBinding { address, .. } => self.lower_expression(address),
+            CppExpression::ReferenceBinding { address, .. } => {
+                let pointer = self.lower_expression(address)?;
+                if matches!(address.as_ref(), CppExpression::AddressOf { .. }) {
+                    // An existing reference parameter already denotes its referent.
+                    Ok(pointer)
+                } else {
+                    Ok(c_checked_object_address(c_typed_load(
+                        pointer,
+                        CType::Int32,
+                    )))
+                }
+            }
             CppExpression::Dereference {
                 pointer,
                 value_type,

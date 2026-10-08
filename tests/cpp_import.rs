@@ -5046,7 +5046,7 @@ fn cpp_frontend_rejects_unsupported_source_without_a_c_fallback() {
 }
 
 #[test]
-fn cpp_scalar_locals_reject_uninitialized_reference_and_nested_declarations() {
+fn cpp_scalar_locals_reject_uninitialized_rvalue_reference_and_nested_declarations() {
     let project = Project::scalar_local();
     fs::write(
         project.source(),
@@ -5060,7 +5060,7 @@ fn cpp_scalar_locals_reject_uninitialized_reference_and_nested_declarations() {
 
     fs::write(
         project.source(),
-        "int relay_value(int& value) noexcept {\n    int& captured = value;\n    return captured;\n}\n",
+        "int relay_value(int& value) noexcept {\n    int&& captured = static_cast<int&&>(value);\n    return captured;\n}\n",
     )
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
@@ -14116,14 +14116,115 @@ int32& run(int32& value) { ensures &result == &value; } by { execute(); simp(); 
 }
 
 #[test]
-fn cpp_reference_results_refuse_raw_pointer_binding_until_live_object_validation() {
+fn cpp_reference_results_bind_live_pointer_referents_without_loading() {
     let project = Project::with_fixture(
         "return.cpp",
         "run",
         "int& run(int* data) noexcept { return *data; }",
     );
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("live-object validation"), "{error}");
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let aliases = r#"verifying "return.cpp";
+int32& run(int32* data) { views data[0..1]; ensures &result == data; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, aliases);
+    let values = aliases.replace(
+        "ensures &result == data;",
+        "ensures &result == data; ensures result == old(data[0]);",
+    );
+    check_arithmetic_sidecar(&project, &import, &values);
+    for hostile in [
+        aliases.replace("views data[0..1];", ""),
+        aliases.replace("ensures &result == data;", "ensures &result == data + 1;"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn cpp_reference_locals_preserve_aliases_and_modular_call_results_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "run",
+        "int& helper(int& value) noexcept { int& alias = value; return alias; }\nint& run(int& value) noexcept { int& back = helper(value); back = 9; return back; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "local.cpp";
+int32& helper(int32& value) { ensures &result == &value; } by { execute(); simp(); }
+int32& run(int32& value) { owns value; ensures &result == &value; ensures result == 9; ensures value == 9; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    for hostile in [
+        sidecar.replace("owns value;", "views value;"),
+        sidecar.replace("owns value;", ""),
+        sidecar.replace("ensures result == 9;", "ensures result == 10;"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn cpp_const_reference_locals_bind_pointer_storage_without_loading_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "run",
+        "const int& run(int* data) noexcept { const int& back = *(data + 1); return back; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "local.cpp";
+const int32& run(int32* data) { views data[0..2]; ensures &result == data + 1; ensures result == old(data[1]); } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace("views data[0..2];", "views data[0..1];");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn cpp_reference_formation_rejects_one_past_even_under_trivial_postconditions() {
+    let project = Project::with_fixture(
+        "return.cpp",
+        "run",
+        "int& run(int* data) noexcept { return *(data + 1); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "return.cpp";
+int32& run(int32* data) { views data[0..1]; ensures true; } by { execute(); simp(); }
+"#;
+    let path = project.directory.join("bad.click");
+    fs::write(&path, sidecar).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, sidecar).unwrap(), &import)
+            .is_err()
+    );
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        &sidecar
+            .replace("views data[0..1];", "views data[0..2];")
+            .replace("ensures true;", "ensures &result == data + 1;"),
+    );
 }
 
 #[test]

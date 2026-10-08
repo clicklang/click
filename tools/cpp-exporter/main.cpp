@@ -1464,6 +1464,9 @@ private:
                               context_.getTypeSize(local->getType()) == 64 ||
                               context_.getTypeSize(local->getType()) == 128) &&
                              !local->getType().hasQualifiers();
+    const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
+    const bool int_reference = local_reference != nullptr &&
+        context_.hasSameType(local_reference->getPointeeType().getUnqualifiedType(), context_.IntTy);
     const auto *record_type = local->getType()->getAs<clang::RecordType>();
     const auto *record =
         record_type == nullptr
@@ -1479,11 +1482,11 @@ private:
            "not local object construction");
       return std::nullopt;
     }
-    if (!mutable_int && !record_object) {
+    if (!mutable_int && !record_object && !int_reference) {
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to mutable "
            "signed/unsigned "
-           "32/64/128-bit integer or one simple record object");
+           "32/64/128-bit integer, an int lvalue reference, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit()) {
@@ -1635,7 +1638,10 @@ private:
     } else if (const auto *call = initializer_call;
                call != nullptr && !is_numeric_limits_max_call(call)) {
       if (call->getDirectCallee() == nullptr ||
-          !context_.hasSameType(source_initializer->getType(), local->getType())) {
+          !(int_reference
+              ? source_initializer->isLValue() && scalar_call->conversions.empty() &&
+                context_.hasSameType(call->getDirectCallee()->getReturnType(), local->getType())
+              : context_.hasSameType(source_initializer->getType(), local->getType()))) {
         fail(call->getExprLoc(),
              "C++ call capture requires matching final initializer and local types");
         return std::nullopt;
@@ -1651,7 +1657,9 @@ private:
       initializer["arguments"] = std::move(lowered->arguments);
       initializer["span"] = std::move(lowered->span);
     } else {
-      auto value = lower_expression(source_initializer, function);
+      auto value = int_reference
+          ? lower_reference_binding(source_initializer, local->getType(), function)
+          : lower_expression(source_initializer, function);
       if (!value) {
         return std::nullopt;
       }
@@ -2138,14 +2146,17 @@ private:
     }
     const auto *source = expression->IgnoreParenImpCasts();
     std::optional<Json> address;
-    {
+    if (const auto *dereference = llvm::dyn_cast<clang::UnaryOperator>(source);
+        dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
+      address = lower_expression(dereference->getSubExpr(), function);
+    } else {
       const auto *declaration = llvm::dyn_cast<clang::DeclRefExpr>(source);
       const auto *parameter = declaration == nullptr ? nullptr :
-          llvm::dyn_cast<clang::ParmVarDecl>(declaration->getDecl());
+          llvm::dyn_cast<clang::VarDecl>(declaration->getDecl());
       const auto *parameter_reference = parameter == nullptr ? nullptr :
           parameter->getType()->getAs<clang::LValueReferenceType>();
       if (parameter_reference == nullptr || parameter->getDeclContext() != function) {
-        fail(expression->getExprLoc(), "C++ reference results currently bind existing reference parameters; raw-pointer binding needs live-object validation");
+        fail(expression->getExprLoc(), "C++ references currently bind existing references or pointer dereferences");
         return std::nullopt;
       }
       auto place = lower_place_reference(source, function);
@@ -2627,7 +2638,7 @@ private:
       const auto *parameter =
           reference == nullptr
               ? nullptr
-              : llvm::dyn_cast<clang::ParmVarDecl>(reference->getDecl());
+              : llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
       const auto *reference_type =
           parameter == nullptr
               ? nullptr
@@ -2638,7 +2649,7 @@ private:
               reference_type->getPointeeType().getUnqualifiedType(),
               context_.IntTy)) {
         fail(address->getOperatorLoc(),
-             "supported C++ address-of must name an int reference parameter");
+             "supported C++ address-of must name an int reference in the current function");
         return std::nullopt;
       }
       auto place = lower_place_reference(operand, function);

@@ -9207,7 +9207,9 @@ pub(super) fn collect_address_taken_in_expression(
     match expression {
         // `&target`: any local reachable in the target may have its address
         // escape, so conservatively record every variable it mentions.
-        CExpression::AddressOf(target) => collect_variable_names(target, names),
+        CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+            collect_variable_names(target, names)
+        }
         CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
         CExpression::Cast { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
@@ -9283,9 +9285,10 @@ pub(super) fn collect_variable_names(expression: &CExpression, names: &mut BTree
             collect_variable_names(expression, names)
         }
         CExpression::PointerOffsetBytes { pointer, .. } => collect_variable_names(pointer, names),
-        CExpression::AddressOf(inner) | CExpression::Not(inner) | CExpression::Load(inner) => {
-            collect_variable_names(inner, names)
-        }
+        CExpression::AddressOf(inner)
+        | CExpression::CheckedObjectAddress(inner)
+        | CExpression::Not(inner)
+        | CExpression::Load(inner) => collect_variable_names(inner, names),
         CExpression::TypedLoad { pointer, .. } => collect_variable_names(pointer, names),
         CExpression::LessThan(left, right)
         | CExpression::LessEqual(left, right)

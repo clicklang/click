@@ -245,6 +245,7 @@ impl Names {
             }
             | FloatNegate(expression)
             | AddressOf(expression)
+            | CheckedObjectAddress(expression)
             | Not(expression)
             | BitwiseNot(expression)
             | Load(expression) => self.c(expression),

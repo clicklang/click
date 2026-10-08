@@ -239,12 +239,18 @@ for that storage. Returning an alias grants no new ownership or write authority.
 Reference and pointer results remain distinct during signature checking, and
 const qualification is preserved through modular calls and result temporaries.
 
-The initial result profile returns existing integer reference parameters,
-including direct call forwarding. Binding a new reference through a raw pointer,
-returning a local object, and reference-valued locals remain unsupported.
-Raw-pointer binding needs a live-object check: ordinary pointer formation also
-permits one-past addresses, which cannot denote reference referents. No implicit
-pointee load stands in for that missing check.
+The result profile returns existing integer reference parameters, including
+direct call forwarding, and binds references through supported integer pointer
+dereferences. New bindings use the shared kernel's checked object address:
+the complete referent must occupy live storage, excluding null, expired and
+one-past addresses. This check neither reads nor initializes the referent and
+grants no access authority. Automatic `int&` and `const int&` locals can bind
+existing references, supported pointer dereferences, and direct calls with
+matching native reference results. Assignment through a mutable reference local
+writes its referent; it does not rebind the alias. Ending the local binding does
+not end the backing object's lifetime. References to local objects, temporary
+lifetime extension, rvalue references and nested reference declarations remain
+unsupported.
 
 Nothing here translates the C++ body to C. The sidecar signature is
 checked against the selected typed Clang declaration, while proof execution
@@ -991,9 +997,9 @@ Copies and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
 virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
-Uninitialized or nested scalar locals, local references, shadowing,
-address-taking other than a current mutable reference parameter for a supported
-pointer call, pointer locals, pointer arithmetic, null pointers, multiple
+Uninitialized or nested scalar locals, references to local objects, shadowing,
+broader address-taking, pointer locals, pointer arithmetic outside the supported
+indexed `int*` slice, null pointers, multiple
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
 indirect calls, loops,

@@ -24,6 +24,7 @@ pub(in crate::surface) fn c_expression_uses_variable(
                 || c_expression_uses_variable(else_branch, variable)
         }
         CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::Not(expression)
         | CExpression::BitwiseNot(expression)
         | CExpression::Load(expression)

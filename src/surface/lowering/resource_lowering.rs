@@ -464,9 +464,9 @@ fn reject_aggregate_parameter_storage_resource(
     fn root(expression: &CExpression) -> Option<&str> {
         match expression {
             CExpression::Variable(name) => Some(name),
-            CExpression::PointerOffsetBytes { pointer, .. } | CExpression::AddressOf(pointer) => {
-                root(pointer)
-            }
+            CExpression::PointerOffsetBytes { pointer, .. }
+            | CExpression::AddressOf(pointer)
+            | CExpression::CheckedObjectAddress(pointer) => root(pointer),
             CExpression::Add(pointer, _) | CExpression::Subtract(pointer, _) => root(pointer),
             CExpression::TypedLoad {
                 pointer,

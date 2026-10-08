@@ -459,7 +459,10 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
         | CExpression::FloatClassification { expression, .. } => {
             collect_c_expression_bitvector_variables(expression, variables)
         }
-        CExpression::AddressOf(body) | CExpression::Not(body) | CExpression::Load(body) => {
+        CExpression::AddressOf(body)
+        | CExpression::CheckedObjectAddress(body)
+        | CExpression::Not(body)
+        | CExpression::Load(body) => {
             collect_c_expression_bitvector_variables(body, variables);
         }
         CExpression::PointerOffsetBytes { pointer, .. } => {
@@ -1292,6 +1295,7 @@ fn collect_c_expression_bound_identities(
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
         | CExpression::AddressOf(expression)
+        | CExpression::CheckedObjectAddress(expression)
         | CExpression::Not(expression)
         | CExpression::Load(expression)
         | CExpression::TypedLoad {
