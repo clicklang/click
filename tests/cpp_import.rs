@@ -13437,18 +13437,18 @@ fn execution_theorem_proof_retains_struct_argument_field_metadata() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let source = r#"verifying "read.cpp";
-int32 read(const struct State* state) {
-    views state->child.value;
-    ensures result == state->child.value;
+int32 read(const struct State& state) {
+    views state.child.value;
+    ensures result == state.child.value;
 } by { execute(); simp(); }
-contract int32 PositiveRead(const struct State* state) {
-    views state->child.value;
-    requires state->child.value == 2;
+contract int32 PositiveRead(const struct State& state) {
+    views state.child.value;
+    requires state.child.value == 2;
     ensures result == 2;
 }
-theorem read_application() executes read(const struct State* state) {
+theorem read_application() executes read(const struct State& state) {
     ensures PositiveRead(&read) by {
-        have state->child.value > 0 by { arithmetic() using { state->child.value == 2; } }
+        have state.child.value > 0 by { arithmetic() using { state.child.value == 2; } }
         execute(); simp();
     }
 }
@@ -13491,7 +13491,7 @@ theorem read_application() executes read(const struct State* state) {
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
     let path = project.directory.join("hostile.click");
-    let hostile = source.replace("requires state->child.value == 2;", "");
+    let hostile = source.replace("requires state.child.value == 2;", "");
     fs::write(&path, &hostile).unwrap();
     assert!(
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
