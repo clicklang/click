@@ -4404,6 +4404,10 @@ fn a_resource_clause_names_a_place() {
             "`counter`, not `&counter[0..1]`",
         ),
         (
+            "int32 read_p(struct cell* p) { owns p->other[0..1]; }",
+            "field `other` is one value, not a pointer or an array, so it takes no range",
+        ),
+        (
             "int32 read_p(struct cell* p) { owns object(p); }",
             "`object(p)` is now written `*p`",
         ),

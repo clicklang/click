@@ -66,7 +66,7 @@ verifying "runner.c";
 
 int32 bump_shared() {
     requires shared.value < 1000;
-    owns shared.value[0..1];
+    owns shared.value;
     ensures result == old(shared.value) + 1 by auto;
 }
 
@@ -74,7 +74,7 @@ int32 increment_local() {
     requires local.value > -1000;
     requires local.value < 1000;
     requires local.ready == 0;
-    owns local.value[0..1];
+    owns local.value;
     ensures result == old(local.value) + 1 by auto;
     ensures local.value == old(local.value) + 1 by auto;
     ensures local.ready == 0 by auto;
@@ -82,15 +82,15 @@ int32 increment_local() {
 
 int32 increment_file_private() {
     requires file_private.value < 1000;
-    owns file_private.value[0..1];
+    owns file_private.value;
     ensures result == old(file_private.value) + 1 by auto;
 }
 
 int32 run() {
-    owns shared.value[0..1];
-    owns private_file::increment_local::local.ready[0..1];
-    owns private_file::increment_local::local.value[0..1];
-    owns private_file::file_private.value[0..1];
+    owns shared.value;
+    owns private_file::increment_local::local.ready;
+    owns private_file::increment_local::local.value;
+    owns private_file::file_private.value;
     requires shared.value == 2;
     requires shared.value < 1000;
     requires private_file::increment_local::local.value == 3;

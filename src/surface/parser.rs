@@ -8036,6 +8036,7 @@ impl Parser {
                     self.resolve_field_segment(base, Some(surface_base.clone()), &field_name)?;
                 return Ok(vec![segment]);
             }
+            let mut scalar_field = false;
             let (
                 lowered,
                 next_struct_name,
@@ -8051,6 +8052,19 @@ impl Parser {
                 dereferences_pointer = field.c_type.is_pointer();
                 let pointer = self.offset_field_pointer(base, field.offset_bytes);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
+                scalar_field = field_memory_pointer
+                    && matches!(
+                        field.c_type,
+                        C0Type::Int8
+                            | C0Type::Int16
+                            | C0Type::Int32
+                            | C0Type::Char
+                            | C0Type::UInt8
+                            | C0Type::UInt16
+                            | C0Type::UInt32
+                            | C0Type::Int64
+                            | C0Type::UInt64
+                    );
                 (
                     lowered_field_expression(pointer, &field),
                     field.struct_name,
@@ -8067,6 +8081,19 @@ impl Parser {
                 dereferences_pointer = field.c_type.is_pointer();
                 let pointer = self.offset_field_pointer(base, field.offset_bytes);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
+                scalar_field = field_memory_pointer
+                    && matches!(
+                        field.c_type,
+                        C0Type::Int8
+                            | C0Type::Int16
+                            | C0Type::Int32
+                            | C0Type::Char
+                            | C0Type::UInt8
+                            | C0Type::UInt16
+                            | C0Type::UInt32
+                            | C0Type::Int64
+                            | C0Type::UInt64
+                    );
                 indexed_scalar_field = scalar_array_field_element(&field)
                     .map(|(width, ty)| (field_name.clone(), width, ty));
                 (
@@ -8090,6 +8117,14 @@ impl Parser {
                     0,
                 )
             };
+            if scalar_field
+                && self.peek() == Some(&Token::LBracket)
+                && self.contract_bracket_is_range()
+            {
+                return Err(self.error(format!(
+                    "field `{field_name}` is one value, not a pointer or an array, so it takes no range; write the field alone"
+                )));
+            }
             let range_base = if field_memory_pointer
                 && self.peek() == Some(&Token::LBracket)
                 && self.contract_bracket_is_range()
