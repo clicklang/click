@@ -79,6 +79,14 @@ returns that model, full root validity and parent consistency, and a null
 fixup parent. Neither the successor's nor its child's color is assumed by the
 contract. Mutation checks cover the required blackening write.
 
+The broader example gate exposed two post-return certification regressions in
+`arena_write` and `arena_region_length`. Exact-width readability of a
+materialized cell and immutable argument facts of ordinary held resources
+are now retained. Argument facts are instantiated without memory, resources,
+or ambient read premises; mutable invariants and authorized member bodies
+remain unavailable through this route. Focused regressions cover range and
+lifetime rejection, resource presence/quantity, and scaling.
+
 Two proof-driver fixes support this increment: named folds after return inside
 `open` are deferred to the returned state, and exact checked execution retains
 its loop semantics even when no loop was reached. Thus the unreachable

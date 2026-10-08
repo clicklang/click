@@ -7390,6 +7390,18 @@ fn trace_completion(
                             continue;
                         }
                         let authority = CResourceFact::own(held.resource().clone());
+                        // Immutable argument facts of an ordinary held resource
+                        // survive a return. Instantiate with no memory, resources,
+                        // or ambient read premises so this cannot import a mutable
+                        // invariant from an unchecked current snapshot.
+                        if !definition[0].is_authorized()
+                            && let Some(facts) = crate::kernel::functions::evaluate_composite_resource_fact_propositions(
+                                &authority, definition, &CMemory::new(), &ResourceContext::new(),
+                                &PureFactContext::new().require_owned_expression_loads()) {
+                            for fact in facts {
+                                *executed_under = std::mem::take(executed_under).assume_proposition(fact);
+                            }
+                        }
                         if let Some(facts) = crate::kernel::functions::evaluate_composite_resource_relation_propositions(
                             &authority, definition, published.memory(), executed_under) {
                             for fact in facts {
@@ -7422,7 +7434,15 @@ fn trace_completion(
                     if executed_under.proves_exact(fact) {
                         continue;
                     }
-                    if !executed_under.settles_exactly(fact)
+                    // A store materializes its exact cell in this snapshot.
+                    // This is read validity, not ownership or a value equality;
+                    // no ambient range search or cross-snapshot transport occurs.
+                    let materialized_read = matches!(fact,
+                        Proposition::CMemoryLoadable { memory, base, bytes }
+                            if bytes.as_const().is_some_and(|width|
+                                width > 0 && memory.is_loadable_concretely(base, width)));
+                    if !materialized_read
+                        && !executed_under.settles_exactly(fact)
                         && !resource_composition_is_supported_by(
                             fact,
                             state.resources(),
@@ -11588,6 +11608,237 @@ mod tests {
                 assert_eq!(after.resources(), state.resources());
             }
         }
+    }
+
+    #[test]
+    fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts() {
+        let pointer = Pointer::symbolic(Variable(42));
+        let memory = CMemory::new().store(pointer.clone(), int32(7));
+        let state = CState::new().with_memory(memory.clone());
+        let empty = ProofFacts::default();
+        let (function, original) = returned_proposition_trace(&state, &empty);
+        let context = returned_proposition_context(&state);
+        let read = |memory, base, bytes| Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+        };
+        let valid = read(
+            memory.clone(),
+            pointer.clone(),
+            Bitvector32Term::Constant(4),
+        );
+        let bad_value = Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(43)),
+                Bitvector32Term::Constant(7),
+            ),
+            true,
+        );
+        let cases = [
+            (valid, true),
+            (
+                read(
+                    memory.clone(),
+                    pointer.clone(),
+                    Bitvector32Term::Constant(8),
+                ),
+                false,
+            ),
+            (
+                read(
+                    memory.clone(),
+                    Pointer::symbolic(Variable(44)),
+                    Bitvector32Term::Constant(4),
+                ),
+                false,
+            ),
+            (
+                read(
+                    CMemory::new(),
+                    pointer.clone(),
+                    Bitvector32Term::Constant(4),
+                ),
+                false,
+            ),
+            (
+                read(
+                    memory.without_local_block(&pointer.block),
+                    pointer,
+                    Bitvector32Term::Constant(4),
+                ),
+                false,
+            ),
+            (bad_value, false),
+        ];
+        for (fact, accepted) in cases {
+            let roots = empty.clone().with_fact(fact.clone());
+            let mut events = original.clone();
+            events.push(returned_proposition_event(
+                &context, &state, &empty, &roots, fact,
+            ));
+            let result = trace_completion(&function, &events, empty.assumptions(), false);
+            assert_eq!(result.is_ok(), accepted);
+            if let Ok((CStatementOutcome::Return { state: after, .. }, _, _)) = result {
+                assert_eq!(after.resources(), state.resources());
+                assert_eq!(after.memory(), state.memory());
+            }
+        }
+    }
+
+    #[test]
+    fn return_materialized_reads_scale_with_the_selected_cells() {
+        let samples = [16, 32, 64, 128].map(|size| {
+            let mut memory = CMemory::new();
+            let pointers: Vec<_> = (0..size).map(|i| Pointer::symbolic(Variable(i))).collect();
+            for pointer in &pointers {
+                memory = memory.store(pointer.clone(), int32(7));
+            }
+            let state = CState::new().with_memory(memory.clone());
+            let mut base = ProofFacts::default();
+            let (function, mut events) = returned_proposition_trace(&state, &base);
+            let initial = base.clone();
+            let context = returned_proposition_context(&state);
+            for pointer in pointers {
+                let fact = Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base: pointer,
+                    bytes: Bitvector32Term::Constant(4),
+                };
+                let roots = base.with_fact(fact.clone());
+                events.push(returned_proposition_event(
+                    &context, &state, &base, &roots, fact,
+                ));
+                base = roots;
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(trace_completion(&function, &events, initial.assumptions(), false).is_ok());
+            });
+            work
+        });
+        assert!(samples[0] > 0);
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 8),
+            "materialized reads rescanned their context: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
+        use crate::kernel::{
+            CComparisonOperator, SpecExpression, SpecProposition, c_parameter, c_variable,
+        };
+        let value = CValue::Int32(Bitvector32Term::Variable(Variable(42)));
+        let fact = Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::signed_less_equal(
+                1.into(),
+                Bitvector32Term::Variable(Variable(42)),
+            ),
+            true,
+        );
+        let definition = CCompositeResourceDefinition::new(
+            "positive",
+            vec![c_parameter("n", CType::Int32)],
+            None,
+            false,
+            vec![],
+            vec![SpecProposition::Comparison {
+                left: SpecExpression::Value(int32(1)),
+                operator: CComparisonOperator::LessEqual,
+                right: SpecExpression::CExpression(c_variable("n")),
+            }],
+        );
+        let owned = CResourceFact::own_composite("positive".into(), vec![value.clone()]);
+        let viewed = CResourceFact::view_composite("positive".into(), vec![value]);
+        let zero = CResourceFact::Own(owned.resource().clone(), Box::new(0.into()));
+        for (resource, authorized, accepted) in [
+            (Some(owned.clone()), false, true),
+            (Some(viewed), false, true),
+            (Some(zero), false, false),
+            (None, false, false),
+            (Some(owned), true, false),
+        ] {
+            let resources = resource
+                .into_iter()
+                .fold(ResourceContext::new(), |r, fact| {
+                    r.unchecked_with_fact(fact)
+                });
+            let state = CState::new().with_resource_context(resources);
+            let empty = ProofFacts::default();
+            let roots = empty.with_fact(fact.clone());
+            let (function, mut events) = returned_proposition_trace(&state, &empty);
+            let function = function.with_composite_resource_definitions(vec![
+                definition.clone().with_authorized(authorized),
+            ]);
+            let context = returned_proposition_context(&state);
+            events.push(returned_proposition_event(
+                &context,
+                &state,
+                &empty,
+                &roots,
+                fact.clone(),
+            ));
+            let result = trace_completion(&function, &events, empty.assumptions(), false);
+            assert_eq!(result.is_ok(), accepted);
+            if let Ok((CStatementOutcome::Return { state: after, .. }, _, _)) = result {
+                assert_eq!(after.resources(), state.resources());
+            }
+        }
+    }
+
+    #[test]
+    fn return_argument_facts_do_not_project_mutable_memory_invariants() {
+        use crate::kernel::{
+            CComparisonOperator, CMemorySegment, SpecExpression, SpecProposition, c_index,
+            c_int32_literal, c_parameter, c_variable,
+        };
+        let pointer = Pointer::symbolic(Variable(42));
+        let held = CResourceFact::own_composite(
+            "cell".into(),
+            vec![CValue::typed_pointer(pointer.clone(), CType::Int32Pointer)],
+        );
+        let definition = CCompositeResourceDefinition::new(
+            "cell",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            ))],
+            vec![SpecProposition::Comparison {
+                left: SpecExpression::CExpression(c_index(c_variable("p"), c_int32_literal(0))),
+                operator: CComparisonOperator::Equal,
+                right: SpecExpression::Value(int32(7)),
+            }],
+        );
+        assert!(
+            crate::kernel::functions::evaluate_composite_resource_fact_propositions(
+                &held,
+                std::slice::from_ref(&definition),
+                &CMemory::new(),
+                &ResourceContext::new(),
+                &PureFactContext::new().require_owned_expression_loads()
+            )
+            .is_none()
+        );
+        let state = CState::new()
+            .with_memory(CMemory::new().store(pointer, int32(9)))
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
+        let empty = ProofFacts::default();
+        let false_fact = Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::equal(9.into(), 7.into()),
+            true,
+        );
+        let roots = empty.with_fact(false_fact.clone());
+        let (function, mut events) = returned_proposition_trace(&state, &empty);
+        let function = function.with_composite_resource_definitions(vec![definition]);
+        let context = returned_proposition_context(&state);
+        events.push(returned_proposition_event(
+            &context, &state, &empty, &roots, false_fact,
+        ));
+        assert!(trace_completion(&function, &events, empty.assumptions(), false).is_err());
     }
 
     #[test]
