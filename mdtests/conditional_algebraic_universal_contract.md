@@ -21,7 +21,7 @@ int32 report(int32 *v) {
     have (forall (k: int32) { v[k] == 0 }) implies
         forall (choice: Choice) { pick(v, choice) == 0 } by {
         intro(); intro();
-        instantiate(forall (k: int32) { v[k] == 0 }, 0) using {}
+        instantiate(forall (k: int32) { v[k] == 0 }, 0);
         unfold(pick(v, choice)); assumption();
     }
     step();

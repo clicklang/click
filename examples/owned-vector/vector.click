@@ -692,10 +692,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 intro();
                 extract(0 <= k);
                 extract(k < old(owner->len));
-                instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(statement(4).entry, owner->data[j]) == old(owner->data[j]) }, k) using {
-                    0 <= k;
-                    k < old(owner->len);
-                }
+                instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(statement(4).entry, owner->data[j]) == old(owner->data[j]) }, k);
                 transport(at(statement(4).entry, owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
                     at(statement(4).entry, owner->data[k]) == old(owner->data[k]);
                     0 <= k;

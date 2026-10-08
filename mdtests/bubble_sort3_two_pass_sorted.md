@@ -97,17 +97,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                                 k < (j - 1);
                             }
                         }
-                        instantiate(forall (__click_q0: int32) { at(statement(6).entry, 0) <= at(statement(6).entry, __click_q0) and at(statement(6).entry, 0) <= at(statement(6).entry, __click_q0) and at(statement(6).entry, __click_q0) < at(statement(6).entry, j) implies at(statement(6).entry, p[__click_q0]) <= at(statement(6).entry, tmp) }, k) using {
-                            at(statement(4).entry, j) < at(statement(4).entry, 2);
-                            k < (j - 1);
-                            k < j;
-                            at(statement(7).entry, p[(j + 1)]) < at(statement(7).entry, tmp);
-                            0 <= k;
-                            at(statement(4).entry, j) <= at(statement(4).entry, 2);
-                            at(statement(4).entry, j) >= at(statement(4).entry, 0);
-                            k != (j - 1);
-                            at(function.entry, viewable(p[0..3]));
-                        }
+                        instantiate(forall (__click_q0: int32) { at(statement(6).entry, 0) <= at(statement(6).entry, __click_q0) and at(statement(6).entry, 0) <= at(statement(6).entry, __click_q0) and at(statement(6).entry, __click_q0) < at(statement(6).entry, j) implies at(statement(6).entry, p[__click_q0]) <= at(statement(6).entry, tmp) }, k);
                         transport(at(statement(6).entry, p[k]) <= at(statement(6).entry, tmp), p[k] <= p[j]) using {
                             at(statement(6).entry, p[k]) <= at(statement(6).entry, tmp);
                             at(statement(4).entry, j) < at(statement(4).entry, 2);
@@ -222,17 +212,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                                 k < (j - 1);
                             }
                         }
-                        instantiate(forall (__click_q0: int32) { at(statement(9).entry, 0) <= at(statement(9).entry, __click_q0) and at(statement(9).entry, 0) <= at(statement(9).entry, __click_q0) and at(statement(9).entry, __click_q0) < at(statement(9).entry, j) implies at(statement(9).entry, p[__click_q0]) <= at(statement(9).entry, p[j]) }, k) using {
-                            at(statement(4).entry, j) < at(statement(4).entry, 2);
-                            k < (j - 1);
-                            k < j;
-                            not at(statement(9).entry, p[(j + 1)]) < at(statement(9).entry, p[j]);
-                            0 <= k;
-                            at(statement(4).entry, j) <= at(statement(4).entry, 2);
-                            at(statement(4).entry, j) >= at(statement(4).entry, 0);
-                            k != (j - 1);
-                            at(function.entry, viewable(p[0..3]));
-                        }
+                        instantiate(forall (__click_q0: int32) { at(statement(9).entry, 0) <= at(statement(9).entry, __click_q0) and at(statement(9).entry, 0) <= at(statement(9).entry, __click_q0) and at(statement(9).entry, __click_q0) < at(statement(9).entry, j) implies at(statement(9).entry, p[__click_q0]) <= at(statement(9).entry, p[j]) }, k);
                         transport(at(statement(9).entry, p[k]) <= at(statement(9).entry, p[j]), p[k] <= p[j]) using {
                             at(statement(9).entry, p[k]) <= at(statement(9).entry, p[j]);
                             at(statement(4).entry, j) < at(statement(4).entry, 2);
@@ -390,13 +370,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     }
                 }
                 have p[0] <= p[2] by {
-                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0) using {
-                    }
+                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
                     assumption();
                 }
                 have p[1] <= p[2] by {
-                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1) using {
-                    }
+                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1);
                     assumption();
                 }
                 mark before_swap;
@@ -480,13 +458,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     }
                 }
                 have p[0] <= p[2] by {
-                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0) using {
-                    }
+                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
                     assumption();
                 }
                 have p[1] <= p[2] by {
-                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1) using {
-                    }
+                    instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1);
                     assumption();
                 }
                 mark before_swap;
