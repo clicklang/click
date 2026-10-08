@@ -933,6 +933,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     let left_closed = split_proof
         .focus_branch(ids[0])
         .expect("the left sibling is open")
+        .begin_execution_match()
         .apply_step(ProofStep::Assumption)
         .expect("the shared disjunction fact closes the left claim");
     assert!(left_closed.state.open_branches().get(ids[1]).is_some());
@@ -944,8 +945,8 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     assert!(both_closed.is_complete());
 
     // An unjoined arm's own certificate follows its lineage: the sibling's
-    // interleaved step is attributed elsewhere, while the whole chain
-    // still lists both.
+    // interleaved step and nested match marker are attributed elsewhere,
+    // while the whole chain still lists both checked steps.
     assert_eq!(left_closed.path_certificate().unwrap().steps().len(), 1);
     assert_eq!(both_closed.path_certificate().unwrap().steps().len(), 1);
     assert_eq!(both_closed.certificate().steps().len(), 2);
@@ -11178,6 +11179,30 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             allocations,
         ));
 
+        for take_then in [true, false] {
+            let focused = split.focus_execution_if_arm(&record, take_then).unwrap();
+            let execution = focused.execution().unwrap();
+            let cases = execution.core.checked_step_case_context(1).unwrap();
+            let selected = execution
+                .presentation
+                .case_assumptions
+                .iter()
+                .last()
+                .unwrap();
+            assert!(cases.proves_exact(selected.fact.as_ref().unwrap()));
+            let opposite = split.focus_execution_if_arm(&record, !take_then).unwrap();
+            let opposite_execution = opposite.execution().unwrap();
+            let opposite_fact = opposite_execution
+                .presentation
+                .case_assumptions
+                .iter()
+                .last()
+                .unwrap();
+            assert!(!cases.proves_exact(opposite_fact.fact.as_ref().unwrap()));
+            assert!(!cases.proves_exact(&indexed_fact(0)));
+            assert!(execution.core.checked_step_case_context(2).is_none());
+        }
+
         let completed = split
             .focus_execution_if_arm(&record, true)
             .expect("the then sibling should remain open")
@@ -11193,6 +11218,14 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             .expect("the else return should check")
             .join_focused_execution_if_terminal(&record)
             .expect("the two terminal proof cases should join");
+        assert!(
+            completed
+                .execution()
+                .unwrap()
+                .core
+                .checked_step_case_context(0)
+                .is_some()
+        );
         assert!(completed.is_at_function_exit());
         assert!(matches!(
             completed.certificate().steps().last(),

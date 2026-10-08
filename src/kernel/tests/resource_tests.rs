@@ -7288,6 +7288,97 @@ fn owned_pieces_over_displaced_bases_rejoin_where_they_abut() {
     );
 }
 
+/// A scalar-reference call carves four bytes from a padded field's eight-byte
+/// slot. The returned scalar and preserved bytewise padding must rejoin even
+/// when the object address is symbolic.
+#[test]
+fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
+    let mut samples = Vec::new();
+    for size in [8usize, 32, 128, 512] {
+        let mut pieces = Vec::new();
+        let mut expected = Vec::new();
+        for index in 0..size {
+            let base = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(88_300 + index as u64)),
+                    4,
+                ),
+            };
+            pieces.push(CResourceFact::own_memory(CMemoryRange::new(
+                base.offset_by_bytes(8),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+            )));
+            pieces.push(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(
+                    base.clone(),
+                    Bitvector32Term::Constant(12),
+                    Bitvector32Term::Constant(16),
+                    1,
+                ),
+            ));
+            expected.push(CResourceFact::own_memory(CMemoryRange::new(
+                base,
+                Bitvector32Term::Constant(2),
+                Bitvector32Term::Constant(4),
+            )));
+        }
+        let context = ResourceContext::new().unchecked_with_facts(pieces);
+        let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expected
+                .iter()
+                .all(|fact| context.satisfies_fact(fact, &PureFactContext::new()))
+        });
+        assert!(accepted);
+        assert_eq!(
+            context.facts().len(),
+            2 * size,
+            "a query preserves the held representation"
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 5 * pair[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn mixed_width_symbolic_ranges_do_not_join_across_gaps_or_overlaps() {
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(88_900)), 4),
+    };
+    for start in [11, 13] {
+        let pieces = [
+            CResourceFact::own_memory(CMemoryRange::new(
+                base.offset_by_bytes(8),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+            )),
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                base.clone(),
+                Bitvector32Term::Constant(start),
+                Bitvector32Term::Constant(16),
+                1,
+            )),
+        ];
+        let context = ResourceContext::new()
+            .unchecked_with_facts(pieces)
+            .normalized(&PureFactContext::new());
+        assert_eq!(context.facts().len(), 2);
+        assert!(!context.satisfies_fact(
+            &CResourceFact::own_memory(CMemoryRange::new(
+                base.clone(),
+                Bitvector32Term::Constant(2),
+                Bitvector32Term::Constant(4)
+            )),
+            &PureFactContext::new()
+        ));
+    }
+}
+
 /// A displaced piece stays apart from a neighbour it may not abut: a gap, an
 /// overlap, or a restated start that is exact only while `i + 1` does not
 /// wrap all leave the pieces as they were.
@@ -8308,6 +8399,86 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
                 .clone()
                 .record_instance_population_exchange(&forged, &instance, establish, &assumptions)
                 .is_err()
+        );
+    }
+}
+
+#[test]
+fn returned_resource_prefix_consumes_only_selected_padded_field_fragments() {
+    for width in [1u32, 4] {
+        let mut samples = Vec::new();
+        for size in [8usize, 32, 128, 512] {
+            let base = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(89_000)),
+                    4,
+                ),
+            };
+            let owned = |base, start, end, width| {
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    base,
+                    Bitvector32Term::Constant(start),
+                    Bitvector32Term::Constant(end),
+                    width,
+                ))
+            };
+            let mut pieces = (0..size)
+                .map(|index| {
+                    owned(
+                        Pointer {
+                            block: PointerBlock::Heap(89_001 + index as u64),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        0,
+                        1,
+                        4,
+                    )
+                })
+                .collect::<Vec<_>>();
+            pieces.push(owned(base.offset_by_bytes(8), 0, 1, 4));
+            pieces.push(owned(base.clone(), 12 / width, 16 / width, width));
+            let available = ResourceContext::new().unchecked_with_facts(pieces);
+            let slot = owned(base.clone(), 2, 4, 4);
+            let required = ResourceContext::new().unchecked_with_fact(slot.clone());
+            let state = CState::new().with_resource_context(available.clone());
+            let interface = CFunctionContractInterface::new(CType::Void, vec![]);
+            let assumptions = PureFactContext::new();
+            let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::functions::jointly_consume_returned_resource_units(
+                    &available,
+                    &required,
+                    &state,
+                    &interface,
+                    &assumptions,
+                )
+            });
+            assert!(accepted, "{width}-byte units, {size} unrelated objects");
+            samples.push(work);
+            let duplicated = required.unchecked_with_fact(slot);
+            assert!(
+                !crate::kernel::functions::jointly_consume_returned_resource_units(
+                    &available,
+                    &duplicated,
+                    &state,
+                    &interface,
+                    &assumptions
+                )
+            );
+            let too_wide = ResourceContext::new().unchecked_with_fact(owned(base, 2, 5, 4));
+            assert!(
+                !crate::kernel::functions::jointly_consume_returned_resource_units(
+                    &available,
+                    &too_wide,
+                    &state,
+                    &interface,
+                    &assumptions
+                )
+            );
+        }
+        assert!(
+            samples.iter().all(|work| *work <= 4 * samples[0] + 64),
+            "{samples:?}"
         );
     }
 }

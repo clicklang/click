@@ -127,9 +127,32 @@ smaller explicit proofs do not visit that driver.
 The branch fix removes 2860 rebuilt entries at 64 returns, but the explicit
 proof's whole-verification curve is still a remaining violation. Its existing
 scaling guard tolerates 3x growth per doubling and missed these counts. The completion/certification part is now shared in both
-proof forms; the explicit form still builds contexts elsewhere, including
-return preparation, and most total work is outside the named completion phases.
-Investigate that construction with the C and proof unchanged.
+proof forms; most total work is outside the named completion phases.
+
+Explicit statement steps also used to rebuild the local case context at each
+return. They constructed a fresh local fact list from all enclosing proof
+cases, so merely consulting the list's cached context still rebuilt the prefix.
+The kernel now retains a persistent context when it admits a logical frontier
+case. A step reuses that prefix only when every written case selects a distinct
+available premise covered by it; duplicates, dropped cases and other producers
+keep the ordered fold. Statement-local resource observations follow the case
+prefix, and the successor carries the context into return preparation.
+
+Measured on base `0aecf5bd5`, with the original C and both proofs unchanged:
+
+| proof / metric | 4 | 8 | 16 | 32 | 64 |
+| --- | --- | --- | --- | --- | --- |
+| grouped context entries, after case-context retention | 53 | 81 | 137 | 249 | 473 |
+| explicit context entries, before | 44 | 68 | 196 | 716 | 2524 |
+| explicit context entries, retained | 46 | 70 | 129 | 257 | 513 |
+| explicit total work, before | 6279 | 10747 | 20061 | 43427 | 124195 |
+| explicit total work, retained | 6281 | 10749 | 19994 | 42968 | 122184 |
+
+`completed_early_return_contexts_are_reused_for_certification` now bounds
+whole-verification context construction in both forms, plus the named return
+context phase. The explicit total-work curve still violates the near-linear
+contract: terminal joins rebuild flat returned-path containers, and flat path
+facts are still imported per outcome. This bug remains open for those costs.
 
 ## Intended regression
 

@@ -300,7 +300,19 @@ pub struct CppRecord {
     pub size_bytes: u32,
     pub alignment_bytes: u32,
     pub fields: Vec<CppField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<CppBase>,
     pub destructor: Option<CppFunctionReference>,
+    pub span: CppSpan,
+}
+
+/// A distinct public, non-virtual base subobject, never a copied field list.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppBase {
+    pub value_type: CppType,
+    pub offset_bytes: u32,
+    pub size_bytes: u32,
     pub span: CppSpan,
 }
 
@@ -907,6 +919,7 @@ impl CppExport {
         validate_reachable_calls(
             &self.function.declaration_id,
             &functions,
+            &records,
             &mut visiting,
             &mut visited,
             logical_source,
@@ -1059,13 +1072,18 @@ pub(super) fn record_layout_order<'a>(
     for (id, record) in records {
         crate::instrumentation::record_deterministic_work(1);
         let mut count = 0;
-        for field in &record.fields {
+        for value_type in record
+            .fields
+            .iter()
+            .map(|field| &field.value_type)
+            .chain(record.base.iter().map(|base| &base.value_type))
+        {
             crate::instrumentation::record_deterministic_work(1);
             if let CppType::Record {
                 declaration_id,
                 name,
                 is_const,
-            } = &field.value_type
+            } = value_type
             {
                 let child = validate_record_reference(records, declaration_id, name)?;
                 if *is_const || child.destructor.is_some() {
@@ -1173,9 +1191,14 @@ fn validate_reachable_records(
         let record = records
             .get(id)
             .ok_or_else(|| format!("unknown C++ record declaration `{id}`"))?;
-        for field in &record.fields {
+        for value_type in record
+            .fields
+            .iter()
+            .map(|field| &field.value_type)
+            .chain(record.base.iter().map(|base| &base.value_type))
+        {
             crate::instrumentation::record_deterministic_work(1);
-            if let CppType::Record { declaration_id, .. } = &field.value_type
+            if let CppType::Record { declaration_id, .. } = value_type
                 && referenced.insert(declaration_id.as_str())
             {
                 pending.push(declaration_id.as_str());
@@ -1190,6 +1213,9 @@ fn validate_reachable_records(
 
 impl CppRecord {
     fn require_flat_local_layout(&self) -> Result<(), String> {
+        if self.base.is_some() {
+            return Err("automatic C++ objects with base subobjects remain unsupported".into());
+        }
         if self
             .fields
             .iter()
@@ -1221,13 +1247,41 @@ impl CppRecord {
             }
             destructor.span.validate(logical_source)?;
         }
-        if self.fields.is_empty()
+        if (self.fields.is_empty() && self.base.is_none())
             || self.alignment_bytes == 0
             || !self.alignment_bytes.is_power_of_two()
             || self.size_bytes == 0
             || !self.size_bytes.is_multiple_of(self.alignment_bytes)
         {
             return Err(format!("C++ record `{}` has an invalid layout", self.name));
+        }
+        if let Some(base) = &self.base {
+            base.span.validate_in(sources)?;
+            let CppType::Record {
+                declaration_id,
+                name,
+                is_const: false,
+            } = &base.value_type
+            else {
+                return Err("C++ base subobject requires a mutable nominal record type".into());
+            };
+            let child = validate_record_reference(records, declaration_id, name)?;
+            // This first profile models data-free tagged wrappers: one complete
+            // base, no own fields, overlap, tail-padding reuse or base cleanup.
+            if base.span.file != self.span.file
+                || !self.fields.is_empty()
+                || self.destructor.is_some()
+                || child.destructor.is_some()
+                || base.offset_bytes != 0
+                || base.size_bytes != child.size_bytes
+                || self.size_bytes != child.size_bytes
+                || self.alignment_bytes != child.alignment_bytes
+            {
+                return Err(format!(
+                    "C++ record `{}` has an invalid single-base layout",
+                    self.name
+                ));
+            }
         }
         let mut identities = std::collections::BTreeSet::new();
         let mut names = std::collections::BTreeSet::new();
@@ -1510,6 +1564,9 @@ impl CppFunction {
         {
             let self_parameter = &self.parameters[0];
             let record = validate_record_reference(records, record_declaration_id, record_name)?;
+            if record.base.is_some() {
+                return Err("C++ constructors with base subobjects remain unsupported".into());
+            }
             if self.body.len() < record.fields.len() {
                 return Err(format!(
                     "C++ constructor `{}` does not initialize every field",
@@ -2450,25 +2507,25 @@ impl CppCallArgument {
             }
             Self::Value { value } => value.validate(places, records, logical_source),
             Self::Reference { place } => {
-                let value_type = validate_place_reference(place, places, logical_source)?;
-                let record_type = match value_type {
-                    CppType::LvalueReference { pointee } => pointee.as_ref(),
-                    other => other,
-                };
+                let root = validate_root_reference(place, places, logical_source)?;
+                for projection in &place.projections {
+                    projection.span.validate(logical_source)?;
+                }
+                let (value_type, _) = resolve_reference_type(root, place, records)?;
                 if let CppType::Record {
                     declaration_id,
                     name,
                     ..
-                } = record_type
+                } = value_type
                 {
                     validate_record_reference(records, declaration_id, name)?;
                     return Ok(());
                 }
-                match value_type {
-                    CppType::LvalueReference { pointee } => {
-                        require_int32(pointee, true, "call reference argument")
-                    }
-                    _ => Err("C++ reference argument does not name a supported reference".into()),
+                if !place.projections.is_empty() || matches!(root, CppType::LvalueReference { .. })
+                {
+                    require_int32(value_type, true, "call reference argument")
+                } else {
+                    Err("C++ reference argument does not name a supported reference".into())
                 }
             }
         }
@@ -2984,6 +3041,7 @@ impl CppStatement {
 fn validate_reachable_calls(
     declaration_id: &str,
     functions: &BTreeMap<String, &CppFunction>,
+    records: &RecordIndex<'_>,
     visiting: &mut Vec<String>,
     visited: &mut BTreeMap<String, usize>,
     logical_source: &str,
@@ -3069,6 +3127,7 @@ fn validate_reachable_calls(
                     target.name.as_str(),
                     &target.parameters,
                     arguments,
+                    records,
                 )?;
             }
             CollectedCall::Constructor { local, .. } => {
@@ -3103,6 +3162,7 @@ fn validate_reachable_calls(
                     target.name.as_str(),
                     explicit_parameters,
                     arguments,
+                    records,
                 )?;
             }
             CollectedCall::Destructor { object, .. } => {
@@ -3137,6 +3197,7 @@ fn validate_reachable_calls(
         let child_depth = validate_reachable_calls(
             &callee.declaration_id,
             functions,
+            records,
             visiting,
             visited,
             logical_source,
@@ -3282,6 +3343,7 @@ fn validate_call_arguments(
     callee_name: &str,
     parameters: &[CppPlace],
     arguments: &[CppCallArgument],
+    records: &RecordIndex<'_>,
 ) -> Result<(), String> {
     if arguments.len() != parameters.len() {
         return Err(format!(
@@ -3317,48 +3379,46 @@ fn validate_call_arguments(
                 CppCallArgument::Reference { place },
                 CppType::LvalueReference { pointee: expected },
             ) => {
-                let actual = caller.place_type(&place.declaration_id);
-                match (actual, expected.as_ref()) {
-                    (
-                        Some(CppType::LvalueReference { pointee: actual }),
-                        CppType::Integer {
-                            bits: 32,
-                            signed: true,
-                            is_const: expected_const,
-                            ..
-                        },
-                    ) => matches!(
-                        actual.as_ref(),
-                        CppType::Integer {
-                            bits: 32,
-                            signed: true,
-                            is_const: actual_const,
-                            ..
-                        } if *expected_const || !*actual_const
-                    ),
-                    (
-                        Some(CppType::LvalueReference { pointee: actual }),
-                        CppType::Record {
-                            declaration_id,
-                            name,
-                            is_const,
-                        },
-                    ) => {
-                        matches!(actual.as_ref(), CppType::Record { declaration_id: actual_id, name: actual_name, is_const: actual_const }
-                            if actual_id == declaration_id && actual_name == name && (*is_const || !*actual_const))
+                if let Some(root) = caller.place_type(&place.declaration_id) {
+                    let (actual, actual_const) = resolve_reference_type(root, place, records)?;
+                    match (actual, expected.as_ref()) {
+                        (
+                            CppType::Integer {
+                                bits: 32,
+                                signed: true,
+                                ..
+                            },
+                            CppType::Integer {
+                                bits: 32,
+                                signed: true,
+                                is_const: expected_const,
+                                ..
+                            },
+                        ) => {
+                            (!place.projections.is_empty()
+                                || matches!(root, CppType::LvalueReference { .. }))
+                                && (*expected_const || !actual_const)
+                        }
+                        (
+                            CppType::Record {
+                                declaration_id: actual_id,
+                                name: actual_name,
+                                ..
+                            },
+                            CppType::Record {
+                                declaration_id,
+                                name,
+                                is_const,
+                            },
+                        ) => {
+                            actual_id == declaration_id
+                                && actual_name == name
+                                && (*is_const || !actual_const)
+                        }
+                        _ => false,
                     }
-                    (
-                        Some(actual @ CppType::Record { .. }),
-                        CppType::Record {
-                            declaration_id,
-                            name,
-                            is_const,
-                        },
-                    ) => {
-                        matches!(actual, CppType::Record { declaration_id: actual_id, name: actual_name, is_const: actual_const }
-                            if actual_id == declaration_id && actual_name == name && (*is_const || !*actual_const))
-                    }
-                    _ => false,
+                } else {
+                    false
                 }
             }
             (CppCallArgument::Value { value }, CppType::Pointer { pointee }) => {
@@ -3803,13 +3863,37 @@ fn valid_relative_source_path(value: &str) -> bool {
         })
 }
 
+fn resolve_reference_type<'a>(
+    root: &'a CppType,
+    place: &CppPlaceReference,
+    records: &'a RecordIndex<'a>,
+) -> Result<(&'a CppType, bool), String> {
+    super::budget::limit(
+        "record field projections",
+        place.projections.len(),
+        super::budget::MAX_RECORDS,
+    )?;
+    let root_type = match root {
+        CppType::LvalueReference { pointee } => pointee.as_ref(),
+        value => value,
+    };
+    // The record profile forbids const embedded declarations and `mutable`
+    // fields, so effective constness propagates from the complete root object.
+    let root_const = match root_type {
+        CppType::Record { is_const, .. } | CppType::Integer { is_const, .. } => *is_const,
+        _ => false,
+    };
+    let (projected, _) = records.resolve_path(root, &place.projections)?;
+    Ok((projected, root_const))
+}
+
 fn validate_place_reference<'a>(
     reference: &CppPlaceReference,
     places: &'a ValidationPlaces<'_>,
     logical_source: &str,
 ) -> Result<&'a CppType, String> {
     if !reference.projections.is_empty() {
-        return Err("projected C++ places are supported only as member-access objects".into());
+        return Err("projected C++ places are unsupported in this operation".into());
     }
     validate_root_reference(reference, places, logical_source)
 }
@@ -4417,6 +4501,7 @@ mod tests {
             alignment_bytes: 4,
             destructor: None,
             span: cleanup_span(),
+            base: None,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "value".into(),
@@ -4606,6 +4691,7 @@ mod tests {
                     ("callee".into(), &callee),
                     ("inner".into(), inner),
                 ]),
+                &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
                 "fixture.cpp",
@@ -4685,6 +4771,7 @@ mod tests {
                         ("outer".into(), &outer),
                         ("inner".into(), inner),
                     ]),
+                    &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
                     "fixture.cpp",
@@ -4770,6 +4857,7 @@ mod tests {
             validate_reachable_calls(
                 "caller",
                 &BTreeMap::from([("caller".into(), caller), ("callee".into(), callee)]),
+                &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
                 "fixture.cpp",
@@ -4851,6 +4939,7 @@ mod tests {
             alignment_bytes: 8,
             destructor: None,
             span: cleanup_span(),
+            base: None,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "fee".into(),
@@ -4968,6 +5057,7 @@ mod tests {
             "read",
             &actual,
             &arguments,
+            &RecordIndex::default(),
         )
         .unwrap();
         let mut writable = actual;
@@ -4981,7 +5071,8 @@ mod tests {
                 &FunctionPlaces::new(&function).unwrap(),
                 "write",
                 &writable,
-                &arguments
+                &arguments,
+                &RecordIndex::default(),
             )
             .is_err()
         );
@@ -5525,6 +5616,7 @@ mod tests {
                 validate_reachable_calls(
                     "caller",
                     &functions,
+                    &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
                     "fixture.cpp",
@@ -5624,6 +5716,7 @@ mod tests {
             let error = validate_reachable_calls(
                 "root",
                 &functions,
+                &RecordIndex::default(),
                 &mut Vec::new(),
                 &mut BTreeMap::new(),
                 "fixture.cpp",
@@ -5688,6 +5781,7 @@ mod tests {
                 validate_reachable_calls(
                     "root",
                     &index,
+                    &RecordIndex::default(),
                     &mut Vec::new(),
                     &mut BTreeMap::new(),
                     "fixture.cpp",
@@ -5718,6 +5812,7 @@ mod tests {
             alignment_bytes: 4,
             destructor: None,
             span: cleanup_span(),
+            base: None,
             fields: vec![CppField {
                 declaration_id: "field".into(),
                 name: "value".into(),
@@ -5820,6 +5915,7 @@ mod tests {
                     alignment_bytes: 4,
                     destructor: None,
                     span: cleanup_span(),
+                    base: None,
                     fields: vec![CppField {
                         declaration_id: format!("f{index}"),
                         name: "value".into(),
@@ -5868,6 +5964,22 @@ mod tests {
             });
             assert_eq!(resolved.unwrap(), (&signed_integer(32, false), 0));
             assert_eq!(work, size);
+            let mut const_root = root.clone();
+            let CppType::Record { is_const, .. } = &mut const_root else {
+                unreachable!()
+            };
+            *is_const = true;
+            let reference = CppPlaceReference {
+                declaration_id: "root".into(),
+                name: "root".into(),
+                span: cleanup_span(),
+                projections: path,
+            };
+            let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resolve_reference_type(&const_root, &reference, &checked)
+            });
+            assert_eq!(resolved.unwrap(), (&signed_integer(32, false), true));
+            assert_eq!(work, size);
             inventory[size - 1].fields[0].value_type = CppType::Record {
                 declaration_id: "r0".into(),
                 name: "R0".into(),
@@ -5891,6 +6003,7 @@ mod tests {
                 alignment_bytes: 4,
                 destructor: None,
                 span: cleanup_span(),
+                base: None,
                 fields: (0..size)
                     .map(|index| CppField {
                         declaration_id: format!("f{index}"),
@@ -5924,6 +6037,17 @@ mod tests {
                 resolved.unwrap(),
                 (&signed_integer(32, false), (size - 1) as u32 * 4)
             );
+            assert_eq!(work, 1);
+            let reference = CppPlaceReference {
+                declaration_id: "root".into(),
+                name: "root".into(),
+                span: cleanup_span(),
+                projections: vec![field],
+            };
+            let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resolve_reference_type(&root, &reference, &records)
+            });
+            assert_eq!(resolved.unwrap(), (&signed_integer(32, false), false));
             assert_eq!(work, 1);
         }
     }
@@ -6007,5 +6131,71 @@ mod tests {
             span: cleanup_span(),
         };
         assert!(!branch(unknown, vec![returned], vec![]).always_returns());
+    }
+    #[test]
+    fn single_base_inventory_walks_have_linear_work_and_reject_cycles() {
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        for size in [8, 32, 128] {
+            let mut inventory = (0..size)
+                .map(|index| CppRecord {
+                    declaration_id: format!("r{index}"),
+                    name: format!("R{index}"),
+                    size_bytes: 4,
+                    alignment_bytes: 4,
+                    destructor: None,
+                    span: cleanup_span(),
+                    base: (index + 1 < size).then(|| CppBase {
+                        value_type: CppType::Record {
+                            declaration_id: format!("r{}", index + 1),
+                            name: format!("R{}", index + 1),
+                            is_const: false,
+                        },
+                        offset_bytes: 0,
+                        size_bytes: 4,
+                        span: cleanup_span(),
+                    }),
+                    fields: if index + 1 == size {
+                        vec![CppField {
+                            declaration_id: "leaf".into(),
+                            name: "value".into(),
+                            value_type: signed_integer(32, false),
+                            offset_bytes: 0,
+                            size_bytes: 4,
+                            span: cleanup_span(),
+                        }]
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .collect::<Vec<_>>();
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+            });
+            let checked = checked.unwrap();
+            assert!(
+                work >= size && work <= 8 * size,
+                "{size} base declarations: {work} work"
+            );
+            assert_eq!(
+                record_layout_order(&checked).unwrap().first().unwrap().name,
+                format!("R{}", size - 1)
+            );
+            inventory[size - 1].fields.clear();
+            inventory[size - 1].base = Some(CppBase {
+                value_type: CppType::Record {
+                    declaration_id: "r0".into(),
+                    name: "R0".into(),
+                    is_const: false,
+                },
+                offset_bytes: 0,
+                size_bytes: 4,
+                span: cleanup_span(),
+            });
+            assert!(
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+                    .unwrap_err()
+                    .contains("by-value cycle")
+            );
+        }
     }
 }

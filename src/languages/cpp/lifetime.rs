@@ -217,6 +217,7 @@ mod tests {
     }
     fn record() -> CppRecord {
         CppRecord {
+            base: None,
             declaration_id: "Guard".into(),
             name: "Guard".into(),
             size_bytes: 4,

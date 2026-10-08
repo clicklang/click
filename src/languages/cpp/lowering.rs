@@ -796,7 +796,31 @@ impl LoweringContext<'_> {
     fn lower_call_argument(&mut self, argument: &CppCallArgument) -> Result<CExpression, String> {
         match argument {
             CppCallArgument::Value { value } => self.lower_expression(value),
-            CppCallArgument::Reference { place } => self.lower_place(place),
+            CppCallArgument::Reference { place } => {
+                let address = self.lower_place(place)?;
+                let root = self.place(place)?;
+                if !matches!(root.value_type, CppType::Record { .. }) {
+                    return Ok(address);
+                }
+                // Automatic aggregates use byte-addressed storage. Calls
+                // need the reference's pointee representation, as constructor
+                // and destructor receivers already do.
+                let (value_type, _) = self
+                    .records
+                    .resolve_path(&root.value_type, &place.projections)?;
+                let pointer_type = match value_type {
+                    CppType::Record { .. } | CppType::Integer { bits: 32, .. } => {
+                        CType::Int32Pointer
+                    }
+                    CppType::Integer { bits: 64, .. } => CType::Int64Pointer,
+                    _ => {
+                        return Err(
+                            "C++ reference place has no supported pointer representation".into(),
+                        );
+                    }
+                };
+                Ok(c_cast(address, pointer_type))
+            }
             CppCallArgument::Call { .. } => {
                 Err("nested C++ call bypassed scalar evaluation normalization".into())
             }
@@ -979,8 +1003,14 @@ impl LoweringContext<'_> {
     }
 
     fn lower_place(&self, place: &CppPlaceReference) -> Result<CExpression, String> {
-        self.place(place)?;
-        Ok(c_variable(place.name.clone()))
+        let root = self.place(place)?;
+        let (_, offset) = self
+            .records
+            .resolve_path(&root.value_type, &place.projections)?;
+        Ok(c_pointer_offset_bytes(
+            c_variable(place.name.clone()),
+            offset,
+        ))
     }
 
     fn lower_typed_int32_load(&mut self, pointer: &CppExpression) -> Result<CExpression, String> {
