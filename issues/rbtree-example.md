@@ -46,6 +46,10 @@ proof-only ownership split can rejoin and then start C execution. Post-loop
 interfaces also retain pointer-read congruence: checked equality premises
 register their read definitions, and interface pointer equalities normalize
 against that scoped graph (`proof_interface_pointer_read_congruence_after_loop.md`).
+Unfolded scalar cells also retain the pointer spelling used by their checked
+body facts when the unfold itself introduces a new alias. Indexed reads reuse
+that cell through the C parameter without granting read authority or carrying
+facts across a write (`unfold_child_preserves_scalar_cell_identity.md`).
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.

@@ -146,7 +146,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let pointer = logical_memory_load_address(memory, pointer, assumptions);
+    let pointer = logical_memory_load_address(memory, pointer, value_type, assumptions);
     if assumptions.should_keep_spec_loads_symbolic() {
         let _assumptions_id_scope = assumptions.enter_id_scope();
         let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
@@ -245,31 +245,43 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 fn logical_memory_load_address(
     memory: &CMemory,
     pointer: Pointer,
+    value_type: CType,
     assumptions: &PureFactContext,
 ) -> Pointer {
-    // Only opaque logical binders need a new coordinate spelling. Concrete
-    // and external addresses already name their storage; loaded pointers
-    // retain their exact typed read definition for explicit rewrites.
-    let PointerBlock::Symbolic(variable) = &pointer.block else {
-        return pointer;
+    // Only opaque model pointers and external pointers with an admitted
+    // cross-block alias can need another spelling. Wide scalar loads need
+    // the cached coordinate because their equalities do not use int32 load
+    // congruence. Keep ordinary and loaded-pointer reads on their fast path.
+    let model_pointer = match &pointer.block {
+        PointerBlock::Symbolic(variable) if !crate::kernel::is_load_variable(variable) => true,
+        PointerBlock::ExternalArgument
+            if matches!(value_type, CType::Int64 | CType::UInt64)
+                && assumptions
+                    .equality_graph
+                    .pointer_is_classed(&pointer.block) =>
+        {
+            false
+        }
+        _ => return pointer,
     };
-    if crate::kernel::is_load_variable(variable) {
-        return pointer;
-    }
-    // The C evaluator gives an exact materialized cell precedence over an
-    // alias. Do the same before selecting footprint coordinates: a model
-    // match may expose another name whose cell was materialized separately.
-    // Choosing that alias here would rename a value the C already read.
+    // Preserve an existing exact cell before choosing coordinates through
+    // a proved alias. An unfold may have named this cell at a model pointer
+    // before its body introduced the equality to the C parameter.
     if memory.known_value(&pointer).is_some() {
         return pointer;
     }
-    // Select a published footprint spelling by the trusted address class. The
-    // footprint is only a coordinate anchor: this grants no read authority
-    // and says nothing about whether this snapshot's value was preserved.
-    assumptions
+    let coordinate = assumptions
         .composition_object_resources
-        .memory_address_spelling(&pointer, assumptions)
-        .unwrap_or(pointer)
+        .memory_address_spelling(&pointer, assumptions);
+    // An uncached footprint only supplies coordinates for a model pointer.
+    // External pointers keep their own spelling unless a cell was found.
+    if model_pointer {
+        coordinate.unwrap_or(pointer)
+    } else {
+        coordinate
+            .filter(|spelling| memory.known_value(spelling).is_some())
+            .unwrap_or(pointer)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1467,7 +1479,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     // C and logical reads must name the same typed value through a checked
     // opaque address alias. Only the symbolic value's coordinates change:
     // C access validity still checks the original pointer and its provenance.
-    let address = logical_memory_load_address(memory, pointer.clone(), assumptions);
+    let address = logical_memory_load_address(memory, pointer.clone(), value_type, assumptions);
     let value = symbolic_load_value(memory, &address, value_type)?;
     // Terms are canonical at creation: an int or byte load evaluates to its
     // load variable, with the defining fact beside it, so every fact,
@@ -5099,6 +5111,7 @@ mod tests {
                             logical_memory_load_address(
                                 &memory,
                                 alias.offset_by_bytes(offset),
+                                CType::Int32,
                                 &context
                             ),
                             owner.offset_by_bytes(offset)
@@ -5120,7 +5133,7 @@ mod tests {
             });
             samples.push((work, map_work));
             assert_eq!(
-                logical_memory_load_address(&memory, alias.clone(), &before),
+                logical_memory_load_address(&memory, alias.clone(), CType::Int32, &before),
                 alias
             );
         }
@@ -5133,6 +5146,107 @@ mod tests {
             "address lookup copied unrelated indexes: {samples:?}"
         );
         eprintln!("logical read address work: {samples:?}");
+    }
+
+    #[test]
+    fn logical_scalar_read_reuses_model_cell_through_later_external_alias() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer::symbolic(Variable(95_300));
+        let alias = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(95_301)), 4),
+        };
+        let field = owner.offset_by_bytes(8);
+        let queried = alias.offset_by_bytes(8);
+        let value = CValue::UInt64(Bitvector32Term::UInt64Constant(17));
+        let memory = CMemory::new().materialize_named_cell(field.clone(), value.clone());
+        let empty = PureFactContext::new();
+        let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                field.clone(),
+                0u32.into(),
+                1u32.into(),
+                8,
+            )),
+        );
+        let before = empty.assume_proposition(Proposition::CResourceComposition(resources));
+        let read = |memory: &CMemory, pointer: Pointer, context: &PureFactContext| {
+            let paths = evaluate_logical_memory_load_paths(
+                memory,
+                pointer,
+                CType::UInt64,
+                Vec::new().into(),
+                Vec::new(),
+                context,
+            );
+            assert_eq!(paths.len(), 1);
+            assert!(paths[0].facts.is_empty());
+            assert!(paths[0].obligations.is_empty());
+            paths[0].outcome.clone()
+        };
+        let mut samples = Vec::new();
+        for size in [8u64, 64, 512] {
+            let mut context = before.clone().assume_condition(
+                ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+                true,
+            );
+            for i in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        owner.clone(),
+                        Pointer::symbolic(Variable(98_000 + i)),
+                    ),
+                    true,
+                );
+            }
+            let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    assert_eq!(
+                        read(&memory, queried.clone(), &context),
+                        CExpressionOutcome::Value(value.clone())
+                    );
+                    assert_eq!(
+                        read(
+                            &memory,
+                            queried.clone(),
+                            &context.clone().keep_spec_loads_symbolic()
+                        ),
+                        CExpressionOutcome::Value(value.clone())
+                    );
+                })
+            });
+            samples.push((work, map_work));
+            assert_ne!(
+                read(&memory, queried.clone(), &before),
+                CExpressionOutcome::Value(value.clone())
+            );
+            assert_ne!(
+                read(&memory, alias.offset_by_bytes(16), &context),
+                CExpressionOutcome::Value(value.clone())
+            );
+            assert!(!ResourceContext::new().permits_memory_read(&queried, 8, &context));
+            let changed_value = CValue::UInt64(Bitvector32Term::UInt64Constant(19));
+            let changed = memory.clone().store(field.clone(), changed_value.clone());
+            assert_eq!(
+                read(&changed, queried.clone(), &context),
+                CExpressionOutcome::Value(changed_value)
+            );
+            // An exact newer cell takes precedence over a cached alias.
+            let direct_value = CValue::UInt64(Bitvector32Term::UInt64Constant(23));
+            let direct = memory.clone().store(queried.clone(), direct_value.clone());
+            assert_eq!(
+                read(&direct, queried.clone(), &context),
+                CExpressionOutcome::Value(direct_value)
+            );
+        }
+        assert!(
+            samples[2].0 <= samples[0].0 * 3 + 64,
+            "cached coordinate lookup scanned aliases: {samples:?}"
+        );
+        assert!(
+            samples[2].1 <= samples[0].1 * 4 + 128,
+            "cached coordinate lookup copied indexes: {samples:?}"
+        );
     }
 
     #[test]
