@@ -1528,6 +1528,96 @@ fn charon_chunk_lane_results_tools_recheck_expanded_certificate() {
     }
 }
 
+const LOOP_ARRAY_COPY_SOURCE: &str = include_str!("../design/charon-trial/loop-array-copy/quad.rs");
+const LOOP_ARRAY_COPY_PROOF: &str =
+    include_str!("../design/charon-trial/loop-array-copy/quad.click");
+
+fn loop_array_copy_project() -> Project {
+    let p = Project::isolated(LOOP_ARRAY_COPY_SOURCE);
+    for (name, bytes) in [
+        ("quad.rs", LOOP_ARRAY_COPY_SOURCE.as_bytes()),
+        ("borrow.click", LOOP_ARRAY_COPY_PROOF.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/loop-array-copy/quad.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/loop-array-copy/quad.click.import.json.lock")
+                .as_slice(),
+        ),
+        (
+            "quad.ullbc",
+            include_bytes!("../design/charon-trial/loop-array-copy/quad.ullbc").as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+#[test]
+fn charon_loop_array_copy_survives_symbolic_heads() {
+    let p = loop_array_copy_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(LOOP_ARRAY_COPY_PROOF, &prepared).unwrap();
+    for (before, after) in [
+        ("have array[1] == chunk[1]", "have array[1] == chunk[0]"),
+        ("have array[2] == chunk[2]", "have array[2] == chunk[3]"),
+        (
+            "have array[3] == chunk[3]",
+            "have array[3] == chunk[3] + 1u32",
+        ),
+        ("views bytes[0..16];", ""),
+    ] {
+        let invalid = LOOP_ARRAY_COPY_PROOF.replace(before, after);
+        assert_ne!(invalid, LOOP_ARRAY_COPY_PROOF);
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
+#[test]
+fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
+    let p = loop_array_copy_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let helper = LOOP_ARRAY_COPY_PROOF
+        .split("uint32 __rust_q_I4_quad_I4_walk")
+        .next()
+        .unwrap();
+    let claim = format!(
+        "{helper} uint32 __rust_q_I4_quad_I4_walk(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == 0u64; ensures result == 0u32; }} by {{ execute(); simp(); }}"
+    );
+    C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: loop-local array copy proof-tool agreement"]
+fn charon_loop_array_copy_results_tools_recheck_expanded_certificate() {
+    let p = loop_array_copy_project();
+    for args in [
+        vec!["verify"],
+        vec![
+            "expand",
+            "--claim",
+            "__rust_q_I4_quad_I4_walk.contract",
+            "--in-place",
+        ],
+        vec!["verify"],
+        vec!["profile"],
+    ] {
+        let result = p.cli(&args);
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
 const CHARON_LOOP_SIDECAR: &str = include_str!("../design/charon-trial/borrowed-loop/loop.click");
 fn charon_loop_project() -> Project {
     let p = Project::new(CHARON_LOOP_SOURCE);

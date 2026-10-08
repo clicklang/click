@@ -266,6 +266,13 @@ Typed pointer arithmetic preserves element widths; word indices do not become
 byte offsets. Array storage must fit the current signed-word memory model
 (`N * sizeof(T) <= INT32_MAX`).
 
+Compiler storage starts for local scalar arrays create checked fresh backing at
+that point, including inside symbolic iterator loops. Plain record storage
+starts also restore backing for array-field snapshot copies. The loop contract
+need not list compiler-created local arrays as input resources. Re-entry checks
+live loans and replaces the previous object's identity; initialization and
+complete source/destination copy authority remain required.
+
 Builtin `.len()`, local reference aliases and reborrows, and direct fixed-array
 reference calls are supported. `.len()` requires no memory authority, including
 for zero-length arrays. Reading any element of a zero-length array cannot pass
