@@ -1,6 +1,6 @@
 verifying "borrow.rs";
 
-int32 choose(int32 x) {
+fn choose(x: i32) -> i32 {
     requires 0 <= x;
     ensures result == (if x < 7 { x + 1 } else { 7 });
 } by {
@@ -8,30 +8,30 @@ int32 choose(int32 x) {
     simp();
 }
 
-void set_seven(int32* value) {
-    owns value[0..1];
-    ensures value[0] == 8;
+fn set_seven(value: &mut i32) {
+    owns *value;
+    ensures *value == 8;
 } by {
     execute();
     simp();
 }
 
-int32 update(struct Pair* parent) {
-    owns parent->left;
-    owns parent->right;
-    ensures parent->left == 8;
-    ensures parent->right == old(parent->right);
+fn update(parent: &mut Pair) -> i32 {
+    owns parent.left;
+    owns parent.right;
+    ensures parent.left == 8;
+    ensures parent.right == old(parent.right);
     ensures result == 8;
 } by {
     execute();
     simp();
 }
 
-int32 shared_field(struct Pair* parent) {
-    owns parent->left;
-    views parent->right;
-    ensures parent->left == 7;
-    ensures result == old(parent->right);
+fn shared_field(parent: &mut Pair) -> i32 {
+    owns parent.left;
+    views parent.right;
+    ensures parent.left == 7;
+    ensures result == old(parent.right);
 } by {
     execute();
     simp();

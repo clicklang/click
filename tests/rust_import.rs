@@ -2262,6 +2262,14 @@ fn rust_sidecar_impl_blocks_verify() {
         .is_err()
     );
     assert_cli(&p, &["verify"]);
+    // The tools address a method by the function it is.
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(
+        &p,
+        &["expand", "--claim", "Guard_drop.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
 }
 
 /// A slice parameter in a Rust signature is one name: `bytes.len()` is its
@@ -2286,6 +2294,10 @@ fn rust_sidecar_slices_in_rust_syntax_verify() {
         )
         .is_err()
     );
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "read.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
 
