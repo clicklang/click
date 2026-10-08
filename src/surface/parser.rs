@@ -5508,7 +5508,7 @@ impl Parser {
             "both" => self.parse_both_proof_tactic(),
             "close_invariants" if self.peek_ident() == Some("by") => {
                 self.position += 1;
-                let body = self.parse_possibly_empty_tactic_block()?;
+                let body = self.parse_close_invariants_body()?;
                 self.skip_redundant_semicolon();
                 Ok(ProofTactic::CloseInvariantsBy(body))
             }
@@ -6748,6 +6748,29 @@ impl Parser {
             self.current_proof_let_names = names;
         }
         result
+    }
+
+    // `close_invariants by T(...);` is the one-step body
+    // `close_invariants by { T(...); }`, as after `have` and `ensures`.
+    #[inline(never)]
+    fn parse_close_invariants_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
+        if self.peek() == Some(&Token::LBrace) {
+            return self.parse_possibly_empty_tactic_block();
+        }
+        // `by simp;` is the step `simp();`, as it is after `have`.
+        if self.peek_ident() == Some("simp") && self.peek_next() == Some(&Token::Semicolon) {
+            self.position += 2;
+            return Ok(vec![ProofTactic::Simp]);
+        }
+        match self.peek() {
+            Some(Token::Ident(_)) => Ok(vec![self.parse_proof_tactic()?]),
+            Some(token) => Err(self.error(format!(
+                "expected a proof after `close_invariants by`, got {token}: write one tactic call or a block `{{ ... }}`"
+            ))),
+            None => Err(self.error(
+                "expected a proof after `close_invariants by`, got end of input",
+            )),
+        }
     }
 
     fn parse_possibly_empty_tactic_block(&mut self) -> Result<Vec<ProofTactic>, ClickError> {

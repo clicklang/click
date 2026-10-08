@@ -60,28 +60,26 @@ A local `int& r = x;` is named in a proof through the lowered program, where
 it is a pointer. After A1 it should read as its referent there too. Not
 started; needs a look at how proofs name C++ locals before it is scoped.
 
-### A4. Rust spellings (decide)
+### A4. Rust sidecars in Rust syntax
 
-Decided in principle: each language spells a place its own way, so a Rust
-`c: &mut Cell` is `owns *c` and `c.value`. Not designed. It is larger than a
-respelling: the sidecar restates signatures in C shape
-(`const uint8* bytes, uint64 bytes_len` for `bytes: &[u8]`), a slice carries
-its length, tuple fields are `_0`, and layout is the compiler's. Needs its
-own proposal, including whether a Rust sidecar states its signature in Rust
-syntax.
+Decided 2026-10-08: a Rust sidecar states its signature in Rust syntax, and
+each language spells a place its own way, so a Rust `c: &mut Cell` is
+`owns *c` and `c.value`. Not designed. Today the sidecar restates signatures
+in C shape (`const uint8* bytes, uint64 bytes_len` for `bytes: &[u8]`), a
+slice carries its length as a second parameter, tuple fields are `_0`, and
+layout is the compiler's.
 
-### A5. A whole slice (decide)
-
-`views bytes[0..(int32)(uint32)bytes_len]` is the only spelling for all of a
-Rust slice. Whether a whole slice gets a spelling, and which, belongs with
-A4.
+Next step: a proposal under `design/` covering the signature grammar, how a
+slice and its length are named, the spelling for a whole slice (today only
+`views bytes[0..(int32)(uint32)bytes_len]`), tuple and enum fields, and the
+migration of the hash-pinned sidecars under `design/charon-trial`.
 
 ## B. Contracts and resource declarations
 
 Found in the third pass and ruled on 2026-10-07. Each was checked against the
 tool that day unless it says otherwise.
 
-### B1. A named child in a resource without fields
+### B1. A child with fields in a resource without fields
 
 A resource holds a child resource with `owns inner(p);`, the clause it uses
 for memory; `contains inner(p);` is retired and refused with that spelling.
@@ -92,8 +90,24 @@ that declares fields of its own, because the parent's model is where the
 child's model is kept. In a parent without fields it is refused: "this
 resource declares no fields to hold them; write the child without a name".
 
-Decide whether a parent without fields should be able to name a child. It
-would need a model for a resource that declares none.
+Decided 2026-10-08: it should be allowed. Today a resource without fields
+cannot hold a child that has fields at all, and the two refusals point at
+each other: the unnamed form `owns counted(p->a);` is refused with "resource
+`counted` has fields; bind it with `owns name: counted(...);`".
+
+Intended reading: the parent does not keep the child's fields. Holding the
+parent means some values of the child's fields exist for which the child is
+held and the parent's facts are true; unfolding gives the child with fresh
+values and those facts. A parent that needs a value tracked across a fold
+declares a field for it. The parent stays fieldless and is held without a
+name. Not yet checked against how the kernel unfolds and folds a resource
+without fields; if this reading does not fit, report what does before
+building another.
+
+Regression: `resource pair(p) { owns p->n; owns first: counted(p->a); fact
+p->n == first.v; }` with no field in `pair`, folded and unfolded, with a
+claim that follows from the fact verifying and one that needs the lost value
+refused; the unnamed form accepted.
 
 ### B3. Reads go through an owned resource: the loop case
 
@@ -139,9 +153,6 @@ the standard library. Left in the long spelling:
   than the block form
   (`bugs/a-failing-short-have-reports-less-than-the-block-form.md`). Respell
   them when that is fixed.
-- One-step blocks after `initialize`, `preserve` and `close_invariants`,
-  which do not take the brace-less form: `close_invariants by simp;` is a
-  syntax error. Decide whether they should.
 - The Rust examples and the sidecars under `design/charon-trial`, which are
   hash-pinned in `design/charon-trial/parity.json`.
 - A few mdtests a Rust test searches by text (`bubble_sort3_loop_sorted.md`,

@@ -74,7 +74,7 @@ int32 drain(int32 n) {
                 }
             }
             step();
-            close_invariants by { simp(); }
+            close_invariants by simp;
         }
     }
     step();
