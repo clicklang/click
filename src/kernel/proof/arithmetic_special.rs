@@ -35,7 +35,8 @@ fn pointer_block_payload(block: &PointerBlock) -> Option<usize> {
         PointerBlock::StringLiteral { identity, bytes } => 1usize
             .checked_add(identity.len())?
             .checked_add(bytes.len())?,
-        PointerBlock::FunctionSymbolic(_)
+        PointerBlock::PureFunctionApplication(_)
+        | PointerBlock::FunctionSymbolic(_)
         | PointerBlock::ExternalArgument
         | PointerBlock::ExternalObject(_)
         | PointerBlock::Symbolic(_)

@@ -2296,7 +2296,11 @@ fn integer_range_fold_index_is_empty(index: &IntegerRangeFoldIndex) -> bool {
 }
 
 fn integer_carrier_in_pointer(pointer: &Pointer, variable: Variable) -> bool {
-    integer_carrier_in_pointer_offset(&pointer.offset, variable)
+    // Like an opaque algebraic application, a pointer call can carry the
+    // accumulator through its arguments. Retain the scope without expanding
+    // a shared application DAG once for every fold obligation.
+    matches!(pointer.block, PointerBlock::PureFunctionApplication(_))
+        || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
 fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Variable) -> bool {
@@ -4875,6 +4879,43 @@ mod algebraic_term_tests {
     }
 
     #[test]
+    fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
+        for result_type in [CType::Int32Pointer, CType::VoidPointer, CType::Void] {
+            let expression = SpecExpression::PureFunctionApplication {
+                name: "select".into(),
+                arguments: vec![],
+                result_type,
+            };
+            let result = evaluate_spec_expression_paths_with_loop_entry_in(
+                &CState::new(),
+                &expression,
+                None,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+            );
+            if result_type == CType::Void {
+                assert!(matches!(
+                    result,
+                    Err(ExecutionLimit::UnsupportedPureFunctionResult(CType::Void))
+                ));
+            } else {
+                let paths = result.expect("a pointer-valued pure call has one opaque result");
+                assert_eq!(paths.len(), 1);
+                assert_eq!(paths[0].value.c_type(), result_type);
+                let CValue::Pointer(pointer) = &paths[0].value else {
+                    panic!("lost pointer sort")
+                };
+                assert!(matches!(
+                    pointer.block,
+                    PointerBlock::PureFunctionApplication(_)
+                ));
+                assert!(paths[0].facts.is_empty());
+                assert!(paths[0].obligations.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn pure_function_application_is_not_eagerly_evaluated() {
         let expression = SpecExpression::PureFunctionApplication {
             name: "increment".to_string(),
@@ -5415,7 +5456,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
     Ok(paths
         .into_iter()
         .map(|(arguments, facts, obligations)| SpecIntegerPath {
-            value: IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+            value: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 name.to_string(),
                 arguments,
             )),
@@ -7255,14 +7296,26 @@ fn evaluate_spec_pure_function_application_paths_in(
     }
     let mut results = Vec::new();
     for (arguments, facts, obligations) in paths {
-        let Some(value) = c_value_from_bitvector_term(
-            result_type,
-            Bitvector32Term::ClickFunctionApplication {
-                name: name.to_string(),
-                arguments,
-            },
-        ) else {
-            continue;
+        let value = if result_type.is_pointer() {
+            CValue::typed_pointer(
+                Pointer {
+                    block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                        name.to_string(),
+                        arguments,
+                    )),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                result_type,
+            )
+        } else {
+            c_value_from_bitvector_term(
+                result_type,
+                Bitvector32Term::ClickFunctionApplication {
+                    name: name.to_string(),
+                    arguments,
+                },
+            )
+            .ok_or(ExecutionLimit::UnsupportedPureFunctionResult(result_type))?
         };
         results.push(SpecExpressionPath {
             value,

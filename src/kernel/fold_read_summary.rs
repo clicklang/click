@@ -295,7 +295,7 @@ impl CheckedFoldReadSummary {
     /// the load identity it was built with and is never reloaded.
     pub(crate) fn instantiate(
         &self,
-        application: &SharedIntegerApplication,
+        application: &SharedPureApplication,
     ) -> Option<FoldReadInterval> {
         crate::instrumentation::record_deterministic_work(1);
         let arguments = application.arguments();
@@ -840,8 +840,8 @@ fn zip_integer(
 /// that differ only in the array argument's snapshot, returning how many
 /// recorded steps were crossed.
 pub(crate) fn frame_fold_applications(
-    left: &SharedIntegerApplication,
-    right: &SharedIntegerApplication,
+    left: &SharedPureApplication,
+    right: &SharedPureApplication,
     assumptions: &PureFactContext,
 ) -> Result<usize, FoldFrameRefusal> {
     let name = left.name().to_string();

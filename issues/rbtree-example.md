@@ -26,10 +26,15 @@ immediate-successor exit, at the root or below it on either parent link.
 Red-leaf and nonempty-child successors return balanced trees with null fixup;
 black-leaf successors retain the exact deficit context and return the successor
 for fixup. Exact models preserve parent consistency and in-order contents.
-Deeper C successors remain. The deeper replacement-child case has a balance
-exit theorem and concrete check in `rbtree_erase_child.click` and
-`successor_child_checks.click`; its exact splice sequence and parent-consistency
-connection remain.
+Deeper C successors remain. The replacement-child model now covers any
+successor depth: `rb_erase_nonempty_successor_splice` proves balance, exact
+in-order removal, and parent consistency for the complete transplant.
+The C descent loop and its ownership transitions are the remaining chunk 11 work.
+The left-only `EraseSpine` resource and terminating `refold_erase_spine` tactic
+now verify and pass expansion audit. Applying them to the fixed C loop exposed
+[`do-while-resource-exits-lose-binders-and-frame`](../bugs/do-while-resource-exits-lose-binders-and-frame.md):
+its guard-false exit loses resource binders and the withheld caller frame.
+That kernel blocker must be fixed before continuing the C transplant proof.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
@@ -1043,9 +1048,13 @@ successors with a right child from the black-leaf theorem. The red-leaf
 successor now has a separate no-deficit theorem, `rb_erase_red_successor_splice`,
 establishing whole-tree validity, in-order removal, and parent consistency.
 `rb_minimum_child_blackens_without_deficit` proves the balance exit for a
-nonempty replacement child; its complete successor-splice sequence and
-parent-consistency equations remain. Keep these cases separate from the
-black-leaf theorem, whose whole spliced tree still needs fixup.
+nonempty replacement child. `rb_erase_nonempty_successor_splice` now connects
+that exit to the complete successor transplant at any depth, proving whole-tree
+balance, exact in-order removal, and parent consistency in the original
+context. `rb_remove_min_blackened` supplies the exact model, with checked
+context reconstruction, reparenting, contents, and parent-preservation lemmas.
+Keep these cases separate from the black-leaf theorem, whose whole spliced
+tree still needs fixup.
 
 **Chunk 11. `__rb_erase_augmented`: zero/one-child and immediate-successor C written.**
 The unchanged C verifies zero/one-child deletion and every immediate-successor
@@ -1053,7 +1062,14 @@ exit, at the root and on either non-root parent link. No-deficit cases return
 exact remaining models, whole-tree balance, parent consistency, in-order
 contents, and null fixup. Black-leaf cases retain the exact one-black-level
 deficit and return the correct fixup parent for chunk 12. Deeper successors
-and their descent loop remain. Depends on 7 and 10.
+and their descent loop remain. The pointer-valued selector `rb_min_parent`
+and `rb_min_context_cut_child` now verify the exact reconstruction equation
+for an empty or nonempty minimum child at any depth, with reparenting to the
+link owner. The pointer-result lowering defect this exposed is fixed and
+covered by positive, negative, substitution, and scaling regressions; the
+nonempty-child blackening connection now verifies through
+`rb_erase_nonempty_successor_splice`. The deeper C descent and transplant
+ownership proof remains. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.

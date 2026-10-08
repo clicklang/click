@@ -204,7 +204,9 @@ impl StorageProvenance {
             PointerBlock::Concrete(_) => Self::Global,
             PointerBlock::Heap(_) | PointerBlock::Temporary(_) => Self::Fresh,
             PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_) => Self::External,
-            PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_) => Self::Symbolic,
+            PointerBlock::Symbolic(_)
+            | PointerBlock::LoadedPointer(_)
+            | PointerBlock::PureFunctionApplication(_) => Self::Symbolic,
             PointerBlock::Function(_)
             | PointerBlock::FunctionSymbolic(_)
             | PointerBlock::StringLiteral { .. } => Self::Other,
@@ -950,6 +952,7 @@ fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => false,
         PointerBlock::Symbolic(_)
+        | PointerBlock::PureFunctionApplication(_)
         | PointerBlock::LoadedPointer(_)
         | PointerBlock::FunctionSymbolic(_)
         | PointerBlock::Function(_)

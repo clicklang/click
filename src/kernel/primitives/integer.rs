@@ -52,7 +52,7 @@ pub enum IntegerTerm {
     TruncatingRemainder(SharedIntegerTerm, SharedIntegerTerm),
     /// An opaque pure specification function application.  The body is
     /// exposed only by the checked `unfold` rule.
-    PureFunctionApplication(SharedIntegerApplication),
+    PureFunctionApplication(SharedPureApplication),
     /// Exhaustive elimination of an algebraic value. Unknown scrutinees stay
     /// symbolic until a checked constructor value permits iota reduction.
     AlgebraicMatch {
@@ -75,35 +75,40 @@ pub struct AlgebraicIntegerMatchArm {
     pub body: SharedIntegerTerm,
 }
 
-/// Canonical shallow node for an opaque Integer function application.
+/// Canonical shallow node for an opaque pure function application.
+/// Integer and pointer results share argument interning, but retain separate
+/// value sorts; no pointer is interpreted as a numeric address.
 #[derive(Clone)]
-pub struct SharedIntegerApplication(Arc<SharedIntegerApplicationNode>);
+pub struct SharedPureApplication(Arc<SharedPureApplicationNode>);
 
-struct SharedIntegerApplicationNode {
+/// The original name remains available for users of the Integer term API.
+pub type SharedIntegerApplication = SharedPureApplication;
+
+struct SharedPureApplicationNode {
     id: u64,
     name: String,
     arguments: Vec<PureFunctionArgument>,
 }
 
-struct IntegerApplicationInterner {
+struct PureApplicationInterner {
     buckets: HashMap<
         u64,
         Vec<(
             String,
             Vec<PureFunctionArgument>,
-            Weak<SharedIntegerApplicationNode>,
+            Weak<SharedPureApplicationNode>,
         )>,
     >,
     cleanup: VecDeque<(u64, usize)>,
     next_id: u64,
 }
 
-impl IntegerApplicationInterner {
+impl PureApplicationInterner {
     fn intern(
         &mut self,
         name: String,
         arguments: Vec<PureFunctionArgument>,
-    ) -> SharedIntegerApplication {
+    ) -> SharedPureApplication {
         crate::instrumentation::record_deterministic_work(arguments.len().saturating_add(1));
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
@@ -139,7 +144,7 @@ impl IntegerApplicationInterner {
                     && old_arguments == &arguments
                     && let Some(node) = node.upgrade()
                 {
-                    return SharedIntegerApplication(node);
+                    return SharedPureApplication(node);
                 }
             }
         }
@@ -147,8 +152,8 @@ impl IntegerApplicationInterner {
         self.next_id = self
             .next_id
             .checked_add(1)
-            .expect("Integer application interner ID exhausted");
-        let node = Arc::new(SharedIntegerApplicationNode {
+            .expect("Pure application interner ID exhausted");
+        let node = Arc::new(SharedPureApplicationNode {
             id,
             name: name.clone(),
             arguments: arguments.clone(),
@@ -158,23 +163,23 @@ impl IntegerApplicationInterner {
             .or_default()
             .push((name, arguments, Arc::downgrade(&node)));
         self.cleanup.push_back((key, Arc::as_ptr(&node) as usize));
-        SharedIntegerApplication(node)
+        SharedPureApplication(node)
     }
 }
 
-impl SharedIntegerApplication {
+impl SharedPureApplication {
     pub(crate) fn intern(name: String, arguments: Vec<PureFunctionArgument>) -> Self {
-        static INTERNER: OnceLock<Mutex<IntegerApplicationInterner>> = OnceLock::new();
+        static INTERNER: OnceLock<Mutex<PureApplicationInterner>> = OnceLock::new();
         INTERNER
             .get_or_init(|| {
-                Mutex::new(IntegerApplicationInterner {
+                Mutex::new(PureApplicationInterner {
                     buckets: HashMap::new(),
                     cleanup: VecDeque::new(),
                     next_id: 0,
                 })
             })
             .lock()
-            .expect("Integer application interner lock poisoned")
+            .expect("Pure application interner lock poisoned")
             .intern(name, arguments)
     }
     pub(crate) fn id(&self) -> u64 {
@@ -185,6 +190,36 @@ impl SharedIntegerApplication {
     }
     pub(crate) fn arguments(&self) -> &[PureFunctionArgument] {
         &self.0.arguments
+    }
+}
+
+impl fmt::Debug for SharedPureApplication {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PureApplication")
+            .field("name", &self.name())
+            .field("arguments", &self.arguments())
+            .finish()
+    }
+}
+impl PartialEq for SharedPureApplication {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+impl Eq for SharedPureApplication {}
+impl PartialOrd for SharedPureApplication {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for SharedPureApplication {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id().cmp(&other.id())
+    }
+}
+impl Hash for SharedPureApplication {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 
@@ -1315,7 +1350,7 @@ mod tests {
             let mut value = IntegerTerm::var(Variable(1));
             for _ in 0..depth {
                 let argument = PureFunctionArgument::Integer(value.clone().into());
-                value = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "successor".to_string(),
                     vec![argument],
                 ));
@@ -1326,7 +1361,7 @@ mod tests {
 
     #[test]
     fn application_cleanup_revisits_live_entries_and_releases_dead_arguments() {
-        let mut interner = IntegerApplicationInterner {
+        let mut interner = PureApplicationInterner {
             buckets: HashMap::new(),
             cleanup: VecDeque::new(),
             next_id: 0,
@@ -1361,17 +1396,17 @@ mod tests {
         for depth in [8usize, 16, 32, 64] {
             let mut value: SharedIntegerTerm = IntegerTerm::var(Variable(71_000)).into();
             for _ in 0..depth {
-                let application = SharedIntegerApplication::intern(
+                let application = SharedPureApplication::intern(
                     "successor".to_string(),
                     vec![PureFunctionArgument::Integer(value.clone())],
                 );
                 value = IntegerTerm::PureFunctionApplication(application).into();
             }
-            let duplicate = SharedIntegerApplication::intern(
+            let duplicate = SharedPureApplication::intern(
                 "successor".to_string(),
                 vec![PureFunctionArgument::Integer(value.clone())],
             );
-            let duplicate_again = SharedIntegerApplication::intern(
+            let duplicate_again = SharedPureApplication::intern(
                 "successor".to_string(),
                 vec![PureFunctionArgument::Integer(value)],
             );
@@ -1518,7 +1553,7 @@ mod tests {
         };
         let initial = IntegerTerm::constant_i64(0);
         let body = IntegerTerm::var(accumulator);
-        let whole = IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+        let whole = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "counted".to_string(),
             vec![
                 crate::kernel::PureFunctionArgument::Value(CValue::Int32(
@@ -1621,7 +1656,7 @@ mod tests {
     #[test]
     fn integer_term_substitution_reaches_the_arithmetic_spine_only() {
         let application = SharedIntegerTerm::from(IntegerTerm::PureFunctionApplication(
-            SharedIntegerApplication::intern("counted".to_string(), Vec::new()),
+            SharedPureApplication::intern("counted".to_string(), Vec::new()),
         ));
         let replacement = SharedIntegerTerm::from(IntegerTerm::constant_i64(7));
         let goal = Proposition::ConditionIs(
