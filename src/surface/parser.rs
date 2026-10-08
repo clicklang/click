@@ -3512,6 +3512,10 @@ impl Parser {
         if self.tokens.get(bracket) != Some(&Token::LBracket) {
             return Ok(None);
         }
+        // `&[T; N]` is a reference to an array, not a slice.
+        if self.tokens.get(bracket + 2) == Some(&Token::Semicolon) {
+            return Ok(None);
+        }
         self.position = bracket + 1;
         let spelling = self.expect_ident("slice element type")?;
         let Some(c_type) = rust_scalar_type(&spelling).and_then(C0Type::pointer_type) else {
@@ -3583,15 +3587,31 @@ impl Parser {
         } else {
             false
         };
-        if matches!(
-            self.peek(),
-            Some(Token::Amp | Token::LBracket | Token::LParen)
-        ) {
+        if matches!(self.peek(), Some(Token::Amp | Token::LParen)) {
             return Err(self.error(
-                "a reference to a reference, array or `()` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
+                "a reference to a reference or `()` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
             ));
         }
+        // `&[T; N]` is the pointer to the array's first element. The length
+        // is the type's, so the contract writes it: `views words[0..N]`.
+        let array = self.peek() == Some(&Token::LBracket);
+        if array {
+            self.position += 1;
+        }
         let spelling = self.expect_ident("type")?;
+        if array {
+            self.expect(Token::Semicolon)?;
+            // The length is a constant expression; the importer checks it.
+            while !matches!(self.peek(), Some(Token::RBracket) | None) {
+                self.position += 1;
+            }
+            self.expect(Token::RBracket)?;
+            if rust_scalar_type(&spelling).is_none() {
+                return Err(self.error(format!(
+                    "an array of `{spelling}` in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling"
+                )));
+            }
+        }
         Ok(match rust_scalar_type(&spelling) {
             Some(scalar) => {
                 let Some(c_type) = scalar.pointer_type() else {

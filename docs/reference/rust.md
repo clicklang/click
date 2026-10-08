@@ -300,8 +300,13 @@ fn cleanup(value: &mut i32) {
 }
 ```
 
-An array or a reference to a reference in a `fn` signature is refused for
-now, and so is `fn` in a C or C++ sidecar. Write those contracts
+A reference to an array, `&[T; N]` or `&mut [T; N]` with a scalar element,
+is the pointer to its first element. The length is the type's, so the
+contract writes it, `views bytes[0..4]`
+([`examples/rust-array-slices`](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click)).
+
+An array by value or a reference to a reference in a `fn` signature is
+refused for now, and so is `fn` in a C or C++ sidecar. Write those contracts
 in the C-shaped spelling the rest of this page uses. Click's own words
 (`requires`, `ensures`, `owns`, `result`, the tactics) are the same in every
 language.

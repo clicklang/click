@@ -1,39 +1,39 @@
 verifying "arrays.rs";
 
-uint8 first(const uint8* bytes, uint64 bytes_len) {
+fn first(bytes: &[u8]) -> u8 {
     requires bytes_len > 0u64;
     requires bytes_len <= 2147483647u64;
     views bytes[0..1];
     ensures result == bytes[0];
 } by { execute(); simp(); }
-void set(uint8* bytes, uint64 bytes_len) {
+fn set(bytes: &mut [u8]) {
     requires bytes_len > 1u64;
     requires bytes_len <= 2147483647u64;
     owns bytes[1..2];
     ensures bytes[1] == 7;
 } by { execute(); simp(); }
-uint64 size(const uint8* bytes, uint64 bytes_len) {
+fn size(bytes: &[u8]) -> usize {
     ensures result == bytes_len;
 } by { execute(); simp(); }
-uint64 array_len(const uint8* bytes) { ensures result == 3u64; } by { execute(); simp(); }
-uint8 read(const uint8* bytes) {
+fn array_len(bytes: &[u8; 3]) -> usize { ensures result == 3u64; } by { execute(); simp(); }
+fn read(bytes: &[u8; 3]) -> u8 {
     views bytes[0..1];
     ensures result == bytes[0];
 } by { execute(); simp(); }
-uint8 mutate(uint8* bytes) {
+fn mutate(bytes: &mut [u8; 3]) -> u8 {
     owns bytes[1..2];
     ensures result == 7;
 } by { execute(); simp(); }
-uint8 local() { ensures result == 10; } by { execute(); simp(); }
-uint8 alias(uint8* bytes) {
+fn local() -> u8 { ensures result == 10; } by { execute(); simp(); }
+fn alias(bytes: &mut [u8; 3]) -> u8 {
     owns bytes[1..2];
     ensures result == 7;
 } by { execute(); simp(); }
-uint64 retarget() { ensures result == 4u64; } by { execute(); simp(); }
-uint8 retarget_mut() { ensures result == 14; } by { execute(); simp(); }
-uint64 empty() { ensures result == 0u64; } by { execute(); simp(); }
-uint64 empty_ref(const uint8* bytes) { ensures result == 0u64; } by { execute(); simp(); }
-uint8 borrow_shared(uint8* bytes) {
+fn retarget() -> usize { ensures result == 4u64; } by { execute(); simp(); }
+fn retarget_mut() -> u8 { ensures result == 14; } by { execute(); simp(); }
+fn empty() -> usize { ensures result == 0u64; } by { execute(); simp(); }
+fn empty_ref(bytes: &[u8; 0]) -> usize { ensures result == 0u64; } by { execute(); simp(); }
+fn borrow_shared(bytes: &mut [u8; 3]) -> u8 {
     owns bytes[0..1];
     ensures result == bytes[0];
 } by { execute(); simp(); }

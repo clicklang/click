@@ -4584,7 +4584,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         ),
         (
             "verifying \"add.rs\"; fn read(value: &&i32) -> i32 { ensures result == result; } by { execute(); simp(); }",
-            "a reference to a reference, array or `()` in a `fn` signature is not supported yet",
+            "a reference to a reference or `()` in a `fn` signature is not supported yet",
         ),
         (
             "verifying \"add.rs\"; fn read(bytes: [u8; 4]) -> u8 { ensures result == result; } by { execute(); simp(); }",
@@ -4646,6 +4646,19 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
         let error = parser::parse(source).expect_err("the impl block is refused");
         assert!(error.message.contains(expected), "{source}: {error:?}");
     }
+    // A reference to an array is the pointer to its first element.
+    assert_eq!(
+        parser::parse(
+            "verifying \"arrays.rs\"; fn first(bytes: &[u8; 4], words: &mut [u32; 1 + 2]) -> u8 { \
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+        )
+        .expect("the Rust spelling parses"),
+        parser::parse(
+            "verifying \"arrays.rs\"; uint8 first(const uint8* bytes, uint32* words) { \
+             views bytes[0..4]; ensures result == bytes[0]; } by { execute(); simp(); }"
+        )
+        .expect("the C-shaped spelling parses"),
+    );
     // `as` before anything but a scalar type is not a cast.
     parser::parse(
         "verifying \"add.c\"; int32 add(int32 a) { ensures result == a; } by { execute(); simp(); }",
