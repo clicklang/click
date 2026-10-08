@@ -2386,7 +2386,6 @@ fn authority_outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         });
         verify_c0_project(&project, sources).map(|_| ())
     });

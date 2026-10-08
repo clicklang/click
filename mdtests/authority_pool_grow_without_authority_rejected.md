@@ -20,7 +20,7 @@ void pool_grow(struct pool* pool, int32 amount);
 void caller(struct pool* pool, int32 amount) { pool_grow(pool, amount); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource pool_slot(pool: struct pool*) {}
 verifying "pool_grow.c";
 verifying "grow_caller.c";

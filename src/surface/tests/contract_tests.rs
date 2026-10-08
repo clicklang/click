@@ -899,25 +899,27 @@ fn post_execution_resource_fold_completes_without_a_body_rerun() {
 #[test]
 fn implicitly_closed_counted_entry_completes_without_a_body_rerun() {
     let c_source = r#"
-        int32 inspect_counts(int32 pool, int32 first, int32 second) {
+        int32 inspect_counts(void* p, void* q) {
             return 0;
         }
     "#;
     let click_source = r#"
-        abstract resource checked_out(pool: int32, object: int32);
+        authorized resource checked_out(pool: void*) {}
 
         verifying "inspect_counts.c";
 
-        int32 inspect_counts(int32 pool, int32 first, int32 second) {
-            requires first != second;
-            requires count(checked_out(pool, first)) == 2;
-            requires count(checked_out(pool, second)) == 1;
-            owns checked_out(pool, first);
-            owns checked_out(pool, first);
-            owns checked_out(pool, second);
+        int32 inspect_counts(void* p, void* q) {
+            requires p != q;
+            owns authority(checked_out(p));
+            owns authority(checked_out(q));
+            requires count(checked_out(p)) == 2;
+            requires count(checked_out(q)) == 1;
+            owns checked_out(p);
+            owns checked_out(p);
+            owns checked_out(q);
 
-            ensures count(checked_out(pool, first)) == 2;
-            ensures count(checked_out(pool, _)) == 3;
+            ensures count(checked_out(p)) == 2;
+            ensures count(checked_out(q)) == 1;
             ensures result == 0;
         } by {
             execute();
@@ -932,59 +934,6 @@ fn implicitly_closed_counted_entry_completes_without_a_body_rerun() {
         crate::kernel::take_checked_function_body_execution_count(),
         0,
         "the completed path applies the contract exit rule, so no explicit frame is needed"
-    );
-}
-
-#[test]
-fn quantified_fold_after_execution_completes_without_a_body_rerun() {
-    let c_source = r#"
-        struct owner {
-            int32 capacity;
-        };
-
-        void produce_population(struct owner* owner, int32 amount) {
-            owner->capacity = amount;
-        }
-    "#;
-    let click_source = r#"
-        resource slot(owner: struct owner*) {
-            views *owner;
-        }
-
-        predicate valid_capacity(owner: struct owner*) {
-            owner->capacity == count(slot(owner))
-        }
-
-        verifying "produce_population.c";
-
-        void produce_population(struct owner* owner, int32 amount) {
-            requires 0 <= amount;
-            owns *owner;
-            produces amount of slot(owner);
-
-            ensures valid_capacity(owner);
-        } by {
-            execute();
-            if 0 < amount {
-                fold(amount of slot(owner));
-                simp();
-            } else {
-                apply(int32_ge_and_not_gt_implies_eq(amount, 0)) using {
-                    0 <= amount;
-                    not (0 < amount);
-                }
-                simp();
-            }
-        }
-    "#;
-
-    let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(click_source, &[("produce_population.c", c_source)])
-        .expect("a produced population folded after execution should verify");
-    assert_eq!(
-        crate::kernel::take_checked_function_body_execution_count(),
-        0,
-        "the produced population is the contract exit rule's, so the completed path carries it"
     );
 }
 

@@ -17,7 +17,7 @@ int run(void) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "authority_mutex_control_sequential.c";
 authorized resource reference(obj: struct object*) {}
 

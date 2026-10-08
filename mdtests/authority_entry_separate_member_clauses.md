@@ -8,7 +8,7 @@ the third.
 int run(void *p) { return 0; }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "authority_entry_separate_member_clauses.c";
 authorized resource ticket(p: void*) {}
 int32 run(void* p) {

@@ -1,7 +1,7 @@
 ```c filename=consume.c
 void consume(int32* p) {}
 ```
-```click resource_semantics=authority
+```click
 authorized resource token(p: int32*) {}
 verifying "consume.c";
 void consume(int32* p) {

@@ -15,7 +15,7 @@ This is reduced from the library scaling test
 int32 identity(int32 x) { return x; }
 ```
 
-```click resource_semantics=authority
+```click
 resource marker(x: int32) { fact x == x; }
 verifying "identity.c";
 int32 identity(int32 x) {

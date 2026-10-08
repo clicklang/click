@@ -55,7 +55,7 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 spec enum ParentLink {
     Empty,
     Linked(struct child*),

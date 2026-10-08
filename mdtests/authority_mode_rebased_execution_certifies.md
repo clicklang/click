@@ -15,7 +15,7 @@ again:
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "natural_goto_cycle.c";
 
 int32 maybe_stop(int32 flag) {

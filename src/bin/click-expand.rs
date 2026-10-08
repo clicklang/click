@@ -815,14 +815,10 @@ mod tests {
         let column = line.find("simp()").unwrap() + 1;
         let selection = format!("{}:{markdown_line}:{column}", path.display());
         let arguments = parse_arguments([selection]).expect("fixture selection should parse");
-        // Use the artifact loader so the authority fence and C inputs survive
-        // both expansion and certificate verification.
+        // Use the artifact loader so the C inputs survive both expansion and
+        // certificate verification.
         let expanded = run(&arguments).expect("exit simp should generate a checked certificate");
-        let expanded_mdtest = cli::parse_mdtest(&path, &expanded).unwrap();
-        assert_eq!(
-            expanded_mdtest.resource_semantics,
-            mdtest.resource_semantics
-        );
+        cli::parse_mdtest(&path, &expanded).expect("the expanded mdtest should parse");
     }
 
     #[test]

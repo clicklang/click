@@ -10,7 +10,7 @@ execution proof has no completed C path, so the fold was refused with
 population, so its fold now keeps the ordinary law, which records no such
 exchange. A wrapper that reaches a population is still recorded.
 
-```click resource_semantics=authority
+```click
 resource Buffer(data: int32*) { owns data[0..1]; }
 resource Box(data: int32*) { owns Buffer(data); }
 contract void Raw(int32* p) { owns p[0..1]; }

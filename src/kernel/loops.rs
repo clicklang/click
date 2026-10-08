@@ -437,7 +437,7 @@ fn authority_mode_call_refusal_path() -> CStatementExecutionPath {
     CStatementExecutionPath {
         loop_invariant_correspondence: Default::default(),
         outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
-            "C calls are not yet supported by authority resource semantics".to_string(),
+            super::functions::AUTHORITY_MODE_ASSUMED_CALL_REFUSAL.to_string(),
         )),
         facts: Vec::new().into(),
         obligations: Vec::new(),

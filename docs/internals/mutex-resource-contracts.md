@@ -427,8 +427,9 @@ suspended-worker protocol transfer or stateful population confinement.
 
 ## Local counted-population payloads
 
-This section describes the legacy rule, which milestone 7 of
-`issues/authority-migration.md` deletes. Under legacy semantics a
+This section describes the legacy rule. Authority semantics replaced it,
+and milestone 7 of `issues/authority-migration.md` deletes its unreachable
+kernel code. Under legacy semantics a
 field-bearing payload may contain a positive quantity of one unconditional
 counted resource whose memory body states its own count. Initialization must
 own the complete population. While unlocked, retained units carry membership
@@ -439,7 +440,7 @@ population.
 
 No fixture depends on this rule any more. The seven `population_mutex_*`
 fixtures, the two `population_conservation_local_mutex*` fixtures, and the
-four `mutex_population_body_*` fixtures select authority semantics. Their
+four `mutex_population_body_*` fixtures use authority semantics. Their
 protected payload is an authority-bearing control, described in the next
 section. Each legacy refusal becomes an ordinary ownership refusal:
 

@@ -9,7 +9,7 @@ extern void mint(int32* p);
 void caller(int32* p) { mint(p); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource ticket(p: int32*) {}
 
 verifying "external_member_birth.c";
@@ -24,5 +24,5 @@ void caller(int32* p) {
 ```
 
 ```expect
-fail: C calls are not yet supported by authority resource semantics
+fail: its assumed contract changes a population or mutex resource
 ```

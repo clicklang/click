@@ -26,7 +26,7 @@ void pool_destroy(struct pool* pool);
 void fixed(struct pool* pool) { pool_destroy(pool); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource pool_slot(pool: struct pool*) {}
 authorized resource pool_object(pool: struct pool*, object: struct object*) { owns *object; }
 resource pool_control(pool: struct pool*) {

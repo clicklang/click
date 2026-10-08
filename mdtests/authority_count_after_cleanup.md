@@ -14,7 +14,7 @@ int32 spent_count() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {

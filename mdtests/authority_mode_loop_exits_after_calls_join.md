@@ -25,7 +25,7 @@ void paint(struct node* p, int32 flag) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "paint_through_helper.c";
 
 void paint(struct node* p, int32 flag) {

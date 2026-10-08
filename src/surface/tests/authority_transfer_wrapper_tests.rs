@@ -8,7 +8,6 @@ fn project(source: &str) -> ClickProject {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     })
 }
 

@@ -7,7 +7,7 @@ no memory or member custody.
 void probe(int32* p) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource permit(p: int32*) {}
 verifying "observe_zero_quantity.c";
 void probe(int32* p) {

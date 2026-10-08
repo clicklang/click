@@ -13,7 +13,7 @@ int32 run() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource ticket(pool: int32*, tag: int32) {
     field cell: int32*;
     field serial: int32;

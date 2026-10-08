@@ -14,7 +14,7 @@ void consume_population(struct owner* owner, int32 amount) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(owner: struct owner*) {
 }
 

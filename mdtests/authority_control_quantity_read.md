@@ -10,7 +10,7 @@ void inspect(struct pool* pool) {}
 void reversed(struct pool* pool) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
     owns *pool;

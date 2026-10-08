@@ -22,7 +22,7 @@ int run(void *p, void *q) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "authority_modeled_pthread_distinct_workers_spend.c";

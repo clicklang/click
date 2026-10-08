@@ -6,7 +6,7 @@ Other owners may retain members outside the helper's contract.
 void inspect(int32* pool, int32* member) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, member: int32*) {}
 verifying "wildcard_helper_arbitrary_total.c";
 void inspect(int32* pool, int32* member) {

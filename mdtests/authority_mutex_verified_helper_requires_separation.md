@@ -14,7 +14,7 @@ void touch(struct holder *holder, int *data) { *data = 1; }
 void write_value(struct holder *holder, int *data) { touch(holder, data); }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "authority_mutex_verified_helper_requires_separation.c";

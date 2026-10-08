@@ -5,7 +5,7 @@ extern void preserve(int32* pool);
 int32 run() { int32 pool = 0; preserve(&pool); return 0; }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource ticket(pool: int32*, tag: int32) { field serial: int32; }
 verifying "helper.c";
 extern void preserve(int32* pool) {

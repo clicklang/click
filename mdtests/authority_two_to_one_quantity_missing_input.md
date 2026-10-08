@@ -8,7 +8,7 @@ void shrink(int32* counter) { *counter = *counter - 1; }
 void lifecycle(int32* counter) { shrink(counter); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource member(counter: int32*) {}
 resource control(counter: int32*) {
     owns counter[0..1];

@@ -11,7 +11,7 @@ void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     owns occupied[0..capacity];
     forall (k: int32) where 0 <= k and k < capacity {

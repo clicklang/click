@@ -88,7 +88,6 @@ fn verify(source: &str) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     verify_c0_project(&project, &[("conditional_release.c", C)])
 }
@@ -142,7 +141,6 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     let c = [("conditional_release.c", C)];
     let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
@@ -186,7 +184,6 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     verify_c0_project(&project, &c).expect("the original handoff proof verifies");
     let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
@@ -205,7 +202,6 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         });
         verify_c0_project(&expanded_project, &c).unwrap_or_else(|error| {
             panic!(
@@ -262,7 +258,6 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     crate::instrumentation::with_default_tactic_limits(|| {
@@ -363,7 +358,6 @@ fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
             .with_c_profile(CProjectProfile {
                 target: None,
                 runtime: None,
-                resource_semantics: ResourceSemanticsMode::Authority,
             })
         };
         let project = project_for(source);

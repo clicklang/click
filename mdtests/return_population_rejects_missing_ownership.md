@@ -10,7 +10,7 @@ struct object { int32 refs; };
 struct object* retain(struct object* obj) { obj->refs += 1; return obj; }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource reference(obj: struct object*) {}
 verifying "retain.c";
 struct object* retain(struct object* obj) {

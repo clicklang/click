@@ -7,7 +7,7 @@ checked death; equal arguments and fields do not merge the occurrences.
 void retire(int32* pool) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource ticket(pool: int32*) { field serial: int32; }
 resource control(pool: int32*) { owns authority(ticket(pool)); }
 verifying "named_retirement.c";

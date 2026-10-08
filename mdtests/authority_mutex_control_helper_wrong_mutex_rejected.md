@@ -27,7 +27,7 @@ int run(void) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "authority_mutex_control_helper_wrong_mutex_rejected.c";

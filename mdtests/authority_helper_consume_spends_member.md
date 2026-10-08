@@ -19,7 +19,7 @@ int run(void) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "authority_helper_consume_spends_member.c";
 authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {

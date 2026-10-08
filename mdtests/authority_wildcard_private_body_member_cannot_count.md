@@ -4,7 +4,7 @@
 void inspect(int32* pool, int32* p) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_private_member_cannot_count.c";
 void inspect(int32* pool, int32* p) {

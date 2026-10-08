@@ -20,7 +20,7 @@ unsigned int run(struct counter *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "population_access.c";

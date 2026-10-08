@@ -23,7 +23,7 @@ void initialize_source(struct pool* source, struct pool* destination) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource pool_slot(pool: struct pool*) {}
 authorized resource pool_object(pool: struct pool*, object: int32*) {}
 resource pool_storage(pool: struct pool*) {

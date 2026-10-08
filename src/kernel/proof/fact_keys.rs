@@ -19,7 +19,6 @@ use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::collections::VecDeque;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Weak};
@@ -1053,43 +1052,37 @@ impl Hash for AlphaRegisteredLoadId {
 
 struct AlphaRegisteredLoadRecord {
     id: u64,
-    _interner: Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
+    interner: Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
+    fingerprint: u64,
     snapshot: AlphaSnapshotKey,
     pointer: AlphaPointerKey,
     kind: LoadKind,
 }
 
+/// Weak entries by descriptor fingerprint. A record removes its own entry
+/// when it dies, so interning one load costs only its own bucket and never
+/// revisits records that an unrelated proof's memos keep alive.
 struct AlphaRegisteredLoadInterner {
     buckets: HashMap<u64, Vec<Weak<AlphaRegisteredLoadRecord>>>,
-    cleanup: VecDeque<u64>,
 }
 
-impl AlphaRegisteredLoadInterner {
-    fn clean_some(&mut self) -> Option<()> {
-        let limit = self.cleanup.len().min(8);
-        for _ in 0..limit {
-            let Some(fingerprint) = self.cleanup.pop_front() else {
-                break;
-            };
-            let Some(bucket) = self.buckets.get_mut(&fingerprint) else {
-                continue;
-            };
-            if crate::instrumentation::deadline_exceeded_with_work(bucket.len().max(1)) {
-                self.cleanup.push_front(fingerprint);
-                return None;
-            }
-            bucket.retain(|candidate| candidate.strong_count() != 0);
-            let bucket_is_empty = bucket.is_empty();
-            if bucket_is_empty {
-                self.buckets.remove(&fingerprint);
-            } else {
-                // Keep a live bucket on the bounded queue so a later drop of
-                // its records is eventually observed even if no new query
-                // hashes this fingerprint.
-                self.cleanup.push_back(fingerprint);
-            }
+impl Drop for AlphaRegisteredLoadRecord {
+    fn drop(&mut self) {
+        // The only holder of the lock is an intern call on this thread, which
+        // drops no last reference while holding it; if another thread's drop
+        // races one, the dead entry stays until that bucket is next interned,
+        // which retains only live candidates.
+        let Ok(mut interner) = self.interner.try_lock() else {
+            return;
+        };
+        let Some(bucket) = interner.buckets.get_mut(&self.fingerprint) else {
+            return;
+        };
+        crate::instrumentation::record_deterministic_work(bucket.len().max(1));
+        bucket.retain(|candidate| candidate.strong_count() != 0);
+        if bucket.is_empty() {
+            interner.buckets.remove(&self.fingerprint);
         }
-        Some(())
     }
 }
 
@@ -1109,7 +1102,6 @@ fn alpha_registered_load_interner() -> Option<Arc<std::sync::Mutex<AlphaRegister
         }
         let interner = Arc::new(std::sync::Mutex::new(AlphaRegisteredLoadInterner {
             buckets: HashMap::new(),
-            cleanup: VecDeque::new(),
         }));
         *cell.borrow_mut() = Arc::downgrade(&interner);
         Some(interner)
@@ -1136,7 +1128,6 @@ fn intern_alpha_registered_load(
 ) -> Option<AlphaRegisteredLoadId> {
     let fingerprint = alpha_registered_load_descriptor_fingerprint(&snapshot, &pointer, kind);
     let mut interner_state = interner.lock().ok()?;
-    interner_state.clean_some()?;
     let bucket = interner_state.buckets.entry(fingerprint).or_default();
     if crate::instrumentation::deadline_exceeded_with_work(bucket.len().max(1)) {
         return None;
@@ -1159,13 +1150,13 @@ fn intern_alpha_registered_load(
         .ok()?;
     let record = Arc::new(AlphaRegisteredLoadRecord {
         id,
-        _interner: interner.clone(),
+        interner: interner.clone(),
+        fingerprint,
         snapshot,
         pointer,
         kind,
     });
     bucket.push(Arc::downgrade(&record));
-    interner_state.cleanup.push_back(fingerprint);
     Some(AlphaRegisteredLoadId(record))
 }
 

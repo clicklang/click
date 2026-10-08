@@ -17,7 +17,7 @@ int32 read_literal() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "string_literals_call.c";
 
 uint8* literal_source() {

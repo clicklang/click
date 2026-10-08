@@ -5,7 +5,7 @@ struct pool { int32 checked_out; };
 void inspect(struct pool* pool) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource item(pool: struct pool*, id: int32) {}
 resource control(pool: struct pool*) {
     owns *pool;

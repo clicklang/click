@@ -8805,7 +8805,9 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
     let error =
         result.expect_err("tampering with the resource selection must invalidate the proof");
     assert!(
-        error.message().contains("`unfold(marker((x + 1)))` failed"),
+        error
+            .message()
+            .contains("`open(marker((x + 1)))` Requires owns marker((x + 1))"),
         "the checked resource-entry operation should reject the tamper directly: {error:?}"
     );
 }
@@ -9009,7 +9011,9 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
     let error =
         result.expect_err("tampering with the nested resource selection must invalidate the proof");
     assert!(
-        error.message().contains("`unfold(cell((p + 1)))` failed"),
+        error
+            .message()
+            .contains("`open(cell((p + 1)))` Requires owns cell((p + 1))"),
         "the nested checked resource entry should reject the tamper directly: {error:?}"
     );
 }
@@ -9214,7 +9218,9 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
     let error =
         result.expect_err("tampering with the branch-arm resource must invalidate the proof");
     assert!(
-        error.message().contains("`unfold(cell((p + 1)))` failed"),
+        error
+            .message()
+            .contains("`open(cell((p + 1)))` Requires owns cell((p + 1))"),
         "the checked branch-arm resource entry should reject the tamper directly: {error:?}"
     );
 }
@@ -9326,7 +9332,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`unfold(marker((flag + 1)))` failed"),
+            .contains("`open(marker((flag + 1)))` Requires owns marker((flag + 1))"),
         "the checked nested branch-arm entry should reject the tamper directly: {error:?}"
     );
 }
@@ -11222,18 +11228,17 @@ fn outcome_simp_with_no_open_claims_is_an_empty_proof_transition() {
         }
     "#;
     let click_source = r#"
-        authorized resource object_ref(obj: struct object*) {
+        resource object_cell(obj: struct object*) {
             owns *obj;
-            fact obj->refs == count(object_ref(obj));
+            fact obj->refs == 1;
         }
 
         verifying "release.c";
 
         void release(struct object* obj) {
-            requires obj->refs == 1;
-            consumes object_ref(obj);
+            consumes object_cell(obj);
         } by {
-            unfold(object_ref(obj));
+            unfold(object_cell(obj));
             execute();
             simp();
         }
@@ -11266,9 +11271,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
     let click_source = r#"
         authorized resource pool_object(pool: struct pool*) {}
 
-        authorized resource pool_slot(pool: struct pool*) {
-            views *pool;
-        }
+        authorized resource pool_slot(pool: struct pool*) {}
 
         predicate valid_pool(pool: struct pool*) {
             0 <= pool->checked_out and
@@ -11281,11 +11284,15 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         void init(struct pool* pool, int32 capacity) {
             requires 0 < capacity;
             owns *pool;
+            owns authority(pool_object(pool));
+            owns authority(pool_slot(pool));
+            requires count(pool_object(pool)) == 0;
+            requires count(pool_slot(pool)) == 0;
             produces capacity of pool_slot(pool);
             ensures valid_pool(pool);
         } by {
-            execute();
             fold(capacity of pool_slot(pool));
+            execute();
             simp();
         }
     "#;
@@ -11304,61 +11311,6 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
     assert!(expanded.contains("normalize();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the retained predicate closure should check independently");
-}
-
-#[test]
-fn outcome_predicate_unfold_uses_the_checked_frame_population_transition() {
-    let c_source = r#"
-        struct pool { int32 checked_out; };
-        struct object { int32 value; };
-
-        void give_back(struct pool* pool, struct object* object) {
-            pool->checked_out = pool->checked_out - 1;
-        }
-    "#;
-    let click_source = r#"
-        authorized resource pool_object(pool: struct pool*, object: struct object*) {
-            owns *object;
-        }
-
-        predicate valid_pool(pool: struct pool*) {
-            0 <= pool->checked_out and
-            pool->checked_out == count(pool_object(pool, _))
-        }
-
-        verifying "give_back.c";
-
-        void give_back(struct pool* pool, struct object* object) {
-            requires valid_pool(pool);
-            requires count(pool_object(pool, object)) == 1;
-            owns *pool;
-            consumes pool_object(pool, object);
-            produces *object;
-            ensures valid_pool(pool);
-        } by {
-            unfold(valid_pool);
-            unfold(pool_object(pool, object));
-            execute();
-            simp();
-        }
-    "#;
-    let sources = [("give_back.c", c_source)];
-
-    let verified = verify_c0_sources(click_source, &sources);
-    verified.expect("the checked frame population transition should reach the outcome Proof");
-
-    let expanded =
-        expand_c0_claim_source(click_source, &sources, "give_back", CProofClaim::Grouped)
-            .expect("the retained population transition should expand");
-    assert!(
-        expanded.contains(
-            "have 0 <= pool->checked_out and pool->checked_out == count(pool_object(pool, _)) by {"
-        ),
-        "{expanded}"
-    );
-    assert!(expanded.contains("unfold(valid_pool);"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
-        .expect("the retained population transition should check independently");
 }
 
 #[test]
@@ -14251,9 +14203,9 @@ fn smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies() {
         .expect("the expanded post-return closer should independently reverify");
 }
 
-/// `object_retain_many` from `examples/refcount`, whose proof writes a smart
-/// `have` inside an `open(...)` body and closes a produced resource claim
-/// with a grouped `simp`.
+/// `object_retain_many` from `examples/refcount`, whose proof folds the
+/// produced references inside an `open(...)` body and closes the produced
+/// resource claim with a grouped `simp`.
 const PRODUCED_RESOURCE_C: &str = r#"
 struct object {
     int32 refs;
@@ -14265,35 +14217,29 @@ void object_retain_many(struct object* obj, int32 amount) {
 "#;
 
 const PRODUCED_RESOURCE_CLICK: &str = r#"
-authorized resource object_ref(obj: struct object*) {
+authorized resource reference(obj: struct object*) {}
+
+resource control(obj: struct object*) {
     owns allocation(obj, sizeof(struct object));
     owns *obj;
-    fact obj->refs == count(object_ref(obj));
+    owns authority(reference(obj));
+    fact obj->refs == count(reference(obj));
 }
 
 verifying "object_retain_many.c";
 
 void object_retain_many(struct object* obj, int32 amount) {
     requires 0 <= amount;
-    requires defined(1 + amount);
-    owns object_ref(obj);
-    produces amount of object_ref(obj);
+    requires defined(obj->refs + amount);
+    owns control(obj);
+    produces amount of reference(obj);
+    ensures defined(obj->refs);
 } by {
-    open(object_ref(obj)) {
-        have 1 == obj->refs by simp;
-        execute();
+    open(control(obj)) {
+        step();
+        fold(amount of reference(obj));
     }
-    have 1 <= 1 + amount by {
-        apply(int32_add_nonnegative_right_is_at_least_left(1, amount)) using {
-            0 <= amount;
-            defined(1 + amount);
-        }
-    }
-    have amount <= 1 + amount by {
-        apply(int32_add_nonnegative_left_is_at_least_right(1, amount)) using {
-            defined(1 + amount);
-        }
-    }
+    execute();
     simp();
 }
 "#;
@@ -15461,7 +15407,6 @@ fn authority_population_certification_expands_every_smart_site() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let project = project_for(source);
@@ -15516,7 +15461,6 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let project = project_for(source);
@@ -15562,7 +15506,6 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     verify_c0_project(&valid_project, &[("keep.c", "void keep(int32* p) {}")])
         .expect("the same C body returns one borrowed exclusive unit");
@@ -15587,7 +15530,6 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         });
         if verify_c0_project(&project, &[("keep.c", "void keep(int32* p) {}")]).is_ok() {
             accepted_closers.push((produced, closer));
@@ -15668,7 +15610,6 @@ void caller(struct parent* p, struct child* kid) {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let c = [("named.c", c_source)];
@@ -16242,7 +16183,6 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let project = project_for(&source);

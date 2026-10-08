@@ -9,7 +9,7 @@ entry state.
 int32 *select(int32 *result, int32 *next) { return next; }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "select.c";
 int32 *select(int32 *result, int32 *next) {
     views result[0..1];

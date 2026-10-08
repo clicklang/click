@@ -13,7 +13,7 @@ void move_slot() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "authority_pool_member_transfer.c";
 authorized resource slot(pool: int32*, cell: int32*) {
     field label: int32;

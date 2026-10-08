@@ -14,7 +14,7 @@ void lifecycle() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, member: int32*) {}
 verifying "wildcard_consume_helper.c";
 void release(int32* pool, int32* member) {

@@ -5,7 +5,7 @@ void inspect(int32* pool, int32* member) {}
 void caller(int32* pool, int32* member) { inspect(pool, member); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, member: int32*) {}
 verifying "wildcard_helper_missing_authority.c";
 void inspect(int32* pool, int32* member) {

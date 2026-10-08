@@ -11,7 +11,7 @@ int32 write_flag_observed(int32* flag) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 resource zero_flag(flag: int32*) {
     owns flag[0..1];
     fact flag[0] == 0;

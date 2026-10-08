@@ -42,7 +42,7 @@ void pool_roundtrip(struct pool* pool, int32 object) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 abstract resource available(object: int32);
 authorized resource pool_object(pool: struct pool*, object: int32) {
     owns available(object);

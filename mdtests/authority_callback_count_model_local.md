@@ -9,7 +9,7 @@ unchanged A population.
 int32 invoke(int32 (*callback)(int32*), int32* pool) { return callback(pool); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource A(pool: int32*) {}
 authorized resource B(pool: int32*) {}
 contract int32 Keep(int32* pool) {

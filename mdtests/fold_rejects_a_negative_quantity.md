@@ -17,7 +17,7 @@ int32 mint_zero(struct s* o) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource ref(o: struct s*) {}
 
 verifying "fold_rejects_a_negative_quantity.c";

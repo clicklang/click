@@ -36,7 +36,7 @@ int32 box_cycle(struct box* box) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 resource boxed(box: struct box*) {
     owns *box;
     owns allocation(box->data, 4);

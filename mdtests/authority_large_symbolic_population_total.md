@@ -9,7 +9,7 @@ void mint_n(int32* o, int32 n) {}
 void first_birth(int32* o, int32 k) { mint_n(o, k); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource tok(o: int32*) {}
 verifying "population_total.c";
 void mint_n(int32* o, int32 n) {

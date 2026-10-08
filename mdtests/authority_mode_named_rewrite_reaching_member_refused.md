@@ -8,7 +8,7 @@ member rules: a definitional rewrite is refused.
 void remember(int32* p) { }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "resource_reference_argument_owns.c";
 authorized resource cell(p: int32*) { field revision: int32; }
 resource revision_record(p: int32*, target: cell(p)) {

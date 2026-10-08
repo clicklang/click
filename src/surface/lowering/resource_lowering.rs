@@ -68,7 +68,6 @@ pub(in crate::surface) fn initial_call_state(
     parameters: &[syntax::C0Parameter],
     function: &CFunction,
     composite_definitions: &[CCompositeResourceDefinition],
-    resource_semantics_mode: ResourceSemanticsMode,
 ) -> Result<(CState, Vec<CExpression>), ClickError> {
     if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
         return Err(ClickError::new(
@@ -309,10 +308,7 @@ pub(in crate::surface) fn initial_call_state(
     // Install ordinary function storage before adding symbolic loadable
     // cells. Otherwise a loadable clause can create a block first and leave
     // entry initialization unable to install its stable typed cells.
-    let initial = match resource_semantics_mode {
-        ResourceSemanticsMode::Legacy => CState::new(),
-        ResourceSemanticsMode::Authority => CState::new().with_population_creation_tracking(),
-    };
+    let initial = CState::new().with_population_creation_tracking();
     let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
     if parameters
         .iter()
@@ -360,7 +356,7 @@ pub(in crate::surface) fn initial_call_state(
     let resources = resource_context_from_requirements(requires, parameters, &arguments, &state)?;
     let mut state =
         crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
-    if resource_semantics_mode == ResourceSemanticsMode::Authority {
+    {
         // A standalone helper is proved for an arbitrary population supplied
         // by its caller. Import only the explicitly declared ownership, with
         // no exact total or C creation right; the call site later checks the actual

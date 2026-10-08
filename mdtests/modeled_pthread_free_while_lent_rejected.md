@@ -24,7 +24,7 @@ int run(void) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_free_while_lent_rejected.c";

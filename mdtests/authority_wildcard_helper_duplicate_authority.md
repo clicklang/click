@@ -4,7 +4,7 @@
 void inspect(int32* pool, int32* member) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, member: int32*) {}
 verifying "wildcard_helper_duplicate_authority.c";
 void inspect(int32* pool, int32* member) {

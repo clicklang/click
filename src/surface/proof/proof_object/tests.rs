@@ -3233,9 +3233,9 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
             }
 
             int32 source_identity(int32 x) {
-                requires x >= 0;
+                requires 100 / (x + 1) >= 0;
                 requires selected(x);
-                requires x + 1 > x;
+                requires x >= 0;
                 ensures result == x by { assumption(); }
             }
         "#,

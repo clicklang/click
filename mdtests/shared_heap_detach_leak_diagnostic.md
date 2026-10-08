@@ -25,7 +25,7 @@ void parent_detach(struct parent* p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 spec enum ParentLink {
     Empty,
     Linked(struct child*),

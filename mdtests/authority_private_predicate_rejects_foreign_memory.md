@@ -2,7 +2,7 @@
 void wrap(int32* p, int32* other) {}
 ```
 
-```click resource_semantics=authority
+```click
 predicate is_zero(cell: int32*) { cell[0] == 0 }
 authorized resource zero_cell(cell: int32*, other: int32*) {
     owns cell[0..1];
