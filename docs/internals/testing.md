@@ -248,7 +248,10 @@ whole repository on a release build: every smart tactic in the examples and
 mdtests must expand to a proof that verifies. It takes about twenty minutes.
 A proof container with a known audit failure is left out with `--exclude` in
 that script, each beside the issue that tracks it; remove the exclusion with
-the issue. When a new test would
+the issue. `examples/basic-cpp` is also left out: its import lock and
+compilation database are generated per machine by the test harness, so a
+fresh checkout cannot load it, and `tests/cpp_import.rs` audits the C++ path.
+When a new test would
 push the gate past ten minutes, put it in the nightly gate; do not raise the
 budget. Before 2026-10-06 the local gate had grown to 41 minutes and CI to 23
 in five days, almost all from tool rechecks in the Rust import tests.

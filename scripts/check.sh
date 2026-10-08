@@ -154,11 +154,17 @@ fi
 # - mdtests/search_terminates_by_unmarked_count.md has a loop body `return`
 #   whose closing `simp` cannot be expanded by location
 #   (issues/loop-return-exit-is-closed-by-the-loops-tail.md).
+#
+# examples/basic-cpp is left out for a different reason: its import lock and
+# compilation database are generated per machine by the test harness and are
+# not checked in, so a fresh checkout cannot load it. `tests/cpp_import.rs`
+# audits the C++ path.
 if [[ "${1:-}" == "--audit" ]]; then
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
     cargo build --release --bin click
     exec target/release/click audit --keep-going --time-limit 180m \
         --exclude examples/multifile-registry \
+        --exclude examples/basic-cpp \
         --exclude mdtests/search_terminates_by_unmarked_count.md \
         .
 fi
