@@ -1,13 +1,13 @@
-# A callback fact does not outlive the open that exposed it
+# An owned suite's callbacks stay callable after the open closes
 
 The callback suite is opened once; the first callback stores through its owned
 node link and the second is still authorized inside the open. The open then
-closes before the third call. The cells the body exposed, `augment->rotate`
-among them, went back into the folded suite with the close, together with the
-body's callback facts, so the call after the close cannot read the callback
-pointer it would apply and is refused for the missing view. The permitted
-mutation inside the open does not change that: the scope, not the mutation,
-bounds what the body exposes.
+closes before the third call, and the cells the body exposed, `augment->rotate`
+among them, go back into the folded suite. The third call is still authorized:
+holding the suite lets C read the memory it owns directly, so the call reads
+the callback pointer through the folded suite, and the suite's `Rotate` fact
+describes that cell for as long as the suite stays folded. A write to the
+cell would need `unfold`, which retires the read.
 
 ```c filename=rb_augment_callbacks_call_after_close.c
 struct node {
@@ -93,5 +93,5 @@ void erase_mutating(struct node* node, struct node* parent,
 ```
 
 ```expect
-fail: missing resource fact
+pass
 ```

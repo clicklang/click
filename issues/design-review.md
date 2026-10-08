@@ -101,21 +101,36 @@ resource declares no fields to hold them; write the child without a name".
 Decide whether a parent without fields should be able to name a child. It
 would need a model for a resource that declares none.
 
-### B3. Reading through a declared resource (decide)
+### B3. Reads go through an owned resource: the loop case
 
-Checked on 2026-10-08 with `resource flat(p: struct cell*) { owns p->value;
-owns p->other; }` and a function that reads `p->value`:
+Decided 2026-10-08 and built: holding a resource, viewed or owned, lets C
+read the memory it owns directly. A write still needs `unfold`. Depth stays
+at one level: memory a child resource owns is not read through.
+`mdtests/c_reads_through_an_owned_resource.md`,
+`c_does_not_write_through_an_owned_resource.md` and
+`an_owned_resource_unfolds_after_a_read_through_it.md` pin the rule.
 
-- `views flat(p);` verifies with no `unfold`. C reads the memory the
-  resource owns directly.
-- `owns flat(p);` does not. It needs `unfold(flat(p));` before the read and
-  `fold(flat(p));` after.
-- Neither reads through a child. With `resource outer(p) { owns inner(p);
-  owns p->other; }`, a read of memory `inner` owns fails under `views
-  outer(p);`, with and without `unfold(outer(p));`.
+What remains is that it is built two ways (`OwnedCores` in
+`src/surface/proof/resources.rs`):
 
-So a view reads one level through a declared resource and ownership reads
-none. Decide whether the two should agree, and at what depth.
+- In a function with no loop, the views of an owned resource's memory are
+  attached to the owner's occurrence, so they retire when the owner is
+  unfolded, consumed, freed or handed to an interface.
+- In a function with a loop, they are free-standing views, as before the
+  decision. A loop head gives the owner a new occurrence, which would retire
+  attached views at the first iteration.
+
+Free-standing views of owned memory are the form that broke `unfold`, a
+freeing call and an `ensuring` interface when it was tried for every
+function on 2026-10-08 (12 tests). Loop proofs in the corpus do not hit
+those, which is evidence about the corpus and not about the rule.
+
+Regression: a function with a loop that reads through an owned resource in
+the body, then unfolds it after the loop; the same with a freeing call.
+
+Done when: one mode serves both, either by re-attaching the views to the
+owner's occurrence at a loop head or by authorizing the read where it
+happens without leaving a view.
 
 ### B4. Overlap that depends on a symbolic bound
 
