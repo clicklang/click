@@ -1626,6 +1626,18 @@ fn c_function_contract_entry_facts(
             });
             (has_same_base && entry_resources.satisfies_fact(required, &assumptions))
                 .then(|| entry_resources.clone())
+        })
+        .or_else(|| {
+            // Expanding the authority entry opens every held composite one
+            // level, including a viewed child the entry already projected.
+            // A view is duplicable, so the unexpanded entry still holding
+            // it satisfies the requirement and consumes nothing.
+            (required.is_view()
+                && entry_state.uses_population_authority_semantics()
+                && entry_state
+                    .resources()
+                    .satisfies_fact(required, &assumptions))
+            .then(|| entry_resources.clone())
         });
         let Some(exposed) = exposed else {
             missing.push((index, required));
