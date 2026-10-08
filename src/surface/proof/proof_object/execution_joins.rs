@@ -573,7 +573,7 @@ impl<'a> Proof<'a> {
             }
         }
         let selected = arm.certificate.clone();
-        let empty = ProofCertificate::from_steps(Vec::new())?;
+        let empty = ProofCertificate::pruned_execution_arm();
         let (then_proof, else_proof) = if take_then {
             (selected, empty)
         } else {
@@ -669,7 +669,7 @@ impl<'a> Proof<'a> {
         selected_steps.resize_with(entry_steps, || ProofStep::Step);
         selected_steps.extend_from_slice(arm.certificate.steps());
         let selected = ProofCertificate::from_steps(selected_steps)?;
-        let empty = ProofCertificate::from_steps(Vec::new())?;
+        let empty = ProofCertificate::pruned_execution_arm();
         let (then_proof, else_proof) = if take_then {
             (selected, empty)
         } else {
@@ -3322,7 +3322,7 @@ impl<'a> Proof<'a> {
     /// those transitions, so this checks the exact Surface operations against
     /// the C branch and applies only the remaining body steps to the focused branch
     /// sibling. No certificate is constructed or interpreted.
-    pub(super) fn checked_expanded_execution_arm_entry_steps(
+    pub(in crate::surface::proof) fn checked_expanded_execution_arm_entry_steps(
         &self,
         record: &ExecutionSplit<'a>,
         take_then: bool,

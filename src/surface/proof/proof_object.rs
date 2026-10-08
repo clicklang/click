@@ -924,8 +924,9 @@ impl ProofExecutionView<'_> {
     ) -> Option<Vec<bool>> {
         let mut decisions = self
             .outcome_provenance
-            .get(path_index)?
-            .branch_decisions
+            .get(path_index)
+            .map(|provenance| &provenance.branch_decisions)
+            .unwrap_or(&self.execution.presentation.branch_decisions)
             .iter();
         let mut path = Vec::new();
         let mut current = steps;
@@ -965,9 +966,15 @@ impl ProofExecutionView<'_> {
         // been skipped, so every path through more than one surface `if`
         // reported no branch path at all and its closer was stitched onto
         // every leaf instead of its own.
-        let provenance = self.outcome_provenance.get(path_index)?;
-        let mut decisions = provenance.branch_decisions.iter();
-        let mut call_routes = provenance.call_routes.iter();
+        let provenance = self.outcome_provenance.get(path_index);
+        let mut decisions = provenance
+            .map(|provenance| &provenance.branch_decisions)
+            .unwrap_or(&self.execution.presentation.branch_decisions)
+            .iter();
+        let mut call_routes = provenance
+            .map(|provenance| provenance.call_routes.as_slice())
+            .unwrap_or(&[])
+            .iter();
         let mut path = Vec::new();
         let mut current = tactics;
         loop {

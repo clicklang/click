@@ -1,5 +1,9 @@
 use super::*;
 #[cfg(test)]
+thread_local! {
+    static SURFACE_LEAF_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
 use crate::persistent::persistent_node_allocations;
 use crate::surface::planning::proposition_search::PropositionSearch;
 #[cfg(test)]
@@ -607,7 +611,15 @@ pub(super) fn record_post_execution_surface_tactic(
     path_tactics.push(tactic);
 }
 
+fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: ProofStep) {
+    if !proof.is_pruned_execution_arm() {
+        append_surface_step_to_leaves(proof.steps_mut(), step);
+    }
+}
+
 pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: ProofStep) {
+    #[cfg(test)]
+    SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
         return;
     }
@@ -625,13 +637,13 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
             Some(per_arm) => {
                 for (arm, suffix) in arms.iter_mut().zip(per_arm) {
                     for next in suffix {
-                        append_surface_step_to_leaves(arm.proof.steps_mut(), next);
+                        append_surface_step_to_certificate(&mut arm.proof, next);
                     }
                 }
             }
             None => {
                 for arm in arms {
-                    append_surface_step_to_leaves(arm.proof.steps_mut(), step.clone());
+                    append_surface_step_to_certificate(&mut arm.proof, step.clone());
                 }
             }
         }
@@ -653,15 +665,15 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
             && condition == existing_condition
         {
             for next in selected_then.steps() {
-                append_surface_step_to_leaves(then_proof.steps_mut(), next.clone());
+                append_surface_step_to_certificate(then_proof, next.clone());
             }
             for next in selected_else.steps() {
-                append_surface_step_to_leaves(else_proof.steps_mut(), next.clone());
+                append_surface_step_to_certificate(else_proof, next.clone());
             }
             return;
         }
-        append_surface_step_to_leaves(then_proof.steps_mut(), step.clone());
-        append_surface_step_to_leaves(else_proof.steps_mut(), step);
+        append_surface_step_to_certificate(then_proof, step.clone());
+        append_surface_step_to_certificate(else_proof, step);
     } else if let Some(ProofStep::CallOutcomes {
         returned_proof,
         threw_proof,
@@ -673,15 +685,15 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
         } = &step
         {
             for next in selected_returned.steps() {
-                append_surface_step_to_leaves(returned_proof.steps_mut(), next.clone());
+                append_surface_step_to_certificate(returned_proof, next.clone());
             }
             for next in selected_threw.steps() {
-                append_surface_step_to_leaves(threw_proof.steps_mut(), next.clone());
+                append_surface_step_to_certificate(threw_proof, next.clone());
             }
             return;
         }
-        append_surface_step_to_leaves(returned_proof.steps_mut(), step.clone());
-        append_surface_step_to_leaves(threw_proof.steps_mut(), step);
+        append_surface_step_to_certificate(returned_proof, step.clone());
+        append_surface_step_to_certificate(threw_proof, step);
     } else {
         steps.push(step);
     }
@@ -839,17 +851,29 @@ pub(super) fn append_surface_tactics_by_leaf(
         }
     }
 
+    fn append_certificate(
+        proof: &mut ProofCertificate,
+        path_steps: &[Vec<ProofStep>],
+        next_path: &mut usize,
+    ) {
+        if !proof.is_pruned_execution_arm() {
+            append(proof.steps_mut(), path_steps, next_path);
+        }
+    }
+
     pub(super) fn append(
         steps: &mut Vec<ProofStep>,
         path_steps: &[Vec<ProofStep>],
         next_path: &mut usize,
     ) {
+        #[cfg(test)]
+        SURFACE_LEAF_VISITS.with(|visits| visits.set(visits.get() + 1));
         if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
             return;
         }
         if let Some(ProofStep::Match { arms, .. }) = steps.last_mut() {
             for arm in arms {
-                append(arm.proof.steps_mut(), path_steps, next_path);
+                append_certificate(&mut arm.proof, path_steps, next_path);
             }
             return;
         }
@@ -859,8 +883,8 @@ pub(super) fn append_surface_tactics_by_leaf(
             ..
         }) = steps.last_mut()
         {
-            append(then_proof.steps_mut(), path_steps, next_path);
-            append(else_proof.steps_mut(), path_steps, next_path);
+            append_certificate(then_proof, path_steps, next_path);
+            append_certificate(else_proof, path_steps, next_path);
         } else if let Some(ProofStep::CallOutcomes {
             returned_proof,
             threw_proof,
@@ -868,8 +892,8 @@ pub(super) fn append_surface_tactics_by_leaf(
         {
             // A call fork joins its returned arm's paths before its threw
             // arm's, as a C `if` joins then before else.
-            append(returned_proof.steps_mut(), path_steps, next_path);
-            append(threw_proof.steps_mut(), path_steps, next_path);
+            append_certificate(returned_proof, path_steps, next_path);
+            append_certificate(threw_proof, path_steps, next_path);
         } else if let Some(suffix) = path_steps.get(*next_path) {
             steps.extend(suffix.iter().cloned());
             *next_path += 1;
@@ -1386,6 +1410,86 @@ pub(super) struct DeferredPostExecutionTactic {
 #[cfg(test)]
 mod proof_fact_store_tests {
     use super::*;
+
+    #[test]
+    fn outcome_suffix_placement_skips_pruned_arms_in_linear_work() {
+        fn branch(then_proof: ProofCertificate, else_proof: ProofCertificate) -> ProofStep {
+            ProofStep::If {
+                condition: ClickProposition::Comparison {
+                    left: ContractExpression::IntegerLiteral("0".into()),
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::IntegerLiteral("0".into()),
+                },
+                ensuring: None,
+                then_proof: Box::new(then_proof),
+                else_proof: Box::new(else_proof),
+            }
+        }
+        fn tree(count: usize) -> ProofCertificate {
+            if count == 1 {
+                return ProofCertificate::from_steps(vec![branch(
+                    ProofCertificate::from_steps(Vec::new()).unwrap(),
+                    ProofCertificate::pruned_execution_arm(),
+                )])
+                .unwrap();
+            }
+            ProofCertificate::from_steps(vec![branch(tree(count / 2), tree(count / 2))]).unwrap()
+        }
+        for count in [16, 64, 256] {
+            for common in [true, false] {
+                let mut steps = tree(count).into_steps();
+                let suffixes = (0..count)
+                    .map(|index| {
+                        vec![ProofTactic::Mark(if common {
+                            "shared".into()
+                        } else {
+                            index.to_string()
+                        })]
+                    })
+                    .collect::<Vec<_>>();
+                SURFACE_LEAF_VISITS.with(|visits| visits.set(0));
+                append_surface_tactics_by_leaf(&mut steps, &suffixes, None).unwrap();
+                let visits = SURFACE_LEAF_VISITS.with(std::cell::Cell::get);
+                assert!(visits <= 4 * count, "{count} leaves: {visits} visits");
+                let mut pending = vec![steps.as_slice()];
+                let mut live = 0;
+                let mut pruned = 0;
+                while let Some(steps) = pending.pop() {
+                    if let [
+                        ProofStep::If {
+                            then_proof,
+                            else_proof,
+                            ..
+                        },
+                    ] = steps
+                    {
+                        for proof in [else_proof, then_proof] {
+                            if proof.is_pruned_execution_arm() {
+                                assert!(proof.steps().is_empty());
+                                pruned += 1;
+                            } else {
+                                pending.push(proof.steps());
+                            }
+                        }
+                    } else {
+                        let [ProofStep::Mark(value)] = steps else {
+                            panic!("live leaf lost its closer");
+                        };
+                        assert_eq!(
+                            value,
+                            &if common {
+                                "shared".into()
+                            } else {
+                                live.to_string()
+                            }
+                        );
+                        live += 1;
+                    }
+                }
+                assert_eq!((live, pruned), (count, count));
+            }
+        }
+    }
 
     #[test]
     fn call_outcome_closers_keep_independent_certificates() {
