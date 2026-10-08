@@ -4297,6 +4297,44 @@ impl<'a> Proof<'a> {
         &self,
         exclude_goal_fact: bool,
     ) -> Option<Self> {
+        // Probe the scalar bounds and remainder identities that need folded
+        // equality congruence. Memory-frame equalities already have a checked
+        // transport path; probing their snapshot aliases first repeats costly
+        // premise spelling and changes the intended transport certificate.
+        let scalar_goal = match self.goal()? {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector64SignedLessThan(..)
+                | ConditionTerm::Bitvector64SignedLessEqual(..)
+                | ConditionTerm::Bitvector64SignedGreaterThan(..)
+                | ConditionTerm::Bitvector64SignedGreaterEqual(..)
+                | ConditionTerm::Bitvector64UnsignedLessThan(..)
+                | ConditionTerm::Bitvector64UnsignedLessEqual(..)
+                | ConditionTerm::Bitvector64UnsignedGreaterThan(..)
+                | ConditionTerm::Bitvector64UnsignedGreaterEqual(..)
+                | ConditionTerm::IntegerLessThan(..)
+                | ConditionTerm::IntegerLessEqual(..)
+                | ConditionTerm::IntegerGreaterThan(..)
+                | ConditionTerm::IntegerGreaterEqual(..),
+                _,
+            ) => true,
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(left, right)
+                | ConditionTerm::Bitvector64Equal(left, right),
+                _,
+            ) => [left.as_ref(), right.as_ref()].into_iter().any(|term| {
+                matches!(
+                    term,
+                    Bitvector32Term::Remainder(..)
+                        | Bitvector32Term::UnsignedRemainder(..)
+                        | Bitvector32Term::Int64Remainder(..)
+                        | Bitvector32Term::UInt64Remainder(..)
+                )
+            }),
+            _ => false,
+        };
+        if !scalar_goal {
+            return None;
+        }
         self.try_indexed_goal_equality_rewrite_with_options(exclude_goal_fact, false, true)
     }
 
