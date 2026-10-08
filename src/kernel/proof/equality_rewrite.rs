@@ -464,8 +464,9 @@ fn rewrite_through_loaded_pointer_block(
 /// symbolic pointer (`p == q`, not `p + 4 == q`) qualifies; the rewrite then
 /// replaces that pointer variable and composes any displacement at each
 /// occurrence, which is exact term congruence bounded by the goal's size.
-/// Reached only for a goal shape the structural rewrite does not handle at
-/// all, so every goal it rewrites keeps its result.
+/// Reached when the structural rewrite cannot change the goal, including
+/// scalar pure-function applications. A structural rewrite that changed the
+/// goal keeps its result.
 fn pointer_variable_rewrite(
     goal: &Proposition,
     left: &Pointer,
@@ -477,10 +478,10 @@ fn pointer_variable_rewrite(
     if left.offset != PointerOffsetTerm::Constant(0) {
         return None;
     }
-    let rewritten =
-        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(variable, right)
-            .proposition(goal);
-    (&rewritten != goal).then_some(rewritten)
+    let mut rewrite =
+        crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(variable, right);
+    let rewritten = rewrite.proposition(goal);
+    (rewrite.refusal().is_none() && &rewritten != goal).then_some(rewritten)
 }
 
 fn rewrite_atomic_proposition_by_exact_equality(
@@ -1300,7 +1301,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         };
         if &rewritten == goal {
-            return Err("`rewrite` equality does not occur in the current goal".to_string());
+            return pointer_variable_rewrite(goal, left, right).ok_or_else(|| {
+                "`rewrite` equality does not occur in the current goal".to_string()
+            });
         }
         return Ok(rewritten);
     }
@@ -2490,6 +2493,88 @@ mod tests {
             ProofFacts::default()
                 .check_equality_rewrite(&goal, &premise)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
+        let variable = Variable(920);
+        let source = Pointer::symbolic(variable);
+        let target = Pointer::symbolic(Variable(921));
+        let cited = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(source.clone(), target.clone()),
+            true,
+        );
+        let memory = CMemory::new().with_block("unchanged", 4);
+        let goal_at = |pointer: Pointer, count: usize| {
+            equality(
+                Bitvector32Term::ClickFunctionApplication {
+                    name: "observes".into(),
+                    arguments: vec![
+                        PureFunctionArgument::ArrayRef {
+                            memory: memory.clone(),
+                            pointer: CValue::typed_pointer(pointer, CType::Int32Pointer),
+                            element_type: CType::Int32,
+                        };
+                        count
+                    ],
+                },
+                Bitvector32Term::Constant(1),
+            )
+        };
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+        let goal = goal_at(source.clone(), 1);
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&goal, &cited)
+                .unwrap()
+                .proposition(),
+            &goal_at(target.clone(), 1)
+        );
+        assert!(
+            ProofFacts::default()
+                .check_equality_rewrite(&goal, &cited)
+                .is_err()
+        );
+        for bound in [variable, Variable(921)] {
+            let quantified = Proposition::ForAll {
+                var: bound,
+                sort: Sort::CPointer(CType::Int32Pointer),
+                body: Box::new(goal.clone()),
+            };
+            assert!(
+                facts.check_equality_rewrite(&quantified, &cited).is_err(),
+                "the equality cannot rewrite a shadowed source or capture the target"
+            );
+        }
+        let displaced = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(
+                Pointer {
+                    block: source.block.clone(),
+                    offset: PointerOffsetTerm::Constant(4),
+                },
+                target.clone(),
+            ),
+            true,
+        );
+        assert!(
+            ProofFacts::from_ordered(std::slice::from_ref(&displaced))
+                .check_equality_rewrite(&goal, &displaced)
+                .is_err(),
+            "equality at an offset does not identify the whole pointer"
+        );
+        let costs = [16, 32, 64, 128].map(|size| {
+            let goal = goal_at(source.clone(), size);
+            let (checked, cost) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &cited).unwrap()
+            });
+            assert_eq!(checked.proposition(), &goal_at(target.clone(), size));
+            cost
+        });
+        assert!(costs[0] > 0);
+        assert!(
+            costs.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 8),
+            "scalar-call rewrite rescanned its argument list: {costs:?}"
         );
     }
 

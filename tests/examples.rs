@@ -391,7 +391,10 @@ fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
             || error
                 .message()
                 .contains("selected child does not satisfy the proposed parent model")
-            || error.message().contains("contract certification"),
+            || error.message().contains("contract certification")
+            || error
+                .message()
+                .contains("unclosed goal: result == old(node->rb_right)"),
         "unexpected refusal: {}",
         error.message()
     );
@@ -464,6 +467,24 @@ fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_successor.click",
         "\t\tsuccessor->__rb_parent_color = pc;\n",
+        "",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_successor_requires_the_fixup_parent() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_successor.click",
+        "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
+        "\t\t\trebalance = NULL;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_black_successor_requires_root_replacement() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_black_successor.click",
+        "\t\t__rb_change_child(node, successor, tmp, root);\n",
         "",
     );
 }

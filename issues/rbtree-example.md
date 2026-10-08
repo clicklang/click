@@ -22,10 +22,11 @@ tree and produces another cannot state that without an abstract model.
 Insert is finished. The black-successor splice's deficit-start model proof
 in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
 successors. Chunk 11 now verifies the unchanged C for a root with zero or
-one child, and for an immediate red-leaf successor at the root. The red-leaf
-successor has a no-deficit model theorem, with immediate and deep concrete
-checks. Non-root C unlink, deeper C successors, and the other immediate
-successor exits remain. Nonempty replacement children now have a balance exit theorem
+one child, and for immediate red- and black-leaf successors at the root. The
+red-leaf successor has a no-deficit model theorem, with immediate and deep
+concrete checks. Non-root C unlink, deeper C successors, and immediate
+successors with a nonempty replacement child remain. Nonempty replacement
+children now have a balance exit theorem
 and immediate/deep checks in `rbtree_erase_child.click` and
 `successor_child_checks.click`; the exact successor-splice sequence and
 parent-consistency connection for that branch remains.
@@ -59,6 +60,16 @@ scaling; mdtests cover interleaved proofs and folds. Exact fact lookup now
 recognizes retained resource-composition facts. Explicit resource closers use
 the same checked ownership receipts as `simp`, fixing the successor's final
 expansion without changing C.
+
+`rbtree_erase_black_successor.click` covers the immediate black-leaf successor
+at the root (2026-10-08). Its output is the empty hole and exact deficit
+context, with `ctx_rb(..., Succ(Zero), Black)`, parent consistency, and
+remaining in-order contents. The returned fixup parent is the non-null
+successor. All five smart sites pass expansion audit. Mutations reject
+returning null or skipping root replacement.
+The proof also exposed scalar pure-function calls skipped by pointer
+`rewrite`; the existing binder-safe pointer walker now handles those goals,
+with missing-premise, capture, offset, snapshot, and scaling regressions.
 
 Two proof-driver fixes support this increment: named folds after return inside
 `open` are deferred to the returned state, and exact checked execution retains
@@ -988,7 +999,9 @@ ownership for root deletion with at most one child. Its exact model and
 in-order contract drops that root's occurrence. Non-root zero/one-child cases
 and the remaining two-child successor branches remain. The immediate red-leaf
 successor at the root is now covered, including its exact model, balance,
-parent consistency, and in-order contents. Depends on 7 and 10.
+parent consistency, and in-order contents. The immediate black-leaf case at
+the root returns the exact deficit context and non-null fixup parent for
+chunk 12. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.

@@ -14,10 +14,17 @@ the exact `rb_successor_splice` model, red-black validity, parent consistency,
 and the old left/right in-order sequence, with a null fixup parent. Its
 contract requires a parent-consistent input tree.
 
+`rbtree_erase_black_successor.click` covers an immediate black-leaf successor
+at the root. It returns the successor as a non-null fixup parent, an empty
+hole, and the exact `ctx_at` context missing one black level. The context
+preserves parent consistency and the remaining in-order sequence. This is
+the input to erase-color fixup; it does not claim that the tree is already
+red-black.
+
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Non-root deletion, deeper
-successors, and immediate successors with a replacement child or black-leaf
-deficit remain. The C file retains all branches; each sidecar states its
+successors, and immediate successors with a replacement child remain. The C
+file retains all branches; each sidecar states its
 current coverage explicitly.
 
 The callback contracts describe the non-augmented case: callbacks cannot
@@ -38,4 +45,5 @@ Run `click verify examples/rbtree-erase` and
 root-deletion and successor-splice theorems independently. Example regressions
 pin the source and reject skipped parent/color writes, root replacement, or
 the successor's left-child parent update. The successor's explicit final
-claim closers also re-verify.
+claim closers also re-verify. Black-successor mutations reject a skipped root
+replacement and incorrectly returning null instead of the fixup parent.
