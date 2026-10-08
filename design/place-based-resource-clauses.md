@@ -228,9 +228,9 @@ an accepted clause.
   `owns a[2..4]`, and a local's storage is `&second[0..1]`.
 - Done: step 5. A range on a struct pointer counts structs, and the sites
   that counted cells name the struct (`*p`), its fields, or a struct count.
-  The parser scales the bounds to cells; a symbolic count is weaker for it in
-  one path
-  (`bugs/a-symbolic-struct-count-is-not-viewable-at-contract-entry.md`).
+  The parser scales the bounds to cells. A constant count works; a symbolic
+  count is not usable, as it was not when the cells were written by hand
+  (`bugs/a-symbolic-struct-count-range-is-not-usable.md`).
 - Not started: step 6.
 - `views *p` and `views p->inner` are accepted in a contract. They were
   refused outside a resource definition for no recorded reason.
