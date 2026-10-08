@@ -2862,23 +2862,22 @@ fn synthesize_surface_bitvector(
         // lies in the same epoch; the kernel's own naming law decides that,
         // so the spelling lowers back to exactly this variable there.
         Bitvector32Term::Variable(variable) => {
+            // A recorded load already supplies the address to inspect. Avoid
+            // searching unrelated locals when ordinary certificates name it.
+            if let Some((_, pointer)) = crate::kernel::registered_load_for_variable(variable)
+                && let Some(name) =
+                    state.local_name_holding_bitvector_variable_at(*variable, &pointer)
+            {
+                return Some(ContractExpression::CFragment(CExpression::Variable(
+                    name.to_string(),
+                )));
+            }
             // A memory-resident scalar local holding exactly this variable
-            // reads as its own name here.
-            if let Some((name, _)) = state.local_cell_values().find(|(_, value)| {
-                matches!(
-                    value,
-                    CValue::Int8(held) | CValue::Int16(held)
-                        | CValue::Int32(held)
-                        | CValue::UInt8(held)
-                        | CValue::UInt16(held)
-                        | CValue::UInt32(held)
-                        | CValue::Int64(held)
-                        | CValue::UInt64(held)
-                        | CValue::Int128(held)
-                        | CValue::UInt128(held)
-                        if held == term
-                )
-            }) {
+            // reads as its own name here. Looking for aliases is a bounded
+            // smart search; a simple certificate never scans unrelated slots.
+            if crate::instrumentation::smart_tactic_active()
+                && let Some(name) = state.local_name_holding_bitvector_variable(*variable)
+            {
                 return Some(ContractExpression::CFragment(CExpression::Variable(
                     name.to_string(),
                 )));
