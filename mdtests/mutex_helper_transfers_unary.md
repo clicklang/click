@@ -45,7 +45,7 @@ void use(struct holder *p) {
     simp();
 }
 void run(struct holder *p) {
-    owns &p->mu;
+    owns p->mu;
     requires aligned(&p->mu, 8);
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mu, 0), {});

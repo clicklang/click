@@ -31,15 +31,15 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
 verifying "loop_frame_field_rewritten.c";
 
 void mark_and_swap(struct arena* arena, int32 start, int32 end) {
-    owns object(arena);
+    owns *arena;
     owns arena->occupied[0..arena->capacity];
     owns arena->spare[0..arena->capacity];
     requires separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     );
     requires separate(
-        memory(object(arena)),
+        memory(*arena),
         memory(arena->spare[0..arena->capacity])
     );
     requires separate(

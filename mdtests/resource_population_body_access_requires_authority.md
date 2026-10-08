@@ -15,7 +15,7 @@ void unauthorized_write(struct object* obj) {
 
 ```click
 resource wrapper(obj: struct object*) {
-    owns object(obj);
+    owns *obj;
 }
 
 verifying "resource_population_body_access_requires_authority.c";

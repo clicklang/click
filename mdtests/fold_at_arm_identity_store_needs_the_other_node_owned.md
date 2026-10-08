@@ -1,7 +1,7 @@
 # The store to the other node still needs its ownership
 
 [`fold_at_arm_identity_after_store_to_other_node.md`](fold_at_arm_identity_after_store_to_other_node.md)
-without `owns &q->tag`. Nothing keeps `q` apart from `p`, and the store itself
+without `owns q->tag`. Nothing keeps `q` apart from `p`, and the store itself
 is refused before any refold is reached.
 
 ```c filename=fold_at_arm_identity_store_needs_the_other_node_owned.c
@@ -19,9 +19,9 @@ resource tree(p: struct node*) {
     match model {
         Tree::Empty => { fact p == 0; },
         Tree::Node(id, lm, rm) => {
-            owns &p->left;
-            owns &p->right;
-            owns &p->tag;
+            owns p->left;
+            owns p->right;
+            owns p->tag;
             owns left: tree(p->left);
             owns right: tree(p->right);
             fact p != 0;

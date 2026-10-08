@@ -2,12 +2,12 @@
 
 The negative of `a_store_keeps_a_cell_a_folded_instance_owns.md` when the
 two descriptors are one. The contract requires `s == other`: no caller can
-lend both `object(other)` and an instance owning `object(s)` then, but the
+lend both `*other` and an instance owning `*s` then, but the
 entry check cannot see inside the folded instance, so the kernel must not
 exploit it. A store opens a held instance's body only into a composition
 that passes the check a flat context of the same ranges would, and with
-`s == other` the opened `object(s)` overlaps the written `object(other)`, as
-`owns object(s); owns object(other);` beside `requires s == other` is
+`s == other` the opened `*s` overlaps the written `*other`, as
+`owns *s; owns *other;` beside `requires s == other` is
 refused. Nothing is opened, the store to `other->at` forgets the cached
 `s->at`, and C's read of `s->at` is not the entry value.
 
@@ -28,7 +28,7 @@ int32 touch(struct slot* s, struct slot* other) {
 resource slot_span(s: struct slot*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     fact s->at == at;
     fact s->end == end;
 }
@@ -38,7 +38,7 @@ verifying "a_store_through_an_equal_descriptor_forgets_a_folded_instance_cell.c"
 int32 touch(struct slot* s, struct slot* other) {
     requires s == other;
     owns r: slot_span(s);
-    owns object(other);
+    owns *other;
     ensures result == old(s->at);
 } by {
     execute();

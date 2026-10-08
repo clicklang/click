@@ -28,12 +28,12 @@ int32 run(int32 value) {
 ```click
 verifying "rewrite.c";
 void put(struct holder* h, struct child* p) {
-    owns &h->target;
+    owns h->target;
     ensures h->target == p;
     ensures defined(h->target);
 } by { execute(); simp(); }
 void change(struct child* p) {
-    owns object(p);
+    owns *p;
     ensures p->payload == old(p->payload);
 } by { execute(); simp(); }
 int32 run(int32 value) {

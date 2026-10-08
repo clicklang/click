@@ -968,7 +968,7 @@ composition names: a body read at a snapshot where it is no longer held could
 name someone else's memory. The composition must pass the validity check a
 flat context of the same ranges would, so a path whose facts prove an opened
 range overlaps the written member (`requires s == other` beside a folded
-instance owning `object(s)` and a flat `object(other)`, which no caller can
+instance owning `*s` and a flat `*other`, which no caller can
 lend) opens nothing. A matched, guarded or witness-bearing body, a nested
 instance, an iterated clause and a view contribute nothing. The unmatched
 body's cells are named at contract entry, as a selected arm's are, so there
@@ -997,9 +997,9 @@ composition.
 
 The composition rule above must *not* be widened to cover
 `mdtests/const_callback_field.md`. `read_view(struct reader *r, const int *p)`
-holds `owns object(r)` and `views p[0..1]`, both spelled in one `external`
+holds `owns *r` and `views p[0..1]`, both spelled in one `external`
 block with symbolic offsets, and its claim is true: a caller cannot both
-transfer `object(r)` and lend a window inside it, because suspending the write
+transfer `*r` and lend a window inside it, because suspending the write
 authority for the loan leaves no usable copy to transfer
 (`docs/internals/stable-views.md`, law 1, and "usable ownership and an active
 independent view of overlapping memory cannot coexist"). But that is a
@@ -1088,7 +1088,7 @@ Four pairs it does not build:
 - **a clause that is not plain memory.** A composite's owned footprint is its
   expansion, and `separate(memory(..), memory(..))` cannot name it without
   expanding it, so the pair is skipped outright rather than approximated.
-  `owns object(r)` is *not* such a clause: `object(r)` lowers to the plain
+  `owns *r` is *not* such a clause: `*r` lowers to the plain
   range `r[0..size/4]`, which is what makes `const_callback_field` expressible.
 
 The two sites that know they are at a contract entry produce it independently

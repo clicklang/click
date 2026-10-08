@@ -39,7 +39,7 @@ int32 flag(int32 value) {
 }
 
 void assign(struct node* parent, struct node* new) {
-    owns &parent->left;
+    owns parent->left;
     ensures parent->left == new by auto;
 }
 ```

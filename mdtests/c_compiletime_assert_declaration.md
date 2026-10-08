@@ -36,7 +36,7 @@ int32 store(int32* cell, int32 value) {
 }
 
 void write_once(struct node* parent, struct node* new) {
-    owns &parent->left;
+    owns parent->left;
     ensures parent->left == new by auto;
 }
 

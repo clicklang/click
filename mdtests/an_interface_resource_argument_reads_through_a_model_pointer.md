@@ -30,7 +30,7 @@ resource list(p: struct node*) {
         Chain::Cons(id, value, rest) => {
             fact p == id;
             owns p->val;
-            owns &p->next;
+            owns p->next;
             owns tail: list(p->next);
             fact p != 0;
             fact p->val == value;

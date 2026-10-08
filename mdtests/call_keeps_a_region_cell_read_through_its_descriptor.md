@@ -79,21 +79,21 @@ resource pool_cells(data: int32*, flags: int32*, n: int32) {
 
 resource pool_state(pool: struct pool*) {
     field live: int32;
-    owns &pool->data;
-    owns &pool->flags;
+    owns pool->data;
+    owns pool->flags;
     owns pool->n;
     owns pool_cells(pool->data, pool->flags, pool->n);
     fact 0 <= live;
     fact pool->n <= 536870911;
     fact separate(memory(pool->flags[0..pool->n]), memory(pool->data[0..pool->n]));
-    fact separate(memory(object(pool)), memory(pool->data[0..pool->n]));
-    fact separate(memory(object(pool)), memory(pool->flags[0..pool->n]));
+    fact separate(memory(*pool), memory(pool->data[0..pool->n]));
+    fact separate(memory(*pool), memory(pool->flags[0..pool->n]));
 }
 
 resource pool_slot(s: struct slot*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     owns s->pool->data[at..end];
     fact s->at == at;
     fact s->end == end;
@@ -166,8 +166,8 @@ int32 get(struct slot* s) {
 
 void attach(struct pool* pool, struct slot* first, struct slot* second) {
     owns st: pool_state(pool);
-    consumes object(first);
-    consumes object(second);
+    consumes *first;
+    consumes *second;
     consumes pool->data[0..2];
     produces a: pool_slot(first);
     produces b: pool_slot(second);
@@ -186,8 +186,8 @@ void attach(struct pool* pool, struct slot* first, struct slot* second) {
 
 int32 two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     owns st: pool_state(pool);
-    consumes object(first);
-    consumes object(second);
+    consumes *first;
+    consumes *second;
     consumes pool->data[0..2];
 
     ensures result == 11;

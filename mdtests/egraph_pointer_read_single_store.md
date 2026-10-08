@@ -11,8 +11,8 @@ struct node *touch(struct node *p) { p->tag = 1; return p->left; }
 ```click
 verifying "read_store.c";
 struct node* touch(struct node* p) {
- owns &p->left;
- owns &p->tag;
+ owns p->left;
+ owns p->tag;
  ensures result == old(p->left);
 } by {
  step();

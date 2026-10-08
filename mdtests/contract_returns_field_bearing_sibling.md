@@ -41,7 +41,7 @@ resource live_count(arena: struct arena*) {
 
 resource prefix_region(region: struct region*) {
     field start: int32;
-    owns object(region);
+    owns *region;
 }
 
 verifying "probe.c";

@@ -38,9 +38,9 @@ int caller(struct arena* arena, struct region* first, struct region* second) {
 verifying "simp_composes_a_pointer_field_chain_across_a_call.c";
 
 void touch(struct region* region) {
-    owns object(region);
-    owns &region->arena->data;
-    requires separate(memory(object(region)), memory(&region->arena->data));
+    owns *region;
+    owns region->arena->data;
+    requires separate(memory(*region), memory(region->arena->data));
     ensures region->arena == old(region->arena);
     ensures region->arena->data == old(region->arena->data);
 } by {
@@ -49,9 +49,9 @@ void touch(struct region* region) {
 }
 
 int32 caller(struct arena* arena, struct region* first, struct region* second) {
-    owns object(arena);
-    owns object(first);
-    owns object(second);
+    owns *arena;
+    owns *first;
+    owns *second;
     requires first->arena == arena;
     requires second->arena == arena;
     ensures result == 0;

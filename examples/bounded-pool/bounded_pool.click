@@ -1,12 +1,12 @@
 authorized resource pool_slot(pool: struct pool*) {}
-authorized resource pool_object(pool: struct pool*, object: struct object*) { owns object(object); }
+authorized resource pool_object(pool: struct pool*, object: struct object*) { owns *object; }
 resource pool_storage(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
 }
 resource pool_control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     owns authority(pool_object(pool, _));
     fact 0 <= pool->checked_out;
@@ -322,7 +322,7 @@ void pool_destroy(struct pool* pool) {
     consumes pool_control(pool);
     consumes pool->capacity of pool_slot(pool);
     requires pool->checked_out == 0;
-    produces object(pool);
+    produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
     ensures count(pool_slot(pool)) == 0;
@@ -343,7 +343,7 @@ void pool_zero_pipeline(struct pool* pool) {
     consumes pool_storage(pool);
     requires count(pool_slot(pool)) == 0;
     requires count(pool_object(pool, _)) == 0;
-    produces object(pool);
+    produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
     ensures count(pool_slot(pool)) == 0;
@@ -362,7 +362,7 @@ void pool_zero_pipeline(struct pool* pool) {
 void pool_checkout(struct pool* pool, struct object* object) {
     owns pool_control(pool);
     consumes pool_slot(pool);
-    consumes object(object);
+    consumes *object;
     produces pool_object(pool, object);
     ensures count(pool_slot(pool)) == old(count(pool_slot(pool))) - 1;
     ensures count(pool_object(pool, _)) == old(count(pool_object(pool, _))) + 1;
@@ -418,7 +418,7 @@ void pool_return(struct pool* pool, struct object* object) {
     owns pool_control(pool);
     requires count(pool_object(pool, object)) == 1;
     consumes pool_object(pool, object);
-    produces object(object);
+    produces *object;
     produces pool_slot(pool);
     ensures count(pool_slot(pool)) == old(count(pool_slot(pool))) + 1;
     ensures count(pool_object(pool, _)) == old(count(pool_object(pool, _))) - 1;
@@ -514,9 +514,9 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     consumes pool_storage(pool);
     requires count(pool_slot(pool)) == 0;
     requires count(pool_object(pool, _)) == 0;
-    owns object(first);
-    owns object(second);
-    produces object(pool);
+    owns *first;
+    owns *second;
+    produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
     ensures count(pool_slot(pool)) == 0;
@@ -595,7 +595,7 @@ void pool_resize_pipeline(struct pool* pool) {
     consumes pool_storage(pool);
     requires count(pool_slot(pool)) == 0;
     requires count(pool_object(pool, _)) == 0;
-    produces object(pool);
+    produces *pool;
     ensures pool->checked_out == 0;
     ensures pool->capacity == 0;
     ensures count(pool_slot(pool)) == 0;
@@ -800,7 +800,7 @@ void pool_transfer_pipeline(struct pool* source, struct pool* destination, struc
     requires source != destination;
     consumes pool_storage(source);
     consumes pool_storage(destination);
-    consumes object(object);
+    consumes *object;
     requires count(pool_slot(source)) == 0;
     requires count(pool_slot(destination)) == 0;
     requires count(pool_object(source, _)) == 0;

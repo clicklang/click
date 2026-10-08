@@ -1170,17 +1170,17 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
 
     let sidecar_source = r#"verifying "caller.cpp";
         void Restore_constructor(struct Restore* self, int32* slot) {
-            owns &self->pointer;
+            owns self->pointer;
             owns self->saved;
             owns slot[0..1];
             ensures self->pointer == slot;
             ensures self->saved == old(slot[0]);
             ensures slot[0] == 9;
-            ensures separate(memory(object(self)), memory(self->pointer[0..1]));
+            ensures separate(memory(*self), memory(self->pointer[0..1]));
         } by { execute(); simp(); }
         void Restore_destructor(struct Restore* self) {
-            requires separate(memory(object(self)), memory(self->pointer[0..1]));
-            owns &self->pointer;
+            requires separate(memory(*self), memory(self->pointer[0..1]));
+            owns self->pointer;
             owns self->saved;
             owns self->pointer[0..1];
             ensures self->pointer == old(self->pointer);
@@ -3120,7 +3120,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded record proof must reverify");
 
-    let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns &state->pointer;\n", "");
+    let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns state->pointer;\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
     verify_program_prepared_project(&missing_project, &import)
@@ -3498,7 +3498,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         .expect("expanded terminal-cleanup proof must reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
-        "void RestoreState_destructor(struct RestoreState* self) {\n    requires separate(memory(object(self)), memory(self->pointer[0..1]));\n    owns &self->pointer;\n    owns self->saved;\n    owns self->pointer[0..1];\n    ensures self->pointer == old(self->pointer);\n    ensures self->saved == old(self->saved);\n    ensures self->pointer[0] == old(self->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
+        "void RestoreState_destructor(struct RestoreState* self) {\n    requires separate(memory(*self), memory(self->pointer[0..1]));\n    owns self->pointer;\n    owns self->saved;\n    owns self->pointer[0..1];\n    ensures self->pointer == old(self->pointer);\n    ensures self->saved == old(self->saved);\n    ensures self->pointer[0] == old(self->saved);\n} by {\n    execute();\n    simp();\n}\n\n",
         "",
     );
     fs::write(&sidecar, &missing_destructor).unwrap();
@@ -6642,13 +6642,13 @@ fn direct_return_calls_capture_typed_results_before_destructors() {
         let source = format!(
             r#"verifying "cleanup.cpp";
 void Restore_constructor(struct Restore* self, int32* slot) {{
- owns &self->p; owns self->saved; owns slot[0..1];
+ owns self->p; owns self->saved; owns slot[0..1];
  ensures self->p == slot; ensures self->saved == old(slot[0]); ensures slot[0] == 7;
- ensures separate(memory(object(self)), memory(self->p[0..1]));
+ ensures separate(memory(*self), memory(self->p[0..1]));
 }} by {{ execute(); simp(); }}
 void Restore_destructor(struct Restore* self) {{
- requires separate(memory(object(self)), memory(self->p[0..1]));
- owns &self->p; owns self->saved; owns self->p[0..1];
+ requires separate(memory(*self), memory(self->p[0..1]));
+ owns self->p; owns self->saved; owns self->p[0..1];
  ensures self->p == old(self->p); ensures self->saved == old(self->saved);
  ensures self->p[0] == old(self->saved);
 }} by {{ execute(); simp(); }}
@@ -7427,15 +7427,15 @@ fn normalized_initializer_calls_capture_before_normal_cleanup() {
     // Reuse the existing independently checked constructor/destructor contracts.
     let source = r#"verifying "evaluation.cpp";
 void Restore_constructor(struct Restore* self, int32* value) {
- owns &self->slot; owns self->saved; owns value[0..1];
+ owns self->slot; owns self->saved; owns value[0..1];
  ensures self->slot == value;
  ensures self->saved == old(value[0]);
  ensures value[0] == 7;
- ensures separate(memory(object(self)), memory(self->slot[0..1]));
+ ensures separate(memory(*self), memory(self->slot[0..1]));
 } by { execute(); simp(); }
 void Restore_destructor(struct Restore* self) {
- requires separate(memory(object(self)), memory(self->slot[0..1]));
- owns &self->slot; owns self->saved; owns self->slot[0..1];
+ requires separate(memory(*self), memory(self->slot[0..1]));
+ owns self->slot; owns self->saved; owns self->slot[0..1];
  ensures self->slot == old(self->slot);
  ensures self->saved == old(self->saved);
  ensures self->slot[0] == old(self->saved);
@@ -11523,11 +11523,11 @@ fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
     for (selected, sidecar) in [
         (
             "read",
-            "verifying \"pointer_nested.cpp\"; int read(const struct Outer* state, int* value) { views &state->child.pointer; views value[0..1]; requires state->child.pointer == value; ensures result == value[0]; } by { execute(); simp(); }",
+            "verifying \"pointer_nested.cpp\"; int read(const struct Outer* state, int* value) { views state->child.pointer; views value[0..1]; requires state->child.pointer == value; ensures result == value[0]; } by { execute(); simp(); }",
         ),
         (
             "write",
-            "verifying \"pointer_nested.cpp\"; void write(const struct Outer* state, int* value, int next) { views &state->child.pointer; owns value[0..1]; requires state->child.pointer == value; ensures value[0] == next; ensures state->child.pointer == old(state->child.pointer); } by { execute(); simp(); }",
+            "verifying \"pointer_nested.cpp\"; void write(const struct Outer* state, int* value, int next) { views state->child.pointer; owns value[0..1]; requires state->child.pointer == value; ensures value[0] == next; ensures state->child.pointer == old(state->child.pointer); } by { execute(); simp(); }",
         ),
     ] {
         let project = Project::with_fixture("pointer_nested.cpp", selected, source);

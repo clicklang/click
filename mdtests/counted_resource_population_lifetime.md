@@ -30,7 +30,7 @@ authorized resource object_ref(obj: struct object*) {}
 
 resource object_control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
-    owns object(obj);
+    owns *obj;
     owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));
 }
@@ -40,9 +40,9 @@ verifying "counted_resource_finish.c";
 
 struct object* object_init(struct object* obj) {
     consumes allocation(obj, sizeof(struct object));
-    consumes object(obj);
+    consumes *obj;
     produces allocation(obj, sizeof(struct object));
-    produces object(obj);
+    produces *obj;
 
     ensures result == obj;
     ensures obj->refs == 1;

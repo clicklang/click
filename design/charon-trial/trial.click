@@ -1,8 +1,8 @@
 verifying "trial.rs";
 
 void Guard_drop(struct Guard* self) {
-    requires separate(memory(object(self)), memory(self->slot[0..1]));
-    owns &self->slot;
+    requires separate(memory(*self), memory(self->slot[0..1]));
+    owns self->slot;
     owns self->saved;
     owns self->slot[0..1];
     ensures self->slot == old(self->slot);

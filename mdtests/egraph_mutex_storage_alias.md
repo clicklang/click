@@ -23,7 +23,7 @@ int32 run(struct holder *first, struct holder *middle, struct holder *last) {
     requires first == middle;
     requires middle == last;
     requires aligned(&last->mu, 8);
-    owns &first->mu;
+    owns first->mu;
     ensures result == 0;
 } by { execute(); simp(); }
 ```

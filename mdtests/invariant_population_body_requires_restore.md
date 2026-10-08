@@ -26,7 +26,7 @@ void break_wrapper_invariant(struct object* obj) {
 
 ```click
 resource wrapper(obj: struct object*) {
-    owns object(obj);
+    owns *obj;
     fact obj->field == 7;
 }
 
@@ -35,7 +35,7 @@ verifying "invariant_population_break.c";
 
 void wrap_object(struct object* obj) {
     requires obj->field == 7;
-    consumes object(obj);
+    consumes *obj;
     produces wrapper(obj);
 } by {
     execute();
@@ -45,7 +45,7 @@ void wrap_object(struct object* obj) {
 
 void break_wrapper_invariant(struct object* obj) {
     requires obj->field == 7;
-    owns object(obj);
+    owns *obj;
 } by {
     step();
     open(wrapper(obj)) {

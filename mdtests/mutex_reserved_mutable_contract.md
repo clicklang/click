@@ -22,10 +22,10 @@ runtime "modeled-pthread";
 verifying "mutex_reserved_mutable_contract.c";
 extern void touch(struct holder *holder) {
     owns mutex_live(&holder->mu);
-    owns &holder->mu;
+    owns holder->mu;
 }
 int32 run(struct holder *holder) {
-    owns &holder->mu;
+    owns holder->mu;
     requires aligned(&holder->mu, 8);
     ensures result == 0;
 } by { execute(); simp(); }

@@ -9,7 +9,7 @@ int32 read() { return current[0]; }
 ```click
 verifying "address_view.c";
 int32 read() {
-    views &current;
+    views current;
     views current[0..1];
     ensures result == current[0];
 } by { execute(); simp(); }

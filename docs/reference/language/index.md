@@ -1277,7 +1277,7 @@ aligned for its type from its declaration, a struct local's for its
 layout; a file-scope or static object's block is aligned for its type from
 its creation; and a pointer reached through a parameter
 needs an `aligned` clause in a contract or a `fact` in a resource. A
-required complete-object clause `object(p)` for a struct type carries
+required complete-object clause `*p` for a struct type carries
 `aligned(p, alignof(struct))` as a generated requirement: the caller proves
 it and the function relies on it. A produced object and a resource body
 state alignment explicitly, with `ensures aligned(result, n)` and
@@ -1348,7 +1348,7 @@ An ordinary resource declaration requires a body shared by all equal units:
 <!-- verified-example: mdtests/counted_resource_refcount_transitions.md -->
 ```click
 resource object_ref(obj: struct object*) {
-    owns object(obj);
+    owns *obj;
     fact obj->refs == count(object_ref(obj));
 }
 ```
@@ -1547,7 +1547,7 @@ unmatched makes the cells its body owns readable to the contract's other
 resource clauses, as a folded field-free composite does:
 `consumes freed: arena_prefix_region(region);` beside
 `consumes before: arena_prefix_state(region->arena);` reads `region->arena`
-through the `object(region)` the region's body owns, in either clause order.
+through the `*region` the region's body owns, in either clause order.
 The same holds for the clauses the contract returns and for the cells its
 postconditions read inside its folded instances
 (`mdtests/contract_returns_field_bearing_sibling.md`,
@@ -1742,8 +1742,8 @@ resource ctx_at(node: struct tree_node*) {
         Context::Top => {},
         Context::Left(up_node, value, right_model, up_model) => {
             owns node->value;
-            owns &node->left;
-            owns &node->right;
+            owns node->left;
+            owns node->right;
             owns right: tree_at(node->right);
             owns up: ctx_at(up_node);
             fact node != 0;
@@ -1772,8 +1772,8 @@ resource ctx_at(child: struct tree_node*) {
         Context::Top => {},
         Context::Left(parent, value, sibling_model, up_model) => {
             owns parent->value;
-            owns &parent->left;
-            owns &parent->right;
+            owns parent->left;
+            owns parent->right;
             owns sibling: tree_at(parent->right);
             owns up: ctx_at(parent);
             fact parent != 0;
@@ -1807,8 +1807,8 @@ equations with the parent's fields:
 resource arena_prefix_state(arena: struct arena*) {
     field prefix: int32;
     field live: int32;
-    owns &arena->data;
-    owns &arena->occupied;
+    owns arena->data;
+    owns arena->occupied;
     owns arena->capacity;
     owns arena->live_regions;
     owns marks: occupied_marks(arena->occupied, prefix);
@@ -1843,7 +1843,7 @@ A composite body may instead have one top-level guard:
 resource list(node: struct node*) {
     if node != 0 {
         owns node->value;
-        owns &node->next;
+        owns node->next;
         contains list(node->next);
     }
 }
@@ -2001,7 +2001,7 @@ by `owns`, `consumes`, and `produces`.
 Fixed-size heap objects add the built-in owned resource
 `allocation(base, bytes)`. It is exclusive authority and responsibility for
 one live heap lifetime; it does not authorize memory access. Complete access is
-spelled separately with `object(base)`. Allocation authority cannot be
+spelled separately with `*base`. Allocation authority cannot be
 `views`-ed or duplicated, and a verified function may not silently drop it:
 the authority must be returned (possibly inside a composite resource) or
 consumed by an actual `free`.
@@ -2011,7 +2011,7 @@ consumed by an actual `free`.
 resource owned_item(item: struct item*) {
     if item != 0 {
         contains allocation(item, sizeof(struct item));
-        owns object(item);
+        owns *item;
     }
 }
 ```
@@ -2420,8 +2420,8 @@ verifying "left.c" as left;
 verifying "right.c" as right;
 
 resource both() {
-    owns &left::count[0..1];
-    owns &right::count[0..1];
+    owns left::count;
+    owns right::count;
     fact right::count == 19u64;
 }
 ```
@@ -2468,7 +2468,7 @@ For a function-local static, include the function name:
 
 <!-- verified-example: mdtests/qualified_function_static_ownership.md -->
 ```click
-owns &counter_file::increment::calls[0..1];
+owns counter_file::increment::calls;
 ```
 
 This names the same storage as the unqualified `calls` inside `increment`.
@@ -2730,18 +2730,18 @@ Click contracts can use field places in resources:
 `views obj->field` and `owns obj->field`. The access resource also makes the
 field viewable for symbolic execution.
 
-Use `object(obj)` for the complete storage of a struct object:
+Use `*obj` for the complete storage of a struct object:
 
 <!-- verified-example: mdtests/composite_resource_struct_owned_buffer.md -->
 ```click
-consumes object(owner);
-fact separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+consumes *owner;
+fact separate(memory(*owner), memory(owner->data[0..owner->cap]));
 ```
 
-`object(owner)` is layout-aware: it denotes the imported C struct's aligned
+`*owner` is layout-aware: it denotes the imported C struct's aligned
 size without exposing byte offsets or pretending that a pointer field is a
 pair of source-level `int32` fields. Use `owner->field` for one field and
-`object(owner)` for the complete object. When a proof exposes the object's
+`*owner` for the complete object. When a proof exposes the object's
 cells, wide integer fields take their own type while pointer fields are
 held as pointer-width words that read back as pointers; the field's source
 spelling is unaffected. Explicit ranges such as

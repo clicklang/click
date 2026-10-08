@@ -31,7 +31,7 @@ int32 destroy_null() {
 resource owned_item(item: struct item*) {
     if item != 0 {
         contains allocation(item, sizeof(struct item));
-        owns object(item);
+        owns *item;
     }
 }
 

@@ -45,12 +45,12 @@ int32 read_after_calls(struct buffer* owner) {
 resource buffer_storage(owner: struct buffer*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
     fact owner->len <= owner->cap;
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     );
 }
@@ -58,7 +58,7 @@ resource buffer_storage(owner: struct buffer*) {
 resource allocated_buffer(owner: struct buffer*) {
     owns owner->len;
     owns owner->cap;
-    owns &owner->data;
+    owns owner->data;
     contains allocation(owner->data, owner->cap * 4);
     owns owner->data[0..owner->cap];
     fact 0 <= owner->len;
@@ -66,7 +66,7 @@ resource allocated_buffer(owner: struct buffer*) {
     fact 1 <= owner->cap;
     fact owner->cap <= 536870911;
     fact separate(
-        memory(object(owner)),
+        memory(*owner),
         memory(owner->data[0..owner->cap])
     );
 }

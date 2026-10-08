@@ -9203,7 +9203,7 @@ int read_retargeted(struct buffer *owner, int *other) {\n\
 verifying "reader.c";
 
 int32 read_entry(struct buffer* owner, int32* other) {
-    owns &owner->data;
+    owns owner->data;
     views owner->data[0..1];
     ensures result == owner->data[0];
 } by {
@@ -9227,7 +9227,7 @@ int32 read_entry(struct buffer* owner, int32* other) {
 verifying "reader.c";
 
 int32 read_retargeted(struct buffer* owner, int32* other) {
-    owns &owner->data;
+    owns owner->data;
     views owner->data[0..1];
     ensures result == owner->data[0];
 } by {
@@ -9438,14 +9438,14 @@ verifying "reader.c";
 resource box(p: struct s*) {
     owns p->a;
     owns p->b;
-    owns &p->d;
+    owns p->d;
     views p->d[0..p->b];
     fact 0 <= p->b;
 }
 
 extern int32 setup(struct s* p, int32 d[], int32 n) {
     requires 0 <= n;
-    consumes object(p);
+    consumes *p;
     views d[0..n];
     produces box(p);
     ensures p->b == n;
@@ -9454,7 +9454,7 @@ extern int32 setup(struct s* p, int32 d[], int32 n) {
 
 extern void drop_box(struct s* p) {
     consumes box(p);
-    produces object(p);
+    produces *p;
 }
 "#;
 
@@ -9470,7 +9470,7 @@ extern void drop_box(struct s* p) {
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }}
@@ -9496,7 +9496,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }}
@@ -9517,7 +9517,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }} by {{
@@ -9545,7 +9545,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
             "{BORROWING_BOX_PRELUDE}
 int32 f(struct s* p, int32 d[], int32 n) {{
     requires 0 < n;
-    owns object(p);
+    owns *p;
     owns d[0..n];
     ensures result == 0;
 }} by {{
@@ -9576,21 +9576,21 @@ verifying "reader.c";
 resource box(p: struct s*) {
     owns p->a;
     owns p->b;
-    owns &p->d;
+    owns p->d;
     views p->d[0..p->b];
     fact 0 <= p->b;
 }
 
 extern int32 conjure(struct s* p, int32 n) {
     requires 0 <= n;
-    consumes object(p);
+    consumes *p;
     produces box(p);
     ensures p->b == n;
 }
 
 int32 f(struct s* p, int32 n) {
     requires 0 < n;
-    consumes object(p);
+    consumes *p;
     produces box(p);
     ensures result == 0;
 }

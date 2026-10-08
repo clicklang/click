@@ -2753,7 +2753,7 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
         void drop_one(struct pair* pair) {
             requires ordered_pair(pair);
             requires pair->low == 1;
-            owns object(pair);
+            owns *pair;
 
             ensures ordered_pair(pair);
         } by {
