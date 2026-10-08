@@ -61,10 +61,10 @@ int32 lifecycle() { ensures result == 0 or result == 18; } by {
     fold(slot(&destination)); fold(slot(&destination));
     fold(item(&source, p)); fold(item(&source, p + 1));
     step();
-    have count(item(&source, _)) == 1 by simp;
-    have count(item(&destination, _)) == 1 by simp;
-    have count(slot(&source)) == 1 by simp;
-    have count(slot(&destination)) == 1 by simp;
+    have count(item(&source, _)) == 1;
+    have count(item(&destination, _)) == 1;
+    have count(slot(&source)) == 1;
+    have count(slot(&destination)) == 1;
     open(item(&destination, p)) { open(item(&source, p + 1)) { step(); step(); } }
     unfold(item(&destination, p)); unfold(item(&source, p + 1));
     unfold(slot(&source)); unfold(slot(&destination));

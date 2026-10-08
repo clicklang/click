@@ -37,7 +37,7 @@ int32 docs_identity(int32 value) {
 ```click
 theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures ((int64)left + (int64)right) <= 4294967295i64 by { apply(uint32_widened_add_guard_by_integer_bound(left, right)); }
+    ensures ((int64)left + (int64)right) <= 4294967295i64 by apply(uint32_widened_add_guard_by_integer_bound(left, right));
 }
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
@@ -53,13 +53,13 @@ theorem use_uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
     }
 }
 theorem use_uint32_to_integer_bounds(value: uint32) {
-    ensures 0 <= to_integer(value) by { apply(uint32_to_integer_bounds(value)); }
-    ensures to_integer(value) <= 4294967295 by { apply(uint32_to_integer_bounds(value)); }
+    ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
+    ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
 }
 theorem use_unsigned_reduction(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
-    ensures value % divisor < divisor by { apply(uint32_remainder_less_than_divisor(value, divisor)); }
-    ensures 0 <= to_integer(value % divisor) by { apply(uint32_to_integer_bounds(value % divisor)); }
+    ensures value % divisor < divisor by apply(uint32_remainder_less_than_divisor(value, divisor));
+    ensures 0 <= to_integer(value % divisor) by apply(uint32_to_integer_bounds(value % divisor));
     ensures to_integer(value % divisor) < to_integer(divisor) by {
         apply(uint32_remainder_less_than_divisor(value, divisor));
         apply(uint32_less_than_to_integer(value % divisor, divisor));
@@ -67,11 +67,11 @@ theorem use_unsigned_reduction(value: uint32, divisor: uint32) {
 }
 theorem use_uint32_remainder_of_lt(value: uint32, divisor: uint32) {
     requires value < divisor;
-    ensures value % divisor == value by { apply(uint32_remainder_of_lt(value, divisor)); }
+    ensures value % divisor == value by apply(uint32_remainder_of_lt(value, divisor));
 }
 theorem use_uint32_add_to_integer(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint32_add_to_integer(left, right)); }
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by apply(uint32_add_to_integer(left, right));
 }
 
 theorem use_uint32_subtract_to_integer(left: uint32, right: uint32) {
@@ -90,49 +90,49 @@ theorem use_uint32_mul_to_integer(left: uint32, right: uint32) {
 
 theorem use_uint64_add_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint64_add_to_integer(left, right)); }
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by apply(uint64_add_to_integer(left, right));
 }
 
 theorem use_uint64_multiply_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) * to_integer(right) <= 18446744073709551615;
-    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by { apply(uint64_multiply_to_integer(left, right)); }
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(uint64_multiply_to_integer(left, right));
 }
 
 theorem use_uint64_subtract_to_integer(left: uint64, right: uint64) {
     requires to_integer(right) <= to_integer(left);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by { apply(uint64_subtract_to_integer(left, right)); }
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by apply(uint64_subtract_to_integer(left, right));
 }
 
 theorem use_uint64_divide_to_integer(left: uint64, right: uint64) {
     requires right != 0u64;
     requires to_integer(right) != 0;
-    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right)) by { apply(uint64_divide_to_integer(left, right)); }
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right)) by apply(uint64_divide_to_integer(left, right));
 }
 
 theorem use_uint64_remainder_to_integer(left: uint64, right: uint64) {
     requires right != 0u64;
     requires to_integer(right) != 0;
-    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right)) by { apply(uint64_remainder_to_integer(left, right)); }
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right)) by apply(uint64_remainder_to_integer(left, right));
 }
 
 theorem use_uint64_less_equal_to_integer(left: uint64, right: uint64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by { apply(uint64_less_equal_to_integer(left, right)); }
+    ensures to_integer(left) <= to_integer(right) by apply(uint64_less_equal_to_integer(left, right));
 }
 
 theorem use_uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by { apply(uint64_less_equal_of_to_integer(left, right)); }
+    ensures left <= right by apply(uint64_less_equal_of_to_integer(left, right));
 }
 
 theorem use_int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right) by { apply(int64_less_than_to_integer(left, right)); }
+    ensures to_integer(left) < to_integer(right) by apply(int64_less_than_to_integer(left, right));
 }
 
 theorem use_int64_greater_equal_to_integer(left: int64, right: int64) {
     requires left >= right;
-    ensures to_integer(left) >= to_integer(right) by { apply(int64_greater_equal_to_integer(left, right)); }
+    ensures to_integer(left) >= to_integer(right) by apply(int64_greater_equal_to_integer(left, right));
 }
 
 theorem use_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
@@ -142,8 +142,8 @@ theorem use_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer,
     requires r <= d - 1;
     requires r < 0 implies value == q + -1;
     requires 0 <= r implies value == q;
-    ensures value * d <= n by { apply(integer_floor_from_remainder(n, d, q, r, value)); }
-    ensures n < (value + 1) * d by { apply(integer_floor_from_remainder(n, d, q, r, value)); }
+    ensures value * d <= n by apply(integer_floor_from_remainder(n, d, q, r, value));
+    ensures n < (value + 1) * d by apply(integer_floor_from_remainder(n, d, q, r, value));
 }
 theorem use_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
     requires 0 < d;
@@ -152,11 +152,11 @@ theorem use_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Intege
     requires r <= d - 1;
     requires 0 < r implies value == q + 1;
     requires r <= 0 implies value == q;
-    ensures n <= value * d by { apply(integer_ceiling_from_remainder(n, d, q, r, value)); }
-    ensures (value + -1) * d < n by { apply(integer_ceiling_from_remainder(n, d, q, r, value)); }
+    ensures n <= value * d by apply(integer_ceiling_from_remainder(n, d, q, r, value));
+    ensures (value + -1) * d < n by apply(integer_ceiling_from_remainder(n, d, q, r, value));
 }
 theorem use_multiply_add(a: Integer, b: Integer, c: Integer) {
-    ensures (a + b) * c == a * c + b * c by { apply(integer_multiply_add(a, b, c)); }
+    ensures (a + b) * c == a * c + b * c by apply(integer_multiply_add(a, b, c));
 }
 theorem check_truncation_identity(n: Integer, d: Integer) {
     requires d != 0;
@@ -241,19 +241,19 @@ theorem integer_equality_bridge(left: int32, right: int32) {
 
 theorem reflect32(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by { apply(int32_less_equal_of_to_integer(left, right)); }
+    ensures left <= right by apply(int32_less_equal_of_to_integer(left, right));
 }
 theorem preserve64(left: int64, right: int64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by { apply(int64_less_equal_to_integer(left, right)); }
+    ensures to_integer(left) <= to_integer(right) by apply(int64_less_equal_to_integer(left, right));
 }
 theorem reflect64(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right by { apply(int64_less_equal_of_to_integer(left, right)); }
+    ensures left <= right by apply(int64_less_equal_of_to_integer(left, right));
 }
 theorem equal64(left: int64, right: int64) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right by { apply(int64_equal_of_to_integer(left, right)); }
+    ensures left == right by apply(int64_equal_of_to_integer(left, right));
 }
 
 theorem integer_order_bridge(left: int32, right: int32) {
@@ -278,26 +278,26 @@ theorem integer_subtract_bridge(left: int32, right: int32) {
 }
 
 theorem builtin_nat_integer_laws(n: Nat) {
-    ensures to_integer(Nat::Zero) == 0 by { apply(nat_integer_zero()); }
-    ensures to_integer(Nat::Succ(n)) == to_integer(n) + 1 by { apply(nat_integer_succ(n)); }
-    ensures to_integer(n) >= 0 by { apply(nat_integer_nonnegative(n)); }
-    ensures to_nat(to_integer(n)) == n by { apply(nat_integer_round_trip(n)); }
-    ensures to_nat(0) == Nat::Zero by { apply(integer_to_nat_zero()); }
+    ensures to_integer(Nat::Zero) == 0 by apply(nat_integer_zero());
+    ensures to_integer(Nat::Succ(n)) == to_integer(n) + 1 by apply(nat_integer_succ(n));
+    ensures to_integer(n) >= 0 by apply(nat_integer_nonnegative(n));
+    ensures to_nat(to_integer(n)) == n by apply(nat_integer_round_trip(n));
+    ensures to_nat(0) == Nat::Zero by apply(integer_to_nat_zero());
 }
 
 theorem builtin_integer_nat_laws(z: Integer) {
     requires z >= 0;
-    ensures to_integer(to_nat(z)) == z by { apply(integer_nat_round_trip(z)); }
+    ensures to_integer(to_nat(z)) == z by apply(integer_nat_round_trip(z));
 }
 
 theorem nat_laws(a: Nat, b: Nat, c: Nat) {
-    ensures to_integer(nat_add(a, b)) == to_integer(a) + to_integer(b) by { apply(nat_integer_add(a, b)); }
-    ensures nat_add(Nat::Zero, a) == a by { apply(nat_add_left_identity(a)); }
-    ensures nat_add(a, Nat::Zero) == a by { apply(nat_add_right_identity(a)); }
-    ensures nat_add(Nat::Succ(a), b) == Nat::Succ(nat_add(a, b)) by { apply(nat_add_succ_left(a, b)); }
-    ensures nat_add(a, Nat::Succ(b)) == Nat::Succ(nat_add(a, b)) by { apply(nat_add_succ_right(a, b)); }
-    ensures nat_add(nat_add(a, b), c) == nat_add(a, nat_add(b, c)) by { apply(nat_add_associative(a, b, c)); }
-    ensures nat_add(a, b) == nat_add(b, a) by { apply(nat_add_commutative(a, b)); }
+    ensures to_integer(nat_add(a, b)) == to_integer(a) + to_integer(b) by apply(nat_integer_add(a, b));
+    ensures nat_add(Nat::Zero, a) == a by apply(nat_add_left_identity(a));
+    ensures nat_add(a, Nat::Zero) == a by apply(nat_add_right_identity(a));
+    ensures nat_add(Nat::Succ(a), b) == Nat::Succ(nat_add(a, b)) by apply(nat_add_succ_left(a, b));
+    ensures nat_add(a, Nat::Succ(b)) == Nat::Succ(nat_add(a, b)) by apply(nat_add_succ_right(a, b));
+    ensures nat_add(nat_add(a, b), c) == nat_add(a, nat_add(b, c)) by apply(nat_add_associative(a, b, c));
+    ensures nat_add(a, b) == nat_add(b, a) by apply(nat_add_commutative(a, b));
 }
 
 theorem one_plus_one() {
@@ -925,49 +925,49 @@ theorem docs_use_cstr_len_is_viewable(bytes: uint8[], len: int32) {
 theorem use_integer_to_int8_round_trip(z: Integer) {
     requires z >= -128;
     requires z <= 127;
-    ensures to_integer(to_int8(z)) == z by { apply(integer_to_int8_round_trip(z)); }
+    ensures to_integer(to_int8(z)) == z by apply(integer_to_int8_round_trip(z));
 }
 
 theorem use_integer_to_int16_round_trip(z: Integer) {
     requires z >= -32768;
     requires z <= 32767;
-    ensures to_integer(to_int16(z)) == z by { apply(integer_to_int16_round_trip(z)); }
+    ensures to_integer(to_int16(z)) == z by apply(integer_to_int16_round_trip(z));
 }
 
 theorem use_integer_to_int32_round_trip(z: Integer) {
     requires z >= -2147483648;
     requires z <= 2147483647;
-    ensures to_integer(to_int32(z)) == z by { apply(integer_to_int32_round_trip(z)); }
+    ensures to_integer(to_int32(z)) == z by apply(integer_to_int32_round_trip(z));
 }
 
 theorem use_integer_to_uint8_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 255;
-    ensures to_integer(to_uint8(z)) == z by { apply(integer_to_uint8_round_trip(z)); }
+    ensures to_integer(to_uint8(z)) == z by apply(integer_to_uint8_round_trip(z));
 }
 
 theorem use_integer_to_uint16_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 65535;
-    ensures to_integer(to_uint16(z)) == z by { apply(integer_to_uint16_round_trip(z)); }
+    ensures to_integer(to_uint16(z)) == z by apply(integer_to_uint16_round_trip(z));
 }
 
 theorem use_integer_to_uint32_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 4294967295;
-    ensures to_integer(to_uint32(z)) == z by { apply(integer_to_uint32_round_trip(z)); }
+    ensures to_integer(to_uint32(z)) == z by apply(integer_to_uint32_round_trip(z));
 }
 
 theorem use_integer_to_int64_round_trip(z: Integer) {
     requires z >= -9223372036854775808;
     requires z <= 9223372036854775807;
-    ensures to_integer(to_int64(z)) == z by { apply(integer_to_int64_round_trip(z)); }
+    ensures to_integer(to_int64(z)) == z by apply(integer_to_int64_round_trip(z));
 }
 
 theorem use_integer_to_uint64_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 18446744073709551615;
-    ensures to_integer(to_uint64(z)) == z by { apply(integer_to_uint64_round_trip(z)); }
+    ensures to_integer(to_uint64(z)) == z by apply(integer_to_uint64_round_trip(z));
 }
 
 theorem use_scaled_quotient(n: Integer, d: Integer, bound: Integer) {
@@ -975,8 +975,8 @@ theorem use_scaled_quotient(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires bound * d <= n;
     requires n <= bound * d;
-    ensures bound <= truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_lower(n, d, bound)); }
-    ensures truncating_quotient(n, d) <= bound by { apply(integer_positive_divisor_quotient_upper(n, d, bound)); }
+    ensures bound <= truncating_quotient(n, d) by apply(integer_positive_divisor_quotient_lower(n, d, bound));
+    ensures truncating_quotient(n, d) <= bound by apply(integer_positive_divisor_quotient_upper(n, d, bound));
 }
 
 theorem use_strict_lower(n: Integer, d: Integer, bound: Integer) {
@@ -984,7 +984,7 @@ theorem use_strict_lower(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires bound < 0;
     requires bound * d < n;
-    ensures bound < truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_strict_lower(n, d, bound)); }
+    ensures bound < truncating_quotient(n, d) by apply(integer_positive_divisor_quotient_strict_lower(n, d, bound));
 }
 
 theorem use_strict_upper(n: Integer, d: Integer, bound: Integer) {
@@ -992,36 +992,36 @@ theorem use_strict_upper(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires 0 < bound;
     requires n < bound * d;
-    ensures truncating_quotient(n, d) < bound by { apply(integer_positive_divisor_quotient_strict_upper(n, d, bound)); }
+    ensures truncating_quotient(n, d) < bound by apply(integer_positive_divisor_quotient_strict_upper(n, d, bound));
 }
 
 theorem use_lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, bound: Integer) {
     requires bound <= q; requires bound * d <= n;
     requires n == q * d + r;
     requires r < 0;
-    ensures bound + 1 <= q by { apply(integer_lower_correction_bound(n, d, q, r, bound)); }
+    ensures bound + 1 <= q by apply(integer_lower_correction_bound(n, d, q, r, bound));
 }
 theorem use_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, bound: Integer) {
     requires q <= bound; requires n <= bound * d;
     requires n == q * d + r;
     requires 0 < r;
-    ensures q <= bound + -1 by { apply(integer_upper_correction_bound(n, d, q, r, bound)); }
+    ensures q <= bound + -1 by apply(integer_upper_correction_bound(n, d, q, r, bound));
 }
 
 theorem use_multiply_orders(a: Integer, b: Integer, c: Integer) {
  requires a <= b; requires 0 <= c;
- ensures a * c <= b * c by { apply(integer_multiply_order_nonnegative(a, b, c)); }
+ ensures a * c <= b * c by apply(integer_multiply_order_nonnegative(a, b, c));
 }
 theorem use_reverse_multiply_order(a: Integer, b: Integer, c: Integer) {
  requires a <= b; requires c <= 0;
- ensures b * c <= a * c by { apply(integer_multiply_order_nonpositive(a, b, c)); }
+ ensures b * c <= a * c by apply(integer_multiply_order_nonpositive(a, b, c));
 }
 theorem use_scaled_product(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
  requires lower <= value; requires value <= upper;
  requires lower <= 0; requires 0 <= upper;
  requires 0 <= amount; requires amount <= size;
- ensures lower * size <= value * amount by { apply(integer_scaled_product_bounds(value, amount, size, lower, upper)); }
- ensures value * amount <= upper * size by { apply(integer_scaled_product_bounds(value, amount, size, lower, upper)); }
+ ensures lower * size <= value * amount by apply(integer_scaled_product_bounds(value, amount, size, lower, upper));
+ ensures value * amount <= upper * size by apply(integer_scaled_product_bounds(value, amount, size, lower, upper));
 }
 
 ```

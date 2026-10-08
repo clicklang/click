@@ -140,7 +140,7 @@ theorem rb_min_list_nonempty_left(node: struct rb_node*, parent: struct rb_node*
     ensures rb_min_list(RbTree::Node(node, parent, color, left, right)) == rb_min_list(left) by {
         induct(left) as ih {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(a, b, c, l, r) => {
@@ -160,7 +160,7 @@ theorem rb_remove_min_nonempty_left(node: struct rb_node*, parent: struct rb_nod
         color, rb_remove_min(left), right) by {
         induct(left) as ih {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(a, b, c, l, r) => {
@@ -179,7 +179,7 @@ theorem rb_minimum_nonempty_left(node: struct rb_node*, parent: struct rb_node*,
     ensures rb_minimum(RbTree::Node(node, parent, color, left, right)) == rb_minimum(left) by {
         induct(left) as ih {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(a, b, c, l, r) => {
@@ -199,7 +199,7 @@ theorem rb_min_context_nonempty_left(node: struct rb_node*, parent: struct rb_no
         Context::Left(node, parent, color, right, up)) by {
         induct(left) as ih {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(a, b, c, l, r) => {
@@ -770,7 +770,7 @@ theorem rb_min_parent_nonempty_left(node: struct rb_node*, parent: struct rb_nod
     ensures rb_min_parent(RbTree::Node(node, parent, color, left, right)) == rb_min_parent(left) by {
         induct(left) as cases {
             RbTree::Empty => {
-                have RbTree::Empty == RbTree::Empty by { normalize(); }
+                have RbTree::Empty == RbTree::Empty by normalize();
                 contradiction(RbTree::Empty == RbTree::Empty);
             }
             RbTree::Node(a, b, c, l, r) => {

@@ -38,7 +38,7 @@ void caller(int32 *v, int32 i, int32 n) {
     ensures zeros(v, 0, i) == old(zeros(v, 0, i));
 } by {
     mark entry;
-    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by { normalize(); }
+    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by normalize();
     have i <= n by { arithmetic() using { i < n; } }
     step();
     have zeros(v, 0, i) == zeros(at(entry, v), 0, i) by {

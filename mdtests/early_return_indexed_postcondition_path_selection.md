@@ -86,9 +86,9 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
             let after = fold(write_result(cells), {
                 model: WriteOutcome::Skipped
             });
-            have result == 0 by { normalize(); }
-            have result == 0 or result == 1 by { assumption(); }
-            have after.model == WriteOutcome::Skipped by { assumption(); }
+            have result == 0 by normalize();
+            have result == 0 or result == 1 by assumption();
+            have after.model == WriteOutcome::Skipped by assumption();
             have not (enabled == 1) by {
                 rewrite(enabled == 0);
                 normalize();

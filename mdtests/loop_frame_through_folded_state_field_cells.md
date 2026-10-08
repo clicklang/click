@@ -86,11 +86,11 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
 } by {
     let { next: n0 } = unfold(w);
     let { capacity: c } = unfold(st);
-    have 0 <= start by simp;
-    have start < arena->capacity by simp;
+    have 0 <= start;
+    have start < arena->capacity;
     step();
     step();
-    have arena->occupied[start] == 0 by simp;
+    have arena->occupied[start] == 0;
     step();
     let w = fold(window(arena->occupied, arena->capacity, start, end), { next: start });
     mark pre;
@@ -119,9 +119,9 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
         }
         preserve by {
             let { next: m } = unfold(w);
-            have m == i by simp;
-            have i < end by simp;
-            have start <= m by simp;
+            have m == i;
+            have i < end;
+            have start <= m;
             have 0 <= m by {
                 apply(int32_le_transitive(0, start, m)) using {
                     0 <= start;
@@ -148,7 +148,7 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                 intro();
                 extract(k < at(opened, i) + 1);
                 if k < at(opened, i) {
-                    have k < m by simp;
+                    have k < m;
                     have at(opened, arena->occupied[k]) == 1 by {
                         instantiate(forall (j: int32) {
                             at(opened, start) <= at(opened, j) and
@@ -160,7 +160,7 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                         }
                         assumption();
                     }
-                    have 0 <= k by simp;
+                    have 0 <= k;
                     transport(at(opened, arena->occupied[k]) == 1, arena->occupied[k] == 1) using {
                         at(opened, arena->occupied[k]) == 1;
                         k < at(opened, i);

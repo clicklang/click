@@ -8,7 +8,7 @@ closes a conjunction whose every side is a fact, so it needs no `extract`.
 ```click
 theorem sub(x: int32, y: int32) {
     requires (x >= 0 and x <= 5) and y == 1;
-    ensures x >= 0 and x <= 5 by { assumption(); }
+    ensures x >= 0 and x <= 5 by assumption();
 }
 ```
 

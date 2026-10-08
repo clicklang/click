@@ -49,9 +49,9 @@ void set_up_word(struct node* c) {
             step();
             step();
             step();
-            have p == id by { simp(); }
-            have p->word == 5 by { simp(); }
-            have id->word == 5 by { simp(); }
+            have p == id;
+            have p->word == 5;
+            have id->word == 5;
             let g = fold(frame_at(c), { model: Frame::Up(id, 5) });
             step();
             simp();

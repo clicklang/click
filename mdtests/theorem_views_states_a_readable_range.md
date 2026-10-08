@@ -28,21 +28,21 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by { simp(); }
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
 }
 
 theorem cell_of_a_stated_range(v: int32[], lo: int32, hi: int32, k: int32) {
     requires viewable(v[lo..hi]);
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by { simp(); }
+    ensures to_integer(v[k]) == to_integer(v[k]) by simp;
 }
 
 theorem first_cell_of_a_viewed_range(v: int32[], hi: int32) {
     views v[0..hi];
     requires 0 < hi;
     ensures to_integer(v[0]) == to_integer(v[0]) by {
-        have 0 <= 0 by { simp(); }
+        have 0 <= 0;
         apply(cell_of_a_viewed_range(v, 0, hi, 0)) using {
             viewable(v[0..hi]);
             0 <= 0;

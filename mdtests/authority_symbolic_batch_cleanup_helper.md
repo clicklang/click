@@ -29,7 +29,7 @@ void cleanup(struct pool* pool) {
 } by {
     unfold(control(pool));
     unfold(pool->capacity of slot(pool));
-    have count(slot(pool)) == 0 by simp;
+    have count(slot(pool)) == 0;
     step();
     unfold(authority(slot(pool)));
     execute(); simp();

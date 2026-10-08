@@ -21,8 +21,8 @@ theorem binding_in_have(n: Nat) {
         induct(n) as ih {
             Nat::Zero => { normalize(); }
             Nat::Succ(previous) => {
-                have previous == previous by { normalize(); }
-                have nat_id(previous) == nat_id(previous) by { normalize(); }
+                have previous == previous by normalize();
+                have nat_id(previous) == nat_id(previous) by normalize();
                 have 0 == 0 by {
                     instantiate(forall (k: int32) { k == k }, nat_zero(previous)) using {}
                     normalize();

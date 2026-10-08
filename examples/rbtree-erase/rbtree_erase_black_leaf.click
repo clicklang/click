@@ -105,7 +105,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     let remaining = fold(ctx_at(0, root), {
                         model: Context::Left(pid, gp, pc, sibling_model, above_model)
                     }, { sibling: sibling, up: above });
-                    have result == pid by simp;
+                    have result == pid;
                     have ctx_node_is(remaining.model, pid) == 1 by {
                         unfold(ctx_node_is(Context::Left(pid, gp, pc, sibling_model, above_model), pid)); normalize();
                     }
@@ -140,7 +140,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             let remaining = fold(ctx_at(0, root), {
                                 model: Context::Right(pid, gp, pc, sibling_model, above_model)
                             }, { sibling: sibling, up: above });
-                            have result == pid by simp;
+                            have result == pid;
                             have ctx_node_is(remaining.model, pid) == 1 by {
                                 unfold(ctx_node_is(Context::Right(pid, gp, pc, sibling_model, above_model), pid)); normalize();
                             }
@@ -159,7 +159,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             let remaining = fold(ctx_at(0, root), {
                                 model: Context::Right(pid, gp, pc, sibling_model, above_model)
                             }, { sibling: sibling, up: above });
-                            have result == pid by simp;
+                            have result == pid;
                             have ctx_node_is(remaining.model, pid) == 1 by {
                                 unfold(ctx_node_is(Context::Right(pid, gp, pc, sibling_model, above_model), pid)); normalize();
                             }

@@ -39,7 +39,7 @@ int32 fill_n_segment_invariant(int32 p[], int32 n) {
         preserve by {
             step();
             step();
-            have i == at(statement(3).entry, i) + 1 by simp;
+            have i == at(statement(3).entry, i) + 1;
             simp();
         }
     }

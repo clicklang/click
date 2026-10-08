@@ -74,10 +74,10 @@ void release_one(struct child* obj) {
     consumes child_ref(obj);
     ensures obj->payload == old(obj->payload);
 } by {
-    have obj->refs == count(child_ref(obj)) by { simp(); }
-    have 1 < count(child_ref(obj)) by { simp(); }
+    have obj->refs == count(child_ref(obj));
+    have 1 < count(child_ref(obj));
     step(child_release(obj), {});
-    have obj->payload == old(obj->payload) by { simp(); }
+    have obj->payload == old(obj->payload);
     step();
     simp();
 }

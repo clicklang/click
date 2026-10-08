@@ -23,10 +23,10 @@ int32 bump(int32 x) {
     step();
     if x <= 0 {
         step();
-        have x <= 0 or x > 0 by { simp(); }
+        have x <= 0 or x > 0;
     } else {
         step();
-        have x <= 0 or x > 0 by { simp(); }
+        have x <= 0 or x > 0;
     }
     step();
     step();

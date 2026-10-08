@@ -39,7 +39,7 @@ int32 walk(int32 *a, int32 n) {
         invariant viewable(a[0..i]);
         preserve by {
             step();
-            have i <= n by { simp(); }
+            have i <= n;
             close_invariants();
         }
     }

@@ -41,11 +41,11 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p + 1));
-    have count(slot(&pool, p)) == 0 by simp;
+    have count(slot(&pool, p)) == 0;
     step();
-    have count(slot(&pool, _)) == 2 by simp;
-    have count(slot(&pool, p)) == 1 by simp;
-    have count(slot(&pool, p + 1)) == 1 by simp;
+    have count(slot(&pool, _)) == 2;
+    have count(slot(&pool, p)) == 1;
+    have count(slot(&pool, p + 1)) == 1;
     open(slot(&pool, p)) {
         open(slot(&pool, p + 1)) { step(); step(); }
     }

@@ -27,7 +27,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 } by {
     mark entry;
     step();
-    have at(entry, a[m]) == at(entry, a[m]) by { normalize(); }
+    have at(entry, a[m]) == at(entry, a[m]) by normalize();
     transport(
         at(entry, a[m]) == at(entry, a[m]),
         at(entry, a[m]) == a[m]

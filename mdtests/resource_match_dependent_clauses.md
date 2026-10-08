@@ -33,8 +33,8 @@ int32 unchanged(int32* occupied, int32 capacity) {
 } by {
     match part.tag {
         PrefixTag::End(prefix) => {
-            have 0 <= prefix by { assumption(); }
-            have prefix <= capacity by { assumption(); }
+            have 0 <= prefix by assumption();
+            have prefix <= capacity by assumption();
             have forall (k: int32) {
                 0 <= k and k < prefix implies occupied[k] == 1
             } by { assumption(); }

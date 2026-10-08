@@ -37,7 +37,7 @@ int32 walk(int32 n) {
         invariant to_integer(i + 1) == to_integer(i + 1);
         preserve by {
             step();
-            have i <= n by { simp(); }
+            have i <= n;
             have i < 2147483647 by { arithmetic() using { i <= n; n < 2147483647; } }
             have defined(i + 1) by {
                 apply(int32_increment_below_max_is_defined(i)) using { i < 2147483647; }

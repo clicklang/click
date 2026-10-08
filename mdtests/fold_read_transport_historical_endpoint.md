@@ -26,7 +26,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
     requires separate(memory(v[0..n]), memory(m[0..1]));
 } by {
     mark entry;
-    have zeros(at(entry, v), 0, at(entry, m[0])) == zeros(at(entry, v), 0, at(entry, m[0])) by { normalize(); }
+    have zeros(at(entry, v), 0, at(entry, m[0])) == zeros(at(entry, v), 0, at(entry, m[0])) by normalize();
     step();
     have zeros(at(entry, v), 0, at(entry, m[0])) == zeros(v, 0, at(entry, m[0])) by {
         transport(

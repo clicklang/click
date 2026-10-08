@@ -1760,7 +1760,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                         normalize();
                     }
                     let { right: right_l, left: right_r } = unfold(entry_r);
-                    have node->rb_left != 0 by { simp(); }
+                    have node->rb_left != 0;
                     let t = fold(rb_at(node->rb_left), { model: entry_right }, { right: right_l,
                             left: right_r });
                     step();
@@ -1786,7 +1786,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                         entry_left, old(c.model)) == ctx.model);
                                 normalize();
                             }
-                            have above == old(c.model) by { extract(above == old(c.model)); }
+                            have above == old(c.model) by extract(above == old(c.model));
                             have plug(above, RbTree::Node(entry_identity, entry_parent,
                                     entry_color, entry_right, entry_left)) == plug(old(c.model),
                                 old(t.model)) by {
@@ -1795,7 +1795,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                         entry_right, entry_left) == old(t.model));
                                 normalize();
                             }
-                            have t.model == entry_right by { simp(); }
+                            have t.model == entry_right;
                             have plug(ctx.model, t.model) == plug(old(c.model),
                                 old(t.model)) by {
                                 rewrite(ctx.model == Context::Left(node, entry_parent,
@@ -1977,7 +1977,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                     right_model, left_model)));
                                         normalize();
                                     }
-                                    have node != 0 by { simp(); }
+                                    have node != 0;
                                     let sub = fold(rb_at(node), { model: RbTree::Node(identity,
                                                 par, color, right_model, left_model) },
                                         { right: l, left: rt });
@@ -2041,7 +2041,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                     }
                 },
                 RbTree::Empty => {
-                    have entry_right == RbTree::Empty by { simp(); }
+                    have entry_right == RbTree::Empty;
                     have rb_left(RbTree::Node(entry_identity, entry_parent, entry_color,
                             entry_right, entry_left)) == RbTree::Empty by {
                         unfold(rb_left(RbTree::Node(entry_identity, entry_parent, entry_color,
@@ -2067,7 +2067,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                         assumption();
                     }
                     unfold(entry_r);
-                    have node->rb_left == 0 by { simp(); }
+                    have node->rb_left == 0;
                     let entry_r = fold(rb_at(node->rb_left), { model: RbTree::Empty });
                     step();
                     step();
@@ -2128,7 +2128,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                     step();
                                     step();
                                     step();
-                                    have parent == par by { simp(); }
+                                    have parent == par;
                                     have par == parent by {
                                         rewrite(parent == par);
                                         normalize();
@@ -2229,8 +2229,8 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                             match s.model {
                                                 RbTree::Empty => {
                                                     unfold(s);
-                                                    have parent->rb_left == 0 by { simp(); }
-                                                    have node != parent->rb_left by { simp(); }
+                                                    have parent->rb_left == 0;
+                                                    have node != parent->rb_left;
                                                     let s = fold(rb_at(parent->rb_left),
                                                         { model: RbTree::Empty });
                                                     step();

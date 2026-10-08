@@ -35,7 +35,7 @@ int32 drain_to_zero(int32 n) {
             have 0 <= n - 1 by {
                 apply(int32_positive_predecessor_is_nonnegative(n)) using { n > 0; }
             }
-            have n <= at(drain.entry, n) by { assumption(); }
+            have n <= at(drain.entry, n) by assumption();
             have n - 1 <= at(drain.entry, n) by {
                 arithmetic() using { n >= 0; n <= at(drain.entry, n); }
             }

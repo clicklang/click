@@ -18,7 +18,7 @@ void transfer(int32 progress, int32 total, int32 end) {
     ensures to_integer(total) <= 255 * to_integer(end);
 } by {
     step();
-    have to_integer(end) == at(statement(0).entry, to_integer(progress)) by { simp(); }
+    have to_integer(end) == at(statement(0).entry, to_integer(progress));
     have to_integer(total) <= 255 * to_integer(end) by {
         arithmetic() using {
             at(statement(0).entry, to_integer(total) <= 255 * to_integer(progress));

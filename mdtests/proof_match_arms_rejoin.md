@@ -44,10 +44,10 @@ int32 peek(struct cell* node) {
     step();
     match c.model {
         Sign::Neg(value) => {
-            have value < 0 or value >= 0 by { simp(); }
+            have value < 0 or value >= 0;
         },
         Sign::Pos(value) => {
-            have value < 0 or value >= 0 by { simp(); }
+            have value < 0 or value >= 0;
         },
     }
     step();

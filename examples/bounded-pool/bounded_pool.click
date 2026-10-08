@@ -24,7 +24,7 @@ theorem pool_checkout_increment_bound(capacity: int32, used: int32, available: i
             rewrite(capacity == used + available);
             simp();
         }
-        have capacity <= 2147483647 by simp;
+        have capacity <= 2147483647;
         have to_integer(capacity) <= 2147483647 by {
             apply(int32_less_equal_to_integer(capacity, 2147483647)) using { capacity <= 2147483647; }
             simp();
@@ -55,7 +55,7 @@ theorem pool_shrink_sum_defined(capacity: int32, used: int32, available: int32, 
         apply(int32_nonnegative_subtract_within_value_is_defined(available, amount)) using {
             0 <= amount; amount <= available;
         }
-        have defined(available - amount) by simp;
+        have defined(available - amount);
         have 0 <= available - amount by {
             arithmetic() using { 0 <= amount; amount <= available; }
         }
@@ -64,7 +64,7 @@ theorem pool_shrink_sum_defined(capacity: int32, used: int32, available: int32, 
             rewrite(capacity == used + available); simp();
         }
         apply(int32_subtract_to_integer(available, amount)) using { defined(available - amount); }
-        have capacity <= 2147483647 by simp;
+        have capacity <= 2147483647;
         have to_integer(capacity) <= 2147483647 by {
             apply(int32_less_equal_to_integer(capacity, 2147483647)) using { capacity <= 2147483647; }
             simp();
@@ -118,11 +118,11 @@ theorem pool_shrink_conservation(capacity: int32, used: int32, available: int32,
             0 <= used; 0 <= amount; amount <= available;
             capacity == used + available; defined(used + available);
         }
-        have defined(used + (available - amount)) by simp;
+        have defined(used + (available - amount));
         apply(int32_nonnegative_subtract_within_value_is_defined(available, amount)) using {
             0 <= amount; amount <= available;
         }
-        have defined(available - amount) by simp;
+        have defined(available - amount);
         apply(int32_add_to_integer(used, available)) using { defined(used + available); }
         have to_integer(capacity) == to_integer(used) + to_integer(available) by {
             rewrite(capacity == used + available); assumption();
@@ -163,7 +163,7 @@ theorem pool_grow_slots_defined(capacity: int32, used: int32, available: int32, 
             rewrite(capacity == used + available); assumption();
         }
         apply(int32_add_to_integer(capacity, amount)) using { defined(capacity + amount); }
-        have capacity + amount <= 2147483647 by simp;
+        have capacity + amount <= 2147483647;
         have to_integer(capacity + amount) <= 2147483647 by {
             apply(int32_less_equal_to_integer(capacity + amount, 2147483647)) using { capacity + amount <= 2147483647; }
             simp();
@@ -216,7 +216,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
             0 <= used; 0 <= available; 0 <= amount;
             capacity == used + available; defined(used + available); defined(capacity + amount);
         }
-        have defined(available + amount) by simp;
+        have defined(available + amount);
         apply(int32_add_to_integer(used, available)) using { defined(used + available); }
         have to_integer(capacity) == to_integer(used) + to_integer(available) by {
             rewrite(capacity == used + available); assumption();
@@ -235,8 +235,8 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
                 conclusion 6;
             }
         }
-        have capacity + amount <= 2147483647 by simp;
-        have -2147483648 <= capacity + amount by simp;
+        have capacity + amount <= 2147483647;
+        have -2147483648 <= capacity + amount;
         have to_integer(capacity + amount) <= 2147483647 by {
             apply(int32_less_equal_to_integer(capacity + amount, 2147483647)) using { capacity + amount <= 2147483647; } simp();
         }
@@ -266,7 +266,7 @@ theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, a
             to_integer(used) + to_integer(available + amount) >= -2147483648;
             to_integer(used) + to_integer(available + amount) <= 2147483647;
         }
-        have defined(used + (available + amount)) by simp;
+        have defined(used + (available + amount));
         apply(int32_add_to_integer(used, available + amount)) using { defined(used + (available + amount)); }
         have to_integer(capacity + amount) == to_integer(used + (available + amount)) by {
             arithmetic_certificate {
@@ -330,10 +330,10 @@ void pool_destroy(struct pool* pool) {
     ensures valid_pool(pool);
 } by {
     unfold(pool_control(pool));
-    have count(pool_object(pool, _)) == 0 by simp;
-    have pool->capacity == count(pool_slot(pool)) by simp;
+    have count(pool_object(pool, _)) == 0;
+    have pool->capacity == count(pool_slot(pool));
     unfold(pool->capacity of pool_slot(pool));
-    have count(pool_slot(pool)) == 0 by simp;
+    have count(pool_slot(pool)) == 0;
     step();
     unfold(authority(pool_slot(pool)));
     unfold(authority(pool_object(pool, _)));
@@ -352,8 +352,8 @@ void pool_zero_pipeline(struct pool* pool) {
 } by {
     step();
     unfold(pool_control(pool));
-    have pool->capacity == count(pool_slot(pool)) by simp;
-    have count(pool_object(pool, _)) == 0 by simp;
+    have pool->capacity == count(pool_slot(pool));
+    have count(pool_object(pool, _)) == 0;
     fold(pool_control(pool));
     step();
     execute(); unfold(valid_pool); simp();
@@ -372,7 +372,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures object->value == old(object->value);
 } by {
     open(pool_control(pool)) {
-        have 1 <= count(pool_slot(pool)) by simp;
+        have 1 <= count(pool_slot(pool));
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, pool->checked_out, count(pool_slot(pool))
         )) using {
@@ -380,7 +380,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
             1 <= count(pool_slot(pool));
             pool->capacity == pool->checked_out + count(pool_slot(pool));
         }
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have defined(pool->checked_out + count(pool_slot(pool)));
         apply(pool_checkout_increment_bound(pool->capacity, pool->checked_out, count(pool_slot(pool)))) using {
             1 <= count(pool_slot(pool));
             0 <= pool->checked_out;
@@ -398,7 +398,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
             to_integer(pool->checked_out) + 1 <= 2147483647;
             to_integer(pool->checked_out) + 1 >= -2147483648;
         }
-        have defined(pool->checked_out + 1) by simp;
+        have defined(pool->checked_out + 1);
         have pool->checked_out >= 0 by {
             arithmetic() using { 0 <= pool->checked_out; }
         }
@@ -409,7 +409,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
         unfold(pool_slot(pool));
         step();
         fold(pool_object(pool, object));
-        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by simp;
+        have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
     execute(); unfold(valid_pool); simp();
 }
@@ -430,12 +430,12 @@ void pool_return(struct pool* pool, struct object* object) {
     ensures object->value == old(object->value);
 } by {
     open(pool_control(pool)) {
-        have 1 <= count(pool_object(pool, _)) by simp;
+        have 1 <= count(pool_object(pool, _));
         have 1 <= pool->checked_out by {
             rewrite(pool->checked_out == count(pool_object(pool, _)));
             assumption();
         }
-        have pool->capacity == count(pool_slot(pool)) + pool->checked_out by simp;
+        have pool->capacity == count(pool_slot(pool)) + pool->checked_out;
         apply(int32_move_one_from_right_to_left_preserves_sum(
             pool->capacity, count(pool_slot(pool)), pool->checked_out
         )) using {
@@ -443,8 +443,8 @@ void pool_return(struct pool* pool, struct object* object) {
             1 <= pool->checked_out;
             pool->capacity == count(pool_slot(pool)) + pool->checked_out;
         }
-        have 0 < pool->checked_out by simp;
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have 0 < pool->checked_out;
+        have defined(pool->checked_out + count(pool_slot(pool)));
         apply(int32_add_to_integer(pool->checked_out, count(pool_slot(pool)))) using {
             defined(pool->checked_out + count(pool_slot(pool)));
         }
@@ -452,7 +452,7 @@ void pool_return(struct pool* pool, struct object* object) {
             rewrite(pool->capacity == pool->checked_out + count(pool_slot(pool)));
             assumption();
         }
-        have pool->capacity <= 2147483647 by simp;
+        have pool->capacity <= 2147483647;
         have to_integer(pool->capacity) <= 2147483647 by {
             apply(int32_less_equal_to_integer(pool->capacity, 2147483647)) using { pool->capacity <= 2147483647; }
             simp();
@@ -490,15 +490,15 @@ void pool_return(struct pool* pool, struct object* object) {
         unfold(pool_object(pool, object));
         step();
         fold(pool_slot(pool));
-        have pool->capacity == old(pool->capacity) by simp;
-        have pool->checked_out == old(pool->checked_out) - 1 by simp;
-        have count(pool_slot(pool)) == old(count(pool_slot(pool))) + 1 by simp;
+        have pool->capacity == old(pool->capacity);
+        have pool->checked_out == old(pool->checked_out) - 1;
+        have count(pool_slot(pool)) == old(count(pool_slot(pool))) + 1;
         have 0 <= pool->checked_out by {
             rewrite(pool->checked_out == old(pool->checked_out) - 1);
             apply(int32_positive_predecessor_is_nonnegative(old(pool->checked_out))) using { 0 < old(pool->checked_out); }
             assumption();
         }
-        have pool->checked_out == count(pool_object(pool, _)) by simp;
+        have pool->checked_out == count(pool_object(pool, _));
         have pool->capacity == pool->checked_out + count(pool_slot(pool)) by {
             rewrite(pool->capacity == old(pool->capacity));
             rewrite(pool->checked_out == old(pool->checked_out) - 1);
@@ -526,21 +526,21 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     ensures valid_pool(pool);
 } by {
     step();
-    have count(pool_object(pool, _)) == 0 by simp;
-    have defined(count(pool_object(pool, _)) + 1) by simp;
+    have count(pool_object(pool, _)) == 0;
+    have defined(count(pool_object(pool, _)) + 1);
     step();
-    have count(pool_object(pool, _)) == 1 by simp;
-    have defined(count(pool_object(pool, _)) + 1) by simp;
+    have count(pool_object(pool, _)) == 1;
+    have defined(count(pool_object(pool, _)) + 1);
     step();
     open(pool_object(pool, first)) { step(); }
     open(pool_object(pool, second)) { step(); }
-    have count(pool_object(pool, second)) == 1 by simp;
+    have count(pool_object(pool, second)) == 1;
     step();
-    have count(pool_object(pool, first)) == 1 by simp;
+    have count(pool_object(pool, first)) == 1;
     step();
     unfold(pool_control(pool));
-    have pool->capacity == count(pool_slot(pool)) by simp;
-    have count(pool_object(pool, _)) == 0 by simp;
+    have pool->capacity == count(pool_slot(pool));
+    have count(pool_object(pool, _)) == 0;
     fold(pool_control(pool));
     step();
     execute(); unfold(valid_pool); simp();
@@ -559,7 +559,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
     ensures valid_pool(pool);
 } by {
     open(pool_control(pool)) {
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have defined(pool->checked_out + count(pool_slot(pool)));
         apply(pool_shrink_sum_defined(pool->capacity, pool->checked_out, count(pool_slot(pool)), amount)) using {
             0 <= pool->checked_out;
             0 <= amount;
@@ -577,10 +577,10 @@ void pool_shrink(struct pool* pool, int32 amount) {
         }
         unfold(amount of pool_slot(pool));
         step();
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
-        have pool->capacity == old(pool->capacity) - amount by simp;
-        have pool->checked_out == old(pool->checked_out) by simp;
-        have count(pool_slot(pool)) == old(count(pool_slot(pool))) - amount by simp;
+        have defined(pool->checked_out + count(pool_slot(pool)));
+        have pool->capacity == old(pool->capacity) - amount;
+        have pool->checked_out == old(pool->checked_out);
+        have count(pool_slot(pool)) == old(count(pool_slot(pool))) - amount;
         have pool->capacity == pool->checked_out + count(pool_slot(pool)) by {
             rewrite(pool->capacity == old(pool->capacity) - amount);
             rewrite(pool->checked_out == old(pool->checked_out));
@@ -605,8 +605,8 @@ void pool_resize_pipeline(struct pool* pool) {
     step();
     step();
     unfold(pool_control(pool));
-    have pool->capacity == count(pool_slot(pool)) by simp;
-    have count(pool_object(pool, _)) == 0 by simp;
+    have pool->capacity == count(pool_slot(pool));
+    have count(pool_object(pool, _)) == 0;
     fold(pool_control(pool));
     step();
     execute(); unfold(valid_pool); simp();
@@ -624,14 +624,14 @@ void pool_grow(struct pool* pool, int32 amount) {
     ensures valid_pool(pool);
 } by {
     open(pool_control(pool)) {
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
-        have 0 <= count(pool_slot(pool)) by simp;
+        have defined(pool->checked_out + count(pool_slot(pool)));
+        have 0 <= count(pool_slot(pool));
         apply(pool_grow_slots_defined(pool->capacity, pool->checked_out, count(pool_slot(pool)), amount)) using {
             0 <= pool->checked_out; 0 <= count(pool_slot(pool)); 0 <= amount;
             pool->capacity == pool->checked_out + count(pool_slot(pool));
             defined(pool->checked_out + count(pool_slot(pool))); defined(pool->capacity + amount);
         }
-        have defined(count(pool_slot(pool)) + amount) by simp;
+        have defined(count(pool_slot(pool)) + amount);
         apply(pool_grow_conservation(pool->capacity, pool->checked_out, count(pool_slot(pool)), amount)) using {
             0 <= pool->checked_out; 0 <= count(pool_slot(pool)); 0 <= amount;
             pool->capacity == pool->checked_out + count(pool_slot(pool));
@@ -639,10 +639,10 @@ void pool_grow(struct pool* pool, int32 amount) {
         }
         step();
         fold(amount of pool_slot(pool));
-        have pool->capacity == old(pool->capacity) + amount by simp;
-        have pool->checked_out == old(pool->checked_out) by simp;
-        have count(pool_slot(pool)) == old(count(pool_slot(pool))) + amount by simp;
-        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have pool->capacity == old(pool->capacity) + amount;
+        have pool->checked_out == old(pool->checked_out);
+        have count(pool_slot(pool)) == old(count(pool_slot(pool))) + amount;
+        have defined(pool->checked_out + count(pool_slot(pool)));
         have pool->capacity == pool->checked_out + count(pool_slot(pool)) by {
             rewrite(pool->capacity == old(pool->capacity) + amount);
             rewrite(pool->checked_out == old(pool->checked_out));
@@ -677,12 +677,12 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
 } by {
     open(pool_control(source)) {
         open(pool_control(destination)) {
-            have 1 <= count(pool_object(source, _)) by simp;
+            have 1 <= count(pool_object(source, _));
             have 1 <= source->checked_out by {
                 rewrite(source->checked_out == count(pool_object(source, _)));
                 assumption();
             }
-            have source->capacity == count(pool_slot(source)) + source->checked_out by simp;
+            have source->capacity == count(pool_slot(source)) + source->checked_out;
             apply(int32_move_one_from_right_to_left_preserves_sum(
                 source->capacity, count(pool_slot(source)), source->checked_out
             )) using {
@@ -690,8 +690,8 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 1 <= source->checked_out;
                 source->capacity == count(pool_slot(source)) + source->checked_out;
             }
-            have 0 < source->checked_out by simp;
-            have defined(source->checked_out + count(pool_slot(source))) by simp;
+            have 0 < source->checked_out;
+            have defined(source->checked_out + count(pool_slot(source)));
             apply(int32_add_to_integer(source->checked_out, count(pool_slot(source)))) using {
                 defined(source->checked_out + count(pool_slot(source)));
             }
@@ -699,7 +699,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 rewrite(source->capacity == source->checked_out + count(pool_slot(source)));
                 assumption();
             }
-            have source->capacity <= 2147483647 by simp;
+            have source->capacity <= 2147483647;
             have to_integer(source->capacity) <= 2147483647 by {
                 apply(int32_less_equal_to_integer(source->capacity, 2147483647)) using { source->capacity <= 2147483647; }
                 simp();
@@ -734,7 +734,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 }
                 simp();
             }
-            have 1 <= count(pool_slot(destination)) by simp;
+            have 1 <= count(pool_slot(destination));
             apply(int32_move_one_from_right_to_left_preserves_sum(
                 destination->capacity, destination->checked_out, count(pool_slot(destination))
             )) using {
@@ -742,7 +742,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 1 <= count(pool_slot(destination));
                 destination->capacity == destination->checked_out + count(pool_slot(destination));
             }
-            have defined(destination->checked_out + count(pool_slot(destination))) by simp;
+            have defined(destination->checked_out + count(pool_slot(destination)));
             apply(pool_checkout_increment_bound(destination->capacity, destination->checked_out, count(pool_slot(destination)))) using {
                 1 <= count(pool_slot(destination));
                 0 <= destination->checked_out;
@@ -760,7 +760,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 to_integer(destination->checked_out) + 1 <= 2147483647;
                 to_integer(destination->checked_out) + 1 >= -2147483648;
             }
-            have defined(destination->checked_out + 1) by simp;
+            have defined(destination->checked_out + 1);
             have destination->checked_out >= 0 by {
                 arithmetic() using { 0 <= destination->checked_out; }
             }
@@ -774,15 +774,15 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             step();
             fold(pool_object(destination, object));
             fold(pool_slot(source));
-            have source->capacity == old(source->capacity) by simp;
-            have source->checked_out == old(source->checked_out) - 1 by simp;
-            have count(pool_slot(source)) == old(count(pool_slot(source))) + 1 by simp;
+            have source->capacity == old(source->capacity);
+            have source->checked_out == old(source->checked_out) - 1;
+            have count(pool_slot(source)) == old(count(pool_slot(source))) + 1;
             have 0 <= source->checked_out by {
                 rewrite(source->checked_out == old(source->checked_out) - 1);
                 apply(int32_positive_predecessor_is_nonnegative(old(source->checked_out))) using { 0 < old(source->checked_out); }
                 assumption();
             }
-            have source->checked_out == count(pool_object(source, _)) by simp;
+            have source->checked_out == count(pool_object(source, _));
             have source->capacity == source->checked_out + count(pool_slot(source)) by {
                 rewrite(source->capacity == old(source->capacity));
                 rewrite(source->checked_out == old(source->checked_out) - 1);
@@ -790,7 +790,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 rewrite(old(source->capacity) == (old(count(pool_slot(source))) + 1) + (old(source->checked_out) - 1));
                 normalize();
             }
-            have destination->capacity == destination->checked_out + count(pool_slot(destination)) by simp;
+            have destination->capacity == destination->checked_out + count(pool_slot(destination));
         }
     }
     execute(); unfold(valid_pool); simp();
@@ -823,23 +823,23 @@ void pool_transfer_pipeline(struct pool* source, struct pool* destination, struc
 } by {
     open(pool_storage(source)) {
         open(pool_storage(destination)) {
-            have object->value == old(object->value) by simp;
+            have object->value == old(object->value);
         }
     }
     step();
-    have object->value == old(object->value) by simp;
+    have object->value == old(object->value);
     open(pool_control(source)) { step(); }
-    have object->value == old(object->value) by simp;
-    have count(pool_object(source, _)) == 0 by simp;
-    have defined(count(pool_object(source, _)) + 1) by simp;
+    have object->value == old(object->value);
+    have count(pool_object(source, _)) == 0;
+    have defined(count(pool_object(source, _)) + 1);
     open(pool_control(destination)) { step(); }
-    have object->value == old(object->value) by simp;
-    have count(pool_object(source, object)) == 1 by simp;
-    have count(pool_object(destination, object)) == 0 by simp;
-    have count(pool_slot(source)) == 0 by simp;
-    have count(pool_object(destination, _)) == 0 by simp;
-    have defined(count(pool_slot(source)) + 1) by simp;
-    have defined(count(pool_object(destination, _)) + 1) by simp;
+    have object->value == old(object->value);
+    have count(pool_object(source, object)) == 1;
+    have count(pool_object(destination, object)) == 0;
+    have count(pool_slot(source)) == 0;
+    have count(pool_object(destination, _)) == 0;
+    have defined(count(pool_slot(source)) + 1);
+    have defined(count(pool_object(destination, _)) + 1);
     step();
     execute(); unfold(valid_pool); simp();
 }

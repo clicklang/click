@@ -26,7 +26,7 @@ theorem two_bounds(x: int32) {
 
 theorem needs_upper(x: int32) {
     requires x <= 10;
-    ensures x <= 20 by { simp(); }
+    ensures x <= 20 by simp;
 }
 
 int32 ident(int32 x) {

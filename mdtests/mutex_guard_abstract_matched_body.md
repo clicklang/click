@@ -48,7 +48,7 @@ void keep(struct counter *counter) {
     ensures h.mode == LockMode::Holding;
 } by {
     unfold(h);
-    have held(&counter->mu) by simp;
+    have held(&counter->mu);
     fold(h);
     execute();
     simp();

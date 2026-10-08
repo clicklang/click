@@ -50,7 +50,7 @@ void advance_once(int32* state) {
     ensures c.model == old(c.model);
     ensures c.revision == old(c.revision) + 1;
 } by {
-    have c.revision < 1000 by { simp(); }
+    have c.revision < 1000;
     step(advance(state), { first: c });
     execute();
     simp();
@@ -63,7 +63,7 @@ void run_twice(int32* state) {
     ensures c.revision == 1;
 } by {
     step(increment(state), { first: c });
-    have c.revision == 1 by { simp(); }
+    have c.revision == 1;
     step(increment(state), { first: c });
     execute();
     simp();

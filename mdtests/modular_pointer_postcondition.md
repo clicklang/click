@@ -46,7 +46,7 @@ int32 call_set_pointer(struct holder* owner, int32* data) {
     ensures result == 1;
 } by {
     execute_until(statement(2));
-    have owner->data == data by simp;
+    have owner->data == data;
     execute();
     simp();
 }

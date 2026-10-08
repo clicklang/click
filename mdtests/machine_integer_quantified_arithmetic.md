@@ -4,7 +4,7 @@
 theorem wide_successor(n: int64) {
     requires 0i64 <= n and n <= 100i64;
     ensures exists (x: int64) { x == n + 1i64 } by {
-        have defined(n + 1i64) by { simp(); }
+        have defined(n + 1i64);
         witness { x: n + 1i64 }
         simp();
     }
@@ -12,7 +12,7 @@ theorem wide_successor(n: int64) {
 
 theorem byte_arithmetic(n: uint8) {
     ensures exists (x: uint8) { x + 1 == n + 1 } by {
-        have defined(n + 1) by { simp(); }
+        have defined(n + 1);
         witness { x: n }
         simp();
     }

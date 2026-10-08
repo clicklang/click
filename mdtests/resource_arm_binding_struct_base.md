@@ -121,7 +121,7 @@ int frame_parent_value(struct tree_node* child, struct tree_node* parent) {
     ensures ctx.model == old(ctx.model);
 } by {
     let { sibling: s, up: u } = unfold(ctx);
-    have s.model == HeapTree::Empty by { simp(); }
+    have s.model == HeapTree::Empty;
     unfold(s);
     execute();
     let s = fold(tree_at(parent->right), { model: HeapTree::Empty });

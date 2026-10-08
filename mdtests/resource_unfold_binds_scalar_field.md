@@ -111,8 +111,8 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 apply(int32_increment_lower_bound(i, 0, p)) using { 0 <= i; i < p; }
             }
             step();
-            have 0 <= i and i <= p by { simp(); }
-            have 0 <= p by { assumption(); }
+            have 0 <= i and i <= p;
+            have 0 <= p by assumption();
             have 0 <= 0 - at(iteration, i) + p - 1 by {
                 arithmetic() using {
                     0 <= at(iteration, i);

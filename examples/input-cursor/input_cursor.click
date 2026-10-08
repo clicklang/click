@@ -162,7 +162,7 @@ int32 input_cursor_shared_pipeline(
             separate(memory(*right), memory(data[0..length]));
         }
     }
-    have left->pos == 0 by simp;
+    have left->pos == 0;
     have left->pos < left->len by {
         simp() using {
             1 <= length;
@@ -170,7 +170,7 @@ int32 input_cursor_shared_pipeline(
             left->pos == 0;
         }
     }
-    have left->data == data by simp;
+    have left->data == data;
     step();
     transport(at(statement(4).entry, left->pos) < at(statement(4).entry, left->len), left->pos < left->len) using {
         at(statement(4).entry, left->pos) < at(statement(4).entry, left->len);
@@ -182,8 +182,8 @@ int32 input_cursor_shared_pipeline(
             right->pos == 0;
         }
     }
-    have right->pos == 0 by simp;
-    have right->data == data by simp;
+    have right->pos == 0;
+    have right->data == data;
     have left->data == data by {
         transport(at(statement(4).entry, left->data) == data, left->data == data) using {
             at(statement(4).entry, left->data) == data;
@@ -224,8 +224,8 @@ int32 input_cursor_shared_pipeline(
         }
         assumption();
     }
-    have at(statement(5).entry, left->pos) == 0 by simp;
-    have left->pos == at(statement(5).entry, left->pos) + 1 by simp;
+    have at(statement(5).entry, left->pos) == 0;
+    have left->pos == at(statement(5).entry, left->pos) + 1;
     apply(incremented_zero_is_one(
         at(statement(5).entry, left->pos),
         left->pos
@@ -234,9 +234,9 @@ int32 input_cursor_shared_pipeline(
     have right_value == right->data[right->pos] by {
         assumption();
     }
-    have right->pos == 0 by simp;
-    have right->data == data by simp;
-    have right_value == right->data[right->pos] by simp;
+    have right->pos == 0;
+    have right->data == data;
+    have right_value == right->data[right->pos];
     have right->data[right->pos] == data[0] by {
         simp() using {
             right->pos == 0;

@@ -36,7 +36,7 @@ int32 f(int32 n) {
         }
     }
     step();
-    have result == 5 by simp;
+    have result == 5;
     simp();
 }
 ```

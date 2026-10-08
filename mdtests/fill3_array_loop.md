@@ -38,7 +38,7 @@ int32 fill3_array_loop(int32 p[3]) {
         preserve by {
             step();
             step();
-            have i == at(statement(3).entry, i) + 1 by simp;
+            have i == at(statement(3).entry, i) + 1;
             simp();
         }
     }

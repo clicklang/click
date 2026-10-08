@@ -638,7 +638,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 normalize();
             }
             have result == 0 or result == 1 by {
-                have result == 1 by { normalize(); }
+                have result == 1 by normalize();
                 assumption();
             }
             have result == 0 implies owner->len == old(owner->len) by {

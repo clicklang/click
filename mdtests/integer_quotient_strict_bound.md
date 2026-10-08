@@ -87,7 +87,7 @@ theorem use_strict_lower(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires bound < 0;
     requires bound * d < n;
-    ensures bound < truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_strict_lower(n, d, bound)); }
+    ensures bound < truncating_quotient(n, d) by apply(integer_positive_divisor_quotient_strict_lower(n, d, bound));
 }
 
 theorem use_strict_upper(n: Integer, d: Integer, bound: Integer) {
@@ -95,7 +95,7 @@ theorem use_strict_upper(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires 0 < bound;
     requires n < bound * d;
-    ensures truncating_quotient(n, d) < bound by { apply(integer_positive_divisor_quotient_strict_upper(n, d, bound)); }
+    ensures truncating_quotient(n, d) < bound by apply(integer_positive_divisor_quotient_strict_upper(n, d, bound));
 }
 
 theorem fee_floor_quotient_fit(n: Integer, d: Integer) {

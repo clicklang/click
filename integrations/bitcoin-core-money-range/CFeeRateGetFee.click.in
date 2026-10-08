@@ -25,16 +25,16 @@ int64 CFeeRate_GetFee(const struct CFeeRate* self, int32 virtual_bytes) {
     step(); step();
     let empty = step(FeeFrac_IsEmpty(&self->m_feerate.base), { });
     branch then {
-        have self->m_feerate.base.size == 0 by { simp(); }
+        have self->m_feerate.base.size == 0;
         execute(); simp();
     } else {
     }
-    have not (self->m_feerate.base.size == 0) by { simp(); }
+    have not (self->m_feerate.base.size == 0);
     have self->m_feerate.base.size > 0 by { arithmetic() using { self->m_feerate.base.size >= 0; not (self->m_feerate.base.size == 0); } }
-    have -9223372036854775808 <= to_integer(self->m_feerate.base.fee) by { simp(); }
-    have to_integer(self->m_feerate.base.fee) <= 9223372036854775807 by { simp(); }
-    have -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) by { simp(); }
-    have to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size) by { simp(); }
+    have -9223372036854775808 <= to_integer(self->m_feerate.base.fee);
+    have to_integer(self->m_feerate.base.fee) <= 9223372036854775807;
+    have -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes);
+    have to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size);
     step(); step();
     let rounded = step(FeeFrac_EvaluateFeeUp(&self->m_feerate.base, virtual_bytes), { });
     if rounded == 0i64 {

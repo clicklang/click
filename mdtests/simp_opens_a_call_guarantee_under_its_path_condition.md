@@ -51,7 +51,7 @@ int32 use_probe(int32 *cell) {
     mark before_probe;
     step();
     if c(r) == 0 {
-        have cell[0] == 0 and cell[1] == at(before_probe, cell[0]) by { simp(); }
+        have cell[0] == 0 and cell[1] == at(before_probe, cell[0]);
         execute();
         simp();
     } else {
