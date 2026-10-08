@@ -109,26 +109,19 @@ nested case did not confirm it: with `contains inner(p)` in `outer`, both
 `views outer(p)` and `owns outer(p)` needed the `unfold`. Re-check with a
 resource whose body owns memory directly before deciding anything.
 
-### B4. Overlapping places returned by one contract
+### B4. Overlap that depends on a symbolic bound
 
-A contract that returns the same place twice, `owns p->value; produces
-p->value;` or `produces X; produces X;`, is refused where it is declared,
-with a message naming the place.
+A contract that returns one place twice, or two places that overlap by
+layout (`owns *p; produces p->value;`), is refused where it is declared or
+set up, with a message naming the places.
 
-Two places that overlap without being the same clause are not:
-`owns *p; produces p->value;`, or `owns q[0..n]; produces q[1];`. With a
-proof, the function is refused when its exit state is checked, with "two
-owned memory resource clauses overlap", which does not name them. A
-`contract` declaration with no proof is accepted.
+An overlap that depends on a symbolic bound is not: `requires n >= 2;
+owns q[0..n]; produces q[1];`. With a proof it is refused when the exit state
+is checked, with "two owned memory resource clauses overlap", which does not
+name them. A `contract` declaration with no proof is accepted.
 
-The declaration check is by spelling because an `owns` clause is read at
-entry and a `produces` clause at exit. Deciding overlap for different
-spellings needs the two places compared in one state, and a place reached
-through a loaded pointer can differ between the two.
-
-Regression: `owns *p; produces p->value;` refused at its declaration by a
-message naming both places, in a function with a proof and in a `contract`
-with none.
+Regression: that contract refused at setup by a message naming `q[0..n]` and
+`q[1]`, in a function with a proof and in a `contract` with none.
 
 ## C. Tactics
 
