@@ -67,54 +67,74 @@ as the referent with no further change.
 Regression, for that change: a function with `int& r = x; r = 1;` whose
 proof states `have r == 1;` and whose expansion re-verifies.
 
-### A4. Rust sidecars in Rust syntax
+### A4. Rust sidecars in Rust syntax: the pinned examples and the refusals
 
-Decided 2026-10-08: a Rust sidecar states its signature in Rust syntax, and
-each language spells a place its own way, so a Rust `c: &mut Cell` is
-`owns *c` and `c.value`. Not designed. Today the sidecar restates signatures
-in C shape (`const uint8* bytes, uint64 bytes_len` for `bytes: &[u8]`), a
-slice carries its length as a second parameter, tuple fields are `_0`, and
-layout is the compiler's.
+Decided 2026-10-08: a Rust sidecar looks like Rust, and Click's own words
+(`requires`, `owns`, `result`, the tactics) are the same in every language.
+Design and order of work: `design/rust-sidecar-signatures.md`.
 
-Next step: a proposal under `design/` covering the signature grammar, how a
-slice and its length are named, the spelling for a whole slice (today only
-`views bytes[0..(int32)(uint32)bytes_len]`), tuple and enum fields, and the
-migration of the hash-pinned sidecars under `design/charon-trial`.
+Built: `fn` signatures with Rust type names, `as` casts, `&T` and `&mut T`
+(`*value`, `parent.left`), slices as one name (`bytes.len()`, `*bytes`, a
+`usize` parameter as an index), references to arrays, and `impl` blocks with
+`self`. `click expand`, `profile` and `audit` address them. Reference:
+`docs/reference/rust.md`, "Signatures in Rust syntax". Eight of the sixteen
+Rust examples are converted.
+
+Remaining:
+
+- Eight examples keep the C-shaped form: `rust-arrays`, `rust-loops`,
+  `rust-iterators`, `rust-iter-references`, `rust-byte-sum`,
+  `rust-chunks-exact` and `rust-split-at` are compared byte for byte with
+  pinned copies under `design/charon-trial` (`tests/rust_import/parity.rs`,
+  `array_lengths.rs`, `iterator_proof.rs`, `loop_headers.rs`,
+  `src/languages/rust/charon/split_slices_tests.rs`), and three tests split
+  the text of `rust-move-drop` by its function headers. Convert each
+  example with its pinned copy and regenerate
+  `design/charon-trial/parity.json`.
+- The converted examples take their signatures from the Rust source, but
+  their contracts and proofs still write `bytes_len`, `->` and
+  `(int32)index`. Respell them.
+- Then refuse `->` and the C-shaped signature for a Rust source, with the
+  spelling to write.
+- Diagnostics and `click expand` print C-shaped spellings for a Rust
+  sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
+  the sidecar writes.
+- A 32-bit index is the memory model's limit, so a slice contract states
+  `requires bytes.len() <= 2147483647u64`. Dropping it needs range bounds
+  wider than 32 bits in the kernel.
+- An array by value, a reference to a reference, generics and lifetimes in
+  a `fn` signature are refused.
+
+Done when: every Rust example and trial sidecar is in Rust syntax, the
+C-shaped form is refused for a Rust source, and no diagnostic for one
+prints a C-shaped place.
 
 ## B. Contracts and resource declarations
 
 Found in the third pass and ruled on 2026-10-07. Each was checked against the
 tool that day unless it says otherwise.
 
-### B1. A child with fields in a resource without fields
+### B1. A second fact about a child's field, where the parent has fields
 
-A resource holds a child resource with `owns inner(p);`, the clause it uses
-for memory; `contains inner(p);` is retired and refused with that spelling.
+Built: a resource that declares no `field` may name a child that has
+fields and state facts about them. It keeps the child's fields in a record
+the author does not write, is held without a name (`owns pair(p);`), and is
+unfolded and folded with only the child map. A call binds a callee's
+instance binder without a map when only one binding is possible. Reference:
+`docs/reference/language/index.md`.
 
-A child can also be named, `owns item: inner(p);`, so the parent's facts can
-read the child's fields as `item.field`. That is accepted only in a parent
-that declares fields of its own, because the parent's model is where the
-child's model is kept. In a parent without fields it is refused: "this
-resource declares no fields to hold them; write the child without a name".
+One asymmetry remains. In a parent that declares fields of its own, the
+one equation `fact first.v == total;` ties a child's field to a parent
+field, and any other fact that mentions `first.v` is refused as "duplicate
+child field equation". A parent without fields has no such limit, because
+`first.v` there reads the hidden field.
 
-Decided 2026-10-08: it should be allowed. Today a resource without fields
-cannot hold a child that has fields at all, and the two refusals point at
-each other: the unnamed form `owns counted(p->a);` is refused with "resource
-`counted` has fields; bind it with `owns name: counted(...);`".
+Regression: a parent with a declared field, the equation for the child's
+field, and a second fact `fact p->n == first.v;`, accepted and usable after
+an unfold.
 
-Intended reading: the parent does not keep the child's fields. Holding the
-parent means some values of the child's fields exist for which the child is
-held and the parent's facts are true; unfolding gives the child with fresh
-values and those facts. A parent that needs a value tracked across a fold
-declares a field for it. The parent stays fieldless and is held without a
-name. Not yet checked against how the kernel unfolds and folds a resource
-without fields; if this reading does not fit, report what does before
-building another.
-
-Regression: `resource pair(p) { owns p->n; owns first: counted(p->a); fact
-p->n == first.v; }` with no field in `pair`, folded and unfolded, with a
-claim that follows from the fact verifying and one that needs the lost value
-refused; the unnamed form accepted.
+Done when: a fact may mention a named child's field in any resource, with
+one of them, or a hidden field, still fixing where the value is kept.
 
 ### B3. Reads through an owned resource with fields, across a loop
 
@@ -200,6 +220,13 @@ the standard library. Left in the long spelling:
   handles it (`docs/internals/byte-representation.md`). A specification that
   must state one byte of a wider cell writes the explicit load,
   `load_uint8(byte_offset(p, n))`.
+- A resource without fields holds a child that has them by a hidden
+  record, which remembers the child's values across a fold. A rule under
+  which each unfold yields fresh values was considered and dropped: the
+  kernel treats a fieldless resource's body as a function of its arguments
+  and memory in about thirty places.
+- A call binds a callee's instance binder automatically when only one
+  binding is possible, and never chooses between two.
 - `diverges` stays on the signature and `decreases` stays a clause: one is a
   property of the function, the other a measure with an expression.
 
