@@ -3123,6 +3123,10 @@ id = "stdlib.theorem.uint32_mul_to_integer"
 path = "reference/library/index.md#uint32_mul_to_integer"
 
 [[item]]
+id = "stdlib.theorem.uint32_mul_guard_by_integer_bound"
+path = "reference/library/index.md#uint32_mul_guard_by_integer_bound"
+
+[[item]]
 id = "stdlib.theorem.uint64_add_to_integer"
 path = "reference/library/index.md#uint64_add_to_integer"
 
