@@ -151,9 +151,6 @@ fi
 # issue does:
 # - examples/multifile-registry does not verify; it is quarantined in
 #   tests/examples.rs (issues/static-state-caller-transport.md).
-# - mdtests/loop_invariant_through_loaded_pointer_field.md, whose expansion
-#   writes a cell range inside a struct
-#   (bugs/expansion-writes-a-cell-range-for-a-struct-field.md).
 #
 # examples/basic-cpp is left out for a different reason: its import lock and
 # compilation database are generated per machine by the test harness and are
@@ -165,7 +162,6 @@ if [[ "${1:-}" == "--audit" ]]; then
     exec target/release/click audit --keep-going --time-limit 180m \
         --exclude examples/multifile-registry \
         --exclude examples/basic-cpp \
-        --exclude mdtests/loop_invariant_through_loaded_pointer_field.md \
         .
 fi
 

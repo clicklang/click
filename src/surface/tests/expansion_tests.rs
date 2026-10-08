@@ -16544,3 +16544,31 @@ fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
         .expect_err("an explicitly named claim does not acquire a default label");
     }
 }
+
+#[test]
+fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_invariant_through_loaded_pointer_field.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
+    assert!(expanded.contains("viewable(j->lo)"), "{expanded}");
+    assert!(!expanded.contains("viewable(j[2..3])"), "{expanded}");
+    verify_c0_sources(&expanded, &sources).unwrap();
+}
+
+#[test]
+fn padded_struct_field_loop_expansion_reverifies() {
+    let (source, sources) =
+        mdtest_sources("mdtests/loop_invariant_through_padded_pointer_field.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "probe_contract.contract").unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+}

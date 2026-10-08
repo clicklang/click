@@ -2382,3 +2382,65 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
         }
     }
 }
+
+#[test]
+fn struct_loadable_spans_relower_without_widening_over_padding() {
+    let function = syntax::parse_function(
+        "struct item { int32 first; int32 last; }; int32 read(struct item *p) { return p->last; }",
+    )
+    .unwrap();
+    let parameter = function.parameters()[0].clone();
+    let pointer = Pointer {
+        block: PointerBlock::Concrete("item".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let value = CValue::typed_pointer(pointer.clone(), CType::Int32Pointer);
+    let state = CState::new().with_local("p", value.clone());
+    let arguments = [CExpression::Value(value)];
+    let plain = synthesize_struct_loadable_segment(
+        &pointer.offset_by_bytes(4),
+        &Bitvector32Term::Constant(4),
+        &[parameter],
+        &arguments,
+        &state,
+    )
+    .unwrap();
+    assert_eq!(
+        crate::surface::diagnostics::describe_click_proposition(&plain),
+        "viewable(p->last)"
+    );
+    let plain_fact = relower_written_proposition(&plain, &state).unwrap();
+    let padded = syntax::C0StructLayout::from_explicit_fields(
+        vec![
+            ("first".into(), C0Type::Int32, 0, 4),
+            ("last".into(), C0Type::Int32, 4, 4),
+        ],
+        16,
+        8,
+    )
+    .unwrap();
+    let parameter = syntax::C0Parameter::new(C0Type::Int32Pointer, "p".into(), None)
+        .with_pointee_struct_layout("item".into(), padded);
+    let clipped = synthesize_struct_loadable_segment(
+        &pointer.offset_by_bytes(4),
+        &Bitvector32Term::Constant(4),
+        &[parameter],
+        &arguments,
+        &state,
+    )
+    .unwrap();
+    assert!(matches!(
+        &clipped,
+        ClickProposition::Loadable {
+            segment: ContractSegment {
+                surface: ContractSegmentSurface::Range { .. },
+                ..
+            }
+        }
+    ));
+    assert_eq!(
+        relower_written_proposition(&clipped, &state).unwrap(),
+        plain_fact,
+        "the byte spelling must preserve the exact four bytes, excluding padding"
+    );
+}
