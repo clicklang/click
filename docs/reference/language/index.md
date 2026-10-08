@@ -2339,7 +2339,10 @@ measure is refused, and so is a structural or parameter measure: those read
 recursive calls in a C body, and a tactic's recursion is in its proof.
 
 Tactic parameters use Click's `name: type` spelling and are C scalars and
-pointers in this release. A tactic may not take the name of a built-in tactic
+pointers in this release. The literal `0` supplies a typed null pointer at a
+pointer parameter; other integers and integer variables do not implicitly
+convert to pointers (`mdtests/user_tactic_accepts_null_pointer_arguments.md`).
+A tactic may not take the name of a built-in tactic
 or a C function, may not declare `diverges`, `throws`, or `constructs`, and
 applies only itself and tactics declared before it, in the module that
 declares it. An application runs at an execution frontier before the function

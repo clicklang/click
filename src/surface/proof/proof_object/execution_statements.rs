@@ -1103,6 +1103,18 @@ impl<'a> Proof<'a> {
         let mut arguments = Vec::with_capacity(parameters.len());
         for (parameter, argument) in parameters.iter().zip(application.arguments()) {
             let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
+            // As at resource and pure-function parameters, the literal `0`
+            // denotes a typed null pointer here. Do not coerce arbitrary
+            // integer expressions, even when their evaluated value is zero.
+            if parameter.c_type().is_pointer()
+                && matches!(&argument, ContractExpression::IntegerLiteral(text) if text == "0")
+            {
+                arguments.push(CValue::typed_pointer(
+                    crate::kernel::Pointer::null(),
+                    parameter.c_type(),
+                ));
+                continue;
+            }
             let value = capture_resource_field_initializer(
                 &argument,
                 &crate::kernel::ResourceFieldType::C(parameter.c_type()),
