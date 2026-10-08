@@ -5506,6 +5506,8 @@ impl Parser {
         match name.as_str() {
             "let" => self.parse_let_proof_tactic(),
             "both" => self.parse_both_proof_tactic(),
+            "if" => self.parse_if_proof_tactic(),
+            "induct" if !self.tactic_names.contains(&name) => self.parse_induct_proof_tactic(),
             "close_invariants" if self.peek_ident() == Some("by") => {
                 self.position += 1;
                 let body = self.parse_possibly_empty_tactic_block()?;
@@ -5865,9 +5867,6 @@ impl Parser {
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::Open(ProofOpen { resource, tactics }));
         }
-        if name == "if" {
-            return self.parse_if_proof_tactic();
-        }
         if name == "cases" {
             // One arm per disjunct, each naming the disjunct it assumes:
             // `cases { A => { ... } B => { ... } }`. The arms' disjunction,
@@ -6141,6 +6140,85 @@ impl Parser {
             }));
         }
         self.parse_named_proof_tactic(name)
+    }
+
+    // Structural induction retains a child proof parser. Its syntax
+    // temporaries must not share the large leaf-tactic dispatch frame.
+    #[inline(never)]
+    fn parse_induct_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        let tactic = {
+            self.expect(Token::LParen)?;
+            let parameter = self.expect_ident("induction parameter")?;
+            self.expect(Token::RParen)?;
+            self.expect_ident_spelling("as")?;
+            let hypothesis = self.expect_ident("induction hypothesis name")?;
+            if self.peek() == Some(&Token::LBrace) {
+                self.position += 1;
+                let mut arms = Vec::new();
+                while self.peek() != Some(&Token::RBrace) {
+                    let type_name = self.expect_ident("induction pattern datatype")?;
+                    self.expect(Token::ColonColon)?;
+                    let variant = self.expect_ident("induction pattern variant")?;
+                    let mut bindings = Vec::new();
+                    if self.peek() == Some(&Token::LParen) {
+                        self.position += 1;
+                        if self.peek() != Some(&Token::RParen) {
+                            loop {
+                                bindings.push(self.expect_ident("induction pattern binding")?);
+                                match self.peek() {
+                                    Some(Token::Comma) => self.position += 1,
+                                    Some(Token::RParen) => break,
+                                    Some(token) => {
+                                        return Err(self.error(format!(
+                                            "expected `,` or `)` after induction binding, got {}",
+                                            token.describe()
+                                        )));
+                                    }
+                                    None => {
+                                        return Err(
+                                            self.error("expected `)` after induction bindings")
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        self.expect(Token::RParen)?;
+                    }
+                    self.expect(Token::FatArrow)?;
+                    let newly_bound = bindings
+                        .iter()
+                        .filter(|binding| self.current_contract_bindings.insert((*binding).clone()))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let tactics = self.parse_possibly_empty_tactic_block();
+                    for binding in newly_bound {
+                        self.current_contract_bindings.remove(&binding);
+                    }
+                    arms.push(ProofInductionArm {
+                        type_name,
+                        variant,
+                        bindings,
+                        tactics: tactics?,
+                    });
+                    if self.peek() == Some(&Token::Comma) {
+                        self.position += 1;
+                    }
+                }
+                self.expect(Token::RBrace)?;
+                self.skip_redundant_semicolon();
+                return Ok(ProofTactic::StructuralInduct {
+                    parameter,
+                    hypothesis,
+                    arms,
+                });
+            }
+            ProofTactic::Induct {
+                parameter,
+                hypothesis,
+            }
+        };
+        self.expect(Token::Semicolon)?;
+        Ok(tactic)
     }
 
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
@@ -6503,79 +6581,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 ProofTactic::ConstructResource(resource)
             }
-            "induct" => {
-                self.expect(Token::LParen)?;
-                let parameter = self.expect_ident("induction parameter")?;
-                self.expect(Token::RParen)?;
-                self.expect_ident_spelling("as")?;
-                let hypothesis = self.expect_ident("induction hypothesis name")?;
-                if self.peek() == Some(&Token::LBrace) {
-                    self.position += 1;
-                    let mut arms = Vec::new();
-                    while self.peek() != Some(&Token::RBrace) {
-                        let type_name = self.expect_ident("induction pattern datatype")?;
-                        self.expect(Token::ColonColon)?;
-                        let variant = self.expect_ident("induction pattern variant")?;
-                        let mut bindings = Vec::new();
-                        if self.peek() == Some(&Token::LParen) {
-                            self.position += 1;
-                            if self.peek() != Some(&Token::RParen) {
-                                loop {
-                                    bindings.push(self.expect_ident("induction pattern binding")?);
-                                    match self.peek() {
-                                        Some(Token::Comma) => self.position += 1,
-                                        Some(Token::RParen) => break,
-                                        Some(token) => {
-                                            return Err(self.error(format!(
-                                                "expected `,` or `)` after induction binding, got {}",
-                                                token.describe()
-                                            )));
-                                        }
-                                        None => {
-                                            return Err(
-                                                self.error("expected `)` after induction bindings")
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            self.expect(Token::RParen)?;
-                        }
-                        self.expect(Token::FatArrow)?;
-                        let newly_bound = bindings
-                            .iter()
-                            .filter(|binding| {
-                                self.current_contract_bindings.insert((*binding).clone())
-                            })
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        let tactics = self.parse_possibly_empty_tactic_block();
-                        for binding in newly_bound {
-                            self.current_contract_bindings.remove(&binding);
-                        }
-                        arms.push(ProofInductionArm {
-                            type_name,
-                            variant,
-                            bindings,
-                            tactics: tactics?,
-                        });
-                        if self.peek() == Some(&Token::Comma) {
-                            self.position += 1;
-                        }
-                    }
-                    self.expect(Token::RBrace)?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::StructuralInduct {
-                        parameter,
-                        hypothesis,
-                        arms,
-                    });
-                }
-                ProofTactic::Induct {
-                    parameter,
-                    hypothesis,
-                }
-            }
+            "induct" => return self.parse_induct_proof_tactic(),
             _ if is_tactic_name(&name) => {
                 return Err(self.error(format!(
                     "`{name}` is only available as a standalone smart tactic; use `by {name};`"
@@ -9570,10 +9576,26 @@ impl Parser {
                             base: Box::new(expression),
                             indexes,
                             dimensions,
-                            lowered: CExpression::Add(
-                                Box::new(struct_byte_base(base)),
-                                Box::new(stride),
-                            ),
+                            lowered: {
+                                let address = CExpression::Add(
+                                    Box::new(struct_byte_base(base)),
+                                    Box::new(stride),
+                                );
+                                if matches!(self.peek(), Some(Token::Arrow | Token::Dot)) {
+                                    address
+                                } else {
+                                    // A bare struct subscript retains the legacy
+                                    // first-word read; a following field uses the
+                                    // byte-scaled address of the whole element.
+                                    CExpression::TypedLoad {
+                                        pointer: Box::new(address),
+                                        value_type: crate::kernel::CType::Int32,
+                                        volatile: false,
+                                        pointee_constant: false,
+                                        source: Default::default(),
+                                    }
+                                }
+                            },
                         };
                         struct_array_element_width = None;
                     } else if let Some(shape) = struct_array_shape.take() {
