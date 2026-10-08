@@ -1075,12 +1075,12 @@ uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct spa
  ensures result == self->_M_extent._M_extent_value;
  ensures self->_M_extent._M_extent_value == old(self->_M_extent._M_extent_value);
 } by { execute(); simp(); }
-uint64 probe(struct span__int__value_unsigned_long_18446744073709551615* span) {
- owns span->_M_extent._M_extent_value;
- requires span->_M_extent._M_extent_value == 18446744073709551615u64;
+uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+ owns span._M_extent._M_extent_value;
+ requires span._M_extent._M_extent_value == 18446744073709551615u64;
  ensures result == 18446744073709551615u64;
- ensures span->_M_extent._M_extent_value == old(span->_M_extent._M_extent_value);
-} by { execute(); rewrite(span->_M_extent._M_extent_value == 18446744073709551615u64); simp(); }
+ ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
+} by { execute(); rewrite(span._M_extent._M_extent_value == 18446744073709551615u64); simp(); }
 "#;
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
@@ -1099,7 +1099,7 @@ uint64 probe(struct span__int__value_unsigned_long_18446744073709551615* span) {
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
-    let hostile = source.replace(" owns span->_M_extent._M_extent_value;", "");
+    let hostile = source.replace(" owns span._M_extent._M_extent_value;", "");
     let rejected = read_click_project(&path, &hostile).unwrap();
     assert!(verify_program_prepared_project(&rejected, &import).is_err());
     fs::remove_dir_all(root).unwrap();
@@ -1184,10 +1184,10 @@ int32* span__int__value_unsigned_long_18446744073709551615_data(const struct spa
  ensures result == self->_M_ptr;
  ensures self->_M_ptr == old(self->_M_ptr);
 } by { execute(); simp(); }
-int32* probe(struct span__int__value_unsigned_long_18446744073709551615* span) {
- owns span->_M_ptr;
- ensures result == span->_M_ptr;
- ensures span->_M_ptr == old(span->_M_ptr);
+int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+ owns span._M_ptr;
+ ensures result == span._M_ptr;
+ ensures span._M_ptr == old(span._M_ptr);
 } by { execute(); simp(); }
 "#;
     let path = root.join("span.click");
@@ -1207,7 +1207,7 @@ int32* probe(struct span__int__value_unsigned_long_18446744073709551615* span) {
     session
         .verify_at_project(&expanded, position.line, position.column)
         .unwrap();
-    let hostile = source.replace(" owns span->_M_ptr;", "");
+    let hostile = source.replace(" owns span._M_ptr;", "");
     assert!(
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
             .is_err()

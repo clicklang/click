@@ -6124,16 +6124,16 @@ fn integral_class_extents_and_unsigned_fields_use_native_typed_cells() {
         "Extent__value_unsigned_long_18446744073709551615"
     );
     let sidecar = r#"verifying "extent.cpp";
-uint64 size(struct Extent__value_unsigned_long_18446744073709551615* span) {
- owns span->length; owns span->marker;
- requires span->length == 18446744073709551615u64;
+uint64 size(struct Extent__value_unsigned_long_18446744073709551615& span) {
+ owns span.length; owns span.marker;
+ requires span.length == 18446744073709551615u64;
  ensures result == 18446744073709551615u64;
- ensures span->length == old(span->length);
- ensures span->marker == 4294967295u32;
+ ensures span.length == old(span.length);
+ ensures span.marker == 4294967295u32;
 } by { execute(); simp(); }
 "#;
     check_arithmetic_sidecar(&project, &import, sidecar);
-    for denied in [" owns span->length;", " owns span->marker;"] {
+    for denied in [" owns span.length;", " owns span.marker;"] {
         let hostile = sidecar.replace(denied, "");
         fs::write(project.directory.join("bad.click"), &hostile).unwrap();
         let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();

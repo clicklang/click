@@ -162,11 +162,22 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    hard-coded offsets. Integral template identity and unsigned descriptor
    storage prerequisites are implemented above; the remaining operations
    still need frontend admission and source proofs.
-2. **Descriptor values and reference returns.** Decide how aggregate results,
-   trivial copy/assignment and their temporary lifetimes fit the shared
-   execution model. Copy only descriptor cells and pointer identity, never
-   pointee ownership. A returned C++ reference must retain its backing pointer
-   and allocation lifetime, without introducing Rust-exclusive borrow rules.
+2. **Descriptor values and reference returns (next design decision).**
+   Recommended profile: preserve native reference result signatures in sidecars
+   (`int32&`), matching native reference parameters. The result is a non-owning
+   alias represented by the shared pointer/allocation-lifetime model. Reading or
+   writing through it still needs caller-held backing authority; no exclusive
+   borrow or ownership transfer is introduced. Its lifetime follows the backing
+   allocation, not the span descriptor.
+
+   Treat this trivial span's by-value result and defaulted copy/assignment as
+   ordinary shared C aggregate field copies with checked Clang layouts and
+   temporary lifetimes. Copy the descriptor pointer and native uint64 extent,
+   never pointee contents or authority. Verify the selected constructors and
+   methods from their pinned source. General nontrivial class value semantics
+   remain outside this profile. Reference results and aggregate results still
+   require implementation; the pointer-return increment above does not admit
+   either one.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
