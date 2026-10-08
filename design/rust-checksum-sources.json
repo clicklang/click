@@ -61,7 +61,7 @@
           "std"
         ],
         "rustc_dep_of_std": false,
-        "compiler": "nightly-2026-06-16",
+        "compiler": "nightly-2026-09-17",
         "overflow_checks": true,
         "panic": "abort",
         "mir_opt_level": 0

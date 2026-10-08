@@ -1,11 +1,11 @@
 # Rust checksum source assessment
 
-This assessment pins the existing Adler-32 implementations selected by
-[the Rust roadmap](../issues/rust-support.md). It does not claim that Click
-verifies either library. The scalar checkpoint supports `u8` and `u32`
-arithmetic and bounded byte slices/indexing; wider integers, iterators, and crate support
-follow from the actual
-reachable source, rather than from a replacement checksum implementation.
+This assessment pins the unchanged Adler-32 implementations, build configuration,
+and common mathematical specification selected by
+[the Rust roadmap](../issues/rust-support.md). Native Charon imports the Rust
+selection, and the [Adler trial](charon-trial/adler2/README.md) records its current
+checked computation bounds. Complete checksum correctness and C/Rust result
+equality remain unproved. Extend the proofs over the reachable original code.
 
 ## Immutable inputs and configuration
 
@@ -33,10 +33,11 @@ Compiler and header identities must enter the eventual Click input lock.
 Keep adler2's declared Rust 2021 edition and default `std` feature. There
 are no ordinary third-party dependencies for this configuration. The optional
 `rustc-dep-of-std` feature is off; tests and benchmarks are not verification
-roots. Use Click's pinned `nightly-2026-06-16`, overflow checks enabled,
-panic abort, and MIR optimization level zero. The current exporter fixes Rust
-2024 and one source file, so edition, features, crate roots, and all reachable
-module bytes must become explicit locked inputs before importing this crate.
+roots. Use the compiler and extractor pinned by
+[the Charon profile](../src/languages/rust/charon-profile.json), overflow checks
+enabled, panic abort, and MIR optimization level zero. The schema-4 input lock
+records Rust 2021, features, crate roots, both module files, and the complete
+compiler-observed source closure.
 
 These are selected paths and a selected build configuration. The `BufRead`
 adapter, zlib compression, alternate `NO_DIVIDE` code, and checksum-combine
@@ -74,7 +75,7 @@ processes the short tail. This is a scalar fixed-array implementation of a
 parallel checksum identity; the proof must establish that identity rather
 than pretend the implementation is the textbook serial loop.
 
-## Rust gaps exposed by these sources
+## Required Rust interpretations
 
 | Source construct | Required checked interpretation |
 | --- | --- |
@@ -86,11 +87,11 @@ than pretend the implementation is the textbook serial loop.
 | `for`, nested loops, `.chunks_exact()`, `.remainder()`, `.iter()` | Iterator state, yielded subranges, progress and existing loop invariants |
 | `mod`, `use`, inherent methods, `Default`, `Copy` derives | Crate-aware extraction and selected concrete reachable definitions |
 
-The current exporter accepts `i32`, booleans, selected structs/references,
-branches, and direct local calls. It does not import this library. Invoking it
-on unchanged `src/lib.rs` fails promptly with the documented one-file boundary
-diagnostic about modules, macros, imports, and attributes. Do not strip those
-constructs from adler2 to turn that rejection into an apparent success.
+Native Charon imports this unchanged crate with its modules, derives, resolved
+methods, and concrete operators. The helper bodies, arithmetic lemmas, and
+small-batch computation bounds have checked sidecars. Full outer batches, short
+tails, and the checksum identity remain proof work; successful extraction alone
+establishes none of those claims.
 
 Support the reachable concrete instantiations rather than promising arbitrary
 traits or generics. Slice and iterator operations need either checked lowering
@@ -131,50 +132,35 @@ that representation needs either full target-width support or explicit checked
 bounds in an intermediate subset. This assessment
 does not establish a need for new public Click syntax.
 
-## Reviewable implementation increments
+## Current proof boundary and delivery
 
-The shared field-borrow blocker was repaired in
-[PR #29](https://github.com/clicklang/click/pull/29). The nested guard proves the
-child's write of 42 and rejects a stale result of 1, with checked expansion.
-The subsequent scalar checkpoint covers `u8`/`u32`, casts, unsigned comparisons,
-remainder, shifts, bitwise operations, and checked panic obligations. `u16`
-and general target-sized `usize` arithmetic remain outstanding. Byte slices
-now support `.len()`, indexed reads/writes, local reborrows and direct calls;
-variable-length memory contracts currently require length at most `INT32_MAX`.
-Slice metadata and index checks retain the target's full 64-bit width.
+The selected scalar types, byte slices, arrays, crate configuration, qualified
+methods, concrete operators, and stored shared iterators are supported by the
+native adapter. Variable-length memory contracts retain an explicit
+`INT32_MAX` range limit; slice metadata and native index checks keep their
+full target width.
 
-1. Add `u8`, `u16`, `u32`, and target-sized `usize` to the Rust artifact and
-   direct lowering, together with required casts, unsigned comparisons,
-   remainder, shifts, and bitwise operations. Keep overflow, divide-by-zero,
-   and shift obligations checked. A small Rust arithmetic regression should
-   verify a true result and reject a false one, overflow, and invalid shifts.
-   This is frontend evidence, not an existing-library verification claim.
-2. Add byte slices and fixed arrays, bounds-checked indexing, and slice-length
-   access using existing memory resources. Cover unchanged input, out-of-bounds
-   rejection, and mutable/shared access separation.
-3. Lock crate configuration and source closure, resolve concrete methods and
-   operators, and model the selected slice/iterator operations. Add structured
-   loops with sidecar invariants and progress checks, including nested chunks.
-4. Prove the serial specification, chunk accumulation bounds and four-lane
-   identity; verify the two pinned computations unchanged. Reject a false
-   checksum claim through Click and run ordinary verification, audit, profile,
-   expansion, and re-verification for the completed example.
+The computation proof covers arbitrary multiple-of-four lengths up to 22,204
+bytes from canonical initial states. It checks the lane-loop ceilings,
+termination, original reductions and recombination, scalar sums, and final
+16-bit stores. It does not yet establish the full mathematical checksum.
 
-Each increment gets its own coherent green checkpoint. Shared checker or
-expansion failures take priority over the next increment. Full arbitrary-input
-verification remains the milestone; a length-limited proof may be intermediate
-evidence only if its bound is explicit.
+Follow the [current roadmap](../issues/rust-support.md) for the remaining outer
+batches, short tails, common specification, unchanged C proof, and architecture
+requirements. Deliver coherent green proof and engine increments through pull
+requests. Repair checker and expansion defects before extending the examples;
+retain explicit bounds on intermediate evidence and meaningful negative tests.
 
 ## Assessment evidence
 
-- Original adler2 source compiled with the pinned compiler, Rust 2021,
-  `std`, overflow checks and panic abort for the selected Linux target
-  (metadata emission). Its file hashes match the immutable repository sources.
+- The native locked adler2 artifact retains Rust 2021, `std`, overflow checks,
+  panic abort, and the selected Linux target. The checked source hashes match
+  the immutable repository files.
 - Original zlib checksum source passed a host Clang syntax check with its
   pinned headers. The host macro dump confirmed LP64 widths and that
   `NO_DIVIDE` and `Z_SOLO` were absent. This is not yet a Linux Click import.
 - 126 host differential checks compared the unchanged implementations with canonical
   seeds and non-null byte buffers around lengths 1, 4, 16, 5,552 and 22,208.
   They are supplementary runtime evidence, not functional verification.
-- The current Rust exporter rejected the original crate promptly at its known
-  source boundary. No implementation source was changed for this assessment.
+- Native Charon imports the selected unchanged Rust crate. No implementation
+  source was changed for the proof trial.
