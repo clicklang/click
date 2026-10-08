@@ -768,19 +768,35 @@ pub(crate) fn cell_run_value(
             };
             CValue::typed_pointer(Pointer::symbolic_function(variable), element_type)
         }
-        c_type if c_type.is_pointer() => CValue::typed_pointer(
-            Pointer::loaded(
+        c_type if c_type.is_pointer() => {
+            // A seeded pointer cell is already a typed read, even before a
+            // C load observes it. Retain its exact producer definition so a
+            // later logical read through an alias can use load congruence.
+            let definition = match &load {
+                Bitvector32Term::MemoryLoad(_, _, _) => Some(load.clone()),
+                Bitvector32Term::Variable(variable) => {
+                    crate::kernel::registered_load_term_for_variable(variable)
+                }
+                _ => None,
+            };
+            let value = Pointer::loaded(
                 pointer.block.clone(),
                 load,
                 i64::from(
                     c_type
                         .pointee_type()
-                        .expect("pointer element type has a pointee")
+                        .expect("pointer element has a pointee")
                         .byte_width(),
                 ),
-            ),
-            c_type,
-        ),
+            );
+            if let Some(Bitvector32Term::MemoryLoad(snapshot, address, LoadKind::Bits32)) =
+                definition
+            {
+                crate::kernel::equality_graph::EqualityGraph::default()
+                    .register_pointer_read_definition(&value, &snapshot, &address);
+            }
+            CValue::typed_pointer(value, c_type)
+        }
         _ => unreachable!("memory ranges cannot contain aggregate elements"),
     }
 }

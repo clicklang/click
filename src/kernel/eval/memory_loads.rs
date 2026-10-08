@@ -5169,6 +5169,70 @@ mod tests {
     }
 
     #[test]
+    fn seeded_pointer_cells_retain_their_typed_load_definition() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let snapshot = intern_c_memory_ref(&memory);
+        let base = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(95_400)), 4),
+        };
+        let alias = Pointer::symbolic(Variable(95_401));
+        let address = base.offset_by_bytes(16);
+        let alias_address = alias.offset_by_bytes(16);
+        let load = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+        let CValue::Pointer(seeded) =
+            crate::kernel::cell_run_value(&address, CType::Int64Pointer, load)
+        else {
+            panic!("seeded pointer");
+        };
+        let bare = PureFactContext::new();
+        let read = logical_pointer_read(&memory, &alias_address, &bare);
+        assert!(!bare.pointers_known_equal(seeded.pointer(), &read));
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128, 512] {
+            for i in 0..size {
+                let unrelated = Pointer::symbolic(Variable(96_400 + i)).offset_by_bytes(16);
+                let load = canonical_form_of_load(
+                    intern_c_memory_ref(&memory),
+                    unrelated.clone(),
+                    LoadKind::Bits32,
+                );
+                crate::kernel::cell_run_value(&unrelated, CType::Int64Pointer, load);
+            }
+            let context = bare.clone().assume_condition(
+                ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+                true,
+            );
+            let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    context.pointers_known_equal(seeded.pointer(), &read)
+                })
+            });
+            assert!(equal);
+            samples.push(work);
+            assert!(
+                map_work < 512 * (size.ilog2() as usize + 1),
+                "size={size}, map work={map_work}"
+            );
+            assert!(!bare.pointers_known_equal(seeded.pointer(), &read));
+            assert!(!ResourceContext::new().permits_memory_read(&alias_address, 8, &context));
+            let other = logical_pointer_read(&memory, &alias.offset_by_bytes(24), &context);
+            assert!(!context.pointers_known_equal(seeded.pointer(), &other));
+            let changed = memory.clone().store(
+                address.clone(),
+                CValue::typed_pointer(Pointer::symbolic(Variable(95_402)), CType::Int64Pointer),
+            );
+            let replacement = logical_pointer_read(&changed, &address, &context);
+            assert!(!context.pointers_known_equal(seeded.pointer(), &replacement));
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 40),
+            "read definition lookup scanned unrelated cells: {samples:?}"
+        );
+    }
+
+    #[test]
     fn cached_pointer_reads_retain_their_current_cell_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let alias = Pointer::symbolic(Variable(95_510));

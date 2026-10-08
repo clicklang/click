@@ -370,7 +370,10 @@ graph relation changes neither logical premises nor read permission. Volatile
 reads do not register this bridge.
 
 Specification pointer loads now retain an exact definition supplied by their
-typed producer as graph term metadata. These definitions are shared across
+typed producer as graph term metadata. Resource-entry cells and lazy cell
+ranges use the same typed constructor and retain this definition before any C
+access, so a later read through a model alias has the same identity even at a
+nonzero field offset. These definitions are shared across
 contexts within one verification session, like load-variable interning;
 address hypotheses, unions, and their consequences remain in persistent
 path-local graph roots. Reconstructing a context must not forget what a logical
