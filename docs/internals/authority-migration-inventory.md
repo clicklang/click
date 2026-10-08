@@ -1478,3 +1478,17 @@ keep authority coverage through verified-helper forms:
 `authority_mutex_verified_helper_requires_separation.md` and
 `authority_mutex_verified_helper_reserved_storage_rejected.md`. At the switch
 the two legacy fixtures expect the assumed-call refusal instead.
+
+#### Chunk 1k: ordinary exit transitions
+
+A closing `simp` reads a returned body outcome through the contract's checked
+resource transition, which folds a produced composite once the body holds
+its pieces. Authority mode refused that transition for every contract the
+population helper rules did not admit, including contracts over families
+that are not `authorized`. A `consumes boxed(box); produces boxed(box);`
+contract whose body unfolds `boxed(box)` therefore closed with the produced
+resource missing. The refusal now applies only to a contract that reaches a
+population, matching the call-site rule from chunk 1a. Regression:
+`authority_mode_ordinary_exit_refolds_a_consumed_family.md`. This clears the
+four reallocating-box fixtures and
+`grouped_fold_after_simp_closes_definitionally.md` in the trial switch.
