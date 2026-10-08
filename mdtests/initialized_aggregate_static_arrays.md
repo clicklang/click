@@ -62,7 +62,7 @@ verifying "runner.c";
 
 int32 bump_shared() {
     requires shared_table[1].value < 1000;
-    owns shared_table[1].value[0..1];
+    owns shared_table[1].value;
     ensures result == old(shared_table[1].value) + 1 by auto;
     ensures shared_table[1].value == old(shared_table[1].value) + 1 by auto;
 }
@@ -72,17 +72,17 @@ int32 increment_private() {
     requires private_table[1].value < 1000;
     requires local_table[0].value > -1000;
     requires local_table[0].value < 1000;
-    owns private_table[1].value[0..1];
-    owns local_table[0].value[0..1];
+    owns private_table[1].value;
+    owns local_table[0].value;
     ensures result == old(private_table[1].value) + old(local_table[0].value) + 2 by auto;
     ensures private_table[1].value == old(private_table[1].value) + 1 by auto;
     ensures local_table[0].value == old(local_table[0].value) + 1 by auto;
 }
 
 int32 run() {
-    owns shared_table[1].value[0..1];
-    owns private_file::private_table[1].value[0..1];
-    owns private_file::increment_private::local_table[0].value[0..1];
+    owns shared_table[1].value;
+    owns private_file::private_table[1].value;
+    owns private_file::increment_private::local_table[0].value;
     requires shared_table[1].value == 2;
     requires shared_table[1].value < 1000;
     requires private_file::private_table[1].value == 5;

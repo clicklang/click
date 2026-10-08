@@ -25,7 +25,7 @@ void box_release(struct box* box) {
 
 ```click
 resource half_boxed(box: struct box*) {
-    owns object(box);
+    owns *box;
     contains allocation(box->data, 8);
     owns box->data[0..1];
 }
@@ -34,7 +34,7 @@ verifying "box.c";
 
 int32* box_take(struct box* box) {
     consumes half_boxed(box);
-    produces object(box);
+    produces *box;
     produces allocation(result, 8);
     produces result[0..1];
 } by {
@@ -45,7 +45,7 @@ int32* box_take(struct box* box) {
 
 void box_release(struct box* box) {
     consumes half_boxed(box);
-    produces object(box);
+    produces *box;
     owns box->data[1..2];
 } by {
     execute();

@@ -36,7 +36,7 @@ void write_through_wrapper(struct object* obj) {
 
 ```click
 resource wrapper(obj: struct object*) {
-    owns object(obj);
+    owns *obj;
 }
 
 verifying "resource_population_wrap.c";
@@ -44,7 +44,7 @@ verifying "resource_population_unwrap.c";
 verifying "resource_population_body_access.c";
 
 void wrap_object(struct object* obj) {
-    consumes object(obj);
+    consumes *obj;
     produces wrapper(obj);
 } by {
     execute();
@@ -54,7 +54,7 @@ void wrap_object(struct object* obj) {
 
 void unwrap_object(struct object* obj) {
     consumes wrapper(obj);
-    produces object(obj);
+    produces *obj;
 } by {
     unfold(wrapper(obj));
     execute();
@@ -62,7 +62,7 @@ void unwrap_object(struct object* obj) {
 }
 
 void write_through_wrapper(struct object* obj) {
-    owns object(obj);
+    owns *obj;
 } by {
     step();
     open(wrapper(obj)) {

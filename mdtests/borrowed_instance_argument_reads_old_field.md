@@ -39,12 +39,12 @@ int caller(struct arena* arena, struct region* a) {
 ```click
 resource state(arena: struct arena*) {
     field live: int32;
-    owns object(arena);
+    owns *arena;
 }
 
 resource reg(region: struct region*) {
     field start: int32;
-    owns object(region);
+    owns *region;
     fact region->start == start;
 }
 
@@ -63,7 +63,7 @@ void use(struct region* region) {
 
 int32 caller(struct arena* arena, struct region* a) {
     owns st: state(arena);
-    owns object(a);
+    owns *a;
     requires a->arena == arena;
     ensures result == 0;
 } by {

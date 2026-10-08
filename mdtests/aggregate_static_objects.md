@@ -70,31 +70,31 @@ verifying "runner.c";
 
 int32 bump_shared() {
     requires shared.value < 1000;
-    owns shared.value[0..1];
-    owns shared.ready[0..1];
+    owns shared.value;
+    owns shared.ready;
     ensures result == old(shared.value) + 1 by auto;
     ensures shared.value == old(shared.value) + 1 by auto;
     ensures shared.ready == 1 by auto;
 }
 
 int32 increment_private() {
-    owns private.value[0..1];
+    owns private.value;
     requires private.value < 1000;
     ensures result == old(private.value) + 1 by auto;
     ensures private.value == old(private.value) + 1 by auto;
 }
 
 int32 increment_file_private() {
-    owns file_private.value[0..1];
+    owns file_private.value;
     requires file_private.value < 1000;
     ensures result == old(file_private.value) + 1 by auto;
     ensures file_private.value == old(file_private.value) + 1 by auto;
 }
 
 int32 run() {
-    owns shared.value[0..1];
-    owns private_file::increment_private::private.value[0..1];
-    owns private_file::file_private.value[0..1];
+    owns shared.value;
+    owns private_file::increment_private::private.value;
+    owns private_file::file_private.value;
     requires shared.value == 0;
     requires shared.value < 1000;
     requires private_file::increment_private::private.value == 0;

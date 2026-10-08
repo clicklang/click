@@ -38,7 +38,7 @@ resource arena_prefix_region(
 ) {
     field start: int32;
     field end: int32;
-    owns object(region);
+    owns *region;
     owns arena->data[start..end];
     fact region->arena == arena;
     fact region->start == start;
@@ -50,11 +50,11 @@ resource arena_prefix_region(
 verifying "arena_prefix_regions_reject_overlap.c";
 
 void carve_overlapping(struct arena* arena, struct region* first, struct region* second) {
-    owns &arena->data;
+    owns arena->data;
     consumes arena->data[0..4];
-    consumes object(first);
-    consumes object(second);
-    requires separate(memory(object(arena)), memory(arena->data[0..4]));
+    consumes *first;
+    consumes *second;
+    requires separate(memory(*arena), memory(arena->data[0..4]));
     produces a: arena_prefix_region(arena, first);
     produces b: arena_prefix_region(arena, second);
 } by {

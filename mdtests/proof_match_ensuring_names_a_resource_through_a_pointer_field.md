@@ -45,7 +45,7 @@ resource cell(p: struct cell*) {
 
 int32 peek(struct holder* h, int32 x) {
     requires h != 0;
-    owns &h->inner;
+    owns h->inner;
     owns c: cell(h->inner);
     ensures result == 0;
 } by {

@@ -23,7 +23,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_held_balanced_loop.c";
 
 int32 run(struct holder *holder, int32 n) {
-    owns &holder->mu;
+    owns holder->mu;
     requires aligned(&holder->mu, 8);
     requires n >= 0 and n <= 1000;
     ensures result == 0;

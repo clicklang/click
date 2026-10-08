@@ -922,7 +922,7 @@ const ORDERED_PAIR_CLICK: &str = r#"
 
     void set_pair(struct pair* pair, int32 bound) {
         requires 0 <= bound;
-        owns object(pair);
+        owns *pair;
 
         ensures ordered_pair(pair);
     } by {
@@ -985,7 +985,7 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
         verifying "touch.c";
 
         void reset(struct pair* pair) {
-            owns object(pair);
+            owns *pair;
 
             ensures pair->low == 0;
         } by {
@@ -994,7 +994,7 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
         }
 
         void touch(struct pair* pair) {
-            owns object(pair);
+            owns *pair;
 
             ensures pair->low == 0;
         } by {
@@ -1044,7 +1044,7 @@ fn grouped_outcome_simp_splits_an_unfold_active_conjunction_ensure() {
         void bump(struct pair* pair) {
             requires ordered_pair(pair);
             requires pair->low < pair->high;
-            owns object(pair);
+            owns *pair;
 
             ensures ordered_pair(pair);
         } by {

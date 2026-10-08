@@ -33,8 +33,8 @@ int same(struct outer* o, struct inner* a) {
 verifying "rewrite_through_a_loaded_pointer_field.c";
 
 int32 same(struct outer* o, struct inner* a) {
-    owns object(o);
-    owns object(a);
+    owns *o;
+    owns *a;
     owns a->cells[0..4];
     requires o->in == a;
     ensures result == 0;

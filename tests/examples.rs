@@ -32,7 +32,7 @@ const SOURCE_METADATA: &str = "SOURCE.md";
 const QUARANTINED: &[(&str, &str)] = &[(
     "multifile-registry",
     "`registry_run`'s entry cannot evaluate an owned field path into another module's \
-     function-local static struct array (`owns beta::record_beta::batches[0].value[0..1]`: \
+     function-local static struct array (`owns beta::record_beta::batches[0].value`: \
      no known pointee type, the gap mdtests/initialized_aggregate_static_arrays.md pins); \
      past it, ordinary-entry static-state transport does not yet certify its cross-file \
      caller (issues/static-state-caller-transport.md)",

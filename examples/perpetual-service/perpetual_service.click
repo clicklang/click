@@ -1,11 +1,11 @@
 resource service(owner: struct service*) {
     owns owner->phase;
-    owns &owner->cell;
+    owns owner->cell;
     owns owner->cell[0..1];
     fact 0 <= owner->phase;
     fact owner->phase <= 1;
     fact owner->cell[0] == owner->phase;
-    fact separate(memory(object(owner)), memory(owner->cell[0..1]));
+    fact separate(memory(*owner), memory(owner->cell[0..1]));
 }
 
 verifying "service_init.c";
@@ -13,7 +13,7 @@ verifying "service_step.c";
 verifying "service_run.c";
 
 int32 service_init(struct service* owner, int32 cell[]) {
-    consumes object(owner);
+    consumes *owner;
     consumes cell[0..1];
     produces service(owner);
 
@@ -41,9 +41,9 @@ int32 service_step(struct service* owner) {
         fact 0 <= owner->phase;
         fact owner->phase <= 1;
         fact owner->cell == old(owner->cell);
-        fact separate(memory(object(owner)), memory(owner->cell[0..1]));
+        fact separate(memory(*owner), memory(owner->cell[0..1]));
         owns owner->phase;
-        owns &owner->cell;
+        owns owner->cell;
         owns owner->cell[0..1];
     } then {
         step();

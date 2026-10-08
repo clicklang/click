@@ -1,7 +1,7 @@
 # An entry alignment fact cited after a loop expands in its source spelling
 
 This is `arena_init` from `examples/arena`, its C unchanged, with only the
-resources its own contract names. `consumes object(arena)` gives the
+resources its own contract names. `consumes *arena` gives the
 function-entry fact `aligned(arena, 8)`. Expanding the `simp()` that closes
 the loop's `preserve` proof once cited that fact as a premise read at
 function entry.
@@ -99,7 +99,7 @@ resource arena_initialized_access(
 }
 
 resource arena_init_result(arena: struct arena*, initialized: int32) {
-    owns object(arena);
+    owns *arena;
     contains arena_initialized_storage(
         arena->data,
         arena->occupied,
@@ -118,7 +118,7 @@ resource arena_init_result(arena: struct arena*, initialized: int32) {
 verifying "arena_init.c";
 
 int32 arena_init(struct arena* arena, int32 capacity) {
-    consumes object(arena);
+    consumes *arena;
     produces arena_init_result(arena, result);
     produces arena_initialized_access(
         arena->data,

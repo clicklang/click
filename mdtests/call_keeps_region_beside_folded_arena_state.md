@@ -58,21 +58,21 @@ resource pool_cells(data: int32*, flags: int32*, n: int32) {
 
 resource pool_state(pool: struct pool*) {
     field live: int32;
-    owns &pool->data;
-    owns &pool->flags;
+    owns pool->data;
+    owns pool->flags;
     owns pool->n;
     owns pool_cells(pool->data, pool->flags, pool->n);
     fact 0 <= live;
     fact pool->n <= 536870911;
     fact separate(memory(pool->flags[0..pool->n]), memory(pool->data[0..pool->n]));
-    fact separate(memory(object(pool)), memory(pool->data[0..pool->n]));
-    fact separate(memory(object(pool)), memory(pool->flags[0..pool->n]));
+    fact separate(memory(*pool), memory(pool->data[0..pool->n]));
+    fact separate(memory(*pool), memory(pool->flags[0..pool->n]));
 }
 
 resource pool_slot(s: struct slot*, pool: struct pool*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     owns pool->data[at..end];
     fact s->at == at;
     fact s->end == end;

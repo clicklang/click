@@ -3537,7 +3537,6 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
                 start: CExpression::Value(int32(0)),
                 end: CExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
-                    address: false,
                     base: Some(Box::new(ContractExpression::CFragment(
                         CExpression::Variable("obj".to_string())
                     ))),
@@ -3642,8 +3641,8 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
         verifying "write_nested.c";
 
         int32 write_nested(struct node* root) {
-            views &root->child;
-            consumes &root->child->value;
+            views root->child;
+            consumes root->child->value;
             ensures result == 7;
         } by {
             execute();
@@ -3692,9 +3691,9 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
 
         int32 initialize(struct vector* owner) {
             requires viewable(owner->data[0..owner->cap]);
-            consumes object(owner);
-            produces object(owner);
-            ensures separate(memory(object(owner)), memory(owner->data[0..owner->cap]));
+            consumes *owner;
+            produces *owner;
+            ensures separate(memory(*owner), memory(owner->data[0..owner->cap]));
         }
     "#;
     let file = parse_c0_click_file(click_source, &[("initialize.c", c_source)])
@@ -3714,7 +3713,7 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
 
     assert_eq!(
         super::diagnostics::describe_contract_segment(segment),
-        "object(owner)"
+        "*owner"
     );
     assert_eq!(segment.start, CExpression::Value(int32(0)));
     assert_eq!(segment.end, CExpression::Value(int32(4)));
@@ -3783,7 +3782,6 @@ fn parses_pilot_struct_field_owned_segment() {
             start: CExpression::Value(int32(0)),
             end: CExpression::Value(int32(1)),
             surface: ContractSegmentSurface::Field {
-                address: false,
                 base: Some(Box::new(ContractExpression::CFragment(
                     CExpression::Variable("obj".to_string())
                 ))),
@@ -4340,7 +4338,7 @@ fn pointer_storage_views_name_the_field_alone() {
     let click_source = r#"
         verifying "pointer.c";
         int32 read(struct packet* p) {
-            views &p->data;
+            views p->data;
             views p->data[0..1];
             ensures result == p->data[0];
         } by { execute(); simp(); }
@@ -4354,20 +4352,7 @@ fn pointer_storage_views_name_the_field_alone() {
     };
     assert_eq!(
         super::diagnostics::describe_contract_segment(segment),
-        "&p->data"
-    );
-    // The field alone is the same storage: the slot that holds the pointer.
-    let bare = click_source.replace("views &p->data;", "views p->data;");
-    verify_c0_sources(&bare, &[("pointer.c", c_source)]).unwrap();
-    let bare_file = parse_c0_click_file(&bare, &[("pointer.c", c_source)]).unwrap();
-    let Requirement::Resource(ResourceClause::ViewMemory(bare_segment)) =
-        &bare_file.function_blocks()[0].requires()[0]
-    else {
-        panic!("expected a pointer storage view");
-    };
-    assert_eq!(
-        (&bare_segment.base, &bare_segment.start, &bare_segment.end),
-        (&segment.base, &segment.start, &segment.end)
+        "p->data"
     );
 }
 
@@ -4410,6 +4395,22 @@ fn a_resource_clause_names_a_place() {
             "`*` names one object and takes no range",
         ),
         ("int32 read_g() { owns *g; }", "`*` expects a pointer"),
+        (
+            "int32 read_p(struct cell* p) { owns &p->other; }",
+            "write `p->next`, not `&p->next`",
+        ),
+        (
+            "int32 read_total() { owns &total[0..1]; }",
+            "`counter`, not `&counter[0..1]`",
+        ),
+        (
+            "int32 read_p(struct cell* p) { owns p->other[0..1]; }",
+            "field `other` is one value, not a pointer or an array, so it takes no range",
+        ),
+        (
+            "int32 read_p(struct cell* p) { owns object(p); }",
+            "`object(p)` is now written `*p`",
+        ),
     ] {
         let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
         let error = verify_c0_sources(&source, &[("place.c", c_source)])
@@ -4422,7 +4423,7 @@ fn a_resource_clause_names_a_place() {
 fn whole_struct_view_requires_a_declared_resource() {
     let c_source =
         "struct packet { int32 data; }; int32 read(struct packet* p) { return p->data; }";
-    for target in ["*p", "object(p)"] {
+    for target in ["*p", "*p"] {
         let source = format!(
             "verifying \"pointer.c\"; int32 read(struct packet* p) {{ views {target}; ensures result == p->data; }}"
         );

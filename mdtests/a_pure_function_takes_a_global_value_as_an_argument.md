@@ -30,7 +30,7 @@ predicate counter_is(c: int32, v: int32) {
 }
 
 int32 bump() {
-    owns &counter[0..1];
+    owns counter;
     requires counter == 5;
     requires read_counter(counter, 0) == 5;
     requires counter_is(counter, 5);

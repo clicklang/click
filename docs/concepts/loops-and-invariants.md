@@ -26,7 +26,7 @@ loop {
         owns mutex_guard(&object->mutex);
     }
     owns mutex_live(&object->mutex);
-    owns &object->mutex;
+    owns object->mutex;
 }
 ```
 

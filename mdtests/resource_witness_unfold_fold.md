@@ -19,7 +19,7 @@ struct node* unpack(struct node* node) {
 
 ```click
 resource packed(node: struct node*) {
-    owns object(node);
+    owns *node;
     let next: struct node* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
 }
 

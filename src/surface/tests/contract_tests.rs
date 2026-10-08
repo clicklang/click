@@ -599,7 +599,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
         "#;
     let click_source = r#"
             resource allocated_cell(owner: struct cell_owner*) {
-                owns &owner->data;
+                owns owner->data;
                 contains allocation(owner->data, 4);
                 owns owner->data[0..1];
             }
@@ -691,7 +691,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
         "#;
     let click_source = r#"
             resource allocated_cell(owner: struct cell_owner*) {
-                owns &owner->data;
+                owns owner->data;
                 contains allocation(owner->data, 4);
                 owns owner->data[0..1];
             }
@@ -948,7 +948,7 @@ fn quantified_fold_after_execution_completes_without_a_body_rerun() {
     "#;
     let click_source = r#"
         resource slot(owner: struct owner*) {
-            views object(owner);
+            views *owner;
         }
 
         predicate valid_capacity(owner: struct owner*) {
@@ -959,7 +959,7 @@ fn quantified_fold_after_execution_completes_without_a_body_rerun() {
 
         void produce_population(struct owner* owner, int32 amount) {
             requires 0 <= amount;
-            owns object(owner);
+            owns *owner;
             produces amount of slot(owner);
 
             ensures valid_capacity(owner);

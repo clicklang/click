@@ -31,7 +31,7 @@ verifying "observe_one_permit.c";
 verifying "observe_many_permits.c";
 
 void observe_one_permit(struct owner* owner) {
-    owns object(owner);
+    owns *owner;
     owns authority(permit(owner));
     owns permit(owner);
 
@@ -44,7 +44,7 @@ void observe_one_permit(struct owner* owner) {
 
 void observe_many_permits(struct owner* owner, int32 amount) {
     requires 0 <= amount;
-    owns object(owner);
+    owns *owner;
     owns authority(permit(owner));
     owns amount of permit(owner);
 

@@ -22,7 +22,7 @@ int32 static_struct_field_footprint_rejected() {
 verifying "static_struct_field_footprint_rejected.c";
 
 int32 static_struct_field_footprint_rejected() {
-    owns &shared.second;
+    owns shared.second;
     ensures result == 0;
 }
 ```

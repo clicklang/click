@@ -86,7 +86,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     owns authority(contribution(counter));
     consumes 2 of contribution(counter);
     requires count(contribution(counter)) == 2;
-    owns &counter->mutex;
+    owns counter->mutex;
     requires aligned(&counter->mutex, 8);
     owns counter->value;
     ensures result == 0 or result == 1;

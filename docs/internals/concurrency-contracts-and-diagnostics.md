@@ -89,11 +89,11 @@ For an external struct parameter, the contract can say:
 
 <!-- verified-example: mdtests/modeled_pthread_empty_mutex.md -->
 ```click
-owns &holder->mu;
+owns holder->mu;
 requires aligned(&holder->mu, 8);
 ```
 
-`owns &holder->mu` now supports an opaque union field as byte storage; this is
+`owns holder->mu` now supports an opaque union field as byte storage; this is
 an extension of an existing resource spelling, not a new resource kind. Its
 extent comes from the C layout, including the field's storage padding, so the
 contract does not hard-code the 40-byte size. It does not provide typed union

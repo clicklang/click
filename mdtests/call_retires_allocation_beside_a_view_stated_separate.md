@@ -28,7 +28,7 @@ void box_release(struct box* box, struct box* other, int32* q, int32 n) {
 
 ```click
 resource boxed(box: struct box*) {
-    owns object(box);
+    owns *box;
     contains allocation(box->data, 4);
     owns box->data[0..1];
 }
@@ -37,7 +37,7 @@ verifying "box.c";
 
 void box_destroy(struct box* box) {
     consumes boxed(box);
-    produces object(box);
+    produces *box;
 } by {
     unfold(boxed(box));
     execute();
@@ -46,8 +46,8 @@ void box_destroy(struct box* box) {
 
 void box_release(struct box* box, struct box* other, int32* q, int32 n) {
     consumes boxed(box);
-    produces object(box);
-    owns object(other);
+    produces *box;
+    owns *other;
     views q[0..1];
     requires n == 1;
     requires separate(memory(q[0..1]), memory(box->data[0..n]));

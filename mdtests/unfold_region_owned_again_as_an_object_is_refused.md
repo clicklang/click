@@ -1,7 +1,7 @@
 # Unfolding a region whose descriptor is also owned flat is refused
 
 The negative of `unfold_region_beside_an_object_of_its_type.md`: the "other"
-descriptor is the region's own. The contract owns `object(s)` both inside
+descriptor is the region's own. The contract owns `*s` both inside
 `pool_slot(s)` and beside it, so unfolding the region would own the
 descriptor twice, and the unfold is refused.
 
@@ -28,7 +28,7 @@ int32 peek(struct slot* s) {
 ```click
 resource pool_state(pool: struct pool*) {
     field live: int32;
-    owns &pool->data;
+    owns pool->data;
     owns pool->n;
     fact 0 <= live;
 }
@@ -36,7 +36,7 @@ resource pool_state(pool: struct pool*) {
 resource pool_slot(s: struct slot*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     owns s->pool->data[at..end];
     fact s->at == at;
     fact s->end == end;
@@ -49,7 +49,7 @@ verifying "unfold_region_owned_again_as_an_object_is_refused.c";
 int32 peek(struct slot* s) {
     owns r: pool_slot(s);
     owns st: pool_state(old(s->pool));
-    owns object(s);
+    owns *s;
 } by {
     let { live: n } = unfold(st);
     let { at: a, end: e } = unfold(r);

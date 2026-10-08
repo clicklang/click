@@ -2,7 +2,7 @@
 
 `box_release` lends `boxed(box)`, which packages the allocation authority for
 `box->data` together with the whole allocated cell, to `box_destroy`, which
-frees it. The caller also owns `object(other)`. This is the shape of
+frees it. The caller also owns `*other`. This is the shape of
 `examples/arena`'s `arena_pipeline`, whose every path ends in
 `arena_destroy(arena)` while the caller still owns its region descriptors.
 
@@ -13,7 +13,7 @@ the value `box->data` had when the caller handed it over rather than a
 post-call load the callee could have rewritten. One owned memory fact the
 caller lent, `box->data[0..1]`, covers every byte of that allocation, and
 owned memory is exclusive within one valid composition, so the owned
-`object(other)` the caller kept is disjoint from it by construction. No
+`*other` the caller kept is disjoint from it by construction. No
 written `separate(..)` fact is needed.
 
 Both halves are needed. Reading the lent resources after the call would let a
@@ -42,7 +42,7 @@ void box_release(struct box* box, struct box* other) {
 
 ```click
 resource boxed(box: struct box*) {
-    owns object(box);
+    owns *box;
     contains allocation(box->data, 4);
     owns box->data[0..1];
 }
@@ -51,7 +51,7 @@ verifying "box.c";
 
 void box_destroy(struct box* box) {
     consumes boxed(box);
-    produces object(box);
+    produces *box;
 } by {
     unfold(boxed(box));
     execute();
@@ -60,8 +60,8 @@ void box_destroy(struct box* box) {
 
 void box_release(struct box* box, struct box* other) {
     consumes boxed(box);
-    produces object(box);
-    owns object(other);
+    produces *box;
+    owns *other;
 } by {
     execute();
     simp();

@@ -1,7 +1,7 @@
 # A store forgets a cell of a matched folded instance
 
 The negative of `a_store_keeps_a_cell_a_folded_instance_owns.md` for a
-matched body. Both arms of `maybe_slot(s)` own `object(s)`, so `s->at` is
+matched body. Both arms of `maybe_slot(s)` own `*s`, so `s->at` is
 readable at entry and the claim is true, but the arm is not decided. A store
 opens a held instance one body layer only when the body is unconditional and
 unmatched, exactly as the call havoc's kept-by-caller rule does: a matched
@@ -30,10 +30,10 @@ resource maybe_slot(s: struct slot*) {
     field phase: Phase;
     match phase {
         Phase::Idle => {
-            owns object(s);
+            owns *s;
         },
         Phase::Busy => {
-            owns object(s);
+            owns *s;
         },
     }
 }
@@ -42,7 +42,7 @@ verifying "a_store_forgets_a_cell_of_a_matched_folded_instance.c";
 
 void touch(struct slot* s, struct slot* other) {
     owns r: maybe_slot(s);
-    owns object(other);
+    owns *other;
     requires s->at == 5;
     ensures s->at == 5;
 } by {

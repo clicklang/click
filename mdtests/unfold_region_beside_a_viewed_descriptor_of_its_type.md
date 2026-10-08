@@ -29,7 +29,7 @@ int32 peek(struct slot* s, struct slot* other) {
 ```click
 resource pool_state(pool: struct pool*) {
     field live: int32;
-    owns &pool->data;
+    owns pool->data;
     owns pool->n;
     fact 0 <= live;
 }
@@ -37,7 +37,7 @@ resource pool_state(pool: struct pool*) {
 resource pool_slot(s: struct slot*) {
     field at: int32;
     field end: int32;
-    owns object(s);
+    owns *s;
     owns s->pool->data[at..end];
     fact s->at == at;
     fact s->end == end;
@@ -50,7 +50,7 @@ verifying "unfold_region_beside_a_viewed_descriptor_of_its_type.c";
 int32 peek(struct slot* s, struct slot* other) {
     owns r: pool_slot(s);
     owns st: pool_state(old(s->pool));
-    views &other->pool;
+    views other->pool;
     views other->at;
 } by {
     let { live: n } = unfold(st);

@@ -17,7 +17,7 @@ void pool_grow(struct pool* pool, int32 amount) {
 ```click resource_semantics=authority
 authorized resource pool_slot(pool: struct pool*) {}
 resource pool_control(pool: struct pool*) {
-    owns object(pool);
+    owns *pool;
     owns authority(pool_slot(pool));
     fact 0 <= pool->checked_out;
     fact pool->capacity == pool->checked_out + count(pool_slot(pool));

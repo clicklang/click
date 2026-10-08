@@ -26,18 +26,18 @@ verifying "counter.c" as counter_file;
 verifying "main.c";
 
 uint32 increment() {
-    owns &counter_file::increment::calls[0..1];
+    owns counter_file::increment::calls;
     ensures counter_file::increment::calls == old(counter_file::increment::calls) + 1u32;
     ensures result == old(counter_file::increment::calls) + 1u32;
     ensures result == counter_file::increment::calls;
 } by { execute(); simp(); }
 uint32 other() {
-    owns &counter_file::other::calls[0..1];
+    owns counter_file::other::calls;
     ensures counter_file::other::calls == old(counter_file::other::calls) + 1u32;
     ensures result == old(counter_file::other::calls) + 1u32;
 } by { execute(); simp(); }
 uint32 twice() {
-    owns &counter_file::increment::calls[0..1];
+    owns counter_file::increment::calls;
     ensures result == (old(counter_file::increment::calls) + 1u32) + 1u32;
     ensures counter_file::increment::calls == (old(counter_file::increment::calls) + 1u32) + 1u32;
 } by {
