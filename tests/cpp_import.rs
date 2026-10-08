@@ -12960,7 +12960,7 @@ int64 relay(int32 value) { requires value == 7; ensures result == 8i64; } by { e
 }
 
 #[test]
-fn converted_call_initializers_preserve_boolean_results_and_bound_wide_observer_chains() {
+fn converted_call_initializers_preserve_boolean_results() {
     let project = Project::with_fixture(
         "converted.cpp",
         "relay",
@@ -12976,19 +12976,6 @@ bool echo(bool value) { ensures result == value; } by { execute(); simp(); }
 int32 relay(bool value) { requires value == 1; ensures result == 1; } by { execute(); simp(); }
 "#,
     );
-    let project = Project::with_fixture(
-        "converted.cpp",
-        "relay",
-        "unsigned __int128 echo(unsigned __int128 value) noexcept { return value; } int relay(unsigned __int128 value) noexcept { int captured = static_cast<int>(echo(value)); return captured; }",
-    );
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(
-        error.contains("wide C++ call-result conversions require native observer normalization"),
-        "{error}"
-    );
-    assert!(error.len() < 8000);
-    assert!(!project.artifact().exists());
-    assert!(!project.lock().exists());
 }
 
 #[test]
@@ -13290,12 +13277,8 @@ using Amount = long; inline Amount echo(Amount value) noexcept { return value; }
 }
 
 #[test]
-fn converted_return_calls_keep_wide_observers_and_composed_effects_bounded() {
+fn converted_return_calls_keep_composed_effects_bounded() {
     for (source, diagnostic) in [
-        (
-            "unsigned __int128 echo(unsigned __int128 value) noexcept { return value; } int relay(unsigned __int128 value) noexcept { return static_cast<int>(echo(value)); }",
-            "wide C++ call-result conversions require native observer normalization",
-        ),
         (
             "int echo(int value) noexcept { return value; } int relay(int value) noexcept { return static_cast<int>(echo(value) + 1); }",
             "unsupported expression",
@@ -13390,4 +13373,288 @@ int64 relay(int32 value) { requires value == 7; ensures result == 8i64; } by { e
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
             .unwrap_err();
     assert!(error.message().contains("overflow"), "{}", error.message());
+}
+
+#[test]
+fn execution_theorem_proof_retains_struct_argument_field_metadata() {
+    let project = Project::with_fixture(
+        "read.cpp",
+        "read",
+        "struct Child { int value; }; struct State { long sibling; Child child; }; int read(const State& state) noexcept { return state.child.value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "read.cpp";
+int32 read(const struct State* state) {
+    views state->child.value;
+    ensures result == state->child.value;
+} by { execute(); simp(); }
+contract int32 PositiveRead(const struct State* state) {
+    views state->child.value;
+    requires state->child.value == 2;
+    ensures result == 2;
+}
+theorem read_application() executes read(const struct State* state) {
+    ensures PositiveRead(&read) by {
+        have state->child.value > 0 by { arithmetic() using { state->child.value == 2; } }
+        execute(); simp();
+    }
+}
+"#;
+    let path = project.directory.join("read.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let first = sites
+        .iter()
+        .find(|site| site.claim_label.starts_with("read_application."))
+        .unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        &import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    let path = project.directory.join("hostile.click");
+    let hostile = source.replace("requires state->child.value == 2;", "");
+    fs::write(&path, &hostile).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+            .is_err()
+    );
+    let (definitions, application) = source.split_once("theorem read_application()").unwrap();
+    let wrong_field = format!(
+        "{definitions}theorem read_application(){}",
+        application.replace("child.value", "child.missing")
+    );
+    fs::write(&path, &wrong_field).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &wrong_field).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.message().len() < 8000);
+}
+
+fn check_converted_wide_call_results(initializer: bool) {
+    for (cpp_source, source, cpp_result, result, lo, hi) in [
+        (
+            "__int128",
+            "int128",
+            "long",
+            "int64",
+            "-9223372036854775808",
+            "9223372036854775807",
+        ),
+        (
+            "__int128",
+            "int128",
+            "int",
+            "int32",
+            "-2147483648",
+            "2147483647",
+        ),
+        (
+            "__int128",
+            "int128",
+            "unsigned long",
+            "uint64",
+            "0",
+            "18446744073709551615",
+        ),
+        (
+            "__int128",
+            "int128",
+            "unsigned",
+            "uint32",
+            "0",
+            "4294967295",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "long",
+            "int64",
+            "0",
+            "9223372036854775807",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "int",
+            "int32",
+            "0",
+            "2147483647",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "unsigned long",
+            "uint64",
+            "0",
+            "18446744073709551615",
+        ),
+        (
+            "unsigned __int128",
+            "uint128",
+            "unsigned",
+            "uint32",
+            "0",
+            "4294967295",
+        ),
+    ] {
+        let body = if initializer {
+            format!(
+                "{cpp_result} narrowed = static_cast<{cpp_result}>(echo(value)); return narrowed;"
+            )
+        } else {
+            format!("return static_cast<{cpp_result}>(echo(value));")
+        };
+        let project = Project::with_fixture(
+            "wide.cpp",
+            "relay",
+            &format!(
+                "{cpp_source} echo({cpp_source} value) noexcept {{ return value; }} {cpp_result} relay({cpp_source} value) noexcept {{ {body} }}"
+            ),
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let declarations = if initializer {
+            "step(); step();"
+        } else {
+            "step();"
+        };
+        let cert = cast_identity_certificate("to_integer(captured)", lo, hi);
+        let proof = format!(
+            r#"verifying "wide.cpp";
+{source} echo({source} value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+{result} relay({source} value) {{
+ requires {lo} <= to_integer(value); requires to_integer(value) <= {hi};
+ ensures to_integer(result) == to_integer(value);
+}} by {{
+ {declarations}
+ let captured = step(echo(value), {{}});
+ have {lo} <= to_integer(captured) by {{ arithmetic() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
+ have to_integer(captured) <= {hi} by {{ arithmetic() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
+ execute();
+ have to_integer(result) == to_integer(captured) by {{ {cert} }}
+ arithmetic() using {{ to_integer(result) == to_integer(captured); to_integer(captured) == to_integer(value); }}
+}}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        if source == "int128" && result == "int64" {
+            for hostile in [
+                proof.replacen("ensures result == value;", "", 1),
+                proof.replace(
+                    "integer_cast_identity bounds [0, 1]",
+                    "integer_cast_identity bounds [0, 0]",
+                ),
+                proof.replacen(
+                    "ensures to_integer(result) == to_integer(value);",
+                    "ensures to_integer(result) == to_integer(value) + 1;",
+                    1,
+                ),
+            ] {
+                let path = project.directory.join("hostile.click");
+                fs::write(&path, &hostile).unwrap();
+                let error = verify_program_prepared_project(
+                    &read_click_project(&path, &hostile).unwrap(),
+                    &import,
+                )
+                .unwrap_err();
+                assert!(error.message().len() < 8000);
+            }
+        }
+        for missing in [
+            format!("requires {lo} <= to_integer(value);"),
+            format!("requires to_integer(value) <= {hi};"),
+        ] {
+            let hostile = proof.replace(&missing, "");
+            let path = project.directory.join("hostile.click");
+            fs::write(&path, &hostile).unwrap();
+            let error = verify_program_prepared_project(
+                &read_click_project(&path, &hostile).unwrap(),
+                &import,
+            )
+            .unwrap_err();
+            assert!(error.message().len() < 8000);
+        }
+    }
+}
+#[test]
+fn converted_wide_return_calls_preserve_values_with_checked_destination_bounds() {
+    check_converted_wide_call_results(false);
+}
+#[test]
+fn converted_wide_call_initializers_preserve_values_with_checked_destination_bounds() {
+    check_converted_wide_call_results(true);
+}
+
+#[test]
+fn converted_wide_boolean_calls_observe_high_bits() {
+    for (point, answer) in [("0", "0"), ("18446744073709551616", "1")] {
+        let project = Project::with_fixture(
+            "wide.cpp",
+            "relay",
+            "unsigned __int128 echo(unsigned __int128 value) noexcept { return value; } bool relay(unsigned __int128 value) noexcept { return static_cast<bool>(echo(value)); }",
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let zero_fact = if answer == "0" {
+            String::new()
+        } else {
+            format!(
+                "have not (to_integer(captured) == 0) by {{ rewrite(to_integer(captured) == {point}); normalize(); }}"
+            )
+        };
+        let proof = format!(
+            r#"verifying "wide.cpp";
+uint128 echo(uint128 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures result == {answer}; }} by {{
+ step(); let captured = step(echo(value), {{}});
+ have to_integer(captured) == {point} by {{ arithmetic() using {{ to_integer(value) == {point}; to_integer(captured) == to_integer(value); }} }}
+ {zero_fact}
+ execute(); simp();
+}}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        let hostile = proof.replace(
+            &format!("ensures result == {answer};"),
+            &format!(
+                "ensures result == {};",
+                if answer == "0" { "1" } else { "0" }
+            ),
+        );
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
 }

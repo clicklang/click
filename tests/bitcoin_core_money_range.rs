@@ -111,10 +111,12 @@ fn check_upstream_cpp_rounding_phase(
     });
     let evaluation_caller = name.starts_with("FeeFracEvaluate");
     let fee_rate_import = name == "CFeeRateGetFeeImported";
+    let fee_rate_per_k = selected == "CFeeRate::GetFeePerK";
+    let fee_rate_caller = name.starts_with("CFeeRateGetFee");
     let result_fit_div = name.starts_with("FeeFracDivResultFit");
     let bounded_div = name == "FeeFracDivBounded" || result_fit_div;
     if evaluation_caller
-        || fee_rate_import
+        || fee_rate_caller
         || bounded_div
         || matches!(
             name,
@@ -134,7 +136,7 @@ fn check_upstream_cpp_rounding_phase(
             "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
         }]);
     }
-    if evaluation_caller || fee_rate_import || bounded_div || name == "FeeFracDivImported" {
+    if evaluation_caller || fee_rate_caller || bounded_div || name == "FeeFracDivImported" {
         const STRING_VIEW_HASH: &str =
             "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c";
         let header = "sysroot/usr/include/c++/12/string_view";
@@ -156,12 +158,15 @@ fn check_upstream_cpp_rounding_phase(
             "function": "std::basic_string_view::basic_string_view", "header": header, "sha256": STRING_VIEW_HASH
         });
     }
-    if fee_rate_import {
+    if fee_rate_caller {
         for header in [
             "bitcoin-src/src/consensus/amount.h",
             "bitcoin-src/src/policy/feerate.h",
             "bitcoin-src/src/util/feefrac.h",
         ] {
+            if header == logical_source {
+                continue;
+            }
             config["dependencies"]
                 .as_array_mut()
                 .unwrap()
@@ -171,6 +176,11 @@ fn check_upstream_cpp_rounding_phase(
             .as_array_mut()
             .unwrap()
             .sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+        if !fee_rate_import {
+            let exporter = root.join("click-cpp-exporter");
+            fs::copy(config["exporter"].as_str().unwrap(), &exporter).unwrap();
+            config["exporter"] = exporter.to_str().unwrap().into();
+        }
     }
     let config_path = root.join(format!("{name}.click.import.json"));
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
@@ -221,6 +231,9 @@ fn check_upstream_cpp_rounding_phase(
         return;
     }
     refreshed.unwrap_or_else(|error| panic!("{selected}: {error}"));
+    if fee_rate_caller {
+        fs::remove_file(config["exporter"].as_str().unwrap()).unwrap();
+    }
     let import = load_import(&config_path).unwrap();
     assert_eq!(import.export().preprocessor_files.len(), 320);
     if evaluation_caller {
@@ -238,7 +251,7 @@ fn check_upstream_cpp_rounding_phase(
                 .collect::<Vec<_>>(),
             vec![instance, "FeeFrac_Mul", "FeeFrac_Div"]
         );
-    } else {
+    } else if !fee_rate_caller {
         assert!(import.export().reachable_functions.is_empty());
     }
     if selected == "FeeFrac::Div" && !bounded_div {
@@ -313,6 +326,112 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         return;
     }
     let project = read_click_project(&sidecar, source).unwrap();
+    if fee_rate_caller {
+        verify_program_prepared_project(&project, &import)
+            .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
+        let root_name = if fee_rate_per_k {
+            "CFeeRate_GetFeePerK"
+        } else {
+            "CFeeRate_GetFee"
+        };
+        if matches!(
+            phase,
+            Some(RoundingPhase::FullExpansion | RoundingPhase::Tools)
+        ) {
+            let expanded = expand_program_prepared_project_claim_source_by_label(
+                &project,
+                &import,
+                &format!("{root_name}.ensures_0"),
+            )
+            .unwrap();
+            let rewritten = project.with_entry_source(expanded.clone());
+            if phase == Some(RoundingPhase::FullExpansion) {
+                verify_program_prepared_project(&rewritten, &import).unwrap();
+            } else {
+                let (session, _) =
+                    C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+                let position = program_prepared_project_tactic_source_position(
+                    &rewritten,
+                    &import,
+                    &format!("{root_name}.contract"),
+                    0,
+                )
+                .unwrap();
+                session
+                    .verify_at_project(&expanded, position.line, position.column)
+                    .unwrap();
+            }
+        } else if phase == Some(RoundingPhase::Rejections) {
+            let (from, to) = match name {
+                "CFeeRateGetFeeMissingFeeAuthority" => ("views self->m_feerate.base.fee;", ""),
+                "CFeeRateGetFeeMissingSizeAuthority" => ("views self->m_feerate.base.size;", ""),
+                "CFeeRateGetFeeMissingAmountGuard" => ("requires 0 <= virtual_bytes;", ""),
+                "CFeeRateGetFeeMissingSizeGuard" => {
+                    ("requires self->m_feerate.base.size >= 0;", "")
+                }
+                "CFeeRateGetFeeMissingLowerFit" => (
+                    "requires self->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes);",
+                    "",
+                ),
+                "CFeeRateGetFeeMissingUpperFit" => (
+                    "requires self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size);",
+                    "",
+                ),
+                "CFeeRateGetFeeInclusiveLowerFit" => (
+                    "-9223372036854775809 * to_integer(self->m_feerate.base.size) <",
+                    "-9223372036854775809 * to_integer(self->m_feerate.base.size) <=",
+                ),
+                "CFeeRateGetFeeFalseEmpty" => (
+                    "self->m_feerate.base.size == 0 implies result == 0i64",
+                    "self->m_feerate.base.size == 0 implies result == 1i64",
+                ),
+                "CFeeRateGetFeeFalseCorrection" => (
+                    "or (result == -1i64 and virtual_bytes",
+                    "or (result == 0i64 and virtual_bytes",
+                ),
+                "CFeeRateGetFeeMissingFeeBounds" => (
+                    "requires self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) <= 9223372036854775807;",
+                    "",
+                ),
+                "CFeeRateGetFeePerKMissingSizeGuard" => {
+                    ("requires self->m_feerate.base.size > 0;", "")
+                }
+                "CFeeRateGetFeePerKMissingFeeAuthority" => ("views self->m_feerate.base.fee;", ""),
+                "CFeeRateGetFeePerKMissingLowerFit" => (
+                    "requires -9223372036854775808 * to_integer(self->m_feerate.base.size) <= to_integer(self->m_feerate.base.fee) * 1000;",
+                    "",
+                ),
+                "CFeeRateGetFeePerKInclusiveUpperFit" => (
+                    "* 1000 < 9223372036854775808",
+                    "* 1000 <= 9223372036854775808",
+                ),
+                "CFeeRateGetFeePerKFalseRounding" => {
+                    ("(to_integer(result) + 1)", "(to_integer(result) + -1)")
+                }
+                _ => panic!("unknown fee-rate rejection {name}"),
+            };
+            let root_signature = format!("int64 {root_name}(");
+            let (helpers, root_source) = source.split_once(&root_signature).unwrap();
+            assert!(root_source.contains(from), "missing mutation {name}");
+            let hostile = format!(
+                "{helpers}{root_signature}{}",
+                root_source.replacen(from, to, 1)
+            );
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            assert!(error.message().len() < 8000, "{}", error.message());
+        } else if phase == Some(RoundingPhase::TransportRejections) {
+            fs::write(
+                root.join("bitcoin-src/src/util/feefrac.h"),
+                "// stale header\n",
+            )
+            .unwrap();
+            let error = load_import(&config_path).unwrap_err();
+            assert!(error.len() < 8000, "{error}");
+        }
+        fs::remove_dir_all(root).unwrap();
+        return;
+    }
     if matches!(phase, None | Some(RoundingPhase::Tools)) {
         verify_program_prepared_project(&project, &import)
             .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
@@ -2162,6 +2281,314 @@ fn pinned_upstream_fee_rate_getfee_imports_converted_call_graph() {
         "CFeeRateGetFeeImported",
         "",
         "bitcoin-src/src/policy/feerate.cpp",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        None,
+    );
+}
+
+fn getfee_source() -> String {
+    let unified = unified_fee_evaluation_source_with_profile("Up", true);
+    let helpers = unified
+        .split_once("\ncontract int64 FastOversizeFee")
+        .unwrap()
+        .0
+        .replace(
+            "verifying \"bitcoin-src/src/util/feefrac.h\";",
+            "verifying \"bitcoin-src/src/policy/feerate.cpp\";",
+        );
+    let empty = include_str!("../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click")
+        .split_once(';')
+        .unwrap()
+        .1;
+    format!(
+        "{helpers}\n{empty}\n{}",
+        include_str!("../integrations/bitcoin-core-money-range/CFeeRateGetFee.click.in")
+    )
+}
+
+fn check_getfee(name: &str, phase: Option<RoundingPhase>) {
+    check_upstream_cpp_rounding_phase(
+        "CFeeRate::GetFee",
+        name,
+        &getfee_source(),
+        "bitcoin-src/src/policy/feerate.cpp",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        phase,
+    );
+}
+
+#[test]
+fn upstream_getfee_expands_and_reverifies_offline() {
+    check_getfee(
+        "CFeeRateGetFeeExpansion",
+        Some(RoundingPhase::FullExpansion),
+    );
+}
+
+#[test]
+fn upstream_getfee_retains_certificates_offline() {
+    check_getfee("CFeeRateGetFeeRetained", Some(RoundingPhase::Tools));
+}
+
+#[test]
+fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
+    let source = getfee_source();
+    let root_contract = source
+        .split_once("int64 CFeeRate_GetFee(")
+        .unwrap()
+        .1
+        .split_once("} by {")
+        .unwrap()
+        .0;
+    let mut callers = String::new();
+    for (name, requirements, conclusion) in [
+        (
+            "NegativeMinimumFee",
+            "requires self->m_feerate.base.fee == -1i64; requires self->m_feerate.base.size == 2; requires virtual_bytes == 1; requires virtual_bytes != 0; requires self->m_feerate.base.fee < 0i64;",
+            "ensures result != 0i64;",
+        ),
+        (
+            "PositiveOversizeFee",
+            "requires self->m_feerate.base.fee == 7i64; requires self->m_feerate.base.size == 1; requires virtual_bytes == 2;",
+            "",
+        ),
+        (
+            "ZeroAmountFee",
+            "requires self->m_feerate.base.fee == 7i64; requires self->m_feerate.base.size == 2; requires virtual_bytes == 0;",
+            "",
+        ),
+    ] {
+        let proof = if conclusion.is_empty() {
+            "execute(); simp();"
+        } else {
+            "have self->m_feerate.base.size != 0 by { simp(); } execute(); extract(result != 0i64); simp();"
+        };
+        let contract = root_contract.replacen(
+            "views self->m_feerate.base.fee;",
+            &format!("{requirements}\n    views self->m_feerate.base.fee;"),
+            1,
+        );
+        callers.push_str(&format!("\ncontract int64 {name}({contract} {conclusion} }}\ntheorem {name}_application() executes CFeeRate_GetFee(const struct CFeeRate* self, int32 virtual_bytes) {{ ensures {name}(&CFeeRate_GetFee) by {{ {proof} }} }}\n"));
+    }
+    callers.push_str(r#"
+contract int64 EmptyRate(const struct CFeeRate* self, int32 virtual_bytes) {
+    views self->m_feerate.base.fee; views self->m_feerate.base.size;
+    requires self->m_feerate.base.size == 0;
+    requires 0 <= virtual_bytes; requires virtual_bytes <= 2147483647;
+    ensures result == 0i64;
+    ensures self->m_feerate.base.fee == old(self->m_feerate.base.fee);
+    ensures self->m_feerate.base.size == old(self->m_feerate.base.size);
+}
+theorem empty_rate_application() executes CFeeRate_GetFee(const struct CFeeRate* self, int32 virtual_bytes) {
+    ensures EmptyRate(&CFeeRate_GetFee) by {
+        have self->m_feerate.base.size >= 0 by { arithmetic() using { self->m_feerate.base.size == 0; } }
+        have self->m_feerate.base.size <= 2147483647 by { arithmetic() using { self->m_feerate.base.size == 0; } }
+        have self->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(self->m_feerate.base.fee) by { simp(); }
+        have self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) <= 9223372036854775807 by { simp(); }
+        have self->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) by { simp(); }
+        have self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size) by { simp(); }
+        execute(); simp();
+    }
+}
+"#);
+    check_upstream_cpp_rounding_phase(
+        "CFeeRate::GetFee",
+        "CFeeRateGetFeeCallers",
+        &format!("{source}{callers}"),
+        "bitcoin-src/src/policy/feerate.cpp",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        None,
+    );
+}
+
+#[test]
+fn upstream_getfee_rejects_missing_fee_authority() {
+    check_getfee(
+        "CFeeRateGetFeeMissingFeeAuthority",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_missing_size_authority() {
+    check_getfee(
+        "CFeeRateGetFeeMissingSizeAuthority",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_missing_amount_guard() {
+    check_getfee(
+        "CFeeRateGetFeeMissingAmountGuard",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_missing_size_guard() {
+    check_getfee(
+        "CFeeRateGetFeeMissingSizeGuard",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_missing_lower_fit() {
+    check_getfee(
+        "CFeeRateGetFeeMissingLowerFit",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_missing_upper_fit() {
+    check_getfee(
+        "CFeeRateGetFeeMissingUpperFit",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_inclusive_lower_fit() {
+    check_getfee(
+        "CFeeRateGetFeeInclusiveLowerFit",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_false_empty_result() {
+    check_getfee("CFeeRateGetFeeFalseEmpty", Some(RoundingPhase::Rejections));
+}
+#[test]
+fn upstream_getfee_rejects_false_minimum_correction() {
+    check_getfee(
+        "CFeeRateGetFeeFalseCorrection",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_missing_fee_observer_bounds() {
+    check_getfee(
+        "CFeeRateGetFeeMissingFeeBounds",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_rejects_stale_reachable_header_offline() {
+    check_getfee(
+        "CFeeRateGetFeeStaleHeader",
+        Some(RoundingPhase::TransportRejections),
+    );
+}
+
+#[test]
+fn upstream_getfee_composes_empty_and_nonempty_result_fit_profiles() {
+    check_upstream_cpp_rounding_phase(
+        "CFeeRate::GetFee",
+        "CFeeRateGetFeeProof",
+        &getfee_source(),
+        "bitcoin-src/src/policy/feerate.cpp",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        None,
+    );
+}
+
+fn getfee_per_k_source() -> String {
+    let unified = unified_fee_evaluation_source_with_profile("Down", true);
+    let helpers = unified
+        .split_once("\ncontract int64 FastOversizeFee")
+        .unwrap()
+        .0;
+    format!(
+        "{}\n{}",
+        helpers.replace(
+            "verifying \"bitcoin-src/src/util/feefrac.h\";",
+            "verifying \"bitcoin-src/src/policy/feerate.h\";"
+        ),
+        include_str!("../integrations/bitcoin-core-money-range/CFeeRateGetFeePerK.click.in")
+    )
+}
+fn check_getfee_per_k(name: &str, phase: Option<RoundingPhase>) {
+    check_upstream_cpp_rounding_phase(
+        "CFeeRate::GetFeePerK",
+        name,
+        &getfee_per_k_source(),
+        "bitcoin-src/src/policy/feerate.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        phase,
+    );
+}
+#[test]
+fn upstream_getfee_per_k_verifies_unchanged_down_rounding() {
+    check_getfee_per_k("CFeeRateGetFeePerK", None);
+}
+#[test]
+fn upstream_getfee_per_k_expands_and_reverifies_offline() {
+    check_getfee_per_k(
+        "CFeeRateGetFeePerKExpansion",
+        Some(RoundingPhase::FullExpansion),
+    );
+}
+#[test]
+fn upstream_getfee_per_k_retains_certificates_offline() {
+    check_getfee_per_k("CFeeRateGetFeePerKRetained", Some(RoundingPhase::Tools));
+}
+#[test]
+fn upstream_getfee_per_k_rejects_zero_size() {
+    check_getfee_per_k(
+        "CFeeRateGetFeePerKMissingSizeGuard",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_per_k_rejects_missing_authority() {
+    check_getfee_per_k(
+        "CFeeRateGetFeePerKMissingFeeAuthority",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_per_k_rejects_missing_lower_fit() {
+    check_getfee_per_k(
+        "CFeeRateGetFeePerKMissingLowerFit",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_per_k_rejects_inclusive_upper_fit() {
+    check_getfee_per_k(
+        "CFeeRateGetFeePerKInclusiveUpperFit",
+        Some(RoundingPhase::Rejections),
+    );
+}
+#[test]
+fn upstream_getfee_per_k_rejects_false_rounding() {
+    check_getfee_per_k(
+        "CFeeRateGetFeePerKFalseRounding",
+        Some(RoundingPhase::Rejections),
+    );
+}
+
+#[test]
+fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
+    let source = getfee_per_k_source();
+    let root_contract = source
+        .split_once("int64 CFeeRate_GetFeePerK(")
+        .unwrap()
+        .1
+        .split_once("} by {")
+        .unwrap()
+        .0;
+    let mut callers = String::new();
+    for (name, fee, size) in [
+        ("PositivePerK", 7_i64, 2),
+        ("NegativePerK", -1, 2),
+        ("ZeroPerK", 0, 2),
+        ("WidePerK", 8589934592, 1000),
+    ] {
+        let contract = root_contract.replacen("views self->m_feerate.base.fee;", &format!("requires self->m_feerate.base.fee == {fee}i64; requires self->m_feerate.base.size == {size}; views self->m_feerate.base.fee;"), 1);
+        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate_GetFeePerK(const struct CFeeRate* self) {{ ensures {name}(&CFeeRate_GetFeePerK) by {{ execute(); simp(); }} }}\n"));
+    }
+    check_upstream_cpp_rounding_phase(
+        "CFeeRate::GetFeePerK",
+        "CFeeRateGetFeePerKCallers",
+        &format!("{source}{callers}"),
+        "bitcoin-src/src/policy/feerate.h",
         "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
         None,
     );

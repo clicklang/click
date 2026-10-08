@@ -1,0 +1,56 @@
+int64 CFeeRate_GetFee(const struct CFeeRate* self, int32 virtual_bytes) {
+    views self->m_feerate.base.fee;
+    views self->m_feerate.base.size;
+    requires 0 <= virtual_bytes;
+    requires virtual_bytes <= 2147483647;
+    requires self->m_feerate.base.size >= 0;
+    requires self->m_feerate.base.size <= 2147483647;
+    requires self->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(self->m_feerate.base.fee);
+    requires self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) <= 9223372036854775807;
+    requires self->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes);
+    requires self->m_feerate.base.size != 0 implies to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size);
+    ensures self->m_feerate.base.fee == old(self->m_feerate.base.fee);
+    ensures self->m_feerate.base.size == old(self->m_feerate.base.size);
+    ensures self->m_feerate.base.size == 0 implies result == 0i64;
+    ensures -9223372036854775808 <= to_integer(result);
+    ensures to_integer(result) <= 9223372036854775807;
+    ensures self->m_feerate.base.size != 0 implies
+        ((to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= to_integer(result) * to_integer(self->m_feerate.base.size)
+          and (to_integer(result) + -1) * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes))
+         or (result == -1i64 and virtual_bytes != 0 and self->m_feerate.base.fee < 0i64
+             and -to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes)
+             and to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0));
+    ensures self->m_feerate.base.size != 0 implies (virtual_bytes != 0 implies (self->m_feerate.base.fee < 0i64 implies result != 0i64));
+} by {
+    step(); step();
+    let empty = step(FeeFrac_IsEmpty(&self->m_feerate.base), { });
+    branch then {
+        have self->m_feerate.base.size == 0 by { simp(); }
+        execute(); simp();
+    } else {
+    }
+    have not (self->m_feerate.base.size == 0) by { simp(); }
+    have self->m_feerate.base.size > 0 by { arithmetic() using { self->m_feerate.base.size >= 0; not (self->m_feerate.base.size == 0); } }
+    have -9223372036854775808 <= to_integer(self->m_feerate.base.fee) by { simp(); }
+    have to_integer(self->m_feerate.base.fee) <= 9223372036854775807 by { simp(); }
+    have -9223372036854775809 * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) by { simp(); }
+    have to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 9223372036854775807 * to_integer(self->m_feerate.base.size) by { simp(); }
+    step(); step();
+    let rounded = step(FeeFrac_EvaluateFeeUp(&self->m_feerate.base, virtual_bytes), { });
+    if rounded == 0i64 {
+        have to_integer(rounded) == 0 by { rewrite(rounded == 0i64); normalize(); }
+        have to_integer(rounded) * to_integer(self->m_feerate.base.size) == 0 by { rewrite(to_integer(rounded) == 0); normalize(); }
+        have (to_integer(rounded) + -1) * to_integer(self->m_feerate.base.size) == -to_integer(self->m_feerate.base.size) by { rewrite(to_integer(rounded) == 0); arithmetic(); }
+        have to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= 0 by { arithmetic() using {
+            to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) <= to_integer(rounded) * to_integer(self->m_feerate.base.size);
+            to_integer(rounded) * to_integer(self->m_feerate.base.size) == 0;
+        } }
+        have -to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes) by { arithmetic() using {
+            (to_integer(rounded) + -1) * to_integer(self->m_feerate.base.size) < to_integer(self->m_feerate.base.fee) * to_integer(virtual_bytes);
+            (to_integer(rounded) + -1) * to_integer(self->m_feerate.base.size) == -to_integer(self->m_feerate.base.size);
+        } }
+        execute(); simp();
+    } else {
+        execute(); simp();
+    }
+}

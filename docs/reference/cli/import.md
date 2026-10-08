@@ -577,10 +577,23 @@ contracts remain outside the proof surface.
 Both contexts bound a chain to 256 Clang conversion steps in the exporter and
 artifact validator, so a flat artifact cannot build unbounded nested kernel
 casts. Converted arguments, arithmetic around calls and call-based brace
-initializers remain outside this slice. Converting an original 128-bit
-callee result requires native observer normalization and is explicitly refused;
-modular wide observer bounds alone do not establish a native cast observation. Schema 45 requires refreshing
-earlier locks.
+initializers remain outside this slice. Original 128-bit callee results retain their typed capture through conversion.
+For a value-preserving narrowing proof, name the captured result, transport both
+destination bounds from its modular contract, and apply the existing checked
+cast certificate to that value. This also checks initializer and return proofs
+offline; no automatic observer normalization or range inference is implied.
+Schema 45 requires refreshing earlier locks.
+
+The pinned unchanged Bitcoin `CFeeRate::GetFeePerK` separately composes the
+unified Down contract at 1000 bytes, with positive size and explicit result fit.
+It has no empty-rate branch or minimum correction.
+
+The pinned unchanged Bitcoin `CFeeRate::GetFee` integration composes the
+read-only `IsEmpty` contract and the unified Up result-fit contract through
+these calls and conversions. It proves zero for an empty rate without fee or
+fit premises, ceiling rounding on the nonempty profile, the negative minimum
+correction, int64 result bounds and both field frames. See the
+[integration proof and explicit assumptions](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#getfee-composition).
 
 The fixture preserves Bitcoin's quotient/remainder correction expression with
 a signed 64-bit dividend. It checks both rounding directions for positive and
