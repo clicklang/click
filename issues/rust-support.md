@@ -1329,8 +1329,18 @@ inspected slot is charged; deterministic size-series regressions cover local
 counts, expression depth, and large seeded storage. Explicit cursor, size,
 and remaining-length observations provide the caller transition's small checked premise set without changing smart budgets.
 
-Next use these initialization and call-site obligations in inductive loop
-proofs that preserve the lane bounds and memory views across arbitrary stored
+The four-byte caller now retains the original lanes across both checked
+`AddAssign` calls and derives the actual B call's Integer sum guards from the
+general iterator contract. Native preservation applies to all eight helper
+results at the real decremented remaining length. Explicit lane observations
+bridge the call snapshots without replacing the preservation argument with
+constructor-zero arithmetic. Negative caller regressions target false first
+and last lane bounds, a too-small B sum guard, and a stale remaining count.
+This proves the original four-byte step's preservation; arbitrary-batch loop
+induction remains open.
+
+Next use these initialization, call-site, and result-preservation obligations
+in inductive loop proofs that preserve the lane bounds and memory views across arbitrary stored
 iterator steps, including outer-loop reduction and reset. The full caller
 contract still covers four constructor-state bytes; larger batches, general
 initial states, whole-loop panic freedom, and the common checksum specification

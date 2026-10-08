@@ -214,6 +214,91 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have at(vector_a, a_vec._0[3]) == 0u32 by { simp(); }
  have at(vector_a, __rust_mir_68._0[3]) == old(bytes[3]) by { simp() using { __rust_mir_68._0[3] == old(bytes[3]); } }
  have to_integer(at(vector_a, __rust_mir_68._0[3])) <= 255 by { simp() using { to_integer(__rust_mir_68._0[3]) <= 255; } }
+ # Retain the entry lanes for both checked helper calls.
+ have 0 <= to_integer(at(vector_a, a_vec._0[0])) by { simp(); }
+ have to_integer(at(vector_a, a_vec._0[0])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(a_vec._0[0]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, b_vec._0[0])) by { simp(); }
+ have to_integer(at(vector_a, b_vec._0[0])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(b_vec._0[0]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, __rust_mir_68._0[0])) by { simp(); }
+ apply(adler_lane_iterator_add_contracts(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[0]), at(vector_a, b_vec._0[0]), at(vector_a, __rust_mir_68._0[0]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[0])); to_integer(at(vector_a, a_vec._0[0])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[0])); to_integer(at(vector_a, b_vec._0[0])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[0])); to_integer(at(vector_a, __rust_mir_68._0[0])) <= 255;
+ }
+ apply(adler_lane_iterator_native_preservation(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[0]), at(vector_a, b_vec._0[0]), at(vector_a, __rust_mir_68._0[0]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[0])); to_integer(at(vector_a, a_vec._0[0])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[0])); to_integer(at(vector_a, b_vec._0[0])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[0])); to_integer(at(vector_a, __rust_mir_68._0[0])) <= 255;
+ }
+ have 0 <= to_integer(at(vector_a, a_vec._0[1])) by { simp(); }
+ have to_integer(at(vector_a, a_vec._0[1])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(a_vec._0[1]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, b_vec._0[1])) by { simp(); }
+ have to_integer(at(vector_a, b_vec._0[1])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(b_vec._0[1]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, __rust_mir_68._0[1])) by { simp(); }
+ apply(adler_lane_iterator_add_contracts(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[1]), at(vector_a, b_vec._0[1]), at(vector_a, __rust_mir_68._0[1]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[1])); to_integer(at(vector_a, a_vec._0[1])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[1])); to_integer(at(vector_a, b_vec._0[1])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[1])); to_integer(at(vector_a, __rust_mir_68._0[1])) <= 255;
+ }
+ apply(adler_lane_iterator_native_preservation(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[1]), at(vector_a, b_vec._0[1]), at(vector_a, __rust_mir_68._0[1]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[1])); to_integer(at(vector_a, a_vec._0[1])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[1])); to_integer(at(vector_a, b_vec._0[1])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[1])); to_integer(at(vector_a, __rust_mir_68._0[1])) <= 255;
+ }
+ have 0 <= to_integer(at(vector_a, a_vec._0[2])) by { simp(); }
+ have to_integer(at(vector_a, a_vec._0[2])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(a_vec._0[2]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, b_vec._0[2])) by { simp(); }
+ have to_integer(at(vector_a, b_vec._0[2])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(b_vec._0[2]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, __rust_mir_68._0[2])) by { simp(); }
+ apply(adler_lane_iterator_add_contracts(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[2]), at(vector_a, b_vec._0[2]), at(vector_a, __rust_mir_68._0[2]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[2])); to_integer(at(vector_a, a_vec._0[2])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[2])); to_integer(at(vector_a, b_vec._0[2])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[2])); to_integer(at(vector_a, __rust_mir_68._0[2])) <= 255;
+ }
+ apply(adler_lane_iterator_native_preservation(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[2]), at(vector_a, b_vec._0[2]), at(vector_a, __rust_mir_68._0[2]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[2])); to_integer(at(vector_a, a_vec._0[2])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[2])); to_integer(at(vector_a, b_vec._0[2])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[2])); to_integer(at(vector_a, __rust_mir_68._0[2])) <= 255;
+ }
+ have 0 <= to_integer(at(vector_a, a_vec._0[3])) by { simp(); }
+ have to_integer(at(vector_a, a_vec._0[3])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(a_vec._0[3]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, b_vec._0[3])) by { simp(); }
+ have to_integer(at(vector_a, b_vec._0[3])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))) by {
+  simp() using { to_integer(b_vec._0[3]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining))); }
+ }
+ have 0 <= to_integer(at(vector_a, __rust_mir_68._0[3])) by { simp(); }
+ apply(adler_lane_iterator_add_contracts(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[3]), at(vector_a, b_vec._0[3]), at(vector_a, __rust_mir_68._0[3]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[3])); to_integer(at(vector_a, a_vec._0[3])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[3])); to_integer(at(vector_a, b_vec._0[3])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[3])); to_integer(at(vector_a, __rust_mir_68._0[3])) <= 255;
+ }
+ apply(adler_lane_iterator_native_preservation(4, at(lane_head, __rust_mir_62_remaining), at(vector_a, a_vec._0[3]), at(vector_a, b_vec._0[3]), at(vector_a, __rust_mir_68._0[3]))) using {
+  0 <= at(lane_head, __rust_mir_62_remaining); 4 <= at(lane_head, __rust_mir_62_remaining); at(lane_head, __rust_mir_62_remaining) <= 4;
+  0 <= to_integer(at(vector_a, a_vec._0[3])); to_integer(at(vector_a, a_vec._0[3])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, b_vec._0[3])); to_integer(at(vector_a, b_vec._0[3])) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining)));
+  0 <= to_integer(at(vector_a, __rust_mir_68._0[3])); to_integer(at(vector_a, __rust_mir_68._0[3])) <= 255;
+ }
  execute_until(assignment(__rust_mir_74, 0));
  have a_vec._0[0] == at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]) by { simp(); }
  have a_vec._0[0] == old(bytes[0]) by {
@@ -228,7 +313,12 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(a_vec._0[0]) == to_integer(at(vector_a, __rust_mir_68._0[0])) by { simp() using { a_vec._0[0] == at(vector_a, __rust_mir_68._0[0]); } }
  have to_integer(a_vec._0[0]) <= 255 by { arithmetic() using { to_integer(a_vec._0[0]) == to_integer(at(vector_a, __rust_mir_68._0[0])); to_integer(at(vector_a, __rust_mir_68._0[0])) <= 255; } }
  have to_integer(b_vec._0[0]) == 0 by { simp(); }
- have to_integer(b_vec._0[0]) + to_integer(a_vec._0[0]) <= 4294967295 by { arithmetic() using { to_integer(b_vec._0[0]) == 0; to_integer(a_vec._0[0]) <= 255; } }
+ have b_vec._0[0] == at(vector_a, b_vec._0[0]) by { simp(); }
+ have to_integer(b_vec._0[0]) == to_integer(at(vector_a, b_vec._0[0])) by { simp() using { b_vec._0[0] == at(vector_a, b_vec._0[0]); } }
+ have to_integer(a_vec._0[0]) == to_integer(at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])) by { simp() using { a_vec._0[0] == at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]); } }
+ have to_integer(b_vec._0[0]) + to_integer(a_vec._0[0]) <= 4294967295 by {
+  arithmetic() using { to_integer(b_vec._0[0]) == to_integer(at(vector_a, b_vec._0[0])); to_integer(a_vec._0[0]) == to_integer(at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])); to_integer(at(vector_a, b_vec._0[0])) + to_integer(at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])) <= 4294967295; }
+ }
  have a_vec._0[1] == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]) by { simp(); }
  have a_vec._0[1] == old(bytes[1]) by {
  rewrite(a_vec._0[1] == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]));
@@ -242,7 +332,12 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(a_vec._0[1]) == to_integer(at(vector_a, __rust_mir_68._0[1])) by { simp() using { a_vec._0[1] == at(vector_a, __rust_mir_68._0[1]); } }
  have to_integer(a_vec._0[1]) <= 255 by { arithmetic() using { to_integer(a_vec._0[1]) == to_integer(at(vector_a, __rust_mir_68._0[1])); to_integer(at(vector_a, __rust_mir_68._0[1])) <= 255; } }
  have to_integer(b_vec._0[1]) == 0 by { simp(); }
- have to_integer(b_vec._0[1]) + to_integer(a_vec._0[1]) <= 4294967295 by { arithmetic() using { to_integer(b_vec._0[1]) == 0; to_integer(a_vec._0[1]) <= 255; } }
+ have b_vec._0[1] == at(vector_a, b_vec._0[1]) by { simp(); }
+ have to_integer(b_vec._0[1]) == to_integer(at(vector_a, b_vec._0[1])) by { simp() using { b_vec._0[1] == at(vector_a, b_vec._0[1]); } }
+ have to_integer(a_vec._0[1]) == to_integer(at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])) by { simp() using { a_vec._0[1] == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]); } }
+ have to_integer(b_vec._0[1]) + to_integer(a_vec._0[1]) <= 4294967295 by {
+  arithmetic() using { to_integer(b_vec._0[1]) == to_integer(at(vector_a, b_vec._0[1])); to_integer(a_vec._0[1]) == to_integer(at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])); to_integer(at(vector_a, b_vec._0[1])) + to_integer(at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])) <= 4294967295; }
+ }
  have a_vec._0[2] == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]) by { simp(); }
  have a_vec._0[2] == old(bytes[2]) by {
  rewrite(a_vec._0[2] == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]));
@@ -256,7 +351,12 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(a_vec._0[2]) == to_integer(at(vector_a, __rust_mir_68._0[2])) by { simp() using { a_vec._0[2] == at(vector_a, __rust_mir_68._0[2]); } }
  have to_integer(a_vec._0[2]) <= 255 by { arithmetic() using { to_integer(a_vec._0[2]) == to_integer(at(vector_a, __rust_mir_68._0[2])); to_integer(at(vector_a, __rust_mir_68._0[2])) <= 255; } }
  have to_integer(b_vec._0[2]) == 0 by { simp(); }
- have to_integer(b_vec._0[2]) + to_integer(a_vec._0[2]) <= 4294967295 by { arithmetic() using { to_integer(b_vec._0[2]) == 0; to_integer(a_vec._0[2]) <= 255; } }
+ have b_vec._0[2] == at(vector_a, b_vec._0[2]) by { simp(); }
+ have to_integer(b_vec._0[2]) == to_integer(at(vector_a, b_vec._0[2])) by { simp() using { b_vec._0[2] == at(vector_a, b_vec._0[2]); } }
+ have to_integer(a_vec._0[2]) == to_integer(at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])) by { simp() using { a_vec._0[2] == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]); } }
+ have to_integer(b_vec._0[2]) + to_integer(a_vec._0[2]) <= 4294967295 by {
+  arithmetic() using { to_integer(b_vec._0[2]) == to_integer(at(vector_a, b_vec._0[2])); to_integer(a_vec._0[2]) == to_integer(at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])); to_integer(at(vector_a, b_vec._0[2])) + to_integer(at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])) <= 4294967295; }
+ }
  have a_vec._0[3] == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]) by { simp(); }
  have a_vec._0[3] == old(bytes[3]) by {
  rewrite(a_vec._0[3] == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]));
@@ -270,8 +370,22 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  have to_integer(a_vec._0[3]) == to_integer(at(vector_a, __rust_mir_68._0[3])) by { simp() using { a_vec._0[3] == at(vector_a, __rust_mir_68._0[3]); } }
  have to_integer(a_vec._0[3]) <= 255 by { arithmetic() using { to_integer(a_vec._0[3]) == to_integer(at(vector_a, __rust_mir_68._0[3])); to_integer(at(vector_a, __rust_mir_68._0[3])) <= 255; } }
  have to_integer(b_vec._0[3]) == 0 by { simp(); }
- have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 4294967295 by { arithmetic() using { to_integer(b_vec._0[3]) == 0; to_integer(a_vec._0[3]) <= 255; } }
+ have b_vec._0[3] == at(vector_a, b_vec._0[3]) by { simp(); }
+ have to_integer(b_vec._0[3]) == to_integer(at(vector_a, b_vec._0[3])) by { simp() using { b_vec._0[3] == at(vector_a, b_vec._0[3]); } }
+ have to_integer(a_vec._0[3]) == to_integer(at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])) by { simp() using { a_vec._0[3] == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]); } }
+ have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 4294967295 by {
+  arithmetic() using { to_integer(b_vec._0[3]) == to_integer(at(vector_a, b_vec._0[3])); to_integer(a_vec._0[3]) == to_integer(at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])); to_integer(at(vector_a, b_vec._0[3])) + to_integer(at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])) <= 4294967295; }
+ }
  mark vector_b;
+ have at(vector_b, b_vec._0[0]) == at(vector_a, b_vec._0[0]) by { simp() using { b_vec._0[0] == at(vector_a, b_vec._0[0]); } }
+ have at(vector_b, a_vec._0[0]) == at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]) by { simp() using { a_vec._0[0] == at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]); } }
+ have at(vector_b, b_vec._0[1]) == at(vector_a, b_vec._0[1]) by { simp() using { b_vec._0[1] == at(vector_a, b_vec._0[1]); } }
+ have at(vector_b, a_vec._0[1]) == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]) by { simp() using { a_vec._0[1] == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]); } }
+ have at(vector_b, b_vec._0[2]) == at(vector_a, b_vec._0[2]) by { simp() using { b_vec._0[2] == at(vector_a, b_vec._0[2]); } }
+ have at(vector_b, a_vec._0[2]) == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]) by { simp() using { a_vec._0[2] == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]); } }
+ have at(vector_b, b_vec._0[3]) == at(vector_a, b_vec._0[3]) by { simp() using { b_vec._0[3] == at(vector_a, b_vec._0[3]); } }
+ have at(vector_b, a_vec._0[3]) == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]) by { simp() using { a_vec._0[3] == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]); } }
+
  have at(vector_b, b_vec._0[0]) == 0u32 by { simp(); }
  have at(vector_b, a_vec._0[0]) == old(bytes[0]) by { simp() using { a_vec._0[0] == old(bytes[0]); } }
  have to_integer(at(vector_b, a_vec._0[0])) <= 255 by { simp() using { to_integer(a_vec._0[0]) <= 255; } }
@@ -323,6 +437,59 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  rewrite(at(vector_b, b_vec._0[3]) == 0u32);
  rewrite(at(vector_b, a_vec._0[3]) == old(bytes[3])); simp() using {};
  }
+ # Both actual helper results satisfy the ceiling at next()'s new state.
+ have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4 by { simp(); }
+ have adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)) by {
+  rewrite(__rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4); simp() using {};
+ }
+ have adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)) by {
+  rewrite(__rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4); simp() using {};
+ }
+ have a_vec._0[0] == at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]) by { simp(); }
+ have b_vec._0[0] == at(vector_b, b_vec._0[0]) + at(vector_b, a_vec._0[0]) by { assumption(); }
+ have b_vec._0[0] == at(vector_a, b_vec._0[0]) + (at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])) by { simp() using { b_vec._0[0] == at(vector_b, b_vec._0[0]) + at(vector_b, a_vec._0[0]); at(vector_b, b_vec._0[0]) == at(vector_a, b_vec._0[0]); at(vector_b, a_vec._0[0]) == at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]); } }
+ have to_integer(a_vec._0[0]) == to_integer(at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])) by { simp() using { a_vec._0[0] == at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]); } }
+ have to_integer(a_vec._0[0]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(a_vec._0[0]) == to_integer(at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+ have to_integer(b_vec._0[0]) == to_integer(at(vector_a, b_vec._0[0]) + (at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]))) by { simp() using { b_vec._0[0] == at(vector_a, b_vec._0[0]) + (at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0])); } }
+ have to_integer(b_vec._0[0]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(b_vec._0[0]) == to_integer(at(vector_a, b_vec._0[0]) + (at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]))); adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, b_vec._0[0]) + (at(vector_a, a_vec._0[0]) + at(vector_a, __rust_mir_68._0[0]))) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+ have a_vec._0[1] == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]) by { simp(); }
+ have b_vec._0[1] == at(vector_b, b_vec._0[1]) + at(vector_b, a_vec._0[1]) by { assumption(); }
+ have b_vec._0[1] == at(vector_a, b_vec._0[1]) + (at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])) by { simp() using { b_vec._0[1] == at(vector_b, b_vec._0[1]) + at(vector_b, a_vec._0[1]); at(vector_b, b_vec._0[1]) == at(vector_a, b_vec._0[1]); at(vector_b, a_vec._0[1]) == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]); } }
+ have to_integer(a_vec._0[1]) == to_integer(at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])) by { simp() using { a_vec._0[1] == at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]); } }
+ have to_integer(a_vec._0[1]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(a_vec._0[1]) == to_integer(at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+ have to_integer(b_vec._0[1]) == to_integer(at(vector_a, b_vec._0[1]) + (at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]))) by { simp() using { b_vec._0[1] == at(vector_a, b_vec._0[1]) + (at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1])); } }
+ have to_integer(b_vec._0[1]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(b_vec._0[1]) == to_integer(at(vector_a, b_vec._0[1]) + (at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]))); adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, b_vec._0[1]) + (at(vector_a, a_vec._0[1]) + at(vector_a, __rust_mir_68._0[1]))) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+ have a_vec._0[2] == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]) by { simp(); }
+ have b_vec._0[2] == at(vector_b, b_vec._0[2]) + at(vector_b, a_vec._0[2]) by { assumption(); }
+ have b_vec._0[2] == at(vector_a, b_vec._0[2]) + (at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])) by { simp() using { b_vec._0[2] == at(vector_b, b_vec._0[2]) + at(vector_b, a_vec._0[2]); at(vector_b, b_vec._0[2]) == at(vector_a, b_vec._0[2]); at(vector_b, a_vec._0[2]) == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]); } }
+ have to_integer(a_vec._0[2]) == to_integer(at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])) by { simp() using { a_vec._0[2] == at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]); } }
+ have to_integer(a_vec._0[2]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(a_vec._0[2]) == to_integer(at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+ have to_integer(b_vec._0[2]) == to_integer(at(vector_a, b_vec._0[2]) + (at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]))) by { simp() using { b_vec._0[2] == at(vector_a, b_vec._0[2]) + (at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2])); } }
+ have to_integer(b_vec._0[2]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(b_vec._0[2]) == to_integer(at(vector_a, b_vec._0[2]) + (at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]))); adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, b_vec._0[2]) + (at(vector_a, a_vec._0[2]) + at(vector_a, __rust_mir_68._0[2]))) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+ have a_vec._0[3] == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]) by { simp(); }
+ have b_vec._0[3] == at(vector_b, b_vec._0[3]) + at(vector_b, a_vec._0[3]) by { assumption(); }
+ have b_vec._0[3] == at(vector_a, b_vec._0[3]) + (at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])) by { simp() using { b_vec._0[3] == at(vector_b, b_vec._0[3]) + at(vector_b, a_vec._0[3]); at(vector_b, b_vec._0[3]) == at(vector_a, b_vec._0[3]); at(vector_b, a_vec._0[3]) == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]); } }
+ have to_integer(a_vec._0[3]) == to_integer(at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])) by { simp() using { a_vec._0[3] == at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]); } }
+ have to_integer(a_vec._0[3]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(a_vec._0[3]) == to_integer(at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])); adler_lane_a_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+ have to_integer(b_vec._0[3]) == to_integer(at(vector_a, b_vec._0[3]) + (at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]))) by { simp() using { b_vec._0[3] == at(vector_a, b_vec._0[3]) + (at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3])); } }
+ have to_integer(b_vec._0[3]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by {
+  arithmetic() using { to_integer(b_vec._0[3]) == to_integer(at(vector_a, b_vec._0[3]) + (at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]))); adler_lane_b_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); to_integer(at(vector_a, b_vec._0[3]) + (at(vector_a, a_vec._0[3]) + at(vector_a, __rust_mir_68._0[3]))) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(4, at(lane_head, __rust_mir_62_remaining) - 4)); }
+ }
+
  step();
  have b == 4u32 by { simp() using { at(scalar_inputs, __rust_mir_78) == 4u64; at(scalar_inputs, a) == 1u32; at(scalar_inputs, b) == 0u32; } }
  mark vector_mod;

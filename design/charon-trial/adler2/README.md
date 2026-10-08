@@ -325,6 +325,16 @@ the output casts are justified by the modulo range. Nightly regressions check
 false outputs, byte ordering, repeated reads, and agreement between verification,
 profiling, audit, expansion, and verification of the expanded contract.
 
+The vector-step proof also retains the entry A/B lanes at a named snapshot,
+uses the general iterator addition contracts for the B call's guards, and
+applies native preservation to all eight actual helper results. The resulting
+ceilings use the real decremented remaining length. Explicit observations
+bridge the two call snapshots; they do not substitute the constructor's zero
+lanes into the preservation argument. Nightly mutations reject false bounds
+on the first and last lanes, a too-small B sum guard, and a stale remaining
+count. This checks preservation at the four-byte caller boundary; it does not
+yet establish induction over arbitrary batches.
+
 With constructor-state inputs of lengths zero through four checked, next
 establish and preserve the lane
 invariants over the original chunks/remainder

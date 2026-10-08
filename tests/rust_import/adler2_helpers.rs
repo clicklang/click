@@ -1216,6 +1216,42 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
 }
 
 #[test]
+#[ignore = "nightly: original vector-step preservation and false bound/state rejections"]
+fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
+    // The complete positive caller is checked by the existing computation
+    // regression. These mutations target the bounds after both original calls,
+    // independently of the final checksum expressions.
+    let post_step = FOUR_BYTE_COMPUTE
+        .split_once("# Both actual helper results satisfy the ceiling at next()'s new state.")
+        .unwrap()
+        .1;
+    for field in ["a", "b"] {
+        for lane in [0, 3] {
+            let bound = format!(
+                "have to_integer({field}_vec._0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by"
+            );
+            let changed = post_step.replacen(
+                &bound,
+                &format!("have to_integer({field}_vec._0[{lane}]) <= 0 by"),
+                1,
+            );
+            assert_ne!(post_step, changed);
+            reject_compute(FOUR_BYTE_COMPUTE, post_step, &changed);
+        }
+    }
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 4294967295 by",
+        "have to_integer(b_vec._0[3]) + to_integer(a_vec._0[3]) <= 254 by",
+    );
+    reject_compute(
+        FOUR_BYTE_COMPUTE,
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4 by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) by",
+    );
+}
+
+#[test]
 #[ignore = "nightly: original four-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
     recheck_compute_tools(FOUR_BYTE_COMPUTE, 4);
