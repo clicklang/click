@@ -3388,6 +3388,7 @@ impl Parser {
             signature: FunctionSignature {
                 return_type,
                 return_pointee_constant: false,
+                return_reference: false,
                 name,
                 parameters,
                 exceptional_type: None,
