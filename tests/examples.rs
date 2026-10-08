@@ -490,6 +490,7 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
             || error
                 .message()
                 .contains("checked outcome `have` search did not retain a complete proof")
+            || error.message().contains("unclosed goal: result == 0")
             || error
                 .message()
                 .contains("unclosed goal: result == old(node->rb_right)"),
@@ -622,6 +623,35 @@ fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
         "rbtree_erase_black_leaf.click",
         "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
         "\t\t\trebalance = NULL;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_red_leaf_requires_left_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_red_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_left, new);",
+        "            WRITE_ONCE(parent->rb_left, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_red_leaf_requires_right_parent_link_update() {
+    erase_source_refuses_mutation(
+        "rbtree_erase_red_leaf.click",
+        "rbtree.h",
+        "            WRITE_ONCE(parent->rb_right, new);",
+        "            WRITE_ONCE(parent->rb_right, old);",
+    );
+}
+
+#[test]
+fn rbtree_erase_red_leaf_requires_no_fixup() {
+    erase_sidecar_refuses_mutation(
+        "rbtree_erase_red_leaf.click",
+        "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
+        "\t\t\trebalance = parent;\n",
     );
 }
 
