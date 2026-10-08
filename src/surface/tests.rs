@@ -1693,24 +1693,32 @@ fn named_resource_binding_does_not_expose_its_memory_body() {
     );
 }
 
+/// A call binds a callee's instance binder to the caller's instance without
+/// a map when only one binding is possible. Two candidates are not chosen
+/// between: the proof writes the map.
 #[test]
-fn named_resource_calls_reject_missing_binder_transport() {
-    let source = r#"verifying "calls.c";
+fn a_call_binds_the_one_possible_instance_and_refuses_to_choose() {
+    let c_source = "int32 callee(void); int32 caller(void) { return callee(); }";
+    let unique = r#"verifying "calls.c";
         resource marker() { field revision: int32; }
-        extern int32 callee() { owns cell: marker(); }
+        extern int32 callee() { owns cell: marker(); ensures cell.revision == old(cell.revision); }
         int32 caller() {
             owns cell: marker();
             ensures cell.revision == old(cell.revision);
         } by { execute(); simp(); }
     "#;
-    let error = verify_c0_sources(
-        source,
-        &[(
-            "calls.c",
-            "int32 callee(void); int32 caller(void) { return callee(); }",
-        )],
-    )
-    .unwrap_err();
+    verify_c0_sources(unique, &[("calls.c", c_source)])
+        .expect("the caller owns exactly one instance the callee's binder can be");
+    let ambiguous = r#"verifying "calls.c";
+        resource marker() { field revision: int32; }
+        extern int32 callee() { owns cell: marker(); ensures cell.revision == old(cell.revision); }
+        int32 caller() {
+            owns cell: marker();
+            owns other: marker();
+            ensures cell.revision == old(cell.revision);
+        } by { execute(); simp(); }
+    "#;
+    let error = verify_c0_sources(ambiguous, &[("calls.c", c_source)]).unwrap_err();
     assert!(
         error.message().contains(
             "`callee` has an unbound instance binder `cell`; bind it in `step(..., { cell: instance })`"
