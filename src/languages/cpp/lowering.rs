@@ -540,6 +540,13 @@ impl LoweringContext<'_> {
                     value_type,
                 ))
             }
+            CppStatement::Unreachable { span } => Ok(crate::kernel::c_labeled_assert(
+                c_cast(CExpression::Value(int32(0)), CType::Bool),
+                format!(
+                    "C++ __builtin_unreachable at {}:{}:{}",
+                    span.file, span.start_line, span.start_column
+                ),
+            )),
             CppStatement::Assume { condition, span } => Ok(crate::kernel::c_labeled_assert(
                 self.lower_expression(condition)?,
                 format!(
@@ -948,6 +955,14 @@ impl LoweringContext<'_> {
                     conversions: &[],
                 });
             }
+            CppExpression::LogicalNot { value, .. } => {
+                let input = self.normalize_expression(value)?;
+                (
+                    input.prefix,
+                    c_cast(crate::kernel::c_not(input.value), CType::Bool),
+                    input.may_throw,
+                )
+            }
             CppExpression::IntegralCast {
                 value, value_type, ..
             } => {
@@ -1095,6 +1110,14 @@ impl LoweringContext<'_> {
 
     fn lower_expression(&mut self, expression: &CppExpression) -> Result<CExpression, String> {
         match expression {
+            CppExpression::RuntimeConstantEvaluation { .. } => {
+                Ok(c_cast(CExpression::Value(int32(0)), CType::Bool))
+            }
+            CppExpression::LogicalNot { value, .. } => Ok(c_cast(
+                crate::kernel::c_not(self.lower_expression(value)?),
+                CType::Bool,
+            )),
+
             CppExpression::ObserverCall { .. } => Err(
                 "C++ expression observers are supported in normalized scalar values only".into(),
             ),
@@ -1420,7 +1443,8 @@ fn expression_contains_observer(expression: &CppExpression) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match expression {
         CppExpression::ObserverCall { .. } => true,
-        CppExpression::IntegralCast { value, .. }
+        CppExpression::LogicalNot { value, .. }
+        | CppExpression::IntegralCast { value, .. }
         | CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),
         CppExpression::Binary { left, right, .. } => {

@@ -831,6 +831,29 @@ Ordinary, expanded and retained proofs cover symbolic field reads, nested
 arguments, signed widening and short-circuit permissions; false claims, writes,
 owning contracts and forged call identities/types/spans are refused.
 
+Integral logical negation also uses shared C truth conversion and returns a
+native Boolean, including full-width unsigned values and observer results.
+In selected runtime function bodies, `__builtin_is_constant_evaluated()`
+returns false. Clang still selects manifestly constant `if constexpr` branches;
+this operation does not replace compile-time evaluation. Automatic const and
+constexpr initializers remain outside the admitted local profile.
+`__builtin_unreachable()` becomes a checked false assertion: its execution
+path must be proved unreachable.
+
+Macros from declared dependency headers retain their locked definitions and
+use Clang's expansion locations within the executable function. Missing macro
+dependencies are refused, and changing a definition invalidates the offline
+artifact. Reference typedefs compare their resolved pointee types, retaining
+width and const qualification. Function-directed proof expansion prints a
+reference result's address as `&result` and its referent as `result`.
+
+The unchanged pinned libstdc++ `std::span<int>::back()` now verifies for a
+one-element backing range, including its constexpr assertion, nested observers,
+native size arithmetic and reference identity/value. Ordinary, expanded and
+retained proofs agree offline. Symbolic backing lengths and the descriptor
+aggregate results needed by Bitcoin's complete `SpanPopBack` remain roadmap
+work.
+
 An ordinary `if` can use a direct Boolean free-function or method call as its
 whole condition. The artifact keeps this effectful call separate from pure
 expressions. The shared scalar-call normalizer evaluates its bounded arguments

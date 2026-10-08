@@ -4421,9 +4421,34 @@ pub(in crate::surface) fn is_call_result_temporary(name: &str) -> bool {
     name.starts_with("__click_call_result")
 }
 
+thread_local! {
+    static REFERENCE_RESULT_SOURCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Kernel reference results carry addresses. Function-directed proof printing
+/// must spell that carrier as `&result`, and a load through it as `result`.
+pub(super) struct ReferenceResultSourceScope(bool);
+
+impl ReferenceResultSourceScope {
+    pub(super) fn enter(reference: bool) -> Self {
+        Self(REFERENCE_RESULT_SOURCE.with(|slot| slot.replace(reference)))
+    }
+}
+
+impl Drop for ReferenceResultSourceScope {
+    fn drop(&mut self) {
+        REFERENCE_RESULT_SOURCE.with(|slot| slot.set(self.0));
+    }
+}
+
 pub(super) fn describe_c_expression(expression: &CExpression) -> String {
     match expression {
         CExpression::Value(value) => describe_c_value(value, &[], &[]),
+        CExpression::Variable(name)
+            if name == "result" && REFERENCE_RESULT_SOURCE.with(std::cell::Cell::get) =>
+        {
+            "&result".into()
+        }
         CExpression::Variable(name) => name.clone(),
         CExpression::FunctionAddress(name) => format!("&{name}"),
         CExpression::Cast {

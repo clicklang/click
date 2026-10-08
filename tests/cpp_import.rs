@@ -848,6 +848,294 @@ uint64 probe(struct Count& count) {
 }
 
 #[test]
+fn declared_macro_definitions_keep_expansion_locations_and_locks_offline() {
+    let mut project = Project::with_fixture(
+        "macro.cpp",
+        "probe",
+        "#include \"read.h\"\nint probe(int value) noexcept { return read(value); }",
+    );
+    fs::write(project.directory.join("read.h"), "#include \"check.h\"\ninline int read(int value) noexcept { CHECK(value > 0); return value; }\n").unwrap();
+    let macro_body = "#define CHECK(value) do { if (__builtin_is_constant_evaluated() && !(value)) { __builtin_unreachable(); } } while (false)\n";
+    fs::write(project.directory.join("check.h"), macro_body).unwrap();
+    project
+        .dependencies
+        .extend(["check.h".into(), "read.h".into()]);
+    project.write_config("probe");
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let canonical_header = project.directory.join("check.h").canonicalize().unwrap();
+    assert!(
+        import
+            .export()
+            .preprocessor_files
+            .iter()
+            .any(|file| file.canonical_path == canonical_header.to_string_lossy())
+    );
+    let sidecar = "verifying \"macro.cpp\";\nint32 read(int32 value) { ensures result == value; } by { execute(); simp(); }\nint32 probe(int32 value) { ensures result == value; } by { execute(); simp(); }\n";
+    check_return_call_sidecar(&project, &import, sidecar);
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let condition = &artifact["reachable_functions"][0]["body"][0]["then_branch"][0]["condition"];
+    assert_eq!(condition["span"]["file"], "read.h");
+    assert_eq!(condition["span"]["start_line"], 2);
+    fs::write(
+        project.directory.join("check.h"),
+        macro_body.replace("!(value)", "(value)"),
+    )
+    .unwrap();
+    assert!(load_import(&project.config()).is_err());
+}
+
+#[test]
+fn reference_result_claim_and_simp_expansion_preserve_address_and_value_spelling() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        "int& helper(int& value) noexcept { return value; } int& probe(int& value) noexcept { return helper(value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32& helper(int32& value) { views value; ensures &result == &value; ensures result == old(value); } by { execute(); simp(); }
+int32& probe(int32& value) { views value; ensures &result == &value; ensures result == old(value); } by { execute(); simp(); }
+"#;
+    let path = project.directory.join("reference.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&parsed, &import, "probe.contract", 1)
+            .unwrap();
+    for expanded in [
+        click::surface::expand_program_prepared_project_claim_source_by_label(
+            &parsed,
+            &import,
+            "probe.contract",
+        )
+        .unwrap(),
+        expand_program_prepared_project_tactic_source_at(
+            &parsed,
+            &import,
+            position.line,
+            position.column,
+        )
+        .unwrap(),
+    ] {
+        assert!(!expanded.contains("result[0]"), "{expanded}");
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+    }
+}
+
+#[test]
+fn reference_aliases_preserve_resolved_types_and_const_qualification_offline() {
+    for (native_type, sidecar_type) in [("int&", "int32&"), ("const int&", "const int32&")] {
+        let cpp = format!(
+            "using Reference = {native_type}; Reference probe(int* data) noexcept {{ return *data; }}"
+        );
+        let project = Project::with_fixture("reference.cpp", "probe", &cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"reference.cpp\";\n{sidecar_type} probe(int32* data) {{ views data[0..1]; ensures &result == data; }} by {{ execute(); simp(); }}\n"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let path = project.directory.join("bad.click");
+        let mismatched = source.replace(
+            sidecar_type,
+            if native_type == "int&" {
+                "const int32&"
+            } else {
+                "int32&"
+            },
+        );
+        fs::write(&path, &mismatched).unwrap();
+        assert!(
+            verify_program_prepared_project(
+                &read_click_project(&path, &mismatched).unwrap(),
+                &import
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline() {
+    for (cpp, expected) in [
+        (
+            "bool probe() noexcept { return __builtin_is_constant_evaluated(); }",
+            0,
+        ),
+        (
+            "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { return evaluated(); }",
+            0,
+        ),
+        (
+            "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { if constexpr (evaluated()) { return true; } else { return false; } }",
+            1,
+        ),
+        (
+            "bool probe() noexcept { if (__builtin_is_constant_evaluated()) { return true; } else { return false; } }",
+            0,
+        ),
+    ] {
+        let project = Project::with_fixture("evaluation.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let helper = if import
+            .export()
+            .reachable_functions
+            .iter()
+            .any(|function| function.name == "evaluated")
+        {
+            "bool evaluated() { ensures result == 0; } by { execute(); simp(); }\n"
+        } else {
+            ""
+        };
+        let source = format!(
+            "verifying \"evaluation.cpp\";\n{helper}bool probe() {{ ensures result == {expected}; }} by {{ execute(); simp(); }}\n"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace(
+            &format!("result == {expected}"),
+            &format!("result == {}", 1 - expected),
+        );
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn boolean_primitive_artifacts_refuse_forged_types_contexts_and_locations() {
+    use sha2::{Digest, Sha256};
+    for cpp in [
+        "bool probe() noexcept { return __builtin_is_constant_evaluated(); }",
+        "bool probe(int value) noexcept { return !value; }",
+    ] {
+        let project = Project::with_fixture("boolean.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        for mutation in 0..3 {
+            let mut forged = artifact.clone();
+            let expression = &mut forged["function"]["body"][0]["value"];
+            match mutation {
+                0 => expression["value_type"]["bits"] = 64.into(),
+                1 => expression["constant_context"] = true.into(),
+                2 => expression["span"]["file"] = "unlocked.h".into(),
+                _ => unreachable!(),
+            }
+            let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+            let mut forged_lock = lock.clone();
+            forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+            forged_lock["artifact_bytes"] = bytes.len().into();
+            fs::write(project.artifact(), bytes).unwrap();
+            fs::write(
+                project.lock(),
+                serde_json::to_vec_pretty(&forged_lock).unwrap(),
+            )
+            .unwrap();
+            assert!(
+                load_import(&project.config()).is_err(),
+                "accepted mutation {mutation}"
+            );
+        }
+    }
+}
+
+#[test]
+fn unreachable_builtin_requires_an_unreachable_execution_path_offline() {
+    let project = Project::with_fixture(
+        "unreachable.cpp",
+        "probe",
+        "int probe(bool enter) noexcept { if (enter) { __builtin_unreachable(); } return 0; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = "verifying \"unreachable.cpp\";\nint32 probe(bool enter) { requires enter == 0; ensures result == 0; } by { execute(); simp(); }\n";
+    check_return_call_sidecar(&project, &import, source);
+    for hostile in [
+        source.replace("requires enter == 0;", ""),
+        source.replace("enter == 0", "enter == 1"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        let error =
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .unwrap_err();
+        assert!(
+            error.message().contains("__builtin_unreachable"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
+    for (cpp, helper, parameters, requires) in [
+        (
+            "bool probe(bool flag) noexcept { return !flag; }",
+            "",
+            "bool flag",
+            "flag == 0",
+        ),
+        (
+            "bool probe(unsigned long value) noexcept { return !value; }",
+            "",
+            "uint64 value",
+            "value == 0u64",
+        ),
+        (
+            "bool ready() noexcept { return false; } bool probe() noexcept { return !ready(); }",
+            "bool ready() { ensures result == 0; } by { execute(); simp(); }",
+            "",
+            "1 == 1",
+        ),
+        (
+            "bool ready() noexcept { return false; } bool probe() noexcept { if (!ready()) { return true; } else { return false; } }",
+            "bool ready() { ensures result == 0; } by { execute(); simp(); }",
+            "",
+            "1 == 1",
+        ),
+    ] {
+        let project = Project::with_fixture("negation.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == 1; }} by {{ execute(); simp(); }}\n"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace("ensures result == 1;", "ensures result == 0;");
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+        if parameters == "uint64 value" {
+            let high = source
+                .replace("value == 0u64", "value == 4294967296u64")
+                .replace("result == 1", "result == 0");
+            check_return_call_sidecar(&project, &import, &high);
+        }
+    }
+}
+
+#[test]
 fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let project = Project::new();
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -12823,17 +13111,16 @@ fn condition_calls_validate_target_result_arguments_and_metadata() {
 }
 
 #[test]
-fn condition_calls_refuse_unsupported_unary_operators() {
-    for condition in ["!predicate()", "+predicate()"] {
-        let source = format!(
-            "bool predicate() noexcept {{ return true; }} int number() noexcept {{ return 1; }} int choose() noexcept {{ if ({condition}) {{ return 1; }} else {{ return 2; }} }}"
-        );
-        let project = Project::with_fixture("condition.cpp", "choose", &source);
-        let error = refresh_import(&project.config()).unwrap_err();
-        assert!(error.len() < 8000, "{error}");
-        assert!(!project.artifact().exists());
-        assert!(!project.lock().exists());
-    }
+fn condition_calls_refuse_unsupported_unary_plus() {
+    let condition = "+predicate()";
+    let source = format!(
+        "bool predicate() noexcept {{ return true; }} int number() noexcept {{ return 1; }} int choose() noexcept {{ if ({condition}) {{ return 1; }} else {{ return 2; }} }}"
+    );
+    let project = Project::with_fixture("condition.cpp", "choose", &source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.len() < 8000, "{error}");
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
 }
 
 #[test]
@@ -13354,7 +13641,7 @@ fn locked_header_graph_verifies_concrete_template_instances_only() {
 }
 
 #[test]
-fn locked_header_graph_retains_object_constant_and_macro_boundaries() {
+fn locked_header_graph_retains_object_constant_and_undeclared_macro_boundaries() {
     for (header, diagnostic) in [
         (
             "inline constexpr int value = 7; inline int read() noexcept { return value; }",
@@ -13366,7 +13653,7 @@ fn locked_header_graph_retains_object_constant_and_macro_boundaries() {
         ),
         (
             "#include \"macro.h\"\ninline int read() noexcept { return VALUE; }",
-            "executable source locations must stay within their function source",
+            "differ from configured dependencies",
         ),
     ] {
         let mut project = Project::with_fixture(
