@@ -485,7 +485,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             && bodies.len() != goals.len()
         {
             return Err(ClickError::new(format!(
-                "loop {loop_index} invariant {invariant_index} owes {} entry goals but the `initialize` script names it {} times; name it once, or once per goal",
+                "loop {loop_index} {} owes {} entry goals but the `initialize` script names it {} times; name it once, or once per goal",
+                item.title(invariant_index),
                 goals.len(),
                 bodies.len()
             )));
@@ -561,7 +562,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                             )
                         });
                     error.with_context(format!(
-                        "loop {loop_index} invariant {invariant_index} entry, owing `{owed}`"
+                        "loop {loop_index} {} entry, owing `{owed}`",
+                        item.title(invariant_index)
                     ))
                 })?;
             let body_certificate = checked.certificate_since(&body_checkpoint)?;

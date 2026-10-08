@@ -2871,7 +2871,8 @@ impl AnnotationLowerer<'_> {
                 )
                 .map_err(|message| {
                     ClickError::new(format!(
-                        "loop {loop_index} invariant {item_index}: {message}"
+                        "loop {loop_index} {}: {message}",
+                        item.title(item_index)
                     ))
                 })?;
                 Ok(CLoopInvariantCheck::new(
@@ -2881,12 +2882,17 @@ impl AnnotationLowerer<'_> {
                     )
                     .map_err(|message| {
                         ClickError::new(format!(
-                            "loop {loop_index} invariant {item_index}: {message}"
+                            "loop {loop_index} {}: {message}",
+                            item.title(item_index)
                         ))
                     })?,
-                    Some(format!("loop {loop_index} invariant {item_index} entry")),
                     Some(format!(
-                        "loop {loop_index} invariant {item_index} preservation"
+                        "loop {loop_index} {} entry",
+                        item.title(item_index)
+                    )),
+                    Some(format!(
+                        "loop {loop_index} {} preservation",
+                        item.title(item_index)
                     )),
                 ))
             })

@@ -1228,8 +1228,11 @@ views p[0..1];
 consumes p[0..1];
 ```
 
-`requires` clauses have no fact labels. `ensures` labels still identify
-postcondition claims. To open an available existential precondition, spell its
+`requires` clauses take no label: a proof cites a precondition by its
+proposition, and an unmet one is reported by its text. An `ensures` label
+names its postcondition claim. A loop `invariant` may be labeled the same
+way, and the label names it where a failure reports it: "loop 0 invariant
+`bounded` entry" for `invariant bounded: i <= n;`. To open an available existential precondition, spell its
 proposition with `obtain (...) { ... };`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
