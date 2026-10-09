@@ -166,8 +166,10 @@ because a tactic builds a kernel theorem for each step it takes. Order
 chains have theirs: `uint64_lt_transitive`, `uint64_le_transitive`,
 `uint64_lt_le_transitive`, `uint64_le_lt_transitive` and the same four for
 `int64` (`prove_wide_order_transitive`). Linear arithmetic does not:
-`arithmetic` reads `int32` and `Integer` goals only, which is what a
-`size_t` loop invariant needs (`i + 2 <= length` from `i + 1 < length`).
+`arithmetic` reads `int32` and `Integer` goals only, so a `size_t` loop
+invariant (`i + 2 <= length` from `i + 1 < length`) is a lemma through
+`to_integer` and the `uint64_*_to_integer` bridges, which have strict forms
+in both directions.
 
 ## Risks
 

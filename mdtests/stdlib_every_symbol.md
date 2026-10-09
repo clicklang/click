@@ -134,6 +134,16 @@ theorem use_uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
     ensures left <= right by apply(uint64_less_equal_of_to_integer(left, right));
 }
 
+theorem use_uint64_less_than_to_integer(left: uint64, right: uint64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right) by apply(uint64_less_than_to_integer(left, right));
+}
+
+theorem use_uint64_less_than_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) < to_integer(right);
+    ensures left < right by apply(uint64_less_than_of_to_integer(left, right));
+}
+
 theorem use_int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by apply(int64_less_than_to_integer(left, right));

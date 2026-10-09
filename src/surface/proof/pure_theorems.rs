@@ -2399,6 +2399,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint64_remainder_to_integer"
                 | "uint64_less_equal_to_integer"
                 | "uint64_less_equal_of_to_integer"
+                | "uint64_less_than_to_integer"
+                | "uint64_less_than_of_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
                 | "int32_increment_upper_bound"
@@ -2506,7 +2508,9 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_multiply_to_integer"
         | "uint64_subtract_to_integer"
         | "uint64_less_equal_to_integer"
-        | "uint64_less_equal_of_to_integer" => (2, 1),
+        | "uint64_less_equal_of_to_integer"
+        | "uint64_less_than_to_integer"
+        | "uint64_less_than_of_to_integer" => (2, 1),
         "uint64_divide_to_integer" | "uint64_remainder_to_integer" => (2, 2),
         "int32_remainder_to_integer" => (2, 2),
         "int32_increment_upper_bound" | "int32_increment_strictly_increases" => (2, 1),
@@ -4176,6 +4180,16 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
+            (
+                "uint64_less_than_to_integer",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
+                "uint64_less_than_of_to_integer",
+                "to_integer(left) < to_integer(right)",
+                "left < right",
+            ),
         ] {
             let source = format!(
                 "theorem {name}(left: uint64, right: uint64) {{ requires {guard}; ensures {goal}; }}"
@@ -4202,6 +4216,11 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                     .replace(
                         "requires to_integer(left) <= to_integer(right)",
                         "requires to_integer(left) < to_integer(right)",
+                    )
+                    .replace("requires left < right", "requires left > right")
+                    .replace(
+                        "requires to_integer(left) < to_integer(right)",
+                        "requires to_integer(right) < to_integer(left)",
                     ),
                 source.replace("left: uint64", "left: int64"),
                 source.replace("right: uint64", "right: uint32"),

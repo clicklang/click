@@ -1289,6 +1289,32 @@ Exact Integer observation order implies native uint64 non-strict order. The math
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint64_less_than_to_integer`
+
+```click
+theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right);
+}
+```
+
+Native uint64 strict order implies strict order of the exact Integer observations, including values above the sign bit.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_less_than_of_to_integer`
+
+```click
+theorem uint64_less_than_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) < to_integer(right);
+    ensures left < right;
+}
+```
+
+Strict order of the exact Integer observations implies native uint64 strict order. The mathematical order premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_less_equal_to_integer`
 
 ```click

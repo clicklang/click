@@ -9079,6 +9079,25 @@ pub fn prove_uint64_integer_bridge(
     };
     let a = observe(left.clone());
     let b = observe(right.clone());
+    // Strict order, in both directions: the unsigned observation is
+    // injective and monotone over every 64-bit pattern.
+    if matches!(
+        name,
+        "uint64_less_than_to_integer" | "uint64_less_than_of_to_integer"
+    ) {
+        let native = Proposition::ConditionIs(ConditionTerm::uint64_less_than(left, right), true);
+        let integer =
+            Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a.into(), b.into()), true);
+        let (premise, conclusion) = if name == "uint64_less_than_of_to_integer" {
+            (integer, native)
+        } else {
+            (native, integer)
+        };
+        return Some(Theorem::new(Proposition::Implies(
+            Box::new(premise),
+            Box::new(conclusion),
+        )));
+    }
     let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
     let (machine, exact, guard) = match name {
         "uint64_add_to_integer" => {

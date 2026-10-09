@@ -118,11 +118,11 @@ Remaining:
   is smart-tactic reach, and the explicit theorems cover the need.
   `arithmetic` accepts only `int32` and `Integer` goals, so a linear
   64-bit fact such as `i + 2u64 <= length` from `i + 1u64 < length` has
-  no direct step. It goes through `to_integer` and the
-  `uint64_*_to_integer` bridges, which lack a strict form
-  (`uint64_less_than_to_integer`). Regression: a `size_t` loop stepping
-  by two, `for (i = 0; i + 1 < length; i += 2) v = bytes[i + 1];`,
-  closing its invariant `i <= length` with explicit steps.
+  no direct step. It is a lemma through `to_integer` and the
+  `uint64_*_to_integer` bridges, about twenty lines each;
+  `mdtests/a_size_t_loop_stepping_by_two_closes_with_explicit_steps.md`
+  proves a `size_t` loop that way. A 64-bit reading for `arithmetic`
+  would make each lemma one step. Describe it to Lacker before building.
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
   regressions. Check with Lacker before starting it.
