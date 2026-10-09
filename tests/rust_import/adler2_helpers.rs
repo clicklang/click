@@ -1571,16 +1571,77 @@ fn adler_common_spec_expands_and_rejects_false_results() {
 const GENERAL_PARTITION: &str =
     include_str!("../../design/charon-trial/adler2/general-partition.click");
 
+const STORED_GUARD_C: &str = r#"int adler_stored_guard(int remaining, unsigned long size) {
+    while (0 < remaining && (size <= 2147483647UL && (int)(unsigned int)size <= remaining)) {
+        remaining -= 22208;
+    }
+    return remaining;
+}
+"#;
+
+const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64 size) {
+ requires 0 <= remaining;
+ requires remaining % 22208 == 0;
+ requires size == 22208u64;
+ ensures result == 0;
+} by {
+ loop {
+  decreases remaining;
+  invariant 0 <= remaining;
+  invariant remaining % 22208 == 0;
+  invariant size == 22208u64;
+  preserve by {
+   have 0 < remaining by { simp(); }
+   apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; }
+   mark head;
+   apply(adler_outer_remaining_step(at(head, remaining), at(head, remaining))) using { 0 <= at(head, remaining); at(head, remaining) <= at(head, remaining); 22208 <= at(head, remaining); }
+   apply(adler_outer_remaining_step_divisible(at(head, remaining))) using { 22208 <= at(head, remaining); at(head, remaining) % 22208 == 0; }
+   step();
+   have remaining == at(head, remaining) - 22208 by { simp(); }
+   have 0 <= remaining by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
+   have remaining % 22208 == 0 by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
+   have remaining < at(head, remaining) by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
+   close_invariants by { simp(); }
+  }
+ }
+ have not (0 < remaining) or not ((int32)(uint32)size <= remaining) by { assumption(); }
+ apply(adler_outer_exhausted_remaining(remaining, size)) using { 0 <= remaining; remaining % 22208 == 0; size == 22208u64; not (0 < remaining) or not ((int32)(uint32)size <= remaining); }
+ execute(); simp();
+}
+"#;
+
 // Unlike the small-batch fixture, checks full signed-range usize observations,
-// aligned short remainders and progress of the actual full-batch remaining count.
+// aligned short remainders and actual full-batch progress. The native guard
+// catches confusing its captured size comparison with a literal endpoint.
 #[test]
 fn charon_adler2_general_partition_and_outer_progress_verify() {
-    click::surface::verify_c0_sources(GENERAL_PARTITION, &[]).unwrap();
+    let proof = format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_PROOF}");
+    click::surface::verify_c0_sources(&proof, &[("stored-guard.c", STORED_GUARD_C)]).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: general batch metadata expansion and mutation checks"]
 fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
+    let guard_proof =
+        format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_PROOF}");
+    let guard_sources = [("stored-guard.c", STORED_GUARD_C)];
+    let expanded_guard = click::surface::expand_c0_claim_source_by_label(
+        &guard_proof,
+        &guard_sources,
+        "adler_stored_guard.contract",
+    )
+    .unwrap();
+    click::surface::verify_c0_sources(&expanded_guard, &guard_sources).unwrap();
+    for (before, after) in [
+        ("requires remaining % 22208 == 0;", ""),
+        ("ensures result == 0;", "ensures result == 1;"),
+    ] {
+        let invalid_guard = STORED_GUARD_PROOF.replacen(before, after, 1);
+        assert_ne!(invalid_guard, STORED_GUARD_PROOF);
+        let invalid =
+            format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{invalid_guard}");
+        assert!(click::surface::verify_c0_sources(&invalid, &guard_sources).is_err());
+    }
     for claim in [
         "adler_aligned_outer_partition.ensures_0",
         "adler_outer_bulk_signed_multiple.ensures_0",
@@ -1591,6 +1652,9 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         "adler_pointer_sum_association.ensures_0",
         "adler_outer_cursor_step.ensures_0",
         "adler_bounded_slice_access.ensures_0",
+        "adler_outer_bulk_within_prefix.ensures_0",
+        "adler_outer_signed_partition_identity.ensures_0",
+        "adler_outer_exhausted_remaining.ensures_0",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
@@ -1598,6 +1662,14 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         click::surface::verify_c0_sources(&expanded, &[]).unwrap();
     }
     for (before, after) in [
+        (
+            "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22208u64) by",
+            "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22204u64) by",
+        ),
+        (
+            "requires not (0 < remaining) or not ((int32)(uint32)size <= remaining);",
+            "requires 0 < remaining or (int32)(uint32)size <= remaining;",
+        ),
         ("requires pos + 4 <= length;", "requires pos <= length;"),
         ("requires pos <= 22204;", "requires pos <= 22205;"),
         (
