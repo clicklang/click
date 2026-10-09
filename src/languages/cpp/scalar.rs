@@ -26,6 +26,24 @@ pub(super) struct Scalar {
 impl Scalar {
     pub fn of(value: &CppType) -> Option<Self> {
         let (kind, is_const) = match value {
+            CppType::Enumeration {
+                is_scoped: true,
+                is_fixed: true,
+                underlying_type,
+                is_const,
+                ..
+            } if matches!(
+                underlying_type.as_ref(),
+                CppType::Integer {
+                    bits: 8,
+                    signed: false,
+                    is_const: false,
+                    ..
+                }
+            ) =>
+            {
+                (ScalarKind::UInt8, *is_const)
+            }
             CppType::Boolean { bits: 8, is_const } => (ScalarKind::Bool, *is_const),
             CppType::Integer {
                 bits,

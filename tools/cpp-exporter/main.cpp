@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 53;
+    artifact["schema"] = 54;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -607,8 +607,7 @@ private:
                              context_.IntTy);
     const bool by_value_integer =
         !parameter->getType().hasQualifiers() &&
-        parameter->getType()->isIntegerType() &&
-        supported_integer_type(parameter->getType());
+        supported_scalar_value_type(parameter->getType());
     const bool by_value_bool =
         reference == nullptr &&
         context_.hasSameType(parameter->getType().getUnqualifiedType(),
@@ -666,6 +665,18 @@ private:
          context_.getTypeSize(type) == 128);
   }
 
+  bool supported_byte_enum(clang::QualType type) const {
+    const auto *enumeration = type->getAs<clang::EnumType>();
+    if (enumeration == nullptr) return false;
+    const auto *declaration = enumeration->getDecl()->getDefinition();
+    return declaration != nullptr && declaration->isScoped() && declaration->isFixed() &&
+        context_.hasSameType(declaration->getIntegerType(), context_.UnsignedCharTy);
+  }
+
+  bool supported_scalar_value_type(clang::QualType type) const {
+    return supported_integer_type(type) || supported_byte_enum(type);
+  }
+
   std::optional<Json>
   lower_type(clang::QualType type, clang::SourceLocation location,
              const clang::TypedefNameDecl *source_alias = nullptr) {
@@ -712,6 +723,25 @@ private:
       result["declaration_id"] = declaration_id(record);
       result["name"] = record_name(record);
       result["is_const"] = type.isConstQualified();
+      return Json(std::move(result));
+    }
+    if (const auto *enumeration = type->getAs<clang::EnumType>()) {
+      if (!supported_byte_enum(type) || type.isVolatileQualified() || type.isRestrictQualified()) {
+        fail(location, "C++ enums require a scoped declaration with fixed unsigned-char backing");
+        return std::nullopt;
+      }
+      const auto *declaration = enumeration->getDecl()->getDefinition();
+      auto underlying = lower_type(declaration->getIntegerType(), declaration->getLocation());
+      if (!underlying) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "enumeration";
+      result["declaration_id"] = declaration_id(declaration);
+      result["name"] = declaration->getQualifiedNameAsString();
+      result["is_scoped"] = true;
+      result["is_fixed"] = true;
+      result["is_const"] = type.isConstQualified();
+      result["underlying_type"] = std::move(*underlying);
+      result["span"] = declaration_span(declaration->getSourceRange());
       return Json(std::move(result));
     }
     if (context_.hasSameType(type.getUnqualifiedType(), context_.BoolTy)) {
@@ -1631,7 +1661,9 @@ private:
           }
           kind = "no_op";
           break;
-        case clang::CK_IntegralCast: kind = "integral_cast"; break;
+        case clang::CK_IntegralCast:
+          kind = cast->getType()->isEnumeralType() ? "integral_to_enumeration" : "integral_cast";
+          break;
         case clang::CK_IntegralToBoolean: kind = "integral_to_boolean"; break;
         case clang::CK_BooleanToSignedIntegral: kind = "boolean_to_signed_integral"; break;
         default:
@@ -1684,8 +1716,7 @@ private:
     if (!remember_local_declaration(function, local)) {
       return std::nullopt;
     }
-    const bool mutable_int = local->getType()->isIntegerType() &&
-                             supported_integer_type(local->getType()) &&
+    const bool mutable_int = supported_scalar_value_type(local->getType()) &&
                              !local->getType().hasQualifiers();
     const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference = local_reference != nullptr &&
@@ -2455,8 +2486,7 @@ private:
     }
     if (!parameter->getType().hasQualifiers() &&
         (context_.hasSameType(parameter->getType(), context_.BoolTy) ||
-         (parameter->getType()->isIntegerType() &&
-          supported_integer_type(parameter->getType())))) {
+         supported_scalar_value_type(parameter->getType()))) {
       auto value = lower_expression(argument, caller);
       if (!value) {
         return std::nullopt;
@@ -2834,6 +2864,23 @@ private:
     }
     if (const auto *cast =
             llvm::dyn_cast<clang::ExplicitCastExpr>(expression)) {
+      if (cast->getType()->isEnumeralType() || cast->getSubExpr()->getType()->isEnumeralType()) {
+        if (cast->getCastKind() != clang::CK_IntegralCast &&
+            cast->getCastKind() != clang::CK_IntegralToBoolean &&
+            cast->getCastKind() != clang::CK_NoOp) {
+          fail(cast->getExprLoc(), "unsupported explicit C++ enum conversion");
+          return std::nullopt;
+        }
+        auto value = lower_expression(cast->getSubExpr(), function);
+        auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+        if (!value || !value_type) return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "enum_cast";
+        result["value"] = std::move(*value);
+        result["value_type"] = std::move(*value_type);
+        result["span"] = span(cast->getSourceRange());
+        return Json(std::move(result));
+      }
       if (cast->getCastKind() == clang::CK_NoOp &&
           context_.hasSameType(cast->getType(),
                                cast->getSubExpr()->getType()) &&
@@ -3241,9 +3288,10 @@ private:
       const auto *pointer = type->getAs<clang::PointerType>();
       const bool mutable_int =
           !type.hasQualifiers() &&
-          type->isIntegerType() && !type->isBooleanType() &&
-          (context_.hasSameType(type.getUnqualifiedType(), context_.UnsignedCharTy) ||
-           context_.getTypeSize(type) == 32 || context_.getTypeSize(type) == 64);
+          (supported_byte_enum(type) ||
+           (type->isIntegerType() && !type->isBooleanType() &&
+            (context_.hasSameType(type.getUnqualifiedType(), context_.UnsignedCharTy) ||
+             context_.getTypeSize(type) == 32 || context_.getTypeSize(type) == 64)));
       const bool mutable_int_pointer =
           pointer != nullptr && !type.hasQualifiers() &&
           !pointer->getPointeeType().hasQualifiers() &&

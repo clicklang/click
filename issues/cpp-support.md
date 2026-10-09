@@ -401,11 +401,14 @@ reference declarations. This changes the artifact schema to 53; refresh older
 locks. Native `unsigned char` scalar values and fields now use `uint8`
 contracts, retaining promotions, modulo casts and one-byte field layout. Other
 character types remain outside the importer profile. The C++ importer still
-needs native byte pointers, checked `std::byte` identities and writable byte-span
-construction before the
-unchanged decoder can use it. The agreed enum boundary uses native integer
-contracts while checking nominal enum identities in the C++ importer. Byte
-alias access must be restricted to the actual pinned `std::byte` declaration;
+needs native byte pointers and writable byte-span construction before the
+unchanged decoder can use it. Scoped fixed unsigned-char-backed enum values
+now use native `uint8` contracts while retaining checked nominal identities and locked declaration
+spans in the importer. Explicit numeric conversions preserve the underlying
+bits, including all 256 values of empty enums. The actual pinned `std::byte`
+declaration has offline normal, expanded and retained forwarding coverage.
+Artifact schema 54 requires refreshing older locks. Enum pointers and byte
+alias permission are not part of this value slice. Byte alias access must be restricted to the actual pinned `std::byte` declaration;
 an arbitrary enum with the same underlying type does not gain that privilege.
 `ReadCompactSize` additionally brings stream failure and canonical
 encoding rules; do not bundle those decisions into this span slice.

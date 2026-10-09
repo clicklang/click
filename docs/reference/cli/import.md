@@ -454,8 +454,18 @@ Native `unsigned char` values use `uint8` contracts, preserving Clang's
 resolved promotions and modulo narrowing conversions. Parameters, returns,
 call captures, automatic locals and byte fields share the existing scalar
 lowering. Byte fields retain their one-byte layout and independent authority.
-This admission does not include signed/plain character types, `char8_t`,
-byte pointers or enums; nominal `std::byte` identity checking is a later step.
+Signed/plain character types and `char8_t` remain outside this admission.
+
+Scoped enums with fixed unsigned-char backing also use `uint8` contracts.
+Their artifact types retain declaration identity, qualified name, backing type,
+scoped/fixed properties and a locked declaration span. Source loads, assignments
+and calls require the same nominal type; explicit enum numeric casts preserve
+Clang's conversion and use the ordinary native scalar model. An empty fixed
+enum still permits all 256 backing values. The actual pinned `std::byte`
+declaration has ordinary, expanded and retained offline coverage. Other enum
+backings, unscoped enums, named-enumerator references and enum pointers remain
+outside this profile. Enum values grant no character alias access; that privilege
+is a separate boundary for checked byte pointers.
 
 The `pointer` fixture distinguishes a mutable `int*` parameter from an `int&`
 in the Clang artifact. A caller may take the address of its mutable reference
@@ -508,7 +518,7 @@ trivial copy assignment and an exact nominal RHS temporary lasting for the full
 expression. Click constructs into distinct raw RHS storage, copies into the live
 LHS and retires the RHS. References into separate backing remain usable only
 under the caller's existing authority. Move assignment, user-defined assignment
-and other materialization shapes remain refused. Artifact schema 53 requires an
+and other materialization shapes remain refused. Artifact schema 54 requires an
 explicit refresh of earlier locks.
 
 Taking the address of a supported int32 record field uses its checked Clang
@@ -517,7 +527,7 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 53 requires refreshing earlier
+rebasing them to a new object. Artifact schema 54 requires refreshing earlier
 locks. Returned constructors use the narrower eligibility restriction above.
 
 Native int32 reference results and locals can also bind supported record fields
@@ -536,7 +546,7 @@ or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 53; refresh earlier locks.
+These nodes use artifact schema 54; refresh earlier locks.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout

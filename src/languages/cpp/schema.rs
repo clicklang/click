@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 53;
+pub(crate) const EXPORT_SCHEMA: u32 = 54;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -391,6 +391,16 @@ pub enum CppType {
         is_const: bool,
         source_aliases: Vec<CppTypeAlias>,
     },
+    /// A nominal C++ scalar, with native uint8 values at the contract boundary.
+    Enumeration {
+        declaration_id: String,
+        name: String,
+        is_scoped: bool,
+        is_fixed: bool,
+        underlying_type: Box<CppType>,
+        is_const: bool,
+        span: CppSpan,
+    },
     LvalueReference {
         pointee: Box<CppType>,
     },
@@ -524,6 +534,12 @@ pub enum CppExpression {
         span: CppSpan,
     },
     IntegralCast {
+        value: Box<CppExpression>,
+        value_type: CppType,
+        span: CppSpan,
+    },
+    /// An explicit numeric conversion involving an admitted scoped enum.
+    EnumCast {
         value: Box<CppExpression>,
         value_type: CppType,
         span: CppSpan,
@@ -750,6 +766,7 @@ pub struct CppScalarConversion {
 pub enum CppScalarCastKind {
     NoOp,
     IntegralCast,
+    IntegralToEnumeration,
     IntegralToBoolean,
     BooleanToSignedIntegral,
 }
@@ -765,9 +782,20 @@ impl CppScalarConversion {
             return Err("C++ call conversion chain has a mismatched source type".into());
         }
         let valid = match self.cast_kind {
-            CppScalarCastKind::NoOp => from == to,
-            CppScalarCastKind::IntegralCast => to.is_integer(),
-            CppScalarCastKind::IntegralToBoolean => from.is_integer() && to == ScalarKind::Bool,
+            CppScalarCastKind::NoOp => same_scalar_type(&self.source_type, &self.value_type),
+            CppScalarCastKind::IntegralCast => {
+                to.is_integer()
+                    && (!matches!(self.source_type, CppType::Enumeration { .. }) || self.explicit)
+                    && !matches!(self.value_type, CppType::Enumeration { .. })
+            }
+            CppScalarCastKind::IntegralToEnumeration => {
+                self.explicit && matches!(self.value_type, CppType::Enumeration { .. })
+            }
+            CppScalarCastKind::IntegralToBoolean => {
+                from.is_integer()
+                    && to == ScalarKind::Bool
+                    && (!matches!(self.source_type, CppType::Enumeration { .. }) || self.explicit)
+            }
             CppScalarCastKind::BooleanToSignedIntegral => {
                 from == ScalarKind::Bool
                     && matches!(
@@ -1647,7 +1675,7 @@ impl CppRecord {
                 return Err(format!("C++ record `{}` has a duplicate field", self.name));
             }
             let (size, alignment) = match &field.value_type {
-                CppType::Integer { .. } => {
+                CppType::Integer { .. } | CppType::Enumeration { .. } => {
                     match Scalar::mutable_kind(&field.value_type) {
                         Some(ScalarKind::UInt8) => (1, 1),
                         Some(ScalarKind::Int32 | ScalarKind::UInt32) => (4, 4),
@@ -1801,7 +1829,7 @@ impl CppFunction {
                 CppType::Boolean { .. } => {
                     require_bool(&parameter.value_type, false, "by-value parameter")?;
                 }
-                CppType::Integer { .. } => {
+                CppType::Integer { .. } | CppType::Enumeration { .. } => {
                     require_scalar_integer(&parameter.value_type, "by-value parameter")?;
                 }
                 CppType::LvalueReference { pointee } => {
@@ -2042,7 +2070,7 @@ impl CppFunction {
                     return Err("C++ local is missing declaration identity".into());
                 }
                 match &local.value_type {
-                    CppType::Integer { .. } => {
+                    CppType::Integer { .. } | CppType::Enumeration { .. } => {
                         require_scalar_integer(&local.value_type, "automatic local")?;
                     }
                     CppType::LvalueReference { pointee } => {
@@ -2556,7 +2584,7 @@ impl CppStatement {
                     CppType::LvalueReference { pointee } => {
                         require_int32(pointee, false, "assignment target")?;
                     }
-                    CppType::Integer { .. } => {
+                    CppType::Integer { .. } | CppType::Enumeration { .. } => {
                         require_scalar_integer(target_type, "assignment target")?;
                     }
                     _ => {
@@ -2800,7 +2828,7 @@ impl CppInitializer {
             _ => {}
         }
         match (self, local_type) {
-            (Self::Uninitialized, CppType::Integer { .. }) => {
+            (Self::Uninitialized, CppType::Integer { .. } | CppType::Enumeration { .. }) => {
                 require_scalar_integer(local_type, "uninitialized automatic local")
             }
             (
@@ -2843,7 +2871,7 @@ impl CppInitializer {
                 }
                 validate_call(callee, arguments, span, places, records, logical_source)
             }
-            (Self::Value { value }, CppType::Integer { .. }) => {
+            (Self::Value { value }, CppType::Integer { .. } | CppType::Enumeration { .. }) => {
                 value.validate(places, records, logical_source)?;
                 if !same_scalar_type(local_type, value.value_type()) {
                     return Err(
@@ -2859,7 +2887,7 @@ impl CppInitializer {
                     conversions,
                     span,
                 },
-                CppType::Integer { .. },
+                CppType::Integer { .. } | CppType::Enumeration { .. },
             ) => {
                 validate_call(callee, arguments, span, places, records, logical_source)?;
                 validate_scalar_conversions(conversions, local_type, logical_source)
@@ -3032,9 +3060,9 @@ pub(super) fn field_scalar_argument(expression: &CppExpression) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match expression {
         CppExpression::MemberLoad { value_type, .. } => Scalar::of(value_type).is_some(),
-        CppExpression::LogicalNot { value, .. } | CppExpression::IntegralCast { value, .. } => {
-            field_scalar_argument(value)
-        }
+        CppExpression::LogicalNot { value, .. }
+        | CppExpression::IntegralCast { value, .. }
+        | CppExpression::EnumCast { value, .. } => field_scalar_argument(value),
         _ => false,
     }
 }
@@ -3051,11 +3079,14 @@ fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<
         | CppExpression::ConstantReference { .. } => true,
         CppExpression::Load { place, .. } => matches!(
             places.get(&place.declaration_id),
-            Some((_, CppType::Integer { .. } | CppType::Boolean { .. }))
+            Some((
+                _,
+                CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Boolean { .. }
+            ))
         ),
-        CppExpression::LogicalNot { value, .. } | CppExpression::IntegralCast { value, .. } => {
-            stable_scalar_argument(value, places)
-        }
+        CppExpression::LogicalNot { value, .. }
+        | CppExpression::IntegralCast { value, .. }
+        | CppExpression::EnumCast { value, .. } => stable_scalar_argument(value, places),
         _ => false,
     }
 }
@@ -3165,6 +3196,7 @@ impl CppExpression {
             Self::ObserverCall { .. } => true,
             Self::LogicalNot { value, .. }
             | Self::IntegralCast { value, .. }
+            | Self::EnumCast { value, .. }
             | Self::ReferenceBinding { address: value, .. }
             | Self::Dereference { pointer: value, .. } => value.contains_observer(),
             Self::Binary { left, right, .. } => {
@@ -3221,6 +3253,7 @@ impl CppExpression {
             | Self::Dereference { value_type, .. }
             | Self::MemberLoad { value_type, .. }
             | Self::IntegralCast { value_type, .. }
+            | Self::EnumCast { value_type, .. }
             | Self::Binary { value_type, .. } => value_type,
         }
     }
@@ -3243,7 +3276,8 @@ impl CppExpression {
                 address: pointer, ..
             }
             | Self::LogicalNot { value: pointer, .. }
-            | Self::IntegralCast { value: pointer, .. } => pointer.references_place(declaration_id),
+            | Self::IntegralCast { value: pointer, .. }
+            | Self::EnumCast { value: pointer, .. } => pointer.references_place(declaration_id),
             Self::MemberLoad { object, .. } => object.declaration_id == declaration_id,
             Self::Binary { left, right, .. } => {
                 left.references_place(declaration_id) || right.references_place(declaration_id)
@@ -3268,6 +3302,9 @@ impl CppExpression {
                 span,
             } => {
                 require_bool(value_type, false, "logical-not result")?;
+                if matches!(value.value_type(), CppType::Enumeration { .. }) {
+                    return Err("C++ scoped enum truth conversion requires an explicit cast".into());
+                }
                 require_integral_scalar(value.value_type(), "logical-not operand")?;
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)
@@ -3294,6 +3331,9 @@ impl CppExpression {
                 value_type,
                 span,
             } => {
+                if matches!(value_type, CppType::Enumeration { .. }) {
+                    return Err("C++ enum numeric constants require an explicit enum cast".into());
+                }
                 require_scalar_integer(value_type, "integer constant type")?;
                 let valid = Scalar::mutable_kind(value_type)
                     .and_then(|kind| kind.parse_literal(value))
@@ -3339,7 +3379,7 @@ impl CppExpression {
                         require_bool(place_type, false, "loaded parameter")?;
                         require_bool(value_type, false, "loaded value type")
                     }
-                    CppType::Integer { .. } => {
+                    CppType::Integer { .. } | CppType::Enumeration { .. } => {
                         require_scalar_integer(place_type, "loaded scalar")?;
                         if !same_scalar_type(place_type, value_type) {
                             return Err(
@@ -3459,9 +3499,29 @@ impl CppExpression {
             } => {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
+                if matches!(value.value_type(), CppType::Enumeration { .. })
+                    || matches!(value_type, CppType::Enumeration { .. })
+                {
+                    return Err("C++ scoped enum conversion requires an explicit enum cast".into());
+                }
                 require_integral_scalar(value.value_type(), "integral cast operand")?;
                 require_integral_scalar(value_type, "integral cast result")?;
                 Ok(())
+            }
+            Self::EnumCast {
+                value,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                value.validate(places, records, logical_source)?;
+                if !matches!(value.value_type(), CppType::Enumeration { .. })
+                    && !matches!(value_type, CppType::Enumeration { .. })
+                {
+                    return Err("C++ enum cast must involve a scoped enum".into());
+                }
+                require_integral_scalar(value.value_type(), "enum cast operand")?;
+                require_integral_scalar(value_type, "enum cast result")
             }
             Self::Binary {
                 operator: operator @ (CppBinaryOperator::Add | CppBinaryOperator::Subtract),
@@ -3514,6 +3574,11 @@ impl CppExpression {
                 ..
             } => {
                 require_scalar_integer(value_type, "binary result type")?;
+                if matches!(value_type, CppType::Enumeration { .. }) {
+                    return Err(
+                        "C++ scoped enum arithmetic requires an explicit integer conversion".into(),
+                    );
+                }
                 let kind = Scalar::mutable_kind(value_type).unwrap();
                 if kind.is_wide()
                     && !(matches!(
@@ -4318,7 +4383,8 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
         CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. }
         | CppExpression::LogicalNot { value, .. }
-        | CppExpression::IntegralCast { value, .. } => collect_expression_calls(value, calls),
+        | CppExpression::IntegralCast { value, .. }
+        | CppExpression::EnumCast { value, .. } => collect_expression_calls(value, calls),
         CppExpression::Binary { left, right, .. } => {
             collect_expression_calls(left, calls);
             collect_expression_calls(right, calls);
@@ -4420,9 +4486,10 @@ fn validate_call_arguments(
                     is_const: false,
                 }
             ),
-            (CppCallArgument::Value { value }, CppType::Integer { .. }) => {
-                same_scalar_type(value.value_type(), &parameter.value_type)
-            }
+            (
+                CppCallArgument::Value { value },
+                CppType::Integer { .. } | CppType::Enumeration { .. },
+            ) => same_scalar_type(value.value_type(), &parameter.value_type),
             (
                 CppCallArgument::Reference { place },
                 CppType::LvalueReference { pointee: expected },
@@ -5003,7 +5070,9 @@ impl CppExpression {
                 constants,
                 referenced_constants,
             ),
-            Self::LogicalNot { value, .. } | Self::IntegralCast { value, .. } => {
+            Self::LogicalNot { value, .. }
+            | Self::IntegralCast { value, .. }
+            | Self::EnumCast { value, .. } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
             Self::Binary { left, right, .. } => {

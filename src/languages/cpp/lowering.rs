@@ -272,7 +272,7 @@ pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool
 
 fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, String> {
     match &parameter.value_type {
-        CppType::Integer { .. } => Ok(c_parameter(
+        CppType::Integer { .. } | CppType::Enumeration { .. } => Ok(c_parameter(
             parameter.name.clone(),
             cpp_scalar_kernel_type(&parameter.value_type)?,
         )),
@@ -380,7 +380,10 @@ impl LoweringContext<'_> {
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
-                (CppType::Integer { .. }, CppInitializer::Uninitialized) => Ok(c_declare(
+                (
+                    CppType::Integer { .. } | CppType::Enumeration { .. },
+                    CppInitializer::Uninitialized,
+                ) => Ok(c_declare(
                     local.name.clone(),
                     cpp_scalar_kernel_type(&local.value_type)?,
                 )),
@@ -399,7 +402,10 @@ impl LoweringContext<'_> {
                         c_assign(carrier, address),
                     ))
                 }
-                (CppType::Integer { .. }, CppInitializer::Value { value }) => {
+                (
+                    CppType::Integer { .. } | CppType::Enumeration { .. },
+                    CppInitializer::Value { value },
+                ) => {
                     let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                     Ok(c_seq(
                         c_declare(local.name.clone(), evaluation.value_type),
@@ -410,7 +416,9 @@ impl LoweringContext<'_> {
                     ))
                 }
                 (
-                    CppType::Integer { .. } | CppType::LvalueReference { .. },
+                    CppType::Integer { .. }
+                    | CppType::Enumeration { .. }
+                    | CppType::LvalueReference { .. },
                     CppInitializer::Call {
                         callee,
                         arguments,
@@ -545,8 +553,10 @@ impl LoweringContext<'_> {
                 )),
             },
             CppStatement::Assign { target, value, .. } => {
-                let target_is_local =
-                    matches!(self.place(target)?.value_type, CppType::Integer { .. });
+                let target_is_local = matches!(
+                    self.place(target)?.value_type,
+                    CppType::Integer { .. } | CppType::Enumeration { .. }
+                );
                 let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                 let assignment = if target_is_local {
                     c_assign(target.name.clone(), evaluation.value)
@@ -1133,6 +1143,9 @@ impl LoweringContext<'_> {
             }
             CppExpression::IntegralCast {
                 value, value_type, ..
+            }
+            | CppExpression::EnumCast {
+                value, value_type, ..
             } => {
                 let input = self.normalize_expression(value)?;
                 let source = Scalar::mutable_kind(value.value_type())
@@ -1356,9 +1369,11 @@ impl LoweringContext<'_> {
                         is_const: false,
                     },
                 ) => Ok(c_variable(self.variable_name(place))),
-                (CppType::Integer { .. }, CppType::Integer { .. })
-                    if cpp_scalar_kernel_type(&self.place(place)?.value_type)?
-                        == cpp_scalar_kernel_type(value_type)? =>
+                (
+                    CppType::Integer { .. } | CppType::Enumeration { .. },
+                    CppType::Integer { .. } | CppType::Enumeration { .. },
+                ) if cpp_scalar_kernel_type(&self.place(place)?.value_type)?
+                    == cpp_scalar_kernel_type(value_type)? =>
                 {
                     Ok(c_variable(self.variable_name(place)))
                 }
@@ -1456,6 +1471,9 @@ impl LoweringContext<'_> {
                 self.lower_typed_load(pointer, field_type)
             }
             CppExpression::IntegralCast {
+                value, value_type, ..
+            }
+            | CppExpression::EnumCast {
                 value, value_type, ..
             } => {
                 let source = Scalar::mutable_kind(value.value_type())
@@ -1638,6 +1656,7 @@ fn expression_contains_observer(expression: &CppExpression) -> bool {
         CppExpression::ObserverCall { .. } => true,
         CppExpression::LogicalNot { value, .. }
         | CppExpression::IntegralCast { value, .. }
+        | CppExpression::EnumCast { value, .. }
         | CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),
         CppExpression::Binary { left, right, .. } => {
