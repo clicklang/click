@@ -5,9 +5,9 @@ function prefix(bytes: const uint8*, end: int32) -> Integer {
     })
 }
 fn sum(bytes: &[u8]) -> i32 {
-    requires bytes_len <= 1000u64;
-    views bytes[0..(int32)(uint32)bytes_len];
-    ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));
+    requires bytes.len() <= 1000u64;
+    views bytes[0..bytes.len()];
+    ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len()));
 } by {
     execute_until(loop(0));
     have prefix(bytes, (int32)(uint32)i) == 0 by {
@@ -25,18 +25,18 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     loop {
-        decreases bytes_len - i;
-        views bytes[0..(int32)(uint32)bytes_len];
-        invariant i <= bytes_len;
-        invariant bytes_len <= 1000u64;
+        decreases bytes.len() - i;
+        views bytes[0..bytes.len()];
+        invariant i <= bytes.len();
+        invariant bytes.len() <= 1000u64;
         invariant 0 <= (int32)(uint32)i and 1000 >= (int32)(uint32)i;
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer((int32)(uint32)i);
         invariant to_integer(total) == prefix(bytes, (int32)(uint32)i);
         preserve by {
             execute_until(read(0)); step();
-            have bytes_len <= 2147483647u64 by {
+            have bytes.len() <= 2147483647u64 by {
                 normalize() using {
-                    bytes_len <= 1000u64;
+                    bytes.len() <= 1000u64;
                 }
             }
             have 0 <= to_integer((int32)(uint32)i) by {
@@ -55,24 +55,24 @@ fn sum(bytes: &[u8]) -> i32 {
                     to_integer((int32)(uint32)i) <= 1000;
                 }
             }
-            have ((int32)(uint32)i) < (int32)(uint32)bytes_len by {
+            have ((int32)(uint32)i) < (int32)(uint32)bytes.len() by {
                 simp() using {
-                    i < bytes_len;
-                    bytes_len <= 2147483647u64;
+                    i < bytes.len();
+                    bytes.len() <= 2147483647u64;
                 }
             }
             have 0 <= (int32)(uint32)i by {
                 simp();
             }
-            have 0 <= (int32)(uint32)bytes_len by {
+            have 0 <= (int32)(uint32)bytes.len() by {
                 simp();
             }
             have defined(bytes[(int32)(uint32)i]) by {
-                transport(at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len])), defined(bytes[(int32)(uint32)i])) using {
-                    at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
-                    0 <= (int32)(uint32)bytes_len;
+                transport(at(function.entry, viewable(bytes[0..bytes.len()])), defined(bytes[(int32)(uint32)i])) using {
+                    at(function.entry, viewable(bytes[0..bytes.len()]));
+                    0 <= (int32)(uint32)bytes.len();
                     0 <= (int32)(uint32)i;
-                    ((int32)(uint32)i) < (int32)(uint32)bytes_len;
+                    ((int32)(uint32)i) < (int32)(uint32)bytes.len();
                 }
             }
             have 0 <= (int32)bytes[(int32)(uint32)i] and 255 >= (int32)bytes[(int32)(uint32)i] by {
@@ -173,13 +173,13 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             execute_until(assignment(i, 1));
             step();
-            have i <= bytes_len by {
+            have i <= bytes.len() by {
                 simp();
             }
             have i <= 1000u64 by {
                 normalize() using {
-                    i <= bytes_len;
-                    bytes_len <= 1000u64;
+                    i <= bytes.len();
+                    bytes.len() <= 1000u64;
                 }
             }
             have i <= 2147483647u64 by {
@@ -201,25 +201,25 @@ fn sum(bytes: &[u8]) -> i32 {
             close_invariants();
         }
     }
-    have i == bytes_len by {
+    have i == bytes.len() by {
         simp() using {
-            i <= bytes_len;
-            not i < bytes_len;
+            i <= bytes.len();
+            not i < bytes.len();
         }
     }
-    have ((int32)(uint32)i) == (int32)(uint32)bytes_len by {
+    have ((int32)(uint32)i) == (int32)(uint32)bytes.len() by {
         normalize() using {
-            i == bytes_len;
+            i == bytes.len();
         }
     }
-    have prefix(bytes, (int32)(uint32)i) == prefix(bytes, (int32)(uint32)bytes_len) by {
-        rewrite(((int32)(uint32)i) == (int32)(uint32)bytes_len);
+    have prefix(bytes, (int32)(uint32)i) == prefix(bytes, (int32)(uint32)bytes.len()) by {
+        rewrite(((int32)(uint32)i) == (int32)(uint32)bytes.len());
         simp();
     }
-    have to_integer(total) == prefix(bytes, (int32)(uint32)bytes_len) by {
+    have to_integer(total) == prefix(bytes, (int32)(uint32)bytes.len()) by {
         arithmetic() using {
             to_integer(total) == prefix(bytes, (int32)(uint32)i);
-            prefix(bytes, (int32)(uint32)i) == prefix(bytes, (int32)(uint32)bytes_len);
+            prefix(bytes, (int32)(uint32)i) == prefix(bytes, (int32)(uint32)bytes.len());
         }
     }
     execute();

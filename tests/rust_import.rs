@@ -3306,8 +3306,8 @@ fn rust_while_loop_invariants_verify_and_expand() {
     assert_eq!(verified.len(), 3);
     for false_claim in [
         sidecar.replace("ensures result == n;", "ensures result == n + 1;"),
-        sidecar.replace("invariant i <= bytes_len;", "invariant i < bytes_len;"),
-        sidecar.replace("decreases bytes_len - i;", "decreases i;"),
+        sidecar.replace("invariant i <= bytes.len();", "invariant i < bytes.len();"),
+        sidecar.replace("decreases bytes.len() - i;", "decreases i;"),
         sidecar.replace("requires value == 1;", "requires value == 2147483647;"),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&false_claim, &prepared).is_err());
@@ -3465,13 +3465,13 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
             "ensures to_integer(result) == old(prefix",
             "ensures to_integer(result) + 1 == old(prefix",
         ),
-        sidecar.replace("invariant i <= bytes_len;", "invariant i < bytes_len;"),
+        sidecar.replace("invariant i <= bytes.len();", "invariant i < bytes.len();"),
         sidecar.replace(
             "invariant to_integer(total) == prefix(bytes, (int32)(uint32)i);",
             "invariant to_integer(total) + 1 == prefix(bytes, (int32)(uint32)i);",
         ),
-        sidecar.replace("decreases bytes_len - i;", "decreases i;"),
-        sidecar.replace("requires bytes_len <= 1000u64;", ""),
+        sidecar.replace("decreases bytes.len() - i;", "decreases i;"),
+        sidecar.replace("requires bytes.len() <= 1000u64;", ""),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
@@ -3563,14 +3563,14 @@ fn rust_slice_for_sum_verifies_and_expands() {
         ),
         sidecar.replace("decreases iter_remaining;", "decreases -iter_remaining;"),
         sidecar.replace(
-            "invariant 0 <= iter_remaining and iter_remaining <= (int32)(uint32)bytes_len;",
-            "invariant 0 <= iter_remaining and iter_remaining < (int32)(uint32)bytes_len;",
+            "invariant 0 <= iter_remaining and iter_remaining <= (int32)(uint32)bytes.len();",
+            "invariant 0 <= iter_remaining and iter_remaining < (int32)(uint32)bytes.len();",
         ),
         sidecar.replace(
-            "invariant iter_cursor == bytes + ((int32)(uint32)bytes_len - iter_remaining);",
-            "invariant iter_cursor == bytes + ((int32)(uint32)bytes_len - iter_remaining + 1);",
+            "invariant iter_cursor == bytes + ((int32)(uint32)bytes.len() - iter_remaining);",
+            "invariant iter_cursor == bytes + ((int32)(uint32)bytes.len() - iter_remaining + 1);",
         ),
-        sidecar.replace("requires bytes_len <= 1000u64;", ""),
+        sidecar.replace("requires bytes.len() <= 1000u64;", ""),
     ] {
         assert_ne!(invalid, sidecar, "negative proof must change the sidecar");
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
@@ -3656,8 +3656,8 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
                 "ensures to_integer(result) == old(prefix",
                 "ensures to_integer(result) + 1 == old(prefix",
             ),
-            sidecar.replace("requires bytes_len <= 1000u64;", ""),
-            sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
+            sidecar.replace("requires bytes.len() <= 1000u64;", ""),
+            sidecar.replace("views bytes[0..bytes.len()];", ""),
             sidecar.replace("decreases iter_remaining;", "decreases -iter_remaining;"),
         ] {
             assert_ne!(invalid, sidecar, "negative proof must change the sidecar");
@@ -3732,11 +3732,11 @@ fn check_chunks_loop_claims(by_reference: bool) {
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace(
-            "ensures result == bytes_len % 4u64;",
-            "ensures result == bytes_len % 4u64 + 1u64;",
+            "ensures result == bytes.len() % 4u64;",
+            "ensures result == bytes.len() % 4u64 + 1u64;",
         ),
-        sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
-        sidecar.replace("requires bytes_len <= 1000u64;", ""),
+        sidecar.replace("views bytes[0..bytes.len()];", ""),
+        sidecar.replace("requires bytes.len() <= 1000u64;", ""),
         sidecar.replace(
             &format!("invariant {iterator}_remaining % 4 == 0;"),
             &format!("invariant {iterator}_remaining % 4 == 1;"),
@@ -4065,13 +4065,13 @@ fn rust_u16_accumulator_fields_and_references_preserve_authority() {
         .replace("accumulator.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for invalid in [
-        sidecar.replace("ensures state->a == 254;", "ensures state->a == 255;"),
-        sidecar.replace("owns state->a;", "views state->a;"),
-        sidecar.replace("owns state->b;", ""),
-        sidecar.replace("views value[0..1];", ""),
+        sidecar.replace("ensures state.a == 254;", "ensures state.a == 255;"),
+        sidecar.replace("owns state.a;", "views state.a;"),
+        sidecar.replace("owns state.b;", ""),
+        sidecar.replace("views *value;", ""),
         sidecar.replace(
-            "ensures state->b == old(state->b);",
-            "ensures state->b != old(state->b);",
+            "ensures state.b == old(state.b);",
+            "ensures state.b != old(state.b);",
         ),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());

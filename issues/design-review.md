@@ -72,19 +72,25 @@ copies under `design/charon-trial`.
 
 Remaining:
 
-- Five examples keep `bytes_len` and `(int32)` casts in their contracts and
-  proofs: `rust-loops`, `rust-iterators`, `rust-iter-references`,
-  `rust-byte-sum` and `rust-chunks-exact`. A test compares each one's
-  contract, as parsed, with its frozen original under `design/charon-trial`
-  (`charon_migrated_sidecars_preserve_original_source_contracts`), and the
-  respelled form parses to a different tree. Respell them once that test
-  compares meaning, not syntax. A cast on an index that is not a lone
-  parameter stays everywhere until typed indices cover it (A5).
-- Then refuse `->` and the C-shaped signature for a Rust source, with the
-  spelling to write.
+- A cast on an index that is not a lone parameter stays in the examples
+  (`(int32)(uint32)i`, `prefix(bytes, (int32)(uint32)bytes.len())`) until
+  typed indices cover it (A5). Every example otherwise writes
+  `bytes.len()` and uncast ranges; the test that compared five of them
+  with their frozen C-shaped originals was retired on 2026-10-08 with
+  Lacker's agreement.
+- Refuse `->` and the C-shaped signature for a Rust source, with the
+  spelling to write. Not ready, by a count on 2026-10-08: 38 sidecars
+  under `design/charon-trial` and about 90 inline in the tests
+  (`tests/rust_import.rs`, `src/languages/rust/charon.rs`) are still
+  C-shaped, and the Adler sidecars name functions by their mangled path
+  (`__rust_q_I6_adler2_..._mul_assign_u32`), for which the Rust grammar
+  has no spelling: they are methods of trait implementations on a type in
+  another module. Convert the plain ones, give those a spelling, then
+  refuse.
 - Diagnostics and `click expand` print C-shaped spellings for a Rust
   sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
-  the sidecar writes.
+  the sidecar writes. Decided 2026-10-08: do this after the
+  typed-index work (A5), which removes most of the conversions printed.
 - A 32-bit index is the memory model's limit, so a slice contract states
   `requires bytes.len() <= 2147483647u64`. Dropping it needs range bounds
   wider than 32 bits in the kernel (A5).
