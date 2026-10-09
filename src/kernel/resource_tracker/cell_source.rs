@@ -865,22 +865,6 @@ impl PointerInRangeEvidence {
     ) -> Option<Self> {
         Self::for_pointer_direct(pointer, range, assumptions)
             .or_else(|| {
-                // A named-call read and its model identity can be joined
-                // through a third pointer. Ask the graph for one spelling;
-                // keep membership and full address equality as separate checks.
-                let alias = assumptions.pointer_at_known_base(pointer, range.base())?;
-                if pointer.blocks_proven_distinct(&alias)
-                    || !assumptions.pointers_known_equal(pointer, &alias)
-                {
-                    return None;
-                }
-                let membership = Self::for_pointer_direct(&alias, range, assumptions)?;
-                Some(Self::GraphAlias {
-                    alias,
-                    membership: Box::new(membership),
-                })
-            })
-            .or_else(|| {
                 assumptions
                     .exact_pointer_aliases(pointer)
                     .find_map(|alias| {
@@ -924,6 +908,22 @@ impl PointerInRangeEvidence {
                             membership: Box::new(membership),
                         })
                     })
+            })
+            .or_else(|| {
+                // A named-call read and its model identity can be joined
+                // through a third pointer. Ask the graph for one spelling;
+                // keep membership and full address equality as separate checks.
+                let alias = assumptions.pointer_at_known_constant_base(pointer, range.base())?;
+                let membership = Self::for_pointer_direct(&alias, range, assumptions)?;
+                if pointer.blocks_proven_distinct(&alias)
+                    || !assumptions.pointers_known_equal(pointer, &alias)
+                {
+                    return None;
+                }
+                Some(Self::GraphAlias {
+                    alias,
+                    membership: Box::new(membership),
+                })
             })
     }
 

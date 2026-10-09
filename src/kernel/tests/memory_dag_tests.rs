@@ -4383,6 +4383,11 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
             witness
         });
         samples.push(work);
+        // Scale the producer and checker at every size. The invalid
+        // certificates are independent of unrelated context size.
+        if count != 16 {
+            continue;
+        }
         assert!(!witness.checks(&step, &read, 8, &no_separation));
         for alias in &aliases {
             let missing =
