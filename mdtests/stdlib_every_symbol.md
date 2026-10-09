@@ -91,6 +91,21 @@ theorem use_uint32_subtract_to_integer(left: uint32, right: uint32) {
     }
 }
 
+theorem use_uint32_nonzero_to_integer(value: uint32) {
+    requires value != 0u32;
+    ensures to_integer(value) != 0 by apply(uint32_nonzero_to_integer(value));
+}
+theorem use_uint32_divide_to_integer(left: uint32, right: uint32) {
+    requires right != 0u32;
+    requires to_integer(right) != 0;
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right)) by apply(uint32_divide_to_integer(left, right));
+}
+theorem use_uint32_remainder_to_integer(left: uint32, right: uint32) {
+    requires right != 0u32;
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right)) by apply(uint32_remainder_to_integer(left, right));
+}
+
 theorem use_uint32_mul_to_integer(left: uint32, right: uint32) {
     requires right == 0u32 or left <= 4294967295u32 / right;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right) by {

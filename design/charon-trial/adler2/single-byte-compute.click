@@ -11,7 +11,30 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  ensures to_integer(self->a) == to_integer((1u32 + old((uint32)bytes[0])) % 65521u32);
  ensures bytes[0] == old(bytes[0]);
  ensures to_integer(self->b) == to_integer((393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32);
+ ensures to_integer(self->a) == old(adler_spec_a(bytes, 1, 1));
+ ensures to_integer(self->b) == old(adler_spec_b(bytes, 1, 1, 0));
 } by {
+
+ apply(adler_spec_one(bytes));
+ apply(adler_byte_bounds(bytes[0]));
+ have to_integer((uint32)bytes[0]) == to_integer((int32)bytes[0]) by { arithmetic_certificate special {
+ premise 0: 0 <= to_integer((int32)bytes[0]) => 0 <= to_integer((int32)bytes[0]);
+ premise 1: to_integer((int32)bytes[0]) <= 255 => to_integer((int32)bytes[0]) <= 255;
+ integer_cast_identity bounds [0, 1] => to_integer((uint32)bytes[0]) == to_integer((int32)bytes[0]); conclusion 0;
+ } }
+ have 0 <= to_integer((uint32)bytes[0]) by { arithmetic() using { 0 <= to_integer((int32)bytes[0]); to_integer((uint32)bytes[0]) == to_integer((int32)bytes[0]); } }
+ have to_integer((uint32)bytes[0]) <= 255 by { arithmetic() using { to_integer((int32)bytes[0]) <= 255; to_integer((uint32)bytes[0]) == to_integer((int32)bytes[0]); } }
+ have to_integer(1u32) + to_integer((uint32)bytes[0]) <= 4294967295 by { arithmetic() using { to_integer((uint32)bytes[0]) <= 255; } }
+ apply(uint32_add_to_integer(1u32, (uint32)bytes[0]));
+ have to_integer(393126u32) + to_integer(1u32 + (uint32)bytes[0]) <= 4294967295 by { arithmetic() using { to_integer(1u32 + (uint32)bytes[0]) == to_integer(1u32) + to_integer((uint32)bytes[0]); to_integer((uint32)bytes[0]) <= 255; } }
+ apply(uint32_add_to_integer(393126u32, 1u32 + (uint32)bytes[0]));
+ apply(uint32_remainder_to_integer(1u32 + (uint32)bytes[0], 65521u32));
+ apply(uint32_remainder_to_integer(393126u32 + (1u32 + (uint32)bytes[0]), 65521u32));
+ have 0 <= 1 + to_integer((uint32)bytes[0]) by { arithmetic() using { 0 <= to_integer((uint32)bytes[0]); } }
+ have 0 <= 393126 + (1 + to_integer((uint32)bytes[0])) by { arithmetic() using { 0 <= to_integer((uint32)bytes[0]); } }
+ have 393126 + (1 + to_integer((uint32)bytes[0])) == (1 + to_integer((uint32)bytes[0])) + 65521 * 6 by { arithmetic() using {}; }
+ apply(adler_residue_congruent(393126 + (1 + to_integer((uint32)bytes[0])), 1 + to_integer((uint32)bytes[0]), 6));
+
  # The empty chunk iterators execute no body. Prove the scalar reduction
  # from its checked transition before following lane recombination.
  execute_until(assignment(b, 0)); step();
@@ -286,6 +309,40 @@ void __rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute(str
  integer_cast_identity bounds [0, 1] => to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); conclusion 0;
  } }
  have bytes[0] == old(bytes[0]) by { simp() using {} }
- simp() using { bytes[0] == old(bytes[0]); to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)); at(reduced_a, __rust_mir_149) == (1u32 + old((uint32)bytes[0])) % 65521u32; to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); at(reduced_b, __rust_mir_151) == (393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32; }
-}
+ have old(adler_spec_a(bytes, 1, 1)) == truncating_remainder(1 + to_integer(old((int32)bytes[0])), 65521) by { assumption(); }
+ have old(adler_spec_b(bytes, 1, 1, 0)) == truncating_remainder(1 + to_integer(old((int32)bytes[0])), 65521) by { assumption(); }
+ have to_integer(self->a) == to_integer((1u32 + old((uint32)bytes[0])) % 65521u32) by {
+ rewrite(to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)));
+ rewrite(at(reduced_a, __rust_mir_149) == (1u32 + old((uint32)bytes[0])) % 65521u32);
+ simp();
+ }
+ have to_integer((1u32 + old((uint32)bytes[0])) % 65521u32) == truncating_remainder(to_integer(1u32 + old((uint32)bytes[0])), 65521) by { assumption(); }
+ have to_integer(1u32 + old((uint32)bytes[0])) == 1 + to_integer(old((uint32)bytes[0])) by { assumption(); }
+ have to_integer(self->a) == old(adler_spec_a(bytes, 1, 1)) by {
+ rewrite(to_integer(self->a) == to_integer((1u32 + old((uint32)bytes[0])) % 65521u32));
+ rewrite(to_integer((1u32 + old((uint32)bytes[0])) % 65521u32) == truncating_remainder(to_integer(1u32 + old((uint32)bytes[0])), 65521));
+ rewrite(to_integer(1u32 + old((uint32)bytes[0])) == 1 + to_integer(old((uint32)bytes[0])));
+ rewrite(old(adler_spec_a(bytes, 1, 1)) == truncating_remainder(1 + to_integer(old((int32)bytes[0])), 65521));
+ rewrite(to_integer(old((uint32)bytes[0])) == to_integer(old((int32)bytes[0])));
+ simp();
+ }
+ have to_integer(self->b) == to_integer((393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32) by {
+ rewrite(to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)));
+ rewrite(at(reduced_b, __rust_mir_151) == (393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32);
+ simp();
+ }
+ have to_integer((393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32) == truncating_remainder(to_integer(393126u32 + (1u32 + old((uint32)bytes[0]))), 65521) by { assumption(); }
+ have to_integer(393126u32 + (1u32 + old((uint32)bytes[0]))) == 393126 + to_integer(1u32 + old((uint32)bytes[0])) by { assumption(); }
+ have to_integer(self->b) == old(adler_spec_b(bytes, 1, 1, 0)) by {
+ rewrite(to_integer(self->b) == to_integer((393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32));
+ rewrite(to_integer((393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32) == truncating_remainder(to_integer(393126u32 + (1u32 + old((uint32)bytes[0]))), 65521));
+ rewrite(to_integer(393126u32 + (1u32 + old((uint32)bytes[0]))) == 393126 + to_integer(1u32 + old((uint32)bytes[0])));
+ rewrite(to_integer(1u32 + old((uint32)bytes[0])) == 1 + to_integer(old((uint32)bytes[0])));
+ rewrite(truncating_remainder(393126 + (1 + to_integer(old((uint32)bytes[0]))), 65521) == truncating_remainder(1 + to_integer(old((uint32)bytes[0])), 65521));
+ rewrite(old(adler_spec_b(bytes, 1, 1, 0)) == truncating_remainder(1 + to_integer(old((int32)bytes[0])), 65521));
+ rewrite(to_integer(old((uint32)bytes[0])) == to_integer(old((int32)bytes[0])));
+ simp();
+ }
 
+ simp() using { bytes[0] == old(bytes[0]); to_integer(self->a) == to_integer(at(reduced_a, __rust_mir_149)); at(reduced_a, __rust_mir_149) == (1u32 + old((uint32)bytes[0])) % 65521u32; to_integer(self->b) == to_integer(at(reduced_b, __rust_mir_151)); at(reduced_b, __rust_mir_151) == (393126u32 + (1u32 + old((uint32)bytes[0]))) % 65521u32; to_integer(self->a) == old(adler_spec_a(bytes, 1, 1)); to_integer(self->b) == old(adler_spec_b(bytes, 1, 1, 0)); }
+}

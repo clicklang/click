@@ -2485,6 +2485,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_add_to_integer"
                 | "uint32_subtract_to_integer"
                 | "uint32_mul_to_integer"
+                | "uint32_divide_to_integer"
+                | "uint32_remainder_to_integer"
                 | "uint32_mul_guard_by_integer_bound"
                 | "uint32_remainder_less_than_divisor"
                 | "uint32_remainder_of_lt"
@@ -2555,7 +2557,10 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_less_than_to_integer"
         | "uint64_less_than_of_to_integer"
         | "uint64_equal_of_to_integer" => (2, 1),
-        "uint64_divide_to_integer" | "uint64_remainder_to_integer" => (2, 2),
+        "uint64_divide_to_integer"
+        | "uint64_remainder_to_integer"
+        | "uint32_divide_to_integer"
+        | "uint32_remainder_to_integer" => (2, 2),
         "int32_remainder_to_integer" => (2, 2),
         "int32_increment_upper_bound" | "int32_increment_strictly_increases" => (2, 1),
         "int32_increment_lower_bound"
@@ -2775,6 +2780,12 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "uint32_subtract_to_integer" => {
                 crate::kernel::prove_uint32_subtract_to_integer(value, uint32_parameter(1)?)
+            }
+            "uint32_divide_to_integer" => {
+                crate::kernel::prove_uint32_divide_to_integer(value, uint32_parameter(1)?)
+            }
+            "uint32_remainder_to_integer" => {
+                crate::kernel::prove_uint32_remainder_to_integer(value, uint32_parameter(1)?)
             }
             "uint32_mul_to_integer" => {
                 crate::kernel::prove_uint32_mul_to_integer(value, uint32_parameter(1)?)
@@ -4217,6 +4228,32 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 for invalid in forged {
                     assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn uint32_division_bridge_declarations_reject_forged_domains_types_and_goals() {
+        for (name, op, mathematical) in [
+            ("uint32_divide_to_integer", "/", "truncating_quotient"),
+            ("uint32_remainder_to_integer", "%", "truncating_remainder"),
+        ] {
+            let source = format!(
+                "theorem {name}(left: uint32, right: uint32) {{ requires right != 0u32; requires to_integer(right) != 0; ensures to_integer(left {op} right) == {mathematical}(to_integer(left), to_integer(right)); }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace("requires right != 0u32;", ""),
+                source.replace("requires to_integer(right) != 0;", ""),
+                source.replace("requires right != 0u32;", "requires left != 0u32;"),
+                source.replace("requires right != 0u32;", "requires right == 0u32;"),
+                source.replace("left: uint32", "left: uint64"),
+                source.replace("right: uint32", "right: int32"),
+                source.replace("right: uint32)", "right: uint32, extra: uint32)"),
+                source.replace("));", ")) + 1;"),
+            ] {
+                assert_ne!(source, invalid);
+                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
             }
         }
     }

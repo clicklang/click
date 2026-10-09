@@ -1022,6 +1022,45 @@ mod tests {
         }
     }
 
+    // Both native operations and modular calls must preserve the mathematical
+    // observation; omitting either evaluation domain must not prove a claim.
+    #[test]
+    fn uint32_division_bridges_verify_actual_operations_calls_and_expansion() {
+        for (name, op, mathematical) in [
+            ("uint32_divide_to_integer", "/", "truncating_quotient"),
+            ("uint32_remainder_to_integer", "%", "truncating_remainder"),
+        ] {
+            let guard = "right != 0u32; requires to_integer(right) != 0";
+            let goal = format!(
+                "to_integer(result) == {mathematical}(to_integer(left), to_integer(right))"
+            );
+            let c = format!(
+                "uint32 op(uint32 left, uint32 right) {{ return left {op} right; }} uint32 caller(uint32 left, uint32 right) {{ return op(left, right); }}"
+            );
+            let source = format!(
+                "verifying \"op.c\"; uint32 op(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ apply({name}(left, right)); execute(); simp(); }} uint32 caller(uint32 left, uint32 right) {{ requires {guard}; ensures {goal}; }} by {{ execute(); simp(); }}"
+            );
+            verify_c0_sources(&source, &[("op.c", &c)])
+                .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[("op.c", &c)], "op.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[("op.c", &c)]).unwrap();
+            for missing in [
+                "requires right != 0u32;",
+                "requires to_integer(right) != 0;",
+            ] {
+                assert!(verify_c0_sources(&source.replace(missing, ""), &[("op.c", &c)]).is_err());
+            }
+            assert!(
+                verify_c0_sources(
+                    &source.replace(&format!("ensures {goal};"), &format!("ensures {goal} + 1;")),
+                    &[("op.c", &c)]
+                )
+                .is_err()
+            );
+        }
+    }
+
     #[test]
     fn uint64_division_bridges_require_both_evaluation_domains() {
         for (name, op, mathematical) in [

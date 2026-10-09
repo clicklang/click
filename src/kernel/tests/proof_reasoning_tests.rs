@@ -9878,6 +9878,68 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
     }
 }
 
+// Guarded bridges must agree with ordinary unsigned division at the sign
+// boundary and maximum word, and must retain a false guard at zero divisors.
+#[test]
+fn uint32_division_integer_bridges_match_unsigned_boundary_models() {
+    use num_bigint::BigInt;
+    fn integer(term: &IntegerTerm) -> BigInt {
+        match term {
+            IntegerTerm::Constant(value) => value.clone(),
+            IntegerTerm::Machine(value) => {
+                assert_eq!(value.ty(), MachineIntegerType::UInt32);
+                BigInt::from(value.value().as_const().expect("constant unsigned word"))
+            }
+            IntegerTerm::TruncatingQuotient(a, b) => integer(a) / integer(b),
+            IntegerTerm::TruncatingRemainder(a, b) => integer(a) % integer(b),
+            _ => panic!("unexpected observation"),
+        }
+    }
+    for remainder in [false, true] {
+        for value in [0, 1, 2, 65520, 65521, 1 << 31, u32::MAX - 1, u32::MAX] {
+            for divisor in [0, 1, 2, 65521, 1 << 31, u32::MAX] {
+                let theorem = if remainder {
+                    prove_uint32_remainder_to_integer(
+                        Bitvector32Term::Constant(value),
+                        Bitvector32Term::Constant(divisor),
+                    )
+                } else {
+                    prove_uint32_divide_to_integer(
+                        Bitvector32Term::Constant(value),
+                        Bitvector32Term::Constant(divisor),
+                    )
+                };
+                let Proposition::Implies(native_guard, rest) = theorem.proposition() else {
+                    panic!("native guard missing");
+                };
+                assert_eq!(
+                    PureFactContext::new().proves_exact(native_guard),
+                    divisor != 0
+                );
+                if divisor == 0 {
+                    continue;
+                }
+                let Proposition::Implies(integer_guard, conclusion) = rest.as_ref() else {
+                    panic!("Integer guard missing");
+                };
+                assert!(PureFactContext::new().proves_exact(integer_guard));
+                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) =
+                    conclusion.as_ref()
+                else {
+                    panic!("observation equality missing");
+                };
+                let expected = BigInt::from(if remainder {
+                    value % divisor
+                } else {
+                    value / divisor
+                });
+                assert_eq!(integer(a), expected);
+                assert_eq!(integer(b), expected);
+            }
+        }
+    }
+}
+
 #[test]
 fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
     use num_bigint::BigInt;

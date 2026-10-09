@@ -50,7 +50,11 @@ incomplete.
 The shared mathematical specification has checked one- and four-byte append
 recurrences, including the ordered weights 4, 3, 2, 1 for a vector step,
 weight shifts, nonnegative sums, residue addition, output and packing bounds,
-and preservation of canonical seeds on empty input. It is not yet connected
+residue congruence with signed quotient witnesses, and preservation of canonical
+seeds on empty input. The original remainder helper also supplies exact Integer
+remainders for all four lanes under its native nonzero-divisor precondition.
+The unchanged Rust one-byte computation proves both fields equal the shared
+specification on the entry byte snapshot. The specification is not yet connected
 to either implementation’s general computation.
 
 Composition regressions cover record and scalar-array storage starts, shared

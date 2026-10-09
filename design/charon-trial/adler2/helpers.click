@@ -74,6 +74,10 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32(struct __rust_q_I6_adler
     ensures self->_0[1] == old(self->_0[1]) % quotient;
     ensures self->_0[2] == old(self->_0[2]) % quotient;
     ensures self->_0[3] == old(self->_0[3]) % quotient;
+    ensures to_integer(self->_0[0]) == truncating_remainder(to_integer(old(self->_0[0])), to_integer(quotient));
+    ensures to_integer(self->_0[1]) == truncating_remainder(to_integer(old(self->_0[1])), to_integer(quotient));
+    ensures to_integer(self->_0[2]) == truncating_remainder(to_integer(old(self->_0[2])), to_integer(quotient));
+    ensures to_integer(self->_0[3]) == truncating_remainder(to_integer(old(self->_0[3])), to_integer(quotient));
     ensures self->_0[0] < quotient;
     ensures 0 <= to_integer(self->_0[0]);
     ensures to_integer(self->_0[0]) < to_integer(quotient);
@@ -91,7 +95,32 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32(struct __rust_q_I6_adler
     ensures old(self->_0[2]) < quotient implies self->_0[2] == old(self->_0[2]);
     ensures old(self->_0[3]) < quotient implies self->_0[3] == old(self->_0[3]);
 } by {
+    apply(uint32_nonzero_to_integer(quotient));
+    apply(uint32_remainder_to_integer(self->_0[0], quotient));
+    apply(uint32_remainder_to_integer(self->_0[1], quotient));
+    apply(uint32_remainder_to_integer(self->_0[2], quotient));
+    apply(uint32_remainder_to_integer(self->_0[3], quotient));
     execute();
+    have self->_0[0] == old(self->_0[0]) % quotient by { simp(); }
+    have to_integer(self->_0[0]) == truncating_remainder(to_integer(old(self->_0[0])), to_integer(quotient)) by {
+        rewrite(self->_0[0] == old(self->_0[0]) % quotient);
+        assumption();
+    }
+    have self->_0[1] == old(self->_0[1]) % quotient by { simp(); }
+    have to_integer(self->_0[1]) == truncating_remainder(to_integer(old(self->_0[1])), to_integer(quotient)) by {
+        rewrite(self->_0[1] == old(self->_0[1]) % quotient);
+        assumption();
+    }
+    have self->_0[2] == old(self->_0[2]) % quotient by { simp(); }
+    have to_integer(self->_0[2]) == truncating_remainder(to_integer(old(self->_0[2])), to_integer(quotient)) by {
+        rewrite(self->_0[2] == old(self->_0[2]) % quotient);
+        assumption();
+    }
+    have self->_0[3] == old(self->_0[3]) % quotient by { simp(); }
+    have to_integer(self->_0[3]) == truncating_remainder(to_integer(old(self->_0[3])), to_integer(quotient)) by {
+        rewrite(self->_0[3] == old(self->_0[3]) % quotient);
+        assumption();
+    }
     apply(uint32_remainder_less_than_divisor(old(self->_0[0]), quotient));
     have self->_0[0] < quotient by { simp(); }
     apply(uint32_to_integer_bounds(self->_0[0]));

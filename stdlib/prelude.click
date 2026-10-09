@@ -1075,6 +1075,19 @@ theorem uint64_equal_of_to_integer(left: uint64, right: uint64) {
     ensures left == right;
 }
 
+# Exact observations of unsigned division require both evaluation domains.
+theorem uint32_divide_to_integer(left: uint32, right: uint32) {
+    requires right != 0u32;
+    requires to_integer(right) != 0;
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right));
+}
+
+theorem uint32_remainder_to_integer(left: uint32, right: uint32) {
+    requires right != 0u32;
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+
 theorem uint32_mul_to_integer(left: uint32, right: uint32) {
     requires right == 0u32 or left <= 4294967295u32 / right;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right);
@@ -1131,6 +1144,24 @@ theorem uint32_to_integer_bounds(value: uint32) {
         have value <= 4294967295u32;
         apply(uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; }
     }
+}
+
+# Checked source proof of the mathematical domain from native nonzero.
+theorem uint32_nonzero_to_integer(value: uint32) {
+ requires value != 0u32;
+ ensures to_integer(value) != 0 by {
+  apply(uint32_remainder_less_than_divisor(0u32, value)) using { value != 0u32; }
+  apply(uint32_less_than_to_integer(0u32 % value, value)) using { 0u32 % value < value; }
+  apply(uint32_to_integer_bounds(0u32 % value));
+  have 1 <= to_integer(value) by {
+   arithmetic() using { 0 <= to_integer(0u32 % value); to_integer(0u32 % value) < to_integer(value); }
+  }
+  arithmetic_certificate special {
+   premise 0: 1 <= to_integer(value) => 1 <= to_integer(value);
+   integer_bound_exclusion bounds [0] => to_integer(value) != 0;
+   conclusion 0;
+  }
+ }
 }
 
 theorem uint64_to_integer_bounds(value: uint64) {
