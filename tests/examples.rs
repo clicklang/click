@@ -513,6 +513,9 @@ fn erase_source_refuses_replacement(
                 .contains("(close_erase_spine_link precondition)")
             || (error.message().contains("have body tactic")
                 && error.message().contains("could not establish"))
+            || error
+                .message()
+                .contains("unclosed goal: new->__rb_parent_color == old(old->__rb_parent_color)",)
             || error.message().contains("unclosed goal: result == 0")
             || error
                 .message()
@@ -1841,5 +1844,41 @@ fn rbtree_erase_color_flips_requires_sibling_recoloring() {
         "rbtree_erase_color_flips.click",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: rotation-helper verification checks both helper contracts"]
+fn rbtree_rotate_set_parents_requires_the_copied_word() {
+    erase_source_refuses_replacement(
+        "rbtree_rotate_set_parents.click",
+        "rbtree.h",
+        "new->__rb_parent_color = old->__rb_parent_color;",
+        "new->__rb_parent_color = new->__rb_parent_color;",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: rotation-helper verification checks both helper contracts"]
+fn rbtree_rotate_set_parents_requires_the_new_parent() {
+    erase_source_refuses_replacement(
+        "rbtree_rotate_set_parents.click",
+        "rbtree.h",
+        "rb_set_parent_color(old, new, color);",
+        "rb_set_parent_color(old, old, color);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: rotation-helper verification checks both helper contracts"]
+fn rbtree_rotate_set_parents_requires_root_replacement() {
+    erase_source_refuses_replacement(
+        "rbtree_rotate_set_parents.click",
+        "rbtree.h",
+        "WRITE_ONCE(root->rb_node, new);",
+        "WRITE_ONCE(root->rb_node, old);",
+        1,
     );
 }

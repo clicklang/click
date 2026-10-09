@@ -208,6 +208,32 @@ fn form_of(
     used: &mut UsedFacts,
     through_facts: bool,
 ) -> Result<Option<TaggedAddress>, Refuted> {
+    crate::instrumentation::record_deterministic_work(1);
+    // A structural miss says nothing about an exact address equation for
+    // the complete word. In particular, an opaque input of `word & ~mask`
+    // must not hide a checked `(word & ~mask) == address(p)` premise.
+    let direct = structural_form_of(term, assumptions, undecided, used, through_facts)?;
+    if direct.is_some() || !through_facts {
+        return Ok(direct);
+    }
+    // One exact recorded 64-bit equality may name the word's address form,
+    // as a resource fact `word == address(next) + tag` does.
+    for (equal, fact) in assumptions.recorded_uint64_equals(term) {
+        if let Some(form) = form_of(&equal, assumptions, undecided, used, false)? {
+            used.cite(Proposition::ConditionIs(fact, true));
+            return Ok(Some(form));
+        }
+    }
+    Ok(None)
+}
+
+fn structural_form_of(
+    term: &Bitvector32Term,
+    assumptions: &PureFactContext,
+    undecided: &mut Undecided<'_>,
+    used: &mut UsedFacts,
+    through_facts: bool,
+) -> Result<Option<TaggedAddress>, Refuted> {
     let direct = match term {
         Bitvector32Term::PointerAddress(pointer) => Some(TaggedAddress {
             pointer: pointer.as_ref().clone(),
@@ -320,18 +346,7 @@ fn form_of(
         }
         _ => None,
     };
-    if direct.is_some() || !through_facts {
-        return Ok(direct);
-    }
-    // One exact recorded 64-bit equality may name the word's address form,
-    // as a resource fact `word == address(next) + tag` does.
-    for (equal, fact) in assumptions.recorded_uint64_equals(term) {
-        if let Some(form) = form_of(&equal, assumptions, undecided, used, false)? {
-            used.cite(Proposition::ConditionIs(fact, true));
-            return Ok(Some(form));
-        }
-    }
-    Ok(None)
+    Ok(direct)
 }
 
 /// `term` as `address(pointer) + tag` using only decided conditions.
@@ -441,6 +456,90 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
                 return Err(format!("{context}; they are refuted"));
             }
             Ok(Some(form.pointer))
+        }
+    }
+}
+
+#[cfg(test)]
+mod exact_word_address_tests {
+    use super::*;
+
+    // A compound word's exact address is an indexed premise. Unrelated word
+    // equalities must neither be searched nor create conversion obligations.
+    #[test]
+    fn compound_word_address_lookup_skips_unrelated_equalities() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(960001));
+        let word = Bitvector32Term::Variable(Variable(960002));
+        let expressions = [
+            Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::UInt64Constant(!3)),
+            Bitvector32Term::uint64_bitwise_or(word, Bitvector32Term::Variable(Variable(960003))),
+        ];
+        for expression in expressions {
+            let fact = Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(
+                    expression.clone(),
+                    Bitvector32Term::PointerAddress(Box::new(pointer.clone())),
+                ),
+                true,
+            );
+            let mut costs = Vec::new();
+            for size in [16, 64, 256, 1024] {
+                let mut assumptions = PureFactContext::new().assume_proposition(fact.clone());
+                for index in 0..size {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::uint64_equal(
+                            Bitvector32Term::Variable(Variable(970000 + index)),
+                            Bitvector32Term::UInt64Constant(index),
+                        ),
+                        true,
+                    );
+                }
+                let mut used = UsedFacts::new();
+                let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    tagged_address_form(&expression, &assumptions, &mut used)
+                });
+                let form = form.expect("the exact address equation names the original pointer");
+                assert_eq!(form.pointer, pointer);
+                assert_eq!(form.tag.uint64_as_const(), Some(0));
+                assert!(used.complete);
+                assert_eq!(used.premises, vec![fact.clone()]);
+                let mut obligations = Vec::new();
+                assert_eq!(
+                    cast_tagged_address_to_pointer(&expression, &assumptions, &mut obligations)
+                        .unwrap(),
+                    Some(pointer.clone())
+                );
+                assert!(obligations.is_empty());
+                costs.push(work);
+            }
+            assert!(
+                costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] * 2),
+                "{costs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn compound_word_address_requires_origin_and_stops_at_cyclic_equations() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let expression = Bitvector32Term::uint64_bitwise_and(
+            Bitvector32Term::Variable(Variable(980001)),
+            Bitvector32Term::UInt64Constant(!3),
+        );
+        let alias = Bitvector32Term::Variable(Variable(980002));
+        for assumptions in [
+            PureFactContext::new(),
+            PureFactContext::new()
+                .assume_condition(ConditionTerm::uint64_equal(expression.clone(), alias), true),
+        ] {
+            let mut obligations = Vec::new();
+            assert_eq!(
+                cast_tagged_address_to_pointer(&expression, &assumptions, &mut obligations)
+                    .unwrap(),
+                None
+            );
+            assert!(obligations.is_empty());
         }
     }
 }
