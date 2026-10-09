@@ -2393,6 +2393,31 @@ pub(in crate::kernel) fn typed_ranges_disjoint_from_pointer_evidence(
         .collect()
 }
 
+/// A typed pointer read may recover a stored pointer in a different block.
+/// Compare the complete stored value, never just its offset.
+pub(crate) fn pointer_read_has_stored_value(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    let Some(Bitvector32Term::MemoryLoad(memory, address, kind)) =
+        crate::kernel::equality_graph::logical_pointer_read_term(left)
+    else {
+        return false;
+    };
+    let bytes = crate::kernel::load_term_access_width(&memory, &address, kind);
+    if bytes != crate::kernel::C_POINTER_BYTE_WIDTH {
+        return false;
+    }
+    let Some(cell) = memory_dag_cell_source(&memory, &address, bytes, assumptions, true) else {
+        return false;
+    };
+    let Some(CValue::Pointer(stored)) = cell.resolved_value(&address, kind) else {
+        return false;
+    };
+    stored.pointer() == right || assumptions.pointers_known_equal(stored.pointer(), right)
+}
+
 /// Whether a pointer-valued load resolves through the recorded memory DAG to
 /// a stored pointer whose offset is `right`. This is the pointer counterpart
 /// of the integer load-equality transport: pointer offsets are represented as
