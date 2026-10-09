@@ -1567,3 +1567,48 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         );
     }
 }
+
+const GENERAL_PARTITION: &str =
+    include_str!("../../design/charon-trial/adler2/general-partition.click");
+
+// Unlike the small-batch fixture, checks full signed-range usize observations,
+// aligned short remainders and progress of the actual full-batch remaining count.
+#[test]
+fn charon_adler2_general_partition_and_outer_progress_verify() {
+    click::surface::verify_c0_sources(GENERAL_PARTITION, &[]).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: general batch metadata expansion and mutation checks"]
+fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
+    for claim in [
+        "adler_aligned_outer_partition.ensures_0",
+        "adler_outer_bulk_signed_multiple.ensures_0",
+        "adler_outer_remaining_step.ensures_0",
+        "adler_outer_remaining_step_divisible.ensures_0",
+    ] {
+        let expanded =
+            click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+    for (before, after) in [
+        ("<= 2147483647u64;", "<= 2147483648u64;"),
+        ("<= 22204 by", "<= 22200 by"),
+        (
+            "ensures remaining - 22208 < remaining",
+            "ensures remaining < remaining - 22208",
+        ),
+        (
+            "ensures (remaining - 22208) % 22208 == 0",
+            "ensures remaining - 22208 == remaining",
+        ),
+    ] {
+        let invalid = GENERAL_PARTITION.replacen(before, after, 1);
+        assert_ne!(invalid, GENERAL_PARTITION, "{before}");
+        assert!(
+            click::surface::verify_c0_sources(&invalid, &[]).is_err(),
+            "{before}"
+        );
+    }
+}

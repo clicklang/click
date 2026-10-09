@@ -1760,6 +1760,36 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     );
 }
 
+/// The same for a signed 64-bit goal: each sum is shown defined from its
+/// Integer bounds before it is observed, and a premise over a sum is
+/// carried only once that sum is defined.
+#[test]
+fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
+    let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires i <= length;\n    requires i + 1i64 < length;\n    requires length <= 2147483647i64;\n    ensures i + 2i64 <= length by {\n        arithmetic() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; }\n    }\n}\n";
+    verify_c0_sources(source, &[]).expect("the int64 goal verifies");
+    let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
+        .expect("the int64 arithmetic step expands");
+    for step in [
+        "apply(int64_add_defined_by_integer_bounds(i, 1i64))",
+        "apply(int64_add_to_integer(i, 2i64))",
+        "apply(int64_less_than_to_integer((i + 1i64), length))",
+        "apply(int64_less_equal_of_to_integer((i + 2i64), length))",
+    ] {
+        assert!(expanded.contains(step), "{step}\n{expanded}");
+    }
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
+    // Without the lower bound on `i`, `i + 1` may overflow below.
+    let unbounded = source.replace("{ 0i64 <= i; i <= length;", "{ i <= length;");
+    assert_ne!(unbounded, source);
+    let error = verify_c0_sources(&unbounded, &[]).expect_err("the sum may overflow");
+    assert!(
+        error.message().contains("stays within int64"),
+        "{}",
+        error.message()
+    );
+}
+
 #[test]
 fn expanded_contract_let_facts_remain_source_indexable() {
     let c_source = "int32 increment(int32 x) { return x + 1; }";

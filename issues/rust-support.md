@@ -42,7 +42,9 @@ and actual vector and scalar iterator state through reductions, recombination,
 scalar sums, short tails, and final 16-bit stores.
 Both output fields remain below 65,521. Checked partition lemmas relate full-width
 lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
-Full outer batches and checksum correctness remain incomplete.
+General signed-range partition lemmas establish aligned full-batch remainders
+and decreasing actual outer-iterator remaining counts, without truncating usize
+metadata. Full outer-batch induction and checksum correctness remain incomplete.
 The shared mathematical specification has checked append and weight-shift
 recurrences, nonnegative sums, residue addition, output and packing bounds,
 and preservation of canonical seeds on empty input. It is not yet connected
