@@ -523,7 +523,10 @@ fn erase_source_refuses_replacement(
         error.message().contains("fold")
             || error
                 .message()
-                .contains("selected child does not satisfy the proposed parent model")
+                .contains("is not proven to have the arguments the parent body gives it")
+            || error
+                .message()
+                .contains("is not proven equal to the value the proposed parent fields give it")
             || error.message().contains("contract certification")
             || (error.message().contains("missing resource fact")
                 && error.message().contains("C operation: parent = rb_parent"))
