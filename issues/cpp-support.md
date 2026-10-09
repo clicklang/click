@@ -260,7 +260,7 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    [aggregate-construction-design.md](aggregate-construction-design.md).
    C++ returned construction, destination forwarding and temporary retirement
    depend on that work. The int32 field-address and constructor/copy identity
-   prerequisites are implemented; artifact schema 47 requires refreshing earlier
+   prerequisites are implemented; artifact schema 48 requires refreshing earlier
    locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
    above as the concrete C++ acceptance target.
 
@@ -278,10 +278,22 @@ extent and four-byte element size. Empty, bounded and wrapping extents retain
 that meaning. Expanded/retained verification and missing-authority/false-product
 refusals are covered.
 
-The next independent target is unchanged pinned indexed access: `operator[]`
-with a native unsigned index smaller than the bounded extent, returning the
-corresponding backing reference. It needs direct operator-method naming and
-selection, but no by-value result, constructor or temporary materialization.
+Unchanged pinned `operator[]` now has a bounded native-index reference proof:
+`index < N` and the same nonempty extent bound identify the corresponding backing
+element and its old value. Direct `Class::operator[]` selection maps to
+`Class_operator_index`. A shared strict uint64-to-Integer comparison bridge and
+checked normalization from explicit full-width index bounds supply the address
+projection; a low-word bound alone remains insufficient. Ordinary, expanded and
+retained verification cover the method and modular caller, with missing bounds,
+authority and false reference claims refused.
+
+Write-through callers of `front()` and `back()` now verify with ownership of the
+backing segment and views of the descriptor. They preserve descriptor fields
+and set the selected element to the input value. The back caller states the
+native/signed last-index address bridge explicitly. Shared address alignment
+supports a captured interior pointer without treating unrelated pointer-read
+tokens as offsets or granting new authority. Ordinary, expanded and retained
+checks reject views-only writes and false unchanged-element claims.
 
 `first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
 behind the shared construction dependency. Other scalar/import work still needs

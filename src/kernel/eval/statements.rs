@@ -605,6 +605,19 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
                 .flatten()
                 .cloned();
             let has_external_write_resource = is_external && authorized_range.is_some();
+            // Keep the checked owner's base when recording an external store.
+            // The graph supplies an equal address, while the owner and exact
+            // byte coverage above remain the authorization. This spelling
+            // lets subsequent frame checks identify the same backing member.
+            let pointer = authorized_range
+                .as_ref()
+                .and_then(|range| {
+                    effective_assumptions
+                        .equality_graph
+                        .pointer_at_base(&pointer, range.base())
+                })
+                .unwrap_or(pointer);
+
             if is_external_memory_pointer(&pointer) && !has_external_write_resource {
                 return Ok(vec![CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),

@@ -466,7 +466,7 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 47 requires refreshing earlier
+rebasing them to a new object. Artifact schema 48 requires refreshing earlier
 locks. Returned construction destinations remain the next shared-model work.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
@@ -497,6 +497,12 @@ them `FeeFrac_IsEmpty`, `FeeFrac_operator_add_assign`, and
 parameter `this`. Const methods use `const struct FeeFrac* this`; const record
 reference parameters retain the same qualification. This restricts writes
 through that parameter without forbidding an alias through a mutable parameter.
+Direct nonvirtual `operator[]` methods also use this method-call path, with
+`Class::operator[]` as the selector and `Class_operator_index` as the proof
+name. The receiver must be a live record lvalue; argument and result types,
+const qualification and reference authority follow the ordinary method rules.
+This does not admit other overloaded operators or temporary receivers.
+
 Unused member functions, constructors, templates, and nested declarations are
 not imported into the execution graph. Reachable definitions and the record's
 complete supported field layout are still checked. Overloaded proof names and

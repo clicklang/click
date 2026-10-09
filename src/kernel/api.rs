@@ -9077,6 +9077,22 @@ pub fn prove_uint64_integer_bridge(
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Option<Theorem> {
+    if name == "uint64_less_than_to_integer" {
+        let observe = |value| {
+            IntegerTerm::from_machine(MachineIntegerType::UInt64, value)
+                .expect("every uint64 bit pattern has an unsigned Integer interpretation")
+        };
+        return Some(Theorem::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::uint64_less_than(left.clone(), right.clone()),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::IntegerLessThan(observe(left).into(), observe(right).into()),
+                true,
+            )),
+        )));
+    }
     if matches!(
         name,
         "uint64_less_equal_to_integer" | "uint64_less_equal_of_to_integer"

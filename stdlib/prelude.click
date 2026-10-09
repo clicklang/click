@@ -1043,6 +1043,11 @@ theorem uint64_remainder_to_integer(left: uint64, right: uint64) {
     ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
 }
 
+theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right);
+}
+
 theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right);

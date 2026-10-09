@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 47;
+    artifact["schema"] = 48;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -3589,15 +3589,21 @@ private:
   std::string method_name(const clang::CXXMethodDecl *method) {
     std::string name = method->getNameAsString();
     if (method->isOverloadedOperator()) {
-      if (method->getOverloadedOperator() != clang::OO_PlusEqual &&
-          method->getOverloadedOperator() != clang::OO_MinusEqual) {
+      switch (method->getOverloadedOperator()) {
+      case clang::OO_PlusEqual:
+        name = "operator_add_assign";
+        break;
+      case clang::OO_MinusEqual:
+        name = "operator_subtract_assign";
+        break;
+      case clang::OO_Subscript:
+        name = "operator_index";
+        break;
+      default:
         fail(method->getLocation(), "the supported C++ operator methods are "
-                                    "operator+= and operator-= only");
+                                    "operator+=, operator-= and operator[] only");
         return {};
       }
-      name = method->getOverloadedOperator() == clang::OO_PlusEqual
-                 ? "operator_add_assign"
-                 : "operator_subtract_assign";
     }
     return record_name(method->getParent()) + "_" + name +
            template_suffix(method);

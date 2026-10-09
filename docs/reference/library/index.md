@@ -1263,6 +1263,19 @@ Unsigned remainder agrees with the truncating Integer remainder. Both native and
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint64_less_than_to_integer`
+
+```click
+theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right);
+}
+```
+
+Native uint64 strict order implies exact Integer observation order over the full unsigned range. Equality or a comparison of low words cannot replace its native strict premise.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint64_less_equal_to_integer`
 
 ```click

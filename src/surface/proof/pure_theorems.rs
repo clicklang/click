@@ -2397,6 +2397,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint64_subtract_to_integer"
                 | "uint64_divide_to_integer"
                 | "uint64_remainder_to_integer"
+                | "uint64_less_than_to_integer"
                 | "uint64_less_equal_to_integer"
                 | "uint64_less_equal_of_to_integer"
                 | "uint64_less_than_to_integer"
@@ -2507,6 +2508,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_add_to_integer"
         | "uint64_multiply_to_integer"
         | "uint64_subtract_to_integer"
+        | "uint64_less_than_to_integer"
         | "uint64_less_equal_to_integer"
         | "uint64_less_equal_of_to_integer"
         | "uint64_less_than_to_integer"
@@ -4171,6 +4173,11 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
             ),
             (
+                "uint64_less_than_to_integer",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
                 "uint64_less_equal_to_integer",
                 "left <= right",
                 "to_integer(left) <= to_integer(right)",
@@ -4209,6 +4216,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                         "left != 0u64",
                     )
                     .replace("requires left <= right", "requires left >= right")
+                    .replace("requires left < right", "requires left <= right")
                     .replace(
                         "requires to_integer(right) <= to_integer(left)",
                         "requires to_integer(left) <= to_integer(right)",

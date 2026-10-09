@@ -2239,3 +2239,106 @@ fn composition_provenance_admission_follows_sibling_deltas_not_the_shared_frame(
         "source admission visited the shared frame: {samples:?}"
     );
 }
+
+#[test]
+fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = CMemory::new();
+    let empty = PureFactContext::new();
+    let read = |id| {
+        let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
+            &memory,
+            Pointer::symbolic(Variable(id)),
+            CType::Int32Pointer,
+            Vec::new().into(),
+            Vec::new(),
+            &empty,
+        );
+        let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
+            panic!("pointer read")
+        };
+        value.pointer().clone()
+    };
+    let base = read(972_100);
+    let unrelated = read(972_101);
+    let captured = Pointer::symbolic(Variable(972_102));
+    let i = Bitvector32Term::Variable(Variable(972_103));
+    let n = Bitvector32Term::Variable(Variable(972_104));
+    let bounds = empty
+        .clone()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+    let relation =
+        ConditionTerm::pointer_equal(captured.clone(), base.offset_by_elements(i.clone(), 4));
+    let facts = bounds.clone().assume_condition(relation.clone(), true);
+    let range = CMemoryRange::new(base.clone(), 0u32.into(), n.clone());
+    let owner = CResourceFact::own_memory(range.clone());
+    let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(owner.clone());
+    resources.synchronize_memory_equalities(&empty);
+    assert_eq!(
+        resources.memory_write_range(&captured, 4, &facts),
+        Some(&range)
+    );
+    assert!(
+        resources
+            .memory_write_range(&captured, 4, &bounds)
+            .is_none()
+    );
+    assert!(
+        resources
+            .memory_write_range(
+                &captured,
+                4,
+                &empty.clone().assume_condition(relation.clone(), true)
+            )
+            .is_none()
+    );
+    assert!(
+        resources
+            .memory_write_range(&unrelated, 4, &facts)
+            .is_none()
+    );
+    // A separate, noncontradictory context says only that the capture is at n.
+    let end_only = bounds.clone().assume_condition(
+        ConditionTerm::pointer_equal(captured.clone(), base.offset_by_elements(n, 4)),
+        true,
+    );
+    assert!(
+        resources
+            .memory_write_range(&captured, 4, &end_only)
+            .is_none()
+    );
+    let views = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_fact(CResourceFact::view_memory(range));
+    views.synchronize_memory_equalities(&facts);
+    assert!(views.memory_write_range(&captured, 4, &facts).is_none());
+    let mut samples = Vec::new();
+    for size in [0u64, 32, 128, 512] {
+        let mut context = facts.clone();
+        let mut frame = resources.clone();
+        for k in 0..size {
+            let p = Pointer::symbolic(Variable(980_000 + k * 2));
+            let q = Pointer::symbolic(Variable(980_001 + k * 2));
+            context = context.assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true);
+            frame = frame.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                p,
+                0u32.into(),
+                1u32.into(),
+            )));
+        }
+        frame.synchronize_memory_equalities(&context);
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..16 {
+                assert!(frame.memory_write_range(&captured, 4, &context).is_some());
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 4 + 512),
+        "captured address queried unrelated state: {samples:?}"
+    );
+}

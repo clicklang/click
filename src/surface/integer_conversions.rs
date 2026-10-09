@@ -975,6 +975,11 @@ mod tests {
                 "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
             ),
             (
+                "uint64_less_than_to_integer",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
                 "uint64_less_equal_to_integer",
                 "left <= right",
                 "to_integer(left) <= to_integer(right)",

@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 47;
+pub(crate) const EXPORT_SCHEMA: u32 = 48;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1047,6 +1047,8 @@ impl CppExport {
                         "operator_add_assign"
                     } else if member == "operator-=" {
                         "operator_subtract_assign"
+                    } else if member == "operator[]" {
+                        "operator_index"
                     } else {
                         member
                     }

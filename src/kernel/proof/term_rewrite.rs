@@ -1234,6 +1234,33 @@ pub(crate) struct CSubstitutionScope {
     scope_id: u64,
 }
 
+// Build once from explicitly cited conditions. Each offset query then checks
+// its own full-width index by key, without scanning unrelated premises.
+fn bounded_uint64_indices(
+    conditions: &HashMap<ConditionTerm, bool>,
+) -> std::collections::HashSet<Bitvector32Term> {
+    conditions
+        .iter()
+        .filter_map(|(condition, value)| {
+            crate::instrumentation::record_deterministic_work(1);
+            let (lower, upper, strict) = match (condition, *value) {
+                (ConditionTerm::Bitvector64UnsignedLessEqual(a, b), true)
+                | (ConditionTerm::Bitvector64UnsignedGreaterThan(a, b), false) => (a, b, false),
+                (ConditionTerm::Bitvector64UnsignedLessThan(a, b), true)
+                | (ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b), false) => (a, b, true),
+                (ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b), true)
+                | (ConditionTerm::Bitvector64UnsignedLessThan(a, b), false) => (b, a, false),
+                (ConditionTerm::Bitvector64UnsignedGreaterThan(a, b), true)
+                | (ConditionTerm::Bitvector64UnsignedLessEqual(a, b), false) => (b, a, true),
+                _ => return None,
+            };
+            let limit = upper.uint64_as_const()?;
+            let limit = if strict { limit.checked_sub(1)? } else { limit };
+            (limit <= i32::MAX as u64).then(|| lower.as_ref().clone())
+        })
+        .collect()
+}
+
 pub(crate) struct TermRewrite<'a> {
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
     bitvector: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
@@ -1242,6 +1269,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
+    bounded_uint64_indices: std::collections::HashSet<Bitvector32Term>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
@@ -1360,6 +1388,7 @@ impl<'a> TermRewrite<'a> {
     fn empty() -> Self {
         Self {
             conditions: None,
+            bounded_uint64_indices: std::collections::HashSet::new(),
             equality_graph: None,
             collected_conditions: None,
             algebraic: None,
@@ -1430,6 +1459,7 @@ impl<'a> TermRewrite<'a> {
             .max();
         let mut rewrite = Self {
             conditions: None,
+            bounded_uint64_indices: std::collections::HashSet::new(),
             equality_graph: None,
             collected_conditions: None,
             algebraic: None,
@@ -1546,6 +1576,7 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             integer_exact: None,
             conditions: Some(conditions),
+            bounded_uint64_indices: bounded_uint64_indices(conditions),
             equality_graph: None,
             collected_conditions: None,
             changed: false,
@@ -1623,6 +1654,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            bounded_uint64_indices: std::collections::HashSet::new(),
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
@@ -1706,6 +1738,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            bounded_uint64_indices: std::collections::HashSet::new(),
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
@@ -1883,6 +1916,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
+            bounded_uint64_indices: std::collections::HashSet::new(),
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
@@ -3605,7 +3639,13 @@ impl<'a> TermRewrite<'a> {
                 unsigned,
             } => {
                 let value = self.bits(value);
-                if self.resolve_registered_loads {
+                if *unsigned && self.bounded_uint64_indices.contains(&value) {
+                    self.changed = true;
+                    PointerOffsetTerm::Int32Scaled {
+                        value: Box::new(Bitvector32Term::uint32_from_64(value)),
+                        byte_width: *byte_width,
+                    }
+                } else if self.resolve_registered_loads {
                     PointerOffsetTerm::scale_int64(
                         canonicalize_integer_to_machine_constant(value),
                         *byte_width,
@@ -7099,5 +7139,164 @@ mod tests {
         });
         assert!(exhausted, "checked collection must reject exhausted work");
         assert!(nodes <= 8, "collector continued after exhaustion: {nodes}");
+    }
+    #[test]
+    fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
+        let index = Bitvector32Term::Variable(Variable(989_100));
+        let native = PointerOffsetTerm::Int64Scaled {
+            value: Box::new(index.clone()),
+            byte_width: 4,
+            unsigned: true,
+        };
+        let narrow = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::uint32_from_64(index.clone())),
+            byte_width: 4,
+        };
+        let bound = ConditionTerm::uint64_less_equal(
+            index.clone(),
+            Bitvector32Term::UInt64Constant(1_073_741_823),
+        );
+        let projection = |condition, truth| {
+            let conditions = HashMap::from([(condition, truth)]);
+            let mut rewrite = TermRewrite::for_conditions(&conditions);
+            let result = rewrite.offset(&native);
+            assert!(rewrite.refusal().is_none());
+            result
+        };
+        for (condition, truth) in [
+            (bound.clone(), true),
+            (
+                ConditionTerm::uint64_less_than(
+                    index.clone(),
+                    Bitvector32Term::UInt64Constant(1_073_741_824),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::uint64_greater_equal(
+                    Bitvector32Term::UInt64Constant(1_073_741_823),
+                    index.clone(),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::uint64_greater_than(
+                    index.clone(),
+                    Bitvector32Term::UInt64Constant(1_073_741_823),
+                ),
+                false,
+            ),
+            (
+                ConditionTerm::uint64_greater_equal(
+                    index.clone(),
+                    Bitvector32Term::UInt64Constant(1_073_741_824),
+                ),
+                false,
+            ),
+        ] {
+            assert_eq!(projection(condition, truth), narrow);
+        }
+        for (condition, truth) in [
+            (bound.clone(), false),
+            (
+                ConditionTerm::signed_less_equal(
+                    Bitvector32Term::uint32_from_64(index.clone()),
+                    Bitvector32Term::Constant(1_073_741_823),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::int64_signed_less_equal(
+                    index.clone(),
+                    Bitvector32Term::Int64Constant(1_073_741_823),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::uint64_less_equal(
+                    index.clone(),
+                    Bitvector32Term::UInt64Constant(1u64 << 32),
+                ),
+                true,
+            ),
+            (
+                ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::UInt64Constant(0)),
+                true,
+            ),
+            (
+                ConditionTerm::uint64_equal(
+                    index.clone(),
+                    Bitvector32Term::UInt64Constant(1u64 << 32),
+                ),
+                true,
+            ),
+        ] {
+            assert_eq!(projection(condition, truth), native);
+        }
+        let conditions = HashMap::from([(bound.clone(), true)]);
+        let signed = PointerOffsetTerm::Int64Scaled {
+            value: Box::new(index.clone()),
+            byte_width: 4,
+            unsigned: false,
+        };
+        let mut rewrite = TermRewrite::for_conditions(&conditions);
+        assert_eq!(rewrite.offset(&signed), signed);
+        let binder = Proposition::ForAll {
+            var: Variable(989_100),
+            sort: Sort::CMachineInteger(MachineIntegerType::UInt64),
+            body: Box::new(Proposition::ConditionIs(
+                ConditionTerm::pointer_offset_equal(native.clone(), narrow.clone()),
+                true,
+            )),
+        };
+        assert_eq!(rewrite.proposition(&binder), binder);
+        assert!(rewrite.refusal().is_none());
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::pointer_offset_equal(native.clone(), narrow),
+            true,
+        );
+        let premise = Proposition::ConditionIs(bound, true);
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+        assert!(
+            crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                &goal,
+                std::slice::from_ref(&premise),
+                &facts
+            )
+            .is_ok()
+        );
+        assert!(
+            crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                &goal,
+                &[premise],
+                &crate::kernel::proof::ProofFacts::from_ordered(&[])
+            )
+            .is_err()
+        );
+        let mut costs = Vec::new();
+        for size in [0, 8, 64, 512] {
+            let mut explicit = conditions.clone();
+            for offset in 0..size {
+                explicit.insert(
+                    ConditionTerm::uint64_less_equal(
+                        Bitvector32Term::Variable(Variable(990_000 + offset)),
+                        Bitvector32Term::UInt64Constant(123),
+                    ),
+                    true,
+                );
+            }
+            let (mut rewrite, prep) = crate::instrumentation::measure_deterministic_work(|| {
+                TermRewrite::for_conditions(&explicit)
+            });
+            assert_eq!(prep, size as usize + 1);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..64 {
+                    assert_ne!(rewrite.offset(&native), native);
+                }
+            });
+            assert!(rewrite.refusal().is_none());
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
     }
 }
