@@ -479,6 +479,17 @@ loops](#modeled-instances-in-loops), applied at the exits:
   fresh names, so the successor states exactly "this is what one of the exits
   reached" and nothing more.
 
+A binder argument declared as a current local, such as `owns c: cursor(cur,
+anchor);`, shares that local's joined value when every exit holds the instance
+at its own `cur`. Rebinding can use pointer equalities established on that
+particular exit (`mdtests/loop_exit_resource_argument_uses_exit_alias.md`);
+other exits cannot supply missing equalities
+(`mdtests/loop_exit_resource_argument_requires_exit_alias.md`). A helper after the loop can therefore consume `cursor(cur,
+anchor)` even if the exits chose different cursors
+(`mdtests/loop_exit_resource_argument_tracks_current_local.md`). This does not
+preserve the entry pointer or equate unrelated model fields
+(`mdtests/loop_exit_resource_argument_rejects_entry_pointer.md`).
+
 A cell the exits wrote differently is a cell folded into one of the declared
 binders, since the body owns nothing else, and a proof after the loop reads it
 back through that binder's model. A loop that declares no binder has nothing to
