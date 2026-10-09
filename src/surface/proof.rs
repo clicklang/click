@@ -2473,11 +2473,7 @@ fn evaluate_entry_resource_context(
     // kernel's certified entry. Retain them in the proof context as well;
     // otherwise the checked boundary loses the very premise used above to
     // admit a symbolic `owns n of ...` clause.
-    let entry_quantity_facts = if state.uses_population_authority_semantics() {
-        quantity_assumptions
-    } else {
-        Vec::new()
-    };
+    let entry_quantity_facts = { quantity_assumptions };
     let state = project_initial_composite_resource_cores(
         resource_environment,
         parsed_function.parameters(),

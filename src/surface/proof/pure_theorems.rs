@@ -248,10 +248,8 @@ impl PureTheoremContext {
                                 operator: ComparisonOperator::Equal,
                                 right: ContractExpression::IntegerLiteral("0".into()),
                             }, BTreeMap::new(), BTreeMap::new(), &state, BTreeMap::new(), BTreeMap::new(),
-                            BTreeMap::new(), &integer_values, None, &RecordedSnapshots::new(),
-                            &PureFactContext::new(), predicate_environment, click_function_environment,
-                            BTreeSet::new(), BTreeMap::new(),
-                        ).map_err(ClickError::new)?;
+                            BTreeMap::new(), &integer_values, None, &RecordedSnapshots::new(), predicate_environment, click_function_environment,
+                            BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
                         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec
                         else {
                             // An unannotated machine conversion can reference
@@ -873,7 +871,6 @@ fn check_pure_structural_induction(
     let state = CState::new().with_memory(context.memory.clone());
     let parameter_value = capture_fixed_state_algebraic_expression(
         &parameter_expression,
-        &PureFactContext::new(),
         &context.values,
         &context.array_refs,
         &state,
@@ -1005,7 +1002,6 @@ fn check_pure_structural_induction(
                     };
                     let captured = capture_fixed_state_algebraic_expression(
                         &symbolic,
-                        &PureFactContext::new(),
                         &branch_context.values,
                         &branch_context.array_refs,
                         &state,

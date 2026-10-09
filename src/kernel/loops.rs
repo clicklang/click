@@ -455,8 +455,7 @@ pub(super) fn execute_c_call_assign_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if state.uses_population_authority_semantics()
-        && !is_modeled_pthread_call(function_name, environment)
+    if !is_modeled_pthread_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))
@@ -759,8 +758,7 @@ pub(super) fn execute_c_call_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if state.uses_population_authority_semantics()
-        && !is_modeled_pthread_call(function_name, environment)
+    if !is_modeled_pthread_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))

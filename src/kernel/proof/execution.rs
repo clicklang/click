@@ -1836,9 +1836,7 @@ impl CheckedResourceRewrite {
                 .is_none_or(|definition| definition.reaches_population()),
             _ => true,
         };
-        if before_state.uses_population_authority_semantics()
-            && !matches!(selected.resource(), CResource::Instance(_))
-        {
+        if !matches!(selected.resource(), CResource::Instance(_)) {
             if let CResource::Composite { name, .. } = selected.resource()
                 && let Some(definition) = function.composite_resource_definition(name)
                 && definition.contains().iter().any(|spec| {
@@ -2216,8 +2214,7 @@ impl CheckedResourceRewrite {
             // through this path: those require ledger evidence. An exact owned
             // authority may move into or out of a control instance; the
             // creation-ledger equality below proves that no population changed.
-            if before_state.uses_population_authority_semantics() && definition.reaches_population()
-            {
+            if definition.reaches_population() {
                 let memory_only = |spec: &crate::kernel::CResourceSpec| {
                     matches!(
                         spec.term(),
@@ -3039,30 +3036,11 @@ impl CheckedAutomaticLifetimeEnd {
 #[derive(Clone)]
 pub(crate) struct CheckedIteratedStep {
     before_state: CState,
-    after_state: CState,
-    before_facts: ProofFacts,
-    step: crate::kernel::IteratedStep,
 }
 
 impl CheckedIteratedStep {
     pub(crate) fn before_state(&self) -> &CState {
         &self.before_state
-    }
-
-    fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<CState> {
-        if state != &self.before_state
-            || state.uses_population_authority_semantics()
-            || facts.introduced_since(&self.before_facts).is_none()
-        {
-            return None;
-        }
-        let after = crate::kernel::apply_iterated_step(
-            &self.before_state,
-            &self.step,
-            self.before_facts.assumptions(),
-        )
-        .ok()?;
-        (after == self.after_state).then(|| self.after_state.clone())
     }
 }
 
@@ -3106,7 +3084,7 @@ impl CheckedResourceObservation {
                 .is_ordinary_abstract_family(name),
             _ => true,
         };
-        if before_state.uses_population_authority_semantics() && counted {
+        if counted {
             let unchanged = before_state.memory.diagnostic_identity()
                 == after_state.memory.diagnostic_identity()
                 && before_state.shares_non_memory_storage_with(after_state)
@@ -3357,15 +3335,13 @@ impl CheckedResourceObservation {
         facts: &ProofFacts,
         call_events: &CheckedCallEvents,
     ) -> Option<ProofFacts> {
-        let same_state = if self.before_state.uses_population_authority_semantics() {
+        let same_state = {
             state.memory.diagnostic_identity() == self.before_state.memory.diagnostic_identity()
                 && state.shares_non_memory_storage_with(&self.before_state)
                 && Arc::ptr_eq(
                     &state.population_effects,
                     &self.before_state.population_effects,
                 )
-        } else {
-            state == &self.before_state
         };
         if !same_state
             || facts.introduced_since(&self.before_facts).is_none()
@@ -3481,7 +3457,7 @@ impl CheckedFunctionEntry {
             ));
         }
         let function = Arc::new(function.clone());
-        let boundary_transfer = if caller_state.uses_population_authority_semantics() {
+        let boundary_transfer = {
             Some(
                 crate::kernel::functions::capture_checked_boundary_resource_transfer(
                     caller_state,
@@ -3497,8 +3473,6 @@ impl CheckedFunctionEntry {
                     ))
                 })??,
             )
-        } else {
-            None
         };
         let mut entry = Self {
             caller_state: caller_state.clone(),
@@ -3561,18 +3535,11 @@ impl CheckedFunctionEntry {
         &self,
         assumptions: &PureFactContext,
     ) -> Option<PureFactContext> {
-        let (_, propositions) = if self.entry_state.uses_population_authority_semantics() {
+        let (_, propositions) = {
             crate::kernel::functions::expand_all_composite_resource_facts_and_propositions_at_state(
                 self.entry_state.resources(),
                 self.function.composite_resource_definitions(),
                 &self.entry_state,
-                assumptions,
-            )?
-        } else {
-            crate::kernel::functions::expand_all_composite_resource_facts_and_propositions(
-                self.entry_state.resources(),
-                self.function.composite_resource_definitions(),
-                self.entry_state.memory(),
                 assumptions,
             )?
         };
@@ -7078,10 +7045,9 @@ fn check_evidence_events_with_call_events(
                 state = rewrite.after_state.clone();
                 continue;
             }
-            CheckedExecutionEvent::IteratedStep(step) => {
-                state = step.advance_checked(&state, &current_facts)?;
-                continue;
-            }
+            // A checked iterated step is not replayed: the authority ledger
+            // records the step's events, so replay rechecks it from the start.
+            CheckedExecutionEvent::IteratedStep(_) => return None,
             CheckedExecutionEvent::TacticApplication(application) => {
                 current_facts = application.advance_checked(&state, &current_facts)?;
                 state = application.after_state.clone();
@@ -9875,12 +9841,7 @@ impl ExecutionProofCore {
         let before_state = self.reached_state().clone();
         let after_state =
             crate::kernel::apply_iterated_step(&before_state, &step, before_facts.assumptions())?;
-        let checked = CheckedIteratedStep {
-            before_state,
-            after_state: after_state.clone(),
-            before_facts: before_facts.clone(),
-            step,
-        };
+        let checked = CheckedIteratedStep { before_state };
         if self.evidence_state.is_some() {
             self.evidence_state = Some(after_state.clone());
         }
@@ -10506,8 +10467,7 @@ impl ExecutionProofCore {
         // path, which still holds its body. Unfolding it again leaves the
         // retained path as it is: the exchange is checked above, and the
         // path never held the folded head it would remove.
-        if before_state.uses_population_authority_semantics()
-            && matches!(selected.resource(), CResource::Composite { name, .. }
+        if matches!(selected.resource(), CResource::Composite { name, .. }
                 if function
                     .composite_resource_definition(name)
                     .is_some_and(|definition| !definition.reaches_population()))
@@ -10947,7 +10907,7 @@ impl ExecutionProofCore {
                 } else {
                     candidates.state()
                 },
-                if has_checked_entry && candidates.state().uses_population_authority_semantics() {
+                if has_checked_entry {
                     self.function_entry
                         .as_ref()
                         .expect("checked entry exists")

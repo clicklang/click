@@ -13,7 +13,6 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
     )
     .expect("struct pointer function should parse");
     let state = CState::new();
-    let assumptions = PureFactContext::new();
     let snapshots = RecordedSnapshots::new();
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -25,7 +24,6 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
         BTreeMap::new(),
         None,
         &snapshots,
-        &assumptions,
         &predicates,
         &functions,
         BTreeSet::new(),
@@ -165,7 +163,6 @@ fn nested_snapshot_propositions_lower_with_small_frames_and_linear_visits() {
             let functions = ClickFunctionEnvironment::new(&[]);
             let mut snapshots = RecordedSnapshots::default();
             snapshots.insert(SnapshotSelector::Mark("before".into()), state.clone());
-            let assumptions = PureFactContext::new();
             let atom = || ClickProposition::Comparison {
                 left: ContractExpression::At {
                     selector: SnapshotSelector::Mark("before".into()),
@@ -195,7 +192,6 @@ fn nested_snapshot_propositions_lower_with_small_frames_and_linear_visits() {
                     BTreeMap::from([("x".into(), int32(9))]),
                     None,
                     &snapshots,
-                    &assumptions,
                     &predicates,
                     &functions,
                     BTreeSet::new(),

@@ -1533,14 +1533,13 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     };
     // Under authority semantics only an authorized family has a
     // population count; any other observation records no count witness.
-    let counts_population = !state.uses_population_authority_semantics()
-        || matches!(
-            &counted_resource,
-            ResourceClause::Declared { name, .. }
-                if resource_environment
-                    .get(name)
-                    .is_some_and(|definition| definition.is_authorized())
-        );
+    let counts_population = matches!(
+        &counted_resource,
+        ResourceClause::Declared { name, .. }
+            if resource_environment
+                .get(name)
+                .is_some_and(|definition| definition.is_authorized())
+    );
     if abstract_resource.owned_quantity_term().is_some() {
         let count_authority = abstract_resource.clone();
         if counts_population {
@@ -1566,7 +1565,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                     describe_resource_clause(resource)
                 ))
             })?;
-            if state.uses_population_authority_semantics() {
+            {
                 let checked = crate::kernel::checked_owned_resource_count_lower_bound(
                     &state,
                     &count_authority,
@@ -1582,29 +1581,6 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 }
                 surface_propositions.record_lowering(&count_witness, &count_kernel)?;
                 available_pure_facts.insert(count_kernel);
-            } else if assumptions.proves(&count_kernel) {
-                let derivation = prove_owned_resource_count_lower_bound(
-                    &state,
-                    &count_authority,
-                    &count_kernel,
-                    &assumptions,
-                )
-                .ok_or_else(|| {
-                    ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: kernel rejected the resource-count witness for `observe({})`",
-                        describe_resource_clause(resource)
-                    ))
-                })?;
-                if !count_derivations.contains(&derivation) {
-                    count_derivations.insert(derivation);
-                }
-                surface_propositions.record_lowering(&count_witness, &count_kernel)?;
-                available_pure_facts.insert(count_kernel);
-            } else if explicit_quantity {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `observe({})` could not certify its resource-count lower bound",
-                    describe_resource_clause(resource)
-                )));
             }
         }
         let nonnegative_witness = ClickProposition::Comparison {
@@ -1669,7 +1645,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 .record_lowering(&count_nonnegative_witness, &count_nonnegative_kernel)?;
         }
     }
-    if state.uses_population_authority_semantics() && counts_population {
+    if counts_population {
         // Authority-mode observation names checked count/quantity facts only.
         // Member bodies remain folded, with their custody and memory unchanged.
         return Ok((state, abstract_resource));
@@ -2446,11 +2422,10 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         return Ok((memory, ResourceContext::new(), false));
     }
     let mut fact_state = state.clone().with_memory(memory.clone());
-    if state.uses_population_authority_semantics()
-        && contained_resources
-            .facts()
-            .iter()
-            .any(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
+    if contained_resources
+        .facts()
+        .iter()
+        .any(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
     {
         let owner = CResourceFact::own(CResource::Composite {
             name: definition.name().to_owned(),
@@ -3160,8 +3135,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         .facts()
         .iter()
         .any(proposition_contains_resource_count);
-    let authority_control_body = state.uses_population_authority_semantics()
-        && composite_body.contains().iter().any(|contained| {
+    let authority_control_body = composite_body.contains().iter().any(|contained| {
             matches!(contained, ResourceClause::Declared { name, .. } if name == "authority")
         });
     // The authority inside a folded control resource is the count witness.
@@ -3270,10 +3244,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             })
     };
     let already_unfolded = folded_resources.is_none();
-    if already_unfolded
-        && access == ResourceBodyAccess::Open
-        && state.uses_population_authority_semantics()
-    {
+    if already_unfolded && access == ResourceBodyAccess::Open {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `open({})` Requires {} {}",
             describe_resource_clause(resource),
@@ -3348,38 +3319,6 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             lowered = CResourceFact::View(lowered.resource().clone());
         }
         unfolded_facts.push(lowered.clone());
-        let visible_quantity = lowered
-            .owned_quantity()
-            .unwrap_or_else(|| u32::from(lowered.is_view()));
-        if visible_quantity > 0 {
-            let named = match lowered.resource() {
-                CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
-                    Some((name, arguments))
-                }
-                CResource::Memory(_)
-                | CResource::Instance(_)
-                | CResource::MutexGuard(_)
-                | CResource::MutexLive(_)
-                | CResource::MutexUse(_)
-                | CResource::PopulationAuthority(_)
-                | CResource::Iterated(_) => None,
-            };
-            if let Some((name, resource_arguments)) = named
-                // Built-in tokens such as `allocation` are not counted
-                // resource declarations. Exposing one must not create a
-                // legacy population as a side effect of opening a control.
-                && !state.uses_population_authority_semantics()
-                && name != CResourceFact::ALLOCATION_RESOURCE_NAME
-                && resource_environment.get(name).is_some()
-                && state.counted_population(name, resource_arguments).is_none()
-            {
-                state = state.clone().with_counted_population(
-                    name.clone(),
-                    resource_arguments.clone(),
-                    Bitvector32Term::Constant(visible_quantity),
-                );
-            }
-        }
         // A completed outcome has no more C loads to execute. Its proof
         // receives loadability and symbolic loads without modifying the
         // certified program memory by installing cached cells into it.
@@ -3606,10 +3545,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             // Population cleanup and authority-mode private body opening
             // are certified as exact exchanges. Preserve adjacent framed
             // ranges so nested opens have the same delta as the kernel law.
-            let resources = if tracks_population_in_body
-                || (access == ResourceBodyAccess::Open
-                    && state.uses_population_authority_semantics())
-            {
+            let resources = if tracks_population_in_body || (access == ResourceBodyAccess::Open) {
                 state
                     .resources()
                     .clone()
@@ -3829,8 +3765,7 @@ fn fold_composite_resources_on_outcome_with_facts(
         let mut authority_control_definition = None;
         let mut folded_representation_already_present = false;
         let mut folded_authority_occurrence = None;
-        let authority_control_body = guard_state.uses_population_authority_semantics()
-            && composite_body.contains().iter().any(|contained| {
+        let authority_control_body = composite_body.contains().iter().any(|contained| {
                 matches!(contained, ResourceClause::Declared { name, .. } if name == "authority")
             });
         if closure == ResourceBodyClosure::Initialize {
@@ -3849,10 +3784,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                 .owned_quantity_term()
                 .expect("fold requires owned composite authority")
                 .clone();
-            let (name, population_arguments) = match population.resource() {
-                CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
-                    (name, arguments)
-                }
+            let name = match population.resource() {
+                CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
                 CResource::Memory(_)
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
@@ -3923,29 +3856,9 @@ fn fold_composite_resources_on_outcome_with_facts(
                         ))
                     })?;
                 authority_control_definition = Some(definition.clone());
-            } else if state.uses_population_authority_semantics() {
+            } else {
                 // An ordinary wrapper transfers its existing children without
                 // installing a legacy population ledger.
-            } else if let Some(count) = state.counted_population(name, population_arguments) {
-                let matching_quantity = Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(count.clone()),
-                        Box::new(quantity.clone()),
-                    ),
-                    true,
-                );
-                if !assumptions.proves(&matching_quantity) {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: `fold({})` can restore an existing resource population only when its count is proved equal to the folded quantity",
-                        describe_resource_clause(resource)
-                    )));
-                }
-            } else if quantity_is_positive {
-                **state = state.clone().with_counted_population(
-                    name.clone(),
-                    population_arguments.clone(),
-                    quantity,
-                );
             }
         } else {
             let CFunctionOutcome::Return { value, state } = &outcome else {
@@ -4316,38 +4229,11 @@ fn fold_composite_resources_on_outcome_with_facts(
         let pre_fold_resources = post_state.resources().clone();
         let mut resources = post_state.resources().clone();
         for lowered in lowered_contained.as_slice() {
-            let next = if post_state.uses_population_authority_semantics() {
+            let next = {
                 // The kernel checks the selected exchange, with its frame intact.
                 resources
                     .clone()
                     .without_fact_incrementally(lowered, &assumptions)
-            } else {
-                // Prefer consuming an equivalent whole representation. Generic
-                // range consumption can leave fragments when endpoints denote
-                // framed forms from different snapshots.
-                let directly_matching = resources.facts().iter().find(|available| {
-                    let quantities_match = match (available, lowered) {
-                        (
-                            CResourceFact::Own(_, available_quantity),
-                            CResourceFact::Own(_, lowered_quantity),
-                        ) => available_quantity == lowered_quantity,
-                        (CResourceFact::View(_), CResourceFact::View(_)) => true,
-                        _ => false,
-                    };
-                    quantities_match
-                        && c_resources_directly_match(
-                            available.resource(),
-                            lowered.resource(),
-                            &assumptions,
-                        )
-                });
-                if let Some(directly_matching) = directly_matching.cloned() {
-                    resources = resources
-                        .without_exact_representation(&directly_matching)
-                        .expect("the directly matched resource came from this context");
-                    continue;
-                }
-                resources.clone().without_fact(lowered, &assumptions)
             };
             let Some(next) = next else {
                 let diagnostic_facts = resources.facts().to_vec();
@@ -4416,9 +4302,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             }
             // Authority rewrites authenticate the selected exchange only;
             // normalizing unrelated memory changes the checked frame.
-            let (resources, inserted_occurrence) = if authority_control_body
-                || post_state.uses_population_authority_semantics()
-            {
+            let (resources, inserted_occurrence) = {
                 let (resources, inserted) = post_state
                     .resources()
                     .clone()
@@ -4440,18 +4324,6 @@ fn fold_composite_resources_on_outcome_with_facts(
                         .next()
                         .map(|(_, occurrence)| occurrence),
                 )
-            } else {
-                post_state
-                    .resources()
-                    .clone()
-                    .try_compose_with_fact_with_occurrence(abstract_resource.clone(), &assumptions)
-                    .map_err(|error| {
-                        ClickError::new(format!(
-                            "`{claim_label}` path {path_index}: `fold({})` produced {}",
-                            describe_resource_clause(resource),
-                            describe_resource_context_validity_error(error, parameters, arguments)
-                        ))
-                    })?
             };
             folded_authority_occurrence = inserted_occurrence;
             post_state = Box::new(post_state.with_resource_context(resources));
@@ -4494,7 +4366,7 @@ fn fold_composite_resources_on_outcome_with_facts(
         // views the context already held, now supported by the head: the
         // fold consumed their owners and invents no new view.
         if closure == ResourceBodyClosure::Initialize
-            && (!guard_state.uses_population_authority_semantics() || !family_reaches_population)
+            && (!family_reaches_population)
             && !authority_control_body
             && !lowered_contained.is_empty()
         {
@@ -4532,10 +4404,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 .iter()
                 .filter_map(|fact| fact.core_with_assumptions(assumptions))
                 .filter(|fact| !post_state.resources().contains_exact_representation(fact))
-                .filter(|fact| {
-                    !guard_state.uses_population_authority_semantics()
-                        || pre_fold_resources.contains_exact_representation(fact)
-                })
+                .filter(|fact| pre_fold_resources.contains_exact_representation(fact))
                 .collect::<BTreeSet<_>>();
             if !projections.is_empty() {
                 let resources = post_state

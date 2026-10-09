@@ -4966,7 +4966,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                         }
                     }
-                    let authority_mode = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if state.uses_population_authority_semantics());
+                    let authority_mode = matches!(outcome, CFunctionOutcome::Return { .. });
                     // Resource closers carry the same checked claim
                     // evidence, whether written as assumption or selected by
                     // simp. Validate their jointly returned units rather than

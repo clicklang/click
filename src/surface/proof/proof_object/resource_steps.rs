@@ -2033,9 +2033,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !matches!(resource, ResourceClause::Named { .. })
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
@@ -2114,9 +2112,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !matches!(resource, ResourceClause::Named { .. })
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
@@ -2211,9 +2207,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !self.is_authority_transfer_wrapper(resource)
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
@@ -2265,7 +2259,7 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             false,
         )?;
-        if checked.state.uses_population_authority_semantics() {
+        {
             execution
                 .core
                 .record_return_transfer_wrapper_rewrite(
@@ -2304,9 +2298,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !self.is_authority_transfer_wrapper(resource)
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
@@ -2392,10 +2384,7 @@ impl<'a> Proof<'a> {
         let CFunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
-        if state.uses_population_authority_semantics()
-            && self.is_authority_transfer_wrapper(resource)
-            && family_reaches_population
-        {
+        if self.is_authority_transfer_wrapper(resource) && family_reaches_population {
             let selected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
@@ -2444,11 +2433,7 @@ impl<'a> Proof<'a> {
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Constructing an ordinary family's token creates no population
         // member; an authorized family's member needs its authority.
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
-            && !self.names_unauthorized_family(resource)
-        {
+        if self.execution().is_some() && !self.names_unauthorized_family(resource) {
             return Err(self.step_error(
                 "resource construction may create untracked members in authority mode",
             ));

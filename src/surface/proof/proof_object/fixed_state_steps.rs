@@ -2095,10 +2095,9 @@ impl<'a> Proof<'a> {
         let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
             &ClickProposition::Comparison { left: promoted, operator: ComparisonOperator::Equal, right: ContractExpression::IntegerLiteral("0".into()) },
             states.element_types, BTreeMap::new(), &states.entry_state, states.entry_values, states.current_values,
-            algebraic, &integers, None, &RecordedSnapshots::new(), &PureFactContext::new(),
+            algebraic, &integers, None, &RecordedSnapshots::new(),
             context.predicate_environment, context.click_function_environment, BTreeSet::new(),
-            BTreeMap::new(),
-        ).map_err(|message| self.step_error(format!("could not lower Integer witness: {message}")))?;
+            BTreeMap::new(),).map_err(|message| self.step_error(format!("could not lower Integer witness: {message}")))?;
         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec else {
             return Err(self.step_error("witness must be an Integer expression"));
         };
