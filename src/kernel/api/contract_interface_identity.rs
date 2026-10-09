@@ -611,6 +611,10 @@ impl Names {
                     self.resource_spec(&mut p.resource);
                 }
             }
+            CResourceTerm::Publication { flag, payload, .. } => {
+                self.c(flag);
+                self.resource_spec(&mut payload.resource);
+            }
             CResourceTerm::Memory(s) => self.segment(s),
             CResourceTerm::Composite { arguments, .. } | CResourceTerm::Token { arguments, .. } => {
                 for e in arguments {

@@ -5854,6 +5854,7 @@ pub fn checked_owned_resource_count_lower_bound(
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)
+        | CResource::Publication(_)
         | CResource::Iterated(_) => return None,
     };
     let mut checked_facts = assumptions.clone();
@@ -5951,6 +5952,7 @@ fn describe_contract_reuse_premise(premise: &Proposition) -> String {
             CResource::MutexGuard(_) => "mutex guard",
             CResource::MutexLive(_) => "mutex lifetime",
             CResource::MutexUse(_) => "mutex use",
+            CResource::Publication(_) => "publication right",
             CResource::Instance(instance) => instance.name(),
             CResource::Iterated(iterated) => iterated.owner(),
         }

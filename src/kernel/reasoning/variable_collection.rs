@@ -1743,6 +1743,15 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 collect_pointer_bitvector_variables(pointer, variables);
             }
         }
+        CResource::Publication(right) => {
+            right
+                .payload
+                .visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
+            collect_pointer_bitvector_variables(&right.flag, variables);
+            if let Some(value) = &right.observed {
+                collect_c_value_bitvector_variables(value, variables);
+            }
+        }
         CResource::Instance(instance) => {
             for value in instance.arguments.iter().chain(instance.fields.iter()) {
                 collect_algebraic_value_bitvector_variables(value, variables);
@@ -1842,6 +1851,10 @@ pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
                 collect_resource_spec_bitvector_variables(&p.resource, variables);
             }
         }
+        CResourceTerm::Publication { flag, payload, .. } => {
+            collect_c_expression_bitvector_variables(flag, variables);
+            collect_resource_spec_bitvector_variables(&payload.resource, variables);
+        }
         CResourceTerm::Memory(segment) => {
             collect_c_expression_bitvector_variables(&segment.base, variables);
             collect_c_expression_bitvector_variables(&segment.start, variables);
@@ -1887,6 +1900,10 @@ fn collect_resource_term_bitvector_variables(
             if let Some(p) = protected {
                 collect_resource_spec_bitvector_variables(&p.resource, variables);
             }
+        }
+        CResourceTerm::Publication { flag, payload, .. } => {
+            collect_c_expression_bitvector_variables(flag, variables);
+            collect_resource_spec_bitvector_variables(&payload.resource, variables);
         }
         CResourceTerm::Memory(segment) => {
             collect_c_expression_bitvector_variables(&segment.base, variables);

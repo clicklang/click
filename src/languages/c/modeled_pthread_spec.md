@@ -1,4 +1,4 @@
-# Modeled pthread create/join and mutex specification, version 9
+# Modeled pthread create/join, mutex, and publication specification, version 11
 
 This trusted specification is an explicit assumption of a conditional Click
 client proof. It does not certify an operating system's pthread implementation.
@@ -122,3 +122,35 @@ the same call maps and preserve their selected authority through checked
 occurrence transfers. Typed-use lock and unlock accept the named `access`, `guard`, and `state`
 binders. A suspended worker's input name is local to its contract; create selects
 and checks the required authority without adding a proof argument to the C call.
+
+## One-shot release/acquire publication
+
+The runtime also models one C11 protocol from Click's `<stdatomic.h>`
+projection: one `atomic_int` flag that publishes one payload once. The
+projection gives `atomic_int` the size and alignment of `int`; the operations
+are declared with plain `int` arguments, and only Click's own declarations are
+modeled.
+
+- `atomic_init(&flag, 0)` takes `{ payload: P(args) }`, where `P` is a declared
+  resource with a body and no fields. It requires 4 bytes of explicit, writable,
+  4-byte-aligned storage at `flag` and the constant value 0, consumes that
+  storage ownership, and mints `publisher(&flag, P(args))` and
+  `subscriber(&flag, P(args))`. The storage stays consumed: C11 has no atomic
+  destroy, so the flag is never again an ordinary object in this model.
+- `atomic_store_explicit(&flag, v, memory_order_release)` requires a value
+  proven nonzero, `publisher(&flag, P)`, and a folded owned `P`. It consumes
+  both and forgets the values in `P`'s footprint, because the acquiring thread
+  may change them from then on.
+- `atomic_load_explicit(&flag, memory_order_acquire)` returns an
+  unconstrained `int`. With `subscriber(&flag, P)` held, the right is marked as
+  read through that value until a C branch decides whether it is zero. The
+  branch that knows it is zero keeps the subscriber right. The branch that
+  knows it is nonzero exchanges the right for `P`. A load without the right
+  returns a value and transfers nothing. A load while an earlier read through
+  the same right is still untested is refused.
+- Any other memory order is refused, including `memory_order_seq_cst`.
+
+The rights are affine and unique per flag and side. They are not
+thread-confined, so a worker contract may consume either right. Dropping a
+right is allowed. Ordinary loads and stores of the flag need the consumed
+storage ownership, so they are refused.

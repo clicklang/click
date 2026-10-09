@@ -1249,7 +1249,7 @@ fn write_premise_list(output: &mut String, facts: &[ClickProposition], indent: u
     }
 }
 
-fn format_resource_call(resource: &ResourceClause) -> String {
+pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> String {
     if let ResourceClause::Named { binding, .. } = resource {
         return binding.name.clone();
     }

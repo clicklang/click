@@ -2991,6 +2991,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_) => {
                 return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
             }
@@ -5715,6 +5716,7 @@ impl LoanLedger {
                     | CResource::Instance(_)
                     | CResource::MutexGuard(_)
                     | CResource::MutexUse(_)
+                    | CResource::Publication(_)
                     | CResource::Iterated(_) => {
                         return Err(LoanRefusal::UnsupportedResource);
                     }

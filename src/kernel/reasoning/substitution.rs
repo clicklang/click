@@ -1331,6 +1331,10 @@ fn collect_c_resource_spec_bound_variables(
                 collect_c_resource_spec_bound_variables(&protected.resource, variables);
             }
         }
+        CResourceTerm::Publication { flag, payload, .. } => {
+            collect_c_expression_bound_variables(flag, variables);
+            collect_c_resource_spec_bound_variables(&payload.resource, variables);
+        }
         CResourceTerm::Memory(segment) => {
             collect_c_memory_segment_bound_variables(segment, variables)
         }
@@ -1371,6 +1375,10 @@ fn collect_c_resource_term_bound_variables(
             if let Some(protected) = protected {
                 collect_c_resource_spec_bound_variables(&protected.resource, variables);
             }
+        }
+        CResourceTerm::Publication { flag, payload, .. } => {
+            collect_c_expression_bound_variables(flag, variables);
+            collect_c_resource_spec_bound_variables(&payload.resource, variables);
         }
         CResourceTerm::Memory(segment) => {
             collect_c_memory_segment_bound_variables(segment, variables)
@@ -1526,6 +1534,15 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
                 collect_pointer_bound_variables(pointer, variables);
+            }
+        }
+        CResource::Publication(right) => {
+            right
+                .payload
+                .visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
+            collect_pointer_bound_variables(&right.flag, variables);
+            if let Some(value) = &right.observed {
+                collect_c_value_bound_variables(value, variables);
             }
         }
         CResource::Instance(instance) => {
@@ -3994,6 +4011,17 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
                 substitute_bitvector_variable_in_algebraic_value(value, from, to)
             }))
         }
+        CResource::Publication(right) => CResource::Publication(PublicationRight {
+            side: right.side,
+            payload: right
+                .payload
+                .map_values(|v| substitute_bitvector_variable_in_algebraic_value(v, from, to)),
+            flag: substitute_bitvector_variable_in_pointer(&right.flag, from, to),
+            observed: right
+                .observed
+                .as_ref()
+                .map(|value| substitute_bitvector_variable_in_c_value(value, from, to)),
+        }),
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
                 if identity.binding.is_none() {
@@ -4360,6 +4388,26 @@ fn substitute_bitvector_variable_in_resource_term(
         CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
             mutex: Box::new(substitute_bitvector_variable_in_c_expression(
                 mutex, from, to,
+            )),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::Publication {
+            side,
+            payload,
+            flag,
+            snapshot,
+        } => CResourceTerm::Publication {
+            side: *side,
+            payload: Box::new(CResourceTypeSpec {
+                resource: Box::new(substitute_bitvector_variable_in_resource_spec(
+                    &payload.resource,
+                    from,
+                    to,
+                )),
+                schema: payload.schema.clone(),
+            }),
+            flag: Box::new(substitute_bitvector_variable_in_c_expression(
+                flag, from, to,
             )),
             snapshot: *snapshot,
         },
@@ -6793,6 +6841,17 @@ fn substitute_pointer_variable_in_c_resource(
                 substitute_pointer_variable_in_algebraic_value(value, from, to)
             }))
         }
+        CResource::Publication(right) => CResource::Publication(PublicationRight {
+            side: right.side,
+            payload: right
+                .payload
+                .map_values(|v| substitute_pointer_variable_in_algebraic_value(v, from, to)),
+            flag: substitute_pointer_variable_in_pointer(&right.flag, from, to),
+            observed: right
+                .observed
+                .as_ref()
+                .map(|value| substitute_pointer_variable_in_c_value(value, from, to)),
+        }),
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
                 if identity.binding.is_none() {
@@ -8120,6 +8179,24 @@ fn substitute_pointer_variable_in_resource_term(
         },
         CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
             mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::Publication {
+            side,
+            payload,
+            flag,
+            snapshot,
+        } => CResourceTerm::Publication {
+            side: *side,
+            payload: Box::new(CResourceTypeSpec {
+                resource: Box::new(substitute_pointer_variable_in_resource_spec(
+                    &payload.resource,
+                    from,
+                    to,
+                )),
+                schema: payload.schema.clone(),
+            }),
+            flag: Box::new(substitute_pointer_variable_in_c_expression(flag, from, to)),
             snapshot: *snapshot,
         },
         CResourceTerm::MutexUse {

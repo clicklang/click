@@ -358,6 +358,17 @@ impl ResourceContextIndex {
                 entry,
             );
         }
+        if let CResource::Publication(right) = fact.resource() {
+            result.mutex_authorities = insert_resource_index_entry(
+                &result.mutex_authorities,
+                (ResourceFamily::Publication, right.flag.clone()),
+                entry,
+            );
+            if right.observed.is_some() {
+                result.observed_publications =
+                    insert_resource_index_entry(&result.observed_publications, (), entry);
+            }
+        }
         if let CResource::Instance(instance) = fact.resource() {
             result.instances =
                 insert_resource_index_entry(&result.instances, instance.identity, entry);
@@ -517,6 +528,17 @@ impl ResourceContextIndex {
                 &(ResourceFamily::MutexLive, identity.mutex.clone()),
                 entry,
             );
+        }
+        if let CResource::Publication(right) = fact.resource() {
+            result.mutex_authorities = remove_resource_index_entry(
+                &result.mutex_authorities,
+                &(ResourceFamily::Publication, right.flag.clone()),
+                entry,
+            );
+            if right.observed.is_some() {
+                result.observed_publications =
+                    remove_resource_index_entry(&result.observed_publications, &(), entry);
+            }
         }
         if let CResource::Instance(instance) = fact.resource() {
             result.instances =
@@ -2562,6 +2584,53 @@ impl ResourceContext {
         matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
     }
 
+    /// The owned publication right of `side` for the flag at `pointer`, found
+    /// through the authority index rather than a scan of the context.
+    pub(crate) fn publication_right_at(
+        &self,
+        side: super::PublicationSide,
+        pointer: &Pointer,
+    ) -> Option<&CResourceFact> {
+        let entries = self
+            .storage
+            .index
+            .mutex_authorities
+            .get(&(ResourceFamily::Publication, pointer.clone()))?;
+        let mut owned = entries
+            .iter()
+            .map(|entry| self.fact(*entry))
+            .filter(|fact| {
+                matches!(fact, CResourceFact::Own(CResource::Publication(right), q)
+                if right.side == side && q.as_const() == Some(1))
+            });
+        let fact = owned.next()?;
+        owned.next().is_none().then_some(fact)
+    }
+
+    /// The subscriber rights read by an acquire load whose value no C branch
+    /// has decided yet, found through their own index.
+    pub(crate) fn has_observed_publication_rights(&self) -> bool {
+        self.storage
+            .index
+            .observed_publications
+            .get(&())
+            .is_some_and(|entries| !entries.is_empty())
+    }
+
+    pub(crate) fn observed_publication_rights(&self) -> Vec<CResourceFact> {
+        self.storage
+            .index
+            .observed_publications
+            .get(&())
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| self.fact(*entry).clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn mutex_guard_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
         let entries = self
             .storage
@@ -3993,7 +4062,8 @@ impl ResourceContext {
             CResource::PopulationAuthority(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
-            | CResource::MutexUse(_) => self.storage.index.by_resource.get(fact.resource()),
+            | CResource::MutexUse(_)
+            | CResource::Publication(_) => self.storage.index.by_resource.get(fact.resource()),
             CResource::Instance(instance) => self.storage.index.instances.get(&instance.identity),
             CResource::Iterated(iterated) => self
                 .storage
@@ -6042,7 +6112,8 @@ impl ResourceNormalizationIndex {
             | CResource::Iterated(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
-            | CResource::MutexUse(_) => {}
+            | CResource::MutexUse(_)
+            | CResource::Publication(_) => {}
             // A wide range is not joined to a neighbour yet, so it has no
             // endpoint to be found by.
             CResource::Memory(range) if range.wide_bounds().is_some() => {}
@@ -6142,7 +6213,8 @@ impl ResourceNormalizationIndex {
             | CResource::Iterated(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
-            | CResource::MutexUse(_) => {}
+            | CResource::MutexUse(_)
+            | CResource::Publication(_) => {}
             CResource::Memory(range) if range.wide_bounds().is_some() => {}
             CResource::Memory(range) => {
                 let mut roots = related_memory_base_roots(range.base(), assumptions);
@@ -6274,6 +6346,7 @@ fn resource_family_algebra(family: ResourceFamily) -> &'static dyn ResourceFamil
         ResourceFamily::MutexLive => &MUTEX_LIVE_RESOURCE_ALGEBRA,
         ResourceFamily::MutexUse => &MUTEX_USE_RESOURCE_ALGEBRA,
         ResourceFamily::Iterated => &ITERATED_RESOURCE_ALGEBRA,
+        ResourceFamily::Publication => &PUBLICATION_RESOURCE_ALGEBRA,
     };
     debug_assert_eq!(algebra.family(), family);
     algebra
@@ -6390,6 +6463,28 @@ fn exact_resources_proven_equal(
     match (left, right) {
         (CResource::Iterated(left), CResource::Iterated(right)) => {
             iterated_memories_proven_equal(left, right, assumptions)
+        }
+        (CResource::Publication(left), CResource::Publication(right)) => {
+            let pointer =
+                |pointer: &Pointer| -> AlgebraicValue { CValue::pointer(pointer.clone()).into() };
+            left.side == right.side
+                && left.observed.is_none()
+                && right.observed.is_none()
+                && crate::kernel::resource_arguments_proven_equal(
+                    &pointer(&left.flag),
+                    &pointer(&right.flag),
+                    assumptions,
+                )
+                && left.payload.family() == right.payload.family()
+                && left.payload.schema() == right.payload.schema()
+                && left.payload.resource_arguments() == right.payload.resource_arguments()
+                && left.payload.arguments().len() == right.payload.arguments().len()
+                && left
+                    .payload
+                    .arguments()
+                    .iter()
+                    .zip(right.payload.arguments())
+                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
         }
         (CResource::Instance(left), CResource::Instance(right)) => {
             left.identity == right.identity
@@ -7323,6 +7418,63 @@ impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
     }
 }
 
+/// A publication right is unique: initialization mints one of each side and
+/// nothing duplicates it, so two for the same flag and side are a conflict.
+impl ResourceFamilyAlgebra for PublicationResourceAlgebra {
+    fn family(&self) -> ResourceFamily {
+        ResourceFamily::Publication
+    }
+    fn pair_validity_error(
+        &self,
+        left: &CResourceFact,
+        right: &CResourceFact,
+        _: &PureFactContext,
+    ) -> Option<ResourceContextValidityError> {
+        match (left.resource(), right.resource()) {
+            (CResource::Publication(a), CResource::Publication(b))
+                if a.side == b.side && a.flag == b.flag =>
+            {
+                Some(ResourceContextValidityError::DuplicateOwnedResourceFact(
+                    right.clone(),
+                ))
+            }
+            _ => None,
+        }
+    }
+    fn entails(
+        &self,
+        available: &CResourceFact,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+            && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
+    }
+    fn consume(
+        &self,
+        available: &CResourceFact,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceFactConsumption> {
+        self.entails(available, required, assumptions)
+            .then(|| ResourceFactConsumption::Replace(vec![]))
+    }
+    fn normalize_pair(
+        &self,
+        _: &CResourceFact,
+        _: &CResourceFact,
+        _: &PureFactContext,
+    ) -> Option<CResourceFact> {
+        None
+    }
+    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+        None
+    }
+    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
+        vec![]
+    }
+}
+
 impl ResourceFamilyAlgebra for MutexLiveResourceAlgebra {
     fn family(&self) -> ResourceFamily {
         ResourceFamily::MutexLive
@@ -7538,6 +7690,7 @@ pub(super) fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_),
         )
         | CResourceFact::Own(..) => None,
@@ -7595,6 +7748,7 @@ fn memory_resource_fact_permits_write(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_),
             _,
         )
@@ -8140,6 +8294,7 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_),
             _,
         )
@@ -8151,6 +8306,7 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_),
         ) => None,
     }
@@ -8612,6 +8768,7 @@ impl CResource {
             Self::MutexLive(_) => ResourceFamily::MutexLive,
             Self::MutexUse(_) => ResourceFamily::MutexUse,
             Self::Iterated(_) => ResourceFamily::Iterated,
+            Self::Publication(_) => ResourceFamily::Publication,
         }
     }
 }
@@ -8625,6 +8782,7 @@ impl CResourceFact {
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
         ) || matches!(self, Self::Own(_, quantity) if quantity.as_const() == Some(1))
     }
 
@@ -8708,7 +8866,7 @@ impl CResourceFact {
             ),
             CResource::Iterated(iterated) => iterated.blocks().contains(&block),
             CResource::Token { .. } | CResource::PopulationAuthority(_)
-            | CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) => false,
+            | CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) | CResource::Publication(_) => false,
         }
     }
 
@@ -8818,6 +8976,7 @@ impl CResourceFact {
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::Iterated(_),
                 _,
             )
@@ -8836,6 +8995,7 @@ impl CResourceFact {
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::Iterated(_),
             )
             | Self::Own(..) => None,
@@ -8855,6 +9015,7 @@ impl CResourceFact {
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::Iterated(_),
                 _,
             )
@@ -8866,6 +9027,7 @@ impl CResourceFact {
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::Iterated(_),
             ) => None,
         }

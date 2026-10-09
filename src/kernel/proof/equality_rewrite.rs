@@ -936,6 +936,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::Iterated(_) => resource.clone(),
             }
         }
@@ -1835,6 +1836,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)
+        | CResource::Publication(_)
         | CResource::Iterated(_) => resource.clone(),
     };
     let rewritten = match goal {

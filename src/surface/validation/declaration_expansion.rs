@@ -345,6 +345,21 @@ fn expand_declared_resource_clauses_with_rules(
             child_slots: Default::default(),
         },
     );
+    for side in ["publisher", "subscriber"] {
+        resource_definitions.insert(
+            side.into(),
+            DeclaredResourceInfo {
+                fields: Default::default(),
+                field_schema: None,
+                has_fields: false,
+                authorized: false,
+                resource_parameter_families: Vec::new(),
+                parameter_types: vec![C0Type::VoidPointer],
+                kind: ResourceKind::Token,
+                child_slots: Default::default(),
+            },
+        );
+    }
     resource_definitions.insert(
         "authority".into(),
         DeclaredResourceInfo {
@@ -793,6 +808,11 @@ fn expand_declared_resource_tactic(
         }
         tactic @ (ProofTactic::Both(_) | ProofTactic::CloseInvariantsBy(_)) => {
             expand_declared_resource_tactic_with_plain_scripts(tactic, resource_definitions)
+        }
+        ProofTactic::StepCall(transport) => {
+            Ok(ProofTactic::StepCall(transport.try_map_type_arguments(
+                |resource| expand_declared_resource_clause(resource, resource_definitions),
+            )?))
         }
         ProofTactic::ArithmeticCertificate(certificate) => Ok(ProofTactic::ArithmeticCertificate(
             expand_declared_resource_certificate(certificate, resource_definitions)?,
@@ -1610,7 +1630,12 @@ fn expand_declared_resource_clause(
             }
             if matches!(
                 name.as_str(),
-                "mutex_live" | "mutex_guard" | "mutex_use" | "authority"
+                "mutex_live"
+                    | "mutex_guard"
+                    | "mutex_use"
+                    | "authority"
+                    | "publisher"
+                    | "subscriber"
             ) {
                 if binding.fold_fields.is_some() || binding.child_bindings.is_some() {
                     return Err(ClickError::new(
@@ -1803,7 +1828,9 @@ fn expand_declared_resource_clause(
                 || name == "mutex_guard"
                 || name == "mutex_live"
                 || name == "mutex_use"
-                || name == "authority")
+                || name == "authority"
+                || name == "publisher"
+                || name == "subscriber")
                 && access == ResourceAccessMode::View
             {
                 return Err(ClickError::new(format!(
@@ -1874,7 +1901,9 @@ fn expand_resource_type_arguments(
     if arguments.is_empty() {
         return Ok(arguments);
     }
-    if !matches!(name, "mutex_use" | "authority") || arguments.len() != 1 {
+    if !matches!(name, "mutex_use" | "authority" | "publisher" | "subscriber")
+        || arguments.len() != 1
+    {
         return Err(ClickError::new(format!(
             "resource `{name}` does not accept these resource type arguments"
         )));
@@ -1897,7 +1926,12 @@ fn expand_resource_type_arguments(
                 || !resource_type_arguments.is_empty()
                 || matches!(
                     name.as_str(),
-                    "mutex_live" | "mutex_use" | "mutex_guard" | "authority"
+                    "mutex_live"
+                        | "mutex_use"
+                        | "mutex_guard"
+                        | "authority"
+                        | "publisher"
+                        | "subscriber"
                 )
             {
                 return Err(ClickError::new(
@@ -2462,7 +2496,12 @@ fn expand_declared_resource_expression_node(
                     .is_some_and(|info| !info.authorized)
                 && !matches!(
                     name.as_str(),
-                    "authority" | "mutex_guard" | "mutex_live" | "mutex_use"
+                    "authority"
+                        | "mutex_guard"
+                        | "mutex_live"
+                        | "mutex_use"
+                        | "publisher"
+                        | "subscriber"
                 )
                 && name != CResourceFact::ALLOCATION_RESOURCE_NAME
             {
@@ -2742,6 +2781,13 @@ fn reject_counted_field_resource(
         ResourceClause::Declared { name, .. } if name == "mutex_use" => Err(ClickError::new(
             "`mutex_use` is exclusive and not countable",
         )),
+        ResourceClause::Declared { name, .. }
+            if matches!(name.as_str(), "publisher" | "subscriber") =>
+        {
+            Err(ClickError::new(format!(
+                "`{name}` is exclusive and not countable"
+            )))
+        }
         ResourceClause::Declared { name, .. } if name == "mutex_live" => Err(ClickError::new(
             "`mutex_live` is exclusive and not countable",
         )),

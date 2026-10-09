@@ -77,6 +77,12 @@ fn concurrency_mutex_composition_source_is_frozen() {
 }
 
 #[test]
+fn frozen_publication_verifies() {
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-publication");
+    run_example_in_thread(&project).unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
 fn concurrency_publication_source_is_frozen() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("design/concurrency-publication/publication.c");

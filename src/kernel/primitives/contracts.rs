@@ -2920,15 +2920,27 @@ impl CExecutionEnvironment {
     /// Selects the binder transport for one ordinary C call to `function`.
     /// The map is the only source of bindings for that call.
     pub(crate) fn with_selected_call_binders(
+        self,
+        function: &str,
+        arity: usize,
+        bindings: BTreeMap<Variable, Variable>,
+    ) -> Self {
+        self.with_selected_call_binders_and_types(function, arity, bindings, BTreeMap::new())
+    }
+
+    /// [`Self::with_selected_call_binders`] with runtime type binders.
+    pub(crate) fn with_selected_call_binders_and_types(
         mut self,
         function: &str,
         arity: usize,
         bindings: BTreeMap<Variable, Variable>,
+        type_arguments: BTreeMap<Variable, crate::kernel::ResourceDescription>,
     ) -> Self {
         self.selected_call_binders = Some(std::sync::Arc::new(CCallBinderTransport {
             function: std::sync::Arc::from(function),
             arity,
             bindings: std::sync::Arc::new(bindings),
+            type_arguments: std::sync::Arc::new(type_arguments),
         }));
         self
     }

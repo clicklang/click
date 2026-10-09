@@ -183,6 +183,15 @@ replacements. They are expanded in source order across a source file and its
 local headers. Recursive expansion and unsupported parameter features receive
 diagnostics.
 
+## Atomics are one publication protocol
+
+The modeled `<stdatomic.h>` operations cover one protocol: an `atomic_int`
+flag initialized to zero publishes one field-less payload once, through a
+release store and an acquire load. Other atomic types, read-modify-write
+operations, fences, and orders other than release/acquire (including
+`memory_order_seq_cst`) are refused. A flag's storage is not returned after
+the protocol, and a flag cannot be reinitialized for a second publication.
+
 ## Callback contracts have known gaps
 
 A named contract's resource clause cannot read through one of its own
