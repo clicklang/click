@@ -31,7 +31,10 @@ obey the same rule. A view freezes the range selected at borrow entry and
 never retargets when a pointer-valued field changes; a view of a pointer
 cell does not protect the pointee unless the resource body includes it. An
 empty range grants no dereference, protects nothing, and proves neither
-nonnullness nor a live allocation.
+nonnullness nor a live allocation. A call requirement whose range endpoints
+are equal under the checked context needs no backing or loan transition,
+matching the resource algebra's empty-range entailment. Unknown endpoints
+continue through ordinary backing checks.
 
 ## Laws
 

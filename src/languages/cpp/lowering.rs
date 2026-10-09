@@ -737,7 +737,7 @@ impl LoweringContext<'_> {
                 };
                 let layout = self.record_layout(name)?;
                 let (prefix, actual) = self.normalize_arguments(arguments)?;
-                let temporary = self.fresh_call_capture()?;
+                let temporary = self.fresh_aggregate_capture()?;
                 // The RHS is a separate object: the live LHS may be read by
                 // the factory and cannot serve as unwritten construction storage.
                 Ok(evaluate_then(
@@ -1201,7 +1201,19 @@ impl LoweringContext<'_> {
     }
 
     fn fresh_call_capture(&mut self) -> Result<String, String> {
-        let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
+        self.fresh_capture(self.nested_capture_name.clone())
+    }
+
+    fn fresh_aggregate_capture(&mut self) -> Result<String, String> {
+        // Materialized objects have addressable storage. Keep their names
+        // separate from scalar call captures: addressability is summarized
+        // across functions by name, so an aggregate temporary in one function
+        // must not obscure a scalar capture's nonescaping storage in another.
+        self.fresh_capture(format!("{}_aggregate", self.nested_capture_name))
+    }
+
+    fn fresh_capture(&mut self, prefix: String) -> Result<String, String> {
+        let mut capture = format!("{prefix}_{}", self.next_call_capture);
         self.next_call_capture = self
             .next_call_capture
             .checked_add(1)

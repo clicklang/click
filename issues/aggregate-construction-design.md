@@ -148,8 +148,16 @@ result owner to typed constructor write ranges. Unknown pointer fields use the
 ordinary typed read during aggregate copying, rather than acquiring the source
 object's provenance; checked shared-engine coverage includes source retirement.
 
-The pinned `first`/`SpanPopBack` acceptance path in steps 4 and 5 is still pending,
-including the singleton-to-empty case. The selected design and bounds below
+The unchanged pinned runtime `first(K)` now verifies for `0 <= K <= N`
+under the accepted extent bound, preserving the receiver and result data pointer.
+Ordinary, expanded and retained checks cover returned construction and forwarding.
+A zero-count caller needs descriptor views alone: checked empty memory ranges
+require no backing or loan transition. The local constructor contract also admits
+zero. Aggregate materialization names are distinct from scalar call captures,
+so a temporary in one function does not suppress another function's checked
+nonaddressable scalar storage. Constructor helper calls and saved-reference
+reads/writes across assignment retirement have source coverage.
+`SpanPopBack` and its singleton-to-empty caller coverage remain pending. The selected design and bounds below
 remain unchanged; no broader source profile or kernel certification redesign
 is needed for the next step.
 

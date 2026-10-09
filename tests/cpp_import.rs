@@ -16273,10 +16273,11 @@ fn check_construction_assignment(expand_and_retain: bool) {
     let project = Project::with_fixture(
         "construct-assignment.cpp",
         "probe",
-        r#"struct View {
+        r#"int* identity(int* p) noexcept { return p; }
+struct View {
  int* data;
  unsigned long size;
- View(int* p, unsigned long n) noexcept : data(p), size(n) {}
+ View(int* p, unsigned long n) noexcept : data(identity(p)), size(n) {}
  View& operator=(const View&) noexcept = default;
 };
 View resize(const View& view, unsigned long n) noexcept { return View(view.data, n); }
@@ -16296,6 +16297,7 @@ unsigned long probe(View& view, unsigned long n) noexcept {
         click::languages::cpp::CppStatement::AssignConstructionCall { .. }
     ));
     let proof = r#"verifying "construct-assignment.cpp";
+int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
 void View_constructor(struct View* this, int32* p, uint64 n) {
  owns this->data;
  owns this->size;
@@ -16342,4 +16344,68 @@ uint64 probe(struct View& view, uint64 n) {
     session
         .verify_at_project(proof, position.line, position.column)
         .unwrap();
+}
+
+#[test]
+// A saved reference remains readable under a backing view after the RHS
+// descriptor temporary retires; pointer copying grants no new authority.
+fn construction_assignment_saved_reference_read_offline() {
+    let project = Project::with_fixture(
+        "construct-assignment.cpp",
+        "probe",
+        r#"int* identity(int* p) noexcept { return p; }
+struct View {
+ int* data;
+ unsigned long size;
+ View(int* p, unsigned long n) noexcept : data(identity(p)), size(n) {}
+ View& operator=(const View&) noexcept = default;
+};
+View resize(const View& view, unsigned long n) noexcept { return View(view.data, n); }
+int& probe(View& view, unsigned long n) noexcept {
+ int& back = *view.data;
+ view = resize(view, n);
+ return back;
+}
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[1],
+        click::languages::cpp::CppStatement::AssignConstructionCall { .. }
+    ));
+    let proof = r#"verifying "construct-assignment.cpp";
+int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
+void View_constructor(struct View* this, int32* p, uint64 n) {
+ owns this->data;
+ owns this->size;
+ ensures this->data == p;
+ ensures this->size == n;
+} by { execute(); simp(); }
+struct View resize(const struct View& view, uint64 n) {
+ views view.data;
+ ensures result.data == old(view.data);
+ ensures result.size == n;
+ ensures view.data == old(view.data);
+} by { execute(); simp(); }
+int32& probe(struct View& view, uint64 n) {
+ owns view.data;
+ owns view.size;
+ views view.data[0..1];
+ ensures &result == old(view.data);
+ ensures result == old(view.data[0]);
+ ensures view.data == old(view.data);
+ ensures view.size == n;
+
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    let missing = proof.replace(" views view.data[0..1];", "");
+    let path = project.directory.join("missing.click");
+    fs::write(&path, &missing).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &missing).unwrap(), &import)
+            .is_err()
+    );
 }

@@ -283,6 +283,12 @@ contract. Establish that from checked constructors/copies, not a span intrinsic.
    existing backing authority. Retain native uint64 extent and the accepted
    `1 <= N <= 1,073,741,823` single-range bound.
 
+Pinned runtime `first(K)` now has ordinary, expanded and retained returned
+construction coverage for `0 <= K <= N` within the accepted bound. Equal
+endpoints require no stable-view loan, so a zero-count caller passes with only
+descriptor views. `SpanPopBack` and its read/write callers are the remaining
+acceptance work.
+
 Primary code owners are [shared interfaces](../src/kernel/primitives/contracts.rs),
 [interface carriers](../src/kernel/primitives.rs),
 [call execution and result binding](../src/kernel/functions.rs),

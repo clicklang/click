@@ -323,8 +323,11 @@ the shared C null pointer value, without grants of storage authority. Nonliteral
 `nullptr_t` conversions, other pointee types and nonzero integer casts remain
 outside this profile. Artifact schema 52 requires refreshing earlier locks.
 
-`first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
-behind the shared construction dependency. Other scalar/import work still needs
+The unchanged pinned runtime `first(K)` now verifies through checked returned
+construction for `0 <= K <= N <= 1073741823`, preserving the data pointer and
+receiver fields. Ordinary, expanded and retained proofs pass; a zero-count caller
+needs no backing authority. `last`, `subspan` and the complete `SpanPopBack`
+target remain pending. Other scalar/import work still needs
 an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation
@@ -335,9 +338,10 @@ construction now uses checked child-constructor calls in declaration order,
 with unwritten destination footprints, native contracts and sibling/backing
 frames. Scalar member initializers can invoke checked nonthrowing read-only
 observers. Trivial destruction permits these local objects in the normal-only
-exception-enabled profile. Prvalue aggregate returns, copy initialization and
-temporary lifetimes still need frontend admission; they do not justify a separate
-C++ memory model. The unchanged pinned libstdc++ pointer/count constructor is now
+exception-enabled profile. The bounded value-only returned-construction profile now supports factory
+returns, forwarding, initialization of new objects and materialized trivial-copy
+assignment with full-expression retirement. Broader prvalue and copy forms
+remain refused; they do not justify a separate C++ memory model. The unchanged pinned libstdc++ pointer/count constructor is now
 verified offline through ordinary contracts for both `to_address` helpers,
 `__extent_storage`, and `span`. Successful concrete compile-time assertions
 produce no runtime operation. The caller retains its backing-range view under
