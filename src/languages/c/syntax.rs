@@ -1941,6 +1941,9 @@ struct ParsedType {
     /// Pointer uses are safe to import; value storage is refused until that
     /// alignment is represented in allocations and aggregate layouts.
     aligned_typedef: bool,
+    /// Declaration-only compiler type. No layout, value or call ABI is granted.
+    /// Kept only in typedef aliases and signatures of unusable prototypes.
+    opaque_builtin: bool,
     struct_name: Option<String>,
     enum_name: Option<String>,
     union_name: Option<String>,
@@ -7149,6 +7152,8 @@ struct Parser {
     enums: BTreeMap<String, C0EnumDefinition>,
     enum_constants: BTreeMap<String, i32>,
     typedefs: BTreeMap<String, ParsedType>,
+    parsing_function_header: bool,
+    opaque_function_signature: bool,
     variable_structs: BTreeMap<String, String>,
     /// The struct name of each automatic struct-pointer local declared in the
     /// function currently being parsed, keyed by its C spelling. `None` marks
@@ -7285,6 +7290,8 @@ pub(crate) struct C0FunctionHeader {
     variadic: bool,
     /// A parameter has no name, which only a body-less prototype may do.
     has_unnamed_parameter: bool,
+    /// No callable ABI exists for a retained declaration-only builtin type.
+    opaque_signature: bool,
     /// Declared with GNU `error`: the compiler rejects the program unless
     /// it removes every call, so a call must be unreachable.
     compile_time_error: bool,
@@ -7372,6 +7379,7 @@ fn function_headers_compatible(left: &C0FunctionHeader, right: &C0FunctionHeader
         && left.weak_linkage == right.weak_linkage
         && left.returns_twice == right.returns_twice
         && left.variadic == right.variadic
+        && left.opaque_signature == right.opaque_signature
         && left.compile_time_error == right.compile_time_error
         && left.name == right.name
         && left.parameters.len() == right.parameters.len()
@@ -7475,6 +7483,8 @@ impl Parser {
             enums: BTreeMap::new(),
             enum_constants: BTreeMap::new(),
             typedefs: BTreeMap::new(),
+            parsing_function_header: false,
+            opaque_function_signature: false,
             variable_structs: BTreeMap::new(),
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
@@ -8149,6 +8159,15 @@ impl Parser {
             || !self.function_declarations.contains_key(source_name)
         {
             return Ok(None);
+        }
+        if self
+            .function_declarations
+            .get(source_name)
+            .is_some_and(|header| header.opaque_signature)
+        {
+            return Err(self.error_here(format!(
+                "function `{source_name}` uses declaration-only __builtin_va_list; function-address uses require a modeled ABI"
+            )));
         }
         if self
             .function_declarations
@@ -8832,6 +8851,12 @@ impl Parser {
     /// A variadic body would read its variable arguments through `va_arg`,
     /// which has no model. Only the body-less prototype is retained.
     fn reject_variadic_definition(&self, header: &C0FunctionHeader) -> Result<(), C0SyntaxError> {
+        if header.opaque_signature {
+            return Err(self.error_here(format!(
+                "function definition `{}` uses declaration-only __builtin_va_list; its call ABI and value operations are not modeled",
+                header.source_name
+            )));
+        }
         if header.has_unnamed_parameter {
             return Err(self.error_here(format!(
                 "function definition `{}` has an unnamed parameter; only a body-less prototype may omit parameter names",
@@ -8852,7 +8877,9 @@ impl Parser {
         internal_linkage: bool,
     ) -> Result<C0FunctionHeader, C0SyntaxError> {
         let declaration_line = self.positions[self.position].line;
-        let parsed_return_type = self.parse_type()?;
+        self.parsing_function_header = true;
+        self.opaque_function_signature = false;
+        let parsed_return_type = self.parse_signature_type()?;
         if parsed_return_type.is_constant {
             return Err(self.error_here(
                 "const-qualified function return types are not supported in this slice",
@@ -8919,8 +8946,11 @@ impl Parser {
         } else {
             source_name.clone()
         };
+        self.parsing_function_header = false;
+        let opaque_signature = std::mem::take(&mut self.opaque_function_signature);
         Ok(C0FunctionHeader {
             declaration_line,
+            opaque_signature,
             return_type,
             return_pointee_constant: parsed_return_type.pointee_constant,
             return_struct_name,
@@ -9148,7 +9178,7 @@ impl Parser {
             Some("__alignof__" | "__alignof" | "_Alignof" | "sizeof") => {
                 let operation = self.expect_ident("alignment operator")?;
                 self.expect(Token::LParen)?;
-                let parsed = self.parse_type_with_anonymous_struct(false, true)?;
+                let parsed = self.parse_type_with_anonymous_struct(false, true, false)?;
                 self.expect(Token::RParen)?;
                 if let Some(name) = parsed.struct_name.as_deref()
                     && !parsed.c_type.is_pointer()
@@ -10427,7 +10457,7 @@ impl Parser {
 
     fn parse_typedef_declaration(&mut self) -> Result<(), C0SyntaxError> {
         self.expect_ident_spelling("typedef")?;
-        let mut parsed_type = self.parse_type_with_anonymous_struct(true, true)?;
+        let mut parsed_type = self.parse_type_with_anonymous_struct(true, true, true)?;
         let alias = self.expect_ident("typedef name")?;
         if self.peek() == Some(&Token::LBracket) {
             self.position += 1;
@@ -10620,7 +10650,7 @@ impl Parser {
             if self.peek_ident() == Some("__extension__") {
                 self.position += 1;
             }
-            let field_type = self.parse_type_with_anonymous_struct(true, true)?;
+            let field_type = self.parse_type_with_anonymous_struct(true, true, false)?;
             loop {
                 let field_name = self.expect_ident("union field name")?;
                 let (
@@ -10705,7 +10735,7 @@ impl Parser {
             if self.peek().is_none() {
                 return Err(self.error_here("expected struct field or `}`, got end of input"));
             }
-            let field_type = self.parse_type_with_anonymous_struct(false, true)?;
+            let field_type = self.parse_type_with_anonymous_struct(false, true, false)?;
             if let Some((field_name, c_type, function_pointer_signature)) =
                 self.parse_function_pointer_declarator(field_type.clone())?
             {
@@ -11135,7 +11165,7 @@ impl Parser {
                 }
                 return Ok(parameters);
             }
-            let parsed_type = self.parse_type()?;
+            let parsed_type = self.parse_signature_type()?;
             if parsed_type.union_name.is_some() && !parsed_type.c_type.is_pointer() {
                 return Err(self.error_here(
                     "union value parameters are not supported; pass a pointer to the union",
@@ -11349,14 +11379,24 @@ impl Parser {
         }
     }
 
+    fn parse_signature_type(&mut self) -> Result<ParsedType, C0SyntaxError> {
+        if !self.parsing_function_header {
+            return self.parse_type();
+        }
+        let ty = self.parse_type_with_anonymous_struct(false, false, true)?;
+        self.opaque_function_signature |= ty.opaque_builtin;
+        Ok(ty)
+    }
+
     fn parse_type(&mut self) -> Result<ParsedType, C0SyntaxError> {
-        self.parse_type_with_anonymous_struct(false, false)
+        self.parse_type_with_anonymous_struct(false, false, false)
     }
 
     fn parse_type_with_anonymous_struct(
         &mut self,
         allow_anonymous_struct: bool,
         allow_long_double_layout: bool,
+        allow_opaque_declaration: bool,
     ) -> Result<ParsedType, C0SyntaxError> {
         let is_constant = if self.peek_ident() == Some("const") {
             self.position += 1;
@@ -11382,6 +11422,7 @@ impl Parser {
                 c_type: C0Type::Int32,
                 long_double: false,
                 aligned_typedef: false,
+                opaque_builtin: false,
                 struct_name: Some(
                     if allow_anonymous_struct && self.peek() == Some(&Token::LBrace) {
                         // Anonymous types have nominal identity per declaration,
@@ -11418,6 +11459,7 @@ impl Parser {
                 c_type: C0Type::Int32,
                 long_double: false,
                 aligned_typedef: false,
+                opaque_builtin: false,
                 struct_name: None,
                 enum_name: None,
                 union_name: {
@@ -11453,6 +11495,7 @@ impl Parser {
                 c_type: C0Type::Int32,
                 long_double: false,
                 aligned_typedef: false,
+                opaque_builtin: false,
                 struct_name: None,
                 union_name: None,
                 enum_name: {
@@ -11630,6 +11673,11 @@ impl Parser {
                 return Err(self.error_at_previous("pointers to enum values are not supported"));
             }
         }
+        if parsed.opaque_builtin && !allow_opaque_declaration {
+            return Err(self.error_here(
+                "__builtin_va_list is declaration-only; its layout and value operations are not modeled",
+            ));
+        }
         if parsed.aligned_typedef && !saw_pointer {
             return Err(self.error_here(
                 "GNU aligned typedef values need modeled object alignment; pointer uses are supported",
@@ -11644,6 +11692,7 @@ impl Parser {
             c_type,
             long_double: parsed.long_double,
             aligned_typedef: false,
+            opaque_builtin: parsed.opaque_builtin,
             struct_name: parsed.struct_name,
             enum_name: parsed.enum_name,
             union_name: parsed.union_name,
@@ -11710,6 +11759,7 @@ impl Parser {
             c_type,
             long_double: false,
             aligned_typedef: false,
+            opaque_builtin: false,
             struct_name,
             enum_name: None,
             union_name: None,
@@ -11850,6 +11900,7 @@ impl Parser {
                 c_type: C0Type::UInt8Array(16),
                 long_double: true,
                 aligned_typedef: false,
+                opaque_builtin: false,
                 struct_name: None,
                 enum_name: None,
                 union_name: None,
@@ -11874,6 +11925,10 @@ impl Parser {
             c_type
         } else {
             match name.as_str() {
+                // Only a header bookkeeping slot: opaque_builtin forbids
+                // every operation that could interpret it as a pointer or
+                // infer a layout. This does not model the real va_list ABI.
+                "__builtin_va_list" => C0Type::VoidPointer,
                 "void" => C0Type::Void,
                 "_Bool" | "bool" => C0Type::Bool,
                 "int8" | "int8_t" => C0Type::Int8,
@@ -11905,6 +11960,7 @@ impl Parser {
             c_type,
             long_double: false,
             aligned_typedef: false,
+            opaque_builtin: name == "__builtin_va_list",
             struct_name: None,
             enum_name: None,
             union_name: None,
@@ -17639,6 +17695,11 @@ impl Parser {
                 .contains_key(&self.resolve_name(source_name))
             && let Some(header) = self.function_declarations.get(source_name)
         {
+            if header.opaque_signature {
+                return Err(self.error_at_previous(format!(
+                    "function `{source_name}` uses declaration-only __builtin_va_list; calls require a modeled ABI"
+                )));
+            }
             if header.weak_linkage {
                 return Err(self.error_at_previous(format!(
                     "weak function `{source_name}` may be absent; calls need an availability model"
@@ -18195,6 +18256,9 @@ impl Parser {
                     return Err(self.error_here(format!("use of undeclared identifier `{name}`")));
                 }
                 self.position += 1;
+                if let Some(address) = self.bare_function_designator(&name)? {
+                    return Ok(address);
+                }
                 return Ok(C0Expression::FunctionAddress(
                     self.resolve_function_name(&name),
                 ));
@@ -19759,7 +19823,7 @@ impl Parser {
                     bytes: c_type.abi_size_bytes(),
                 });
             }
-            let parsed_type = self.parse_type_with_anonymous_struct(false, true)?;
+            let parsed_type = self.parse_type_with_anonymous_struct(false, true, false)?;
             self.expect(Token::RParen)?;
             if parsed_type.c_type == C0Type::Void {
                 return Err(self.error_at_previous("`sizeof(void)` is not supported"));
