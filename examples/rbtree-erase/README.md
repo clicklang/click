@@ -151,8 +151,14 @@ cover the nonempty near-child case. The near subtree is reparented with its
 color and children preserved; both proofs return the exact balanced root,
 consistent parent links, and unchanged inorder contents. Each passes all
 111 audit sites. Four mutations reject a wrong near-child parent or attachment.
-Inner-child and red-sibling rotations, and rotations after deficit propagation,
-remain.
+`rbtree_erase_color_inner_left.click` and its mirrored right sidecar cover
+cases 3 and 4 for an empty deficit, a black sibling with a red inner leaf,
+and an empty far child. Either parent color and arbitrary outer contexts are
+supported. The two rotations return the exact balanced root, consistent
+parent links, and unchanged in-order contents. Each passes all 95 expansion-audit
+sites. Six mutations reject an incorrect inner-child detachment, old-sibling
+attachment, or old-sibling parent. Red-sibling rotations and rotations after
+deficit propagation remain.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
