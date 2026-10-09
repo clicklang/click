@@ -1408,7 +1408,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 53);
+    assert_eq!(prepared.export().schema, 54);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -2645,7 +2645,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -2762,7 +2762,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -2873,7 +2873,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2934,7 +2934,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2980,7 +2980,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3613,7 +3613,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3691,7 +3691,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3809,7 +3809,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3947,7 +3947,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -4049,7 +4049,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -4149,7 +4149,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -4296,7 +4296,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -4447,7 +4447,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let destructor = import
         .export()
         .reachable_functions
@@ -4635,7 +4635,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -4739,7 +4739,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 53);
+    assert_eq!(import.export().schema, 54);
     let destructor = import
         .export()
         .reachable_functions
@@ -5960,6 +5960,177 @@ fn cpp_frontend_rejects_unsupported_source_without_a_c_fallback() {
     assert!(error.contains("increment.cpp:2"), "{error}");
     assert!(error.contains("const-qualified"), "{error}");
     assert!(!project.artifact().exists());
+}
+
+#[test]
+// Empty scoped enums still have every value of their fixed backing type.
+// Their contracts are integers, while source loads and calls keep nominal IDs.
+fn cpp_fixed_byte_enum_forwarding_verifies_and_retains_nominal_identity_offline() {
+    let project = Project::with_fixture(
+        "enum.cpp",
+        "probe",
+        "enum class Byte : unsigned char {}; Byte echo(Byte value) noexcept { return value; } Byte probe(Byte value) noexcept { Byte obj = echo(value); return obj; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.return_type,
+        CppType::Enumeration {
+            is_scoped: true,
+            is_fixed: true,
+            ..
+        }
+    ));
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"enum.cpp\"; uint8 echo(uint8 value) { ensures result == value; } by { execute(); simp(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn cpp_fixed_byte_enum_explicit_cast_preserves_all_representation_bits_offline() {
+    let project = Project::with_fixture(
+        "enum.cpp",
+        "probe",
+        "enum class Byte : unsigned char {}; Byte probe(unsigned int value) noexcept { Byte obj; obj = static_cast<Byte>(value); return obj; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"enum.cpp\"; uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn cpp_fixed_byte_enum_converted_call_results_verify_offline() {
+    let project = Project::with_fixture(
+        "enum.cpp",
+        "probe",
+        "enum class Byte : unsigned char {}; unsigned int echo(unsigned int value) noexcept { return value; } Byte probe(unsigned int value) noexcept { return static_cast<Byte>(echo(value)); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"enum.cpp\"; uint32 echo(uint32 value) { ensures result == value; } by { execute(); simp(); } uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+// Equal backing widths cannot erase distinct enum declarations in a converted
+// call result. Only the retained explicit numeric conversion crosses them.
+fn cpp_fixed_byte_enum_call_conversions_cannot_erase_nominal_identity() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture(
+        "enum.cpp",
+        "probe",
+        "enum class A : unsigned char {}; enum class B : unsigned char {}; A echo(A value) noexcept { return value; } B probe(A value) noexcept { return static_cast<B>(echo(value)); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"enum.cpp\"; uint8 echo(uint8 value) { ensures result == value; } by { execute(); simp(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
+    );
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        let cast = &mut forged["function"]["body"][0]["conversions"][0];
+        match mutation {
+            0 => cast["cast_kind"] = "no_op".into(),
+            1 => cast["cast_kind"] = "integral_cast".into(),
+            2 => cast["explicit"] = false.into(),
+            3 => cast["source_type"]["declaration_id"] = "c:@E@Other".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(load_import(&project.config()).is_err());
+    }
+}
+
+#[test]
+fn cpp_fixed_byte_enum_artifacts_reject_identity_backing_and_source_forgery() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture(
+        "enum.cpp",
+        "probe",
+        "enum class Byte : unsigned char {}; Byte probe(Byte value) noexcept { return value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..8 {
+        let mut forged = artifact.clone();
+        let ty = &mut forged["function"]["body"][0]["value"]["value_type"];
+        match mutation {
+            0 => ty["declaration_id"] = "c:@E@Other".into(),
+            1 => ty["name"] = "Other".into(),
+            2 => ty["declaration_id"] = "".into(),
+            3 => ty["is_scoped"] = false.into(),
+            4 => ty["is_fixed"] = false.into(),
+            5 => ty["underlying_type"]["signed"] = true.into(),
+            6 => ty["underlying_type"]["bits"] = 32.into(),
+            7 => ty["span"]["file"] = "unlocked.hpp".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("scalar load")
+                || error.contains("enum")
+                || error.contains("source span")
+                || error.contains("return value does not match"),
+            "{mutation}: {error}"
+        );
+    }
+}
+
+#[test]
+fn cpp_fixed_byte_enum_profile_refuses_other_underlying_and_unscoped_types() {
+    for declaration in [
+        "enum Byte : unsigned char {};",
+        "enum class Byte : signed char {};",
+        "enum class Byte : unsigned int {};",
+        "enum class Byte {};",
+    ] {
+        let source = format!("{declaration} Byte probe(Byte value) noexcept {{ return value; }}");
+        let project = Project::with_fixture("enum.cpp", "probe", &source);
+        assert!(refresh_import(&project.config()).is_err());
+        assert!(!project.artifact().exists());
+    }
 }
 
 #[test]
@@ -10520,7 +10691,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 53);
+        assert_eq!(import.export().schema, 54);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -10704,7 +10875,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 53);
+            assert_eq!(import.export().schema, 54);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -16764,6 +16935,157 @@ fn scalar_assignment_observers_verify_and_reject_writes_offline() {
         assert!(
             verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
                 .is_err()
+        );
+    }
+}
+
+// Native object pointers retain their element type, stride and authority.
+#[test]
+fn cpp_native_word_and_byte_pointer_stores_verify_offline() {
+    for (source_type, contract_type, literal) in [
+        ("unsigned int", "uint32", "4294967295u32"),
+        ("unsigned char", "uint8", "255u8"),
+    ] {
+        let source = format!(
+            "{source_type} probe({source_type}* p, {source_type} value) noexcept {{ *(p + 1) = value; return *(p + 1); }}"
+        );
+        let project = Project::with_fixture("pointer.cpp", "probe", &source);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"pointer.cpp\"; {contract_type} probe({contract_type}* p, {contract_type} value) {{ owns p[0..2]; requires value == {literal}; ensures p[1] == value; ensures p[0] == old(p[0]); ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &sidecar);
+        let bad = sidecar.replace("owns p[0..2];", "views p[0..2];");
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn cpp_native_scalar_addresses_initialize_automatic_storage_offline() {
+    for (source_type, contract_type) in [("unsigned int", "uint32"), ("unsigned char", "uint8")] {
+        let source = format!(
+            "{source_type} probe({source_type} value) noexcept {{ {source_type} obj; *(&obj) = value; return obj; }}"
+        );
+        let project = Project::with_fixture("address.cpp", "probe", &source);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"address.cpp\"; {contract_type} probe({contract_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &sidecar);
+    }
+}
+
+#[test]
+fn cpp_native_byte_field_address_uses_one_byte_storage_offline() {
+    let project = Project::with_fixture(
+        "field.cpp",
+        "probe",
+        "struct Pair { unsigned char a; unsigned char b; }; unsigned char probe(Pair& pair, unsigned char value) noexcept { *(&pair.b) = value; return pair.b; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"field.cpp\"; uint8 probe(struct Pair& pair, uint8 value) { owns pair.b; ensures pair.b == value; ensures result == value; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn cpp_native_pointer_profile_refuses_generic_enums_and_other_character_types() {
+    for ty in [
+        "char",
+        "signed char",
+        "char8_t",
+        "char16_t",
+        "char32_t",
+        "wchar_t",
+        "unsigned long long",
+        "Byte",
+    ] {
+        let source = format!(
+            "enum class Byte : unsigned char {{}}; {ty} probe({ty}* p) noexcept {{ return *p; }}"
+        );
+        let project = Project::with_fixture("pointer.cpp", "probe", &source);
+        assert!(refresh_import(&project.config()).is_err(), "{ty}");
+    }
+}
+
+// Rehashed artifacts must not change a pointer's element type at loads,
+// stores, or a resolved call boundary.
+#[test]
+fn cpp_native_pointer_artifacts_reject_pointee_substitution_offline() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture(
+        "pointer.cpp",
+        "probe",
+        "unsigned char echo(unsigned char* p, unsigned char value) noexcept { *p = value; return *p; } unsigned char probe(unsigned char* p, unsigned char value) noexcept { return echo(p, value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let original_lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for change in ["load", "store", "call"] {
+        let mut artifact = original.clone();
+        match change {
+            "load" => {
+                artifact["reachable_functions"][0]["body"][1]["value"]["pointer"]["value_type"]["pointee"]
+                    ["bits"] = 32.into()
+            }
+            "store" => {
+                artifact["reachable_functions"][0]["body"][0]["pointer"]["value_type"]["pointee"]
+                    ["bits"] = 32.into()
+            }
+            "call" => {
+                artifact["function"]["parameters"][0]["value_type"]["pointee"]["bits"] = 32.into();
+                artifact["function"]["body"][0]["arguments"][0]["value"]["value_type"]["pointee"]
+                    ["bits"] = 32.into();
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        let mut lock = original_lock.clone();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        assert!(load_import(&project.config()).is_err(), "{change}");
+    }
+}
+
+// Automatic scalar storage has implicit write authority, but a modular
+// owned-memory contract requires a separately supplied resource. This refusal
+// is independent of initialization and records the next shared design boundary.
+#[test]
+fn cpp_native_scalar_modular_write_requires_explicit_storage_authority() {
+    for declaration in ["unsigned int obj;", "unsigned int obj = 0;"] {
+        let source = format!(
+            "void fill(unsigned int* p, unsigned int value) noexcept {{ *p = value; }} unsigned int probe(unsigned int value) noexcept {{ {declaration} fill(&obj, value); return obj; }}"
+        );
+        let project = Project::with_fixture("initialize.cpp", "probe", &source);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let proof = "verifying \"initialize.cpp\"; void fill(uint32* p, uint32 value) { owns p[0..1]; ensures p[0] == value; } by { execute(); simp(); } uint32 probe(uint32 value) { ensures result == value; } by { execute(); simp(); }";
+        let path = project.directory.join("initialize.click");
+        fs::write(&path, proof).unwrap();
+        let parsed = read_click_project(&path, proof).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("missing resource fact `owns obj[0..1]`"),
+            "{}",
+            error.message()
         );
     }
 }
