@@ -128,6 +128,12 @@ redundant constructor refutations. No simple-step tail exceeds 500 ms; about
 11 seconds remain in loop-control work. This is still below the project's
 verification-speed target.
 
+`rbtree_rotate_set_parents.click` verifies the rotation helper's incoming-link
+replacement at the root or either parent link. It copies the original packed
+word to the new root, reparents and recolors the old root, and preserves the
+exact outer context. All 35 expansion-audit sites pass. This supplies the
+shared parent-update step for the remaining rotations.
+
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
 separated from fields the C may write. Metadata-carrying callbacks remain

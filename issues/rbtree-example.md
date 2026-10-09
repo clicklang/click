@@ -1211,8 +1211,10 @@ ancestor, arbitrary black sibling children, and both red-parent and root exits.
 It returns the exact balanced,
 parent-consistent whole-root model with unchanged in-order contents. Structural
 context descent checks every continuing back edge. All 39 audit sites and
-four mutation checks pass. The pinned C keeps every case. Left-focus rotations
-remain.
+four mutation checks pass. `rbtree_rotate_set_parents.click` verifies the
+shared incoming-link and packed-word updates for rotations at any tree
+position, with 35 passing audit sites. The pinned C keeps every case.
+Left-focus rotation cases remain.
 Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
