@@ -1,11 +1,45 @@
 verifying "quad.rs";
+
+theorem quad_byte_observation(value: uint8) {
+ ensures to_integer((uint32)value) == to_integer((int32)value) by {
+  have 0 <= (int32)value by { simp(); }
+  have (int32)value <= 255 by { simp(); }
+  apply(int32_less_equal_to_integer(0, (int32)value));
+  apply(int32_less_equal_to_integer((int32)value, 255));
+  arithmetic_certificate special {
+   premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
+   premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
+   integer_cast_identity bounds [0, 1] => to_integer((uint32)value) == to_integer((int32)value);
+   conclusion 0;
+  }
+ }
+}
 fn quad::load(bytes: &[u8]) -> quad::Quad {
  requires bytes.len() == 4u64; views bytes[0..4];
  ensures result.lanes[0] == bytes[0];
  ensures result.lanes[1] == bytes[1];
  ensures result.lanes[2] == bytes[2];
  ensures result.lanes[3] == bytes[3];
-} by { execute(); simp(); }
+ ensures to_integer(result.lanes[0]) == old(to_integer((int32)bytes[0]));
+ ensures to_integer(result.lanes[1]) == old(to_integer((int32)bytes[1]));
+ ensures to_integer(result.lanes[2]) == old(to_integer((int32)bytes[2]));
+ ensures to_integer(result.lanes[3]) == old(to_integer((int32)bytes[3]));
+} by {
+ apply(quad_byte_observation(bytes[0]));
+ apply(quad_byte_observation(bytes[1]));
+ apply(quad_byte_observation(bytes[2]));
+ apply(quad_byte_observation(bytes[3]));
+ execute();
+ have result.lanes[0] == old((uint32)bytes[0]) by { simp(); }
+ have to_integer(result.lanes[0]) == old(to_integer((int32)bytes[0])) by { rewrite(result.lanes[0] == old((uint32)bytes[0])); assumption(); }
+ have result.lanes[1] == old((uint32)bytes[1]) by { simp(); }
+ have to_integer(result.lanes[1]) == old(to_integer((int32)bytes[1])) by { rewrite(result.lanes[1] == old((uint32)bytes[1])); assumption(); }
+ have result.lanes[2] == old((uint32)bytes[2]) by { simp(); }
+ have to_integer(result.lanes[2]) == old(to_integer((int32)bytes[2])) by { rewrite(result.lanes[2] == old((uint32)bytes[2])); assumption(); }
+ have result.lanes[3] == old((uint32)bytes[3]) by { simp(); }
+ have to_integer(result.lanes[3]) == old(to_integer((int32)bytes[3])) by { rewrite(result.lanes[3] == old((uint32)bytes[3])); assumption(); }
+ simp();
+}
 fn quad::walk(bytes: &[u8]) -> u32 {
     requires bytes.len() == 16u64;
     views bytes[0..16];
@@ -39,6 +73,14 @@ fn quad::walk(bytes: &[u8]) -> u32 {
             have lanes.lanes[2] == chunk[2] by { simp(); }
             have lanes.lanes[3] == chunk[3] by { simp(); }
 
+            have lanes.lanes[0] == (uint32)chunk[0] by { simp(); }
+            have to_integer(lanes.lanes[0]) == to_integer((int32)chunk[0]) by { rewrite(lanes.lanes[0] == (uint32)chunk[0]); apply(quad_byte_observation(chunk[0])); assumption(); }
+            have lanes.lanes[1] == (uint32)chunk[1] by { simp(); }
+            have to_integer(lanes.lanes[1]) == to_integer((int32)chunk[1]) by { rewrite(lanes.lanes[1] == (uint32)chunk[1]); apply(quad_byte_observation(chunk[1])); assumption(); }
+            have lanes.lanes[2] == (uint32)chunk[2] by { simp(); }
+            have to_integer(lanes.lanes[2]) == to_integer((int32)chunk[2]) by { rewrite(lanes.lanes[2] == (uint32)chunk[2]); apply(quad_byte_observation(chunk[2])); assumption(); }
+            have lanes.lanes[3] == (uint32)chunk[3] by { simp(); }
+            have to_integer(lanes.lanes[3]) == to_integer((int32)chunk[3]) by { rewrite(lanes.lanes[3] == (uint32)chunk[3]); apply(quad_byte_observation(chunk[3])); assumption(); }
             execute_until(back_edge());
             have viewable(bytes[0..16]) by {
                 transport(at(iteration, viewable(bytes[0..16])), viewable(bytes[0..16])) using { at(iteration, viewable(bytes[0..16])); }

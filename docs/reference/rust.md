@@ -535,8 +535,9 @@ The copied-byte slice `for` form described below is supported.
 and its [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.click)
 verify a scalar counter, checked accumulation, and a byte-slice walk with a
 full-width `usize` counter. The walk uses `invariant i <= bytes_len` and
-`decreases bytes_len - i`; slice access still requires the signed-word length
-bound and `views` authority. The accumulator contract fixes the added value
+`decreases bytes_len - i`; slice access requires `views` authority.
+Full-width range endpoints retain the target’s `usize` width; contracts using
+signed indices must separately justify their conversions. The accumulator contract fixes the added value
 to one. These are synthetic loop regressions, not a checksum-library proof.
 Verification, profiling, auditing, and proof expansion use the shared engine.
 
@@ -580,8 +581,9 @@ There is no generated processed-count or index variable. Sidecars choose their
 own properties of iterator state. The sum examples explicitly relate the cursor
 to the original slice and derive a processed prefix as original length minus
 remaining length; the remaining length also proves termination. This length is
-the iterator's remaining slice metadata, represented as `int32` under the shared
-memory model's checked `i32::MAX` length limit. Reads require view authority and
+the iterator's remaining slice metadata, represented as full-width `uint64`
+for the locked 64-bit target. Signed prefix-index observations require a checked
+range and conversion in the sidecar. Reads require view authority and
 body arithmetic retains its panic checks. Immutable slice bindings keep the
 original pointer and length stable; mutable bindings and slices are rejected.
 
@@ -630,14 +632,16 @@ a shared byte-slice local; parameters or returns of iterator type, iterator
 assignment/copying, adapters, and explicit `next()` calls are unsupported.
 
 Construction captures the receiver before evaluating the size once, then
-checks `size != 0` and the input's signed-word memory-model length bound.
+checks `size != 0`. Input lengths retain the locked target’s `usize` width.
 For an iterator named `chunks`, the sidecar sees `chunks_cursor`,
 `chunks_remaining`, `chunks_size`, `chunks_tail`, and `chunks_tail_len`.
 The complete range has length `length - length % size`; its cursor initially
 points at the original input. The fixed tail begins at the end of that
 range and has length `length % size`. Chunk sizes and tail lengths retain
-64 bits. The complete range's remaining length uses the checked `int32`
-representation of the current memory model.
+64 bits, as does the complete range's remaining length. The iterator does not
+truncate metadata or impose an artificial `i32::MAX` construction limit.
+Sidecars that express prefixes with signed indices must prove the relevant
+range and value-preserving conversions.
 
 Each successful `next` binds a shared byte subslice of length `size`, then
 advances the cursor and subtracts that size from the remaining complete

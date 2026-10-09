@@ -34,7 +34,10 @@ parameters, and selected resolved operators execute verified imported bodies.
 
 The unchanged pinned adler2 2.0.1 selection imports successfully. Constructors,
 constants, lane helper bodies, numeric ceilings, and lane preservation verify.
-The original computation has a terminating whole-body bounds proof for every
+The existing general and four-byte sidecars need native-count updates to reverify
+after the full-width iterator change; the small-batch sidecar is already restored.
+See the [tracked regression](../bugs/adler-sidecars-use-retired-signed-iterator-counts.md).
+The original computation previously had a terminating whole-body bounds proof for every
 length from zero through 2,147,483,647 bytes from any canonical initial state.
 It carries all eight lane ceilings, scalar-tail ceilings, the shared input view,
 and actual vector and scalar iterator state through reductions, recombination,
@@ -52,6 +55,12 @@ weight shifts, nonnegative sums, residue addition, output and packing bounds,
 residue congruence with signed quotient witnesses, and preservation of canonical
 seeds on empty input. The original remainder helper also supplies exact Integer
 remainders for all four lanes under its native nonzero-divisor precondition.
+Checked Integer lane-state lemmas establish the optimized four-byte recurrence,
+including the original recombination offset and weights, and preservation of
+both residues through lane reductions. The constructor exports each lane’s
+exact mathematical entry-byte value. One- and four-byte prefix lemmas preserve
+the A residue against the common specification. Connecting those relations to
+the arbitrary-length computation’s nested loops remains incomplete.
 The unchanged Rust one-byte computation proves both fields equal the shared
 specification on the entry byte snapshot. The specification is not yet connected
 to either implementation’s general computation.
@@ -137,8 +146,9 @@ rustc establishes source typing and borrow legality. Click checks functional
 claims and supplied memory authority; references grant no allocation or
 deallocation authority. Keep allocation lifetime, access authority, and value
 validity distinct. Lock source, compiler/exporter, target/layout, semantic flags,
-models, and relevant dependencies. The current signed-word memory-range limit
-must remain explicit without truncating full-width Rust metadata.
+models, and relevant dependencies. Preserve full-width Rust metadata and range
+endpoints. Proofs using signed index observations, including the current checksum
+trial, must state and check their narrower range explicitly.
 
 Unsafe Rust, interior mutability, returned references, general traits/generics,
 closures, async, threading, heap support, mutable/adapted iterators, and broad
