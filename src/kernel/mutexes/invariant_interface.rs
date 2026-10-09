@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 pub(super) struct MutexInvariantInterface {
     description: ResourceDescription,
     mutex: Pointer,
-    pub(super) population: Option<super::population::PopulationCustody>,
 }
 
 impl MutexInvariantInterface {
@@ -66,7 +65,6 @@ impl MutexInvariantInterface {
             return Ok(Self {
                 description: ResourceDescription::from_instance(instance),
                 mutex: mutex.clone(),
-                population: None,
             });
         };
         let Some(AlgebraicValue::C(CValue::Pointer(base))) =
@@ -87,7 +85,6 @@ impl MutexInvariantInterface {
         Ok(Self {
             description: ResourceDescription::from_instance(instance),
             mutex: expected,
-            population: None,
         })
     }
 
