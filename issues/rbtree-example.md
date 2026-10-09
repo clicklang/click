@@ -97,6 +97,11 @@ normalization route. `normalize() using { child == identity; }` can follow
 the typed memory history to a wide stored value using the cited alias and
 the call’s recorded caller-owned ranges. The original `normalize()` remains
 context-free; partial overwrites and withdrawn aliases do not recover a value.
+The structural frame comparator also now includes 64-bit equality. Its missing
+case blocked the parent-word frame across the successor’s final tag write. A
+quantified wide-array equality reproduces the refusal on the prior checker and
+passes with the same checked load-history rule used for 32-bit equality. The
+non-root black-leaf prototype now reaches its final augmentation callback.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
