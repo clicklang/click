@@ -39,13 +39,13 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
     let prepared = super::super::import::prepared_for_test(export).unwrap();
     C0VerificationSession::new_program_prepared(CLAIM, &prepared).unwrap();
     for bad in [
-        CLAIM.replace("requires mid <= bytes_len;", ""),
+        CLAIM.replace("requires mid <= bytes.len();", ""),
         CLAIM.replace("requires mid <= 2147483647u64;", ""),
-        CLAIM.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
+        CLAIM.replace("views bytes[0..bytes.len()];", ""),
         CLAIM.replace("ensures result == mid;", "ensures result != mid;"),
         CLAIM.replace(
-            "ensures result == bytes[(int32)(uint32)mid];",
-            "ensures result != bytes[(int32)(uint32)mid];",
+            "ensures result == bytes[mid];",
+            "ensures result != bytes[mid];",
         ),
     ] {
         assert!(
@@ -159,8 +159,8 @@ fn charon_split_at_checked_byte_reads_do_not_enumerate_slice_extent() {
     let mut previous = None;
     for length in [8, 128, 1024] {
         let sidecar = CLAIM.replace(
-            "requires bytes_len <= 2147483647u64;",
-            &format!("requires bytes_len <= 2147483647u64; requires bytes_len == {length}u64;"),
+            "requires bytes.len() <= 2147483647u64;",
+            &format!("requires bytes.len() <= 2147483647u64; requires bytes.len() == {length}u64;"),
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             C0VerificationSession::new_program_prepared(&sidecar, &prepared)

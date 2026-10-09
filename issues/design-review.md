@@ -68,8 +68,14 @@ copies under `design/charon-trial`.
 
 Remaining:
 
-- Most of the examples' contracts and proofs still write `bytes_len`, `->` and
-  `(int32)index`. Respell them.
+- Five examples keep `bytes_len` and `(int32)` casts in their contracts and
+  proofs: `rust-loops`, `rust-iterators`, `rust-iter-references`,
+  `rust-byte-sum` and `rust-chunks-exact`. A test compares each one's
+  contract, as parsed, with its frozen original under `design/charon-trial`
+  (`charon_migrated_sidecars_preserve_original_source_contracts`), and the
+  respelled form parses to a different tree. Respell them once that test
+  compares meaning, not syntax. A cast on an index that is not a lone
+  parameter stays everywhere until typed indices cover it (A5).
 - Then refuse `->` and the C-shaped signature for a Rust source, with the
   spelling to write.
 - Diagnostics and `click expand` print C-shaped spellings for a Rust
