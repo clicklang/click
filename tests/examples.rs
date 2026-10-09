@@ -1069,6 +1069,7 @@ fn rbtree_erase_deep_red_leaf_refuses_spurious_fixup() {
 }
 
 #[test]
+#[ignore = "nightly: 10s in the parallel gate"]
 fn rbtree_erase_deep_black_leaf_refuses_a_skipped_splice() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_spine.click",
@@ -1078,6 +1079,7 @@ fn rbtree_erase_deep_black_leaf_refuses_a_skipped_splice() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_deep_black_leaf_requires_fixup() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_spine.click",
@@ -1097,6 +1099,7 @@ fn rbtree_erase_deep_black_leaf_requires_the_splice_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 10s in the parallel gate"]
 fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_spine.click",
