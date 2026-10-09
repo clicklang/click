@@ -613,6 +613,62 @@ theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
     ensures first <= last;
 }
 
+theorem uint64_lt_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem uint64_le_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint64_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
+theorem int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem int64_le_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem int64_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem int64_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
 theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
     requires greater > lower;
 

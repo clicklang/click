@@ -9767,6 +9767,59 @@ pub fn prove_uint32_le_implies_reversed_ge(
     )
 }
 
+/// Whether `name` is one of the 64-bit order transitivity theorems.
+pub fn is_wide_order_transitivity_name(name: &str) -> bool {
+    matches!(
+        name.split_once('_'),
+        Some((
+            "uint64" | "int64",
+            "lt_le_transitive" | "le_lt_transitive" | "lt_transitive" | "le_transitive"
+        ))
+    )
+}
+
+/// Transitivity of 64-bit order, by the name of its standard theorem:
+/// `{uint64,int64}_{lt_le,le_lt,lt,le}_transitive`. The first premise orders
+/// `first` and `middle`, the second `middle` and `last`, and the conclusion
+/// is strict when either premise is.
+pub fn prove_wide_order_transitive(
+    name: &str,
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Option<Theorem> {
+    let (unsigned, shape) = match name.split_once('_')? {
+        ("uint64", shape) => (true, shape),
+        ("int64", shape) => (false, shape),
+        _ => return None,
+    };
+    let (first_strict, second_strict) = match shape {
+        "lt_le_transitive" => (true, false),
+        "le_lt_transitive" => (false, true),
+        "lt_transitive" => (true, true),
+        "le_transitive" => (false, false),
+        _ => return None,
+    };
+    let order = |lower: Bitvector32Term, upper: Bitvector32Term, strict: bool| {
+        Proposition::ConditionIs(
+            match (unsigned, strict) {
+                (true, true) => ConditionTerm::uint64_less_than(lower, upper),
+                (true, false) => ConditionTerm::uint64_less_equal(lower, upper),
+                (false, true) => ConditionTerm::int64_signed_less_than(lower, upper),
+                (false, false) => ConditionTerm::int64_signed_less_equal(lower, upper),
+            },
+            true,
+        )
+    };
+    Some(Theorem::new(Proposition::Implies(
+        Box::new(order(first.clone(), middle.clone(), first_strict)),
+        Box::new(Proposition::Implies(
+            Box::new(order(middle, last.clone(), second_strict)),
+            Box::new(order(first, last, first_strict || second_strict)),
+        )),
+    )))
+}
+
 /// Signed non-strict order followed by strict order is strict order.
 pub fn prove_int32_le_lt_transitive(
     first: Bitvector32Term,

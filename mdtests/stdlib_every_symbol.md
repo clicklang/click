@@ -698,6 +698,78 @@ theorem docs_use_uint32_le_transitive(first: uint32, middle: uint32, last: uint3
     }
 }
 
+theorem docs_use_uint64_lt_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last by {
+        apply(uint64_lt_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_le_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(uint64_le_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(uint64_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last by {
+        apply(uint64_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last by {
+        apply(int64_lt_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_le_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(int64_le_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(int64_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last by {
+        apply(int64_le_transitive(first, middle, last));
+    }
+}
+
 theorem docs_use_uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
     requires greater > lower;
 

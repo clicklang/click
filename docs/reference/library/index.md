@@ -1807,6 +1807,126 @@ theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
+### `uint64_lt_le_transitive`
+
+```click
+theorem uint64_lt_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+```
+
+Transitivity of unsigned 64-bit order: `first < middle` and `middle <= last` give `first < last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_le_lt_transitive`
+
+```click
+theorem uint64_le_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+Transitivity of unsigned 64-bit order: `first <= middle` and `middle < last` give `first < last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_lt_transitive`
+
+```click
+theorem uint64_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+Transitivity of unsigned 64-bit order: `first < middle` and `middle < last` give `first < last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_le_transitive`
+
+```click
+theorem uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+```
+
+Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` give `first <= last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_lt_le_transitive`
+
+```click
+theorem int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+```
+
+Transitivity of signed 64-bit order: `first < middle` and `middle <= last` give `first < last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_le_lt_transitive`
+
+```click
+theorem int64_le_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+Transitivity of signed 64-bit order: `first <= middle` and `middle < last` give `first < last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_lt_transitive`
+
+```click
+theorem int64_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+Transitivity of signed 64-bit order: `first < middle` and `middle < last` give `first < last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_le_transitive`
+
+```click
+theorem int64_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+```
+
+Transitivity of signed 64-bit order: `first <= middle` and `middle <= last` give `first <= last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_gt_implies_reversed_lt`
 
 ```click

@@ -161,11 +161,13 @@ The kernel half was built on 2026-10-08, in
 - A signed 64-bit index is admitted where its value is proved to lie in
   `0..=INT_MAX` (`int64_index_fits_int32`). It was refused outright.
 
-These make a C operation in range. They do not prove a goal in a proof:
-`simp` and `arithmetic` build a kernel theorem for each step they take, and
-the 64-bit comparisons have no transitivity or linear-arithmetic theorems.
-That is the proof half, and it is what a `size_t` loop invariant needs
-(`i + 2 <= length` from `i + 1 < length`).
+These make a C operation in range. A goal in a proof is a separate matter,
+because a tactic builds a kernel theorem for each step it takes. Order
+chains have theirs: `uint64_lt_transitive`, `uint64_le_transitive`,
+`uint64_lt_le_transitive`, `uint64_le_lt_transitive` and the same four for
+`int64` (`prove_wide_order_transitive`). Linear arithmetic does not:
+`arithmetic` reads `int32` and `Integer` goals only, which is what a
+`size_t` loop invariant needs (`i + 2 <= length` from `i + 1 < length`).
 
 ## Risks
 

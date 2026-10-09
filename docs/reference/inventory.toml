@@ -2162,6 +2162,38 @@ id = "stdlib.theorem.uint32_le_transitive"
 path = "reference/library/index.md#uint32_le_transitive"
 
 [[item]]
+id = "stdlib.theorem.uint64_lt_le_transitive"
+path = "reference/library/index.md#uint64_lt_le_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint64_le_lt_transitive"
+path = "reference/library/index.md#uint64_le_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint64_lt_transitive"
+path = "reference/library/index.md#uint64_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint64_le_transitive"
+path = "reference/library/index.md#uint64_le_transitive"
+
+[[item]]
+id = "stdlib.theorem.int64_lt_le_transitive"
+path = "reference/library/index.md#int64_lt_le_transitive"
+
+[[item]]
+id = "stdlib.theorem.int64_le_lt_transitive"
+path = "reference/library/index.md#int64_le_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.int64_lt_transitive"
+path = "reference/library/index.md#int64_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.int64_le_transitive"
+path = "reference/library/index.md#int64_le_transitive"
+
+[[item]]
 id = "stdlib.theorem.uint32_gt_implies_reversed_lt"
 path = "reference/library/index.md#uint32_gt_implies_reversed_lt"
 
