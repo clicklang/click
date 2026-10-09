@@ -1829,3 +1829,23 @@ With chunks 2a–2g, the four kinds of legacy machinery are gone:
 - field-based countability (2g).
 
 Chunk 3 removes `guarded_by`.
+
+### Milestone 7 chunk 3: `guarded_by`
+
+No fixture used `guarded_by`. A mutex's protected resource comes from its
+checked `pthread_mutex_init` step, and the declaration only added a check that
+the mutex sat at the named struct field. The parser now refuses the spelling:
+"`guarded_by` is retired: a mutex protects the resource its checked
+`pthread_mutex_init` step deposits, so remove the clause and pass the resource
+to that step". `mdtests/guarded_by_retired.md` is the regression.
+
+Deleted:
+- the surface body field and its validation, lowering and proof-object checks;
+- the kernel `CMutexGuardDeclaration`, the definition field and the
+  function-level `modeled_mutex_guards` map;
+- the field-offset association checks in mutex publication and assumed
+  protocol acquisition;
+- the unit assertions that exercised only that association.
+
+The wrong-mutex refusals of authority controls (`authority_mutex_*wrong_mutex*`)
+are the coverage that remains.

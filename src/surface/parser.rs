@@ -50,6 +50,11 @@ pub(super) const CONTRACT_LET_CHAIN_LIMIT: usize = 128;
 /// recursive, so keep that separate nesting path deliberately small.
 const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 
+/// `guarded_by` associated a resource with a mutex field by declaration. A
+/// mutex's protected resource now comes from its checked initialization, so
+/// the spelling is refused with that direction.
+const RETIRED_GUARDED_BY: &str = "`guarded_by` is retired: a mutex protects the resource its checked `pthread_mutex_init` step deposits, so remove the clause and pass the resource to that step";
+
 /// The index shape and scalar element type of a C global or static array
 /// visible to one function's contract. Resource lowering only knows parameter
 /// types, so the element type travels with the name to give a byte or
@@ -1965,14 +1970,9 @@ impl Parser {
                 })
                 .collect();
         }
-        let guarded_by = if self.peek_ident() == Some("guarded_by") {
-            self.position += 1;
-            let mutex = self.parse_guarded_by_mutex_field()?;
-            self.expect(Token::Semicolon)?;
-            Some(mutex)
-        } else {
-            None
-        };
+        if self.peek_ident() == Some("guarded_by") {
+            return Err(self.error(RETIRED_GUARDED_BY));
+        }
         if self.peek_ident() == Some("match") {
             if self.match_nesting != 0 {
                 return Err(self.error("nested resource matches are not supported"));
@@ -2029,7 +2029,6 @@ impl Parser {
                     ));
                 }
                 if !body.fields.is_empty()
-                    || body.guarded_by.is_some()
                     || body.matched.is_some()
                     || body.condition.is_some()
                     || !body.witnesses.is_empty()
@@ -2054,7 +2053,6 @@ impl Parser {
             return Ok(CompositeResourceBody {
                 children: vec![],
                 fields,
-                guarded_by,
                 matched: Some(ResourceMatchBody { field, arms }),
                 condition: None,
                 contains: vec![],
@@ -2078,7 +2076,7 @@ impl Parser {
         let hidden_record = fields.is_empty() && self.match_nesting == 0;
         while self.peek() != Some(&Token::RBrace) {
             match self.peek_ident() {
-                Some("guarded_by") => return Err(self.error("`guarded_by` must appear once before the resource body clauses")),
+                Some("guarded_by") => return Err(self.error(RETIRED_GUARDED_BY)),
                 Some("field") => return Err(self.error("resource fields must be declared before body clauses and outside the resource guard")),
                 Some("let") => {
                     let binding = self.parse_contract_let_binding()?;
@@ -2171,48 +2169,12 @@ impl Parser {
         Ok(CompositeResourceBody {
             children: vec![],
             fields,
-            guarded_by,
             matched: None,
             condition,
             contains,
             facts,
             witnesses,
         })
-    }
-
-    fn parse_guarded_by_mutex_field(&mut self) -> Result<ContractSegment, ClickError> {
-        let parameter = self.expect_ident("resource's struct pointer parameter")?;
-        self.expect(Token::Arrow)?;
-        let field_name = self.expect_ident("pthread mutex field")?;
-        let struct_name = self.current_struct_params.get(&parameter).ok_or_else(|| {
-            self.error(format!(
-                "`guarded_by {parameter}->{field_name}` requires a struct pointer parameter"
-            ))
-        })?;
-        let field = self.resolve_struct_field_metadata(struct_name, &field_name)?;
-        let Some(union_name) = field.union_name.as_deref() else {
-            return Err(self.error("`guarded_by` requires a `pthread_mutex_t` field"));
-        };
-        let Some(layout) = self.union_layouts.get(union_name) else {
-            return Err(self.error("`guarded_by` mutex type has no imported layout"));
-        };
-        if !matches!(union_name, "__click_pthread_mutex" | "pthread_mutex_t")
-            || layout.size_bytes() != 40
-            || layout.alignment_bytes() != 8
-            || field.byte_width != 40
-            || !field.offset_bytes.is_multiple_of(8)
-        {
-            return Err(self
-                .error("`guarded_by` requires a 40-byte, 8-byte-aligned `pthread_mutex_t` field"));
-        }
-        Ok(Self::field_segment_from_metadata(
-            CExpression::Variable(parameter.clone()),
-            Some(ContractExpression::CFragment(CExpression::Variable(
-                parameter,
-            ))),
-            &field_name,
-            &field,
-        ))
     }
 
     /// `forall (k: int32) where <range> { [if <guard> {] owns <segment>; [}] }`

@@ -6902,7 +6902,6 @@ impl CState {
                 .instance_schema
                 .as_ref()
                 .is_some_and(|schema| !schema.fields().is_empty())
-            || definition.guarded_by.is_some()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
@@ -7160,7 +7159,6 @@ impl CState {
         let batch = quantity.as_const() != Some(1);
         if definition.name != *name
             || !definition.resource_parameters.is_empty()
-            || definition.guarded_by.is_some()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()

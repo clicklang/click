@@ -545,7 +545,6 @@ pub(in crate::kernel) fn apply_call_effect(
         let (memory, fresh) = super::assumed_protocol::fresh_protected_payload(
             &next,
             assumptions,
-            mutex,
             description,
             definition,
             Some(identity),

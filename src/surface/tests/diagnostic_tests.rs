@@ -97,7 +97,6 @@ fn worker_without_protocol_contract_is_a_proof_error() {
         runtime "modeled-pthread";
         resource box_state(box: struct box*) {
             field value: int32;
-            guarded_by box->mu;
             owns box->value;
             fact box->value == value;
         }

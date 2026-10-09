@@ -115,7 +115,6 @@ impl<'a> Proof<'a> {
         definition.resource_parameters().is_empty()
             && definition.fields().is_empty()
             && body.children.is_empty()
-            && body.guarded_by.is_none()
             && body.matched.is_none()
             && body.condition.is_none()
             && body.facts.is_empty()
@@ -166,7 +165,6 @@ impl<'a> Proof<'a> {
         if !definition.resource_parameters().is_empty()
             || !definition.fields().is_empty()
             || !body.children.is_empty()
-            || body.guarded_by.is_some()
             || body.matched.is_some()
             || body.condition.is_some()
             || contains_nonprivate_resource

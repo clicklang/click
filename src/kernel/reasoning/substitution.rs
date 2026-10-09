@@ -4119,7 +4119,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
                 .map(|spec| substitute_bitvector_variable_in_resource_spec(spec, from, to))
                 .collect(),
             instance_schema: definition.instance_schema.clone(),
-            guarded_by: definition.guarded_by.clone(),
             thread_confined: definition.thread_confined,
             contains_mutex_authority: definition.contains_mutex_authority,
             authorized: definition.authorized,
@@ -7842,7 +7841,6 @@ fn substitute_pointer_variable_in_c_function(
                 .map(|spec| substitute_pointer_variable_in_resource_spec(spec, from, to))
                 .collect(),
             instance_schema: definition.instance_schema.clone(),
-            guarded_by: definition.guarded_by.clone(),
             thread_confined: definition.thread_confined,
             contains_mutex_authority: definition.contains_mutex_authority,
             authorized: definition.authorized,
