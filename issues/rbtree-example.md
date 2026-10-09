@@ -1224,8 +1224,12 @@ contents. All 97 expansion-audit sites and four link/color mutation checks
 pass. `rbtree_erase_color_outer_nonempty_left.click` also handles a nonempty
 near child, preserving its color and child models during reparenting, with
 111 passing audit sites and two near-child parent/link mutations. The pinned
-C keeps every case. Inner-child and red-sibling rotations, and rotations after
-deficit propagation, remain.
+C keeps every case. `rbtree_erase_color_inner_left.click` now verifies cases 3
+and 4 for an empty deficit, a red inner leaf, and an empty far child, under
+arbitrary outer contexts and either parent color. It returns the exact balanced,
+parent-consistent root and unchanged in-order contents; all 95 expansion-audit
+sites and three link/parent mutations pass. Red-sibling rotations and rotations
+after deficit propagation remain.
 Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
@@ -1236,7 +1240,10 @@ leaf, with the same exact balanced-root, parent, and in-order guarantees.
 All 97 audit sites and four mirrored link/color mutation checks pass.
 `rbtree_erase_color_outer_nonempty_right.click` covers the mirrored nonempty
 near child, with 111 passing audit sites and two near-child mutations.
-Other mirrored rotation shapes, rotations after propagation, and the complete
+`rbtree_erase_color_inner_right.click` covers the mirrored cases 3 and 4 for a
+red inner leaf and empty far child, with the same exact root guarantees,
+95 passing audit sites, and three link/parent mutations.
+Red-sibling rotations, rotations after propagation, and the complete
 `rb_erase` wrapper remain. Depends on 12.
 
 ### Augmented

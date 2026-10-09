@@ -2029,3 +2029,71 @@ fn rbtree_erase_color_outer_nonempty_right_requires_near_link() {
         "WRITE_ONCE(parent->rb_left, NULL);",
     );
 }
+
+#[test]
+#[ignore = "nightly: inner-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_inner_left_requires_detached_inner_child() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_inner_left.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_left, tmp1);",
+        "WRITE_ONCE(sibling->rb_left, tmp2);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: inner-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_inner_left_requires_attached_old_sibling() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_inner_left.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(tmp2->rb_right, sibling);",
+        "WRITE_ONCE(tmp2->rb_right, NULL);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: inner-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_inner_left_requires_old_sibling_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_inner_left.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, parent, RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: inner-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_inner_right_requires_detached_inner_child() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_inner_right.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_right, tmp1);",
+        "WRITE_ONCE(sibling->rb_right, tmp2);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: inner-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_inner_right_requires_attached_old_sibling() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_inner_right.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(tmp2->rb_left, sibling);",
+        "WRITE_ONCE(tmp2->rb_left, NULL);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: inner-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_inner_right_requires_old_sibling_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_inner_right.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, parent, RB_BLACK);",
+    );
+}

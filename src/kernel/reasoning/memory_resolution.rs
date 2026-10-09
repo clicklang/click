@@ -1432,6 +1432,16 @@ fn pointer_with_exact_index_constants(pointer: &Pointer, assumptions: &PureFactC
                         .unwrap_or_else(|| offset.clone()),
                 );
             }
+            Task::Visit(offset @ PointerOffsetTerm::Int64Scaled { .. }) => {
+                values.push(
+                    crate::kernel::assumptions::exact_wide_scaled_offset_constant(
+                        offset,
+                        assumptions,
+                    )
+                    .map(PointerOffsetTerm::Constant)
+                    .unwrap_or_else(|| offset.clone()),
+                );
+            }
             Task::Visit(offset) => values.push(offset.clone()),
             Task::Add => {
                 let right = values.pop().expect("right offset");
@@ -3308,7 +3318,7 @@ pub(in crate::kernel) fn run_access(run: &CellRun, pointer: &Pointer) -> RunAcce
 /// [`PureFactContext::resolve_memory_load_value`]'s cell scan over one run:
 /// the live slot whose pointer a load at `pointer` is at, and whether some
 /// other live slot is neither proven at it nor proven elsewhere. `None`
-/// sends the caller slot by slot.
+/// sends the caller to assumption-aware compact slot selection.
 ///
 /// That scan compares start addresses. A pointer in a block proven distinct
 /// from the run's is elsewhere than every slot. One with the base's atoms and

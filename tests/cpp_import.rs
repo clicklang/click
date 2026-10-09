@@ -5453,16 +5453,26 @@ fn cpp_native_size_t_last_load_checks_nonempty_and_actual_backing_bounds() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let unresolved = r#"verifying "last.cpp";
+    let fixed_index = r#"verifying "last.cpp";
 int32 last(int32* data, uint64 length) {
  owns data[0..1]; requires length == 1u64;
  ensures result == old(data[0]);
 } by { execute(); simp(); }
 "#;
+    check_arithmetic_sidecar(&project, &import, fixed_index);
+    let unresolved = fixed_index
+        .replace(
+            "owns data[0..1];",
+            "owns data[0]; views data[length - 1u64];",
+        )
+        .replace("requires length == 1u64;", "");
     let path = project.directory.join("unresolved.click");
-    fs::write(&path, unresolved).unwrap();
-    let parsed = read_click_project(&path, unresolved).unwrap();
-    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    fs::write(&path, &unresolved).unwrap();
+    let parsed = read_click_project(&path, &unresolved).unwrap();
+    let error = match verify_program_prepared_project(&parsed, &import) {
+        Err(error) => error,
+        Ok(_) => panic!("an unfixed index cannot establish the first element's value"),
+    };
     let message = error.message();
     assert!(message.contains("index/address"), "{message}");
     assert!(!message.contains("the store to"), "{message}");
@@ -5476,7 +5486,7 @@ int32 last(int32* data, uint64 length) {
 int32 last(int32* data, uint64 length) {{
  owns data[0..{end}]; requires length == {length};
  ensures result == old(data[{expected}]);
-}} by {{ execute(); rewrite(length == {length}); simp(); }}
+}} by {{ execute(); simp(); }}
 "#
         );
         check_arithmetic_sidecar(&project, &import, &sidecar);
@@ -5490,7 +5500,7 @@ int32 last(int32* data, uint64 length) {{
             r#"verifying "last.cpp";
 int32 last(int32* data, uint64 length) {{
  owns data[0..{end}]; requires length == {length}; ensures 0 == 0;
-}} by {{ execute(); rewrite(length == {length}); simp(); }}
+}} by {{ execute(); simp(); }}
 "#
         );
         let path = project.directory.join("bad.click");
