@@ -117,14 +117,18 @@ Remaining:
   range through a chain of 64-bit order facts (`i < n`, `n <= length`), at
   an index plus a constant (`bytes[index + 1]`), and at a signed `long`
   index proved to lie in `0..=INT_MAX`
-  (`mdtests/a_64_bit_index_*.md`). The proof half is not: `simp` and
-  `arithmetic` do not prove a 64-bit order goal that `int32` gets, such as
-  `a < c` from `a < b` and `b < c`, because each needs a kernel theorem and
-  there are none for the 64-bit comparisons. A proof goes through
-  `to_integer` and the `uint64_*_to_integer` bridges today. Regression: the
-  `int32` chain, constant-bound and `a <= b`, `a != b` goals verifying by
-  `simp` at `uint64` and `int64`, and `arithmetic` proving
-  `i + 2u64 <= length` from `i + 1u64 < length` and a bound on `length`.
+  (`mdtests/a_64_bit_index_*.md`). In a proof, an order chain is an
+  explicit step: `uint64_lt_transitive` and its seven siblings for
+  `uint64` and `int64` are in the standard library. Two things are left.
+  `simp` does not search for a 64-bit chain as it does for `int32`; that
+  is smart-tactic reach, and the explicit theorems cover the need.
+  `arithmetic` accepts only `int32` and `Integer` goals, so a linear
+  64-bit fact such as `i + 2u64 <= length` from `i + 1u64 < length` has
+  no direct step. It is a lemma through `to_integer` and the
+  `uint64_*_to_integer` bridges, about twenty lines each;
+  `mdtests/a_size_t_loop_stepping_by_two_closes_with_explicit_steps.md`
+  proves a `size_t` loop that way. A 64-bit reading for `arithmetic`
+  would make each lemma one step. Describe it to Lacker before building.
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
   regressions. Check with Lacker before starting it.

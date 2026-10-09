@@ -2399,6 +2399,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint64_remainder_to_integer"
                 | "uint64_less_equal_to_integer"
                 | "uint64_less_equal_of_to_integer"
+                | "uint64_less_than_to_integer"
+                | "uint64_less_than_of_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
                 | "int32_increment_upper_bound"
@@ -2459,6 +2461,14 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_le_lt_transitive"
                 | "uint32_lt_transitive"
                 | "uint32_le_transitive"
+                | "uint64_lt_le_transitive"
+                | "uint64_le_lt_transitive"
+                | "uint64_lt_transitive"
+                | "uint64_le_transitive"
+                | "int64_lt_le_transitive"
+                | "int64_le_lt_transitive"
+                | "int64_lt_transitive"
+                | "int64_le_transitive"
         )
 }
 
@@ -2498,7 +2508,9 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_multiply_to_integer"
         | "uint64_subtract_to_integer"
         | "uint64_less_equal_to_integer"
-        | "uint64_less_equal_of_to_integer" => (2, 1),
+        | "uint64_less_equal_of_to_integer"
+        | "uint64_less_than_to_integer"
+        | "uint64_less_than_of_to_integer" => (2, 1),
         "uint64_divide_to_integer" | "uint64_remainder_to_integer" => (2, 2),
         "int32_remainder_to_integer" => (2, 2),
         "int32_increment_upper_bound" | "int32_increment_strictly_increases" => (2, 1),
@@ -2556,6 +2568,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint32_le_lt_transitive"
         | "uint32_lt_transitive"
         | "uint32_le_transitive" => (3, 2),
+        name if crate::kernel::is_wide_order_transitivity_name(name) => (3, 2),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2615,8 +2628,18 @@ fn verify_kernel_standard_theorem_axiom(
                 ))),
             }
         };
-        crate::kernel::prove_uint64_integer_bridge(theorem.name(), parameter(0)?, parameter(1)?)
-            .expect("registered uint64 observation bridge")
+        if crate::kernel::is_wide_order_transitivity_name(theorem.name()) {
+            crate::kernel::prove_wide_order_transitive(
+                theorem.name(),
+                parameter(0)?,
+                parameter(1)?,
+                parameter(2)?,
+            )
+            .expect("registered uint64 transitivity")
+        } else {
+            crate::kernel::prove_uint64_integer_bridge(theorem.name(), parameter(0)?, parameter(1)?)
+                .expect("registered uint64 observation bridge")
+        }
     } else if theorem.name().starts_with("int64_") {
         let parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
@@ -2631,6 +2654,10 @@ fn verify_kernel_standard_theorem_axiom(
         let left = parameter(0)?;
         let right = parameter(1)?;
         match theorem.name() {
+            name if crate::kernel::is_wide_order_transitivity_name(name) => {
+                crate::kernel::prove_wide_order_transitive(name, left, right, parameter(2)?)
+                    .expect("registered int64 transitivity")
+            }
             "int64_less_equal_to_integer" => {
                 crate::kernel::prove_int64_less_equal_to_integer(left, right)
             }
@@ -4064,6 +4091,58 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
         }
     }
     #[test]
+    fn wide_order_transitivity_declarations_reject_forged_premises_types_and_goals() {
+        for ty in ["uint64", "int64"] {
+            for (shape, first, second, conclusion) in [
+                ("lt_le", "<", "<=", "<"),
+                ("le_lt", "<=", "<", "<"),
+                ("lt", "<", "<", "<"),
+                ("le", "<=", "<=", "<="),
+            ] {
+                let declaration = |ty: &str, first: &str, second: &str, conclusion: &str| {
+                    format!(
+                        "theorem {ty_name}_{shape}_transitive(first: {ty}, middle: {ty}, last: {ty}) {{ requires first {first} middle; requires middle {second} last; ensures first {conclusion} last; }}",
+                        ty_name = if ty == "uint32" { "uint64" } else { ty },
+                    )
+                };
+                let source = declaration(ty, first, second, conclusion);
+                verify_standard_declaration(&source)
+                    .unwrap_or_else(|error| panic!("{source}: {}", error.message()));
+                let weaker = |operator: &str| if operator == "<" { "<=" } else { "<" };
+                let mut forged = vec![
+                    // A premise the conclusion does not follow from.
+                    source.replace("requires middle", "requires last"),
+                    // The other kind's parameters under this kind's name.
+                    source.replace(
+                        &format!(": {ty}"),
+                        if ty == "uint64" {
+                            ": int64"
+                        } else {
+                            ": uint64"
+                        },
+                    ),
+                    source.replace("ensures first", "ensures last"),
+                ];
+                if conclusion == "<=" {
+                    forged.push(declaration(ty, first, second, "<"));
+                } else {
+                    // Weakening one strict premise changes which theorem
+                    // this is; under this name it is refused.
+                    if first == "<" {
+                        forged.push(declaration(ty, weaker(first), second, conclusion));
+                    }
+                    if second == "<" {
+                        forged.push(declaration(ty, first, weaker(second), conclusion));
+                    }
+                }
+                for invalid in forged {
+                    assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn uint64_integer_bridge_declarations_reject_forged_guards_types_and_goals() {
         for (name, guard, goal) in [
             (
@@ -4101,6 +4180,16 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
+            (
+                "uint64_less_than_to_integer",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
+                "uint64_less_than_of_to_integer",
+                "to_integer(left) < to_integer(right)",
+                "left < right",
+            ),
         ] {
             let source = format!(
                 "theorem {name}(left: uint64, right: uint64) {{ requires {guard}; ensures {goal}; }}"
@@ -4127,6 +4216,11 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                     .replace(
                         "requires to_integer(left) <= to_integer(right)",
                         "requires to_integer(left) < to_integer(right)",
+                    )
+                    .replace("requires left < right", "requires left > right")
+                    .replace(
+                        "requires to_integer(left) < to_integer(right)",
+                        "requires to_integer(right) < to_integer(left)",
                     ),
                 source.replace("left: uint64", "left: int64"),
                 source.replace("right: uint64", "right: uint32"),

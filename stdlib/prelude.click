@@ -613,6 +613,62 @@ theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
     ensures first <= last;
 }
 
+theorem uint64_lt_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem uint64_le_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint64_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
+theorem int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem int64_le_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem int64_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem int64_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
 theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
     requires greater > lower;
 
@@ -995,6 +1051,16 @@ theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
 theorem uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right;
+}
+
+theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right);
+}
+
+theorem uint64_less_than_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) < to_integer(right);
+    ensures left < right;
 }
 
 theorem uint32_mul_to_integer(left: uint32, right: uint32) {
