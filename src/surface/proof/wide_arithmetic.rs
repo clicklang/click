@@ -1,4 +1,5 @@
-//! `arithmetic() using { ... }` on a linear `uint64` or `int64` order goal.
+//! `arithmetic() using { ... }` on a linear `uint64` or `int64` order or
+//! equality goal.
 //!
 //! The arithmetic certificates read `int32` and `Integer` claims. A 64-bit
 //! goal is proved through its exact Integer observations, by the
@@ -33,14 +34,14 @@ impl Carrier {
                 | ConditionTerm::Bitvector64UnsignedLessEqual(..)
                 | ConditionTerm::Bitvector64UnsignedGreaterThan(..)
                 | ConditionTerm::Bitvector64UnsignedGreaterEqual(..),
-                true,
+                _,
             ) => Some(Self::UInt64),
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector64SignedLessThan(..)
                 | ConditionTerm::Bitvector64SignedLessEqual(..)
                 | ConditionTerm::Bitvector64SignedGreaterThan(..)
                 | ConditionTerm::Bitvector64SignedGreaterEqual(..),
-                true,
+                _,
             ) => Some(Self::Int64),
             _ => None,
         }
@@ -59,11 +60,26 @@ impl Carrier {
     }
 }
 
-/// `left < right` or `left <= right`, as the bridges state order. A
-/// comparison written the other way round is read with its sides exchanged.
-fn order_parts(
+/// How a premise or a goal relates its two sides.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Relation {
+    Less,
+    LessEqual,
+    Equal,
+}
+
+/// `left < right`, `left <= right` or `left == right`, as the bridges state
+/// them. A comparison written the other way round is read with its sides
+/// exchanged, and so is a negated order: `not a < b` is `b <= a`, which
+/// holds of every pair of values of one integer type. The last part says
+/// whether the proposition is written in the bridge's own form.
+fn relation_parts(
     proposition: &ClickProposition,
-) -> Option<(ContractExpression, ContractExpression, bool, bool)> {
+) -> Option<(ContractExpression, ContractExpression, Relation, bool)> {
+    let (proposition, negated) = match proposition {
+        ClickProposition::Not(body) => (body.as_ref(), true),
+        other => (other, false),
+    };
     let ClickProposition::Comparison {
         left,
         operator,
@@ -72,26 +88,47 @@ fn order_parts(
     else {
         return None;
     };
-    let (lower, upper, strict, written_forward) = match operator {
-        ComparisonOperator::LessThan => (left, right, true, true),
-        ComparisonOperator::LessEqual => (left, right, false, true),
-        ComparisonOperator::GreaterThan => (right, left, true, false),
-        ComparisonOperator::GreaterEqual => (right, left, false, false),
+    let (lower, upper, relation, written_forward) = match (operator, negated) {
+        (ComparisonOperator::LessThan, false) => (left, right, Relation::Less, true),
+        (ComparisonOperator::LessEqual, false) => (left, right, Relation::LessEqual, true),
+        (ComparisonOperator::GreaterThan, false) => (right, left, Relation::Less, false),
+        (ComparisonOperator::GreaterEqual, false) => (right, left, Relation::LessEqual, false),
+        (ComparisonOperator::Equal, false) => (left, right, Relation::Equal, true),
+        (ComparisonOperator::LessThan, true) => (right, left, Relation::LessEqual, false),
+        (ComparisonOperator::LessEqual, true) => (right, left, Relation::Less, false),
+        (ComparisonOperator::GreaterThan, true) => (left, right, Relation::LessEqual, false),
+        (ComparisonOperator::GreaterEqual, true) => (left, right, Relation::Less, false),
         _ => return None,
     };
-    Some((lower.clone(), upper.clone(), strict, written_forward))
+    Some((lower.clone(), upper.clone(), relation, written_forward))
 }
 
-fn order(lower: ContractExpression, upper: ContractExpression, strict: bool) -> ClickProposition {
+fn relate(
+    lower: ContractExpression,
+    upper: ContractExpression,
+    relation: Relation,
+) -> ClickProposition {
     ClickProposition::Comparison {
         left: lower,
-        operator: if strict {
-            ComparisonOperator::LessThan
-        } else {
-            ComparisonOperator::LessEqual
+        operator: match relation {
+            Relation::Less => ComparisonOperator::LessThan,
+            Relation::LessEqual => ComparisonOperator::LessEqual,
+            Relation::Equal => ComparisonOperator::Equal,
         },
         right: upper,
     }
+}
+
+fn order(lower: ContractExpression, upper: ContractExpression, strict: bool) -> ClickProposition {
+    relate(
+        lower,
+        upper,
+        if strict {
+            Relation::Less
+        } else {
+            Relation::LessEqual
+        },
+    )
 }
 
 /// The exact Integer observation of a `uint64` expression. A literal is
@@ -147,6 +184,44 @@ fn collect_atoms(expression: &ContractExpression, atoms: &mut Vec<ContractExpres
     }
 }
 
+/// Whether `expression` is a sum or difference of plain operands. A side
+/// that multiplies, divides, shifts or masks is not a linear claim, and an
+/// equality over one is left to the families that read those operations.
+fn linear(expression: &ContractExpression) -> bool {
+    match expression {
+        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+            linear(left) && linear(right)
+        }
+        ContractExpression::Multiply(..)
+        | ContractExpression::Divide(..)
+        | ContractExpression::Remainder(..)
+        | ContractExpression::ShiftLeft(..)
+        | ContractExpression::ShiftRight(..)
+        | ContractExpression::BitwiseAnd(..)
+        | ContractExpression::BitwiseOr(..)
+        | ContractExpression::BitwiseXor(..)
+        | ContractExpression::BitwiseNot(..)
+        | ContractExpression::Negate(..)
+        | ContractExpression::CUnary { .. }
+        | ContractExpression::If { .. } => false,
+        _ => true,
+    }
+}
+
+/// The 64-bit type a literal written in `expression` has, if one is.
+fn literal_carrier(expression: &ContractExpression) -> Option<Carrier> {
+    match expression {
+        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+            literal_carrier(left).or_else(|| literal_carrier(right))
+        }
+        ContractExpression::CFragment(CExpression::Value(CValue::UInt64(_))) => {
+            Some(Carrier::UInt64)
+        }
+        ContractExpression::CFragment(CExpression::Value(CValue::Int64(_))) => Some(Carrier::Int64),
+        _ => None,
+    }
+}
+
 fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> ProofStep {
     ProofStep::Have {
         proposition,
@@ -182,16 +257,79 @@ impl<'a> Proof<'a> {
         // diagnostic. Preserve bridge failures with raw summaries: rendering
         // their nested goals/premises here would embed a second diagnostic
         // inside that summary (and violate ClickError's debug invariant).
-        let Some(carrier) = self.goal().and_then(Carrier::of) else {
+        let goal = self.goal();
+        if let Some(carrier) = goal.and_then(|goal| match goal {
+            Proposition::ConditionIs(_, true) => Carrier::of(goal),
+            _ => None,
+        }) {
+            return self.wide_arithmetic_with(carrier, surface_premises);
+        }
+        // An equality does not say which 64-bit type it compares, since
+        // the two share one equality. A listed order premise does, and so
+        // does a typed literal; with neither, the unsigned reading is
+        // tried and then the signed one.
+        if !matches!(
+            goal,
+            Some(Proposition::ConditionIs(
+                ConditionTerm::Bitvector64Equal(..),
+                true
+            ))
+        ) {
             return Err(None);
+        }
+        if !self
+            .surface_goal()
+            .and_then(relation_parts)
+            .is_some_and(|(left, right, ..)| linear(&left) && linear(&right))
+        {
+            return Err(None);
+        }
+        let written = |proposition: &ClickProposition| {
+            relation_parts(proposition)
+                .and_then(|(lower, upper, ..)| literal_carrier(&lower).or(literal_carrier(&upper)))
         };
+        let stated = surface_premises
+            .iter()
+            .find_map(|premise| {
+                self.lower_cited_surface_proposition(premise, "`arithmetic using` premise")
+                    .ok()
+                    .as_ref()
+                    .and_then(Carrier::of)
+            })
+            .or_else(|| self.surface_goal().and_then(written))
+            .or_else(|| surface_premises.iter().find_map(written));
+        if let Some(carrier) = stated {
+            return self.wide_arithmetic_with(carrier, surface_premises);
+        }
+        let unsigned = match self.wide_arithmetic_with(Carrier::UInt64, surface_premises) {
+            Ok(proof) => return Ok(proof),
+            Err(reason) => reason,
+        };
+        let signed = match self.wide_arithmetic_with(Carrier::Int64, surface_premises) {
+            Ok(proof) => return Ok(proof),
+            Err(reason) => reason,
+        };
+        match (unsigned, signed) {
+            (Some(unsigned), Some(signed)) => Err(Some(format!(
+                "no listed premise says which 64-bit type the equality compares. Read as uint64: {unsigned}. Read as int64: {signed}"
+            ))),
+            (reason, other) => Err(reason.or(other)),
+        }
+    }
+
+    /// [`Self::try_wide_arithmetic_using`] for a goal over `carrier`.
+    fn wide_arithmetic_with(
+        &self,
+        carrier: Carrier,
+        surface_premises: &[ClickProposition],
+    ) -> Result<Self, Option<String>> {
         let ty = carrier.name();
         let describe = crate::surface::diagnostics::describe_contract_expression;
         let spell = crate::surface::printing::source_click_proposition;
         let article = if carrier == Carrier::Int64 { "an" } else { "a" };
-        let (goal_lower, goal_upper, goal_strict, goal_forward) = self
+        let (goal_lower, goal_upper, goal_relation, goal_forward) = self
             .surface_goal()
-            .and_then(order_parts)
+            .and_then(relation_parts)
             .ok_or_else(|| Some(format!("the {ty} goal has no source spelling to read")))?;
         if !goal_forward {
             return Err(Some(format!(
@@ -210,7 +348,7 @@ impl<'a> Proof<'a> {
                 ClickProposition,
                 ContractExpression,
                 ContractExpression,
-                bool,
+                Relation,
             ),
             Operation(ContractExpression),
         }
@@ -228,13 +366,20 @@ impl<'a> Proof<'a> {
                         error.raw_summary()
                     ))
                 })?;
-            if Carrier::of(&kernel) != Some(carrier) {
+            let equality = matches!(
+                kernel,
+                Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)
+            );
+            if Carrier::of(&kernel) != Some(carrier) && !equality {
                 // An Integer premise is used as it is written.
                 facts.push(premise.clone());
                 continue;
             }
-            let (lower, upper, strict, forward) = order_parts(premise).ok_or(None)?;
-            if !forward {
+            let (lower, upper, relation, forward) = relation_parts(premise).ok_or(None)?;
+            // A negated order is read with its sides exchanged, which the
+            // bridge accepts as the same fact. An order written with `>` is
+            // not, and is asked for the other way round.
+            if !forward && !matches!(premise, ClickProposition::Not(_)) {
                 return Err(Some(format!(
                     "{article} {ty} premise is read as `left < right` or `left <= right`; write `{}` that way round",
                     spell(premise)
@@ -244,7 +389,7 @@ impl<'a> Proof<'a> {
             collect_operations(&upper, &mut operations);
             collect_atoms(&lower, &mut atoms);
             collect_atoms(&upper, &mut atoms);
-            pending.push(Pending::Premise(premise.clone(), lower, upper, strict));
+            pending.push(Pending::Premise(premise.clone(), lower, upper, relation));
         }
         collect_operations(&goal_lower, &mut operations);
         collect_operations(&goal_upper, &mut operations);
@@ -286,22 +431,36 @@ impl<'a> Proof<'a> {
             stuck = None;
             for item in pending {
                 let attempt = match &item {
-                    Pending::Premise(premise, lower, upper, strict) => {
-                        let observed = order(to_integer(lower), to_integer(upper), *strict);
-                        let bridge = carrier.theorem(if *strict {
-                            "less_than_to_integer"
+                    Pending::Premise(premise, lower, upper, relation) => {
+                        let observed = relate(to_integer(lower), to_integer(upper), *relation);
+                        // Equal values have equal observations: rewriting
+                        // by the premise leaves an identity.
+                        // A negated order is first stated as the order it
+                        // is, which is the same fact to the kernel.
+                        let stated = relate(lower.clone(), upper.clone(), *relation);
+                        let restated = if matches!(premise, ClickProposition::Not(_)) {
+                            proof.apply_step(have(stated.clone(), vec![ProofStep::Assumption]))
                         } else {
-                            "less_equal_to_integer"
-                        });
-                        proof
-                            .apply_step(have(
-                                observed.clone(),
-                                vec![apply(
-                                    &bridge,
-                                    vec![lower.clone(), upper.clone()],
-                                    vec![premise.clone()],
-                                )],
-                            ))
+                            Ok(proof.clone())
+                        };
+                        // Equal values have equal observations: rewriting
+                        // by the premise leaves an identity.
+                        let carried = match relation {
+                            Relation::Equal => {
+                                vec![ProofStep::Rewrite(premise.clone()), ProofStep::Normalize]
+                            }
+                            order => vec![apply(
+                                &carrier.theorem(if *order == Relation::Less {
+                                    "less_than_to_integer"
+                                } else {
+                                    "less_equal_to_integer"
+                                }),
+                                vec![lower.clone(), upper.clone()],
+                                vec![stated],
+                            )],
+                        };
+                        restated
+                            .and_then(|proof| proof.apply_step(have(observed.clone(), carried)))
                             .map(|proof| (proof, observed))
                             .map_err(|error| {
                                 format!(
@@ -466,10 +625,10 @@ impl<'a> Proof<'a> {
             })));
         }
 
-        let observed_goal = order(
+        let observed_goal = relate(
             to_integer(&goal_lower),
             to_integer(&goal_upper),
-            goal_strict,
+            goal_relation,
         );
         proof = proof
             .apply_step(have(
@@ -485,10 +644,10 @@ impl<'a> Proof<'a> {
             })?;
         let applied = proof
             .apply_step(apply(
-                &carrier.theorem(if goal_strict {
-                    "less_than_of_to_integer"
-                } else {
-                    "less_equal_of_to_integer"
+                &carrier.theorem(match goal_relation {
+                    Relation::Less => "less_than_of_to_integer",
+                    Relation::LessEqual => "less_equal_of_to_integer",
+                    Relation::Equal => "equal_of_to_integer",
                 }),
                 vec![goal_lower, goal_upper],
                 vec![observed_goal],
