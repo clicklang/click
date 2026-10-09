@@ -2525,14 +2525,6 @@ fn verify_c0_sources_in_context(
         } else {
             BTreeMap::new()
         };
-        let modeled_mutex_guards = modeled_mutex_definitions
-            .iter()
-            .filter_map(|(name, definition)| {
-                definition
-                    .mutex_guard()
-                    .map(|guard| (name.clone(), guard.clone()))
-            })
-            .collect();
         let mut function_environment = initial_function_environment
             .unwrap_or(built_function_environment)
             .with_modeled_pthread_binding(
@@ -2540,7 +2532,6 @@ fn verify_c0_sources_in_context(
                     == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread)
                     .then(|| c_sources.modeled_pthread_binding()),
             )
-            .with_modeled_mutex_guards(modeled_mutex_guards)
             .with_modeled_mutex_definitions(modeled_mutex_definitions)
             .with_byte_order(selected_target.byte_order());
         // Contracts are declaration interfaces. A selected function receives
@@ -7422,39 +7413,6 @@ pub(in crate::surface) fn composite_resource_definitions(
         let Some(body) = definition.composite_body() else {
             continue;
         };
-        let guarded_by = body
-            .guarded_by()
-            .map(|guard| {
-                let CExpression::Variable(parameter) = &guard.base else {
-                    return Err(ClickError::new(
-                        "`guarded_by` requires a direct resource parameter",
-                    ));
-                };
-                let parameter_index = definition
-                    .parameters()
-                    .iter()
-                    .position(|candidate| candidate.name() == parameter)
-                    .ok_or_else(|| ClickError::new("`guarded_by` names no resource parameter"))?;
-                let CExpression::Value(crate::kernel::CValue::Int32(
-                    crate::kernel::Bitvector32Term::Constant(start),
-                )) = &guard.start
-                else {
-                    return Err(ClickError::new(
-                        "`guarded_by` requires a fixed member offset",
-                    ));
-                };
-                let width = guard
-                    .field_element_width()
-                    .ok_or_else(|| ClickError::new("`guarded_by` has no member width"))?;
-                let field_offset_bytes = start
-                    .checked_mul(width)
-                    .ok_or_else(|| ClickError::new("`guarded_by` member offset overflows"))?;
-                Ok(crate::kernel::CMutexGuardDeclaration {
-                    parameter_index,
-                    field_offset_bytes,
-                })
-            })
-            .transpose()?;
         // The body's memory clauses take their element widths from the
         // definition's own parameters and field types, as contract clauses
         // do, so a `uint64` field is one 8-byte element on both sides of
@@ -7684,8 +7642,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .with_resource_match_body(matched)
             .with_children(lower_resource_body_children(body)?)
             .with_matched_recursion(matched_recursive)
-            .with_instance_schema(definition.field_schema().cloned())
-            .with_mutex_guard(guarded_by),
+            .with_instance_schema(definition.field_schema().cloned()),
         );
     }
     crate::kernel::propagate_population_reach(&mut definitions);

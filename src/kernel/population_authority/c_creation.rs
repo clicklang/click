@@ -541,7 +541,7 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Result<Self, CreationRefusal> {
-        if description.schema().is_countable() {
+        if description.schema().is_fieldless() {
             return Err(CreationRefusal::InvalidMember);
         }
         let count = if let Some(import) = self.0.opaque_imports.get(description) {
@@ -805,7 +805,7 @@ impl CreationEvents {
         let named_authority = matches!(members, OpaqueMemberInputs::NamedAuthority);
         let acquired = matches!(members, OpaqueMemberInputs::Acquired);
         if named_authority
-            && (description.schema().is_countable()
+            && (description.schema().is_fieldless()
                 || owned_members != 0
                 || symbolic_members.is_some()
                 || control.is_some())
@@ -821,7 +821,7 @@ impl CreationEvents {
         };
         if (description.population_arity().is_none() && wildcard_member.is_some())
             || pointer.pointer().block != PointerBlock::ExternalArgument
-            || !description.schema().is_countable() && !named_authority
+            || !description.schema().is_fieldless() && !named_authority
             || !description.resource_arguments().is_empty()
             || owned_members > i32::MAX as u32
         {
@@ -1762,7 +1762,7 @@ impl CreationEvents {
                     });
                 }
             }
-            if !scope.schema().is_countable() {
+            if !scope.schema().is_fieldless() {
                 let key = Self::exact_count_key(description);
                 if import.named_ambiguous
                     || import
@@ -2017,7 +2017,7 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
-        if !description.schema().is_countable() {
+        if !description.schema().is_fieldless() {
             // Named occurrences carry independent fields, not an anonymous
             // quantity that can be produced without those owned instances.
             return Err(CreationRefusal::InvalidMember);
@@ -2410,7 +2410,7 @@ impl CreationEvents {
         let reference = ResourceReference::from_instance(instance);
         let description = reference.description();
         if description.population_arity().is_some()
-            || description.schema().is_countable()
+            || description.schema().is_fieldless()
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);
@@ -2640,7 +2640,7 @@ impl CreationEvents {
             }
         );
         if description.population_arity().is_some()
-            || matches!(form, MemberForm::Quantity { .. }) && !description.schema().is_countable()
+            || matches!(form, MemberForm::Quantity { .. }) && !description.schema().is_fieldless()
         {
             return Err(CreationRefusal::InvalidMember);
         }

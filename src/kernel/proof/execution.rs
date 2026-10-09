@@ -780,7 +780,6 @@ fn checks_population_member_exchange(
     let batch = quantity.as_const() != Some(1);
     if definition.name != *name
         || !definition.resource_parameters.is_empty()
-        || definition.guarded_by.is_some()
         || definition.matched.is_some()
         || !definition.witnesses.is_empty()
         || definition.condition.is_some()
@@ -1609,7 +1608,6 @@ impl CheckedResourceRewrite {
         };
         if quantity.as_const() != Some(1)
             || !definition.resource_parameters.is_empty()
-            || definition.guarded_by.is_some()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
@@ -1874,7 +1872,6 @@ impl CheckedResourceRewrite {
                     .ok_or("authority-mode body access needs its registered definition")?;
                 if quantity.as_const() != Some(1)
                     || !definition.resource_parameters.is_empty()
-                    || definition.guarded_by.is_some()
                     || definition.matched.is_some()
                     || !definition.witnesses.is_empty()
                     || definition.condition.is_some()

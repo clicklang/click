@@ -204,15 +204,15 @@ holds only the plan.
 | 4. Mutex-held authority controls | Complete | Ordinary protected controls replace counted-population mutex custody |
 | 5. Retire `guarded_by` associations | Complete; its two worker fixtures migrated in milestone 6 chunk 3 | No active `guarded_by` consumer; associations come from checked initialization |
 | 6. Concurrent lifetime and worker accounting | Complete | Shared refcount and worker accounting verify through ordinary transfers |
-| 7. Sole default and legacy removal | Chunk 1 complete; 3 chunks remain | One checked counting model remains; old machinery and `guarded_by` are deleted |
+| 7. Sole default and legacy removal | Chunks 1–3 complete; chunk 4 remains | One checked counting model remains; old machinery and `guarded_by` are deleted |
 
-The remaining plan is milestone 7's last three chunks.
+The remaining plan is milestone 7's last chunk.
 These are planning estimates, not promises. Tooling repairs may still add
 chunks.
 
 Authority semantics are the only resource semantics, and the temporary
-project selection is refused. No fixture uses `guarded_by`. The legacy
-kernel machinery is unreachable from the surface until chunk 2 deletes it.
+project selection is refused. `guarded_by` is refused with a retired-spelling diagnostic. The legacy
+population machinery is deleted; chunk 2's steps are recorded in the inventory.
 The inventory names every retired file.
 
 ### Dependency order

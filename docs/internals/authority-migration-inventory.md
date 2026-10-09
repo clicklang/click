@@ -71,7 +71,7 @@ The following commands, run from the repository root, find the checked-in consum
 rg -l '\bcount\s*\(' examples mdtests design docs src tests
 rg -l '\bguarded_by\b' examples mdtests design docs src tests
 rg -l '\b(owns|views|consumes|produces)\s+[^;\n]*\s+of\s+\w+\s*\(' examples mdtests design docs src tests
-rg -l 'field.*count|count.*field|is_countable|CountedPopulation' examples mdtests design docs src tests
+rg -l 'field.*count|count.*field|is_fieldless|CountedPopulation' examples mdtests design docs src tests
 ```
 
 The third query finds explicit coefficient clauses, including unrelated resource quantities. Repeated `owns`/`consumes` clauses also encode quantities and require contextual review. The `count` search covers body facts, contracts, predicates, snapshots, and loop invariants; those are distinct authority-dependency sites, not one interchangeable test.
@@ -1797,3 +1797,55 @@ answer. Each live consumer now asks the question it meant:
 
 The surface's unfold check that a body reading a count owns an authority now
 says so, instead of asking for an active population.
+
+#### Chunk 2g: field-based countability
+
+Outside the standard library, `authorized` already decided whether a family
+can be counted. Fields only select a member's form: a quantity for a
+field-free member, and a separately named instance otherwise. The remaining
+names that said otherwise are renamed:
+- `is_countable` becomes `is_fieldless` on the surface definition and the
+  kernel schema.
+- The expansion's `authority_mode` becomes `family_rules`. It is off only for
+  the standard library's own expansion.
+- A quantity of a family with fields has one refusal.
+- A dead legacy receipt branch in claim checking is removed.
+
+`authorization_not_field_presence_selects_countability`
+(`src/surface/validation/declaration_expansion/tests.rs`) is the exit-gate
+regression. With and without fields, a count is admitted exactly when the
+family is authorized. The language reference no longer calls resources with
+fields uncountable.
+
+#### Chunk 2: complete
+
+With chunks 2a–2g, the four kinds of legacy machinery are gone:
+- counted-population mutex custody (2a);
+- implicit population-body access: the legacy execution path, the counted
+  transition and the count store (2b–2d). What remains is the explicit
+  `open(..)` scope of an authority control, which the surface opens and closes
+  by name;
+- count-in-body classification (2e–2f);
+- field-based countability (2g).
+
+Chunk 3 removes `guarded_by`.
+
+### Milestone 7 chunk 3: `guarded_by`
+
+No fixture used `guarded_by`. A mutex's protected resource comes from its
+checked `pthread_mutex_init` step, and the declaration only added a check that
+the mutex sat at the named struct field. The parser now refuses the spelling:
+"`guarded_by` is retired: a mutex protects the resource its checked
+`pthread_mutex_init` step deposits, so remove the clause and pass the resource
+to that step". `mdtests/guarded_by_retired.md` is the regression.
+
+Deleted:
+- the surface body field and its validation, lowering and proof-object checks;
+- the kernel `CMutexGuardDeclaration`, the definition field and the
+  function-level `modeled_mutex_guards` map;
+- the field-offset association checks in mutex publication and assumed
+  protocol acquisition;
+- the unit assertions that exercised only that association.
+
+The wrong-mutex refusals of authority controls (`authority_mutex_*wrong_mutex*`)
+are the coverage that remains.

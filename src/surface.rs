@@ -799,8 +799,6 @@ pub struct ResourceDefinition {
 pub struct CompositeResourceBody {
     children: Vec<ResourceChildBody>,
     fields: Vec<ResourceFieldDefinition>,
-    /// The C mutex object whose guard controls access to this whole body.
-    guarded_by: Option<ContractSegment>,
     matched: Option<ResourceMatchBody>,
     condition: Option<ClickProposition>,
     contains: Vec<ResourceClause>,
@@ -6755,7 +6753,7 @@ impl ResourceDefinition {
         self.field_schema.as_ref()
     }
 
-    pub fn is_countable(&self) -> bool {
+    pub fn is_fieldless(&self) -> bool {
         self.fields().is_empty()
     }
 
@@ -6781,10 +6779,6 @@ impl ResourceDefinition {
 }
 
 impl CompositeResourceBody {
-    pub fn guarded_by(&self) -> Option<&ContractSegment> {
-        self.guarded_by.as_ref()
-    }
-
     pub fn condition(&self) -> Option<&ClickProposition> {
         self.condition.as_ref()
     }

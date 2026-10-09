@@ -1760,13 +1760,13 @@ fn resource_fields_preserve_checked_types_and_do_not_lower_to_legacy_resources()
     )
     .unwrap();
     let buffer = &file.resource_definitions()[0];
-    assert!(!buffer.is_countable());
+    assert!(!buffer.is_fieldless());
     assert_eq!(
         buffer.fields().iter().map(|f| f.name()).collect::<Vec<_>>(),
         ["contents", "mark", "revision", "origin"]
     );
     let schema = buffer.field_schema().unwrap();
-    assert!(!schema.is_countable());
+    assert!(!schema.is_fieldless());
     assert_eq!(schema.fields().len(), 4);
     let crate::kernel::ResourceFieldType::Algebraic(ty) = &schema.fields()[0].1 else {
         panic!("expected List schema")
@@ -1787,7 +1787,7 @@ fn resource_fields_preserve_checked_types_and_do_not_lower_to_legacy_resources()
         schema.fields()[3].1,
         crate::kernel::ResourceFieldType::C(CType::Int32Pointer)
     );
-    assert!(file.resource_definitions()[1].is_countable());
+    assert!(file.resource_definitions()[1].is_fieldless());
     let lowered = composite_resource_definitions(
         &ResourceEnvironment::new(file.resource_definitions()),
         &PredicateEnvironment::new(&[]),

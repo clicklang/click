@@ -578,7 +578,6 @@ fn population_transfer_frontier<'a>(
                 && let definition = &definitions[index]
                 && definition.resource_parameters().is_empty()
                 && definition.instance_schema.is_none()
-                && definition.guarded_by.is_none()
                 && definition.matched.is_none()
                 && definition.witnesses.is_empty()
                 && definition.condition.is_none()

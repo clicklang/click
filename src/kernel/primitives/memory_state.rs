@@ -6304,7 +6304,7 @@ impl CState {
         let CResource::PopulationAuthority(description) = authority.resource() else {
             return Err("population import requires authority".into());
         };
-        if !description.schema().is_countable() {
+        if !description.schema().is_fieldless() {
             if authority
                 .owned_quantity_term()
                 .and_then(Bitvector32Term::as_const)
@@ -6463,7 +6463,7 @@ impl CState {
         {
             return Err("Requires one declared owned authority".into());
         }
-        if !scope.schema().is_countable() {
+        if !scope.schema().is_fieldless() {
             return self.import_opaque_population_inputs(authority);
         }
         let events = self
@@ -6902,7 +6902,6 @@ impl CState {
                 .instance_schema
                 .as_ref()
                 .is_some_and(|schema| !schema.fields().is_empty())
-            || definition.guarded_by.is_some()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
@@ -7160,7 +7159,6 @@ impl CState {
         let batch = quantity.as_const() != Some(1);
         if definition.name != *name
             || !definition.resource_parameters.is_empty()
-            || definition.guarded_by.is_some()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()

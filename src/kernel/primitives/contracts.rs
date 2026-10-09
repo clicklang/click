@@ -1447,15 +1447,6 @@ impl CCompositeResourceDefinition {
         &self.resource_parameters
     }
 
-    pub(crate) fn with_mutex_guard(mut self, guarded_by: Option<CMutexGuardDeclaration>) -> Self {
-        self.guarded_by = guarded_by;
-        self
-    }
-
-    pub(crate) fn mutex_guard(&self) -> Option<&CMutexGuardDeclaration> {
-        self.guarded_by.as_ref()
-    }
-
     pub(crate) fn with_instance_schema(mut self, schema: Option<ResourceFieldSchema>) -> Self {
         self.instance_schema = schema;
         self
@@ -1488,7 +1479,6 @@ impl CCompositeResourceDefinition {
         let mut definition = Self {
             resource_parameters: Vec::new(),
             instance_schema: None,
-            guarded_by: None,
             matched: None,
             name: name.into(),
             parameters,
@@ -2650,14 +2640,6 @@ impl CExecutionEnvironment {
         definitions: BTreeMap<String, CCompositeResourceDefinition>,
     ) -> Self {
         self.modeled_mutex_definitions = std::sync::Arc::new(definitions);
-        self
-    }
-
-    pub(crate) fn with_modeled_mutex_guards(
-        mut self,
-        guards: BTreeMap<String, CMutexGuardDeclaration>,
-    ) -> Self {
-        self.modeled_mutex_guards = std::sync::Arc::new(guards);
         self
     }
 

@@ -1807,7 +1807,7 @@ impl ResourceFieldSchema {
         &self.fields
     }
 
-    pub fn is_countable(&self) -> bool {
+    pub fn is_fieldless(&self) -> bool {
         self.fields.is_empty()
     }
 }
@@ -3273,7 +3273,6 @@ pub struct CCompositeResourceDefinition {
     /// owned ingredients; custody requires an explicit body clause.
     pub(super) resource_parameters: Vec<CResourceSpec>,
     pub(super) instance_schema: Option<ResourceFieldSchema>,
-    pub(super) guarded_by: Option<CMutexGuardDeclaration>,
     pub(super) matched: Option<CResourceMatchBody>,
     pub(super) name: String,
     pub(super) parameters: Vec<CParameter>,
@@ -3326,15 +3325,6 @@ pub struct CCompositeResourceDefinition {
     pub(super) fact_source_indices: Vec<usize>,
     /// Source spellings are diagnostic metadata. They never justify a fact.
     pub(super) fact_source_spellings: Vec<String>,
-}
-
-/// The direct C struct member named by a resource body's `guarded_by` clause.
-/// Parsing and declaration validation check its pthread type and ABI. The
-/// parameter index and byte offset make guard matching independent of names.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CMutexGuardDeclaration {
-    pub parameter_index: usize,
-    pub field_offset_bytes: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3488,7 +3478,6 @@ pub struct CExecutionEnvironment {
         Option<crate::languages::c::thread_runtime::ModeledPthreadBinding>,
     /// Resource-definition metadata for selected modeled mutex calls. Named
     /// lookup avoids scanning unrelated project definitions at each call.
-    pub(super) modeled_mutex_guards: std::sync::Arc<BTreeMap<String, CMutexGuardDeclaration>>,
     pub(super) modeled_mutex_definitions:
         std::sync::Arc<BTreeMap<String, CCompositeResourceDefinition>>,
     /// The selected target's byte order. It decides whether a one-byte C
@@ -3530,7 +3519,6 @@ impl std::fmt::Debug for CExecutionEnvironment {
                 &self.verified_function_termination_rules,
             )
             .field("modeled_pthread_binding", &self.modeled_pthread_binding)
-            .field("modeled_mutex_guards", &self.modeled_mutex_guards)
             .field("modeled_mutex_definitions", &self.modeled_mutex_definitions)
             .field("byte_order", &self.byte_order)
             .field("verified_loop_rules", &self.verified_loop_rules)
@@ -3554,7 +3542,6 @@ impl PartialEq for CExecutionEnvironment {
             && self.verified_function_rules == other.verified_function_rules
             && self.verified_function_termination_rules == other.verified_function_termination_rules
             && self.modeled_pthread_binding == other.modeled_pthread_binding
-            && self.modeled_mutex_guards == other.modeled_mutex_guards
             && self.modeled_mutex_definitions == other.modeled_mutex_definitions
             && self.byte_order == other.byte_order
             && self.verified_loop_rules == other.verified_loop_rules
@@ -6737,7 +6724,7 @@ impl ResourceInstance {
         fields: ResourceArguments,
         resource_arguments: Vec<super::ResourceReference>,
     ) -> Option<Self> {
-        if schema.is_countable() || schema.fields().len() != fields.len() {
+        if schema.is_fieldless() || schema.fields().len() != fields.len() {
             return None;
         }
         for ((_, ty), value) in schema.fields().iter().zip(fields.iter()) {

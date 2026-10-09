@@ -198,7 +198,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
     if file
         .resource_definitions
         .iter()
-        .all(ResourceDefinition::is_countable)
+        .all(ResourceDefinition::is_fieldless)
     {
         return Ok(());
     }
@@ -207,7 +207,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
         &super::super::validation::combined_algebraic_type_definitions(file)?,
     );
     for definition in &mut file.resource_definitions {
-        if definition.is_countable() {
+        if definition.is_fieldless() {
             continue;
         }
         definition.field_schema = Some(resolve_resource_field_schema(definition, &environment)?);
