@@ -204,9 +204,29 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         }
         result => result?,
     };
+    let mut completed = successor.execution;
+    let facts = requirement_pure_facts.with_statement_facts_retaining_prefix(
+        successor.pure_facts.into_vec(),
+        &completed.core.publication_case_prefix(),
+    );
+    // This is checked semantic state, shared by both source and Proof drivers.
+    // A statement with several outcomes cannot attach one branch's facts to
+    // every candidate; loop-return producers likewise keep their own bases.
+    completed.presentation.checked_leaf_facts = completed
+        .core
+        .frontier
+        .execution()
+        .filter(|paths| paths.path_count() == 1)
+        .filter(|_| completed.core.frontier_loop_rules.is_empty())
+        .map(|paths| {
+            Arc::new((
+                paths.candidate_at(0).expect("one checked outcome").clone(),
+                facts.clone(),
+            ))
+        });
     Ok(CheckedStatementStep {
-        execution: successor.execution,
-        facts: requirement_pure_facts.with_statement_facts(successor.pure_facts.into_vec()),
+        execution: completed,
+        facts,
         added_facts: successor.introduced_facts,
     })
 }

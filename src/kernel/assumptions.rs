@@ -7751,12 +7751,39 @@ impl CFunctionExecutionCandidates {
         &self.data.arguments
     }
 
+    pub(crate) fn candidate_at(&self, index: usize) -> Option<&CFunctionExecutionCandidate> {
+        self.data.paths.get(index)
+    }
+    pub(crate) fn path_count(&self) -> usize {
+        self.data.paths.len()
+    }
+    pub(crate) fn common_facts_contain(&self, fact: &ExecutionPureFact) -> bool {
+        self.data
+            .common_facts
+            .as_ref()
+            .is_some_and(|facts| facts.contains(fact))
+    }
+
     pub fn paths(&self) -> &[CFunctionExecutionCandidate] {
-        &self.data.paths
+        self.data.paths.as_slice_with(|paths| {
+            #[cfg(test)]
+            ExecutionFacts::record_published_storage(
+                false,
+                paths.len(),
+                paths
+                    .iter()
+                    .flat_map(|path| [path.facts(), path.effect_facts()]),
+            );
+            #[cfg(not(test))]
+            let _ = paths;
+        })
     }
 }
 
 impl CFunctionExecutionCandidate {
+    pub(crate) fn shares_record_with(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.data, &other.data)
+    }
     pub fn outcome(&self) -> &CFunctionOutcome {
         &self.data.outcome
     }

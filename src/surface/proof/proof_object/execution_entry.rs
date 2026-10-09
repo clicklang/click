@@ -12,7 +12,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn for_execution_frontier(
         claim_label: &'a str,
         tactic_index: usize,
-        execution: ExecutionProofState,
+        mut execution: ExecutionProofState,
         pure_facts: impl PropositionSource,
         constants: ExecutionProofConstants,
         function_block: &'a FunctionBlock,
@@ -32,6 +32,21 @@ impl<'a> Proof<'a> {
             .entry_facts_at_entry()
             .cloned()
             .unwrap_or_else(|| ProofFacts::from_source(&pure_facts));
+        // A fresh premise lineage cannot reuse contexts checked under the
+        // previous root. Compatible derived roots retain the original base
+        // so newly added ambient facts remain visible as a suffix.
+        if !execution
+            .presentation
+            .outcome_fact_root
+            .as_ref()
+            .is_some_and(|root| facts.introduced_since(root).is_some())
+        {
+            execution.presentation.outcome_fact_root = Some(Arc::new(facts.clone()));
+            execution.presentation.checked_leaf_facts = None;
+            for provenance in execution.presentation.outcome_provenance.iter_mut() {
+                provenance.checked_leaf_facts = None;
+            }
+        }
         Self {
             site: ProofStepSite::default(),
             context: Arc::new(ProofContext::Execution(ExecutionProofContext {
@@ -190,7 +205,7 @@ impl<'a> Proof<'a> {
             context,
             unfolded_predicates: &execution.core.unfolded_predicates,
             branch_path: &execution.presentation.branch_path,
-            outcome_provenance: execution.presentation.outcome_provenance.as_ref(),
+            outcome_provenance: &execution.presentation.outcome_provenance,
         })
     }
 

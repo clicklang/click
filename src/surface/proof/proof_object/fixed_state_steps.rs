@@ -2977,30 +2977,54 @@ impl<'a> Proof<'a> {
             arms,
         });
         let root = nodes.len() - 1;
+        let ambient_delta = execution
+            .presentation
+            .outcome_fact_root
+            .as_ref()
+            .and_then(|root| self.facts().introduced_since(root));
         for (path_index, path) in checked.paths().iter().enumerate() {
             check_verification_deadline()?;
-            let provenance = execution.provenance_for_outcome(path_index);
+            let mut provenance = execution.provenance_for_outcome(path_index);
+            let retained = provenance
+                .checked_leaf_facts
+                .as_deref()
+                .filter(|(candidate, _)| candidate.shares_record_with(path))
+                .filter(|_| {
+                    execution
+                        .core
+                        .pending_loop_return_pure_facts(path_index)
+                        .is_none()
+                })
+                .zip(ambient_delta.as_ref())
+                .map(|((_, facts), delta)| {
+                    delta.iter().fold(facts.clone(), |facts, fact| {
+                        facts.with_kernel_checked_fact(fact.clone())
+                    })
+                });
+            if retained.is_none() {
+                provenance.checked_leaf_facts = None;
+            }
             let CFunctionOutcome::Return { value, state } = path.outcome() else {
-                paths.push((
-                    path.outcome().clone(),
-                    path.execution_facts(),
-                    path.obligations().to_vec(),
-                    path.loan_evidence().clone(),
-                ));
+                paths.push(path.clone());
                 outcome_provenance.push(provenance);
                 evidence_plan.push(OutcomeEvidenceFork::Keep);
                 continue;
             };
-            // Materialize this input path once. Nested cases push/pop their
-            // own fact delta; sibling paths are never scanned or copied.
-            let mut path_facts = path
-                .facts()
-                .iter()
-                .map(|fact| fact.proposition().clone())
-                .collect::<Vec<_>>();
+            // A checked leaf retains its query root. Only new case facts
+            // enter the push/pop buffer; legacy paths keep their full input.
+            let mut path_facts = if retained.is_some() {
+                Vec::new()
+            } else {
+                path.facts()
+                    .iter()
+                    .map(|fact| fact.proposition().clone())
+                    .collect::<Vec<_>>()
+            };
             let base_len = path_facts.len();
-            let query = path_facts.iter().fold(self.facts().clone(), |facts, fact| {
-                facts.with_kernel_checked_fact(fact.clone())
+            let query = retained.clone().unwrap_or_else(|| {
+                path_facts.iter().fold(self.facts().clone(), |facts, fact| {
+                    facts.with_kernel_checked_fact(fact.clone())
+                })
             });
             let snapshots = provenance.recorded_snapshots.clone();
             let fork = partition_outcome_cases(
@@ -3011,50 +3035,73 @@ impl<'a> Proof<'a> {
                 &mut path_facts,
                 provenance,
                 &|condition, facts| {
-                    lower_outcome_proposition_with_recorded_snapshots(
-                        context.parsed_function.parameters(),
-                        context.arguments,
-                        &pre_state,
-                        state,
-                        value,
-                        facts,
-                        condition,
-                        context.predicate_environment,
-                        context.click_function_environment,
-                        &snapshots,
-                    )
-                    .map_err(|message| {
+                    let lowered = if retained.is_some() {
+                        let retained_query = facts.iter().fold(query.clone(), |query, fact| {
+                            query.with_kernel_checked_fact(fact.clone())
+                        });
+                        lower_outcome_proposition_with_recorded_snapshots(
+                            context.parsed_function.parameters(),
+                            context.arguments,
+                            &pre_state,
+                            state,
+                            value,
+                            &retained_query,
+                            condition,
+                            context.predicate_environment,
+                            context.click_function_environment,
+                            &snapshots,
+                        )
+                    } else {
+                        lower_outcome_proposition_with_recorded_snapshots(
+                            context.parsed_function.parameters(),
+                            context.arguments,
+                            &pre_state,
+                            state,
+                            value,
+                            facts,
+                            condition,
+                            context.predicate_environment,
+                            context.click_function_environment,
+                            &snapshots,
+                        )
+                    };
+                    lowered.map_err(|message| {
                         self.step_error(format!(
                             "post-execution case split could not lower its condition: {message}"
                         ))
                     })
                 },
-                &mut |facts, provenance| {
-                    let mut execution_facts = path.execution_facts();
-                    execution_facts.extend(
-                        facts[base_len..]
+                &mut |facts, mut provenance| {
+                    let additional = facts[base_len..]
+                        .iter()
+                        .cloned()
+                        .map(ExecutionPureFact::new)
+                        .collect::<ExecutionFacts>();
+                    let published =
+                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                            path,
+                            &additional,
+                        );
+                    if let Some(retained) = &retained {
+                        let facts = facts[base_len..]
                             .iter()
-                            .cloned()
-                            .map(ExecutionPureFact::new),
-                    );
-                    paths.push((
-                        path.outcome().clone(),
-                        execution_facts,
-                        path.obligations().to_vec(),
-                        path.loan_evidence().clone(),
-                    ));
+                            .fold(retained.clone(), |facts, fact| {
+                                facts.with_kernel_checked_fact(fact.clone())
+                            });
+                        provenance.checked_leaf_facts = Some(Arc::new((published.clone(), facts)));
+                    }
+                    paths.push(published);
                     outcome_provenance.push(provenance);
                 },
             )?;
             evidence_plan.push(fork);
         }
-        let candidates =
-            crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
-                checked.state().clone(),
-                checked.function().clone(),
-                checked.arguments().to_vec(),
-                paths,
-            );
+        let candidates = crate::kernel::c_function_execution_candidates_from_retained_paths(
+            checked.state().clone(),
+            checked.function().clone(),
+            checked.arguments().to_vec(),
+            paths,
+        );
         execution
             .core
             .fork_outcome_evidence(&evidence_plan)
@@ -3062,7 +3109,7 @@ impl<'a> Proof<'a> {
         execution.core.frontier.position = FrontierPosition::FunctionExit {
             execution: candidates,
         };
-        execution.presentation.outcome_provenance = Arc::new(outcome_provenance);
+        execution.presentation.outcome_provenance = outcome_provenance.into();
         let transition = self.checked_execution_transition(
             self.facts().clone(),
             false,
@@ -3872,6 +3919,7 @@ mod outcome_case_tests {
                 });
             }
             let provenance = OutcomeProvenance {
+                checked_leaf_facts: None,
                 loop_return: None,
                 call_routes: Vec::new(),
                 branch_decisions: decisions,
@@ -4026,6 +4074,7 @@ mod outcome_case_tests {
                 &root,
                 &mut facts,
                 OutcomeProvenance {
+                    checked_leaf_facts: None,
                     loop_return: None,
                     call_routes: Vec::new(),
                     branch_decisions: ExecutionBranchDecisions::default(),

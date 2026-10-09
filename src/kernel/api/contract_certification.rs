@@ -2078,9 +2078,30 @@ pub(crate) fn c_function_execution_candidates_from_retained_paths(
     CFunctionExecutionCandidates {
         data: std::sync::Arc::new(CFunctionExecutionCandidatesData {
             state,
-            function,
-            arguments,
+            function: Arc::new(function),
+            arguments: Arc::new(arguments),
+            common_facts: (paths.len() == 1).then(|| paths[0].facts().clone()),
+            paths: paths.into(),
+        }),
+    }
+}
+
+/// Retain disjoint, checked arm publications as vector subtrees. This is
+/// still untrusted candidate data; trace completion certifies every outcome.
+pub(crate) fn concat_retained_function_candidates(
+    state: CState,
+    arms: [&CFunctionExecutionCandidates; 2],
+    common_facts: ExecutionFacts,
+) -> CFunctionExecutionCandidates {
+    let mut paths = arms[0].data.paths.clone();
+    paths.append_shared(&arms[1].data.paths);
+    CFunctionExecutionCandidates {
+        data: Arc::new(CFunctionExecutionCandidatesData {
+            state,
+            function: arms[0].data.function.clone(),
+            arguments: arms[0].data.arguments.clone(),
             paths,
+            common_facts: Some(common_facts),
         }),
     }
 }

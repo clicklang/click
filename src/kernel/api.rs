@@ -5669,7 +5669,7 @@ mod proof_case_evidence_tests {
         assert_eq!(core.execution_evidence[1].len(), 3);
         assert_eq!(core.execution_evidence[2].len(), 3);
         assert!(proof_case_partitions_are_exhaustive(
-            &core.execution_evidence.to_vec()
+            core.execution_evidence.as_slice()
         ));
         // The forked traces share the original's prefix.
         assert!(

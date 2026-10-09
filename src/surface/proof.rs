@@ -2740,3 +2740,9 @@ fn note_automatic_body_joined_apart(joined_apart: bool) -> AutomaticBodyJoinedAp
 fn automatic_body_joined_apart() -> bool {
     AUTOMATIC_BODY_JOINED_APART.with(std::cell::Cell::get)
 }
+
+#[cfg(test)]
+pub(in crate::surface) use proof_object::take_outcome_fact_reads;
+
+#[cfg(test)]
+pub(in crate::surface) use proof_object::take_terminal_publication_visits;

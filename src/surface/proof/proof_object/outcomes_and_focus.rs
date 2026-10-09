@@ -2,6 +2,15 @@
 
 use super::*;
 
+#[cfg(test)]
+thread_local! {
+    static OUTCOME_FACT_READS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+}
+#[cfg(test)]
+pub(in crate::surface) fn take_outcome_fact_reads() -> (usize, usize) {
+    OUTCOME_FACT_READS.with(|counts| counts.replace((0, 0)))
+}
+
 impl<'a> Proof<'a> {
     /// Whether this execution proof has reached the function-exit frontier.
     ///
@@ -236,12 +245,10 @@ impl<'a> Proof<'a> {
                 };
                 let decision = {
                     let mut budget = ExecutionBudget::beside_live_state();
-                    let guard_assumptions = goal.data.core.effect_facts.iter().fold(
-                        self.facts().assumptions().clone(),
-                        |assumptions, fact| {
-                            assumptions.assume_proposition(fact.proposition().clone())
-                        },
-                    );
+                    // Outcome construction already imported these checked path
+                    // facts. Retain that context instead of folding the same
+                    // inherited guard prefix again for each resource claim.
+                    let guard_assumptions = self.facts().assumptions().clone();
                     let guard_state = context
                         .constants
                         .function_entry_state
@@ -674,8 +681,28 @@ impl<'a> Proof<'a> {
             _ => PersistentMap::default(),
         };
         let requirement_surfaces = Arc::new(requirement_surfaces);
+        // The frontier contributes only the suffix added after the shared
+        // entry root. Each checked leaf already retains that entry prefix.
+        let ambient_delta = execution
+            .presentation
+            .outcome_fact_root
+            .as_ref()
+            .and_then(|root| self.facts().introduced_since(root));
         let mut goals = Vec::new();
         for (path_index, path) in checked.paths().iter().enumerate() {
+            let provenance = execution.provenance_for_outcome(path_index);
+            let retained_leaf = provenance
+                .checked_leaf_facts
+                .as_deref()
+                .filter(|(candidate, _)| candidate.shares_record_with(path))
+                .map(|(_, facts)| facts)
+                .filter(|_| {
+                    execution
+                        .core
+                        .pending_loop_return_pure_facts(path_index)
+                        .is_none()
+                })
+                .zip(ambient_delta.as_ref());
             // A returned path of a summarized loop keeps the fact base it was
             // certified under, not the facts the continuing path established
             // after the loop.
@@ -691,7 +718,23 @@ impl<'a> Proof<'a> {
             // every candidate. Preserve the original path index so later
             // finalization addresses the checked candidate without rebuilding
             // or renumbering the path set.
-            if path
+            #[cfg(test)]
+            OUTCOME_FACT_READS.with(|counts| {
+                let (reused, imported) = counts.get();
+                counts.set((reused + usize::from(retained_leaf.is_some()), imported));
+            });
+            if let Some((leaf, ambient)) = retained_leaf {
+                if ambient
+                    .iter()
+                    .any(|fact| leaf.directly_conflicts_with(fact))
+                {
+                    continue;
+                }
+                facts = leaf.clone();
+                for fact in ambient {
+                    facts = facts.with_kernel_checked_fact(fact.clone());
+                }
+            } else if path
                 .facts()
                 .iter()
                 .any(|fact| facts.directly_conflicts_with(fact.proposition()))
@@ -727,10 +770,19 @@ impl<'a> Proof<'a> {
             // evidence. Haves and resource operations share this persistent
             // context; none reconstructs assumptions from the path history.
             let execution_facts = path.execution_facts();
-            for fact in &execution_facts {
+            let imported_facts = if retained_leaf.is_some() {
+                path.effect_facts()
+            } else {
+                &execution_facts
+            };
+            for fact in imported_facts {
+                #[cfg(test)]
+                OUTCOME_FACT_READS.with(|counts| {
+                    let (reused, imported) = counts.get();
+                    counts.set((reused, imported + 1));
+                });
                 facts = facts.with_kernel_checked_fact(fact.proposition().clone());
             }
-            let provenance = execution.provenance_for_outcome(path_index);
             goals.push(OpenBranch::function_outcome(
                 OutcomeObligation::new(
                     path_index,
