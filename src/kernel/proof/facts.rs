@@ -780,6 +780,29 @@ impl ProofFacts {
         self.with_selected_separation_facts(goal, false)
     }
 
+    /// Observes only the separation explicitly requested at this checked C
+    /// state. Unfolding independent instances exposes members of the same
+    /// live partition, even when their retained body compositions are separate.
+    /// Do not retain/hash the whole state composition or enumerate its pairs.
+    pub(crate) fn with_selected_held_resource_separation(
+        &self,
+        goal: &Proposition,
+        state: &crate::kernel::CState,
+    ) -> Self {
+        let Proposition::CResourceSeparate { left, right } = goal else {
+            return self.clone();
+        };
+        if !self.contains(goal)
+            && self
+                .assumptions
+                .proves_held_resources_separate(state.resources(), left, right)
+        {
+            self.with_fact(goal.clone())
+        } else {
+            self.clone()
+        }
+    }
+
     /// As above, but separation must follow from the compositions alone.
     /// Contextual separation facts retain their explicit derivation.
     pub(crate) fn with_selected_composition_separation(&self, goal: &Proposition) -> Self {
@@ -3618,6 +3641,106 @@ mod retained_root_context_tests {
             assert!(retained.contains(inputs.last().unwrap()));
             assert_eq!(retained.fact_count(), size as usize);
         }
+    }
+}
+
+#[cfg(test)]
+mod held_separation_tests {
+    use super::*;
+
+    fn cell(index: u64) -> CResource {
+        CResource::Memory(CMemoryRange::new(
+            Pointer {
+                block: "shared".into(),
+                offset: PointerOffsetTerm::Variable(Variable(980_000 + index)),
+            },
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        ))
+    }
+
+    fn separation(left: CResource, right: CResource) -> Proposition {
+        Proposition::CResourceSeparate {
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    /// Same-block unrelated members must not turn one selected observation
+    /// into a frame scan or an enumeration of ownership pairs.
+    #[test]
+    fn held_separation_uses_only_the_selected_members() {
+        let mut samples = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let resources = ResourceContext::new()
+                .unchecked_with_facts((0..size).map(|index| CResourceFact::own(cell(index))));
+            let state = CState::new().with_resource_context(resources);
+            let facts = ProofFacts::default();
+            let goal = separation(cell(size - 2), cell(size - 1));
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let observed = facts.with_selected_held_resource_separation(&goal, &state);
+                assert!(observed.contains(&goal));
+                assert_eq!(observed.fact_count(), 1);
+            });
+            samples.push(work);
+        }
+        assert!(samples.iter().all(|work| *work > 0));
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+            "selected separation inspected unrelated ownership: {samples:?}"
+        );
+    }
+
+    /// Views, repeated selection of one owner, and stale/unheld members
+    /// cannot manufacture separation from the live ownership partition.
+    #[test]
+    fn held_separation_requires_two_distinct_current_owners() {
+        let state = CState::new().with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_facts([CResourceFact::own(cell(0)), CResourceFact::View(cell(1))]),
+        );
+        for goal in [
+            separation(cell(0), cell(0)),
+            separation(cell(0), cell(1)),
+            separation(cell(0), cell(2)),
+        ] {
+            assert!(
+                !ProofFacts::default()
+                    .with_selected_held_resource_separation(&goal, &state)
+                    .contains(&goal)
+            );
+        }
+    }
+
+    #[test]
+    fn held_separation_does_not_override_pointer_alias_facts() {
+        let left = cell(0);
+        let right = cell(1);
+        let (CResource::Memory(left_range), CResource::Memory(right_range)) = (&left, &right)
+        else {
+            unreachable!()
+        };
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(left_range.base().clone()),
+                Box::new(right_range.base().clone()),
+            ),
+            true,
+        );
+        // Deliberately assemble a stale partition: the explicit equality
+        // must prevent using it as fresh evidence of separation.
+        let state =
+            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+                CResourceFact::own(left.clone()),
+                CResourceFact::own(right.clone()),
+            ]));
+        let goal = separation(left, right);
+        let facts = ProofFacts::from_ordered(&[alias]);
+        assert!(
+            !facts
+                .with_selected_held_resource_separation(&goal, &state)
+                .contains(&goal)
+        );
     }
 }
 

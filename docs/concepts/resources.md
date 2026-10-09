@@ -1693,7 +1693,10 @@ Click implements:
 - checked lending of owned memory to satisfy a viewed requirement, with scoped
   recovery at the return,
 - visible owned resources imply `separate(...)` facts; provably overlapping
-  visible writes are rejected,
+  visible writes are rejected. A `have separate(memory(...), memory(...))`
+  can select two distinct owned fields exposed by independent named-resource
+  unfolds from the current ownership partition. A viewed field or two
+  references to the same owned field cannot justify that separation,
 - composite resources project direct `contains(parent, child)` facts for owned
   contained resources and direct `separate(child1, child2)` facts for owned
   sibling resources without exposing the hidden owned resource facts,
