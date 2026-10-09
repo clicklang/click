@@ -13,6 +13,7 @@ const FOUR_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
 const SMALL_PARTITION: &str = include_str!("../../design/charon-trial/adler2/partition.click");
 const TAIL_BOUNDS: &str = include_str!("../../design/charon-trial/adler2/tail-bounds.click");
+const COUNT_BRIDGE: &str = include_str!("../../design/charon-trial/adler2/count-bridge.click");
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
 
@@ -50,13 +51,18 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let count_bridge = if contract.contains("adler_count_") {
+        COUNT_BRIDGE
+    } else {
+        ""
+    };
     let common_spec = if contract.contains("adler_spec_one(") {
         COMMON_ADLER_SPEC
     } else {
         ""
     };
     format!(
-        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1368,11 +1374,7 @@ fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
 #[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch() {
-    reject_compute(
-        SMALL_BATCH_COMPUTE,
-        " views bytes[0..(int32)(uint32)bytes_len];",
-        "",
-    );
+    reject_compute(SMALL_BATCH_COMPUTE, " views bytes[0..bytes_len];", "");
     reject_compute(
         SMALL_BATCH_COMPUTE,
         " requires bytes_len <= 22207u64;\n requires bytes_len < 22208u64;",
@@ -1416,8 +1418,8 @@ fn charon_adler2_small_batch_compute_requires_canonical_b() {
 fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() {
     for (before, after) in [
         (
-            "have __rust_mir_62_remaining == old((int32)(uint32)(bytes_len - bytes_len % 4u64)) by { simp(); }",
-            "have __rust_mir_62_remaining == old((int32)(uint32)(bytes_len - bytes_len % 4u64)) + 4 by { assumption(); }",
+            "have __rust_mir_62_remaining == bytes_len - bytes_len % 4u64 by { simp(); }",
+            "have __rust_mir_62_remaining == (bytes_len - bytes_len % 4u64) + 4u64 by { assumption(); }",
         ),
         ("ensures self->a < 65521;", "ensures self->a < 1;"),
         ("ensures self->b < 65521;", "ensures self->b < 1;"),
@@ -1431,11 +1433,11 @@ fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() 
 fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
     for (before, after) in [
         (
-            "have __rust_mir_138_cursor == remainder by { simp(); }",
+            "have __rust_mir_138_cursor == remainder by { normalize(); }",
             "have __rust_mir_138_cursor == remainder + 1 by { assumption(); }",
         ),
         (
-            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by { rewrite(__rust_mir_138_remaining == at(tail_head, __rust_mir_138_remaining) - 1); assumption(); }",
+            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by { arithmetic() using { __rust_mir_138_remaining == at(tail_head, __rust_mir_138_remaining) - 1u64; 1u64 <= at(tail_head, __rust_mir_138_remaining); } }",
             "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by { assumption(); }",
         ),
     ] {
