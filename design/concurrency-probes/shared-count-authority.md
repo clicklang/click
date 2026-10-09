@@ -51,9 +51,8 @@ one nested unit must never create a second copy of that custody.
 Initialization establishes the association from actual ownership and the
 selected resource. The proposed rule does not depend on a mutex annotation.
 Initialization now supports ordinary unannotated exclusive resources, with
-declaration/schema and actual ownership checks. No fixture uses the legacy
-declaration annotation any more; milestone 7 of `issues/authority-migration.md`
-removes it. Both concrete and independently checked
+declaration/schema and actual ownership checks; the declaration annotation is
+retired. Both concrete and independently checked
 typed-use paths accept the unannotated exclusive form. The frozen counter's
 existing memory-safety sidecar uses it. Counted wrappers have the local custody
 implementation below, but typed-use sharing of them remains refused.

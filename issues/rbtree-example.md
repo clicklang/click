@@ -913,9 +913,7 @@ as follows:
 | [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md), [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md) | chunks 15 to 23 |
 | D1 (attach sidecars to the pinned source; not design decision D1) | chunk 24 |
 
-Chunks 8, 10, and 15 have no unlanded prerequisite; chunk 3 is landed. None depends on the
-[authority migration](authority-migration.md): the rbtree fixtures use neither
-`count(...)` nor `guarded_by`.
+Chunks 8, 10, and 15 have no unlanded prerequisite; chunk 3 is landed.
 
 ### Insert
 
