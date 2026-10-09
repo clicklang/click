@@ -3365,11 +3365,11 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
 /// The loops of a certified function that certification executed to their
 /// exit, by source index.
 ///
-/// Execution summarizes a loop only when the loop carries annotations: a
-/// verified loop rule applies to a loop with invariant or effect checks, and
-/// the invariant route runs for one with checks or a measure. A loop with none
-/// of them has one route, the concrete one, which takes the loop one budgeted
-/// iteration at a time and returns only when every feasible path has left it.
+/// A verified loop rule can summarize a loop even when its clause carries no
+/// checks. Exclude every loop named by a rule before considering empty
+/// annotations as evidence of concrete execution. An unruled loop with no
+/// checks or measure takes the concrete route, one budgeted iteration at a
+/// time, and returns only when every feasible path has left it.
 /// A function's verified rule exists because certification executed exactly
 /// this body, so such a loop was run to its exit on every path the contract
 /// admits and owes no measure.
@@ -3408,6 +3408,9 @@ fn loops_executed_to_exit(
         .iter()
         .enumerate()
         .filter(|(index, certified)| {
+            if ruled_loops.contains(index) {
+                return false;
+            }
             let CStatement::While {
                 invariant,
                 invariant_checks,
@@ -3435,7 +3438,6 @@ fn loops_executed_to_exit(
                 .iter()
                 .all(|check| check.origin() == CLoopEffectOrigin::InheritedResourceDerived)
                 && loop_semantics == CLoopSemantics::ApplyVerifiedRules
-                && !ruled_loops.contains(index)
         })
         .map(|(index, _)| index)
         .collect()
@@ -6303,6 +6305,21 @@ mod local_descent_tests {
             loops_executed_to_exit(&summarized, CLoopSemantics::Verify, &BTreeSet::new())
                 .is_empty()
         );
+    }
+
+    /// An empty loop clause still summarizes the loop. Its indexed rule is
+    /// not evidence that concrete execution ran every path to an exit.
+    #[test]
+    fn an_empty_checked_loop_rule_is_not_concrete_termination_evidence() {
+        let body = crate::kernel::c_while(
+            crate::kernel::c_int32_literal(1),
+            Vec::new(),
+            CStatement::Skip,
+        );
+        let function = CFunction::new(CType::Void, "spin", Vec::new(), body);
+        for semantics in [CLoopSemantics::Verify, CLoopSemantics::ApplyVerifiedRules] {
+            assert!(loops_executed_to_exit(&function, semantics, &BTreeSet::from([0])).is_empty());
+        }
     }
 
     /// Each sequential `if` used to double the list of path bounds the

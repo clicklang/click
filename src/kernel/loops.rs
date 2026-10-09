@@ -5,6 +5,30 @@ use super::loans::{
 use super::prelude::*;
 
 #[cfg(test)]
+mod empty_loop_rule_tests {
+    use super::*;
+
+    /// A genuinely unannotated loop without a checked rule must retain the
+    /// evaluator's unrolling bound, even though rule dispatch checks all loops.
+    #[test]
+    fn unannotated_loop_without_rule_keeps_unrolling_bound() {
+        let statement = c_while(c_int32_literal(1), Vec::new(), CStatement::Skip);
+        let mut budget = ExecutionBudget::default().with_loop_unrolls(0);
+        let (execution, rule) =
+            prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
+                CState::new(),
+                statement,
+                PureFactContext::new(),
+                CExecutionEnvironment::new(),
+                CExecutionSemantics::APPLY_VERIFIED_RULES,
+                &mut budget,
+            );
+        assert_eq!(execution.limit, Some(ExecutionLimit::LoopUnrolls));
+        assert!(rule.is_none());
+    }
+}
+
+#[cfg(test)]
 mod pointee_const_return_tests {
     use super::*;
     // Surface planning; only this test reaches it from inside the kernel.
@@ -2215,7 +2239,29 @@ pub(super) fn execute_c_statement_verification_paths(
         budget.consume_statement_step()?;
     }
     if execution_semantics.loops == CLoopSemantics::ApplyVerifiedRules
-        && matches!(
+        && matches!(statement, CStatement::While { .. })
+    {
+        // A checked rule may have no invariant, effect, or measure checks.
+        // Its authority is the rule itself, not a nonempty annotation bundle.
+        if let Some(rule) = environment.applicable_verified_loop_rule(state, statement, assumptions)
+        {
+            let paths = rule
+                .paths
+                .iter()
+                .cloned()
+                .map(|mut path| {
+                    path.facts = path
+                        .facts
+                        .into_iter()
+                        .map(ExecutionPureFact::into_certified)
+                        .collect();
+                    path
+                })
+                .collect::<Vec<_>>();
+            budget.check_path_width(paths.len())?;
+            return Ok(paths);
+        }
+        if matches!(
             statement,
             CStatement::While {
                 invariant_checks,
@@ -2227,27 +2273,9 @@ pub(super) fn execute_c_statement_verification_paths(
                 || !effect_checks.is_empty()
                 || !ranking_measures.is_empty()
                 || structural_measure.is_some()
-        )
-    {
-        let Some(rule) = environment.applicable_verified_loop_rule(state, statement, assumptions)
-        else {
+        ) {
             return Ok(Vec::new());
-        };
-        let paths = rule
-            .paths
-            .iter()
-            .cloned()
-            .map(|mut path| {
-                path.facts = path
-                    .facts
-                    .into_iter()
-                    .map(ExecutionPureFact::into_certified)
-                    .collect();
-                path
-            })
-            .collect::<Vec<_>>();
-        budget.check_path_width(paths.len())?;
-        return Ok(paths);
+        }
     }
     let paths = match statement {
         CStatement::Seq(first, second) => {
