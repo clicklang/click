@@ -1462,6 +1462,7 @@ mod tests {
             },
             || {
                 let tactic = TacticEvent {
+                    source_tactic_path: None,
                     claim: "bounded integer equality elimination".into(),
                     tactic_index: 0,
                     tactic_name: "integer_affine_planner".into(),
@@ -1647,6 +1648,7 @@ mod tests {
             },
             || {
                 let tactic = TacticEvent {
+                    source_tactic_path: None,
                     claim: "bounded integer affine planner".into(),
                     tactic_index: 0,
                     tactic_name: "integer_affine_planner".into(),
@@ -1679,6 +1681,7 @@ mod tests {
             constant: BigInt::zero(),
         };
         let tactic = TacticEvent {
+            source_tactic_path: None,
             claim: "affine map construction budget".into(),
             tactic_index: 0,
             tactic_name: "integer_affine_planner".into(),

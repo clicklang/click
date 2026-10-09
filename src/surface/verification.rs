@@ -2571,6 +2571,7 @@ fn verify_c0_sources_in_context(
                 function_environment = function_environment.with_external_function_rule(assumption);
             }
         }
+        drop(_timing);
         let verified_theorems = verify_theorem_definitions(
             &theorem_dependencies,
             &theorem_definitions,
@@ -2584,6 +2585,7 @@ fn verify_c0_sources_in_context(
             file.entry_module()
                 .map_or(error.clone(), |identity| error.with_context(identity))
         })?;
+        let _timing = VerificationTimingPhase::new("environment");
         let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
         let mut theorem_certification_authorities =
             BTreeMap::<String, Vec<CVerifiedPureTheorem>>::new();

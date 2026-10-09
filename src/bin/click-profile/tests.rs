@@ -25,6 +25,7 @@ click timing: tactic example.contract 2 step class simple statement 4 source 5 1
 fn structured_timeout_attributes_interrupted_phase_and_preserves_completed_work() {
     let source = PathBuf::from("examples/sample.click");
     let completed = TacticEvent {
+        source_tactic_path: None,
         claim: "sample.contract".to_string(),
         tactic_index: 0,
         tactic_name: "step".to_string(),
@@ -71,6 +72,7 @@ fn structured_timeout_attributes_interrupted_phase_and_preserves_completed_work(
 #[test]
 fn structured_work_exhaustion_attributes_the_active_tactic() {
     let tactic = TacticEvent {
+        source_tactic_path: None,
         claim: "sample.contract".to_string(),
         tactic_index: 3,
         tactic_name: "simp".to_string(),
@@ -737,6 +739,8 @@ fn end_of_options_accepts_a_dash_prefixed_target() {
 #[test]
 fn generated_commands_quote_locations_and_artifacts() {
     let key = StepKey {
+        prepared_import: false,
+        source_tactic_path: None,
         source_path: PathBuf::from("examples/it's spaced.click"),
         claim: "claim".to_string(),
         tactic_index: 0,
@@ -765,6 +769,31 @@ fn generated_commands_quote_locations_and_artifacts() {
         output.contains("'examples/it'\\''s spaced.expanded.click'"),
         "{output}"
     );
+    let key = StepKey {
+        prepared_import: true,
+        ..key
+    };
+    output.clear();
+    render_expansion_command(
+        &mut output,
+        &key,
+        SourcePosition {
+            line: 2,
+            column: 3,
+            origin: None,
+        },
+        Thresholds::default(),
+    );
+    assert!(
+        output.contains("click expand --in-place 'examples/it'\\''s spaced.click:2:3'"),
+        "{output}"
+    );
+    assert!(
+        output.contains("click verify 'examples/it'\\''s spaced.click'"),
+        "{output}"
+    );
+    assert!(!output.contains("--output"), "{output}");
+    assert!(!output.contains(".expanded.click"), "{output}");
 }
 
 #[test]
@@ -1020,6 +1049,7 @@ fn structured_events_do_not_require_text_parsing() {
         VerificationEvent::Source(PathBuf::from("example.click")),
         VerificationEvent::TacticFinished {
             tactic: TacticEvent {
+                source_tactic_path: None,
                 claim: "f.contract".to_string(),
                 tactic_index: 0,
                 tactic_name: "step".to_string(),
@@ -1078,4 +1108,50 @@ fn operations_are_ranked_by_deterministic_work_as_well_as_time() {
         "{report}"
     );
     assert!(work_section.contains("500000 units"), "{report}");
+}
+
+#[test]
+fn pure_proof_claim_accounting_keeps_tactic_and_core_time_disjoint() {
+    let tactic = TacticEvent {
+        claim: "identity.ensures_0".to_string(),
+        tactic_index: 0,
+        source_index: 0,
+        source_tactic_path: Some(vec![0]),
+        tactic_name: "normalize".to_string(),
+        class: "simple".to_string(),
+        statement_index: 0,
+    };
+    let events = vec![
+        VerificationEvent::Source(PathBuf::from("identity.click")),
+        VerificationEvent::TacticStarted(tactic.clone()),
+        VerificationEvent::TacticFinished {
+            tactic,
+            elapsed: Duration::from_millis(10),
+            work: 42,
+        },
+        VerificationEvent::ProofClaimFinished {
+            function: "identity".to_string(),
+            claim: "identity.ensures_0".to_string(),
+            elapsed: Duration::from_millis(15),
+        },
+        VerificationEvent::FunctionFinished {
+            name: "identity".to_string(),
+            elapsed: Duration::from_millis(20),
+        },
+    ];
+    let profile = profile_from_events("identity", &events, Thresholds::default(), false).unwrap();
+    assert_eq!(profile.work.claims, 1);
+    assert_eq!(profile.accounting.simple, Duration::from_millis(10));
+    assert_eq!(profile.accounting.certification, Duration::ZERO);
+    let row = &profile.attribution["identity"];
+    assert_eq!(
+        row.claims["identity.ensures_0"].buckets.verifier_core,
+        Duration::from_millis(5)
+    );
+    assert_eq!(
+        row.claims["identity::<shared verifier work>"]
+            .buckets
+            .verifier_core,
+        Duration::from_millis(5)
+    );
 }

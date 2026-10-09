@@ -4581,6 +4581,7 @@ fn singleton_substitution_derivation_records_only_its_bound_premises() {
         || {
             instrumentation::collect(|| {
                 let tactic = TacticEvent {
+                    source_tactic_path: None,
                     claim: "singleton certificate budget".into(),
                     tactic_index: 0,
                     tactic_name: "singleton_certificate_budget".into(),
@@ -5387,6 +5388,7 @@ fn forall_integer_application_emits_no_theorem_after_work_exhaustion() {
     };
     crate::instrumentation::with_tactic_work_limits(limits, || {
         let tactic = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
             claim: "integer.quantifier".into(),
             tactic_index: 0,
             tactic_name: "integer_forall".into(),
@@ -6458,6 +6460,7 @@ fn repeated_resolution_queries_do_not_repay_their_search() {
 
     let work_for = |index: usize, query: fn(&Pointer, &Pointer, &PureFactContext) -> bool| {
         let tactic = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
             claim: "memo.regression".to_string(),
             tactic_index: index,
             tactic_name: "query".to_string(),

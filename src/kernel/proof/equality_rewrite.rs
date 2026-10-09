@@ -2647,6 +2647,7 @@ mod tests {
         let result = crate::instrumentation::with_tactic_work_limits(limits, || {
             crate::instrumentation::collect(|| {
                 let tactic = crate::instrumentation::TacticEvent {
+                    source_tactic_path: None,
                     claim: "Integer equality rewrite".into(),
                     tactic_index: 0,
                     tactic_name: "rewrite".into(),

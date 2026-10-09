@@ -1370,6 +1370,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 crate::instrumentation::emit(
                     crate::instrumentation::VerificationEvent::TacticStarted(
                         crate::instrumentation::TacticEvent {
+                            source_tactic_path: None,
                             claim: claim_label.clone(),
                             tactic_index: closer_index,
                             tactic_name: closer_name.to_string(),
@@ -1381,6 +1382,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 );
             }
             let timing_context = TimingTacticContext {
+                source_tactic_path: None,
                 claim_label: claim_label.clone(),
                 tactic_index: closer_index,
                 source_index: closer_source,
@@ -1390,6 +1392,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             };
             push_timing_tactic(timing_context.clone());
             TacticTiming {
+                source_tactic_path: None,
                 claim_label: claim_label.clone(),
                 tactic_index: closer_index,
                 source_index: closer_source,

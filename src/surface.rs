@@ -6541,6 +6541,7 @@ pub(in crate::surface) struct UnresolvedRequirement {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TimingTacticContext {
+    source_tactic_path: Option<Vec<usize>>,
     claim_label: String,
     tactic_index: usize,
     tactic_name: String,
@@ -8384,6 +8385,7 @@ impl ClickError {
         }
         if let Some(tactic) = &self.timing_tactic {
             instrumentation::emit(VerificationEvent::TacticFailed(TacticEvent {
+                source_tactic_path: tactic.source_tactic_path.clone(),
                 claim: tactic.claim_label.clone(),
                 tactic_index: tactic.tactic_index,
                 tactic_name: tactic.tactic_name.clone(),

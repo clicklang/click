@@ -4,6 +4,7 @@ pub(super) struct TacticTiming {
     pub(super) claim_label: String,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
+    pub(super) source_tactic_path: Option<Vec<usize>>,
     pub(super) tactic_name: String,
     pub(super) tactic_class: &'static str,
     pub(super) statement_index: usize,
@@ -112,6 +113,44 @@ impl TacticTiming {
         source_index: usize,
         statement_index: usize,
     ) -> Option<Self> {
+        Self::named_at_path(
+            claim_label,
+            name,
+            tactic,
+            tactic_index,
+            source_index,
+            statement_index,
+            None,
+        )
+    }
+
+    pub(super) fn pure_source(
+        claim_label: &str,
+        path: Vec<usize>,
+        tactic: &ProofTactic,
+    ) -> Option<Self> {
+        let source_index = *path.first()?;
+        Self::named_at_path(
+            claim_label,
+            tactic_name(tactic),
+            tactic,
+            source_index,
+            source_index,
+            0,
+            Some(path),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn named_at_path(
+        claim_label: &str,
+        name: &str,
+        tactic: &ProofTactic,
+        tactic_index: usize,
+        source_index: usize,
+        statement_index: usize,
+        source_tactic_path: Option<Vec<usize>>,
+    ) -> Option<Self> {
         if source_index == usize::MAX {
             return None;
         }
@@ -121,6 +160,7 @@ impl TacticTiming {
                 crate::instrumentation::emit(
                     crate::instrumentation::VerificationEvent::TacticStarted(
                         crate::instrumentation::TacticEvent {
+                            source_tactic_path: source_tactic_path.clone(),
                             claim: claim_label.to_string(),
                             tactic_index,
                             tactic_name: name.to_string(),
@@ -132,6 +172,7 @@ impl TacticTiming {
                 );
             }
             let context = TimingTacticContext {
+                source_tactic_path: source_tactic_path.clone(),
                 claim_label: claim_label.to_string(),
                 tactic_index,
                 tactic_name: name.to_string(),
@@ -144,6 +185,7 @@ impl TacticTiming {
                 claim_label: claim_label.to_string(),
                 tactic_index,
                 source_index,
+                source_tactic_path,
                 tactic_name: name.to_string(),
                 tactic_class,
                 statement_index,
@@ -158,6 +200,7 @@ impl Drop for TacticTiming {
     fn drop(&mut self) {
         crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticFinished {
             tactic: crate::instrumentation::TacticEvent {
+                source_tactic_path: self.source_tactic_path.clone(),
                 claim: self.claim_label.clone(),
                 tactic_index: self.tactic_index,
                 tactic_name: self.tactic_name.clone(),

@@ -73,15 +73,24 @@ pub(in crate::surface) fn verify_theorem_definitions(
             theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
             continue;
         }
+        let started = std::time::Instant::now();
         verified.extend(
-            verify_theorem_definition(
-                theorem,
-                predicate_environment,
-                click_function_environment,
-                &theorem_environment,
-                function_environment,
-            )
+            crate::instrumentation::with_default_tactic_limits(|| {
+                verify_theorem_definition(
+                    theorem,
+                    predicate_environment,
+                    click_function_environment,
+                    &theorem_environment,
+                    function_environment,
+                )
+            })
             .map_err(ClickError::located_by_ambient_source)?,
+        );
+        crate::instrumentation::emit(
+            crate::instrumentation::VerificationEvent::FunctionFinished {
+                name: theorem.name().to_owned(),
+                elapsed: started.elapsed(),
+            },
         );
         theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
     }
@@ -148,7 +157,8 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
         .enumerate()
         .map(|(ensure_index, ensure_clause)| {
             let claim_label = theorem_claim_label(theorem.name(), ensure_index, ensure_clause);
-            verify_theorem_ensure(
+            let started = std::time::Instant::now();
+            let result = verify_theorem_ensure(
                 theorem,
                 ensure_index,
                 ensure_clause,
@@ -158,7 +168,17 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
                 click_function_environment,
                 theorem_environment,
                 function_environment,
-            )
+            );
+            if result.is_ok() {
+                crate::instrumentation::emit(
+                    crate::instrumentation::VerificationEvent::ProofClaimFinished {
+                        function: theorem.name().to_owned(),
+                        claim: claim_label,
+                        elapsed: started.elapsed(),
+                    },
+                );
+            }
+            result
         })
         .collect()
 }
@@ -829,6 +849,9 @@ fn check_pure_structural_induction(
     ),
     ClickError,
 > {
+    let _timing = tactics
+        .first()
+        .and_then(|tactic| TacticTiming::pure_source(claim_label, vec![0], tactic));
     let [
         ProofTactic::StructuralInduct {
             parameter,
@@ -1803,6 +1826,7 @@ fn verify_theorem_ensure(
     let (proof_kind, certificate, checked_completion) = match ensure_clause.proof() {
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
             let (certificate, completion) = check_direct_pure_goal_with_proof(
+                !matches!(ensure_clause.proof(), SourceProof::Default),
                 claim_label,
                 context,
                 surface_goal,
@@ -2304,6 +2328,7 @@ fn claim_script_sites(
 }
 
 fn check_direct_pure_goal_with_proof(
+    has_written_tactic: bool,
     claim_label: &str,
     context: &PureTheoremContext,
     surface_goal: &ClickProposition,
@@ -2325,6 +2350,20 @@ fn check_direct_pure_goal_with_proof(
     )
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
     let mut search = super::attempt::search_scope("pure theorem simp");
+    // Default proof search has a budget and timing, but no written tactic
+    // occurrence. Its failure belongs to the declaration, not a fabricated
+    // `simp` site at the ensures clause.
+    let (root, _timing) = if has_written_tactic {
+        (
+            root.at_source_tactic(0),
+            TacticTiming::pure_source(claim_label, vec![0], &ProofTactic::Simp),
+        )
+    } else {
+        (
+            root,
+            TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
+        )
+    };
     let result = match root.try_simp_closure() {
         Ok(result) => result,
         Err(error) => return Err(error.with_search_failures(search.finish())),

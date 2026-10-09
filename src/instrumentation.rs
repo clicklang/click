@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TacticEvent {
+    pub source_tactic_path: Option<Vec<usize>>,
     pub claim: String,
     pub tactic_index: usize,
     pub tactic_name: String,
@@ -75,6 +76,13 @@ pub enum VerificationEvent {
     ClaimFinished {
         function: String,
         key: String,
+        elapsed: Duration,
+    },
+    /// Completion of a pure proof claim, including its tactic checking.
+    /// Unlike contract certification this is not an additional time bucket.
+    ProofClaimFinished {
+        function: String,
+        claim: String,
         elapsed: Duration,
     },
     /// A nested verifier operation reported for hotspot attribution. These
@@ -1317,6 +1325,14 @@ fn render_legacy(event: &VerificationEvent) -> String {
             "click timing: claim {function} {key} {:.6}s",
             elapsed.as_secs_f64()
         ),
+        VerificationEvent::ProofClaimFinished {
+            function,
+            claim,
+            elapsed,
+        } => format!(
+            "click timing: proof claim {function} {claim} {:.6}s",
+            elapsed.as_secs_f64()
+        ),
         VerificationEvent::OperationFinished {
             function,
             claim,
@@ -1353,6 +1369,7 @@ mod tests {
 
     fn tactic(class: &str, index: usize) -> TacticEvent {
         TacticEvent {
+            source_tactic_path: None,
             claim: "deadline.contract".to_string(),
             tactic_index: index,
             tactic_name: format!("{class}_work"),

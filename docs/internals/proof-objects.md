@@ -93,6 +93,13 @@ serialized body to recover its result. Expanded Surface proofs are still
 verified independently. Frontier clause binding replaces an earlier registration
 for the same C loop identity while preserving the current proof-local scope.
 
+Wide generated invariant bundles use balanced conjunctions, keeping all members
+in declaration order while bounding certificate nesting logarithmically. Short
+bundles retain their established grouping. Wide source conjunctions can instead
+expand to sequential checked `have` leaves followed by `assumption`; every
+reified leaf must lower to the exact kernel proposition. Neither representation
+raises the parser depth limit or skips an invariant obligation.
+
 When loop preservation produces two feasible proof-level `if` arms, the kernel
 also allocates the sibling identities and records their split topology around
 the two checked frontier results.

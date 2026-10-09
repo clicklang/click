@@ -3217,6 +3217,7 @@ mod integer_equality_fact_index_tests {
             4,
         );
         let tactic = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
             claim: "quantified_loadable_alpha_budget".into(),
             tactic_index: 0,
             tactic_name: "quantified_loadable_alpha_budget".into(),

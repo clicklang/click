@@ -331,7 +331,7 @@ impl<'a> Proof<'a> {
 
     /// Closes the back-edge bundle by descending its fixed structure.
     ///
-    /// The bundle is a right-nested conjunction of members, and a tuple
+    /// The bundle conjoins its members (balanced for wide bundles), and a tuple
     /// measure's decrease member is a right-nested disjunction over pivots.
     /// This planner therefore tries only checked structural operations over
     /// the bundle's fixed shape (`both` and `intro`), `assumption` over a
@@ -368,6 +368,19 @@ impl<'a> Proof<'a> {
         // conjunction and implication structure is nevertheless checked by
         // the kernel, so descend that structure directly and retain the
         // ordinary Both/Intro certificate nodes.
+        if let Some(surfaces) = self.wide_conjunction_surfaces() {
+            let mut proof = self.clone();
+            for surface in surfaces {
+                let nested = proof.begin_have(surface)?;
+                let Some(closed) =
+                    nested.plan_invariant_bundle_closure(premises, loop_head_surfaces)?
+                else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+            }
+            return attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption));
+        }
         if matches!(goal, Proposition::And(_, _)) {
             let (split_proof, split, ids) = self.split_focused_both()?;
             let marker = split_proof.checkpoint();
@@ -390,10 +403,19 @@ impl<'a> Proof<'a> {
             return result;
         }
         if matches!(goal, Proposition::Implies(_, _)) {
-            let Some(introduced) = attempt::candidate_outcome(self.apply_step(ProofStep::Intro))?
-            else {
-                return Ok(None);
-            };
+            // Later invariant declarations can have a long prefix of guards
+            // from earlier declarations. Introduce that spine iteratively;
+            // one native planner frame per guard overflows before a bounded
+            // tactic can return, even though the certificate is sequential.
+            let mut introduced = self.clone();
+            while matches!(introduced.goal(), Some(Proposition::Implies(_, _))) {
+                let Some(next) =
+                    attempt::candidate_outcome(introduced.apply_step(ProofStep::Intro))?
+                else {
+                    return Ok(None);
+                };
+                introduced = next;
+            }
             let result = introduced.plan_invariant_bundle_closure(premises, loop_head_surfaces)?;
             if result.is_some() {
                 scope.succeed();

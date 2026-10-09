@@ -1557,15 +1557,37 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
                 format!("could not read the loop's declared ranking measure: {reason}")
             })?,
         );
-        let goal = obligations
+        let mut members: Vec<_> = obligations
             .iter()
-            .rev()
             .map(|obligation| obligation.proposition().clone())
-            .reduce(|right, left| Proposition::And(Box::new(left), Box::new(right)))
-            .unwrap_or(Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::Constant(true),
-                true,
-            ));
+            .collect();
+        // Preserve the established shape of short bundles. Wide generated
+        // bundles need logarithmic conjunction depth so their explicit
+        // certificates fit the unchanged source parser's structural limit.
+        // Pair adjacent members only: every obligation and its order remain.
+        let goal = if members.len() <= 24 {
+            members
+                .into_iter()
+                .rev()
+                .reduce(|right, left| Proposition::And(Box::new(left), Box::new(right)))
+        } else {
+            while members.len() > 1 {
+                let mut level = Vec::with_capacity(members.len().div_ceil(2));
+                let mut pairs = members.into_iter();
+                while let Some(left) = pairs.next() {
+                    level.push(match pairs.next() {
+                        Some(right) => Proposition::And(Box::new(left), Box::new(right)),
+                        None => left,
+                    });
+                }
+                members = level;
+            }
+            members.pop()
+        }
+        .unwrap_or(Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(true),
+            true,
+        ));
         let introductions = obligations
             .iter()
             .map(|obligation| obligation.shared_introductions().cloned())
