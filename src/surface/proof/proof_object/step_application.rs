@@ -812,6 +812,19 @@ impl<'a> Proof<'a> {
         {
             return Ok(proof);
         }
+        // A 64-bit unsigned order is proved through its Integer
+        // observations, by the bridge steps a proof would write.
+        if let ProofStep::ArithmeticUsing(premises) = &step {
+            match self.try_wide_arithmetic_using(premises) {
+                Ok(proof) => return Ok(proof),
+                Err(Some(reason)) => {
+                    return Err(self.step_error(format!(
+                        "`arithmetic` read the current goal as a uint64 order: {reason}"
+                    )));
+                }
+                Err(None) => {}
+            }
+        }
         if matches!(
             &step,
             ProofStep::Step

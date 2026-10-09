@@ -178,9 +178,17 @@ fn plan_by_equality_elimination(
     }
     let (reduced_goal, corrections) = eliminate_rows_from_goal(&rows, expected)?;
     if corrections.is_empty() {
-        // Nothing was eliminated from the goal, so the direct routes the
-        // caller already tried saw exactly this claim.
-        return None;
+        // Nothing was eliminated from the goal, but the order premises are
+        // still reduced by the rows: a premise over an atom an equality
+        // pivots on meets the goal only after that. `t == i + 5`, `i < n`
+        // and `n <= 100` give `t < 200` this way when the row pivots on
+        // `i`, which the goal does not mention. An equality goal has no
+        // such route, and the direct ones already saw it.
+        if expected.relation != IntegerAffineRelation::LessEqual {
+            return None;
+        }
+        let conclusion = plan_reduced_order_claim(&mut nodes, &rows, claims, expected)?;
+        return reachable_certificate(nodes, conclusion);
     }
     let (correction, correction_node) =
         append_correction_equality(&mut nodes, &rows, &corrections)?;
