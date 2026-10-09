@@ -354,9 +354,26 @@ impl CThreadRuntime {
         match self {
             Self::None => None,
             Self::ModeledPthread => Some(
-                "modeled-pthread v9: pthread create/join and shared mutex calls obey the trusted Click specification; native runtime binding unvalidated",
+                "modeled-pthread v10: pthread create/join and shared mutex calls obey the trusted Click specification; native runtime binding unvalidated",
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod assumption_tests {
+    use super::*;
+
+    #[test]
+    fn the_runtime_assumption_names_the_builtin_specification_version() {
+        let version = ModeledPthreadBinding::builtin().specification_version;
+        let assumption = CThreadRuntime::ModeledPthread
+            .assumption()
+            .expect("the modeled runtime states its assumption");
+        assert!(
+            assumption.starts_with(&format!("modeled-pthread v{version}:")),
+            "{assumption}"
+        );
     }
 }
 

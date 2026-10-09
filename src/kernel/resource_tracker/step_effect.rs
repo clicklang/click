@@ -682,6 +682,12 @@ pub(in crate::kernel) fn seeded_cell_effect(
         unreachable!("seeded_cell_effect is asked about a CellsSeeded edge");
     };
     crate::instrumentation::record_deterministic_work(1);
+    // A wider read can overlap several cached scalar slots. None supplies
+    // its whole value, but materializing unchanged predecessor bytes still
+    // writes nothing; do not misclassify the last slot as a partial write.
+    if bytes > run.value_width() && seeded_loads_preserve_base(step) {
+        return SeededCellEffect::Separate(vec![MemoryDagHopJustification::SeededLoadsOfBase]);
+    }
     match crate::kernel::reasoning::memory_resolution::run_access(run, pointer) {
         // Every store is in the run's block, which is proven distinct from
         // this one: each is separate by `StoreDistinctBlocks`.

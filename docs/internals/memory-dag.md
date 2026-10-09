@@ -162,6 +162,9 @@ footprint is disjoint from it.
 A scalar seeded run that caches loads from the same producer-maintained read
 identity as its base does not change bytes. When ordinary cell lookup cannot
 prove separation, `SeededLoadsOfBase` carries that local fact across the edge.
+The same witness preserves a read wider than a cached slot: two four-byte
+loads of unchanged bytes do not partially overwrite an eight-byte pointer.
+A real partial store remains a barrier before those cache-only edges.
 Checking compares the source identity, load mode and exact scalar stride; it
 never enumerates the run or assumes a caller's separation facts. Boolean and
 pointer representations remain under their existing rules. Constant runs,
@@ -233,6 +236,19 @@ find a common source snapshot for a specific pointer. A query stops at an edge
 whose safety condition it can't prove. Positive answers are cached by stable
 snapshot and pointer identities; failed answers can be retried after new
 derivation information becomes available.
+
+Explicit `normalize() using { ... }` can recover the value of a recorded
+full-width pointer read. The query follows its exact retained canonical
+projection source, when present, then at most 64 derivation edges in either
+equality orientation. It uses the cited conditions to justify crossings and
+compare the recovered value. Whole-pointer equality checks the complete stored
+pointer, including its block. Same-block pointer comparisons lower to offset
+equality; that form uses an exact typed-read offset definition, including its
+stride, and proves only the offset equality. Conflicting offset definitions
+remain ambiguous. Equal offsets alone do not establish equality of blocks.
+A narrow read, a scalar cell, or an intervening partial write cannot supply a
+full pointer value. These rules establish only the selected equality and do
+not grant ownership or initialization authority.
 
 The stronger bridging that crosses `BlockDeclared` and `CellsForgotten` is
 scoped to viewability reasoning through `with_extended_dag_bridging`. Enabling

@@ -2292,22 +2292,81 @@ pub(crate) fn pointer_read_has_stored_value(
     right: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Some(Bitvector32Term::MemoryLoad(memory, address, kind)) =
-        crate::kernel::equality_graph::logical_pointer_read_term(left)
+    pointer_read_stored_value(left, assumptions, None)
+        .is_some_and(|stored| stored == *right || assumptions.pointers_known_equal(&stored, right))
+}
+
+/// Explicit pointer read-value normalization follows at most 64 recorded
+/// edges and compares the entire pointer using only the cited conditions.
+/// A different block with the same offset is not the stored pointer.
+pub(crate) fn pointer_read_has_recorded_value(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    [(left, right), (right, left)]
+        .into_iter()
+        .any(|(read, value)| {
+            pointer_read_stored_value(read, assumptions, Some(64)).is_some_and(|stored| {
+                stored == *value || assumptions.pointers_known_equal(&stored, value)
+            })
+        })
+}
+
+/// The offset projection of an exact typed pointer read can use the same
+/// bounded value query. This proves offsets only, never equality of blocks.
+pub(crate) fn pointer_offset_read_has_recorded_value(
+    left: &PointerOffsetTerm,
+    right: &PointerOffsetTerm,
+    assumptions: &PureFactContext,
+) -> bool {
+    [(left, right), (right, left)]
+        .into_iter()
+        .any(|(offset, value)| {
+            let Some(read) = crate::kernel::equality_graph::logical_pointer_read_for_offset(offset)
+            else {
+                return false;
+            };
+            pointer_read_stored_value(&read, assumptions, Some(64)).is_some_and(|stored| {
+                crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
+                    &stored.offset,
+                    value,
+                    assumptions,
+                )
+            })
+        })
+}
+
+fn pointer_read_stored_value(
+    read: &Pointer,
+    assumptions: &PureFactContext,
+    max_hops: Option<usize>,
+) -> Option<Pointer> {
+    let Bitvector32Term::MemoryLoad(memory, address, kind) =
+        crate::kernel::equality_graph::logical_pointer_read_term(read)?
     else {
-        return false;
+        return None;
     };
     let bytes = crate::kernel::load_term_access_width(&memory, &address, kind);
     if bytes != crate::kernel::C_POINTER_BYTE_WIDTH {
-        return false;
+        return None;
     }
-    let Some(cell) = memory_dag_cell_source(&memory, &address, bytes, assumptions, true) else {
-        return false;
+    let cell = match max_hops {
+        Some(limit) => {
+            // A logical read may name its canonical projection rather than
+            // the execution snapshot. Follow only its exact producer-retained
+            // source edge; never reconstruct or search for a matching memory.
+            crate::instrumentation::record_deterministic_work(1);
+            let source = canonical_load_projection_source(&memory, &address)
+                .unwrap_or_else(|| memory.clone());
+            memory_dag_cell_source_with_hop_limit(&source, &address, bytes, assumptions, limit)
+        }
+        None => memory_dag_cell_source(&memory, &address, bytes, assumptions, true),
+    }?;
+    let CValue::Pointer(stored) = cell.resolved_value(&address, kind)? else {
+        return None;
     };
-    let Some(CValue::Pointer(stored)) = cell.resolved_value(&address, kind) else {
-        return false;
-    };
-    stored.pointer() == right || assumptions.pointers_known_equal(stored.pointer(), right)
+    Some(stored.pointer().clone())
 }
 
 /// Whether a pointer-valued load resolves through the recorded memory DAG to

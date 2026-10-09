@@ -1083,6 +1083,11 @@ theorem uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
     ensures left <= right;
 }
 
+theorem uint32_equal_of_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
+}
+
 theorem uint32_less_than_to_integer(left: uint32, right: uint32) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by {

@@ -1340,6 +1340,21 @@ Reflects exact Integer observation order into native unsigned order. The mathema
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_equal_of_to_integer`
+
+```click
+theorem uint32_equal_of_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
+}
+```
+
+Reflects equal exact Integer observations into native unsigned equality. Every
+32-bit pattern, including those above the signed sign bit, has one unsigned
+Integer value, so the observation is injective.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_less_than_to_integer`
 
 ```click
