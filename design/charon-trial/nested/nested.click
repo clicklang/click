@@ -1,6 +1,6 @@
 verifying "nested.rs";
-uint64 array_len() { ensures result == 8u64; } by { execute(); simp(); }
-uint8 array_mut() { ensures result == 9; } by { execute(); simp(); }
+fn array_len() -> usize { ensures result == 8u64; } by { execute(); simp(); }
+fn array_mut() -> u8 { ensures result == 9; } by { execute(); simp(); }
 
 theorem chunk_offset_shift(x: int32, y: int32) {
     requires 0 <= x;
@@ -12,8 +12,8 @@ theorem chunk_offset_shift(x: int32, y: int32) {
     }
 }
 
-uint64 nested(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 8u64;
+fn nested(bytes: &[u8]) -> usize {
+    requires bytes.len() == 8u64;
     views bytes[0..8];
     ensures result == 0u64;
     ensures forall (k: int32) { 0 <= k and k < 8 implies bytes[k] == old(bytes[k]) };
@@ -200,19 +200,19 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
             }
             have 0 <= __rust_mir_8_remaining and __rust_mir_8_remaining <= 8 by {
                 both {
-                    rewrite(at(function.entry, bytes_len) == at(function.entry, 8u64));
+                    rewrite(at(function.entry, bytes.len()) == at(function.entry, 8u64));
                     normalize();
                 } and {
-                    rewrite(at(function.entry, bytes_len) == at(function.entry, 8u64));
+                    rewrite(at(function.entry, bytes.len()) == at(function.entry, 8u64));
                     normalize();
                 }
             }
             have (__rust_mir_8_remaining % 4) == 0 by {
-                rewrite(at(function.entry, bytes_len) == at(function.entry, 8u64));
+                rewrite(at(function.entry, bytes.len()) == at(function.entry, 8u64));
                 normalize();
             }
             have __rust_mir_8_cursor == (bytes + (8 - __rust_mir_8_remaining)) by {
-                rewrite(at(function.entry, bytes_len) == at(function.entry, 8u64));
+                rewrite(at(function.entry, bytes.len()) == at(function.entry, 8u64));
                 intro();
                 intro();
                 intro();
@@ -1175,7 +1175,7 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
     step();
     step();
     have result == 0u64 by {
-        rewrite(at(function.entry, bytes_len == 8u64));
+        rewrite(at(function.entry, bytes.len() == 8u64));
         normalize();
     }
     have forall (k: int32) { 0 <= k and k < 8 implies bytes[k] == old(bytes[k]) } by {
@@ -1185,10 +1185,10 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
     assumption();
 }
 
-uint64 empty_array_len() { ensures result == 0u64; } by { execute(); simp(); }
-uint64 medium_array_len() { ensures result == 1024u64; } by { execute(); simp(); }
-uint64 large_array_len() { ensures result == 1000000u64; } by { execute(); simp(); }
-uint8 array_read(uint64 index) {
+fn empty_array_len() -> usize { ensures result == 0u64; } by { execute(); simp(); }
+fn medium_array_len() -> usize { ensures result == 1024u64; } by { execute(); simp(); }
+fn large_array_len() -> usize { ensures result == 1000000u64; } by { execute(); simp(); }
+fn array_read(index: usize) -> u8 {
     requires index < 8u64;
     ensures result == 7;
 } by { execute(); simp(); }

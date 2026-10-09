@@ -79,14 +79,16 @@ Remaining:
   with their frozen C-shaped originals was retired on 2026-10-08 with
   Lacker's agreement.
 - Refuse `->` and the C-shaped signature for a Rust source, with the
-  spelling to write. Not ready, by a count on 2026-10-08: 38 sidecars
-  under `design/charon-trial` and about 90 inline in the tests
-  (`tests/rust_import.rs`, `src/languages/rust/charon.rs`) are still
-  C-shaped, and the Adler sidecars name functions by their mangled path
-  (`__rust_q_I6_adler2_..._mul_assign_u32`), for which the Rust grammar
-  has no spelling: they are methods of trait implementations on a type in
-  another module. Convert the plain ones, give those a spelling, then
-  refuse.
+  spelling to write. Not ready. The plain functions of the sidecars under
+  `design/charon-trial` take Rust signatures as of 2026-10-08. Still
+  C-shaped: methods written as free functions there (`Guard_drop`,
+  `U32X4_mul_assign_u32`), which need `impl` blocks; functions named by a
+  mangled path (`__rust_q_I6_adler2_..._mul_assign_u32`,
+  `__rust_q_I4_quad_I4_load`), for which the Rust grammar has no spelling;
+  the five frozen originals, which are hash-pinned and stay; and about 90
+  sidecars written inline in the tests (`tests/rust_import.rs`,
+  `src/languages/rust/charon.rs`). Convert those, give the mangled ones a
+  spelling, then refuse.
 - Diagnostics and `click expand` print C-shaped spellings for a Rust
   sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
   the sidecar writes. Decided 2026-10-08: do this after the

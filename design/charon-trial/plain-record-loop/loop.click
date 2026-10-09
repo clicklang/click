@@ -1,5 +1,5 @@
 verifying "loop.rs";
-int32 packet_walk(int32 n) {
+fn packet_walk(n: i32) -> i32 {
     requires 0 <= n and n <= 1000;
     ensures result == n;
 } by {

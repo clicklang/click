@@ -1,16 +1,16 @@
 verifying "copies.rs";
-uint64 copy_right(const uint8* bytes, uint64 bytes_len, uint64 mid) {
-    requires mid <= bytes_len;
+fn copy_right(bytes: &[u8], mid: usize) -> usize {
+    requires mid <= bytes.len();
     requires mid <= 2147483647u64;
-    ensures result == bytes_len - mid;
+    ensures result == bytes.len() - mid;
 } by { execute(); simp(); }
-uint64 reassign_left(const uint8* bytes, uint64 bytes_len, uint64 mid) {
-    requires mid <= bytes_len;
+fn reassign_left(bytes: &[u8], mid: usize) -> usize {
+    requires mid <= bytes.len();
     requires mid <= 2147483647u64;
     ensures result == 0u64;
 } by { execute(); simp(); }
-uint64 collision(const uint8* bytes, uint64 bytes_len, uint64 mid) {
-    requires mid <= bytes_len;
+fn collision(bytes: &[u8], mid: usize) -> usize {
+    requires mid <= bytes.len();
     requires mid <= 2147483647u64;
-    ensures result == bytes_len - mid;
+    ensures result == bytes.len() - mid;
 } by { execute(); simp(); }
