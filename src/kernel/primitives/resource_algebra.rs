@@ -5196,9 +5196,7 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<CResourceFact> {
-        let Some(mut entries) = self.write_access_entries(pointer, bytes, assumptions) else {
-            return None;
-        };
+        let mut entries = self.write_access_entries(pointer, bytes, assumptions)?;
         while let Some(entry) = entries.next() {
             crate::instrumentation::record_deterministic_work(1);
             if !self.fact(entry).has_proven_positive_quantity(assumptions) {
