@@ -143,7 +143,10 @@ Remaining:
 - **Stage 2, windows.** A callee's constant `views` range at a 64-bit
   offset into a 64-bit range is covered
   (`mdtests/a_callee_takes_a_window_of_a_64_bit_range.md`). An owned window
-  is refused: splitting an owned 64-bit range is plan step 6.
+  is refused: splitting an owned 64-bit range is plan step 6. A window two
+  offsets deep and a call inside a chunk a loop holds are covered too
+  (`mdtests/a_window_two_offsets_into_a_64_bit_range.md`,
+  `mdtests/a_callee_reads_inside_a_chunk_a_loop_holds.md`).
 - **Stage 2, what is left.** A range with a nonzero start
   (`bytes[a..b]`) and a range with a signed 64-bit bound still go through
   the 32-bit conversion and need their bound shown to fit; plan steps 5 and
@@ -154,9 +157,10 @@ Remaining:
   `stores_to_bounded_unordered_size_t_indices_are_near_linear`); the plan
   names two more, for stores beside many owned ranges and the unsigned
   order walk. The Adler-32 trial's three long compute proofs
-  (`design/charon-trial/adler2/{four-byte,general,small-batch}-compute.click`)
-  are still written around the chunk iterator's old 32-bit count, and their
-  eight nightly-only tests fail until they are converted. A refusal whose range is reached through a loaded pointer prints a byte
+  verify over the 64-bit iterator counts again. The small-batch and
+  four-byte proofs read a count through its `(int32)(uint32)` view
+  (`design/charon-trial/adler2/count-bridge.click`), because their bound
+  libraries are still stated over `int32` counts. A refusal whose range is reached through a loaded pointer prints a byte
   spelling, `((char *)s)[...]`, instead of the element place.
 
 Done when: no contract casts an index, and a slice contract states no bound
