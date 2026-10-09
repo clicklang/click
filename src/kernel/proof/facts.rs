@@ -3624,6 +3624,7 @@ mod retained_root_context_tests {
 #[cfg(test)]
 mod statement_publication_delta_tests {
     use super::*;
+    // Repeated statement premises keep their priority but must not become a new introduction delta.
     #[test]
     fn prioritized_statement_batches_publish_only_new_facts_and_preserve_order() {
         let fact = |index| Proposition::Predicate {
@@ -3647,6 +3648,7 @@ mod statement_publication_delta_tests {
             assert_eq!(repeated.to_vec()[0], prefix[0]);
         }
     }
+    // Borrowing a case prefix must preserve the exact selected order, including reordered fallbacks.
     #[test]
     fn statement_priority_retains_only_an_identical_checked_prefix() {
         let fact = |index| Proposition::Predicate {

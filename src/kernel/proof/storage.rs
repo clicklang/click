@@ -742,6 +742,7 @@ mod persistent_vector_publication_tests {
         }
     }
 
+    // Both concatenation directions must retain old roots without cloning descendant payloads.
     #[test]
     fn terminal_vector_concatenation_shares_its_unchanged_descendants() {
         for prepend in [false, true] {
@@ -777,6 +778,7 @@ mod persistent_vector_publication_tests {
             }
         }
     }
+    // Repeated large sibling blocks must keep bounded node work rather than copying a growing prefix.
     #[test]
     fn terminal_vector_blocks_share_payloads_and_bound_node_work() {
         for prepend in [false, true] {
@@ -825,6 +827,7 @@ mod persistent_vector_publication_tests {
         }
     }
 
+    // Indexed and whole-vector edits must preserve other forks and already materialized slice views.
     #[test]
     fn terminal_vector_edits_and_slice_views_preserve_forks() {
         for size in [128, 256, 512, 1024] {

@@ -693,6 +693,7 @@ mod tests {
         )
     }
 
+    // Indexed lookups must avoid fact-list walks without conflating producer metadata or occurrences.
     #[test]
     fn exact_membership_keeps_producer_metadata_and_selected_occurrences() {
         for size in [64, 128, 256, 512] {
