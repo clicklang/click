@@ -334,6 +334,21 @@ constant graphs, other constant expressions, mutable signed-64 references,
 outside the boundary. Signed integer operands in a Boolean context use the
 checked nonzero conversion; they are not truncated to 32 bits first.
 
+
+Selected or locked dependency headers also admit namespace-scope inline
+`constexpr` 64-bit integer constants. Unsigned constants retain a uint64 literal
+or a checked uint64 conversion of a signed int32 literal, optionally negated;
+the importer independently recomputes the modulo-2^64 conversion and checks
+Clang's evaluated value. Thus the pinned `std::dynamic_extent` remains
+`18446744073709551615`, without a host-width or low-word substitution. Constant
+declarations and initializer spans must belong to the locked source closure;
+arbitrary constexpr calls and broader unsigned constant graphs remain refused.
+
+Composed nonthrowing read-only observers can also supply scalar assignment
+values. The shared scalar normalizer evaluates the RHS once before changing the
+parameter, local, or supported int32 referent. Observer contracts still cannot
+write, and each source read still requires caller-held authority.
+
 The `direct-call` fixture selects a caller and captures the transitive closure
 of definitions reached by discarded-result direct call statements. Each call
 node records the declaration identity resolved by Clang, reference arguments

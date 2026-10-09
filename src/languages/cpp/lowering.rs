@@ -25,10 +25,10 @@ use crate::kernel::{
     c_add, c_allocate_aggregate_destination, c_and, c_assign, c_call, c_call_assign, c_cast,
     c_checked_object_address, c_copy_aggregate, c_declare, c_declare_aggregate,
     c_declare_with_all_qualifiers, c_divide, c_end_automatic_lifetimes, c_equal, c_function,
-    c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply,
-    c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip,
-    c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load,
-    c_typed_load_with_source, c_typed_store, c_variable, int32,
+    c_greater_equal, c_greater_than, c_if, c_less_equal, c_less_than, c_multiply, c_not_equal,
+    c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract,
+    c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load, c_typed_load_with_source,
+    c_typed_store, c_variable, int32,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -543,16 +543,13 @@ impl LoweringContext<'_> {
             CppStatement::Assign { target, value, .. } => {
                 let target_is_local =
                     matches!(self.place(target)?.value_type, CppType::Integer { .. });
-                let value = self.lower_expression(value)?;
-                if target_is_local {
-                    Ok(c_assign(target.name.clone(), value))
+                let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                let assignment = if target_is_local {
+                    c_assign(target.name.clone(), evaluation.value)
                 } else {
-                    Ok(c_typed_store(
-                        self.lower_place(target)?,
-                        value,
-                        CType::Int32,
-                    ))
-                }
+                    c_typed_store(self.lower_place(target)?, evaluation.value, CType::Int32)
+                };
+                Ok(evaluate_then(evaluation.prefix, assignment))
             }
             CppStatement::Store { pointer, value, .. } => Ok(c_typed_store(
                 self.lower_expression(pointer)?,
@@ -1312,7 +1309,11 @@ impl LoweringContext<'_> {
                 .and_then(|kind| kind.parse_literal(value))
                 .map(|literal| literal.kernel_expression())
                 .ok_or_else(|| format!("unsupported C++ integer constant `{value}`")),
-            CppExpression::ConstantReference { constant, .. } => {
+            CppExpression::ConstantReference {
+                constant,
+                value_type,
+                ..
+            } => {
                 let resolved = self
                     .constants
                     .get(constant.declaration_id.as_str())
@@ -1328,11 +1329,10 @@ impl LoweringContext<'_> {
                         constant.declaration_id
                     ));
                 }
-                resolved
-                    .evaluated_value
-                    .parse::<i64>()
-                    .map(c_int64_literal)
-                    .map_err(|_| {
+                Scalar::mutable_kind(value_type)
+                    .and_then(|kind| kind.parse_literal(&resolved.evaluated_value))
+                    .map(|literal| literal.kernel_expression())
+                    .ok_or_else(|| {
                         format!(
                             "C++ constant `{}` has unsupported evaluated value `{}`",
                             resolved.name, resolved.evaluated_value

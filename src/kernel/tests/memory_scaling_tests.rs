@@ -1762,7 +1762,16 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
                 ),
                 true,
             )
-            .assume_condition(ConditionTerm::uint64_less_equal(count, n.clone()), true);
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(count.clone(), n.clone()),
+                true,
+            );
+        let offset_suffix = CMemoryRange::new_wide(
+            base.offset_by_typed_elements(count.clone(), 4, true, true),
+            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_subtract(n.clone(), count),
+            4,
+        );
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
@@ -1774,6 +1783,11 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
         }
         let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::primitives::wide_memory_range_covers(&available, &required, &facts)
+                && crate::kernel::primitives::wide_memory_range_covers(
+                    &available,
+                    &offset_suffix,
+                    &facts,
+                )
         });
         assert!(covered);
         samples.push(work);
