@@ -796,3 +796,43 @@ theorem adler_absolute_chunk_access(t: int32, pos: int32, n: int32) {
   apply(int32_less_equal_of_to_integer((t + pos) + 4, n)) using { to_integer((t + pos) + 4) <= to_integer(n); }
  }
 }
+
+# Advancing the original outer cursor preserves the absolute byte position.
+theorem adler_pointer_sum_association(base: const uint8*, left: int32, right: int32) {
+ requires defined(left + right);
+ ensures (base + left) + right == base + (left + right) by { normalize() using { defined(left + right); } }
+}
+theorem adler_outer_cursor_step(base: const uint8*, total: int32, remaining: int32) {
+ requires 0 <= total;
+ requires remaining <= total;
+ requires 22208 <= remaining;
+ ensures (base + (total - remaining)) + 22208 == base + (total - (remaining - 22208)) by {
+  have 0 <= remaining by { arithmetic() using { 22208 <= remaining; } }
+  have 0 <= total - remaining by { arithmetic() using { 0 <= total; 22208 <= remaining; remaining <= total; } }
+  have total - remaining <= 2147461439 by { arithmetic() using { 0 <= total; 22208 <= remaining; remaining <= total; } }
+  have defined(total - remaining) by { apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; } }
+  have defined(remaining - 22208) by { apply(int32_nonnegative_subtract_within_value_is_defined(remaining, 22208)) using { 0 <= 22208; 22208 <= remaining; } }
+  have 0 <= remaining - 22208 by { arithmetic() using { 22208 <= remaining; } }
+  have remaining - 22208 <= total by { arithmetic() using { remaining <= total; 22208 <= remaining; } }
+  have defined(total - (remaining - 22208)) by { apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining - 22208)) using { 0 <= remaining - 22208; remaining - 22208 <= total; } simp(); }
+  have defined((total - remaining) + 22208) by { apply(int32_nonnegative_add_within_max_is_defined(total - remaining, 22208)) using { 0 <= 22208; total - remaining <= 2147483647 - 22208; } simp(); }
+  apply(int32_subtract_to_integer(total, remaining)) using { defined(total - remaining); }
+  apply(int32_subtract_to_integer(remaining, 22208)) using { defined(remaining - 22208); }
+  apply(int32_subtract_to_integer(total, remaining - 22208)) using { defined(total - (remaining - 22208)); }
+  apply(int32_add_to_integer(total - remaining, 22208)) using { defined((total - remaining) + 22208); }
+  have to_integer((total - remaining) + 22208) == to_integer(total - (remaining - 22208)) by {
+   arithmetic() using {
+    to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
+    to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208);
+    to_integer(total - (remaining - 22208)) == to_integer(total) - to_integer(remaining - 22208);
+    to_integer((total - remaining) + 22208) == to_integer(total - remaining) + to_integer(22208);
+   }
+  }
+  have (total - remaining) + 22208 == total - (remaining - 22208) by { apply(int32_equal_of_to_integer((total - remaining) + 22208, total - (remaining - 22208))) using { to_integer((total - remaining) + 22208) == to_integer(total - (remaining - 22208)); } }
+  apply(adler_pointer_sum_association(base, total - remaining, 22208)) using { defined((total - remaining) + 22208); }
+  normalize() using {
+   (base + (total - remaining)) + 22208 == base + ((total - remaining) + 22208);
+   (total - remaining) + 22208 == total - (remaining - 22208);
+  }
+ }
+}

@@ -83,7 +83,9 @@ actual outer iterator's nonempty-step bound, divisibility and strict progress.
 A checked access lemma combines a batch's absolute start with the inner
 cursor displacement to keep the four-byte read inside the original input,
 including at the signed-index boundary. Native additions use checked Integer
-bridges and preserve their overflow prerequisites.
+bridges and preserve their overflow prerequisites. A cursor-step lemma
+relates the original pointer advance to the decreasing outer remaining count;
+its pointer equalities grant no memory authority.
 No generated processed counter is used. These arithmetic lemmas do not yet
 establish the original outer-loop invariant or checksum result.
 

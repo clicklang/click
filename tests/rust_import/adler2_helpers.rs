@@ -1588,6 +1588,8 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         "adler_outer_remaining_step_divisible.ensures_0",
         "adler_absolute_chunk_access.ensures_0",
         "adler_absolute_chunk_access.ensures_1",
+        "adler_pointer_sum_association.ensures_0",
+        "adler_outer_cursor_step.ensures_0",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
@@ -1596,6 +1598,10 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
     }
     for (before, after) in [
         ("requires pos <= 22204;", "requires pos <= 22205;"),
+        (
+            "base + (total - (remaining - 22208)) by",
+            "base + (total - (remaining - 22204)) by",
+        ),
         (
             "ensures (t + pos) + 4 <= n by",
             "ensures (t + pos) + 4 < n by",
