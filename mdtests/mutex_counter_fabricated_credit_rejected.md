@@ -135,7 +135,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     requires count(contribution(counter)) == 0;
     requires count(credit(counter)) == 0;
     ensures result == 0 or result == 1;
-    ensures result == 0 or to_integer(counter->value) == 2;
+    ensures result == 0 or counter->value == 2u32;
 } by {
     step();
     step();
@@ -193,6 +193,12 @@ int32 increment_twice(struct mutex_counter* counter) {
         to_integer(counter->value) == to_integer(done);
         to_integer(done) == 2;
     };
+    have to_integer(2u32) == 2;
+    have to_integer(counter->value) == to_integer(2u32) by arithmetic() using {
+        to_integer(counter->value) == 2;
+        to_integer(2u32) == 2;
+    };
+    have counter->value == 2u32 by apply(uint32_equal_of_to_integer(counter->value, 2u32));
     unfold(contribution(counter));
     unfold(contribution(counter));
     step();
