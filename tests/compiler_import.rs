@@ -111,6 +111,29 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
         .expect("checked compiler-backed tactic expansion");
     assert_ne!(expanded, proof);
     verify_c0_prepared_sources(&expanded, &imports).expect("expanded certificate verifies");
+    let sites = click::surface::c0_prepared_smart_tactic_source_sites(&proof, &imports).unwrap();
+    let claim = &sites.last().unwrap().claim_label;
+    let positions = sites
+        .iter()
+        .filter(|site| &site.claim_label == claim)
+        .map(|site| site.position.clone())
+        .collect::<Vec<_>>();
+    let batch =
+        click::surface::expand_c0_prepared_tactics_source_at(&proof, &imports, &positions).unwrap();
+    verify_c0_prepared_sources(&batch.source, &imports).expect("batch compiler-backed expansion");
+    let scoped = click::surface::ClickProject::new(
+        "main.click",
+        [click::surface::ClickModuleSource::new(
+            "main.click",
+            &proof,
+            [],
+        )],
+    );
+    let batch =
+        click::surface::expand_c0_prepared_project_tactics_source_at(&scoped, &imports, &positions)
+            .unwrap();
+    click::surface::verify_c0_prepared_project(&scoped.with_entry_source(batch.source), &imports)
+        .expect("batch project compiler-backed expansion");
     fs::write(project.0.join("main.click"), &expanded).unwrap();
     let reloaded = load_imports(&project.config()).expect("proof edits do not invalidate C input");
     verify_c0_prepared_sources(&expanded, &reloaded).expect("offline imported expanded proof");

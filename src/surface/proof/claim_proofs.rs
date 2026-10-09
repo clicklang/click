@@ -2029,6 +2029,15 @@ pub(super) fn finish_ordered_proof<'a>(
         // surface tactics. Consulted only when the captured expansions
         // disagree across paths (see the stitch below).
         let mut implicit_closure_by_path = Vec::with_capacity(execution.paths().len());
+        let mut batch_capture_paths =
+            BTreeMap::<usize, Vec<(usize, Vec<ProofTactic>, (usize, usize))>>::new();
+
+        let mut batch_implicit_closure = BTreeMap::new();
+        let mut batch_captures = proof_execution
+            .presentation
+            .expansion
+            .batch_deferred_captures
+            .clone();
 
         // Every theorem below carries this one execution until the finished
         // execution replaces it for all of them at once.
@@ -2040,6 +2049,18 @@ pub(super) fn finish_ordered_proof<'a>(
             || -> Result<(), ClickError> {
                 'execution_path: for (path_index, path) in execution.paths().iter().enumerate() {
                     let loop_return = proof_execution.loop_return_proof(path_index);
+                    if let Some(returned) = loop_return {
+                        for (index, capture) in &returned.batch_captures {
+                            batch_captures.insert(*index, capture.clone());
+                        }
+                    }
+                    let path_batch_captures = loop_return.map_or(
+                        &proof_execution
+                            .presentation
+                            .expansion
+                            .batch_deferred_captures,
+                        |p| &p.batch_captures,
+                    );
                     let path_capture = loop_return.and_then(|p| p.capture.as_ref()).or_else(|| {
                         if loop_return.is_none() {
                             proof_execution
@@ -2366,9 +2387,22 @@ pub(super) fn finish_ordered_proof<'a>(
                         })
                     });
                     let mut surface_post_choices = Vec::new();
+                    let mut batch_previous_capture = None;
                     for (post_execution_index, deferred) in
                         selected_post_execution_tactics.into_iter().enumerate()
                     {
+                        if let Some(previous) = batch_previous_capture.take() {
+                            batch_capture_paths.entry(previous).or_default().push((
+                                path_index,
+                                std::mem::take(&mut path_deferred_capture_tactics),
+                                path_deferred_capture_prefix,
+                            ));
+                        }
+                        let batch_capture = path_batch_captures.get(&deferred.source_index);
+                        let path_capture = batch_capture.or(path_capture);
+                        if batch_capture.is_some() {
+                            batch_previous_capture = Some(deferred.source_index);
+                        }
                         let path_requirements = outcome_proof
                             .as_ref()
                             .map_or_else(|| proof.facts().clone(), |root| root.facts().clone());
@@ -5158,12 +5192,27 @@ pub(super) fn finish_ordered_proof<'a>(
                         surface_post_path_indices.push(path_index);
                         surface_post_tactics_by_path.push(path_surface_post_tactics);
                     }
+                    if let Some(previous) = batch_previous_capture.take() {
+                        batch_capture_paths.entry(previous).or_default().push((
+                            path_index,
+                            std::mem::take(&mut path_deferred_capture_tactics),
+                            path_deferred_capture_prefix,
+                        ));
+                    }
                     let implicitly_closable = path_deferred_capture_tactics.is_empty()
                         || (!require_explicit_closers
                             && claims.iter().enumerate().all(|(claim_index, claim)| {
                                 !matches!(claim.clause().ensure(), Ensure::Proposition(_))
                                     || closures[claim_index].is_closed()
                             }));
+                    batch_implicit_closure.insert(
+                        path_index,
+                        !require_explicit_closers
+                            && claims.iter().enumerate().all(|(index, claim)| {
+                                !matches!(claim.clause().ensure(), Ensure::Proposition(_))
+                                    || closures[index].is_closed()
+                            }),
+                    );
                     if visits_selected_capture {
                         deferred_capture_prefixes_by_path.push(path_deferred_capture_prefix);
                         implicit_closure_by_path.push(implicitly_closable);
@@ -5400,7 +5449,11 @@ pub(super) fn finish_ordered_proof<'a>(
                 claim_surface_builders.push((verified_claim, expanded));
             }
         }
-        if tactic_expansion_capture_is_active(expansion_capture.as_deref()) {
+        if tactic_expansion_capture_is_active(expansion_capture.as_deref())
+            && expansion_capture
+                .as_ref()
+                .is_none_or(|capture| capture.batch.is_none())
+        {
             let Some(deferred) = proof_execution
                 .presentation
                 .expansion
@@ -5420,123 +5473,196 @@ pub(super) fn finish_ordered_proof<'a>(
                 // or the expansion entry reports that no result was seen.
                 return Ok(verified);
             };
-            // A tactic whose claims all closed by exact checks or grouped
-            // transitions contributes no surface tactics of its own (see
-            // `ClosedClaim::claim_tactics`): its exact expansion is empty and
-            // the tactic is simply removed. Grafting the enclosing branch
-            // skeleton around empty leaves would instead re-split every
-            // already-merged execution path at path end, losing the
-            // execution-path/branch-trace pairing certificate validation keeps —
-            // proof-level `if` conditions lower at each path's own outcome, so
-            // an alien path meets another path's branch conditions as
-            // contradictory facts it cannot use.
-            let mut capture = ProofCertificateBuilder::default();
-            let path_independent_capture = !deferred_capture_tactics_by_path.is_empty()
-                && deferred_capture_tactics_by_path
-                    .windows(2)
-                    .all(|pair| pair[0] == pair[1]);
-            // Paths that disagree — a certificate found on one, the implicit
-            // exact closer on the others — cannot be stitched without the
-            // branch skeleton. When every path is closable by that exact
-            // closer the tactic contributes nothing on any of them and is
-            // removed, exactly as when no path produced a certificate; the
-            // certificate one path happened to find is not evidence the
-            // others needed one.
-            let contributes_no_tactics = deferred_capture_tactics_by_path
-                .iter()
-                .all(|tactics| tactics.is_empty())
-                || (!path_independent_capture
-                    && deferred_capture_branches_by_path
-                        .iter()
-                        .all(Option::is_none)
-                    && implicit_closure_by_path.iter().all(|closable| *closable));
-            if !contributes_no_tactics && path_independent_capture {
-                // Every path produced the same checked expansion. It stands
-                // at the selected source site, including inside an existing
-                // proof branch. Repeating that branch here could evaluate a
-                // caller local after return, when it is no longer in scope.
-                match ProofCertificate::from_proof_tactics(&deferred_capture_tactics_by_path[0]) {
-                    Ok(proof) => capture.steps = proof.steps().to_vec(),
-                    Err(error) => capture.block(format!(
-                        "deferred expansion produced a non-simple proof: {error:?}"
-                    )),
+            finish_deferred_expansion(
+                expansion_capture.as_deref_mut(),
+                deferred,
+                &retained_surface,
+                &deferred_capture_tactics_by_path,
+                &deferred_capture_branches_by_path,
+                &implicit_closure_by_path,
+                &deferred_capture_prefixes_by_path,
+                &surface_post_path_indices,
+                &surface_post_tactics_by_path,
+                &surface_grouped_closers_by_path,
+                call_edges,
+            );
+        }
+        if let Some(capture) = expansion_capture.as_deref_mut()
+            && capture.batch.is_some()
+        {
+            for (index, paths) in batch_capture_paths {
+                let Some(deferred) = batch_captures.get(&index) else {
+                    continue;
+                };
+                if let Some(batch) = &mut capture.batch {
+                    batch.active_source = Some(deferred.source_index);
                 }
-            } else if !contributes_no_tactics
-                && deferred.can_expand_execution_prefix
-                && surface_has_repeated_branch_conditions(&retained_surface.steps)
-                && deferred.post_execution_index != DeferredTacticCapture::NESTED
-                && retained_surface.path_choices.is_empty()
-                && deferred_capture_tactics_by_path.len() == surface_post_path_indices.len()
-            {
-                // Reuse the execution prefix at its original branch points.
-                // Repeating only its guards at function exit can reread a
-                // mutable local or a loop statement's overwritten snapshot.
-                // The selected closer therefore expands the checked prefix
-                // too, putting each delta in the leaf where it was checked.
-                capture = retained_surface.clone();
-                // Retain offsets during checking; copy syntax only now,
-                // when it belongs to the requested expansion's output.
-                let path_tactics = deferred_capture_prefixes_by_path
+                let branches = paths
                     .iter()
-                    .zip(&deferred_capture_tactics_by_path)
-                    .enumerate()
-                    .map(|(index, ((post_end, closer_end), delta))| {
-                        surface_post_tactics_by_path[index][..*post_end]
-                            .iter()
-                            .chain(&surface_grouped_closers_by_path[index][..*closer_end])
-                            .chain(delta)
-                            .cloned()
-                            .collect::<Vec<_>>()
+                    .map(|(path, _, _)| {
+                        direct_view.surface_branch_path(*path, &deferred.branch_skeleton)
                     })
                     .collect::<Vec<_>>();
-                if let Err(message) = append_surface_tactics_by_leaf(
-                    &mut capture.steps,
-                    &path_tactics,
-                    call_edges.map(Vec::as_slice),
-                ) {
-                    capture.block(message);
-                } else {
-                    crate::surface::expansion::note_expansion_replaces_from(0);
-                }
-            } else if !contributes_no_tactics {
-                let mut capture_tactics = deferred.branch_skeleton.clone();
-                for (branch_path, path_tactics) in deferred_capture_branches_by_path
+                let prefixes = paths
                     .iter()
-                    .zip(&deferred_capture_tactics_by_path)
-                {
-                    let appended = match branch_path {
-                        Some(branch_path) => append_surface_tactics_at_branch_path(
-                            &mut capture_tactics,
-                            branch_path,
-                            path_tactics,
-                        ),
-                        None => {
-                            append_surface_tactics_at_every_leaf(&mut capture_tactics, path_tactics)
-                        }
-                    };
-                    if let Err(message) = appended {
-                        capture.block(message);
-                        break;
-                    }
-                }
-                if capture.blocker.is_none() {
-                    match ProofCertificate::from_proof_tactics(&capture_tactics) {
-                        Ok(proof) => capture.steps = proof.steps().to_vec(),
-                        Err(error) => capture.block(format!(
-                            "deferred expansion produced a non-simple proof: {error:?}"
-                        )),
-                    }
+                    .map(|(_, _, prefix)| *prefix)
+                    .collect::<Vec<_>>();
+                let implicit = paths
+                    .iter()
+                    .map(|(path, tactics, _)| {
+                        tactics.is_empty()
+                            || batch_implicit_closure.get(path).copied().unwrap_or(false)
+                    })
+                    .collect::<Vec<_>>();
+                let deltas = paths
+                    .into_iter()
+                    .map(|(_, tactics, _)| tactics)
+                    .collect::<Vec<_>>();
+                finish_deferred_expansion(
+                    Some(capture),
+                    deferred,
+                    &retained_surface,
+                    &deltas,
+                    &branches,
+                    &implicit,
+                    &prefixes,
+                    &surface_post_path_indices,
+                    &surface_post_tactics_by_path,
+                    &surface_grouped_closers_by_path,
+                    call_edges,
+                );
+                if let Some(target) = capture.target_mut(deferred.source_index) {
+                    target.replaces_from =
+                        crate::surface::expansion::take_expansion_replaces_from();
                 }
             }
-            finish_tactic_expansion_capture(
-                expansion_capture.as_deref_mut(),
-                &capture,
-                contributes_no_tactics,
-            );
         }
         Ok(verified)
     })();
     result.map_err(|error| add_proof_branch_path(error, branch_path))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finish_deferred_expansion(
+    expansion_capture: Option<&mut ExpansionCapture>,
+    deferred: &DeferredTacticCapture,
+    retained_surface: &ProofCertificateBuilder,
+    deferred_capture_tactics_by_path: &[Vec<ProofTactic>],
+    deferred_capture_branches_by_path: &[Option<Vec<bool>>],
+    implicit_closure_by_path: &[bool],
+    deferred_capture_prefixes_by_path: &[(usize, usize)],
+    surface_post_path_indices: &[usize],
+    surface_post_tactics_by_path: &[Vec<ProofTactic>],
+    surface_grouped_closers_by_path: &[Vec<ProofTactic>],
+    call_edges: Option<&Vec<bool>>,
+) {
+    // A tactic whose claims all closed by exact checks or grouped
+    // transitions contributes no surface tactics of its own (see
+    // `ClosedClaim::claim_tactics`): its exact expansion is empty and
+    // the tactic is simply removed. Grafting the enclosing branch
+    // skeleton around empty leaves would instead re-split every
+    // already-merged execution path at path end, losing the
+    // execution-path/branch-trace pairing certificate validation keeps —
+    // proof-level `if` conditions lower at each path's own outcome, so
+    // an alien path meets another path's branch conditions as
+    // contradictory facts it cannot use.
+    let mut capture = ProofCertificateBuilder::default();
+    let path_independent_capture = !deferred_capture_tactics_by_path.is_empty()
+        && deferred_capture_tactics_by_path
+            .windows(2)
+            .all(|pair| pair[0] == pair[1]);
+    // Paths that disagree — a certificate found on one, the implicit
+    // exact closer on the others — cannot be stitched without the
+    // branch skeleton. When every path is closable by that exact
+    // closer the tactic contributes nothing on any of them and is
+    // removed, exactly as when no path produced a certificate; the
+    // certificate one path happened to find is not evidence the
+    // others needed one.
+    let contributes_no_tactics = deferred_capture_tactics_by_path
+        .iter()
+        .all(|tactics| tactics.is_empty())
+        || (!path_independent_capture
+            && deferred_capture_branches_by_path
+                .iter()
+                .all(Option::is_none)
+            && implicit_closure_by_path.iter().all(|closable| *closable));
+    if !contributes_no_tactics && path_independent_capture {
+        // Every path produced the same checked expansion. It stands
+        // at the selected source site, including inside an existing
+        // proof branch. Repeating that branch here could evaluate a
+        // caller local after return, when it is no longer in scope.
+        match ProofCertificate::from_proof_tactics(&deferred_capture_tactics_by_path[0]) {
+            Ok(proof) => capture.steps = proof.steps().to_vec(),
+            Err(error) => capture.block(format!(
+                "deferred expansion produced a non-simple proof: {error:?}"
+            )),
+        }
+    } else if !contributes_no_tactics
+        && deferred.can_expand_execution_prefix
+        && surface_has_repeated_branch_conditions(&retained_surface.steps)
+        && deferred.post_execution_index != DeferredTacticCapture::NESTED
+        && retained_surface.path_choices.is_empty()
+        && deferred_capture_tactics_by_path.len() == surface_post_path_indices.len()
+    {
+        // Reuse the execution prefix at its original branch points.
+        // Repeating only its guards at function exit can reread a
+        // mutable local or a loop statement's overwritten snapshot.
+        // The selected closer therefore expands the checked prefix
+        // too, putting each delta in the leaf where it was checked.
+        capture = retained_surface.clone();
+        // Retain offsets during checking; copy syntax only now,
+        // when it belongs to the requested expansion's output.
+        let path_tactics = deferred_capture_prefixes_by_path
+            .iter()
+            .zip(deferred_capture_tactics_by_path)
+            .enumerate()
+            .map(|(index, ((post_end, closer_end), delta))| {
+                surface_post_tactics_by_path[index][..*post_end]
+                    .iter()
+                    .chain(&surface_grouped_closers_by_path[index][..*closer_end])
+                    .chain(delta)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if let Err(message) = append_surface_tactics_by_leaf(
+            &mut capture.steps,
+            &path_tactics,
+            call_edges.map(Vec::as_slice),
+        ) {
+            capture.block(message);
+        } else {
+            crate::surface::expansion::note_expansion_replaces_from(0);
+        }
+    } else if !contributes_no_tactics {
+        let mut capture_tactics = deferred.branch_skeleton.as_ref().clone();
+        for (branch_path, path_tactics) in deferred_capture_branches_by_path
+            .iter()
+            .zip(deferred_capture_tactics_by_path)
+        {
+            let appended = match branch_path {
+                Some(branch_path) => append_surface_tactics_at_branch_path(
+                    &mut capture_tactics,
+                    branch_path,
+                    path_tactics,
+                ),
+                None => append_surface_tactics_at_every_leaf(&mut capture_tactics, path_tactics),
+            };
+            if let Err(message) = appended {
+                capture.block(message);
+                break;
+            }
+        }
+        if capture.blocker.is_none() {
+            match ProofCertificate::from_proof_tactics(&capture_tactics) {
+                Ok(proof) => capture.steps = proof.steps().to_vec(),
+                Err(error) => capture.block(format!(
+                    "deferred expansion produced a non-simple proof: {error:?}"
+                )),
+            }
+        }
+    }
+    finish_tactic_expansion_capture(expansion_capture, &capture, contributes_no_tactics);
 }
 
 #[cfg(test)]

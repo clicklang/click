@@ -1,6 +1,149 @@
 use super::*;
 
 #[test]
+fn selected_tactic_batch_uses_the_project_entry_scope() {
+    let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
+    let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures result == x; } by { execute(); have x == x by simp; have x + 0 == x by simp; simp(); }";
+    let project = ClickProject::new(
+        "unit.click",
+        [ClickModuleSource::new("unit.click", source, [])],
+    );
+    let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
+    let positions = sites[1..3]
+        .iter()
+        .map(|site| site.position.clone())
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_project_tactics_source_at(&project, &c, &positions).unwrap();
+    assert!(expanded.source.contains("execute();"));
+    verify_c0_project(&project.with_entry_source(expanded.source), &c).unwrap();
+}
+
+#[test]
+fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
+    let c = [(
+        "flag.c",
+        "int32 flag(int32 x) { if (x > 0) { return 1; } return 0; }",
+    )];
+    let source = "verifying \"flag.c\"; int32 flag(int32 x) { requires x <= 0; ensures result == 0; } by { branch then { step(); simp(); simp(); } else {} step(); simp(); }";
+    verify_c0_sources(source, &c).unwrap();
+    let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
+    let positions = sites[..2]
+        .iter()
+        .map(|site| site.position.clone())
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_tactics_source_at(source, &c, &positions).unwrap();
+    assert!(!expanded.source.contains("step(); simp(); simp();"));
+    assert!(expanded.source.ends_with("step(); simp(); }"));
+    verify_c0_sources(&expanded.source, &c).unwrap();
+}
+
+#[test]
+fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
+    let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by { have x == x by { simp(); } simp(); }\nsimp();\n}\n";
+    verify_c0_sources(source, &c).unwrap();
+    let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
+    let positions = sites[1..3]
+        .iter()
+        .map(|site| site.position.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(sites[1].source_index, sites[2].source_index);
+    let expanded = expand_c0_tactics_source_at(source, &c, &positions).unwrap();
+    assert!(expanded.source.contains("execute();"));
+    assert!(expanded.source.ends_with("simp();\n}\n"));
+    verify_c0_sources(&expanded.source, &c).unwrap();
+}
+
+#[test]
+fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
+    for relative in [
+        "mdtests/loop_after_proof_branch_expands.md",
+        "mdtests/a_ranked_loop_with_no_invariant_closes_a_branching_body.md",
+        "mdtests/bubble_sort3_loop_sorted.md",
+        "mdtests/loop_return_closes_in_preserve_arm.md",
+    ] {
+        let (source, c) = mdtest_sources(relative);
+        let c = c
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &c).unwrap();
+        let sites = c0_smart_tactic_source_sites(&source, &c).unwrap();
+        let claim = sites
+            .iter()
+            .find(|site| {
+                sites
+                    .iter()
+                    .filter(|other| other.claim_label == site.claim_label)
+                    .count()
+                    > 1
+            })
+            .unwrap();
+        let positions = sites
+            .iter()
+            .filter(|site| site.claim_label == claim.claim_label)
+            .map(|site| site.position.clone())
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_tactics_source_at(&source, &c, &positions)
+            .unwrap_or_else(|error| panic!("{relative}: {error:?}"));
+        verify_c0_sources(&expanded.source, &c)
+            .unwrap_or_else(|error| panic!("{relative}: {error:?}\n{}", expanded.source));
+    }
+}
+
+#[test]
+fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
+    let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nexecute();\nhave x == x by simp;\nhave x + 0 == x by simp;\nhave x - 0 == x by simp;\nsimp();\n}\n";
+    verify_c0_sources(source, &c).unwrap();
+    let sites = c0_smart_tactic_source_sites(source, &c).unwrap();
+    let selected = sites[1..3]
+        .iter()
+        .map(|s| s.position.clone())
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_tactics_source_at(source, &c, &selected).unwrap();
+    assert!(expanded.source.contains("execute();"));
+    assert!(expanded.source.contains("have x - 0 == x by simp;"));
+    assert!(
+        !expanded.source.contains("have x == x by simp;"),
+        "{}",
+        expanded.source
+    );
+    assert!(
+        !expanded.source.contains("have x + 0 == x by simp;"),
+        "{}",
+        expanded.source
+    );
+    verify_c0_sources(&expanded.source, &c).unwrap();
+}
+
+#[test]
+fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
+    let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
+    let samples = [4, 8, 16, 32].map(|size| {
+        let source = format!("verifying \"identity.c\";\nint32 identity(int32 x) {{ ensures result == x; }} by {{\nexecute();\n{}{}simp();\n}}\n",
+            "have x + 0 == x by simp;\n".repeat(8), "have x == x by simp;\n".repeat(size));
+        let sites = c0_smart_tactic_source_sites(&source, &c).unwrap();
+        let positions = sites[9..9+size].iter().map(|s| s.position.clone()).collect::<Vec<_>>();
+        let (_, ordinary_views) = proof::count_finalization_view_constructions(|| verify_c0_sources(&source, &c).unwrap());
+        let ((expanded, work), runs) = proof::count_finalization_view_constructions(|| {
+            crate::instrumentation::measure_deterministic_work(|| expand_c0_tactics_source_at(&source, &c, &positions))
+        });
+        let expanded = expanded.unwrap_or_else(|error| panic!("{size} selected sites: {error:?}"));
+        assert_eq!(runs, ordinary_views, "{size} sites must cost one ordinary claim verification");
+        assert_eq!(expanded.source.matches("have x + 0 == x by simp;").count(), 8);
+        verify_c0_sources(&expanded.source, &c).unwrap();
+        work
+    });
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] * 4 <= pair[0] * 9,
+            "selected capture work grew too quickly: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn post_execution_have_expansion_preserves_later_smart_proofs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/bubble_sort3_loop_sorted.md");

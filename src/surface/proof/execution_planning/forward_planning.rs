@@ -370,47 +370,31 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 if let Some(certificates) = environment.frontier_loop_certificates {
                     certificates.borrow_mut().initialize = Some(initialization_certificate.clone());
                 }
-                if environment.frontier_loop_source.is_some() {
-                    // A smart tactic that stands for the rest of the phase
-                    // expands to the invariant steps the planner built. A
-                    // smart `have` inside the script is recorded by the
-                    // entry planner itself, at its own source index.
-                    if selected_source_index.is_some()
-                        && let Some(selected) =
-                            selected_tactic_index_for_site(expansion_capture.as_deref(), &site)
-                        && let Some(initialization) = checked_initializations.first()
-                        && let Some(expansion) = initialization
-                            .phase_closer_expansion(selected, &initialization_certificate)
-                    {
-                        record_proof_site_tactic_expansion(
-                            expansion_capture.as_deref_mut(),
-                            &site,
-                            selected,
-                            &expansion,
-                        );
-                    }
+                let can_capture_closer = if environment.frontier_loop_source.is_some() {
+                    selected_source_index.is_some()
                 } else {
-                    if let Some(source_index) =
-                        selected_tactic_index_for_site(expansion_capture.as_deref(), &site)
-                        && let Some((_, SourceProof::Script(source_tactics))) = initialization_proof
-                        && !source_tactics.iter().any(|tactic| {
-                            matches!(
-                                tactic,
-                                ProofTactic::ApplyTheorem(_)
-                                    | ProofTactic::ApplyTheoremUsing { .. }
-                            )
-                        })
-                        && let Some(initialization) = checked_initializations.first()
-                        && let Some(expansion) = initialization
-                            .phase_closer_expansion(source_index, &initialization_certificate)
-                    {
-                        record_proof_site_tactic_expansion(
-                            expansion_capture.as_deref_mut(),
-                            &site,
-                            source_index,
-                            &expansion,
-                        );
+                    matches!(initialization_proof, Some((_, SourceProof::Script(tactics))) if !tactics.iter().any(|tactic| matches!(tactic, ProofTactic::ApplyTheorem(_) | ProofTactic::ApplyTheoremUsing { .. })))
+                };
+                let selected = if can_capture_closer {
+                    selected_tactic_indices_for_site(expansion_capture.as_deref(), &site)
+                } else {
+                    Vec::new()
+                };
+                if let Some(initialization) = checked_initializations.first() {
+                    for index in selected {
+                        if let Some(expansion) = initialization
+                            .phase_closer_expansion(index, &initialization_certificate)
+                        {
+                            record_proof_site_tactic_expansion(
+                                expansion_capture.as_deref_mut(),
+                                &site,
+                                index,
+                                &expansion,
+                            );
+                        }
                     }
+                }
+                if environment.frontier_loop_source.is_none() {
                     finish_proof_site_expansion_capture(
                         expansion_capture.as_deref_mut(),
                         &site,
@@ -459,8 +443,11 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         Some(SourceProof::Tactic(SmartTactic::Simp))
                     )
                     && let Some(site) = source.proof_site.as_ref()
-                    && selected_tactic_index_for_site(expansion_capture.as_deref(), site)
-                        == Some(preserve_source_index)
+                    && capture_selects_source(
+                        expansion_capture.as_deref(),
+                        site,
+                        preserve_source_index,
+                    )
                 {
                     record_proof_site_tactic_expansion(
                         expansion_capture,

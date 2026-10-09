@@ -459,7 +459,11 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             }
             _ => unreachable!("only unfold and have steps are phase helpers"),
         };
-        if selected_source_index == Some(*source_index) {
+        if capture_selects_source(
+            expansion_capture.as_deref(),
+            &initialize_site,
+            *source_index,
+        ) {
             record_proof_site_tactic_expansion(
                 expansion_capture.as_deref_mut(),
                 &initialize_site,
@@ -569,8 +573,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             let body_certificate = checked.certificate_since(&body_checkpoint)?;
             completions.push(checked.completed_loop_entry_goal()?);
             phase = checked.join()?;
-            if let Some(selected) = selected_source_index
-                && own_body.map(|(index, _)| index) == Some(selected)
+            if let Some((selected, _)) = own_body
+                && capture_selects_source(expansion_capture.as_deref(), &initialize_site, selected)
             {
                 record_proof_site_tactic_expansion(
                     expansion_capture.as_deref_mut(),
@@ -1038,10 +1042,15 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             ProofTactic::CloseInvariants | ProofTactic::CloseInvariantsBy(_)
         )
     }) && expansion_capture.as_deref().is_some_and(|capture| {
-        capture.nested.is_none()
-            && capture.site == preserve_site
-            && capture.source_index
-                == Some(preserve_source_index + source_tactic_count(&tactics[..tactics.len() - 1]))
+        let index = preserve_source_index + source_tactic_count(&tactics[..tactics.len() - 1]);
+        capture.selects(&preserve_site, index)
+            && capture
+                .batch
+                .as_ref()
+                .and_then(|batch| batch.targets.get(&index))
+                .unwrap_or(capture)
+                .nested
+                .is_none()
     });
 
     let mut program = if environment
@@ -1579,6 +1588,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     },
                     case_path: case_path.clone(),
                     tactics,
+                    batch_captures: context_execution
+                        .presentation
+                        .expansion
+                        .batch_deferred_captures
+                        .clone(),
                     capture: context_execution
                         .presentation
                         .expansion
@@ -1707,8 +1721,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 // never opens an active tactic capture. Match its selected
                 // source occurrence just as the driver's explicit steps do.
                 proof_site.as_ref().is_some_and(|site| {
-                    selected_tactic_index_for_site(expansion_capture.as_deref(), site)
-                        == Some(source_index)
+                    capture_selects_source(expansion_capture.as_deref(), site, source_index)
                 })
             })
         {
@@ -1722,6 +1735,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // A region whose invariants are already closed has a
             // legitimately empty closer: the selected `simp` contributes no
             // surface tactics and its exact expansion removes it.
+            if let Some(selected) = region_simp.map(|(_, source)| source)
+                && let Some(outer) = expansion_capture.as_deref_mut()
+                && let Some(batch) = &mut outer.batch
+            {
+                batch.active_source = Some(selected);
+            }
             finish_tactic_expansion_capture(
                 expansion_capture.as_deref_mut(),
                 &capture,
@@ -1751,9 +1770,19 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let certificate = merge_phase_path_aligned_certificates(&claim_label, certificate_paths)?;
     if capture_shared_closer {
         let capture = expansion_capture.expect("selected shared closer");
-        capture.active = true;
-        capture.result = Some(Ok(certificate.to_proof_tactics()));
-        crate::surface::expansion::note_expansion_replaces_from(preserve_source_index);
+        let selected = preserve_source_index + source_tactic_count(&tactics[..tactics.len() - 1]);
+        if capture.batch.is_some() {
+            let target = capture
+                .target_mut(selected)
+                .expect("selected shared closer");
+            target.active = true;
+            target.result = Some(Ok(certificate.to_proof_tactics()));
+            target.replaces_from = Some(preserve_source_index);
+        } else {
+            capture.active = true;
+            capture.result = Some(Ok(certificate.to_proof_tactics()));
+            crate::surface::expansion::note_expansion_replaces_from(preserve_source_index);
+        }
     }
     Ok(LoopPreservationProofResult {
         return_proofs,
