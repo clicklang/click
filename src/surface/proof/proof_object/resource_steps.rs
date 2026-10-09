@@ -956,7 +956,12 @@ impl<'a> Proof<'a> {
             .parameters()
             .iter()
             .zip(&checked_arguments)
-            .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+            .map(|(parameter, argument)| {
+                (
+                    parameter.name().to_string(),
+                    crate::surface::lowering::pure_function_parameter_argument(parameter, argument),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         let checked_body =
             substitute_contract_expression(definition.body(), &checked_substitutions).map_err(
@@ -1126,7 +1131,14 @@ impl<'a> Proof<'a> {
                     .parameters()
                     .iter()
                     .zip(&application.arguments)
-                    .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+                    .map(|(parameter, argument)| {
+                        (
+                            parameter.name().to_string(),
+                            crate::surface::lowering::pure_function_parameter_argument(
+                                parameter, argument,
+                            ),
+                        )
+                    })
                     .collect::<BTreeMap<_, _>>();
                 let surface_body =
                     substitute_contract_expression(definition.body(), &substitutions).map_err(
@@ -1527,7 +1539,12 @@ impl<'a> Proof<'a> {
             .parameters()
             .iter()
             .zip(&application.arguments)
-            .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+            .map(|(parameter, argument)| {
+                (
+                    parameter.name().to_string(),
+                    crate::surface::lowering::pure_function_parameter_argument(parameter, argument),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         let substitute = |expression: &ContractExpression| {
             substitute_contract_expression(expression, &substitutions).ok()

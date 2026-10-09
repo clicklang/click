@@ -5636,9 +5636,16 @@ impl AnnotationLowerer<'_> {
                         element_type: array_ref.element_type,
                     })
                 }
-                ClickType::C(_) => self
-                    .lower_contract_expression_to_spec(argument, environment)
-                    .map(crate::kernel::SpecPureFunctionArgument::Value),
+                ClickType::C(_) => {
+                    // Lower the borrowed argument once; wrapping its surface
+                    // tree first would clone every nested call's subtree.
+                    let value = self.lower_contract_expression_to_spec(argument, environment)?;
+                    let value = match pure_function_parameter_scalar_type(parameter) {
+                        Some(target) => SpecExpression::Cast(Box::new(value), target),
+                        None => value,
+                    };
+                    Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
+                }
             })
             .collect()
     }

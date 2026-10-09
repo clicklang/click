@@ -1402,8 +1402,10 @@ fn rewrite_contract_expression_exact(
         | ContractExpression::IntegerLiteral(_) => (expression.clone(), false),
         ContractExpression::CUnary { operand, lowered } => {
             let (operand, changed) = unary(operand);
-            let Some(fragment) = contract_expression_as_c_fragment(&operand) else {
-                return (expression.clone(), false);
+            let fragment = match contract_expression_as_c_fragment(&operand) {
+                Some(fragment) => fragment,
+                None if matches!(lowered, CExpression::Cast { .. }) => CExpression::Value(int32(0)),
+                None => return (expression.clone(), false),
             };
             (
                 ContractExpression::CUnary {
@@ -2476,11 +2478,10 @@ fn collect_contract_expression_referenced_names_one(
             names.insert(name.clone());
             collect_c_expression_referenced_names(lowered, names);
         }
-        ContractExpression::CUnary {
-            lowered: expression,
-            ..
+        ContractExpression::CUnary { operand, .. } => {
+            collect_contract_expression_referenced_names(operand, names);
         }
-        | ContractExpression::CFragment(expression) => {
+        ContractExpression::CFragment(expression) => {
             collect_c_expression_referenced_names(expression, names);
         }
         ContractExpression::Field { base, .. } => {
@@ -2862,6 +2863,61 @@ pub(in crate::surface) fn contract_expression_has_explicit_c_result_reference(
     false
 }
 
+// Pure functions have declared machine parameter types just as C functions do.
+// Keep the conversion in both the application and its unfolded body: otherwise
+// f(0) and f(word) after word == 0 name different typed applications, and a
+// narrowing call can unfold the unconverted argument.
+pub(in crate::surface) fn pure_function_parameter_scalar_type(
+    parameter: &FunctionParameter,
+) -> Option<CType> {
+    let c_type = parameter.click_type().c_type()?;
+    let target_type = c_type.to_kernel_type();
+    if !matches!(
+        target_type,
+        CType::Bool
+            | CType::Int8
+            | CType::Int16
+            | CType::Int32
+            | CType::UInt8
+            | CType::UInt16
+            | CType::UInt32
+            | CType::Int64
+            | CType::UInt64
+            | CType::Int128
+            | CType::UInt128
+            | CType::Float32
+            | CType::Float64
+    ) {
+        return None;
+    }
+    Some(target_type)
+}
+
+pub(in crate::surface) fn pure_function_parameter_argument(
+    parameter: &FunctionParameter,
+    argument: &ContractExpression,
+) -> ContractExpression {
+    let Some(target_type) = pure_function_parameter_scalar_type(parameter) else {
+        return argument.clone();
+    };
+    ContractExpression::CUnary {
+        operand: Box::new(argument.clone()),
+        // CUnary's operand is authoritative during lowering. Retain an exact
+        // C spelling when one exists for printing and C-fragment substitution.
+        lowered: CExpression::Cast {
+            expression: Box::new(
+                contract_expression_as_c_fragment(argument).unwrap_or(CExpression::Value(int32(0))),
+            ),
+            target_type,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    }
+}
+
 pub(in crate::surface) fn contract_c_unary(
     operand: ContractExpression,
     lowered: CExpression,
@@ -2917,8 +2973,11 @@ pub(in crate::surface) fn substitute_contract_expression_in(
     match expression {
         ContractExpression::CUnary { operand, lowered } => {
             let operand = substitute_contract_expression_in(operand, substitutions)?;
-            let fragment = contract_expression_as_c_fragment(&operand)
-                .ok_or_else(|| "C unary operand is not a C expression".to_string())?;
+            let fragment = match contract_expression_as_c_fragment(&operand) {
+                Some(fragment) => fragment,
+                None if matches!(lowered, CExpression::Cast { .. }) => CExpression::Value(int32(0)),
+                None => return Err("C unary operand is not a C expression".to_string()),
+            };
             Ok(ContractExpression::CUnary {
                 lowered: c_unary_with_operand(lowered, fragment),
                 operand: Box::new(operand),
@@ -3613,11 +3672,11 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
             lowered: expression,
             ..
         }
-        | ContractExpression::CUnary {
-            lowered: expression,
-            ..
-        }
         | ContractExpression::CFragment(expression) => Some(expression.clone()),
+        ContractExpression::CUnary { operand, lowered } => Some(c_unary_with_operand(
+            lowered,
+            contract_expression_as_c_fragment(operand)?,
+        )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
             Some(CExpression::Variable(name.clone()))
@@ -3732,11 +3791,11 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
             lowered: expression,
             ..
         }
-        | ContractExpression::CUnary {
-            lowered: expression,
-            ..
-        }
         | ContractExpression::CFragment(expression) => Some(expression.clone()),
+        ContractExpression::CUnary { operand, lowered } => Some(c_unary_with_operand(
+            lowered,
+            contract_expression_to_c_fragment(operand)?,
+        )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
             Some(CExpression::Variable(name.clone()))

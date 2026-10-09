@@ -2488,7 +2488,8 @@ Wide examples are in
 
 Contract expressions accept the unsigned narrowing cast `(uint32)x`, including
 `old((uint32)p->value)`. The operand must be
-a current C expression; put `old(...)` or `at(...)` around the whole cast to
+a current scalar expression, including a pure-function call; put `old(...)`
+or `at(...)` around the whole cast to
 select another snapshot. A 64-to-`uint32` cast retains the low 32 bits, rather
 than requiring the source value to fit. Casts retain their selected memory
 snapshot even when the underlying field is subsequently updated.

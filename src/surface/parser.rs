@@ -10288,12 +10288,16 @@ impl Parser {
             }
             self.expect(Token::RParen)?;
             let operand = self.parse_contract_unary_at_depth(depth + 1)?;
-            let Some(expression) = contract_expression_as_c_fragment(&operand) else {
-                return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value"));
-            };
-            return Ok(crate::surface::lowering::contract_c_unary(
-                operand,
-                CExpression::Cast {
+            if crate::surface::validation::contains_old_expression(&operand)
+                || crate::surface::validation::contains_at_expression(&operand)
+            {
+                return Err(self.error("scalar cast expects a current expression; put old(...) around the whole cast for an entry-state value"));
+            }
+            let expression =
+                contract_expression_as_c_fragment(&operand).unwrap_or(CExpression::Value(int32(0)));
+            return Ok(ContractExpression::CUnary {
+                operand: Box::new(operand),
+                lowered: CExpression::Cast {
                     expression: Box::new(expression),
                     target_type,
                     integer_mode: crate::kernel::CIntegerCastMode::Standard,
@@ -10302,7 +10306,7 @@ impl Parser {
                     pointee_constant: false,
                     explicit_qualification: false,
                 },
-            ));
+            });
         }
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
