@@ -2541,28 +2541,24 @@ private:
       return false;
     }
     definition = definition->getCanonicalDecl();
-    if (!is_in_logical_source(definition->getLocation())) {
-      fail(definition->getLocation(),
-           "reachable C++ constants must be declared in the selected source");
-      return false;
-    }
     const bool internal_namespace_constant =
         definition->getDeclContext()->isFileContext() &&
         definition->getFormalLinkage() == clang::Linkage::Internal;
     if (!definition->isConstexpr() ||
         (definition->getStorageClass() != clang::SC_Static &&
-         !internal_namespace_constant) ||
+         !internal_namespace_constant &&
+         !(definition->isInline() && definition->getDeclContext()->isFileContext())) ||
         !definition->hasGlobalStorage()) {
       fail(definition->getLocation(),
            "reachable C++ constants must be namespace-scope static constexpr "
-           "or internal-linkage constexpr declarations");
+           "or internal-linkage/inline constexpr declarations");
       return false;
     }
     const clang::QualType type = definition->getType();
-    if (!type.isConstQualified() || !type->isSignedIntegerType() ||
+    if (!type.isConstQualified() || !type->isIntegerType() ||
         context_.getTypeSize(type) != 64) {
       fail(definition->getLocation(),
-           "reachable C++ constants must have const signed 64-bit type");
+           "reachable C++ constants must have const signed or unsigned 64-bit type");
       return false;
     }
     if (known_constants_.insert(definition).second) {
@@ -2601,12 +2597,30 @@ private:
   std::optional<Json>
   lower_constant(const clang::VarDecl *constant,
                  const clang::FunctionDecl *function) {
+    auto source = executable_source(constant->getLocation());
+    if (!source) {
+      fail(constant->getLocation(), "C++ constants require a selected or dependency source");
+      return std::nullopt;
+    }
+    llvm::SaveAndRestore<std::string> constant_source(function_source_, *source);
+    if (*source != logical_source_) dependency_sources_.insert(*source);
     const clang::Expr *initializer = constant->getInit();
     const clang::Expr *semantic =
         initializer == nullptr ? nullptr : initializer->IgnoreParenImpCasts();
     const auto *binary = llvm::dyn_cast_or_null<clang::BinaryOperator>(semantic);
+    const auto *cast = llvm::dyn_cast_or_null<clang::ExplicitCastExpr>(semantic);
+    const auto *operand = cast == nullptr ? nullptr : cast->getSubExpr()->IgnoreParenImpCasts();
+    const auto *negation = llvm::dyn_cast_or_null<clang::UnaryOperator>(operand);
+    const bool unsigned_literal_cast = constant->getType()->isUnsignedIntegerType() &&
+        cast != nullptr &&
+        (cast->getCastKind() == clang::CK_IntegralCast ||
+         (cast->getCastKind() == clang::CK_NoOp &&
+          context_.hasSameType(cast->getType(), cast->getSubExpr()->getType()))) &&
+        (llvm::isa_and_nonnull<clang::IntegerLiteral>(operand) ||
+         (negation != nullptr && negation->getOpcode() == clang::UO_Minus &&
+          llvm::isa<clang::IntegerLiteral>(negation->getSubExpr()->IgnoreParenImpCasts())));
     if (semantic == nullptr ||
-        (!llvm::isa<clang::IntegerLiteral>(semantic) &&
+        (!unsigned_literal_cast && !llvm::isa<clang::IntegerLiteral>(semantic) &&
          (binary == nullptr || binary->getOpcode() != clang::BO_Mul))) {
       fail(constant->getLocation(),
            "supported C++ constants require a literal leaf or one dependent multiplication");

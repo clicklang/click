@@ -42,7 +42,7 @@ profile decision before implementation:
   admitted, but automatic observer normalization/range inference remains separate
   from explicit proofs. Select source requiring additional native wide arithmetic,
   wide mutable references/memory/aggregates/callbacks, byte reinterpretation,
-  header constants, mixed-source executable macros, namespaced method selection,
+  broader header constant forms, mixed-source executable macros, namespaced method selection,
   overload signature selectors, or same-named record layouts before widening a
   profile. The portable `DivFallback` path is a separate target, not a substitute
   for the pinned `__int128` implementation.
@@ -342,7 +342,17 @@ missing bounds/views and false pointer/extent claims are refused. Returned
 constructor arguments reuse read-only observer normalization for value-only
 arguments. Shared wide-range coverage checks the non-wrapping suffix displacement
 and full-width observer equality, without granting new backing authority.
-`subspan` remains an unselected target. Other scalar/import work still needs
+The unchanged runtime `subspan(offset, count)` now verifies finite windows under
+`offset <= N`, `count <= N - offset` and the same extent bound. The explicit
+`dynamic_extent` count also verifies the original assignment branch and returns
+length `N - offset`. Empty, end, full and empty-input windows, method/caller
+expansion, retained checking, missing permissions/bounds and false result claims
+are covered. Header uint64 literal conversions and scalar assignment observers
+use the existing checked declaration and read-only normalization paths. Shared
+range coverage recognizes both `(N - K)[0..K]` and `offset[0..N - offset]` with
+full-width identities and underflow/byte-extent bounds. An explicit checked
+`size()` result capture supplies the sentinel branch's arithmetic bounds.
+Omitted default arguments, compile-time `subspan` and other scalar/import work still need
 an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation

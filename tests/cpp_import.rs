@@ -8577,8 +8577,8 @@ fn fee_pattern_contracts_reject_zero_divisors_and_unproved_product_bounds() {
 }
 
 #[test]
-fn stable_constant_siblings_reject_external_linkage_and_mutable_globals() {
-    for declaration in ["inline constexpr long value = 7;", "long value = 7;"] {
+fn stable_constant_siblings_reject_noninline_external_linkage_and_mutable_globals() {
+    for declaration in ["extern constexpr long value = 7;", "long value = 7;"] {
         let cpp = format!(
             "{declaration} int inner() noexcept {{ return 5; }} long outer(int first, long second) noexcept {{ return second; }} long relay() noexcept {{ return outer(inner(), value); }}"
         );
@@ -13963,7 +13963,7 @@ fn locked_header_graph_retains_object_constant_and_undeclared_macro_boundaries()
     for (header, diagnostic) in [
         (
             "inline constexpr int value = 7; inline int read() noexcept { return value; }",
-            "constants must be declared in the selected source",
+            "constants must have const signed or unsigned 64-bit type",
         ),
         (
             "struct Guard { int value; explicit Guard(int initial) noexcept : value(initial) {} ~Guard() noexcept { value = 0; } }; inline int read() noexcept { Guard guard(0); return 0; }",
@@ -16512,4 +16512,93 @@ fn returned_constructor_observers_refuse_mixed_nested_calls_offline() {
     );
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("value-only arguments"), "{error}");
+}
+
+// A locked header constant keeps its native high bits and its checked
+// initializer; the frontend's evaluated value alone is insufficient evidence.
+#[test]
+fn locked_unsigned_header_constants_verify_and_reject_forged_values_offline() {
+    let mut project = Project::with_fixture(
+        "sentinel.cpp",
+        "probe",
+        "#include \"limits.h\"\nunsigned long probe() noexcept { if (limits::wide == 4294967299UL) return limits::end; return 0UL; }",
+    );
+    fs::write(project.directory.join("limits.h"), "namespace limits { inline constexpr unsigned long wide = 4294967299UL; inline constexpr unsigned long end = static_cast<unsigned long>(-1); }\n").unwrap();
+    project.dependencies.push("limits.h".into());
+    project.write_config_with_profile("probe", "sentinel.cpp", false);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"sentinel.cpp\"; uint64 probe() { ensures result == 18446744073709551615u64; } by { execute(); simp(); }";
+    check_arithmetic_sidecar(&project, &import, proof);
+    assert!(
+        import
+            .export()
+            .constants
+            .iter()
+            .all(|constant| constant.span.file == "limits.h")
+    );
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        let constants = forged["constants"].as_array_mut().unwrap();
+        let sentinel = constants
+            .iter_mut()
+            .find(|constant| constant["name"] == "end")
+            .unwrap();
+        match mutation {
+            0 => sentinel["evaluated_value"] = "4294967295".into(),
+            1 => sentinel["span"]["file"] = "unlocked.h".into(),
+            2 => sentinel["initializer"]["value"]["right"]["value"] = "2".into(),
+            3 => sentinel["initializer"]["value_type"]["signed"] = true.into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "mutation {mutation}"
+        );
+    }
+}
+
+// An observer RHS is evaluated once before assigning a scalar parameter or
+// referent, and still cannot obtain a mutating contract or invent read authority.
+#[test]
+fn scalar_assignment_observers_verify_and_reject_writes_offline() {
+    let project = Project::with_fixture(
+        "assign-observer.cpp",
+        "probe",
+        "struct Count { unsigned long value; unsigned long size() const noexcept { return value; } }; unsigned long probe(const Count& count, unsigned long n) noexcept { n = count.size() + 1UL; return n; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"assign-observer.cpp\"; uint64 Count_size(const struct Count* this) { views this->value; ensures result == this->value; } by { execute(); simp(); } uint64 probe(const struct Count& count, uint64 n) { views count.value; ensures result == count.value + 1u64; ensures count.value == old(count.value); } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    for bad in [
+        proof
+            .replace("views this->value", "owns this->value")
+            .replace("views count.value", "owns count.value"),
+        proof.replace("views count.value;", ""),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+                .is_err()
+        );
+    }
 }
