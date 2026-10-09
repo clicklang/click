@@ -14,6 +14,12 @@ A loop invariant is a fact that must hold:
 - at the start of every iteration,
 - and after one iteration preserves it.
 
+A loop's `views` clause and `viewable` invariant over a local pointer use its
+declared element type:
+`uint8*` counts bytes and `uint64*` counts eight-byte elements. The C and typed
+Rust annotation paths retain those types; the invariant does not acquire
+read authority merely from the pointer declaration.
+
 A loop may declare conditional resources using the same `if` form as a
 resource body:
 

@@ -7292,6 +7292,7 @@ pub(in crate::surface) fn function_resource_summary(
             (!ensure.borrowed()).then(|| parsed_function.return_type().to_kernel_type()),
             role,
             snapshot,
+            None,
         )?;
         let guard = ensure
             .condition()
@@ -7371,6 +7372,7 @@ pub(in crate::surface) fn function_resource_constructors(
                 None,
                 CResourceTransferRole::Produce,
                 CResourceSnapshot::Current,
+                None,
             )
         })
         .collect()
@@ -7671,6 +7673,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                             None,
                             CResourceTransferRole::Borrow,
                             CResourceSnapshot::Current,
+                            None,
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?
@@ -7732,6 +7735,24 @@ pub(in crate::surface) fn append_entry_resource_specs(
         None,
         CResourceTransferRole::Borrow,
         CResourceSnapshot::Entry,
+        None,
+    )?);
+    Ok(())
+}
+
+pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
+    resource: &ResourceClause,
+    parameters: &[syntax::C0Parameter],
+    pointer_element_types: &BTreeMap<String, crate::kernel::CType>,
+    specs: &mut Vec<CResourceSpec>,
+) -> Result<(), ClickError> {
+    specs.extend(resource_clause_to_resource_specs_with_metadata(
+        resource,
+        parameters,
+        None,
+        CResourceTransferRole::Borrow,
+        CResourceSnapshot::Entry,
+        Some(pointer_element_types),
     )?);
     Ok(())
 }
@@ -7742,6 +7763,7 @@ fn resource_clause_to_resource_specs_with_metadata(
     result_type: Option<crate::kernel::CType>,
     role: crate::kernel::CResourceTransferRole,
     snapshot: crate::kernel::CResourceSnapshot,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
 ) -> Result<Vec<CResourceSpec>, ClickError> {
     if let ResourceClause::MemoryAggregate { access, segments } = resource {
         return segments
@@ -7757,6 +7779,7 @@ fn resource_clause_to_resource_specs_with_metadata(
                     result_type,
                     role,
                     snapshot,
+                    pointer_element_types,
                 )
             })
             .collect();
@@ -7767,6 +7790,7 @@ fn resource_clause_to_resource_specs_with_metadata(
         result_type,
         role,
         snapshot,
+        pointer_element_types,
     )?;
     fn declared_arguments(resource: &ResourceClause) -> Option<&[ContractExpression]> {
         match resource {
@@ -7798,6 +7822,7 @@ fn resource_clause_to_resource_spec_with_parameters(
         result_type,
         crate::kernel::CResourceTransferRole::Borrow,
         crate::kernel::CResourceSnapshot::Entry,
+        None,
     )
 }
 
@@ -7854,6 +7879,7 @@ fn resource_clause_to_resource_spec_for_body(
         result_type,
         role,
         CResourceSnapshot::Current,
+        None,
     )
 }
 
@@ -7863,6 +7889,7 @@ fn resource_clause_to_resource_spec_with_metadata(
     result_type: Option<crate::kernel::CType>,
     role: crate::kernel::CResourceTransferRole,
     snapshot: crate::kernel::CResourceSnapshot,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
 ) -> Result<CResourceSpec, ClickError> {
     match resource {
         ResourceClause::Conditional { .. } => Err(ClickError::new(
@@ -7875,6 +7902,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 result_type,
                 role,
                 snapshot,
+                pointer_element_types,
             )?;
             if matches!(
                 inner.term(),
@@ -7905,6 +7933,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 result_type,
                 role,
                 snapshot,
+                pointer_element_types,
             )?;
             let (quantity, quantity_snapshot) =
                 crate::surface::lowering::resource_argument_to_typed_c_expression_with_snapshot(
@@ -7927,10 +7956,11 @@ fn resource_clause_to_resource_spec_with_metadata(
                 segment.end.clone(),
             )
             .with_element_width(
-                crate::surface::lowering::contract_segment_element_width_for_result_type(
+                crate::surface::lowering::contract_segment_element_width_with_pointer_types(
                     parameters,
                     segment,
                     result_type,
+                    pointer_element_types,
                 ),
             ),
             CResourceAccessMode::View,
@@ -7944,10 +7974,11 @@ fn resource_clause_to_resource_spec_with_metadata(
                 segment.end.clone(),
             )
             .with_element_width(
-                crate::surface::lowering::contract_segment_element_width_for_result_type(
+                crate::surface::lowering::contract_segment_element_width_with_pointer_types(
                     parameters,
                     segment,
                     result_type,
+                    pointer_element_types,
                 ),
             ),
             CResourceAccessMode::Own,
@@ -8040,6 +8071,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                     result_type,
                     role,
                     snapshot,
+                    pointer_element_types,
                 )?
                 .with_source_arguments(
                     protected_arguments
@@ -8105,7 +8137,8 @@ fn resource_clause_to_resource_spec_with_metadata(
                         protected: resource_type_arguments.first().map(|resource| {
                             let ResourceClause::Declared { type_schema: Some(schema), .. } = resource else { return Err(ClickError::new("protected resource type has no checked schema")); };
                             Ok(Box::new(crate::kernel::CResourceTypeSpec {
-                                resource: Box::new(resource_clause_to_resource_spec_with_metadata(resource, parameters, result_type, role, snapshot)?.with_source_arguments(match resource {
+                                resource: Box::new(resource_clause_to_resource_spec_with_metadata(resource, parameters, result_type, role, snapshot, pointer_element_types,
+)?.with_source_arguments(match resource {
                                     ResourceClause::Declared { arguments, .. } => arguments.iter().map(crate::surface::diagnostics::describe_contract_expression).collect(),
                                     _ => unreachable!(),
                                 })),
@@ -8318,6 +8351,7 @@ pub(in crate::surface) fn resource_clause_to_resource_spec(
         None,
         crate::kernel::CResourceTransferRole::Borrow,
         crate::kernel::CResourceSnapshot::Current,
+        None,
     )
 }
 
