@@ -1032,6 +1032,11 @@ fn try_check_flat_function_proof_inner<'a>(
     };
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
+        if remaining.is_empty()
+            && let Some(error) = proof.unfinished_callback_diagnostic()?
+        {
+            return Err(error);
+        }
         if let Some((indexed, reason)) = remaining.first().and_then(|indexed| {
             pre_exit_outcome_tactic_error(&indexed.tactic).map(|reason| (indexed, reason))
         }) {
@@ -1719,6 +1724,11 @@ fn try_check_structural_function_proof_inner<'a>(
     }
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
+        if remaining.is_empty()
+            && let Some(error) = proof.unfinished_callback_diagnostic()?
+        {
+            return Err(error);
+        }
         if let Some((indexed, reason)) = remaining.first().and_then(|indexed| {
             pre_exit_outcome_tactic_error(&indexed.tactic).map(|reason| (indexed, reason))
         }) {

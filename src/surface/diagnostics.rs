@@ -1273,14 +1273,20 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::UnsupportedOpaqueFunctionContract(name) => format!(
             "cannot execute call to `{name}` opaquely: its contract refers to an internal program point that is unavailable at the call site"
         ),
-        crate::kernel::CRuntimeError::AbstractFunctionPointerCall(name) => format!(
-            "cannot verify call through {}: no matching named contract is available for this value",
-            if is_call_result_temporary(name) {
-                "a function pointer loaded from memory".to_string()
+        crate::kernel::CRuntimeError::AbstractFunctionPointerCall(name) => {
+            if let Some(source) = super::proof::callback_source_name(name) {
+                format!("cannot verify call: no contract fact for the function pointer `{source}` with this call signature")
             } else {
-                format!("function pointer `{name}`")
+                format!(
+                    "cannot verify call through {}: no matching named contract is available for this value",
+                    if is_call_result_temporary(name) {
+                        "a function pointer loaded from memory".to_string()
+                    } else {
+                        format!("function pointer `{name}`")
+                    }
+                )
             }
-        ),
+        }
         crate::kernel::CRuntimeError::FunctionContract(message) => {
             format!(
                 "function contract could not be applied: {}",
@@ -4483,6 +4489,36 @@ fn name_string_literal_storage(message: &str) -> String {
 /// a call or load nested inside a larger expression.
 pub(in crate::surface) fn is_call_result_temporary(name: &str) -> bool {
     name.starts_with("__click_call_result")
+}
+
+pub(in crate::surface) fn describe_callback_source(expression: &syntax::C0Expression) -> String {
+    match expression {
+        syntax::C0Expression::Field {
+            pointer,
+            source: Some(source),
+            ..
+        } => {
+            let base = match pointer.as_ref() {
+                syntax::C0Expression::PointerOffsetBytes { pointer, .. } => pointer.as_ref(),
+                pointer => pointer,
+            };
+            match base {
+                syntax::C0Expression::AddressOf(object) => {
+                    format!(
+                        "{}.{}",
+                        describe_callback_source(object),
+                        source.field_name()
+                    )
+                }
+                pointer => format!(
+                    "{}->{}",
+                    describe_callback_source(pointer),
+                    source.field_name()
+                ),
+            }
+        }
+        expression => describe_c_expression(&expression.to_kernel_expression()),
+    }
 }
 
 thread_local! {

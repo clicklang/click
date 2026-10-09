@@ -112,13 +112,13 @@ use surface_certificates::*;
 use surface_construction::*;
 #[cfg(test)]
 use surface_synthesis::{SURFACE_SYNTHESIS_DEPTH_LIMIT, bitvector_term_is_load_free};
+pub(super) use surface_synthesis::{
+    callback_source_name, synthesize_surface_equality_across_points, synthesize_surface_proposition,
+};
 use surface_synthesis::{
     surface_synthesis_exhaustion_description, surface_synthesis_failure,
     synthesize_surface_machine_expression,
     synthesize_surface_proposition_with_bound_variable_names,
-};
-pub(super) use surface_synthesis::{
-    synthesize_surface_equality_across_points, synthesize_surface_proposition,
 };
 use theorem_application::*;
 use timing::TacticTiming;
