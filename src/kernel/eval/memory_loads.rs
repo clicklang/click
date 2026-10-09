@@ -1328,23 +1328,31 @@ fn canonicalized_pointer_value_from_int_cell(
         }
         _ => return None,
     };
+    // The selected cached value already names its defining read. An address
+    // alias may spell that cell with a different symbolic storage block; it
+    // must not rebase the same pointer value onto that caller spelling.
+    let defining_load = registered_load_term_for_variable(&fresh);
+    let defining_block = match &defining_load {
+        Some(Bitvector32Term::MemoryLoad(_, address, _)) => &address.block,
+        _ => &pointer.block,
+    };
     // A load variable names the pointer value, not an offset in the
     // storage object containing it. Fresh storage provenance must not
     // manufacture disjointness from the actual pointee.
     let loaded = if matches!(
-        pointer.block,
+        defining_block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || pointer.block.starts_with("local:")
+    ) || defining_block.starts_with("local:")
     {
         Pointer::symbolic(fresh)
     } else {
         Pointer::loaded(
-            pointer.block.clone(),
+            defining_block.clone(),
             Bitvector32Term::Variable(fresh),
             i64::from(pointee_byte_width),
         )
     };
-    if let Some(load) = registered_load_term_for_variable(&fresh) {
+    if let Some(load) = defining_load {
         if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
             && let Bitvector32Term::MemoryLoad(memory, address, _) = &load
         {
@@ -3824,6 +3832,28 @@ fn mint_load_variable_identity(
     })
 }
 
+/// Reuse an exact read name or a materialized pointer cell's retained name.
+/// This lookup never canonicalizes a new read or walks its memory history.
+/// A scalar read of fewer bytes cannot supply a whole pointer's identity.
+pub(in crate::kernel) fn known_pointer_read_variable_for_term(
+    bits: &Bitvector32Term,
+) -> Option<Variable> {
+    crate::instrumentation::record_deterministic_work(1);
+    let Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32) = bits else {
+        return None;
+    };
+    let variable = LOAD_VARIABLE_CACHE
+        .with(|cache| cache.borrow().get(bits).map(|(variable, _)| *variable))
+        .or_else(|| match memory.known_value(address) {
+            Some(CValue::Int32(Bitvector32Term::Variable(variable))) => Some(variable),
+            _ => materialized_pointer_cell_load_variable(memory, address),
+        })?;
+    (registered_load_kind_for_variable(&variable) == Some(LoadKind::Bits32)
+        && registered_load_bytes_for_variable(&variable)
+            == Some(crate::kernel::C_POINTER_BYTE_WIDTH))
+    .then_some(variable)
+}
+
 /// Returns the load variable for a load term's provenance-stable form.
 /// The term is first canonicalized without assumptions, resolving cached
 /// cells and snapshot representation differences. The same cell loaded at
@@ -5468,6 +5498,123 @@ mod tests {
         assert!(
             samples.iter().all(|work| *work <= samples[0] + 40),
             "read definition lookup scanned unrelated cells: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn known_pointer_read_names_require_a_complete_pointer_cell() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let source = intern_c_memory_ref(&memory);
+        let wide = Pointer::symbolic(Variable(210_100));
+        let narrow = Pointer::symbolic(Variable(210_101));
+        record_load_access_width(&memory, &wide, crate::kernel::C_POINTER_BYTE_WIDTH);
+        record_load_access_width(&memory, &narrow, 4);
+        let term = |address: &Pointer| {
+            Bitvector32Term::MemoryLoad(source.clone(), Box::new(address.clone()), LoadKind::Bits32)
+        };
+        assert!(known_pointer_read_variable_for_term(&term(&wide)).is_none());
+        let (wide_name, _) = load_variable_for_term(&term(&wide)).unwrap();
+        let (narrow_name, _) = load_variable_for_term(&term(&narrow)).unwrap();
+        assert_eq!(
+            known_pointer_read_variable_for_term(&term(&wide)),
+            Some(wide_name)
+        );
+        assert!(known_pointer_read_variable_for_term(&term(&narrow)).is_none());
+        let selected = Pointer::symbolic(Variable(210_102));
+        for (value, expected) in [
+            (
+                CValue::Int32(Bitvector32Term::Variable(wide_name)),
+                Some(wide_name),
+            ),
+            (CValue::Int32(Bitvector32Term::Variable(narrow_name)), None),
+            (
+                CValue::Int32(Bitvector32Term::Variable(Variable(210_103))),
+                None,
+            ),
+            (CValue::UInt64(Bitvector32Term::UInt64Constant(0)), None),
+        ] {
+            let cached = memory
+                .clone()
+                .materialize_named_cell(selected.clone(), value);
+            let read = Bitvector32Term::MemoryLoad(
+                intern_c_memory_ref(&cached),
+                Box::new(selected.clone()),
+                LoadKind::Bits32,
+            );
+            assert_eq!(known_pointer_read_variable_for_term(&read), expected);
+        }
+        let wrong_kind = Bitvector32Term::MemoryLoad(source, Box::new(wide), LoadKind::Bits64);
+        assert!(known_pointer_read_variable_for_term(&wrong_kind).is_none());
+    }
+
+    /// A selected cached load denotes one pointer even when its cell is
+    /// reached through a loop cursor in another symbolic coordinate system.
+    #[test]
+    fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer::symbolic(Variable(195_100));
+        let cursor = Pointer::symbolic(Variable(195_101));
+        let address = owner.offset_by_bytes(16);
+        let cursor_address = cursor.offset_by_bytes(16);
+        let memory = CMemory::new();
+        let snapshot = intern_c_memory_ref(&memory);
+        let bits = canonical_form_of_load(snapshot, address.clone(), LoadKind::Bits32);
+        let cached = CValue::Int32(bits);
+        let mut samples = Vec::new();
+        for count in [16u64, 64, 256, 1024] {
+            let mut context = PureFactContext::new().assume_condition(
+                ConditionTerm::pointer_equal(owner.clone(), cursor.clone()),
+                true,
+            );
+            for i in 0..count {
+                context = context.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(196_000 + i)),
+                        Pointer::symbolic(Variable(198_000 + i)),
+                    ),
+                    true,
+                );
+            }
+            let read = |at: &Pointer| {
+                canonicalized_pointer_value_from_int_cell(
+                    at,
+                    &cached,
+                    CType::Int64Pointer,
+                    &mut ExecutionFacts::new(),
+                    &context,
+                    None,
+                    LoadPurpose::Program,
+                )
+                .expect("selected pointer cache")
+            };
+            let expected = read(&address);
+            let ((actual, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| read(&cursor_address))
+            });
+            assert_eq!(actual, expected, "alias rebased a cached pointer value");
+            samples.push((work, map_work));
+            assert!(
+                canonicalized_pointer_value_from_int_cell(
+                    &cursor_address,
+                    &CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+                    CType::Int64Pointer,
+                    &mut ExecutionFacts::new(),
+                    &context,
+                    None,
+                    LoadPurpose::Program,
+                )
+                .is_none(),
+                "an arbitrary scalar must not gain pointer identity"
+            );
+        }
+        assert!(
+            samples.iter().all(|sample| sample.0 <= samples[0].0 + 32),
+            "{samples:?}"
+        );
+        assert!(
+            samples.iter().all(|sample| sample.1 <= samples[0].1 + 128),
+            "{samples:?}"
         );
     }
 

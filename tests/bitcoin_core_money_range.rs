@@ -4772,3 +4772,231 @@ struct span__int__value_unsigned_long_18446744073709551615 probe(const struct sp
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_bounded_window_offline() {
+    check_pinned_std_span_subspan("finite");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_empty_window_offline() {
+    check_pinned_std_span_subspan("empty");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_empty_at_end_offline() {
+    check_pinned_std_span_subspan("end");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_full_window_offline() {
+    check_pinned_std_span_subspan("full");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_empty_input_offline() {
+    check_pinned_std_span_subspan("empty-input");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_method_expands_offline() {
+    check_pinned_std_span_subspan("expand-method");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_caller_expands_offline() {
+    check_pinned_std_span_subspan("expand-caller");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_retains_offline() {
+    check_pinned_std_span_subspan("retain");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_refuses_missing_views_offline() {
+    check_pinned_std_span_subspan("refuse-views");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_refuses_missing_bounds_offline() {
+    check_pinned_std_span_subspan("refuse-bounds");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_refuses_false_results_offline() {
+    check_pinned_std_span_subspan("refuse-results");
+}
+
+#[test]
+#[ignore = "nightly: 3.5s pinned runtime subspan base proof; tools/refusals add rechecks"]
+fn pinned_std_span_subspan_explicit_dynamic_extent_offline() {
+    check_pinned_std_span_subspan("sentinel");
+}
+
+// The original runtime subspan branch and returned constructor must verify
+// without replacing the header with a specialized finite-count implementation.
+fn check_pinned_std_span_subspan(case: &str) {
+    let harness = "#include <span.h>\nstd::span<int> probe(const std::span<int>& span, unsigned long offset, unsigned long count) noexcept { return span.subspan(offset, count); }\n";
+    let (root, import) = pinned_span_fixture_with_dependencies(
+        &format!("returned-subspan-{case}"),
+        harness,
+        &["sysroot/usr/include/c++/12/bits/ptr_traits.h"],
+    );
+    let common = pinned_span_construction_contracts(&import);
+    let start = common.find("struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_first(").unwrap();
+    let common = common[..start].replace("(int32)__count", "__count");
+    let source = format!(
+        "{}{}",
+        common,
+        r#"
+theorem bounded_subspan_count(n: uint64, offset: uint64, count: uint64) {
+ requires offset <= n;
+ requires count <= n - offset;
+ requires n <= 1073741823u64;
+ ensures count <= 1073741823u64 and count != 18446744073709551615u64 by {
+  apply(uint64_less_equal_to_integer(offset, n));
+  apply(uint64_subtract_to_integer(n, offset));
+  apply(uint64_less_equal_to_integer(count, n - offset));
+  apply(uint64_less_equal_to_integer(n, 1073741823u64));
+  apply(uint64_to_integer_bounds(offset));
+  have to_integer(n - offset) <= to_integer(n) by { arithmetic() using { to_integer(n - offset) == to_integer(n) - to_integer(offset); 0 <= to_integer(offset); } }
+  have to_integer(count) <= to_integer(n) by { arithmetic() using { to_integer(count) <= to_integer(n - offset); to_integer(n - offset) <= to_integer(n); } }
+  have to_integer(count) <= 1073741823 by { arithmetic() using { to_integer(count) <= to_integer(n); to_integer(n) <= 1073741823; } }
+  have count <= 1073741823u64 by apply(uint64_less_equal_of_to_integer(count, 1073741823u64));
+  have to_integer(count) < 18446744073709551615 by { arithmetic() using { to_integer(count) <= 1073741823; } }
+  have count < 18446744073709551615u64 by apply(uint64_less_than_of_to_integer(count, 18446744073709551615u64));
+  if count == 18446744073709551615u64 {
+   have not (count < 18446744073709551615u64) by { rewrite(count == 18446744073709551615u64); normalize(); }
+   contradiction(count < 18446744073709551615u64);
+  } else { both { assumption(); } and { assumption(); } }
+ }
+}
+struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_subspan(const struct span__int__value_unsigned_long_18446744073709551615* this, uint64 __offset, uint64 __count) {
+ views this->_M_ptr;
+ views this->_M_extent._M_extent_value;
+ views this->_M_ptr[0..this->_M_extent._M_extent_value];
+ requires __offset <= this->_M_extent._M_extent_value;
+ requires __count <= this->_M_extent._M_extent_value - __offset;
+ requires this->_M_extent._M_extent_value <= 1073741823u64;
+ ensures result._M_ptr == old(this->_M_ptr) + __offset;
+ ensures result._M_extent._M_extent_value == old(__count);
+ ensures this->_M_ptr == old(this->_M_ptr);
+ ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
+} by { apply(bounded_subspan_count(this->_M_extent._M_extent_value, __offset, __count)); execute(); simp(); }
+struct span__int__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span, uint64 offset, uint64 count) {
+ views span._M_ptr;
+ views span._M_extent._M_extent_value;
+ views span._M_ptr[0..span._M_extent._M_extent_value];
+ requires offset <= span._M_extent._M_extent_value;
+ requires count <= span._M_extent._M_extent_value - offset;
+ requires span._M_extent._M_extent_value <= 1073741823u64;
+ ensures result._M_ptr == old(span._M_ptr) + offset;
+ ensures result._M_extent._M_extent_value == count;
+ ensures span._M_ptr == old(span._M_ptr);
+ ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
+ ensures forall (index: uint64) { index < old(span._M_extent._M_extent_value) implies span._M_ptr[index] == old(span._M_ptr[index]) };
+} by { apply(bounded_subspan_count(span._M_extent._M_extent_value, offset, count)); execute(); simp(); }
+"#
+    );
+    let source = match case {
+        "empty" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires count == 0u64;"),
+        "end" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires count == 0u64; requires offset == span._M_extent._M_extent_value;"),
+        "full" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires offset == 0u64; requires count == span._M_extent._M_extent_value;"),
+        "empty-input" => source.replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count <= span._M_extent._M_extent_value - offset;\n requires count == 0u64; requires offset == 0u64; requires span._M_extent._M_extent_value == 0u64;"),
+        "sentinel" => source
+          .replace(" requires __count <= this->_M_extent._M_extent_value - __offset;", " requires __count == 18446744073709551615u64;")
+          .replace(" requires count <= span._M_extent._M_extent_value - offset;", " requires count == 18446744073709551615u64;")
+          .replace("result._M_extent._M_extent_value == old(__count)", "result._M_extent._M_extent_value == old(this->_M_extent._M_extent_value) - __offset")
+          .replace("result._M_extent._M_extent_value == count", "result._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - offset")
+          .replace("this->_M_extent._M_extent_value, __offset, __count)", "this->_M_extent._M_extent_value, __offset, this->_M_extent._M_extent_value - __offset)")
+          .replace("span._M_extent._M_extent_value, offset, count)", "span._M_extent._M_extent_value, offset, span._M_extent._M_extent_value - offset)")
+          .replace("apply(bounded_subspan_count(this->_M_extent._M_extent_value, __offset, this->_M_extent._M_extent_value - __offset)); execute(); simp();", r#"
+ step(); step(); step(); step(); step(); step(); step(); step(); step(); step();
+ let observed = step(span__int__value_unsigned_long_18446744073709551615_size(this), {});
+ have observed == this->_M_extent._M_extent_value by simp;
+ have __offset <= observed by { rewrite(observed == this->_M_extent._M_extent_value); assumption(); }
+ have observed <= 1073741823u64 by { rewrite(observed == this->_M_extent._M_extent_value); assumption(); }
+ apply(bounded_subspan_count(observed, __offset, observed - __offset));
+ execute(); simp();
+"#),
+        _ => source,
+    };
+    let path = root.join("span.click");
+    fs::write(&path, &source).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
+    verify_program_prepared_project(&project, &import).unwrap();
+    if case.starts_with("expand-") {
+        let label = if case == "expand-method" {
+            "span__int__value_unsigned_long_18446744073709551615_subspan.contract"
+        } else {
+            "probe.contract"
+        };
+        let expanded =
+            expand_program_prepared_project_claim_source_by_label(&project, &import, label)
+                .unwrap();
+        verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+    }
+    if case == "retain" {
+        let (session, _) =
+            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+        let position = program_prepared_project_tactic_source_position(
+            &project,
+            &import,
+            "probe.ensures_0",
+            0,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&source, position.line, position.column)
+            .unwrap();
+    }
+    if case.starts_with("refuse-") {
+        let mutations = [
+            source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
+            source.replace(" requires offset <= span._M_extent._M_extent_value;", ""),
+            source.replace(
+                " requires count <= span._M_extent._M_extent_value - offset;",
+                "",
+            ),
+            source.replace(
+                " requires span._M_extent._M_extent_value <= 1073741823u64;",
+                "",
+            ),
+            source.replace(
+                "result._M_extent._M_extent_value == count;",
+                "result._M_extent._M_extent_value != count;",
+            ),
+            source.replace(
+                "old(span._M_ptr) + offset;",
+                "old(span._M_ptr) + offset + 1u64;",
+            ),
+        ];
+        let range = match case {
+            "refuse-views" => 0..1,
+            "refuse-bounds" => 1..4,
+            _ => 4..6,
+        };
+        for hostile in &mutations[range] {
+            assert!(
+                verify_program_prepared_project(
+                    &read_click_project(&path, hostile).unwrap(),
+                    &import
+                )
+                .is_err()
+            );
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}

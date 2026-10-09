@@ -2469,8 +2469,7 @@ impl CppStatement {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
-            Self::Assign { value, .. }
-            | Self::Throw { value, .. }
+            Self::Throw { value, .. }
             | Self::Assume {
                 condition: value, ..
             }
@@ -3307,7 +3306,7 @@ impl CppExpression {
                 if constant.declaration_id.is_empty() || constant.name.is_empty() {
                     return Err("C++ constant reference is missing declaration identity".into());
                 }
-                require_signed_int64(value_type, false, "constant reference type")
+                require_native_constant_type(value_type, false, "constant reference type")
             }
             Self::Load {
                 place,
@@ -4518,18 +4517,31 @@ fn validate_constant_inventory<'a>(
 impl CppConstant {
     fn validate(
         &self,
-        logical_source: &str,
+        _logical_source: &str,
         alias_sources: &BTreeSet<String>,
         prior_constants: &BTreeMap<String, &CppConstant>,
     ) -> Result<Option<String>, String> {
         if self.declaration_id.is_empty() || self.name.is_empty() {
             return Err("C++ constant is missing declaration identity".into());
         }
-        self.span.validate(logical_source)?;
-        require_const_signed_int64(&self.value_type, "constant type")?;
+        if !alias_sources.contains(&self.span.file) {
+            return Err("C++ constant declaration is outside the locked source closure".into());
+        }
+        self.span.validate(&self.span.file)?;
+        require_native_constant_type(&self.value_type, true, "constant type")?;
         self.value_type.validate_aliases_in(alias_sources)?;
+        if matches!(self.value_type, CppType::Integer { signed: false, .. }) {
+            let value = validate_uint64_initializer(&self.initializer, &self.span.file)?;
+            if self.evaluated_value.parse::<u64>().ok() != Some(value) {
+                return Err(format!(
+                    "C++ constant `{}` initializer disagrees with its evaluated value",
+                    self.name
+                ));
+            }
+            return Ok(None);
+        }
         let (dependency, initializer_value) =
-            validate_int64_initializer(&self.initializer, logical_source, prior_constants)?;
+            validate_int64_initializer(&self.initializer, &self.span.file, prior_constants)?;
         let evaluated = self
             .evaluated_value
             .parse::<i64>()
@@ -4541,6 +4553,81 @@ impl CppConstant {
             ));
         }
         Ok(dependency)
+    }
+}
+
+fn require_native_constant_type(
+    value: &CppType,
+    is_const: bool,
+    label: &str,
+) -> Result<(), String> {
+    if matches!(value, CppType::Integer { bits: 64, is_const: qualifier, .. } if *qualifier == is_const)
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} requires a native {}64-bit integer",
+            if is_const { "const " } else { "" }
+        ))
+    }
+}
+
+// This is an independently checked initializer slice, not arbitrary compiler
+// evaluation: a uint64 literal or a uint64 cast of a signed int32 literal,
+// optionally negated. The cast uses C++'s modulo-2^64 integer conversion.
+fn validate_uint64_initializer(expression: &CppExpression, source: &str) -> Result<u64, String> {
+    match expression {
+        CppExpression::IntegerLiteral {
+            value,
+            value_type,
+            span,
+        } => {
+            span.validate(source)?;
+            require_native_constant_type(value_type, false, "unsigned constant literal")?;
+            if !matches!(value_type, CppType::Integer { signed: false, .. }) {
+                return Err("unsigned constant literal requires uint64 type".into());
+            }
+            value
+                .parse::<u64>()
+                .map_err(|_| "unsigned constant literal is out of range".into())
+        }
+        CppExpression::IntegralCast {
+            value,
+            value_type,
+            span,
+        } => {
+            span.validate(source)?;
+            require_native_constant_type(value_type, false, "unsigned constant cast")?;
+            if !matches!(value_type, CppType::Integer { signed: false, .. }) {
+                return Err("unsigned constant cast requires uint64 result".into());
+            }
+            let signed = match value.as_ref() {
+                CppExpression::Binary {
+                    operator: CppBinaryOperator::Subtract,
+                    left,
+                    right,
+                    value_type,
+                    span,
+                } => {
+                    span.validate(source)?;
+                    require_int32(value_type, false, "negated constant literal")?;
+                    if evaluate_int32_literal(left, source)? != 0 {
+                        return Err(
+                            "unsigned constant cast requires a literal or its negation".into()
+                        );
+                    }
+                    evaluate_int32_literal(right, source)?
+                        .checked_neg()
+                        .ok_or_else(|| "constant literal negation overflows int32".to_string())?
+                }
+                literal => evaluate_int32_literal(literal, source)?,
+            };
+            Ok(i64::from(signed) as u64)
+        }
+        _ => Err(
+            "unsigned constants require a uint64 literal or checked int32 literal conversion"
+                .into(),
+        ),
     }
 }
 

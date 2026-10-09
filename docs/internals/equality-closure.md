@@ -390,6 +390,19 @@ misses, without scanning or rebuilding the proof environment. `simp` can emit
 The nonrecursive `mdtests/egraph_resource_pointer_load_alias.md` regression
 checks this after an unfold publishes address equality.
 
+An explicit pointer rewrite uses this producer metadata to distinguish a
+pointer-valued read from ordinary address arithmetic. For a registered read,
+it rewrites the defining address at the read's original snapshot and names
+that rewritten read. It does not add the owner's alias displacement to the
+loaded value. Resolving the new address against the original snapshot keeps
+cached child identities across a joined loop; a projection for the old address
+alone is insufficient. Naming uses exact recorded reads and cached pointer
+cells; a cold read keeps its snapshot application without searching history.
+A complete pointer value cached at the rewritten address is returned directly
+from that snapshot, including after a pointer store.
+The joined-pointer-field fixtures cover the explicit
+rewrite and rejection of an equality about a different field.
+
 Recursive resource child indices use the same term-definition interface.
 After a child expression passes the existing readable-expression and argument
 checks, its certified typed producer metadata is retained before the temporary

@@ -1127,7 +1127,7 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
     }
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let site = if bytes == 4 {
-        "have __rust_mir_115_remaining == 3".to_owned()
+        "have (int32)(uint32)__rust_mir_115_remaining == 3".to_owned()
     } else if bytes == 1 {
         "execute_until(assignment(__rust_mir_144, 0))".to_owned()
     } else {
@@ -1251,13 +1251,13 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have __rust_mir_62_remaining == 4u64 by",
-        "have __rust_mir_62_remaining == 8u64 by",
+        "have (int32)(uint32)__rust_mir_62_remaining == 4 by",
+        "have (int32)(uint32)__rust_mir_62_remaining == 8 by",
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have adler_lane_vectors_consumed(4, ((int32)(uint32)__rust_mir_62_remaining)) == 0 by",
-        "have adler_lane_vectors_consumed(4, ((int32)(uint32)__rust_mir_62_remaining)) == 1 by",
+        "have adler_lane_vectors_consumed(4, (int32)(uint32)__rust_mir_62_remaining) == 0 by",
+        "have adler_lane_vectors_consumed(4, (int32)(uint32)__rust_mir_62_remaining) == 1 by",
     );
 }
 
@@ -1323,7 +1323,7 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     for field in ["a", "b"] {
         for lane in [0, 3] {
             let bound = format!(
-                "have to_integer({field}_vec._0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, ((int32)(uint32)__rust_mir_62_remaining))) by"
+                "have to_integer({field}_vec._0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, (int32)(uint32)__rust_mir_62_remaining)) by"
             );
             let changed = post_step.replacen(
                 &bound,
@@ -1341,8 +1341,8 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have ((int32)(uint32)__rust_mir_62_remaining) == at(lane_head, ((int32)(uint32)__rust_mir_62_remaining)) - 4 by",
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have ((int32)(uint32)__rust_mir_62_remaining) == at(lane_head, ((int32)(uint32)__rust_mir_62_remaining)) by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have (int32)(uint32)__rust_mir_62_remaining == at(lane_head, (int32)(uint32)__rust_mir_62_remaining) - 4 by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have (int32)(uint32)__rust_mir_62_remaining == at(lane_head, (int32)(uint32)__rust_mir_62_remaining) by",
     );
 }
 
@@ -1355,12 +1355,12 @@ fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
             "decreases 4 - ((int32)(uint32)__rust_mir_62_remaining);",
         ),
         (
-            "invariant ((int32)(uint32)__rust_mir_62_remaining) % 4 == 0;",
-            "invariant ((int32)(uint32)__rust_mir_62_remaining) % 4 == 1;",
+            "invariant (int32)(uint32)__rust_mir_62_remaining % 4 == 0;",
+            "invariant (int32)(uint32)__rust_mir_62_remaining % 4 == 1;",
         ),
         (
-            "invariant ((int32)(uint32)__rust_mir_62_remaining) == 0 implies a_vec._0[3] == old((uint32)bytes[3]);",
-            "invariant ((int32)(uint32)__rust_mir_62_remaining) == 0 implies a_vec._0[3] == old((uint32)bytes[2]);",
+            "invariant (int32)(uint32)__rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[3]);",
+            "invariant (int32)(uint32)__rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[2]);",
         ),
         (
             "invariant b_vec._0[3] <= 255u32;",

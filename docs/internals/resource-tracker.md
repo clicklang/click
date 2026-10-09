@@ -609,6 +609,16 @@ kind; narrower reads hold the extended value, which signedness changes. A
 pointer read is a `Bits32` read, because Click names a pointer value by the
 four-byte word at its address, as a materialized pointer field's cells hold it.
 
+When a pointer read reuses a cached scalar load name, its legacy coordinates
+come from that name's defining read. Reading the same cached cell through an
+alias in a different symbolic storage block must not rebase its pointer value
+onto that alias. The address lookup still checks the alias and read authority;
+recovering the defining coordinates grants neither. The loop-cursor fixtures
+`loop_cursor_pointer_read_preserves_child_model.md` and
+`loop_cursor_pointer_read_requires_owner_alias.md` cover both sides, and
+`cached_pointer_value_keeps_its_defining_coordinates_and_scales` checks that the
+conversion does not scan unrelated aliases.
+
 Before the kind was part of the term, two reads of one address in one snapshot
 were one term whatever they read, and every route that equates loads equated
 them: `s[i] == u[i]` through a `signed char*` and an `unsigned char*` view, and

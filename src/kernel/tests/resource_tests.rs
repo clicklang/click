@@ -8512,6 +8512,15 @@ fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
         true,
     );
     assert!(!covers(&available, &required, &only_count));
+    let offset_suffix = CMemoryRange::new_wide(
+        base.offset_by_typed_elements(taken.clone(), 4, true, true),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::uint64_subtract(whole.clone(), taken.clone()),
+        4,
+    );
+    assert!(covers(&available, &offset_suffix, &facts));
+    assert!(!covers(&available, &offset_suffix, &bounded));
+    assert!(!covers(&available, &offset_suffix, &only_count));
     let low_words = bounded.clone().assume_condition(
         ConditionTerm::signed_less_equal(
             Bitvector32Term::uint32_from_64(taken.clone()),

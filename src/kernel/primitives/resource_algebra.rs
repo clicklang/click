@@ -8256,6 +8256,15 @@ fn wide_memory_range_covers_window(
             // without underflow and (whole - count) + count == whole as integers.
             return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
         }
+        if let Bitvector32Term::UInt64Subtract(whole, skipped) = &last
+            && first.uint64_as_const() == Some(0)
+            && assumptions.uint64_values_equal_for_range_resolution(&index, skipped)
+            && assumptions.uint64_values_equal_for_range_resolution(end, whole)
+            && holds(index.clone(), end.clone())
+        {
+            // A native suffix keeps its complete endpoint and underflow guard.
+            return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
+        }
         (start.uint64_as_const() == Some(0) || holds(start.clone(), index.clone()))
             && ((holds(index.clone(), end.clone())
                 && holds(
