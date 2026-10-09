@@ -603,8 +603,7 @@ private:
     const bool mutable_int_pointer =
         pointer != nullptr && !parameter->getType().hasQualifiers() &&
         !pointer->getPointeeType().hasQualifiers() &&
-        context_.hasSameType(pointer->getPointeeType().getUnqualifiedType(),
-                             context_.IntTy);
+        supported_pointer_element(pointer->getPointeeType());
     const bool by_value_integer =
         !parameter->getType().hasQualifiers() &&
         supported_scalar_value_type(parameter->getType());
@@ -619,7 +618,7 @@ private:
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, int&, const "
-           "int&, const signed-64 reference, or mutable int* parameter, or a "
+           "int&, const signed-64 reference, or mutable int* parameter, mutable unsigned int*/unsigned char* parameter, or a "
            "mutable or const simple-record reference parameter");
       return std::nullopt;
     }
@@ -656,6 +655,14 @@ private:
       }
     }
     return nullptr;
+  }
+
+  bool supported_pointer_element(clang::QualType type) const {
+    const auto unqualified = type.getUnqualifiedType();
+    return !type.isVolatileQualified() && !type.isRestrictQualified() &&
+        (context_.hasSameType(unqualified, context_.IntTy) ||
+         context_.hasSameType(unqualified, context_.UnsignedIntTy) ||
+         context_.hasSameType(unqualified, context_.UnsignedCharTy));
   }
 
   bool supported_integer_type(clang::QualType type) const {
@@ -2767,8 +2774,8 @@ private:
       }
       const auto *pointer = cast->getType()->getAs<clang::PointerType>();
       if (pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
-          !context_.hasSameType(pointer->getPointeeType(), context_.IntTy)) {
-        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer");
+          !supported_pointer_element(pointer->getPointeeType())) {
+        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer, uint32 pointer or unsigned-byte pointer");
         return std::nullopt;
       }
       auto value_type = lower_type(cast->getType(), cast->getExprLoc());
@@ -3024,14 +3031,17 @@ private:
               ? nullptr
               : parameter->getType()->getAs<clang::LValueReferenceType>();
       const bool integer_field = llvm::isa<clang::MemberExpr>(operand) &&
-          operand->isLValue() && context_.hasSameType(operand->getType().getUnqualifiedType(), context_.IntTy);
+          operand->isLValue() && supported_pointer_element(operand->getType());
+      const bool automatic_scalar = parameter != nullptr &&
+          parameter->hasLocalStorage() &&
+          supported_pointer_element(parameter->getType());
+      const bool integer_reference = reference_type != nullptr &&
+          context_.hasSameType(reference_type->getPointeeType().getUnqualifiedType(),
+                               context_.IntTy);
       if (!integer_field && (parameter == nullptr || parameter->getDeclContext() != function ||
-          reference_type == nullptr ||
-          !context_.hasSameType(
-              reference_type->getPointeeType().getUnqualifiedType(),
-              context_.IntTy))) {
+          (!automatic_scalar && !integer_reference))) {
         fail(address->getOperatorLoc(),
-             "supported C++ address-of must name an int reference in the current function");
+             "supported C++ address-of must name a native scalar object or int reference in the current function");
         return std::nullopt;
       }
       auto place = lower_place_reference(operand, function);
@@ -3130,7 +3140,7 @@ private:
               !supported_wide_arithmetic))) {
           fail(binary->getOperatorLoc(),
                "C++ arithmetic requires signed/unsigned 32/64-bit operands or "
-               "int pointer addition with a 32/64-bit index or subtraction "
+               "native object pointer addition with a 32/64-bit index or subtraction "
                "with an int32 index; pointer differences remain unsupported");
           return std::nullopt;
         }
@@ -3295,8 +3305,7 @@ private:
       const bool mutable_int_pointer =
           pointer != nullptr && !type.hasQualifiers() &&
           !pointer->getPointeeType().hasQualifiers() &&
-          context_.hasSameType(pointer->getPointeeType().getUnqualifiedType(),
-                               context_.IntTy);
+          supported_pointer_element(pointer->getPointeeType());
       const auto *embedded = type->getAsCXXRecordDecl();
       const bool mutable_record = embedded != nullptr && !type.hasQualifiers();
       // Access control is checked by Clang at each source use. It does not
@@ -3308,7 +3317,7 @@ private:
         fail(
             field->getLocation(),
             "the supported C++ record fields must be named mutable 32/64-bit "
-            "integers, unsigned char, mutable int*, or embedded record fields without bit-fields");
+            "integers, unsigned char, mutable native int/unsigned int/unsigned char pointers, or embedded record fields without bit-fields");
         return false;
       }
       if (mutable_record) {

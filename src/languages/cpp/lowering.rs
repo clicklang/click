@@ -300,8 +300,15 @@ fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, St
                 ),
             )
         }
-        CppType::Pointer { pointee } if is_mutable_int32(pointee) => {
-            Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
+        CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() => {
+            Ok(c_parameter(
+                parameter.name.clone(),
+                Scalar::pointer_element(pointee, false)
+                    .unwrap()
+                    .kind
+                    .pointer_kernel_type()
+                    .unwrap(),
+            ))
         }
         _ => Err(format!(
             "C++ parameter `{}` is outside direct by-value `bool`, `int&`, `const int&`, `int*`, and record-reference lowering",
@@ -568,7 +575,7 @@ impl LoweringContext<'_> {
             CppStatement::Store { pointer, value, .. } => Ok(c_typed_store(
                 self.lower_expression(pointer)?,
                 self.lower_expression(value)?,
-                CType::Int32,
+                cpp_scalar_kernel_type(value.value_type())?,
             )),
             CppStatement::MemberConstruct {
                 object,
@@ -1110,9 +1117,10 @@ impl LoweringContext<'_> {
         &mut self,
         expression: &CppExpression,
     ) -> Result<ScalarEvaluation, String> {
-        let value_type = if matches!(expression.value_type(), CppType::Pointer { pointee } if is_mutable_int32(pointee) || is_const_int32(pointee))
-        {
-            CType::Int32Pointer
+        let value_type = if let CppType::Pointer { pointee } = expression.value_type() {
+            Scalar::pointer_element(pointee, true)
+                .and_then(|scalar| scalar.kind.pointer_kernel_type())
+                .ok_or("unsupported native pointer expression")?
         } else {
             cpp_return_scalar_type(expression.value_type())?
         };
@@ -1314,9 +1322,10 @@ impl LoweringContext<'_> {
             CppExpression::ObserverCall { .. } => Err(
                 "C++ expression observers are supported in normalized scalar values only".into(),
             ),
-            CppExpression::NullPointer { .. } => {
-                Ok(c_cast(CExpression::Value(int32(0)), CType::Int32Pointer))
-            }
+            CppExpression::NullPointer { value_type, .. } => Ok(c_cast(
+                CExpression::Value(int32(0)),
+                cpp_scalar_kernel_type(value_type)?,
+            )),
             CppExpression::IntegerLiteral {
                 value, value_type, ..
             }
@@ -1382,7 +1391,9 @@ impl LoweringContext<'_> {
                     CppType::Pointer {
                         pointee: value_pointee,
                     },
-                ) if is_mutable_int32(pointee) && is_mutable_int32(value_pointee) => {
+                ) if Scalar::pointer_element(pointee, false).is_some()
+                    && scalar::same_scalar_type(pointee, value_pointee) =>
+                {
                     Ok(c_variable(self.variable_name(place)))
                 }
                 (CppType::LvalueReference { pointee }, value_type)
@@ -1415,11 +1426,19 @@ impl LoweringContext<'_> {
                 }
                 _ => Err("C++ load is outside direct bool/reference lowering".into()),
             },
-            CppExpression::AddressOf { place, .. } if !place.projections.is_empty() => {
+            CppExpression::AddressOf {
+                place, value_type, ..
+            } if !place.projections.is_empty() => {
                 // Address formation checks storage, not a read of the field value.
+                let CppType::Pointer { pointee } = value_type else {
+                    unreachable!("validated field address")
+                };
                 Ok(c_checked_object_address(c_typed_load(
                     self.lower_place(place)?,
-                    CType::Int32,
+                    Scalar::pointer_element(pointee, true)
+                        .unwrap()
+                        .kind
+                        .kernel_type(),
                 )))
             }
             CppExpression::AddressOf {
@@ -1430,6 +1449,13 @@ impl LoweringContext<'_> {
                         && scalar::same_scalar_type(pointee, result) =>
                 {
                     Ok(c_variable(self.variable_name(place)))
+                }
+                (CppType::Integer { .. }, CppType::Pointer { pointee })
+                    if Scalar::pointer_element(pointee, false).is_some() =>
+                {
+                    Ok(CExpression::AddressOf(Box::new(c_variable(
+                        self.variable_name(place),
+                    ))))
                 }
                 _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
@@ -1449,8 +1475,9 @@ impl LoweringContext<'_> {
                 pointer,
                 value_type,
                 ..
-            } if is_mutable_int32(value_type) && is_mutable_int32_pointer(pointer.value_type()) => {
-                self.lower_typed_int32_load(pointer)
+            } if is_native_object_pointer(pointer.value_type()) => {
+                let address = self.lower_expression(pointer)?;
+                self.lower_typed_load(address, cpp_scalar_kernel_type(value_type)?)
             }
             CppExpression::Dereference { .. } => {
                 Err("C++ dereference is outside mutable `int*` lowering".into())
@@ -1516,11 +1543,6 @@ impl LoweringContext<'_> {
             c_variable(self.variable_name(place)),
             offset,
         ))
-    }
-
-    fn lower_typed_int32_load(&mut self, pointer: &CppExpression) -> Result<CExpression, String> {
-        let pointer = self.lower_expression(pointer)?;
-        self.lower_typed_load(pointer, CType::Int32)
     }
 
     fn lower_typed_load(
@@ -1694,8 +1716,12 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
-    if is_mutable_int32_pointer(value_type)
-        || matches!(value_type, CppType::LvalueReference { pointee } if is_mutable_int32(pointee) || is_const_int32(pointee))
+    if let CppType::Pointer { pointee } = value_type {
+        return Scalar::pointer_element(pointee, false)
+            .and_then(|scalar| scalar.kind.pointer_kernel_type())
+            .ok_or_else(|| "unsupported native C++ pointer result".into());
+    }
+    if matches!(value_type, CppType::LvalueReference { pointee } if is_mutable_int32(pointee) || is_const_int32(pointee))
     {
         return Ok(CType::Int32Pointer);
     }
@@ -1707,8 +1733,8 @@ fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
     if let Some(kind) = Scalar::mutable_kind(value_type).filter(|kind| kind.is_integer()) {
         Ok(kind.kernel_type())
-    } else if is_mutable_int32_pointer(value_type) {
-        Ok(CType::Int32Pointer)
+    } else if is_native_object_pointer(value_type) {
+        cpp_return_scalar_type(value_type)
     } else {
         Err("unsupported C++ scalar kernel type".into())
     }
@@ -1730,6 +1756,6 @@ fn is_const_int64(value_type: &CppType) -> bool {
     Scalar::is(value_type, ScalarKind::Int64, true)
 }
 
-fn is_mutable_int32_pointer(value_type: &CppType) -> bool {
-    matches!(value_type, CppType::Pointer { pointee } if is_mutable_int32(pointee))
+fn is_native_object_pointer(value_type: &CppType) -> bool {
+    matches!(value_type, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some())
 }

@@ -72,9 +72,13 @@ pub(super) fn prepare_layouts(
                         Scalar::mutable_kind(value).unwrap().proof_type()
                     }
                     CppType::Pointer { pointee }
-                        if Scalar::is(pointee, ScalarKind::Int32, false) =>
+                        if Scalar::pointer_element(pointee, false).is_some() =>
                     {
-                        C0Type::Int32Pointer
+                        Scalar::pointer_element(pointee, false)
+                            .unwrap()
+                            .kind
+                            .pointer_proof_type()
+                            .unwrap()
                     }
                     CppType::Record {
                         name,
@@ -208,12 +212,12 @@ fn function_interface(
     let return_constant = matches!(&source.return_type, CppType::LvalueReference { pointee } if Scalar::is(pointee, ScalarKind::Int32, true));
     let return_type = if source.return_type == CppType::Void {
         C0Type::Void
-    } else if matches!(source.return_type, CppType::Record { .. })
-        || return_reference
-        || matches!(&source.return_type, CppType::Pointer { pointee }
-        if Scalar::is(pointee, ScalarKind::Int32, false))
-    {
+    } else if matches!(source.return_type, CppType::Record { .. }) || return_reference {
         C0Type::Int32Pointer
+    } else if let CppType::Pointer { pointee } = &source.return_type {
+        Scalar::pointer_element(pointee, false)
+            .and_then(|scalar| scalar.kind.pointer_proof_type())
+            .ok_or("unsupported native pointer return interface")?
     } else {
         Scalar::mutable_kind(&source.return_type)
             .map(ScalarKind::proof_type)
@@ -290,10 +294,10 @@ fn function_interface(
                     .with_pointee_constant(*is_const)
                     .with_reference(is_reference))
             }
-            CppType::Pointer { pointee } if Scalar::is(pointee, ScalarKind::Int32, false) =>
+            CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() =>
             {
                 Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
+                    Scalar::pointer_element(pointee, false).unwrap().kind.pointer_proof_type().unwrap(),
                     carried_name.clone(),
                     None,
                 ))

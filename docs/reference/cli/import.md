@@ -272,9 +272,9 @@ reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
 currently by-value `bool` or signed/unsigned 32/64/128-bit integers, `int&`, `const int&`,
-mutable `int*`, one `const` signed-64 reference, and mutable or const references
+mutable `int*`, `unsigned int*` or `unsigned char*`, one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
-signed/unsigned 64/128-bit integers, `unsigned int`, `bool`, mutable `int*`,
+signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
 `int&`, `const int&`, or `void`.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
@@ -475,6 +475,15 @@ kernel's existing address, typed-load, and typed-store operations, so the
 sidecar must provide ordinary memory authority. Removing that authority or
 claiming the wrong pointer-mediated memory effect fails verification.
 
+The bounded native object-pointer profile also admits mutable `unsigned int*`
+and `unsigned char*`, using `uint32*` and `uint8*` contracts. Loads, stores,
+resolved calls and pointer fields retain their exact pointee type; pointer
+arithmetic uses its native element stride. Addresses of automatic `int`,
+`unsigned int` and `unsigned char` objects can be formed before initialization,
+but reads still require an initialized object. Arbitrary enum pointers do not
+acquire character byte-alias permission. Pointer locals, reinterpretation and
+other pointee kinds remain outside this slice.
+
 The `struct-member` fixture accepts one named, public, non-inheriting aggregate
 `struct` whose fields are mutable `int`, signed 64-bit integers, or mutable `int*`. Clang supplies the
 record and field declaration identities plus the exact LP64 size, alignment,
@@ -540,7 +549,8 @@ The pinned `std::span<int>` pointer/count constructor also has ordinary,
 expanded and retained coverage through native contracts; the returned `first`
 and `SpanPopBack` path remains pending.
 
-Literal `nullptr` and integer zero converted to mutable `int*`, implicitly or
+Literal `nullptr` and integer zero converted to mutable native `int*`,
+`unsigned int*` or `unsigned char*`, implicitly or
 through an explicit cast, lower to the shared C null pointer value. Returning
 or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
@@ -1202,9 +1212,9 @@ Copy construction and moves, default or partial aggregate initialization, multip
 non-destructible aggregate locals, broader nested lifetime combinations,
 virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
-Uninitialized or nested scalar locals, references to scalar locals, shadowing,
+Nested scalar locals, references to scalar locals, shadowing,
 broader address-taking, pointer locals, pointer arithmetic outside the supported
-indexed `int*` slice, nonliteral null-pointer conversions, multiple
+indexed native object-pointer slice, nonliteral null-pointer conversions, multiple
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
 indirect calls, loops,

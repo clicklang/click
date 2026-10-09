@@ -1687,7 +1687,7 @@ impl CppRecord {
                     }
                 }
                 CppType::Pointer { pointee } => {
-                    require_int32(pointee, false, "record pointer field")?;
+                    require_native_pointer_element(pointee, false, "record pointer field")?;
                     (8, 8)
                 }
                 CppType::Record {
@@ -1847,7 +1847,7 @@ impl CppFunction {
                     }
                 }
                 CppType::Pointer { pointee } => {
-                    require_int32(pointee, false, "pointer pointee")?;
+                    require_native_pointer_element(pointee, false, "pointer pointee")?;
                 }
                 _ => {
                     return Err(
@@ -2610,9 +2610,13 @@ impl CppStatement {
             } => {
                 span.validate(logical_source)?;
                 pointer.validate(places, records, logical_source)?;
-                require_mutable_int32_pointer(pointer.value_type(), "store pointer")?;
+                require_native_object_pointer(pointer.value_type(), "store pointer")?;
                 value.validate(places, records, logical_source)?;
-                require_int32(value.value_type(), false, "stored value")
+                let CppType::Pointer { pointee } = pointer.value_type() else { unreachable!("validated native pointer") };
+                if !same_scalar_type(pointee, value.value_type()) {
+                    return Err("C++ store must preserve the native pointee type".into());
+                }
+                Ok(())
             }
             Self::MemberStore {
                 object,
@@ -3153,7 +3157,7 @@ impl CppCallArgument {
                 span,
             } => {
                 if require_scalar_integer(value_type, "nested-call value").is_err()
-                    && require_mutable_int32_pointer(value_type, "nested-call value").is_err()
+                    && require_native_object_pointer(value_type, "nested-call value").is_err()
                 {
                     require_bool(value_type, false, "nested-call value")?;
                 }
@@ -3344,7 +3348,7 @@ impl CppExpression {
                 span.validate(logical_source)
             }
             Self::NullPointer { value_type, span } => {
-                require_mutable_int32_pointer(value_type, "null pointer literal")?;
+                require_native_object_pointer(value_type, "null pointer literal")?;
                 span.validate(logical_source)
             }
             Self::ConstantReference {
@@ -3389,8 +3393,12 @@ impl CppExpression {
                         require_scalar_integer(value_type, "loaded value type")
                     }
                     CppType::Pointer { .. } => {
-                        require_mutable_int32_pointer(place_type, "loaded pointer parameter")?;
-                        require_mutable_int32_pointer(value_type, "loaded pointer value type")
+                        require_native_object_pointer(place_type, "loaded pointer parameter")?;
+                        require_native_object_pointer(value_type, "loaded pointer value type")?;
+                        if !same_scalar_type(place_type, value_type) {
+                            return Err("C++ pointer load changed pointee type".into());
+                        }
+                        Ok(())
                     }
                     CppType::Record { .. } => {
                         Err("C++ record values cannot be loaded or copied".into())
@@ -3410,7 +3418,7 @@ impl CppExpression {
                         projection.span().validate(logical_source)?;
                     }
                     let (field_type, root_const) = resolve_reference_type(root, place, records)?;
-                    require_int32(field_type, false, "addressed record field")?;
+                    require_native_pointer_element(field_type, false, "addressed record field")?;
                     let mut effective_type = field_type.clone();
                     if let CppType::Integer { is_const, .. } = &mut effective_type {
                         *is_const |= root_const;
@@ -3423,12 +3431,13 @@ impl CppExpression {
                     }
                     return Ok(());
                 }
-                let CppType::LvalueReference { pointee } =
-                    validate_place_reference(place, places, logical_source)?
-                else {
-                    return Err("C++ address-of must name an integer reference".into());
+                let object_type = validate_place_reference(place, places, logical_source)?;
+                let pointee = match object_type {
+                    CppType::LvalueReference { pointee } => pointee.as_ref(),
+                    CppType::Integer { .. } => object_type,
+                    _ => return Err("C++ address-of requires a native scalar object".into()),
                 };
-                require_int32(pointee, true, "addressed reference pointee")?;
+                require_native_pointer_element(pointee, true, "addressed object type")?;
                 let CppType::Pointer { pointee: result } = value_type else {
                     return Err("C++ address-of result must be a pointer".into());
                 };
@@ -3472,8 +3481,14 @@ impl CppExpression {
             } => {
                 span.validate(logical_source)?;
                 pointer.validate(places, records, logical_source)?;
-                require_mutable_int32_pointer(pointer.value_type(), "dereference operand")?;
-                require_int32(value_type, false, "dereference result type")
+                require_native_object_pointer(pointer.value_type(), "dereference operand")?;
+                let CppType::Pointer { pointee } = pointer.value_type() else {
+                    unreachable!("validated native pointer")
+                };
+                if !same_scalar_type(pointee, value_type) {
+                    return Err("C++ dereference must preserve the native pointee type".into());
+                }
+                Ok(())
             }
             Self::MemberLoad {
                 object,
@@ -3531,7 +3546,7 @@ impl CppExpression {
                 span,
             } => {
                 span.validate(logical_source)?;
-                require_int32(pointee, false, "pointer arithmetic pointee")?;
+                require_native_pointer_element(pointee, false, "pointer arithmetic pointee")?;
                 left.validate(places, records, logical_source)?;
                 right.validate(places, records, logical_source)?;
                 let result_type = self.value_type();
@@ -4537,9 +4552,10 @@ fn validate_call_arguments(
                 }
             }
             (CppCallArgument::Value { value }, CppType::Pointer { pointee }) => {
-                require_int32(pointee, false, "call pointer parameter").is_ok()
-                    && require_mutable_int32_pointer(value.value_type(), "call pointer argument")
+                require_native_pointer_element(pointee, false, "call pointer parameter").is_ok()
+                    && require_native_object_pointer(value.value_type(), "call pointer argument")
                         .is_ok()
+                    && same_scalar_type(&parameter.value_type, value.value_type())
             }
             _ => false,
         };
@@ -5350,7 +5366,7 @@ fn require_function_return_type(
 
 fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
     if require_scalar_integer(value, label).is_ok()
-        || require_mutable_int32_pointer(value, label).is_ok()
+        || require_native_object_pointer(value, label).is_ok()
         || matches!(value, CppType::LvalueReference { pointee } if require_int32(pointee, true, label).is_ok())
     {
         Ok(())
@@ -5359,11 +5375,23 @@ fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String>
     }
 }
 
-fn require_mutable_int32_pointer(value: &CppType, label: &str) -> Result<(), String> {
+fn require_native_pointer_element(
+    value: &CppType,
+    allow_const: bool,
+    label: &str,
+) -> Result<(), String> {
+    Scalar::pointer_element(value, allow_const)
+        .map(|_| ())
+        .ok_or_else(|| {
+            format!("{label} requires a supported native int32, uint32 or unsigned-byte pointee")
+        })
+}
+
+fn require_native_object_pointer(value: &CppType, label: &str) -> Result<(), String> {
     match value {
-        CppType::Pointer { pointee } => require_int32(pointee, false, label),
+        CppType::Pointer { pointee } => require_native_pointer_element(pointee, false, label),
         _ => Err(format!(
-            "{label} is outside the supported C++ mutable `int*` slice"
+            "{label} requires a supported mutable native object pointer"
         )),
     }
 }
