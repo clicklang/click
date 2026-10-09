@@ -23961,6 +23961,23 @@ fn body_fact_is_established_through_a_pointer_alias(
     established: &PureFactContext,
     proposition: &Proposition,
 ) -> bool {
+    // A C pointer can have both a symbolic base and a scaled offset, even
+    // inside a pure-function argument. Query the actual goal's pointers,
+    // rather than only bare symbolic variables. Each candidate still needs
+    // exact evidence after capture-avoiding substitution. Null is excluded
+    // by the collector: its aliases may include every empty link in a path.
+    for pointer in crate::kernel::proof::term_rewrite::proposition_pointer_terms(proposition) {
+        for alias in established.exact_pointer_aliases(&pointer) {
+            let candidate =
+                crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_exact(&pointer, alias)
+                    .proposition(proposition);
+            if candidate != *proposition
+                && required_obligation_is_exactly_discharged(established, &candidate)
+            {
+                return true;
+            }
+        }
+    }
     let mut variables = std::collections::BTreeSet::new();
     crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
         proposition,
@@ -36994,5 +37011,116 @@ mod inline_loop_boundary_tests {
             Err(ExecutionLimit::LoopUnrolls)
         );
         assert_eq!(budget.inline_call_name.as_deref(), Some("outer"));
+    }
+}
+
+#[cfg(test)]
+mod composite_pointer_body_fact_tests {
+    use super::*;
+
+    fn pointer_fact(left: &Pointer, right: &Pointer, equal: bool) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(Box::new(left.clone()), Box::new(right.clone())),
+            equal,
+        )
+    }
+
+    #[test]
+    fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
+        let model = Pointer::symbolic(Variable(700));
+        let program = Pointer {
+            block: PointerBlock::Symbolic(Variable(701)),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::Variable(Variable(702))),
+                byte_width: 4,
+            },
+        };
+        let null = Pointer::null();
+        let alias = pointer_fact(&model, &program, true);
+        let nonnull = pointer_fact(&model, &null, false);
+        let needed = pointer_fact(&program, &null, false);
+        let context = PureFactContext::new()
+            .assume_proposition(alias.clone())
+            .assume_proposition(nonnull.clone());
+        assert!(resource_body_fact_is_established(&context, &needed));
+        assert!(!resource_body_fact_is_established(
+            &context,
+            &pointer_fact(&program, &null, true),
+        ));
+        assert!(!resource_body_fact_is_established(
+            &PureFactContext::new().assume_proposition(alias.clone()),
+            &needed,
+        ));
+        assert!(!resource_body_fact_is_established(
+            &PureFactContext::new().assume_proposition(nonnull.clone()),
+            &needed,
+        ));
+        let parent_fact = |pointer: &Pointer, value: u32| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::ClickFunctionApplication {
+                        name: "parent_is".into(),
+                        arguments: vec![PureFunctionArgument::Value(CValue::typed_pointer(
+                            pointer.clone(),
+                            CType::Int32Pointer,
+                        ))],
+                    }),
+                    Box::new(Bitvector32Term::Constant(value)),
+                ),
+                true,
+            )
+        };
+        let model_parent = parent_fact(&model, 1);
+        let needed_parent = parent_fact(&program, 1);
+        let context = context.assume_proposition(model_parent.clone());
+        assert!(resource_body_fact_is_established(&context, &needed_parent));
+        assert!(!resource_body_fact_is_established(
+            &context,
+            &parent_fact(&program, 0)
+        ));
+        assert!(!resource_body_fact_is_established(
+            &PureFactContext::new().assume_proposition(model_parent),
+            &needed_parent,
+        ));
+        let mut work = Vec::new();
+        for count in [16, 64, 256] {
+            let mut padded = context.clone();
+            for index in 0..count {
+                padded = padded.assume_proposition(pointer_fact(
+                    &Pointer::symbolic(Variable(10_000 + index)),
+                    &Pointer::symbolic(Variable(20_000 + index)),
+                    true,
+                ));
+                padded = padded.assume_proposition(pointer_fact(
+                    &Pointer::symbolic(Variable(30_000 + index)),
+                    &null,
+                    true,
+                ));
+            }
+            // Charge the deferred insertion of these new facts to building
+            // the context, then measure only the fold's indexed query.
+            padded.build_stated_proposition_index();
+            let (proved, units) = crate::instrumentation::measure_deterministic_work(|| {
+                let proved = resource_body_fact_is_established(&padded, &needed);
+                assert!(resource_body_fact_is_established(&padded, &needed_parent));
+                assert!(!resource_body_fact_is_established(
+                    &padded,
+                    &parent_fact(&program, 0)
+                ));
+                assert!(!resource_body_fact_is_established(
+                    &padded,
+                    &pointer_fact(&program, &null, true),
+                ));
+                proved
+            });
+            assert!(proved);
+            work.push(units);
+        }
+        for pair in work.windows(2) {
+            assert!(
+                pair[1] <= pair[0] * 2 + 8,
+                "unrelated aliases increased fold work: {work:?}"
+            );
+        }
     }
 }

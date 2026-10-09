@@ -1789,8 +1789,18 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
             index += character.len_utf8();
             continue;
         }
-        if character == '#' {
+        if character == '#' || source[index..].starts_with("//") {
             index += source[index..].find('\n').unwrap_or(source.len() - index);
+            continue;
+        }
+        if source[index..].starts_with("/*") {
+            let Some(end) = source[index + 2..].find("*/") else {
+                return Err(ClickError::new(format!(
+                    "{}: unterminated block comment",
+                    position_at_offset(source, index)
+                )));
+            };
+            index += 2 + end + 2;
             continue;
         }
         let start = index;

@@ -162,7 +162,7 @@ fn standard_library_initialization_is_constant_across_verification_sizes() {
 
 #[test]
 fn standard_library_syntax_errors_name_the_prelude_file_and_line() {
-    for source in ["\n\n// a `quoted` word", "\n\nfunction 42"] {
+    for source in ["\n\n/* an unclosed `quoted` comment", "\n\nfunction 42"] {
         let error = load_standard_library(source).expect_err("invalid prelude must fail");
         assert_eq!(error.kind(), ClickErrorKind::Syntax);
         assert!(

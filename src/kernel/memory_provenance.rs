@@ -4000,12 +4000,44 @@ fn cell_integer_for_read(
         | CValue::UInt8(value)
         | CValue::UInt16(value)
         | CValue::UInt32(value)
+        | CValue::Int64(value)
+        | CValue::UInt64(value)
             if &value != load =>
         {
             Some(value)
         }
         _ => None,
     }
+}
+
+/// Compare only the two named wide reads, retaining their kind and recorded
+/// history. Do not route wide arithmetic through the int32 equality graph.
+pub(crate) fn wide_loads_have_same_canonical_value(
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> bool {
+    let origin = |term: &Bitvector32Term| match term {
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::eval::registered_load_origin_term_for_variable(variable)
+        }
+        Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+        _ => None,
+    };
+    let (Some(left), Some(right)) = (origin(left), origin(right)) else {
+        return false;
+    };
+    if !matches!(
+        (&left, &right),
+        (
+            Bitvector32Term::MemoryLoad(_, _, LoadKind::Bits64),
+            Bitvector32Term::MemoryLoad(_, _, LoadKind::Bits64)
+        )
+    ) {
+        return false;
+    }
+    crate::kernel::canonical_term(&left) == crate::kernel::canonical_term(&right)
+        && !crate::kernel::reasoning::load_equality_refuted_by_history(&left, &right, assumptions)
 }
 
 /// Deep, assumption-free canonical form for a term: every load resolves its

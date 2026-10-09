@@ -94,6 +94,27 @@ pub(super) fn tokenize(
                 tokens.push(Token::Star);
                 index += 1;
             }
+            '/' if chars.get(index + 1) == Some(&'/') => {
+                index += 2;
+                while chars.get(index).is_some_and(|ch| *ch != '\n') {
+                    index += 1;
+                }
+            }
+            '/' if chars.get(index + 1) == Some(&'*') => {
+                index += 2;
+                loop {
+                    if chars.get(index) == Some(&'*') && chars.get(index + 1) == Some(&'/') {
+                        index += 2;
+                        break;
+                    }
+                    if index >= chars.len() {
+                        return Err(ClickError::new(format!(
+                            "{position}: unterminated block comment"
+                        )));
+                    }
+                    index += 1;
+                }
+            }
             '/' => {
                 tokens.push(Token::Slash);
                 index += 1;
@@ -401,4 +422,41 @@ fn is_ident_start(ch: char) -> bool {
 
 fn is_ident_continue(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+#[cfg(test)]
+mod comment_tests {
+    use super::*;
+
+    #[test]
+    fn comments_separate_tokens_and_preserve_source_positions() {
+        let source = "// ü } \n/* ignored\n{ */ int32/* gap */value; // EOF";
+        let (tokens, positions) = tokenize(source, None).unwrap();
+        assert_eq!(tokens, tokenize("int32 value;", None).unwrap().0);
+        assert_eq!((positions[0].line, positions[0].column), (3, 6));
+        assert_eq!((positions[1].line, positions[1].column), (3, 20));
+        assert_eq!(tokenize("// no newline", None).unwrap().0.len(), 0);
+        assert_eq!(tokenize("/* closed */", None).unwrap().0.len(), 0);
+    }
+
+    #[test]
+    fn comments_do_not_consume_division_or_literal_contents() {
+        let source = r#"8 / 2 '/' "// literal /* */" /* skip */ + 1 # legacy comment"#;
+        let expected = r#"8 / 2 '/' "// literal /* */" + 1"#;
+        assert_eq!(
+            tokenize(source, None).unwrap().0,
+            tokenize(expected, None).unwrap().0
+        );
+    }
+
+    #[test]
+    fn unterminated_block_comment_reports_its_opening_position() {
+        for source in ["\n  /*", "\n  /* never closes *", "\n  /* // still a block"] {
+            let error = tokenize(source, None).unwrap_err();
+            assert_eq!(
+                error.message(),
+                "line 2, column 3: unterminated block comment"
+            );
+        }
+    }
 }

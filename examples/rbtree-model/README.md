@@ -733,3 +733,10 @@ successor transplant at any depth. It preserves the exact in-order contents,
 whole-tree red-black balance, and parent consistency in the original context.
 The supporting lemmas preserve parents and in-order contents while blackening
 and commute removal with reparenting the right-subtree root.
+
+`rbtree_spine_model.click` supplies the exact left-only path model used by
+both deeper-successor C proofs. Its lemmas preserve minimum identity and parent,
+relate the minimum context to path concatenation, and derive path-link consistency
+from the original tree. `rbtree_spine_resources.click` packages the corresponding
+ownership, including the anchor frame used when grafting a black-leaf deficit
+into the transplanted successor's outer context.
