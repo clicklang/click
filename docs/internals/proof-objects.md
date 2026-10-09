@@ -265,7 +265,9 @@ names in the written arguments and then captures the referenced C locals at
 the current frontier before selecting execution or outcome checking. Thus after
 `p = q`, both `fold(tag_at(p))` and `unfold(tag_at(p))` name the resource
 at `q`; ownership at the entry value of `p` does not suffice. Capture uses indexed
-lookups for the written names, without scanning unrelated locals. The resource
+lookups for the written names, without scanning unrelated locals. Storage
+operands such as `&x` retain the C place, and explicit snapshot selectors remain
+intact during current-value substitution. The resource
 definition, read obligations, and ownership checks remain unchanged. Named-instance
 folds continue to resolve their arguments when constructing the instance.
 

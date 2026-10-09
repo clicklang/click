@@ -930,7 +930,12 @@ impl<'a> Proof<'a> {
                         })
                         .collect::<BTreeMap<_, _>>();
                     if !substitutions.is_empty() {
-                        *argument = substitute_contract_expression(argument, &substitutions)?;
+                        *argument = substitute_contract_expression(
+                            argument,
+                            crate::surface::lowering::ContractSubstitutions::for_current_c_values(
+                                &substitutions,
+                            ),
+                        )?;
                     }
                 }
             }

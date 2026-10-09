@@ -2714,6 +2714,7 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     /// by the C name the kernel binds it to (see `resource_body_c_fragment`).
     body_fields_as_c_names: bool,
     contract_result_only: bool,
+    current_c_values: bool,
 }
 
 impl<'a> ContractSubstitutions<'a> {
@@ -2724,6 +2725,7 @@ impl<'a> ContractSubstitutions<'a> {
             instance_renames: Cow::Borrowed(&NO_INSTANCE_RENAMES),
             body_fields_as_c_names: false,
             contract_result_only: false,
+            current_c_values: false,
         }
     }
 
@@ -2740,6 +2742,17 @@ impl<'a> ContractSubstitutions<'a> {
 
     pub(in crate::surface) fn is_contract_result_binding(&self) -> bool {
         self.contract_result_only
+    }
+
+    /// Capture current C values without replacing the storage named by `&x`
+    /// or changing a value explicitly read from a historical snapshot.
+    pub(in crate::surface) fn for_current_c_values(
+        values: &'a BTreeMap<String, ContractExpression>,
+    ) -> Self {
+        Self {
+            current_c_values: true,
+            ..Self::new(values)
+        }
     }
 
     /// Value substitutions that also spell each scalar field of the resource
@@ -2766,6 +2779,7 @@ impl<'a> ContractSubstitutions<'a> {
             instance_renames: Cow::Borrowed(instance_renames),
             body_fields_as_c_names: false,
             contract_result_only: false,
+            current_c_values: false,
         }
     }
 
@@ -2812,6 +2826,7 @@ impl<'a> ContractSubstitutions<'a> {
             instance_renames,
             body_fields_as_c_names: self.body_fields_as_c_names,
             contract_result_only: self.contract_result_only,
+            current_c_values: self.current_c_values,
         }
     }
 }
@@ -2971,6 +2986,24 @@ pub(in crate::surface) fn substitute_contract_expression_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
     match expression {
+        ContractExpression::Old(_) | ContractExpression::At { .. }
+            if substitutions.current_c_values =>
+        {
+            Ok(expression.clone())
+        }
+        ContractExpression::CUnary { operand, lowered }
+            if substitutions.current_c_values
+                && matches!(
+                    lowered,
+                    CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_)
+                )
+                && matches!(
+                    contract_expression_as_c_fragment(operand),
+                    Some(CExpression::Variable(_))
+                ) =>
+        {
+            Ok(expression.clone())
+        }
         ContractExpression::CUnary { operand, lowered } => {
             let operand = substitute_contract_expression_in(operand, substitutions)?;
             let fragment = match contract_expression_as_c_fragment(&operand) {
@@ -3509,6 +3542,12 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             then_branch: Box::new(substitute_c_fragment_in(then_branch, substitutions)?),
             else_branch: Box::new(substitute_c_fragment_in(else_branch, substitutions)?),
         }),
+        CExpression::AddressOf(body) | CExpression::CheckedObjectAddress(body)
+            if substitutions.current_c_values
+                && matches!(body.as_ref(), CExpression::Variable(_)) =>
+        {
+            Ok(expression.clone())
+        }
         CExpression::AddressOf(body) => Ok(CExpression::AddressOf(Box::new(
             substitute_c_fragment_in(body, substitutions)?,
         ))),
