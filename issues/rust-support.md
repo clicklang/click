@@ -45,8 +45,9 @@ lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
 General signed-range partition lemmas establish aligned full-batch remainders
 and decreasing actual outer-iterator remaining counts, without truncating usize
 metadata. Full outer-batch induction and checksum correctness remain incomplete.
-The shared mathematical specification has checked append and weight-shift
-recurrences, nonnegative sums, residue addition, output and packing bounds,
+The shared mathematical specification has checked one- and four-byte append
+recurrences, including the ordered weights 4, 3, 2, 1 for a vector step,
+weight shifts, nonnegative sums, residue addition, output and packing bounds,
 and preservation of canonical seeds on empty input. It is not yet connected
 to either implementation’s general computation.
 
