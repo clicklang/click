@@ -2450,6 +2450,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_remainder_of_lt"
                 | "uint32_less_equal_to_integer"
                 | "uint32_less_equal_of_to_integer"
+                | "uint32_equal_of_to_integer"
                 | "uint32_lt_implies_positive_difference"
                 | "uint32_gt_implies_reversed_lt"
                 | "uint32_lt_implies_reversed_gt"
@@ -2554,6 +2555,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint32_mul_guard_by_integer_bound"
         | "uint32_less_equal_to_integer"
         | "uint32_less_equal_of_to_integer"
+        | "uint32_equal_of_to_integer"
         | "uint32_remainder_less_than_divisor"
         | "uint32_remainder_of_lt" => (2, 1),
         "uint32_positive_predecessor_strictly_decreases" => (1, 1),
@@ -2713,6 +2715,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "uint32_less_equal_of_to_integer" => {
                 crate::kernel::prove_uint32_less_equal_of_to_integer(value, uint32_parameter(1)?)
+            }
+            "uint32_equal_of_to_integer" => {
+                crate::kernel::prove_uint32_equal_of_to_integer(value, uint32_parameter(1)?)
             }
             "uint32_remainder_less_than_divisor" => {
                 crate::kernel::prove_uint32_remainder_less_than_divisor(value, uint32_parameter(1)?)
@@ -4016,6 +4021,25 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
             ] {
                 assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
             }
+        }
+    }
+
+    #[test]
+    fn uint32_equality_bridge_checks_exact_declaration() {
+        let source = "theorem uint32_equal_of_to_integer(left: uint32, right: uint32) { requires to_integer(left) == to_integer(right); ensures left == right; }";
+        verify_standard_declaration(source).unwrap();
+        for invalid in [
+            source.replace("requires to_integer(left) == to_integer(right);", ""),
+            source.replace(
+                "requires to_integer(left) == to_integer(right);",
+                "requires to_integer(left) <= to_integer(right);",
+            ),
+            source.replace("ensures left == right;", "ensures true;"),
+            source.replace("ensures left == right;", "ensures left <= right;"),
+            source.replace("left: uint32", "left: int32"),
+            source.replace("right: uint32", "right: uint64"),
+        ] {
+            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
         }
     }
 

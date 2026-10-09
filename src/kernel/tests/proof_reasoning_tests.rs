@@ -7438,6 +7438,56 @@ fn int32_order_observation_axiom_agrees_with_boundary_model() {
 }
 
 #[test]
+fn uint32_integer_equality_bridge_matches_independent_unsigned_boundary_values() {
+    let theorem = prove_uint32_equal_of_to_integer(
+        Bitvector32Term::Variable(Variable(924)),
+        Bitvector32Term::Variable(Variable(925)),
+    );
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("equality needs its Integer premise");
+    };
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premise.as_ref() else {
+        panic!("expected exact Integer equality");
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(x, y), true) = conclusion.as_ref()
+    else {
+        panic!("expected exact machine equality");
+    };
+    let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref()) else {
+        panic!("expected machine observations");
+    };
+    assert_eq!(a.ty(), MachineIntegerType::UInt32);
+    assert_eq!(b.ty(), MachineIntegerType::UInt32);
+    assert_eq!(a.value(), x.as_ref());
+    assert_eq!(b.value(), y.as_ref());
+    for left in [
+        0,
+        1,
+        0x7fff_ffff,
+        0x8000_0000,
+        0x8000_0001,
+        u32::MAX - 1,
+        u32::MAX,
+    ] {
+        for right in [
+            0,
+            1,
+            0x7fff_ffff,
+            0x8000_0000,
+            0x8000_0001,
+            u32::MAX - 1,
+            u32::MAX,
+        ] {
+            // The unsigned observation and the bit pattern agree, including
+            // patterns above the signed sign bit.
+            let observed_equal = u64::from(left) == u64::from(right);
+            let bits_equal = left == right;
+            assert_eq!(observed_equal, bits_equal, "{left}, {right}");
+        }
+    }
+}
+
+#[test]
 fn int32_integer_equality_bridge_matches_independent_signed_boundary_values() {
     let theorem = prove_int32_equal_of_to_integer(
         Bitvector32Term::Variable(Variable(922)),

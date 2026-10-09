@@ -352,6 +352,11 @@ mod tests {
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
+            (
+                "uint32_equal_of_to_integer",
+                "to_integer(left) == to_integer(right)",
+                "left == right",
+            ),
         ] {
             let source = format!(
                 "theorem bridge(left: uint32, right: uint32) {{ requires {premise}; ensures {conclusion} by {{ apply({name}(left, right)); }} }}"

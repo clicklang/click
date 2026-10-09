@@ -1,6 +1,53 @@
+# One increment cannot produce two contributions
+
+The worker contract claims two contributions for its single increment and
+single credit. Only one is created under the authority, so the produced
+resources are missing.
+
+```c filename=mutex_counter_doubled_contribution_rejected.c
+#include <pthread.h>
+#include <stddef.h>
+
+struct mutex_counter {
+    pthread_mutex_t mutex;
+    unsigned int value;
+};
+
+void *increment_counter(void *argument) {
+    struct mutex_counter *counter = argument;
+    (void)pthread_mutex_lock(&counter->mutex);
+    counter->value = counter->value + 1u;
+    (void)pthread_mutex_unlock(&counter->mutex);
+    return NULL;
+}
+
+int increment_twice(struct mutex_counter *counter) {
+    pthread_t first;
+    pthread_t second;
+
+    counter->value = 0u;
+    if (pthread_mutex_init(&counter->mutex, NULL) != 0) return 0;
+    if (pthread_create(&first, NULL, increment_counter, counter) != 0) {
+        (void)pthread_mutex_destroy(&counter->mutex);
+        return 0;
+    }
+    if (pthread_create(&second, NULL, increment_counter, counter) != 0) {
+        (void)pthread_join(first, NULL);
+        (void)pthread_mutex_destroy(&counter->mutex);
+        return 0;
+    }
+
+    (void)pthread_join(first, NULL);
+    (void)pthread_join(second, NULL);
+    (void)pthread_mutex_destroy(&counter->mutex);
+    return 1;
+}
+```
+
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
-verifying "mutex_counter.c";
+verifying "mutex_counter_doubled_contribution_rejected.c";
 
 # Each worker that has incremented the counter holds one contribution, and
 # each worker still to run holds one credit. The control owns the counter and
@@ -27,7 +74,7 @@ void* increment_counter(void* argument) {
         counter_control((struct mutex_counter*)argument)
     );
     consumes credit((struct mutex_counter*)argument);
-    produces contribution((struct mutex_counter*)argument);
+    produces 2 of contribution((struct mutex_counter*)argument);
     ensures result == 0;
 } by {
     step();
@@ -159,3 +206,8 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     simp();
 }
+```
+
+```expect
+fail: `increment_counter.ensures_1` unproved
+```

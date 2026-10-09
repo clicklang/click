@@ -52,6 +52,12 @@ theorem use_uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
         apply(uint32_less_equal_of_to_integer(left, right));
     }
 }
+theorem use_uint32_equal_of_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right by {
+        apply(uint32_equal_of_to_integer(left, right));
+    }
+}
 theorem use_uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
     ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));

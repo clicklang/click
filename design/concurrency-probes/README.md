@@ -12,9 +12,15 @@ in `tests/examples.rs` pins the C bytes.
 The [mutex counter source](mutex_counter.c) is frozen separately. Its two
 workers mutate the same ordinary cell under one lock. The
 [shared-protocol design](mutex-shared-protocol.md) records the authority and
-interference rules. Typed mutex use now crosses worker boundaries, and the
-memory-safety control verifies the unchanged counter. The exact-two result
-remains unproved here. Both earlier proposals, the
+interference rules. The [sidecar](mutex_counter.click) verifies the unchanged
+counter and its exact result: when both workers start and join, the counter
+is two. The mutex protects a control that owns the counter and the authorities
+for two populations, contributions already made and credits still to spend;
+each worker spends a credit and creates a contribution while it holds the
+lock, so the control's facts tie the counter to the contribution count.
+`mdtests/mutex_counter_*_rejected.md` refuse a wrong increment, a fabricated
+credit, a doubled contribution, and a total read before the second join. Both
+earlier proposals, the
 [counted-resource investigation](shared-count-authority.md) and the
 [explicit-authority proposal](explicit-authority.md), are superseded by
 population authority: a mutex protects an ordinary control that owns

@@ -9236,22 +9236,29 @@ fn prove_machine_integer_order_bridge(
 /// have the same 32-bit pattern. No overflow premise or conversion back is
 /// needed, since every signed int32 pattern has one exact Integer value.
 pub fn prove_int32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_signed_integer_equality_bridge(MachineIntegerType::Int32, left, right)
+    prove_integer_equality_bridge(MachineIntegerType::Int32, left, right)
 }
 
 /// Signed int64 observation is injective, including the full 64-bit extrema.
 pub fn prove_int64_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_signed_integer_equality_bridge(MachineIntegerType::Int64, left, right)
+    prove_integer_equality_bridge(MachineIntegerType::Int64, left, right)
 }
 
-fn prove_signed_integer_equality_bridge(
+/// Unsigned uint32 observation is injective: every 32-bit pattern has one
+/// exact Integer value in `0..=4294967295`, including the patterns above the
+/// signed sign bit, so equal observations have the same pattern.
+pub fn prove_uint32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_integer_equality_bridge(MachineIntegerType::UInt32, left, right)
+}
+
+fn prove_integer_equality_bridge(
     ty: MachineIntegerType,
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(ty, value)
-            .expect("typed signed operands have exact Integer interpretations")
+            .expect("typed operands have exact Integer interpretations")
     };
     let integer = Proposition::ConditionIs(
         ConditionTerm::IntegerEqual(observe(left.clone()).into(), observe(right.clone()).into()),
@@ -9260,7 +9267,9 @@ fn prove_signed_integer_equality_bridge(
     let native = match ty {
         MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
         MachineIntegerType::Int64 => ConditionTerm::int64_equal(left, right),
-        _ => unreachable!("signed equality bridges admit only int32/int64"),
+        // Equality of the 32-bit pattern does not depend on its signedness.
+        MachineIntegerType::UInt32 => ConditionTerm::equal(left, right),
+        _ => unreachable!("integer equality bridges admit only int32/int64/uint32"),
     };
     Theorem::new(Proposition::Implies(
         Box::new(integer),
@@ -9279,7 +9288,7 @@ pub fn prove_int32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32
 pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
-            .expect("typed signed operands have exact Integer interpretations")
+            .expect("typed operands have exact Integer interpretations")
     };
     let native_defined = Proposition::And(
         Box::new(Proposition::ConditionIs(
@@ -9329,7 +9338,7 @@ fn prove_signed_operation_to_integer(
 ) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(ty, value)
-            .expect("typed signed operands have exact Integer interpretations")
+            .expect("typed operands have exact Integer interpretations")
     };
     let (overflow, machine) = match (ty, subtract) {
         (MachineIntegerType::Int32, false) => (
