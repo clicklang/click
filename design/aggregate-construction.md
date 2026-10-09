@@ -5,8 +5,8 @@ This is the implementation contract for
 The shared kernel supports a bounded complete-object construction return mode.
 Existing C aggregate returns remain field copies. C++ now admits bounded
 returned construction and forwarding under a body-validated copy-equivalence
-restriction; assignment temporaries and the pinned end-to-end target remain
-pending.
+restriction. Assignment uses a distinct RHS temporary and full-expression
+retirement; the pinned end-to-end target remains pending.
 
 The copy-return implementation now checks source initialization inside the
 materialization transition, before allocating or copying a result. Kernel tests
@@ -235,8 +235,8 @@ contract. Padding and object representation are outside the admitted observation
 profile. A shared checked regression constructs directly or through one/several
 explicit copies and retirement, preserving the descriptor and external backing.
 
-Artifact schema 51 distinguishes resolved returned construction, aggregate-call
-forwarding and initialization of a new object from a construction call. The
+Artifact schema 52 distinguishes resolved returned construction, aggregate-call
+forwarding, new-object initialization and assignment from a construction call. The
 importer recomputes eligibility; no serialized eligibility flag grants access.
 Source and signature validation still checks declaration identities, exact
 nominal types, arguments, field order and cleanup. Named return candidates,
@@ -244,8 +244,17 @@ moves, user-defined copies, nontrivial destruction, mixed copy/construction
 return branches and storage-sensitive returned constructors remain refused.
 Construction-return functions require `noexcept` and no exit cleanup in this
 slice. Existing `ReturnRecord` copy-only functions retain the copy result mode.
-Assignment from a returned aggregate remains refused until a distinct RHS
-object and its full-expression lifetime are represented.
+For assignment, the exporter requires a resolved trivial copy assignment with
+an exact nominal prvalue call result materialized for the full expression.
+C++20 `[expr.ass]` sequences RHS evaluation before assignment; `[class.temporary]`
+ends the temporary's lifetime after the full expression. Lowering evaluates
+arguments, allocates distinct raw RHS storage, calls the factory into it, copies
+into the live LHS and retires the RHS. The lifetime event is derived separately
+from the destructor inventory, because trivial destruction does not erase the
+object's lifetime. Direct construction over the initialized LHS is never used.
+References into independently live backing survive this retirement under their
+existing authority. Move assignment, user-defined assignment and other temporary
+shapes remain outside this slice.
 
 The identity-sensitive `Node` is the shared-kernel test oracle. It is not a
 universal source claim about trivially copyable C++ returns. The first real

@@ -18880,22 +18880,16 @@ fn copy_aggregate_fields(
                     | CType::UInt8Pointer
                     | CType::Int32PointerPointer
                     | CType::UInt8PointerPointer => {
-                        let pointee_type = element_type.pointee_type()?;
-                        let load = crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
-                            source_field.clone(),
-                            LoadKind::of_type(element_type)?,
-                        );
-                        Some(CValue::typed_pointer(
-                            Pointer {
-                                block: source_field.block.clone(),
-                                offset: PointerOffsetTerm::scale_int32(
-                                    load,
-                                    i64::from(pointee_type.byte_width()),
-                                ),
-                            },
+                        // An unknown pointer is the value read from this cell,
+                        // not an offset in the object holding it. Use the same
+                        // canonical typed read as ordinary pointer loads so a
+                        // trivial copy preserves provenance and checked aliases.
+                        crate::kernel::eval::symbolic_storage_cell_value(
+                            &memory,
+                            &source_field,
                             element_type,
-                        ))
+                            true,
+                        )
                     }
                     CType::UInt16 => Some(CValue::UInt16(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),

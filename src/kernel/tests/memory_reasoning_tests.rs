@@ -6489,6 +6489,38 @@ mod membership_needs_an_unwrapped_difference {
         ));
     }
 
+    // Raw result storage and typed field writes use different element units.
+    // Containment must compare complete byte extents, including shifted fields.
+    #[test]
+    fn constant_typed_fields_fit_only_inside_their_raw_byte_extent() {
+        let at = Pointer::symbolic(Variable(93_953));
+        let bytes = CMemoryRange::new_with_element_width(at.clone(), 0u32.into(), 16u32.into(), 1);
+        let field = |offset, width, count| {
+            CMemoryRange::new_with_element_width(
+                at.offset_by_bytes(offset),
+                0u32.into(),
+                count,
+                width,
+            )
+        };
+        for range in [
+            field(0, 8, 1u32.into()),
+            field(8, 8, 1u32.into()),
+            field(4, 4, 3u32.into()),
+        ] {
+            assert!(crate::kernel::assumptions::memory_range_shallowly_contained(&range, &bytes));
+        }
+        for range in [
+            CMemoryRange::new_with_element_width(at.clone(), (-1i32 as u32).into(), 0u32.into(), 4),
+            field(12, 8, 1u32.into()),
+            field(8, 8, 2u32.into()),
+        ] {
+            assert!(!crate::kernel::assumptions::memory_range_shallowly_contained(&range, &bytes));
+        }
+        let symbolic = field(0, 8, Bitvector32Term::Variable(Variable(93_954)));
+        assert!(!crate::kernel::assumptions::memory_range_shallowly_contained(&symbolic, &bytes));
+    }
+
     #[test]
     fn a_child_range_is_contained_by_its_count_or_by_a_forward_parent() {
         let index = Bitvector32Term::Variable(Variable(93_952));

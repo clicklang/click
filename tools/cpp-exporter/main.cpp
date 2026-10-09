@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 51;
+    artifact["schema"] = 52;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -981,6 +981,13 @@ private:
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
+      // A trivial record assignment still materializes the RHS temporary. Its
+      // lifetime is represented by the explicit assignment operation below.
+      if (const auto *operation = llvm::dyn_cast_or_null<clang::CXXOperatorCallExpr>(call);
+          operation != nullptr && operation->getOperator() == clang::OO_Equal &&
+          !cleanups->cleanupsHaveSideEffects()) {
+        return lower_statement(operation, function, allow_local_declaration, allow_nested_scope);
+      }
       if (callee) {
         auto contract = library_assertions_.find(callee->getQualifiedNameAsString());
         if (contract != library_assertions_.end() &&
@@ -1056,10 +1063,17 @@ private:
           operation != nullptr && operation->getOperator() == clang::OO_Equal) {
         const auto *method =
             llvm::dyn_cast_or_null<clang::CXXMethodDecl>(operation->getDirectCallee());
+        const clang::Expr *assignment_rhs = operation->getNumArgs() == 2
+            ? operation->getArg(1)->IgnoreParens() : nullptr;
+        // IgnoreParenImpCasts also erases materialization wrappers. Retain that
+        // lifetime evidence while stripping only implicit qualification casts.
+        while (const auto *cast = llvm::dyn_cast_or_null<clang::ImplicitCastExpr>(assignment_rhs))
+          assignment_rhs = cast->getSubExpr()->IgnoreParens();
         if (method != nullptr && method->isCopyAssignmentOperator() &&
             method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
             method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
-            operation->getArg(0)->isLValue() && operation->getArg(1)->isLValue()) {
+            operation->getArg(0)->isLValue() && operation->getArg(1)->isLValue() &&
+            !llvm::isa_and_nonnull<clang::MaterializeTemporaryExpr>(assignment_rhs)) {
           auto target = lower_place_reference(operation->getArg(0)->IgnoreParenImpCasts(), function);
           auto source = lower_place_reference(operation->getArg(1)->IgnoreParenImpCasts(), function);
           if (!target || !source) return std::nullopt;
@@ -1070,8 +1084,33 @@ private:
           result["span"] = span(operation->getSourceRange());
           return Json(std::move(result));
         }
+        if (method != nullptr && method->isCopyAssignmentOperator() &&
+            method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
+            method->getParent()->isTriviallyCopyable() &&
+            method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
+            operation->getArg(0)->isLValue()) {
+          const auto *temporary = llvm::dyn_cast_or_null<clang::MaterializeTemporaryExpr>(assignment_rhs);
+          const auto *rhs = temporary == nullptr ? nullptr : llvm::dyn_cast<clang::CallExpr>(
+              temporary->getSubExpr()->IgnoreParenImpCasts());
+          if (rhs != nullptr && rhs->isPRValue() &&
+              temporary->getStorageDuration() == clang::SD_FullExpression &&
+              context_.hasSameUnqualifiedType(rhs->getType(), operation->getArg(0)->getType())) {
+            auto target = lower_place_reference(operation->getArg(0)->IgnoreParenImpCasts(), function);
+            auto value_type = lower_type(rhs->getType(), rhs->getExprLoc());
+            auto call = lower_call_operation(rhs, function, true);
+            if (!target || !value_type || !call) return std::nullopt;
+            llvm::json::Object result;
+            result["kind"] = "assign_construction_call";
+            result["target"] = std::move(*target);
+            result["value_type"] = std::move(*value_type);
+            result["callee"] = std::move(call->callee);
+            result["arguments"] = std::move(call->arguments);
+            result["span"] = span(operation->getSourceRange());
+            return Json(std::move(result));
+          }
+        }
         fail(operation->getExprLoc(),
-             "C++ record assignment requires a trivial copy assignment with live record lvalues and trivial destruction");
+             "C++ record assignment requires a trivial copy assignment between live lvalues or from a full-expression construction-call temporary with trivial destruction");
         return std::nullopt;
       }
       const auto *callee = call->getDirectCallee();

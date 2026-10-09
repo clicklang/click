@@ -6057,6 +6057,12 @@ pub(in crate::kernel) fn memory_range_shallowly_contained(
 /// * both counts come from [`affine_range_element_count`], which is the count
 ///   and not a bound on it.
 ///
+/// Ranges with different element widths have a narrower route: all endpoints
+/// and the byte delta between their bases must be constant. Checked `i64`
+/// multiplication and addition then compare their exact byte intervals. This
+/// connects raw construction storage with typed field footprints without
+/// treating symbolic or modular endpoint arithmetic as byte arithmetic.
+///
 /// A parent whose endpoints have no constant difference has no count, and then
 /// the only route left compares the two ranges' *ends* — `p[3..n]` inside
 /// `p[0..n]`. That reads `end` as `start + count`, so it additionally asks
@@ -6076,7 +6082,32 @@ fn memory_range_contained_by_exact_arithmetic(
     assumptions: Option<&PureFactContext>,
 ) -> bool {
     if range.element_width() != parent.element_width() {
-        return false;
+        // Construction owns raw bytes while a constructor's write footprint
+        // names typed fields. Constant bounds can be compared in exact byte
+        // coordinates without modular arithmetic or changing either range.
+        let Some(delta) = range
+            .base()
+            .exact_element_delta_from_base(parent.base(), 1, assumptions)
+        else {
+            return false;
+        };
+        if !delta.is_constant() {
+            return false;
+        }
+        let byte_endpoint = |endpoint: &Bitvector32Term, width: u32, offset: i64| {
+            signed_bitvector_constant(endpoint)?
+                .checked_mul(i64::from(width))?
+                .checked_add(offset)
+        };
+        let (Some(start), Some(end), Some(parent_start), Some(parent_end)) = (
+            byte_endpoint(range.start(), range.element_width(), delta.constant),
+            byte_endpoint(range.end(), range.element_width(), delta.constant),
+            byte_endpoint(parent.start(), parent.element_width(), 0),
+            byte_endpoint(parent.end(), parent.element_width(), 0),
+        ) else {
+            return false;
+        };
+        return parent_start <= start && start <= end && end <= parent_end;
     }
     let Some(base_delta) = range.base().exact_element_delta_from_base(
         parent.base(),

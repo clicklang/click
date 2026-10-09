@@ -71,6 +71,18 @@ impl LifetimePlan {
         Ok(Self { destructors })
     }
 
+    /// Trivial temporaries still have a lifetime. This event is derived from the
+    /// resolved full expression, independently of the destructor inventory.
+    pub(super) fn full_expression_temporary_type<'s>(
+        &self,
+        statement: &'s CppStatement,
+    ) -> Option<&'s CppType> {
+        match statement {
+            CppStatement::AssignConstructionCall { value_type, .. } => Some(value_type),
+            _ => None,
+        }
+    }
+
     /// This event occurs only on the initializer's successful continuation.
     pub(super) fn constructed<'a>(
         &'a self,

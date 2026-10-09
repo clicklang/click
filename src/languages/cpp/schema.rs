@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 51;
+pub(crate) const EXPORT_SCHEMA: u32 = 52;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -841,6 +841,15 @@ pub enum CppInitializer {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppStatement {
     /// A Clang-resolved trivial copy assignment; no user-defined body is erased.
+    /// Materialize a call result, trivially copy it into a live object, then end
+    /// the RHS temporary's lifetime at this full-expression boundary.
+    AssignConstructionCall {
+        target: CppPlaceReference,
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
+        span: CppSpan,
+    },
     TrivialCopy {
         target: CppPlaceReference,
         source: CppPlaceReference,
@@ -2477,6 +2486,22 @@ impl CppStatement {
         match self {
             Self::MemberConstruct { .. } => Err("C++ embedded construction is only supported in the constructor member-initializer prefix".into()),
             Self::Unreachable { span } => span.validate(logical_source),
+            Self::AssignConstructionCall { target, callee, arguments, value_type, span } => {
+                let root = validate_root_reference(target, places, logical_source)?;
+                if matches!(root, CppType::Record { is_const: true, .. })
+                    || matches!(root, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. })) {
+                    return Err("C++ construction assignment cannot write through a const record".into());
+                }
+                let (target_type, _) = records.resolve_path(root, &target.projections)?;
+                let CppType::Record { declaration_id, name, is_const: false } = target_type else {
+                    return Err("C++ construction assignment requires a mutable live record target".into());
+                };
+                if target_type != value_type {
+                    return Err("C++ construction assignment requires the exact nominal result type".into());
+                }
+                validate_trivial_record_value(records, declaration_id, name)?;
+                validate_call(callee, arguments, span, places, records, logical_source)
+            }
             Self::TrivialCopy {
                 target,
                 source,
@@ -3730,6 +3755,7 @@ impl CppStatement {
             | Self::MemberStore { .. }
             | Self::MemberConstruct { .. }
             | Self::TrivialCopy { .. }
+            | Self::AssignConstructionCall { .. }
             | Self::Assume { .. }
             | Self::LibraryAssert { .. }
             | Self::Call { .. } => false,
@@ -4033,6 +4059,12 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 collect_nested_calls(arguments, calls);
             }
             CppStatement::ReturnAggregateCall {
+                callee,
+                arguments,
+                value_type,
+                ..
+            }
+            | CppStatement::AssignConstructionCall {
                 callee,
                 arguments,
                 value_type,
@@ -4690,6 +4722,7 @@ fn validate_statement_constant_references(
                 )?;
             }
             CppStatement::ReturnConstruct { arguments, .. }
+            | CppStatement::AssignConstructionCall { arguments, .. }
             | CppStatement::ReturnAggregateCall { arguments, .. }
             | CppStatement::Call { arguments, .. }
             | CppStatement::ReturnCall { arguments, .. }

@@ -95,7 +95,8 @@ pub(super) fn validate_returns<'a>(
                 CppStatement::Declare {
                     initializer: CppInitializer::ConstructionCall { callee, .. },
                     ..
-                } => {
+                }
+                | CppStatement::AssignConstructionCall { callee, .. } => {
                     let target = functions
                         .get(&callee.declaration_id)
                         .ok_or("C++ construction initializer has no reachable definition")?;

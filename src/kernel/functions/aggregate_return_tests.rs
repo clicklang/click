@@ -1444,3 +1444,64 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
         }
     }
 }
+
+// A summary can establish initialized storage without naming its pointer field's
+// value. Copying that value must use the same typed read as an ordinary load,
+// including when the storage holding it ends immediately afterwards.
+#[test]
+fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut state =
+        allocate_destination(&CState::new().with_population_creation_tracking(), "source");
+    state = allocate_destination(&state, "target");
+    let source = state
+        .locals
+        .aggregate_object_pointer("source")
+        .unwrap()
+        .clone();
+    let target = state
+        .locals
+        .aggregate_object_pointer("target")
+        .unwrap()
+        .clone();
+    state.set_memory(state.memory.clone().with_initialized_object(&source, 16));
+    let expected = crate::kernel::eval::symbolic_storage_cell_value(
+        &state.memory,
+        &source,
+        CType::Int32Pointer,
+        true,
+    )
+    .unwrap();
+    let checked = prove_symbolic_c_execution_paths_with_environment(
+        state,
+        c_seq(
+            c_copy_aggregate(c_variable("target"), c_variable("source"), node_layout()),
+            c_end_automatic_lifetimes(vec!["source".into()]),
+        ),
+        PureFactContext::new(),
+        CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+    );
+    let [path] = checked.paths() else {
+        panic!("one checked copy path");
+    };
+    let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
+        Proposition::CStatementExecutes {
+            outcome: CStatementOutcome::Normal(state),
+            ..
+        }
+        | Proposition::CStatementVerifies {
+            outcome: CStatementOutcome::Normal(state),
+            ..
+        } => state,
+        _ => panic!("initialized unknown pointer copy must complete"),
+    };
+    assert_eq!(state.memory.known_value(&target), Some(expected));
+    assert!(state.locals.aggregate_object_pointer("source").is_none());
+    assert!(
+        state
+            .resources
+            .memory_write_range(&target, 16, &PureFactContext::new())
+            .is_some()
+    );
+}

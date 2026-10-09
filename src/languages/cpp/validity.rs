@@ -326,6 +326,19 @@ impl Metadata<'_> {
         for statement in body {
             crate::instrumentation::record_deterministic_work(1);
             let span = match statement {
+                CppStatement::AssignConstructionCall {
+                    target,
+                    callee,
+                    arguments,
+                    value_type,
+                    span,
+                } => {
+                    self.reference(target)?;
+                    self.callee(callee)?;
+                    self.arguments(arguments)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
+                    span
+                }
                 CppStatement::TrivialCopy {
                     target,
                     source,

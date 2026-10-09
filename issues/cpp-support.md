@@ -265,7 +265,7 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    [aggregate-construction-design.md](aggregate-construction-design.md).
    C++ returned construction, destination forwarding and temporary retirement
    depend on that work. The int32 field-address and constructor/copy identity
-   prerequisites are implemented; artifact schema 51 requires refreshing earlier
+   prerequisites are implemented; artifact schema 52 requires refreshing earlier
    locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
    above as the concrete C++ acceptance target.
    A bounded returned-construction slice now validates argument-value-only
@@ -321,7 +321,7 @@ path, retaining const qualification and requiring caller-held authority for
 loads and writes. Literal `nullptr` and zero conversions to mutable `int*` reuse
 the shared C null pointer value, without grants of storage authority. Nonliteral
 `nullptr_t` conversions, other pointee types and nonzero integer casts remain
-outside this profile. Artifact schema 51 requires refreshing earlier locks.
+outside this profile. Artifact schema 52 requires refreshing earlier locks.
 
 `first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
 behind the shared construction dependency. Other scalar/import work still needs

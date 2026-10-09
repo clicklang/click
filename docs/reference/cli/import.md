@@ -456,9 +456,28 @@ construction with trivial destruction and no base subobjects. Sidecars retain
 leaves, through the shared aggregate return model and checked nominal layouts.
 Each copied leaf needs initialized read authority. Copying a pointer field does
 not transfer ownership of its pointees or grant permission to read them. Copies
-complete before automatic cleanup. User-defined copies, moves, returns of whole
-automatic records, prvalue record construction and aggregate-return calls remain outside this slice. Artifact
-schema 46 requires an explicit refresh of earlier locks.
+complete before automatic cleanup. User-defined copies, moves and named returns
+of automatic records remain outside the copy-return slice.
+
+Bounded prvalue construction returns, aggregate-call forwarding and initialization
+from such a call use the shared construction mode. The importer recomputes an
+eligibility restriction over constructor and helper bodies: their stored values
+depend on evaluated by-value arguments and constants, without aliasable memory
+reads, storage-address escape or runtime effects. Embedded constructors and pure
+helpers satisfy the same restriction. Ordinary checked helper contracts remain
+required. This establishes field-value equivalence across C++20's permitted
+trivial result copies; a prvalue category alone is not a no-copy guarantee.
+Native result types and contracts are unchanged, and incomplete construction is
+refused. Address-sensitive returned constructors, nontrivial destruction, NRVO
+and mixed copy/construction return branches remain outside this profile.
+
+Assignment from an admitted construction-return call requires Clang-resolved
+trivial copy assignment and an exact nominal RHS temporary lasting for the full
+expression. Click constructs into distinct raw RHS storage, copies into the live
+LHS and retires the RHS. References into separate backing remain usable only
+under the caller's existing authority. Move assignment, user-defined assignment
+and other materialization shapes remain refused. Artifact schema 52 requires an
+explicit refresh of earlier locks.
 
 Taking the address of a supported int32 record field uses its checked Clang
 projection and the shared storage-lifetime checks. It preserves const
@@ -466,8 +485,8 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 50 requires refreshing earlier
-locks. Returned construction destinations remain the next shared-model work.
+rebasing them to a new object. Artifact schema 52 requires refreshing earlier
+locks. Returned constructors use the narrower eligibility restriction above.
 
 Native int32 reference results and locals can also bind supported record fields
 through that same checked field-address path. Const qualification is preserved;
@@ -475,8 +494,9 @@ a returned alias grants no backing authority. An external backing reference
 can remain readable and writable after a descriptor's destructor clears its
 pointer field, when the caller retains the corresponding backing authority.
 A reference into a destroyed automatic object's own field cannot be read.
-These lifetime regressions use synthetic descriptors, rather than claiming
-support for construction of pinned `std::span` descriptors.
+The pinned `std::span<int>` pointer/count constructor also has ordinary,
+expanded and retained coverage through native contracts; the returned `first`
+and `SpanPopBack` path remains pending.
 
 Literal `nullptr` and integer zero converted to mutable `int*`, implicitly or
 through an explicit cast, lower to the shared C null pointer value. Returning
@@ -484,7 +504,7 @@ or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 50; refresh earlier locks.
+These nodes use artifact schema 52; refresh earlier locks.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout

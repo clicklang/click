@@ -122,7 +122,8 @@ temporary retirement. Bounded C++ returned construction, forwarding and new-obje
 initialization now select the shared construction mode. Their typed constructors
 and value helpers must satisfy the copy-equivalence restriction below; direct
 local constructors retain the existing address-sensitive profile. Assignment
-materialization and expression lifetime lowering remain to be connected.
+from these calls materializes a distinct RHS object, copies into the live LHS
+and retires the RHS at the full-expression boundary.
 The precise compiler/ABI evidence is an admission gate for each new C++ return
 shape; the design does not treat a Clang expression category as sufficient
 evidence of copy elision.
@@ -137,7 +138,16 @@ substitutes for that analysis. Checked regressions compare zero, one and several
 trivial result copies, and source fixtures cover nested descriptors, forwarding,
 caller initialization, expansion, retained proofs and unsupported constructors.
 
-Assignment materialization and full-expression retirement in step 3 are next.
+Schema 52 also implements assignment materialization and full-expression
+retirement in step 3. The importer retains Clang's full-expression materialization
+and resolved trivial copy assignment; the lifetime event is independent of the
+destructor inventory. Ordinary, expanded and retained descriptor regressions
+preserve pointer identity and a saved reference into caller-owned backing through
+assignment and retirement. Constant byte-interval containment connects the raw
+result owner to typed constructor write ranges. Unknown pointer fields use the
+ordinary typed read during aggregate copying, rather than acquiring the source
+object's provenance; checked shared-engine coverage includes source retirement.
+
 The pinned `first`/`SpanPopBack` acceptance path in steps 4 and 5 is still pending,
 including the singleton-to-empty case. The selected design and bounds below
 remain unchanged; no broader source profile or kernel certification redesign
