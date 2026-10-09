@@ -144,8 +144,7 @@ Remaining:
   (`bytes[a..b]`) and a range with a signed 64-bit bound still go through
   the 32-bit conversion and need their bound shown to fit; plan steps 5 and
   9, and the signed wide kind, in the design. A cast written in a range
-  bound, `bytes[0..(int32)length]`, is still read as the uncast range,
-  while a cast in a place truncates as decided; the two should agree.
+  bound, `bytes[0..(int32)length]`, truncates as a cast in a place does.
   Two scaling regressions cover wide ranges
   (`wide_range_membership_ignores_unrelated_index_bounds`,
   `stores_to_bounded_unordered_size_t_indices_are_near_linear`); the plan
