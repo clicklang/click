@@ -1245,6 +1245,10 @@ impl<'a> Proof<'a> {
             self.facts()
                 .with_selected_composition_separation(&body_kernel)
         };
+        if let Some(execution) = self.execution() {
+            body_facts = body_facts
+                .with_selected_held_resource_separation(&body_kernel, &execution.core.state);
+        }
         // A `have` stated at an execution frontier may use the frontier's
         // effect facts exactly as the shared mid-execution law offers them.
         if at_frontier && let Some(execution) = self.execution() {

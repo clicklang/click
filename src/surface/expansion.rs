@@ -1696,7 +1696,7 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
     if !theorem.function_block.is_tactic_procedure() {
         return Ok(super::printing::format_proof_certificate(&certificate));
     }
-    // A tactic's proof is checked with a fixed ending on every path: one
+    // A tactic's proof is checked with a fixed ending on every live path: one
     // step over the empty procedure's `return`, then an `assumption` per
     // claim. That ending is supplied by the checker and cannot be written in
     // a tactic's proof, which runs no code, so the expansion leaves it out.
@@ -1714,8 +1714,11 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
 
 /// Removes the `ending` tactics the checker appends where each path of a
 /// tactic's proof ends: at the end of the script, or of each arm of a final
-/// proof `match`.
+/// proof `match`. A refuted path has no supplied ending.
 fn remove_tactic_procedure_ending(tactics: &mut Vec<ProofTactic>, ending: usize) -> Result<(), ()> {
+    if matches!(tactics.last(), Some(ProofTactic::Contradiction(_))) {
+        return Ok(());
+    }
     if let Some(ProofTactic::Match(proof_match)) = tactics.last_mut() {
         for arm in &mut std::sync::Arc::make_mut(proof_match).arms {
             remove_tactic_procedure_ending(&mut arm.tactics, ending)?;
