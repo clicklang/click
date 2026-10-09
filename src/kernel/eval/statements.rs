@@ -2551,6 +2551,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::Continue
         | CStatement::Goto { .. }
         | CStatement::ForStep { .. }
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::CopyAggregate { .. }
         | CStatement::InitializeScalarArray { .. }
         | CStatement::Assign { .. }
@@ -2929,6 +2930,16 @@ fn execute_c_statement_leaf_paths(
             facts: Vec::new().into(),
             obligations: Vec::new(),
 
+            loan_evidence: empty_checked_loan_evidence_sequence(),
+        }],
+        CStatement::EndAutomaticLifetimes { names } => vec![CStatementExecutionPath {
+            loop_invariant_correspondence: Default::default(),
+            outcome: match end_scope_automatic_lifetimes(state, names) {
+                Ok(state) => CStatementOutcome::Normal(Box::new(state)),
+                Err(refusal) => CStatementOutcome::RuntimeError(refusal),
+            },
+            facts: Vec::new().into(),
+            obligations: Vec::new(),
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }],
         CStatement::ForStep {

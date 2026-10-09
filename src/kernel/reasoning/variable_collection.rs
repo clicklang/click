@@ -505,6 +505,7 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
 ) {
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

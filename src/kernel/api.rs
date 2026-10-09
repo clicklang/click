@@ -2327,6 +2327,12 @@ pub fn c_copy_aggregate(
     }
 }
 
+/// Retire automatic storage at a source-language lifetime boundary. Frontends
+/// supply the objects whose lifetimes end; this grants no cleanup authority.
+pub fn c_end_automatic_lifetimes(names: Vec<String>) -> CStatement {
+    CStatement::EndAutomaticLifetimes { names }
+}
+
 pub fn c_initialize_scalar_array(
     target: CExpression,
     source: CExpression,

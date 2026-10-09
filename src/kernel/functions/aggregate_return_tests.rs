@@ -356,6 +356,155 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
     );
 }
 
+// Full-expression materialization copies pointer values before the temporary
+// expires. Only a pointer into separate caller storage remains dereferenceable.
+#[test]
+fn construction_temporary_retirement_preserves_copies_and_external_backing() {
+    for points_to_self in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let result = c_variable(C_CONTRACT_RESULT_NAME);
+        let field = c_cast(
+            c_pointer_offset_bytes(result.clone(), 8),
+            CType::Int32Pointer,
+        );
+        let owner = CResourceSpec::owned_memory(CMemorySegment::new(
+            result.clone(),
+            c_int32_literal(0),
+            c_int32_literal(4),
+        ));
+        let factory = c_function(
+            CType::VoidPointer,
+            "materialize_descriptor",
+            vec![c_parameter("backing", CType::Int32Pointer)],
+            c_seq(
+                c_typed_store(
+                    result.clone(),
+                    if points_to_self {
+                        field.clone()
+                    } else {
+                        c_variable("backing")
+                    },
+                    CType::Int32Pointer,
+                ),
+                c_seq(
+                    c_typed_store(field, c_int32_literal(37), CType::Int32),
+                    c_return(result),
+                ),
+            ),
+        )
+        .with_construction_return(node_layout())
+        .with_resource_summary(vec![owner.clone()], vec![owner]);
+        let environment = CExecutionEnvironment::new().with_function(factory);
+        let sequence = |statements: Vec<CStatement>| statements.into_iter().reduce(c_seq).unwrap();
+        let prefix = sequence(vec![
+            c_declare("backing", CType::Int32),
+            c_assign("backing", c_int32_literal(23)),
+            c_allocate_aggregate_destination("node", node_layout()),
+            c_allocate_aggregate_destination("temporary", node_layout()),
+            c_call_assign(
+                "temporary",
+                "materialize_descriptor",
+                vec![c_addr_of("backing")],
+            ),
+            c_copy_aggregate(c_variable("node"), c_variable("temporary"), node_layout()),
+        ]);
+        let paths = execute_c_statement_paths(
+            &CState::new(),
+            &prefix,
+            &PureFactContext::new(),
+            &environment,
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one materialization path");
+        };
+        let CStatementOutcome::Normal(state) = &path.outcome else {
+            panic!("materialization must finish");
+        };
+        let temporary = state
+            .locals
+            .aggregate_object_pointer("temporary")
+            .unwrap()
+            .clone();
+        let node = state
+            .locals
+            .aggregate_object_pointer("node")
+            .unwrap()
+            .clone();
+        let backing = state.locals.slot("backing").unwrap().clone();
+        let copied = state.memory.known_value(&node).unwrap();
+        let referent = if points_to_self {
+            temporary.offset_by_bytes(8)
+        } else {
+            backing.clone()
+        };
+        assert_eq!(pointer(&copied), referent);
+        let retirement = c_end_automatic_lifetimes(vec!["temporary".into()]);
+        let checked = prove_symbolic_c_execution_paths_with_environment(
+            state.as_ref().clone(),
+            retirement,
+            PureFactContext::new(),
+            environment.clone(),
+            CExecutionSemantics::EXECUTE_BODIES,
+        );
+        let [path] = checked.paths() else {
+            panic!("one retirement path");
+        };
+        let after = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
+            Proposition::CStatementExecutes {
+                outcome: CStatementOutcome::Normal(after),
+                ..
+            }
+            | Proposition::CStatementVerifies {
+                outcome: CStatementOutcome::Normal(after),
+                ..
+            } => after,
+            _ => panic!("checked temporary retirement"),
+        };
+        assert!(after.locals.aggregate_object_pointer("temporary").is_none());
+        assert!(after.memory.is_ended_local_block(&temporary.block));
+        assert!(!after.memory.has_block(&temporary.block));
+        assert!(after.memory.has_block(&node.block));
+        assert!(after.memory.has_block(&backing.block));
+        assert_eq!(after.memory.known_value(&node), Some(copied));
+        assert_eq!(after.memory.known_value(&backing), Some(int32(23)));
+        assert!(
+            after
+                .resources
+                .memory_write_range(&node, 16, &PureFactContext::new())
+                .is_some()
+        );
+        assert!(
+            after
+                .resources
+                .memory_write_range(&temporary, 16, &PureFactContext::new())
+                .is_none()
+        );
+        let read = execute_c_statement_paths(
+            after,
+            &c_return(c_typed_load(c_pointer_value(referent), CType::Int32)),
+            &PureFactContext::new(),
+            &environment,
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(read.len(), 1);
+        if points_to_self {
+            assert!(matches!(
+                read[0].outcome,
+                CStatementOutcome::UndefinedBehavior(_)
+            ));
+        } else {
+            assert!(
+                matches!(&read[0].outcome, CStatementOutcome::Return { value, .. } if *value == int32(23))
+            );
+        }
+    }
+}
+
 #[test]
 fn construction_completion_work_scales_with_value_fields() {
     let mut samples = Vec::new();

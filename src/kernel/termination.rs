@@ -444,6 +444,9 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 .collect()
         };
         match statement {
+            CStatement::EndAutomaticLifetimes { names } => {
+                Ok(names.iter().fold(paths, |paths, name| forget(name, paths)))
+            }
             CStatement::Skip
             | CStatement::Continue
             | CStatement::Goto { .. }
@@ -1093,6 +1096,7 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
     let escapes = |expression: &CExpression| expression_takes_address_of(expression, name);
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -1491,6 +1495,7 @@ fn statement_calls(statement: &CStatement, calls: &mut BTreeSet<String>) {
         }
         CStatement::ForStep { step, .. } => statement_calls(step, calls),
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -1551,6 +1556,7 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         }
         CStatement::ForStep { step, .. } => statement_declared_variables(step, names),
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -1822,6 +1828,14 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
     ) -> Result<Vec<i64>, CTerminationError> {
         let measure = self.measure;
         match statement {
+            CStatement::EndAutomaticLifetimes { names } => {
+                if names.iter().any(|name| name == measure) {
+                    return Err(error(format!(
+                        "termination measure `{measure}` leaves its lifetime"
+                    )));
+                }
+                Ok(lower_bounds)
+            }
             CStatement::Skip
             | CStatement::Continue
             | CStatement::Goto { .. }
@@ -2977,6 +2991,7 @@ fn loop_at_index<'a>(
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -3284,6 +3299,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
         }
         CStatement::ForStep { step, .. } => collect_loops(step, loops),
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -3550,6 +3566,7 @@ fn check_loops(
             unranked,
         ),
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -3729,6 +3746,7 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
     let mut visit = |expression: &CExpression| expression_function_addresses(expression, taken);
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -4087,6 +4105,7 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
             .any(|case| statement_calls_function(&case.body, callee)),
         CStatement::ForStep { step, .. } => statement_calls_function(step, callee),
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -4168,6 +4187,7 @@ fn self_call_loop_indices(
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

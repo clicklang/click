@@ -2588,6 +2588,12 @@ pub enum CStatement {
         expression: CExpression,
         cases: Vec<CSwitchCase>,
     },
+    /// End selected automatic objects at a frontend-recorded lifetime boundary,
+    /// including a full expression's materialized temporaries. This retires
+    /// their storage and ownership, never the allocations their fields name.
+    EndAutomaticLifetimes {
+        names: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

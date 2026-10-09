@@ -1117,6 +1117,7 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
 ) {
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -3169,6 +3170,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
         CStatement::Break => CStatement::Break,
         CStatement::Continue => CStatement::Continue,
         CStatement::Goto { target } => CStatement::Goto { target: *target },
+        CStatement::EndAutomaticLifetimes { names } => CStatement::EndAutomaticLifetimes {
+            names: names.clone(),
+        },
         CStatement::ForStep {
             step,
             exited_locals,
@@ -6311,6 +6315,7 @@ fn substitute_pointer_variable_in_c_statement(
 ) -> CStatement {
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }

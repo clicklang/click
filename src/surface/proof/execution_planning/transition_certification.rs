@@ -535,7 +535,8 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &CStatement)
         CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. } => false,
+        | CStatement::InitializeScalarArray { .. }
+        | CStatement::EndAutomaticLifetimes { .. } => false,
     }
 }
 

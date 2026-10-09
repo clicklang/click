@@ -35,6 +35,12 @@ construction assumptions, and constructor callbacks remain refused. Contract
 matching, state substitution, branch joins, and checked snapshot comparisons
 include the destination and result mode. Source admission remains pending.
 
+`c_end_automatic_lifetimes` makes a frontend-recorded expression boundary an
+explicit shared statement. It uses the existing automatic-storage retirement
+checks, removes only the named objects and their ownership, and preserves copied
+pointer values and independently live backing storage. C++ lowering must still
+select and emit those boundaries when returned construction is admitted.
+
 ## Surface and source boundary
 
 Keep native result signatures, `result` field projections, and existing

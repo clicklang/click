@@ -2395,6 +2395,9 @@ pub(super) fn execute_c_statement_verification_paths(
                 CStatement::Continue => "verification statement: continue",
                 CStatement::Goto { .. } => "verification statement: goto",
                 CStatement::ForStep { .. } => "verification statement: continue with for step",
+                CStatement::EndAutomaticLifetimes { .. } => {
+                    "verification statement: automatic lifetime end"
+                }
                 CStatement::Declare { .. } => "verification statement: declare",
                 CStatement::DeclareAggregate { .. } => "verification statement: declare aggregate",
                 CStatement::CopyAggregate { .. } => "verification statement: aggregate copy",
@@ -9123,6 +9126,7 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         | CStatement::Call { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
@@ -9224,6 +9228,9 @@ mod v10_tests {
 
 pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
     match statement {
+        CStatement::EndAutomaticLifetimes { names: retired } => {
+            names.extend(retired.iter().cloned())
+        }
         CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
@@ -9385,6 +9392,7 @@ pub(super) fn address_escaped_scalar_locals(state: &CState, body: &CStatement) -
 
 pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
     match statement {
+        CStatement::EndAutomaticLifetimes { .. } => {}
         CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
