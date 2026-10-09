@@ -2361,7 +2361,18 @@ impl<'a> Proof<'a> {
                         self,
                         result,
                         "integer certificate trivial result",
-                        node_index != certificate.conclusion,
+                        node_index != certificate.conclusion
+                            // Peeling can retain an Integer order obligation
+                            // whose written constant comparison ordinarily
+                            // lowers to `true`. Keep its relation only when it
+                            // matches the actual kernel conclusion exactly.
+                            || lower_integer_constant_comparison(result)
+                                .as_ref()
+                                .and_then(integer_affine_claim)
+                                .is_some_and(|written| {
+                                    self.goal().and_then(integer_affine_claim)
+                                        == Some(written)
+                                }),
                     )?,
                 },
             };
