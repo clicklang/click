@@ -29,7 +29,7 @@ resource leaf(p: struct node*) {
 resource branch(p: struct node*) {
  field model: Branch;
  match model { Branch::At(id, lm) => {
-  owns p->left; owns child: leaf(p->left);
+  owns p->left; owns p->right; fact p->right == 0; owns child: leaf(p->left);
   fact p == id; fact child.model == lm;
  } }
 }
@@ -64,6 +64,8 @@ void probe(struct node *p, struct root *root) {
   have nid == p->right->left by { normalize() using { p->right == sid; sid->left == nid; } }
   have separate(memory(p->right->left->left->left), memory(p->right->left->left)) by { assumption(); }
   have separate(memory(rid->left), memory(nid->left)) by { transport(separate(memory(p->right->left->left->left), memory(p->right->left->left)), separate(memory(rid->left), memory(nid->left))) using { separate(memory(p->right->left->left->left), memory(p->right->left->left)); rid == p->right->left->left; nid == p->right->left; }; }
+  have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by { assumption(); }
+  have separate(memory(nid->right), memory(rid->right)) by { transport(separate(memory(p->right->left->right), memory(p->right->left->left->right)), separate(memory(nid->right), memory(rid->right))) using { separate(memory(p->right->left->right), memory(p->right->left->left->right)); nid == p->right->left; rid == p->right->left->left; }; }
   step(); step(); step(); step(); step(); step();
   let { after: c } = step(helper(p, cursor, root), { before: c });
   step();
@@ -76,11 +78,14 @@ void probe(struct node *p, struct root *root) {
   step();
   have rid->left == 0 by { transport(at(before_detach, rid->left) == 0, rid->left == 0) using { at(before_detach, rid->left) == 0; separate(memory(rid->left), memory(nid->left)); cursor == nid; near == rid; }; }
   have separate(memory(rid->left), memory(near->right)) by { transport(separate(memory(rid->left), memory(rid->right)), separate(memory(rid->left), memory(near->right))) using { separate(memory(rid->left), memory(rid->right)); near == rid; }; }
+  have nid->right == 0 by { simp(); }
+  have separate(memory(nid->right), memory(near->right)) by { transport(separate(memory(nid->right), memory(rid->right)), separate(memory(nid->right), memory(near->right))) using { separate(memory(nid->right), memory(rid->right)); near == rid; }; }
   mark before_attach;
   step();
   have near->right == cursor by { simp(); }
   have rid->right == cursor by { transport(near->right == cursor, rid->right == cursor) using { near->right == cursor; near == rid; }; }
   have rid->left == 0 by { transport(at(before_attach, rid->left) == 0, rid->left == 0) using { at(before_attach, rid->left) == 0; separate(memory(rid->left), memory(near->right)); near == rid; }; }
+  have nid->right == 0 by { transport(at(before_attach, nid->right) == 0, nid->right == 0) using { at(before_attach, nid->right) == 0; separate(memory(nid->right), memory(near->right)); near == rid; cursor == nid; }; }
   execute(); simp();
  } }
  } }

@@ -4316,3 +4316,94 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
     }
     assert!(samples[3] <= samples[0] * 4 + 32, "{samples:?}");
 }
+
+#[test]
+fn graph_aliased_range_membership_checks_complete_access_and_scales() {
+    // A named call can leave a store's pointer connected to the selected
+    // range by two equalities. Check that local graph evidence frames the
+    // complete access without enumerating unrelated aliases.
+    use crate::kernel::memory_provenance::typed_store_separated_ranges_evidence;
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = |id| {
+        Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(id)),
+            4,
+        )
+    };
+    let write_base = base(160_001);
+    let write_model = base(160_002);
+    let read_base = base(160_003);
+    let read_model = base(160_004);
+    let write_bridge = Pointer::symbolic(Variable(160_005));
+    let read_bridge = Pointer::symbolic(Variable(160_006));
+    let write = write_base.offset_by_bytes(8);
+    let read = read_base.offset_by_bytes(8);
+    let range = |base: &Pointer, end| {
+        CMemoryRange::new_with_element_width(
+            base.clone(),
+            Bitvector32Term::Constant(8),
+            Bitvector32Term::Constant(end),
+            1,
+        )
+    };
+    let separation = |end| Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(range(&write_model, end))),
+        right: Box::new(CResource::Memory(range(&read_model, end))),
+    };
+    let aliases = [
+        ConditionTerm::pointer_equal(write_base.clone(), write_bridge.clone()),
+        ConditionTerm::pointer_equal(write_bridge, write_model.clone()),
+        ConditionTerm::pointer_equal(read_base.clone(), read_bridge.clone()),
+        ConditionTerm::pointer_equal(read_bridge, read_model.clone()),
+    ];
+    let step = CMemoryDerivation::Store {
+        base: intern_c_memory(CMemory::new()),
+        pointer: write.clone(),
+        value: CValue::typed_pointer(Pointer::symbolic(Variable(160_007)), CType::Int32Pointer),
+    };
+    let mut samples = Vec::new();
+    for count in [16u64, 64, 256, 1024] {
+        let mut context = PureFactContext::new();
+        for index in 0..count {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(base(170_000 + index * 2), base(170_001 + index * 2)),
+                true,
+            );
+        }
+        for alias in &aliases {
+            context = context.assume_condition(alias.clone(), true);
+        }
+        let no_separation = context.clone();
+        context = context.assume_proposition(separation(16));
+        let (witness, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let witness = typed_store_separated_ranges_evidence(&write, 8, &read, 8, &context)
+                .expect("the graph aligns both accesses to the selected ranges");
+            assert!(witness.checks(&step, &read, 8, &context));
+            witness
+        });
+        samples.push(work);
+        assert!(!witness.checks(&step, &read, 8, &no_separation));
+        for alias in &aliases {
+            let missing =
+                context.without_exact_fact(&Proposition::ConditionIs(alias.clone(), true));
+            assert!(!witness.checks(&step, &read, 8, &missing));
+            assert!(typed_store_separated_ranges_evidence(&write, 8, &read, 8, &missing).is_none());
+        }
+        assert!(!witness.checks(&step, &read, 9, &context));
+        assert!(typed_store_separated_ranges_evidence(&write, 9, &read, 8, &context).is_none());
+        assert!(typed_store_separated_ranges_evidence(&write, 8, &read, 9, &context).is_none());
+        let partial = no_separation.assume_proposition(separation(12));
+        assert!(typed_store_separated_ranges_evidence(&write, 8, &read, 8, &partial).is_none());
+        let overlapping = context.assume_condition(
+            ConditionTerm::pointer_equal(write_model.clone(), read_model.clone()),
+            true,
+        );
+        assert!(!witness.checks(&step, &read, 8, &overlapping));
+        assert!(typed_store_separated_ranges_evidence(&write, 8, &read, 8, &overlapping).is_none());
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 2 + 64),
+        "{samples:?}"
+    );
+}

@@ -1057,6 +1057,17 @@ ladder therefore spends it at `typed_store_separated_ranges_evidence`, where it
 spends a stated one, and the havoc side reads it at
 `typed_range_disjoint_from_pointer_evidence`.
 
+Range membership can retain one address spelling supplied by the maintained
+pointer-equality graph. This handles a post-call pointer connected to a model
+identity through another alias. The checker requires full pointer equality in
+the current context and checks the first and last addressed elements against
+the selected range; equality alone grants neither membership nor separation.
+It does not enumerate aliases or recover older memory. Withdrawing a required
+alias or separation, or extending either access beyond its range, invalidates
+the store witness. The named-root-call fixture and
+`graph_aliased_range_membership_checks_complete_access_and_scales` cover this
+case, including unrelated aliases and partial coverage.
+
 `functions::contract_entry_partition_facts` is the rule, and it reads the
 contract's evaluated **clause list** — the `Vec<CCheckedResourceFact>` that
 `evaluate_function_resource_context_with_metadata` returns, one fact per
