@@ -35,7 +35,7 @@ historical checkpoints.
 | --- | --- | --- |
 | [Disjoint fork/join](../examples/concurrency-fork-join/fork_join.click) | Exact outputs, ownership transfer, stable input loans, matching joins, and create-failure cleanup | Native runtime validation and broader threading APIs |
 | [Even/odd locking](../design/concurrency-probes/mutex_held_parity.click) | Conditional acquisition across loop iterations, final unlock, and destruction | The conditional acquisition abstraction with protected payloads or use-loan-backed guards |
-| [Shared-worker counter](../design/concurrency-probes/mutex_counter.click) | Worker and parent safety, shared typed use permissions, create-failure cleanup, and final destruction | The exact final value of two |
+| [Shared-worker counter](../design/concurrency-probes/mutex_counter.click) | Worker and parent safety, shared typed use permissions, create-failure cleanup, final destruction, and the exact final value of two | Nothing for the frozen C |
 | One-shot publication | Design obligation only | Checked release/acquire semantics and a frozen C demonstration |
 
 The parity loop works both through an ordinary conditional guard resource and
@@ -47,7 +47,10 @@ creation transfers a checked worker share while retaining a parent share;
 failure leaves authority unchanged. Joins recover shares into the current
 ledger in either order. Destruction requires complete recovery. Shared
 acquisition and release forget observations consistently with interference;
-completed workers alone do not establish the final counter value.
+completed workers alone do not establish the final counter value. The control
+the mutex protects owns the counter with the authorities for contributions and
+credits, and its facts tie the counter to the contribution count, so the parent
+reads exactly two after both joins and destruction.
 
 Mutex initialization checks writable storage and alignment. Initialized bytes
 are reserved against ordinary writes, and live mutexes prevent overlapping
@@ -150,28 +153,16 @@ alone does not establish population conservation or exact totals.
 
 ### 1. Complete the mutex-protected counter
 
-Prove that the unchanged [counter C](../design/concurrency-probes/mutex_counter.c)
-finishes at exactly two when both workers are created and joined successfully.
-Preserve safety and cleanup for both create-failure paths and either join order.
-
-Use ordinary protected resources containing population authority and the
-counter invariant. Workers hold contribution members; checked updates connect
-member consumption with the C increment. A join recovers checked outputs and
-permissions exactly once; it cannot invent that connection after execution.
-Acquisition authorizes fresh observations through the returned control resource.
-Joining one worker cannot establish a current total from a stale snapshot while
-another worker can still update it.
-
-The [counted counter record](../design/concurrency-probes/shared-count-authority.md)
-contains historical sequential and local-mutex controls. Its recommendation to
-extend whole-population publication first is superseded. The migration retains
-those test properties with explicit authority. Existing abstract-ticket join
-accounting is also a migration input, not an exception to the new update rules.
-
-Reject missing or doubled contributions, incorrect increments, fabricated
-credits, mismatched populations, and reuse of old counter observations. Preserve
-the [missing-conservation regression](../mdtests/mutex_resource_quantity_requires_conservation.md)
-until a stronger contract actually supplies the missing relationship.
+Complete. The unchanged [counter C](../design/concurrency-probes/mutex_counter.c)
+verifies at exactly two when both workers are created and joined, with safety
+and cleanup on both create-failure paths. Each worker spends a credit and
+creates a contribution under the lock; the parent receives both authorities
+with empty populations through its contract, because the counter is caller
+storage. `mdtests/mutex_counter_*_rejected.md` refuse a wrong increment, a
+fabricated credit, a doubled contribution, and a total observed before the
+second join. The
+[missing-conservation regression](../mdtests/mutex_resource_quantity_requires_conservation.md)
+remains.
 
 ### 2. Test protected-resource composition
 

@@ -1,6 +1,52 @@
+# A worker cannot spend a credit its contract does not supply
+
+The worker contract no longer consumes a credit, so the credit it unfolds to
+make room for its contribution is not owned.
+
+```c filename=mutex_counter_fabricated_credit_rejected.c
+#include <pthread.h>
+#include <stddef.h>
+
+struct mutex_counter {
+    pthread_mutex_t mutex;
+    unsigned int value;
+};
+
+void *increment_counter(void *argument) {
+    struct mutex_counter *counter = argument;
+    (void)pthread_mutex_lock(&counter->mutex);
+    counter->value = counter->value + 1u;
+    (void)pthread_mutex_unlock(&counter->mutex);
+    return NULL;
+}
+
+int increment_twice(struct mutex_counter *counter) {
+    pthread_t first;
+    pthread_t second;
+
+    counter->value = 0u;
+    if (pthread_mutex_init(&counter->mutex, NULL) != 0) return 0;
+    if (pthread_create(&first, NULL, increment_counter, counter) != 0) {
+        (void)pthread_mutex_destroy(&counter->mutex);
+        return 0;
+    }
+    if (pthread_create(&second, NULL, increment_counter, counter) != 0) {
+        (void)pthread_join(first, NULL);
+        (void)pthread_mutex_destroy(&counter->mutex);
+        return 0;
+    }
+
+    (void)pthread_join(first, NULL);
+    (void)pthread_join(second, NULL);
+    (void)pthread_mutex_destroy(&counter->mutex);
+    return 1;
+}
+```
+
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
-verifying "mutex_counter.c";
+verifying "mutex_counter_fabricated_credit_rejected.c";
 
 # Each worker that has incremented the counter holds one contribution, and
 # each worker still to run holds one credit. The control owns the counter and
@@ -26,7 +72,6 @@ void* increment_counter(void* argument) {
         &((struct mutex_counter*)argument)->mutex,
         counter_control((struct mutex_counter*)argument)
     );
-    consumes credit((struct mutex_counter*)argument);
     produces contribution((struct mutex_counter*)argument);
     ensures result == 0;
 } by {
@@ -153,3 +198,8 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     simp();
 }
+```
+
+```expect
+fail: could not establish `count(credit(counter)) >= 1`
+```
