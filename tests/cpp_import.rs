@@ -5963,6 +5963,98 @@ fn cpp_frontend_rejects_unsupported_source_without_a_c_fallback() {
 }
 
 #[test]
+// Native unsigned-byte forwarding must retain its exact type through a call
+// capture, expansion and offline retained verification.
+fn cpp_unsigned_byte_call_capture_verifies_offline() {
+    let project = Project::with_fixture(
+        "bytes.cpp",
+        "probe",
+        "unsigned char echo(unsigned char value) noexcept { return value; } unsigned char probe(unsigned char value) noexcept { unsigned char obj = echo(value); return obj; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"bytes.cpp\"; uint8 echo(uint8 value) { ensures result == value; } by { execute(); simp(); } uint8 probe(uint8 value) { ensures result == value; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn cpp_unsigned_byte_narrowing_preserves_modulo_values_offline() {
+    let project = Project::with_fixture(
+        "bytes.cpp",
+        "probe",
+        "unsigned char probe(unsigned int value) noexcept { unsigned char obj; obj = static_cast<unsigned char>(value); return obj; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"bytes.cpp\"; uint8 probe(uint32 value) { requires value == 511u32; ensures result == 255u8; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    let bad = proof.replace("255u8", "0u8");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &bad).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+// Clang promotes unsigned bytes to int before multiplying; arithmetic cannot
+// accidentally run at byte width and wrap 255 * 255 to one.
+fn cpp_unsigned_byte_arithmetic_preserves_integer_promotions_offline() {
+    let project = Project::with_fixture(
+        "bytes.cpp",
+        "probe",
+        "unsigned int probe(unsigned char value) noexcept { return value * value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"bytes.cpp\"; uint32 probe(uint8 value) { requires value == 255u8; ensures result == 65025u32; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+// Adjacent byte fields retain one-byte layout and separate authority; a write
+// cannot borrow its neighbor's view or alter the preserved padded word.
+fn cpp_unsigned_byte_record_fields_preserve_layout_and_authority_offline() {
+    let project = Project::with_fixture(
+        "bytes.cpp",
+        "probe",
+        "struct Bytes { unsigned char first; unsigned char second; unsigned int tail; }; unsigned char probe(Bytes& bytes, unsigned char value) noexcept { bytes.first = value; return bytes.second; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"bytes.cpp\"; uint8 probe(struct Bytes& bytes, uint8 value) { owns bytes.first; views bytes.second; views bytes.tail; ensures bytes.first == value; ensures result == old(bytes.second); ensures bytes.second == old(bytes.second); ensures bytes.tail == old(bytes.tail); } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    let bad = proof.replace("owns bytes.first", "views bytes.first");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &bad).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn cpp_unsigned_byte_admission_keeps_other_character_types_outside_profile() {
+    for ty in ["signed char", "char", "char8_t", "char16_t"] {
+        let source = format!("{ty} probe({ty} value) noexcept {{ return value; }}");
+        let project = Project::with_fixture("bytes.cpp", "probe", &source);
+        assert!(refresh_import(&project.config()).is_err());
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
 // Uninitialized storage has no placeholder value; normal, expanded and retained
 // verification must accept a later assignment and refuse an early read.
 fn cpp_uninitialized_integer_local_verifies_only_after_assignment_offline() {

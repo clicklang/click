@@ -8,6 +8,7 @@ use crate::languages::c::syntax::C0Type;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ScalarKind {
     Bool,
+    UInt8,
     Int32,
     Int64,
     UInt32,
@@ -33,6 +34,7 @@ impl Scalar {
                 ..
             } => (
                 match (*bits, *signed) {
+                    (8, false) => ScalarKind::UInt8,
                     (32, true) => ScalarKind::Int32,
                     (64, true) => ScalarKind::Int64,
                     (32, false) => ScalarKind::UInt32,
@@ -71,6 +73,7 @@ impl ScalarKind {
     pub fn kernel_type(self) -> CType {
         match self {
             Self::Bool => CType::Bool,
+            Self::UInt8 => CType::UInt8,
             Self::Int32 => CType::Int32,
             Self::Int64 => CType::Int64,
             Self::UInt32 => CType::UInt32,
@@ -83,6 +86,7 @@ impl ScalarKind {
     pub fn proof_type(self) -> C0Type {
         match self {
             Self::Bool => C0Type::Bool,
+            Self::UInt8 => C0Type::UInt8,
             Self::Int32 => C0Type::Int32,
             Self::Int64 => C0Type::Int64,
             Self::UInt32 => C0Type::UInt32,
@@ -194,11 +198,9 @@ mod tests {
                         source_aliases: vec![],
                     };
                     let scalar = Scalar::of(&ty);
-                    assert_eq!(scalar.is_some(), matches!(bits, 32 | 64 | 128));
-                    assert_eq!(
-                        Scalar::mutable_kind(&ty).is_some(),
-                        matches!(bits, 32 | 64 | 128) && !is_const
-                    );
+                    let supported = matches!(bits, 32 | 64 | 128) || (bits == 8 && !signed);
+                    assert_eq!(scalar.is_some(), supported);
+                    assert_eq!(Scalar::mutable_kind(&ty).is_some(), supported && !is_const);
                     if let Some(scalar) = scalar {
                         assert_eq!(scalar.is_const, is_const);
                         // Qualifiers are preserved independently of value kind.
@@ -234,6 +236,11 @@ mod tests {
     #[test]
     fn integer_literals_use_one_checked_interpretation_at_both_boundaries() {
         for (kind, accepted, rejected) in [
+            (
+                ScalarKind::UInt8,
+                vec!["0", "128", "255"],
+                vec!["-1", "256"],
+            ),
             (
                 ScalarKind::Int32,
                 vec!["-2147483648", "2147483647", "0"],

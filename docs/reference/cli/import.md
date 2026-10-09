@@ -450,6 +450,13 @@ kernel's ordinary `Declare` and `CallAssign` statements, while later reads and
 assignments use the existing scalar rules. This makes call results usable
 without treating a compiler-resolved C++ expression as C source text.
 
+Native `unsigned char` values use `uint8` contracts, preserving Clang's
+resolved promotions and modulo narrowing conversions. Parameters, returns,
+call captures, automatic locals and byte fields share the existing scalar
+lowering. Byte fields retain their one-byte layout and independent authority.
+This admission does not include signed/plain character types, `char8_t`,
+byte pointers or enums; nominal `std::byte` identity checking is a later step.
+
 The `pointer` fixture distinguishes a mutable `int*` parameter from an `int&`
 in the Clang artifact. A caller may take the address of its mutable reference
 parameter and pass that pointer to a direct call. Pointer lvalue-to-rvalue

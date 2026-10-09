@@ -608,9 +608,7 @@ private:
     const bool by_value_integer =
         !parameter->getType().hasQualifiers() &&
         parameter->getType()->isIntegerType() &&
-        (context_.getTypeSize(parameter->getType()) == 32 ||
-         context_.getTypeSize(parameter->getType()) == 64 ||
-         context_.getTypeSize(parameter->getType()) == 128);
+        supported_integer_type(parameter->getType());
     const bool by_value_bool =
         reference == nullptr &&
         context_.hasSameType(parameter->getType().getUnqualifiedType(),
@@ -621,7 +619,7 @@ private:
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
-           "32/64/128-bit integer, int&, const "
+           "32/64/128-bit integer or unsigned char, int&, const "
            "int&, const signed-64 reference, or mutable int* parameter, or a "
            "mutable or const simple-record reference parameter");
       return std::nullopt;
@@ -659,6 +657,13 @@ private:
       }
     }
     return nullptr;
+  }
+
+  bool supported_integer_type(clang::QualType type) const {
+    return type->isIntegerType() &&
+        (context_.hasSameType(type.getUnqualifiedType(), context_.UnsignedCharTy) ||
+         context_.getTypeSize(type) == 32 || context_.getTypeSize(type) == 64 ||
+         context_.getTypeSize(type) == 128);
   }
 
   std::optional<Json>
@@ -716,11 +721,9 @@ private:
       result["is_const"] = type.isConstQualified();
       return Json(std::move(result));
     }
-    if (!type->isIntegerType() || (context_.getTypeSize(type) != 32 &&
-                                   context_.getTypeSize(type) != 64 &&
-                                   context_.getTypeSize(type) != 128)) {
+    if (!supported_integer_type(type)) {
       fail(location, "the supported C++ slice supports bool, signed/unsigned "
-                     "32/64/128-bit integers, selected signed references, mutable "
+                     "32/64/128-bit integers, unsigned char, selected signed references, mutable "
                      "int*, and one simple record-reference type");
       return std::nullopt;
     }
@@ -1682,9 +1685,7 @@ private:
       return std::nullopt;
     }
     const bool mutable_int = local->getType()->isIntegerType() &&
-                             (context_.getTypeSize(local->getType()) == 32 ||
-                              context_.getTypeSize(local->getType()) == 64 ||
-                              context_.getTypeSize(local->getType()) == 128) &&
+                             supported_integer_type(local->getType()) &&
                              !local->getType().hasQualifiers();
     const auto *local_reference = local->getType()->getAs<clang::LValueReferenceType>();
     const bool int_reference = local_reference != nullptr &&
@@ -1707,7 +1708,7 @@ private:
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to mutable "
            "signed/unsigned "
-           "32/64/128-bit integer, an int lvalue reference, or one simple record object");
+           "32/64/128-bit integer or unsigned char, an int lvalue reference, or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit() && !mutable_int) {
@@ -2073,8 +2074,7 @@ private:
       syntax = list;
     const auto type = list->getType();
     if (!list->isSemanticForm() || !type->isIntegerType() ||
-        (!type->isBooleanType() && context_.getTypeSize(type) != 32 &&
-         context_.getTypeSize(type) != 64 && context_.getTypeSize(type) != 128) ||
+        (!type->isBooleanType() && !supported_integer_type(type)) ||
         list->getNumInits() != 1 || syntax->getNumInits() != 1 ||
         !context_.hasSameUnqualifiedType(type, list->getInit(0)->getType()))
       return nullptr;
@@ -2456,9 +2456,7 @@ private:
     if (!parameter->getType().hasQualifiers() &&
         (context_.hasSameType(parameter->getType(), context_.BoolTy) ||
          (parameter->getType()->isIntegerType() &&
-          (context_.getTypeSize(parameter->getType()) == 32 ||
-           context_.getTypeSize(parameter->getType()) == 64 ||
-           context_.getTypeSize(parameter->getType()) == 128)))) {
+          supported_integer_type(parameter->getType())))) {
       auto value = lower_expression(argument, caller);
       if (!value) {
         return std::nullopt;
@@ -2763,9 +2761,7 @@ private:
     if ((trait != nullptr && trait->getKind() == clang::UETT_SizeOf) ||
         limits_max) {
       if (expression->getType()->isIntegerType() &&
-          (context_.getTypeSize(expression->getType()) == 32 ||
-           context_.getTypeSize(expression->getType()) == 64 ||
-           context_.getTypeSize(expression->getType()) == 128) &&
+          supported_integer_type(expression->getType()) &&
           expression->isCXX11ConstantExpr(context_)) {
         clang::Expr::EvalResult evaluated;
         if (expression->EvaluateAsInt(evaluated, context_,
@@ -2843,9 +2839,7 @@ private:
                                cast->getSubExpr()->getType()) &&
           (cast->getType()->isBooleanType() || cast->getType()->isPointerType() ||
            (cast->getType()->isIntegerType() &&
-            (context_.getTypeSize(cast->getType()) == 32 ||
-             context_.getTypeSize(cast->getType()) == 64 ||
-             context_.getTypeSize(cast->getType()) == 128)))) {
+            supported_integer_type(cast->getType())))) {
         return lower_expression(cast->getSubExpr(), function);
       }
       if (cast->getCastKind() != clang::CK_IntegralCast &&
@@ -3248,7 +3242,8 @@ private:
       const bool mutable_int =
           !type.hasQualifiers() &&
           type->isIntegerType() && !type->isBooleanType() &&
-          (context_.getTypeSize(type) == 32 || context_.getTypeSize(type) == 64);
+          (context_.hasSameType(type.getUnqualifiedType(), context_.UnsignedCharTy) ||
+           context_.getTypeSize(type) == 32 || context_.getTypeSize(type) == 64);
       const bool mutable_int_pointer =
           pointer != nullptr && !type.hasQualifiers() &&
           !pointer->getPointeeType().hasQualifiers() &&
@@ -3265,7 +3260,7 @@ private:
         fail(
             field->getLocation(),
             "the supported C++ record fields must be named mutable 32/64-bit "
-            "integers, mutable int*, or embedded record fields without bit-fields");
+            "integers, unsigned char, mutable int*, or embedded record fields without bit-fields");
         return false;
       }
       if (mutable_record) {

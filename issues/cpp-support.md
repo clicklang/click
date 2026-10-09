@@ -398,8 +398,11 @@ storage, and reads require initialization; record construction and reference
 binding remain mandatory. Normal, expanded and retained checks cover later
 assignment, and offline validation rejects forged uninitialized record or
 reference declarations. This changes the artifact schema to 53; refresh older
-locks. The C++ importer still needs native byte/`std::byte` types and checked
-writable byte-span construction before the
+locks. Native `unsigned char` scalar values and fields now use `uint8`
+contracts, retaining promotions, modulo casts and one-byte field layout. Other
+character types remain outside the importer profile. The C++ importer still
+needs native byte pointers, checked `std::byte` identities and writable byte-span
+construction before the
 unchanged decoder can use it. The agreed enum boundary uses native integer
 contracts while checking nominal enum identities in the C++ importer. Byte
 alias access must be restricted to the actual pinned `std::byte` declaration;

@@ -61,7 +61,8 @@ pub(super) fn prepare_layouts(
                         if Scalar::mutable_kind(value).is_some_and(|kind| {
                             matches!(
                                 kind,
-                                ScalarKind::Int32
+                                ScalarKind::UInt8
+                                    | ScalarKind::Int32
                                     | ScalarKind::UInt32
                                     | ScalarKind::Int64
                                     | ScalarKind::UInt64
