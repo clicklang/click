@@ -13388,3 +13388,59 @@ fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_a
         );
     }
 }
+
+// glibc's register_t uses word mode; preserving its 64-bit width is required
+// when importing the unchanged zlib translation unit and its system headers.
+#[test]
+fn c0_gnu_word_mode_preserves_signedness_and_lp64_layout() {
+    for (base, expected) in [
+        ("signed char", syntax::C0Type::Int64),
+        ("short", syntax::C0Type::Int64),
+        ("int", syntax::C0Type::Int64),
+        ("long", syntax::C0Type::Int64),
+        ("unsigned char", syntax::C0Type::UInt64),
+        ("unsigned short", syntax::C0Type::UInt64),
+        ("unsigned int", syntax::C0Type::UInt64),
+        ("unsigned long", syntax::C0Type::UInt64),
+    ] {
+        for (attribute, mode) in [("mode", "word"), ("__mode__", "__word__")] {
+            let source = format!(
+                "typedef {base} word __attribute__(({attribute}({mode}))); \
+                 struct record {{ char before; word value; char after; }}; \
+                 word identity(word value) {{ return value; }}"
+            );
+            let unit = syntax::parse_translation_unit_for_source(
+                &source,
+                "word.c",
+                &source::ExpandedLineMap::empty(),
+            )
+            .unwrap();
+            let function = &unit.functions[0];
+            assert_eq!(function.return_type(), expected);
+            assert_eq!(function.parameters()[0].c_type(), expected);
+            let layout = &unit.structs["record"];
+            assert_eq!(layout.field("value").unwrap().offset_bytes(), 8);
+            assert_eq!(layout.field("value").unwrap().byte_width(), 8);
+            assert_eq!(layout.field("after").unwrap().offset_bytes(), 16);
+            assert_eq!(layout.size_bytes(), 24);
+        }
+    }
+}
+
+#[test]
+#[ignore = "nightly: GNU typedef attribute rejection cases"]
+fn c0_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
+    for source in [
+        "typedef int word __attribute__((mode(QI)));",
+        "typedef int word __attribute__((mode(word, word)));",
+        "typedef double word __attribute__((mode(word)));",
+        "typedef _Bool word __attribute__((mode(word)));",
+        "typedef int *word __attribute__((mode(word)));",
+        "typedef int word[2] __attribute__((mode(word)));",
+        "typedef enum tag { A } word __attribute__((mode(word)));",
+        "typedef struct { int field; } word __attribute__((mode(word)));",
+        "typedef union { int field; } word __attribute__((mode(word)));",
+    ] {
+        assert!(syntax::parse_functions(source).is_err(), "{source}");
+    }
+}
