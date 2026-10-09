@@ -2286,7 +2286,10 @@ let { root: node } = step(init(p, left, right, value), { l: a, r: b });
 
 The introduced name is an ordinary owned instance afterwards: it can be folded
 into a parent as a child, or returned by the caller's own `produces` clause.
-Multiple named outputs use a destructuring pattern:
+A non-mutex output may reuse the name of an instance consumed by the call.
+Its current arguments and fields come from the produced contract; `old(...)`
+still observes the caller's entry instance. Reuse does not let a call overwrite
+another live instance. Multiple named outputs use a destructuring pattern:
 
 <!-- verified-example: mdtests/c_call_binder_transport_multiple_produces.md -->
 ```click
