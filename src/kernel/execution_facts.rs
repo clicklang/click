@@ -2,6 +2,16 @@
 use super::{ConditionTerm, ExecutionPureFact, Proposition};
 use std::sync::Arc;
 
+#[cfg(test)]
+thread_local! {
+    static FACT_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn take_fact_reads() -> usize {
+    FACT_READS.with(|reads| reads.replace(0))
+}
+
 type FactVector = imbl::Vector<Arc<ExecutionPureFact>>;
 type BlockIter<'a> = imbl::vector::Iter<'a, FactBlock, imbl::shared_ptr::DefaultSharedPtr>;
 type BorrowedFacts<'a> = Box<dyn DoubleEndedIterator<Item = &'a ExecutionPureFact> + 'a>;
@@ -49,6 +59,8 @@ pub struct ExecutionFacts {
 struct ExecutionFactsData {
     blocks: imbl::Vector<FactBlock>,
     propositions: imbl::OrdSet<Arc<Proposition>>,
+    exact: imbl::HashSet<Arc<ExecutionPureFact>>,
+    exact_invalid: bool,
     len: usize,
     propositions_invalid: bool,
 }
@@ -71,7 +83,22 @@ impl ExecutionFacts {
         }
     }
     pub fn contains(&self, fact: &ExecutionPureFact) -> bool {
-        self.iter().any(|item| item == fact)
+        if self.data.exact_invalid {
+            return self.iter().any(|item| item == fact);
+        }
+        if self.data.exact.contains(fact) {
+            return true;
+        }
+        let key = match fact.proposition() {
+            Proposition::ConditionIs(condition, _) => ContextFactKey::Condition(condition.clone()),
+            proposition => ContextFactKey::Proposition(proposition.clone()),
+        };
+        self.data.blocks.iter().any(|block| match block {
+            FactBlock::Context { facts, excluded } => facts.get(&key).is_some_and(|found| {
+                found.as_ref() == fact && !excluded.contains_proposition(fact.proposition())
+            }),
+            FactBlock::Facts(_) => false,
+        })
     }
     pub fn to_vec(&self) -> Vec<ExecutionPureFact> {
         self.iter().cloned().collect()
@@ -98,6 +125,7 @@ impl ExecutionFacts {
         let data = Arc::make_mut(&mut self.data);
         data.propositions
             .insert(Arc::new(fact.proposition().clone()));
+        data.exact.insert(fact.clone());
         if let Some(FactBlock::Facts(facts)) = data.blocks.back_mut() {
             Arc::make_mut(facts).push_back(fact);
         } else {
@@ -117,6 +145,8 @@ impl ExecutionFacts {
         let other = Arc::make_mut(&mut other.data);
         data.len += other.len;
         data.propositions_invalid |= other.propositions_invalid;
+        data.exact_invalid |= other.exact_invalid;
+        data.exact = data.exact.clone().union(std::mem::take(&mut other.exact));
         data.propositions = data
             .propositions
             .clone()
@@ -179,6 +209,7 @@ impl ExecutionFacts {
                 data.len += count;
             }
         }
+        data.exact = explicit_fact_index(&data.blocks);
         filtered
     }
     /// Retain selected occurrences, not selected object addresses: the same
@@ -223,6 +254,7 @@ impl ExecutionFacts {
             selected_start = selected_end;
             start = end;
         }
+        data.exact = explicit_fact_index(&data.blocks);
         result
     }
     pub(crate) fn retain(&mut self, predicate: impl Fn(&ExecutionPureFact) -> bool) {
@@ -254,6 +286,7 @@ impl ExecutionFacts {
         let data = Arc::make_mut(&mut self.data);
         data.blocks = imbl::vector![FactBlock::Facts(Arc::new(facts))];
         data.propositions_invalid = true;
+        data.exact_invalid = true;
     }
     #[cfg(test)]
     pub(crate) fn pop(&mut self) -> Option<ExecutionPureFact> {
@@ -264,6 +297,7 @@ impl ExecutionFacts {
         let data = Arc::make_mut(&mut self.data);
         data.len -= 1;
         data.propositions_invalid = true;
+        data.exact_invalid = true;
         let FactBlock::Facts(facts) = &mut data.blocks[0] else {
             unreachable!()
         };
@@ -275,6 +309,7 @@ impl ExecutionFacts {
         self.make_explicit();
         let data = Arc::make_mut(&mut self.data);
         data.propositions_invalid = true;
+        data.exact_invalid = true;
         let FactBlock::Facts(facts) = &mut data.blocks[0] else {
             unreachable!()
         };
@@ -320,6 +355,17 @@ impl ExecutionFacts {
         Some(suffix)
     }
 }
+fn explicit_fact_index(blocks: &imbl::Vector<FactBlock>) -> imbl::HashSet<Arc<ExecutionPureFact>> {
+    blocks
+        .iter()
+        .filter_map(|block| match block {
+            FactBlock::Facts(facts) => Some(facts.iter().cloned()),
+            FactBlock::Context { .. } => None,
+        })
+        .flatten()
+        .collect()
+}
+
 impl From<Vec<ExecutionPureFact>> for ExecutionFacts {
     fn from(facts: Vec<ExecutionPureFact>) -> Self {
         facts.into_iter().collect()
@@ -347,7 +393,8 @@ impl std::ops::Index<usize> for ExecutionFacts {
 }
 impl PartialEq for ExecutionFacts {
     fn eq(&self, other: &Self) -> bool {
-        self.data.len == other.data.len && self.iter().eq(other)
+        Arc::ptr_eq(&self.data, &other.data)
+            || (self.data.len == other.data.len && self.iter().eq(other))
     }
 }
 impl Eq for ExecutionFacts {}
@@ -385,6 +432,8 @@ impl<'a> Iterator for ExecutionFactsIter<'a> {
         loop {
             if let Some(fact) = self.front.as_mut().and_then(|iter| iter.next()) {
                 self.remaining -= 1;
+                #[cfg(test)]
+                FACT_READS.with(|reads| reads.set(reads.get() + 1));
                 return Some(fact);
             }
             self.front = None;
@@ -395,6 +444,8 @@ impl<'a> Iterator for ExecutionFactsIter<'a> {
             let fact = self.back.as_mut().and_then(|iter| iter.next());
             if fact.is_some() {
                 self.remaining -= 1;
+                #[cfg(test)]
+                FACT_READS.with(|reads| reads.set(reads.get() + 1));
             }
             return fact;
         }
@@ -408,6 +459,8 @@ impl DoubleEndedIterator for ExecutionFactsIter<'_> {
         loop {
             if let Some(fact) = self.back.as_mut().and_then(|iter| iter.next_back()) {
                 self.remaining -= 1;
+                #[cfg(test)]
+                FACT_READS.with(|reads| reads.set(reads.get() + 1));
                 return Some(fact);
             }
             self.back = None;
@@ -418,6 +471,8 @@ impl DoubleEndedIterator for ExecutionFactsIter<'_> {
             let fact = self.front.as_mut().and_then(|iter| iter.next_back());
             if fact.is_some() {
                 self.remaining -= 1;
+                #[cfg(test)]
+                FACT_READS.with(|reads| reads.set(reads.get() + 1));
             }
             return fact;
         }
@@ -636,6 +691,39 @@ mod tests {
             ),
             value,
         )
+    }
+
+    // Indexed lookups must avoid fact-list walks without conflating producer metadata or occurrences.
+    #[test]
+    fn exact_membership_keeps_producer_metadata_and_selected_occurrences() {
+        for size in [64, 128, 256, 512] {
+            let facts: ExecutionFacts = (0..size)
+                .map(|index| ExecutionPureFact::new(guard(index, true)))
+                .collect();
+            take_fact_reads();
+            for index in 0..size {
+                assert!(facts.contains(&ExecutionPureFact::new(guard(index, true))));
+                assert!(!facts.contains(&ExecutionPureFact::certified(guard(index, true))));
+            }
+            assert_eq!(
+                take_fact_reads(),
+                0,
+                "indexed membership must not scan {size} facts"
+            );
+            let selected = facts.selected(&[0, size as usize - 1]);
+            assert!(selected.contains(&ExecutionPureFact::new(guard(0, true))));
+            assert!(!selected.contains(&ExecutionPureFact::new(guard(1, true))));
+            let mut edited = selected.clone();
+            *edited.get_mut(0) = ExecutionPureFact::certified(guard(0, true));
+            take_fact_reads();
+            assert!(!edited.contains(&ExecutionPureFact::new(guard(0, true))));
+            assert!(
+                take_fact_reads() > 0,
+                "explicit metadata edits use the ordered fallback"
+            );
+            assert!(edited.contains(&ExecutionPureFact::certified(guard(0, true))));
+            assert!(selected.contains(&ExecutionPureFact::new(guard(0, true))));
+        }
     }
 
     #[test]

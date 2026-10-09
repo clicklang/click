@@ -12,6 +12,7 @@ const THREE_BYTE_COMPUTE: &str =
 const FOUR_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
 const SMALL_PARTITION: &str = include_str!("../../design/charon-trial/adler2/partition.click");
+const TAIL_BOUNDS: &str = include_str!("../../design/charon-trial/adler2/tail-bounds.click");
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
 
@@ -31,8 +32,18 @@ fn compute_proof(contract: &str) -> String {
     } else {
         String::new()
     };
+    let partition = if contract.contains("adler_small_tail_metadata(") {
+        SMALL_PARTITION
+    } else {
+        ""
+    };
+    let tail_bounds = if contract.contains("adler_tail_iterator_step(") {
+        TAIL_BOUNDS
+    } else {
+        ""
+    };
     format!(
-        "{}\n{lemmas}\n{iterator_lemmas}\n{contract}\n{getters}",
+        "{}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{tail_bounds}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1317,6 +1328,7 @@ fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
@@ -1325,13 +1337,13 @@ fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch()
     );
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        " requires bytes_len <= 22204u64;\n requires bytes_len < 22208u64;",
+        " requires bytes_len <= 22207u64;\n requires bytes_len < 22208u64;",
         " requires bytes_len <= 22208u64;",
     );
 }
 
 #[test]
-#[ignore = "nightly: original 0..22204-byte vector computation from canonical initial states"]
+#[ignore = "nightly: original 0..22207-byte vector and tail computation from canonical states"]
 fn charon_adler2_small_batch_compute_proves_original_body() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
     C0VerificationSession::new_program_prepared(
@@ -1342,6 +1354,7 @@ fn charon_adler2_small_batch_compute_proves_original_body() {
 }
 
 #[test]
+#[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_a() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
@@ -1351,6 +1364,7 @@ fn charon_adler2_small_batch_compute_requires_canonical_a() {
 }
 
 #[test]
+#[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_b() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
@@ -1364,11 +1378,28 @@ fn charon_adler2_small_batch_compute_requires_canonical_b() {
 fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() {
     for (before, after) in [
         (
-            "have __rust_mir_62_remaining == old((int32)(uint32)bytes_len) by { simp(); }",
-            "have __rust_mir_62_remaining == old((int32)(uint32)bytes_len) + 4 by { assumption(); }",
+            "have __rust_mir_62_remaining == old((int32)(uint32)(bytes_len - bytes_len % 4u64)) by { simp(); }",
+            "have __rust_mir_62_remaining == old((int32)(uint32)(bytes_len - bytes_len % 4u64)) + 4 by { assumption(); }",
         ),
         ("ensures self->a < 65521;", "ensures self->a < 1;"),
         ("ensures self->b < 65521;", "ensures self->b < 1;"),
+    ] {
+        reject_compute(SMALL_BATCH_COMPUTE, before, after);
+    }
+}
+
+#[test]
+#[ignore = "nightly: original scalar-tail cursor and ranking rejections"]
+fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
+    for (before, after) in [
+        (
+            "have __rust_mir_138_cursor == remainder by { simp(); }",
+            "have __rust_mir_138_cursor == remainder + 1 by { assumption(); }",
+        ),
+        (
+            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by { rewrite(__rust_mir_138_remaining == at(tail_head, __rust_mir_138_remaining) - 1); assumption(); }",
+            "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by { assumption(); }",
+        ),
     ] {
         reject_compute(SMALL_BATCH_COMPUTE, before, after);
     }
@@ -1391,12 +1422,14 @@ fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[ignore = "nightly: checksum lemma expansion and mutation checks"]
 fn charon_adler2_small_partition_verifies_and_expands() {
     click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
     for claim in [
         "adler_small_prefix_divisible.ensures_0",
         "adler_small_tail_metadata.ensures_0",
         "adler_signed_small_prefix.ensures_0",
+        "adler_small_tail_indices.ensures_2",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(SMALL_PARTITION, &[], claim).unwrap();
@@ -1405,6 +1438,37 @@ fn charon_adler2_small_partition_verifies_and_expands() {
 }
 
 #[test]
+#[ignore = "nightly: checksum lemma expansion and mutation checks"]
+fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
+    click::surface::verify_c0_sources(TAIL_BOUNDS, &[]).unwrap();
+    for claim in [
+        "adler_tail_iterator_step.ensures_0",
+        "adler_tail_iterator_step.ensures_3",
+        "adler_tail_remaining_progress.ensures_0",
+    ] {
+        let expanded =
+            click::surface::expand_c0_claim_source_by_label(TAIL_BOUNDS, &[], claim).unwrap();
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+    for (before, after) in [
+        ("ensures a + byte <= 328365", "ensures a + byte <= 328364"),
+        (
+            "ensures b + a + byte <= 2492061",
+            "ensures b + a + byte <= 2492060",
+        ),
+        (
+            "ensures adler_tail_consumed(total, remaining - 1) == adler_tail_consumed(total, remaining) + 1",
+            "ensures adler_tail_consumed(total, remaining - 1) == adler_tail_consumed(total, remaining) + 2",
+        ),
+    ] {
+        let invalid = TAIL_BOUNDS.replacen(before, after, 1);
+        assert_ne!(invalid, TAIL_BOUNDS);
+        assert!(click::surface::verify_c0_sources(&invalid, &[]).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_partition_rejects_false_metadata() {
     for (before, after) in [
         (
@@ -1431,6 +1495,75 @@ fn charon_adler2_small_partition_rejects_false_metadata() {
         assert!(
             click::surface::verify_c0_sources(&invalid, &[]).is_err(),
             "{before}"
+        );
+    }
+}
+
+// The original scalar tail needs safe A/B updates and actual remaining progress.
+#[test]
+fn charon_adler2_scalar_tail_bounds_verify() {
+    click::surface::verify_c0_sources(TAIL_BOUNDS, &[]).unwrap();
+}
+
+// Full-width lengths must agree with four-byte prefixes and short-tail indices.
+#[test]
+fn charon_adler2_small_partition_verifies() {
+    click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
+}
+
+const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32-spec.click");
+
+// Checks the common mathematical target independently of an imported body:
+// weighted byte order, canonical residues, empty seeds and packed bounds.
+#[test]
+fn adler_common_spec_recurrences_and_bounds_verify() {
+    click::surface::verify_c0_sources(COMMON_ADLER_SPEC, &[]).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: common checksum specification expansion and mutation checks"]
+fn adler_common_spec_expands_and_rejects_false_results() {
+    for claim in [
+        "adler_weight_shift.ensures_0",
+        "adler_weighted_prefix_step.ensures_0",
+        "adler_sum_nonnegative.ensures_0",
+        "adler_weighted_nonnegative.ensures_0",
+        "adler_residue_unique.ensures_0",
+        "adler_residue_add.ensures_0",
+        "adler_spec_a_canonical.ensures_0",
+        "adler_spec_b_canonical.ensures_0",
+        "adler_spec_packing_bounds.ensures_0",
+        "adler_spec_empty.ensures_0",
+        "adler_spec_empty.ensures_1",
+    ] {
+        let expanded =
+            click::surface::expand_c0_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+    for (before, after) in [
+        (
+            "adler_weighted_sum(bytes, n - 1, n - 1) + adler_byte_sum(bytes, n) by",
+            "adler_weighted_sum(bytes, n - 1, n - 1) + 2 * adler_byte_sum(bytes, n) by",
+        ),
+        ("<= 4293984240 by", "<= 4293984239 by"),
+        (
+            "adler_spec_a(bytes, 0, a0) == a0 by",
+            "adler_spec_a(bytes, 0, a0) == a0 + 1 by",
+        ),
+        (
+            "adler_spec_b(bytes, 0, a0, b0) == b0 by",
+            "adler_spec_b(bytes, 0, a0, b0) == a0 by",
+        ),
+    ] {
+        let invalid = COMMON_ADLER_SPEC.replacen(before, after, 1);
+        assert_ne!(invalid, COMMON_ADLER_SPEC, "missing mutation: {before}");
+        let error = click::surface::verify_c0_sources(&invalid, &[])
+            .expect_err("false checksum specification lemma accepted");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
         );
     }
 }

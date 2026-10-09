@@ -1101,3 +1101,16 @@ This establishes the fee caller's joint numerator/divisor profile for a full
 int64 fee, but native multiplication observations, conversions, safety and
 the caller's fast paths remain separate obligations. See the
 [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_multiply_order.md).
+
+
+When `peel` removes the final Integer fold application from a goal, ordinary
+source lowering may reduce its spelling to `true` while the kernel retains
+an Integer comparison such as `0 - 0 == 0` or `0 <= 0`.
+A trivial certificate preserves the constant comparison’s relation when it
+matches that kernel goal, including at the conclusion. The refreshed spelling
+is retained
+when its lowered Integer claim matches the kernel checker's normalized claim,
+or after a premise-free Integer certificate checks a truth reduced to a
+Boolean constant. Later arithmetic certificates still discharge the original
+kernel obligation; refreshing its presentation supplies no premise or memory
+authority.

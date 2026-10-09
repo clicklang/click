@@ -1541,7 +1541,7 @@ pub(super) fn construct_c_function_resource(
         CResource::Token { name, .. }
             if function.contract_interface().is_ordinary_abstract_family(name)
     );
-    if state.uses_population_authority_semantics() && !ordinary_token {
+    if !ordinary_token {
         return Ok(Err(CRuntimeError::FunctionContract(
             "generic resource construction cannot create members in authority mode".to_string(),
         )));
@@ -2285,10 +2285,8 @@ fn spec_reaches_population(interface: &CFunctionContractInterface, spec: &CResou
 /// Unadmitted calls cannot update an authority population. Verified effects
 /// and explicitly preserving assumed interfaces are checked at their own call
 /// boundaries; allocation/free use separate statement forms.
-fn authority_mode_call_refusal(caller_state: &CState) -> Option<CRuntimeError> {
-    caller_state
-        .uses_population_authority_semantics()
-        .then(|| CRuntimeError::FunctionContract(AUTHORITY_MODE_ASSUMED_CALL_REFUSAL.to_string()))
+fn authority_mode_call_refusal() -> CRuntimeError {
+    CRuntimeError::FunctionContract(AUTHORITY_MODE_ASSUMED_CALL_REFUSAL.to_string())
 }
 
 /// Why an unverified call whose contract changes a population or mutex
@@ -3308,15 +3306,13 @@ pub(super) fn check_wildcard_consumption_at_return(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(), CRuntimeError>> {
-    if entry.uses_population_authority_semantics()
-        && authority_mode_quantity_exchange_effects(interface).is_some()
+    if authority_mode_quantity_exchange_effects(interface).is_some()
         && authority_mode_member_companions_admitted(interface)
     {
         return check_quantity_exchange_at_return(entry, exit, interface, assumptions, budget);
     }
-    if !entry.uses_population_authority_semantics()
-        || !(authority_mode_consumes_member_contract(interface)
-            || authority_mode_exchanges_member_contract(interface))
+    if !(authority_mode_consumes_member_contract(interface)
+        || authority_mode_exchanges_member_contract(interface))
     {
         return Ok(Ok(()));
     }
@@ -4642,8 +4638,7 @@ pub(super) fn execute_c_function_call_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
-    if let Some(error) = authority_mode_call_refusal(caller_state)
-        && contract_reaches_population(function.contract_interface())
+    if contract_reaches_population(function.contract_interface())
         && environment
             .get_verified_function_rule(function.name())
             .is_none()
@@ -4656,6 +4651,7 @@ pub(super) fn execute_c_function_call_paths(
                     )
             })
     {
+        let error = authority_mode_call_refusal();
         return Ok(vec![CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
             facts: Vec::new().into(),
@@ -6207,28 +6203,13 @@ fn execute_verified_function_applications_with_suspension(
                     .map(|instance| CResourceFact::own(CResource::Instance(instance.clone()))),
             )
         };
-        let mut transition_state = post_state.clone().with_resource_context(callee_resources);
+        let transition_state = post_state.clone().with_resource_context(callee_resources);
         let population_timing = crate::instrumentation::OperationTiming::new(
             name,
             "verified function rule application",
             "verified call population transition",
         );
-        let population_transition = if caller_state.uses_population_authority_semantics() {
-            Ok(CCountedPopulationTransition::default())
-        } else {
-            apply_counted_population_transitions_with_interface(
-                caller_state,
-                &mut transition_state,
-                storage,
-                interface,
-                &argument_values,
-                &effective_assumptions,
-                true,
-                "after call to",
-                suspended.is_some(),
-                budget,
-            )?
-        };
+        let population_transition = { Ok(CCountedPopulationTransition::default()) };
         let population_transition = match population_transition {
             Ok(transition) => transition,
             Err(error) => {
@@ -6436,7 +6417,7 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        let authority_release_retires = if caller_state.uses_population_authority_semantics() {
+        let authority_release_retires = {
             match authority_mode_release_retires_control(
                 &entry_contract_state,
                 &post_state,
@@ -6456,8 +6437,6 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 }
             }
-        } else {
-            false
         };
         if authority_release_retires {
             let Some(member) = checked_consumed_population_member(interface, &transfer).cloned()
@@ -6603,7 +6582,7 @@ fn execute_verified_function_applications_with_suspension(
         }
         // Named consumption follows the checked input partition. The ordinary
         // planner removes exact custody; this advances only the population ledger.
-        if caller_state.uses_population_authority_semantics() {
+        {
             for checked in &transfer.consumed_inputs {
                 let CResource::Instance(instance) = checked.fact.resource() else {
                     continue;
@@ -6641,19 +6620,18 @@ fn execute_verified_function_applications_with_suspension(
             suspended.is_some() && authority_mode_mutex_member_helper_contract(interface);
         let mut deferred_exchange = Vec::new();
         // Publish the checked population delta before lowering postcondition counts.
-        let member_effects =
-            if !caller_state.uses_population_authority_semantics() || authority_release_retires {
-                Vec::new()
-            } else if authority_mode_mutex_member_helper_contract(interface) {
-                locked_helper_member_effects(interface).unwrap_or_default()
-            } else if authority_mode_consumes_member_contract(interface)
-                || authority_mode_produces_member_contract(interface)
-                || authority_mode_exchanges_member_contract(interface)
-            {
-                authority_mode_checked_member_effects(interface)
-            } else {
-                Vec::new()
-            };
+        let member_effects = if authority_release_retires {
+            Vec::new()
+        } else if authority_mode_mutex_member_helper_contract(interface) {
+            locked_helper_member_effects(interface).unwrap_or_default()
+        } else if authority_mode_consumes_member_contract(interface)
+            || authority_mode_produces_member_contract(interface)
+            || authority_mode_exchanges_member_contract(interface)
+        {
+            authority_mode_checked_member_effects(interface)
+        } else {
+            Vec::new()
+        };
         if !member_effects.is_empty() {
             for (produce, member_spec) in member_effects {
                 let mut produced_member = if produce {
@@ -6864,11 +6842,7 @@ fn execute_verified_function_applications_with_suspension(
             &entry_state.memory,
             &transfer.callee_resources,
             &caller_resources_after_requirements,
-            if caller_state.uses_population_authority_semantics() {
-                &output_resources
-            } else {
-                &return_resources
-            },
+            &output_resources,
             &population_transition.retained_body_allocations,
             interface,
             &allocation_assumptions,
@@ -6927,7 +6901,7 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
         };
-        if post_contract_state.uses_population_authority_semantics() {
+        {
             let body_assumptions =
                 assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
             let composite_outputs = ResourceContext::new_with_equalities(assumptions)
@@ -6969,7 +6943,7 @@ fn execute_verified_function_applications_with_suspension(
             budget,
         )?;
         drop(ensure_timing);
-        if post_contract_state.uses_population_authority_semantics() {
+        {
             let ensured_assumptions =
                 assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
             facts.extend(
@@ -7040,11 +7014,10 @@ fn execute_verified_function_applications_with_suspension(
                     // Authority mode transfers an exact authority through the
                     // creation ledger below, as at a sequential call boundary.
                     if worker_mutex_uses.contains(fact)
-                        || (caller_state.uses_population_authority_semantics()
-                            && matches!(
-                                fact,
-                                CResourceFact::Own(CResource::PopulationAuthority(_), _)
-                            ))
+                        || (matches!(
+                            fact,
+                            CResourceFact::Own(CResource::PopulationAuthority(_), _)
+                        ))
                     {
                         None
                     } else {
@@ -7101,7 +7074,7 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            let creation = if caller_state.uses_population_authority_semantics() {
+            let creation = {
                 let (Some(after), Some(parent), Some(worker)) = (
                     post_state.population_effects.creation.as_ref(),
                     caller_state.population_effects.creation.as_ref(),
@@ -7118,8 +7091,6 @@ fn execute_verified_function_applications_with_suspension(
                     definitions: interface.composite_resource_definitions().to_vec(),
                     deferred: deferred_exchange.clone(),
                 })
-            } else {
-                None
             };
             completions.push(super::threads::WorkerCompletion::checked(
                 plan,
@@ -7260,7 +7231,7 @@ fn execute_verified_function_applications_with_suspension(
         }
         return_state.population_access = post_state.population_access.clone();
         return_state.counted_populations = post_state.counted_populations.clone();
-        if caller_state.uses_population_authority_semantics() {
+        {
             let returned = match transfer_population_call_facts(
                 post_state.clone(),
                 &entry_state,
@@ -7354,11 +7325,6 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 }
             }
-        } else {
-            return_state.restore_population_creation_after_call(
-                caller_state.population_effects.creation.as_ref(),
-                post_state.population_effects.creation.as_ref(),
-            );
         }
         return_state = match checked_returned_control_wrappers(
             return_state,
@@ -7639,9 +7605,6 @@ fn checked_returned_control_wrappers(
     interface: &CFunctionContractInterface,
     assumptions: &PureFactContext,
 ) -> Result<CState, CRuntimeError> {
-    if !state.uses_population_authority_semantics() {
-        return Ok(state);
-    }
     for fact in frontier.facts() {
         let CResourceFact::Own(CResource::Composite { name, .. }, _) = fact else {
             continue;
@@ -7671,9 +7634,6 @@ fn checked_contract_control_read_state(
     interface: &CFunctionContractInterface,
     assumptions: &PureFactContext,
 ) -> Result<CState, CRuntimeError> {
-    if !state.uses_population_authority_semantics() {
-        return Ok(state.clone());
-    }
     let mut resources = state.resources().clone();
     for fact in frontier.facts() {
         let CResourceFact::Own(CResource::Composite { name, .. }, _) = fact else {
@@ -7750,8 +7710,7 @@ fn prepare_verified_function_call<'a>(
     suspend_worker: bool,
 ) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, CFunctionPath>> {
     let contract_interface = application.interface;
-    if let Some(error) = authority_mode_call_refusal(caller_state)
-        && contract_reaches_population(contract_interface)
+    if contract_reaches_population(contract_interface)
         && ((suspend_worker && application.evidence.is_none())
             || (application.evidence.is_none()
                 && !environment
@@ -7759,6 +7718,7 @@ fn prepare_verified_function_call<'a>(
                     .is_some_and(CExternalFunctionRule::is_scoped_unselected)
                 && !authority_mode_preserves_assumed_resource_contract(contract_interface)))
     {
+        let error = authority_mode_call_refusal();
         return Ok(Err(CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
             facts: arguments_path.facts,
@@ -7766,8 +7726,7 @@ fn prepare_verified_function_call<'a>(
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }));
     }
-    if caller_state.uses_population_authority_semantics()
-        && contract_reaches_population(contract_interface)
+    if contract_reaches_population(contract_interface)
         && !authority_mode_supports_resource_contract(contract_interface)
     {
         return Ok(Err(resource_call_failure(
@@ -7987,7 +7946,7 @@ fn prepare_verified_function_call<'a>(
     // total, the caller's own members, and no count observation. The ledger
     // then lends it to the call like any held population, and the caller's
     // own exit check compares the declared change with the calls' changes.
-    if caller_state.uses_population_authority_semantics() && !suspend_worker {
+    if !suspend_worker {
         let populations = match locked_helper_population(
             contract_interface,
             &transfer,
@@ -8078,7 +8037,7 @@ fn prepare_verified_function_call<'a>(
         }
         Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
     };
-    if caller_state.uses_population_authority_semantics() && !suspend_worker {
+    if !suspend_worker {
         let lent = match locked_helper_population(
             contract_interface,
             &transfer,
@@ -8185,18 +8144,11 @@ fn prepare_verified_function_call<'a>(
         .any(|fact| matches!(fact.resource(), CResource::Composite { .. }))
     {
         let definitions = contract_interface.composite_resource_definitions();
-        let opened = if entry_contract_state.uses_population_authority_semantics() {
+        let opened = {
             expand_all_composite_resource_facts_at_state(
                 entry_contract_state.resources(),
                 definitions,
                 &entry_contract_state,
-                &path_assumptions,
-            )
-        } else {
-            expand_all_composite_resource_facts(
-                entry_contract_state.resources(),
-                definitions,
-                entry_contract_state.memory(),
                 &path_assumptions,
             )
         };
@@ -8226,7 +8178,7 @@ fn prepare_verified_function_call<'a>(
             .iter()
             .chain(&transfer.consumed_inputs)
             .filter(|input| {
-                !entry_contract_state.uses_population_authority_semantics()
+                false
                     && match input.fact.resource() {
                         CResource::Composite { name, .. } | CResource::Token { name, .. } => {
                             contract_interface
@@ -8234,14 +8186,12 @@ fn prepare_verified_function_call<'a>(
                                 .is_some_and(|definition| {
                                     definition.is_counted_population()
                                         && !definition.facts().is_empty()
-                                        && !(entry_contract_state
-                                            .uses_population_authority_semantics()
-                                            && definition.contains().iter().any(|child| {
-                                                matches!(
-                                                    child.term(),
-                                                    CResourceTerm::PopulationAuthority { .. }
-                                                )
-                                            }))
+                                        && !(definition.contains().iter().any(|child| {
+                                            matches!(
+                                                child.term(),
+                                                CResourceTerm::PopulationAuthority { .. }
+                                            )
+                                        }))
                                 })
                         }
                         _ => false,
@@ -8281,7 +8231,6 @@ fn prepare_verified_function_call<'a>(
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }));
     };
-    let has_population_invariant = population_facts.iter().any(|fact| fact.is_body_fact);
     for fact in population_facts {
         if fact.is_body_fact
             && !crate::kernel::PureFactContext::settles_exactly(
@@ -8298,25 +8247,20 @@ fn prepare_verified_function_call<'a>(
             );
         }
     }
-    if has_population_invariant || entry_contract_state.uses_population_authority_semantics() {
-        // The transfer's exposed population body and its untouched caller
-        // frame are parts of the same checked ownership partition. Retain
-        // that partition before consumption hides the body, so a later
-        // disjoint caller store can transport the callee's returned facts.
-        if let Some(partition) = retained_population_call_partition(
-            &transfer.caller_resources_after_requirements,
-            if entry_contract_state.uses_population_authority_semantics() {
-                precondition_state.resources()
-            } else {
-                &transfer.callee_resources
-            },
-            &path_assumptions,
-        ) {
-            facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
-                partition,
-            )));
-        }
+    // The transfer's exposed population body and its untouched caller
+    // frame are parts of the same checked ownership partition. Retain
+    // that partition before consumption hides the body, so a later
+    // disjoint caller store can transport the callee's returned facts.
+    if let Some(partition) = retained_population_call_partition(
+        &transfer.caller_resources_after_requirements,
+        precondition_state.resources(),
+        &path_assumptions,
+    ) {
+        facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
+            partition,
+        )));
     }
+
     let mut established_requirements = Vec::new();
     let requirement_timing = crate::instrumentation::OperationTiming::new(
         application.name,
@@ -9397,7 +9341,7 @@ pub(super) fn function_contract_refinement_entry_state(
     context: &CFunctionContractRefinementContext,
 ) -> CState {
     with_contract_interface_argument_views(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         &context.contract.interface,
         &context.argument_values,
     )
@@ -9410,8 +9354,11 @@ pub(super) fn prepare_contract_refinement_obligations(
     let source = &context.function_interface;
     let mut budget = ExecutionBudget::continuing_from(context.next_kernel_variable);
     let entry = function_contract_refinement_entry_state(context);
-    let source_entry =
-        with_contract_interface_argument_views(&CState::new(), source, &context.argument_values);
+    let source_entry = with_contract_interface_argument_views(
+        &CState::new().with_population_creation_tracking(),
+        source,
+        &context.argument_values,
+    );
     let mut assumptions = PureFactContext::new();
     if !assume_contract_propositions(
         &entry,
@@ -9924,12 +9871,12 @@ fn function_refines_named_contract_in_case(
     }
 
     let contract_frame = with_contract_interface_argument_views(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         contract_interface,
         &context.argument_values,
     );
     let function_frame = with_contract_interface_argument_views(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         function_interface,
         &context.argument_values,
     );
@@ -10717,102 +10664,6 @@ fn expand_composites_for_frame(
 mod counted_membership_framing_tests {
     use super::*;
     use crate::kernel::*;
-
-    #[test]
-    fn neutral_population_call_preserves_allocation_lifetime_without_preserving_bytes() {
-        let pointer = Pointer {
-            block: "population-allocation".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
-        let body = CMemoryRange::new(
-            pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        );
-        let population = CCompositeResourceDefinition::counted_population(
-            "remaining",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            None,
-            vec![
-                CResourceSpec::token(
-                    CResourceAccessMode::Own,
-                    CResourceFact::ALLOCATION_RESOURCE_NAME.into(),
-                    vec![c_variable("p"), c_int32_literal(4)],
-                    vec![CType::Int32Pointer, CType::Int32],
-                ),
-                CResourceSpec::owned_memory(CMemorySegment::new(
-                    c_variable("p"),
-                    c_int32_literal(0),
-                    c_int32_literal(1),
-                )),
-            ],
-            vec![],
-        );
-        let specification = CResourceSpec::composite(
-            CResourceAccessMode::Own,
-            "remaining".into(),
-            vec![c_variable("p")],
-            vec![CType::Int32Pointer],
-        );
-        let function = c_function(
-            CType::Void,
-            "neutral",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            CStatement::Skip,
-        )
-        .with_composite_resource_definitions(vec![population])
-        .with_resource_summary(vec![specification.clone()], vec![specification]);
-        let head = CResourceFact::own(CResource::Composite {
-            name: "remaining".into(),
-            arguments: arguments.clone(),
-        });
-        let before = CState::new()
-            .with_memory(
-                CMemory::new()
-                    .with_block("population-allocation", 4)
-                    .with_heap_allocation_claim(pointer.clone(), 4)
-                    .unwrap()
-                    .store(pointer.clone(), int32(0)),
-            )
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(head.clone()))
-            .with_counted_population("remaining", arguments.clone(), Bitvector32Term::Constant(3));
-        let assumptions = PureFactContext::new();
-        let havoc = before.memory().clone().with_call_memory_havoc(
-            Variable(780_120),
-            std::slice::from_ref(&body),
-            &assumptions,
-            None,
-        );
-        assert!(!havoc.cells.contains_key(&pointer));
-        let mut after = before.clone().with_memory(havoc.clone());
-        let transition = apply_counted_population_transitions(
-            &before,
-            &mut after,
-            &function,
-            &[CValue::pointer(pointer.clone())],
-            &assumptions,
-            true,
-            &mut ExecutionBudget::beside_live_state(),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(
-            after.counted_population("remaining", &arguments),
-            Some(&Bitvector32Term::Constant(3))
-        );
-        assert_eq!(
-            transition.retained_body_allocations,
-            vec![(pointer.clone(), Bitvector32Term::Constant(4))]
-        );
-        assert!(transition.finalized_body_resources.is_empty());
-        assert_eq!(
-            after.memory(),
-            &havoc,
-            "lifetime accounting must not restore the body's old bytes"
-        );
-        assert!(!after.memory().cells.contains_key(&pointer));
-    }
 
     #[test]
     fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
@@ -15323,7 +15174,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     // the whole fact list per ensure was quadratic in the ensure count, and
     // uncharged. The facts and obligations are sets of assumptions, so
     // assuming a later fact after the obligations names the same context.
-    let opened_entry_state = if entry_contract_state.uses_population_authority_semantics() {
+    let opened_entry_state = {
         expand_all_composite_resource_facts_at_state(
             entry_contract_state.resources(),
             interface.composite_resource_definitions(),
@@ -15335,8 +15186,6 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 .clone()
                 .with_resource_context(resources)
         })
-    } else {
-        None
     };
     let entry_contract_state = opened_entry_state.as_ref().unwrap_or(entry_contract_state);
     let mut ensure_assumptions =
@@ -15365,25 +15214,20 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             // path, such as a checked count's entry-owned lower bound. Keep
             // their branch guards, but do not turn those consequences into
             // new caller prerequisites for the specialized ensure.
-            let authority_semantics = post_contract_state.uses_population_authority_semantics();
-            let branch_facts = if authority_semantics {
+            let branch_facts = {
                 ensure_path
                     .facts
                     .iter()
                     .filter(|fact| !fact.certified)
                     .cloned()
                     .collect::<ExecutionFacts>()
-            } else {
-                ensure_path.facts.clone()
             };
-            if authority_semantics {
-                for fact in ensure_path.facts.iter().filter(|fact| fact.certified) {
-                    facts.push(ExecutionPureFact::certified(wrap_path_context(
-                        fact.proposition().clone(),
-                        &branch_facts,
-                        &[],
-                    )));
-                }
+            for fact in ensure_path.facts.iter().filter(|fact| fact.certified) {
+                facts.push(ExecutionPureFact::certified(wrap_path_context(
+                    fact.proposition().clone(),
+                    &branch_facts,
+                    &[],
+                )));
             }
 
             for path_obligation in &ensure_path.obligations {
@@ -15450,14 +15294,12 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 // A closed premise, such as the constant condition left by
                 // a decided argument comparison, settles without the call
                 // context under either semantics.
-                let available = if authority_semantics {
+                let available = {
                     crate::kernel::reasoning::path_facts::solve_builtin_prop(&premise)
                         || specialized_assumptions.states_required_goal(&premise)
                         || reversed_order.as_ref().is_some_and(|premise| {
                             specialized_assumptions.states_required_goal(premise)
                         })
-                } else {
-                    specialized_assumptions.proves_exact(&premise)
                 } || discharged_premises
                     .iter()
                     .any(|discharged| discharged == premise.as_ref());
@@ -16065,25 +15907,16 @@ fn apply_verified_heap_allocation_delta(
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
     let expand_allocations = |resources: &ResourceContext, state: &CState, memory: &CMemory| {
-        if state.uses_population_authority_semantics() {
-            let projection_state = state
-                .clone()
-                .with_memory(memory.clone())
-                .with_resource_context(resources.clone());
-            expand_all_composite_resource_facts_at_state(
-                resources,
-                interface.composite_resource_definitions(),
-                &projection_state,
-                assumptions,
-            )
-        } else {
-            expand_all_composite_resource_facts(
-                resources,
-                interface.composite_resource_definitions(),
-                memory,
-                assumptions,
-            )
-        }
+        let projection_state = state
+            .clone()
+            .with_memory(memory.clone())
+            .with_resource_context(resources.clone());
+        expand_all_composite_resource_facts_at_state(
+            resources,
+            interface.composite_resource_definitions(),
+            &projection_state,
+            assumptions,
+        )
     };
     let input =
         expand_allocations(input_resources, mutex_state, entry_memory).ok_or_else(|| {
@@ -16109,16 +15942,11 @@ fn apply_verified_heap_allocation_delta(
     // Returned controls belong to the callee until checked custody returns;
     // untouched controls belong to the caller. Keep their checked projections
     // separate and visit the same returned facts without rebuilding the frame.
-    let authority_mode = mutex_state.uses_population_authority_semantics();
     let returned_facts = || {
         output
             .facts()
             .iter()
-            .chain(preserved.facts().iter().take(if authority_mode {
-                preserved.facts().len()
-            } else {
-                0
-            }))
+            .chain(preserved.facts().iter().take(preserved.facts().len()))
     };
     let allocation_assumptions = input
         .observable_facts_assuming_valid(assumptions)
@@ -16153,10 +15981,9 @@ fn apply_verified_heap_allocation_delta(
         if output
             .cached_support_exposing_fact(fact, &allocation_assumptions)
             .is_some()
-            || (authority_mode
-                && preserved
-                    .cached_support_exposing_fact(fact, &allocation_assumptions)
-                    .is_some())
+            || (preserved
+                .cached_support_exposing_fact(fact, &allocation_assumptions)
+                .is_some())
             || expose_composite_resource_fact(
                 &output,
                 fact,
@@ -16412,19 +16239,32 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
     );
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AggregateReturnRefusal {
+    InvalidValue,
+    UninitializedRead,
+}
+
+// Keep source initialization and materialization in one checked transition.
+// Every body-completion path must use this boundary before retiring the source.
 fn materialize_aggregate_return(
     state: &mut CState,
     function: &CFunction,
     value: CValue,
-) -> Option<CValue> {
-    let layout = function.return_aggregate_layout()?;
+) -> Result<CValue, AggregateReturnRefusal> {
+    let layout = function
+        .return_aggregate_layout()
+        .ok_or(AggregateReturnRefusal::InvalidValue)?;
     let CValue::Pointer(pointer) = value else {
-        return None;
+        return Err(AggregateReturnRefusal::InvalidValue);
     };
     if pointer.is_null() {
-        return None;
+        return Err(AggregateReturnRefusal::InvalidValue);
     }
     let source = pointer.pointer().clone();
+    if aggregate_copy_reads_uninitialized(&state.memory, &source, layout) {
+        return Err(AggregateReturnRefusal::UninitializedRead);
+    }
     let frame = state.next_local_frame;
     let destination = CMemory::frame_local_pointer(frame, "__return");
     state.set_memory(
@@ -16440,7 +16280,7 @@ fn materialize_aggregate_return(
         layout,
     ));
     state.next_local_frame = frame.saturating_add(1);
-    Some(CValue::typed_pointer(destination, function.return_type()))
+    Ok(CValue::typed_pointer(destination, function.return_type()))
 }
 
 /// The undefined behavior of the implicit conversion a `return` performs when
@@ -19543,10 +19383,7 @@ fn evaluate_resource_population_body_resources(
         else {
             continue;
         };
-        if !include_ordinary
-            && (!definition.is_counted_population()
-                || callee_state.uses_population_authority_semantics())
-        {
+        if !include_ordinary {
             continue;
         }
         if definition.parameters().len() != arguments.len() {
@@ -20174,9 +20011,7 @@ fn prepare_contract_resource_transfer(
     // a declared named input before C execution. Its exact receipt supplies
     // only input-clause evaluation; it never restores the live resource state.
     let mut input_evaluation_state = callee_state.clone();
-    if purpose == ResourceTransitionPurpose::FunctionBoundary
-        && caller_state.uses_population_authority_semantics()
-    {
+    if purpose == ResourceTransitionPurpose::FunctionBoundary {
         input_evaluation_state.resource_bindings = caller_state.resource_bindings.clone();
     }
     let mut spent_named_inputs = BTreeSet::new();
@@ -20273,7 +20108,7 @@ fn prepare_contract_resource_transfer(
         }
     }
     let mut canonical_population_owners = Vec::new();
-    if caller_state.uses_population_authority_semantics() {
+    {
         let quantity_input =
             authority_mode_quantity_exchange_effects(interface).and_then(|effects| {
                 interface
@@ -20951,7 +20786,7 @@ fn prepare_contract_resource_transfer(
             }
         }
     }
-    let canonical_resources = if caller_state.uses_population_authority_semantics() {
+    let canonical_resources = {
         let canonical_state = caller_state
             .clone()
             .with_resource_context(required_resources.clone());
@@ -20959,13 +20794,6 @@ fn prepare_contract_resource_transfer(
             &required_resources,
             interface.composite_resource_definitions(),
             &canonical_state,
-            assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts(
-            &required_resources,
-            interface.composite_resource_definitions(),
-            callee_state.memory(),
             assumptions,
         )
     };
@@ -21344,11 +21172,7 @@ pub(super) fn evaluate_function_return_resource_context(
     evaluate_contract_return_resource_context(
         function.contract_interface(),
         &[],
-        if entry_state.uses_population_authority_semantics() {
-            entry_clauses
-        } else {
-            &[]
-        },
+        entry_clauses,
         entry_clauses,
         entry_state,
         post_state,
@@ -21551,11 +21375,10 @@ fn evaluate_contract_return_resource_context(
                 entry_state,
                 assumptions,
             ));
-            if entry_state.uses_population_authority_semantics()
-                && let Some(owned) = entry_state
-                    .resources()
-                    .directly_supporting_fact(&checked.fact, assumptions)
-                    .filter(|fact| fact.is_own())
+            if let Some(owned) = entry_state
+                .resources()
+                .directly_supporting_fact(&checked.fact, assumptions)
+                .filter(|fact| fact.is_own())
                 && let Some((ranges, _)) = matched_instance_body_ownership(
                     owned,
                     interface.composite_resource_definitions(),
@@ -21596,12 +21419,11 @@ fn evaluate_contract_return_resource_context(
         canonical_borrowed_owners,
     );
     let entry_state_for_argument_reads =
-        if entry_state.uses_population_authority_semantics()
-            && interface
-                .resource_ensures()
-                .iter()
-                .take(count)
-                .any(|resource| resource.guard().is_some())
+        if interface
+            .resource_ensures()
+            .iter()
+            .take(count)
+            .any(|resource| resource.guard().is_some())
         {
             let mut resources = entry_state_for_argument_reads.resources().clone();
             for checked in entry_clauses {
@@ -21654,7 +21476,7 @@ fn evaluate_contract_return_resource_context(
     // A returned control preserves the authority consumed at entry. Match
     // its source spelling against only those authenticated input controls;
     // alias equality does not create a new ledger identity.
-    let consumed_control_frontier = if entry_state.uses_population_authority_semantics() {
+    let consumed_control_frontier = {
         ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
             entry_clauses.iter().filter_map(|checked| {
                 if checked.role != CResourceTransferRole::Consume {
@@ -21673,8 +21495,6 @@ fn evaluate_contract_return_resource_context(
                     .map(|_| checked.fact.clone())
             }),
         )
-    } else {
-        ResourceContext::new_with_equalities(assumptions)
     };
     // A produced member of a checked quantity exchange retains the exact
     // population of its consumed input. Canonicalize before composition and
@@ -21951,11 +21771,7 @@ fn evaluate_function_return_resources(
     evaluate_contract_return_resources(
         caller_resources_after_requirements,
         escrowed_owners,
-        if entry_state.uses_population_authority_semantics() {
-            canonical_borrowed_owners
-        } else {
-            &[]
-        },
+        canonical_borrowed_owners,
         borrowed_inputs,
         entry_clauses,
         entry_state,
@@ -22083,20 +21899,13 @@ fn evaluate_contract_return_resources(
                     *source_rank += 1;
                     let singleton = ResourceContext::new_with_equalities(assumptions)
                         .unchecked_with_fact(support.clone());
-                    let expanded = if post_state.uses_population_authority_semantics() {
+                    let expanded = {
                         let projection_state =
                             post_state.clone().with_resource_context(singleton.clone());
                         expand_all_composite_resource_facts_at_state(
                             &singleton,
                             interface.composite_resource_definitions(),
                             &projection_state,
-                            assumptions,
-                        )?
-                    } else {
-                        expand_all_composite_resource_facts(
-                            &singleton,
-                            interface.composite_resource_definitions(),
-                            post_state.memory(),
                             assumptions,
                         )?
                     };
@@ -22471,59 +22280,6 @@ fn counted_population_quantities(
 #[cfg(test)]
 mod committed_population_return_tests {
     use super::*;
-
-    #[test]
-    fn unprojected_legacy_endpoint_preserves_body_consumption_evidence() {
-        let function = c_function(
-            CType::Void,
-            "endpoint",
-            vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
-        );
-        let entry = CState::new();
-        let mut body = entry.clone().with_counted_population(
-            "remaining",
-            vec![].into(),
-            Bitvector32Term::Constant(1),
-        );
-        Arc::make_mut(&mut body.population_effects)
-            .committed_consumptions
-            .insert(CCountedPopulation {
-                name: "remaining".into(),
-                arguments: vec![].into(),
-                count: Bitvector32Term::Constant(1),
-                family_observation_marker: false,
-            });
-        for projected in [false, true] {
-            let resources = ResourceContext::new();
-            let (outcome, _) = function_outcome_from_body(
-                &entry,
-                &function,
-                CStatementOutcome::Return {
-                    value: CValue::Void,
-                    state: Box::new(body.clone()),
-                },
-                vec![],
-                &PureFactContext::new(),
-                projected.then_some(&resources),
-            );
-            let CFunctionOutcome::Return { state, .. } = outcome else {
-                panic!("expected return endpoint");
-            };
-            assert_eq!(
-                state.counted_population("remaining", &[]),
-                Some(&Bitvector32Term::Constant(1))
-            );
-            assert_eq!(
-                state
-                    .population_effects
-                    .committed_consumptions
-                    .get("remaining", &[], false)
-                    .is_some(),
-                !projected
-            );
-        }
-    }
 
     #[test]
     fn return_reconciles_an_early_consumption_without_resetting_the_total() {
@@ -23029,35 +22785,7 @@ fn apply_counted_population_transitions_with_interface(
             // membership unit; allocation reconciliation still needs the
             // population-wide allocations that the unchanged count keeps
             // alive, just as it does for a nonzero changed count below.
-            if let Some(definition) = population_body_definition
-                && !caller_state.uses_population_authority_semantics()
-                && post_state
-                    .counted_population(&name, &arguments)
-                    .is_some_and(|count| !population_quantity_is_zero(count, assumptions))
-            {
-                let singleton =
-                    ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(
-                        CResourceFact::own(CResource::Composite { name, arguments }),
-                    );
-                let retained = match evaluate_resource_population_body_resources(
-                    &singleton,
-                    &entry_state,
-                    std::slice::from_ref(definition),
-                    assumptions,
-                    budget,
-                    true,
-                )? {
-                    Ok(resources) => resources,
-                    Err(error) => return Ok(Err(error)),
-                };
-                transition.retained_body_allocations.extend(
-                    retained
-                        .facts()
-                        .iter()
-                        .filter_map(CResourceFact::allocation)
-                        .map(|(base, bytes)| (base.clone(), bytes.clone())),
-                );
-            }
+
             continue;
         }
         let consumes_entire_population =
@@ -23194,62 +22922,13 @@ fn apply_counted_population_transitions_with_interface(
             *post_state = post_state
                 .clone()
                 .without_counted_population(&name, &arguments);
-            if population_body_definition.is_some()
-                && !caller_state.uses_population_authority_semantics()
-            {
-                let singleton = ResourceContext::new_with_equalities(assumptions)
-                    .unchecked_with_fact(CResourceFact::own(CResource::Composite {
-                        name: name.clone(),
-                        arguments: arguments.clone(),
-                    }));
-                let finalized = match evaluate_resource_population_body_resources(
-                    &singleton,
-                    &entry_state,
-                    interface.composite_resource_definitions(),
-                    assumptions,
-                    budget,
-                    true,
-                )? {
-                    Ok(resources) => resources,
-                    Err(error) => return Ok(Err(error)),
-                };
-                transition
-                    .finalized_body_resources
-                    .extend(finalized.facts().iter().cloned());
-            }
         } else {
             *post_state = post_state.clone().with_counted_population(
                 name.clone(),
                 arguments.clone(),
                 new_count.clone(),
             );
-            if population_body_definition.is_some()
-                && !caller_state.uses_population_authority_semantics()
-            {
-                let singleton = ResourceContext::new_with_equalities(assumptions)
-                    .unchecked_with_fact(CResourceFact::own(CResource::Composite {
-                        name: name.clone(),
-                        arguments: arguments.clone(),
-                    }));
-                let retained = match evaluate_resource_population_body_resources(
-                    &singleton,
-                    &entry_state,
-                    interface.composite_resource_definitions(),
-                    assumptions,
-                    budget,
-                    true,
-                )? {
-                    Ok(resources) => resources,
-                    Err(error) => return Ok(Err(error)),
-                };
-                transition.retained_body_allocations.extend(
-                    retained
-                        .facts()
-                        .iter()
-                        .filter_map(CResourceFact::allocation)
-                        .map(|(base, bytes)| (base.clone(), bytes.clone())),
-                );
-            }
+
             // A visible ensured unit witnesses nonemptiness. The transition
             // preserves the population cardinality invariant algebraically:
             // entry count >= required units, then both sides change by the
@@ -23342,7 +23021,6 @@ fn apply_counted_population_transitions_with_interface(
     // verification condition, not an automatically assumed consequence.
     let post_contract_state =
         with_contract_interface_argument_views(post_state, interface, argument_values);
-    let mut active_populations = Vec::new();
     for population in post_contract_state.counted_populations() {
         if population_quantity_is_zero(&population.count, assumptions) {
             continue;
@@ -23387,26 +23065,12 @@ fn apply_counted_population_transitions_with_interface(
                 .with_context("resource population body is active"),
             );
         }
-        active_populations.push(CResourceFact::own(CResource::Composite {
-            name: population.name.clone(),
-            arguments: population.arguments.clone(),
-        }));
     }
-    let active_populations =
-        ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(active_populations);
-    let Some(population_facts) = (if caller_state.uses_population_authority_semantics() {
+    let Some(population_facts) = ({
         // Authority-mode invariants belong to owned controls and are checked
         // by their resource exchanges. Legacy population membership cannot
         // expose those bodies or publish their facts at a return boundary.
         Some(Vec::new())
-    } else {
-        evaluate_resource_population_fact_propositions(
-            &active_populations,
-            interface.composite_resource_definitions(),
-            &post_contract_state,
-            &PureFactContext::new(),
-            true,
-        )
     }) else {
         return Ok(Err(CRuntimeError::FunctionContract(
             "could not evaluate resource population postcondition".to_string(),
@@ -23763,6 +23427,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
     pub(crate) state: CState,
     pub(crate) semantic_facts: Vec<Proposition>,
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
+    /// The checked opening delta used to choose the body's pointer spellings.
+    pub(crate) naming_facts: Vec<Proposition>,
 }
 
 /// Whether an undischarged proposition only says that an arithmetic
@@ -24229,7 +23895,6 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || definition.recursive
-        || (definition.counted_population && !state.uses_population_authority_semantics())
         || !definition.witnesses.is_empty()
         || definition.parameters.len() != instance.arguments.len()
         || instance
@@ -24411,8 +24076,8 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     // memory bounds. A proposed fold has no such authority: its quantities
     // must be proved nonnegative and actually consumed below.
     let entry_assumptions = assumptions;
-    let mut quantity_assumptions = assumptions.clone();
-    let mut quantity_facts = Vec::new();
+    let mut opening_assumptions = assumptions.clone();
+    let mut opening_facts = Vec::new();
     if unfold {
         for resource in body_specs {
             let CResourceQuantity::Count(quantity) = resource.quantity() else {
@@ -24425,7 +24090,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 &evaluation,
                 &evaluation,
                 resource,
-                &quantity_assumptions,
+                &opening_assumptions,
                 &mut budget,
             )
             .map_err(|_| "instance quantity guard evaluation exceeded its budget")?
@@ -24436,7 +24101,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             let value = evaluate_loop_effect_segment_value(
                 &evaluation,
                 quantity,
-                &quantity_assumptions,
+                &opening_assumptions,
                 "instance body quantity",
                 &mut budget,
             )
@@ -24452,11 +24117,64 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 ),
                 true,
             );
-            quantity_assumptions = quantity_assumptions.assume_proposition(fact.clone());
-            quantity_facts.push(fact);
+            opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
+            opening_facts.push(fact);
         }
     }
-    let assumptions = &quantity_assumptions;
+    // The exclusively owned parent already establishes these direct pointer
+    // aliases. Retain them before choosing the spelling of its memory body
+    // and child arguments, so opening and later closing the same arm agree.
+    // Restrict this early phase to bare pointer locals: it neither reads a
+    // child nor acquires any extra memory authority. A fold must prove its
+    // proposed body facts and must never assume them here.
+    if unfold && active && !body_children.is_empty() {
+        let early = selected
+            .map_or(&definition.facts, |arm| &arm.facts)
+            .iter()
+            .filter(|fact| match fact {
+                SpecProposition::Comparison {
+                    left: SpecExpression::CExpression(CExpression::Variable(left)),
+                    operator: CComparisonOperator::Equal,
+                    right: SpecExpression::CExpression(CExpression::Variable(right)),
+                } => {
+                    matches!(evaluation.locals.get(left), Some(CValue::Pointer(_)))
+                        && matches!(evaluation.locals.get(right), Some(CValue::Pointer(_)))
+                }
+                _ => false,
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let (clauses, conditions) = lower_selected_resource_body_clauses(
+            &evaluation,
+            &early,
+            selected.map(|arm| arm.variant.as_str()),
+            &integer_bindings,
+            &algebraic_bindings,
+            &opening_assumptions,
+            None,
+            &mut budget,
+        )?;
+        for fact in clauses
+            .into_iter()
+            .map(|clause| clause.proposition)
+            .chain(conditions)
+        {
+            opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
+            opening_facts.push(fact);
+        }
+        if let Some(arm) = selected {
+            for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
+                if let AlgebraicValue::C(value) = value
+                    && let Some(spelling) =
+                        arm_binding_program_spelling(value, &opening_assumptions)
+                {
+                    let ty = spelling.c_type();
+                    evaluation.locals.set_typed(name.clone(), spelling, ty);
+                }
+            }
+        }
+    }
+    let assumptions = &opening_assumptions;
     // A contained authority is exclusive custody, not a readable footprint.
     // Name it from its declared type; the fold below consumes the caller's
     // actual authority, and an unfold returns the one this instance holds.
@@ -24466,8 +24184,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     let body_specs = body_specs.into_iter().cloned().collect::<Vec<_>>();
     let mut authorities = Vec::with_capacity(authority_specs.len());
     for spec in authority_specs {
-        if !state.uses_population_authority_semantics()
-            || spec.access() != CResourceAccessMode::Own
+        if spec.access() != CResourceAccessMode::Own
             || spec.quantity() != &CResourceQuantity::One
             || spec.guard().is_some()
         {
@@ -24704,6 +24421,23 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             .try_compose_into_valid_context_delaying_normalization([folded.clone()], assumptions)
             .map_err(|_| "fold would duplicate instance ownership")?;
     }
+    // Body propositions retain their source bindings, including exact facts
+    // about model pointers. Only memory/child placement uses the early alias
+    // spelling; lowering reads still has that checked equality available.
+    if unfold
+        && active
+        && !body_children.is_empty()
+        && let Some(arm) = selected
+    {
+        for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
+            if let AlgebraicValue::C(value) = value {
+                let spelling = arm_binding_program_spelling(value, entry_assumptions)
+                    .unwrap_or_else(|| value.clone());
+                let ty = spelling.c_type();
+                evaluation.locals.set_typed(name.clone(), spelling, ty);
+            }
+        }
+    }
     evaluation.resources = if unfold {
         next.resources.clone()
     } else {
@@ -24711,7 +24445,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     };
     evaluation.resource_bindings = Some(std::sync::Arc::new(resource_bindings));
     let mut facts = body.observable_facts_assuming_valid(assumptions);
-    facts.extend(quantity_facts);
+    facts.extend(opening_facts.iter().cloned());
     for fact in body.facts() {
         let Some(range) = fact.memory_range() else {
             continue;
@@ -24793,7 +24527,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 !entry_assumptions.states_required_goal(fact) && seen.insert(fact.clone())
             })
             .collect()
-    } else if state.uses_population_authority_semantics() {
+    } else {
         // Folding checked each pure body clause in the current snapshot.
         // A transported old-snapshot fact can establish that clause without
         // already spelling the current proposition, so retain that checked
@@ -24806,8 +24540,6 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 !entry_assumptions.states_required_goal(fact) && seen.insert(fact.clone())
             })
             .collect()
-    } else {
-        Vec::new()
     };
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
         .map_err(ResourceRewriteRefusal::OwnedMessage)?;
@@ -24865,6 +24597,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         state: next,
         semantic_facts,
         body_clauses,
+        naming_facts: opening_facts,
     })
 }
 
@@ -26287,15 +26020,13 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
     }) {
         return None;
     }
-    let guard_assumptions = if state.uses_population_authority_semantics() {
+    let guard_assumptions = {
         path.facts
             .iter()
             .filter(|fact| fact.is_certified())
             .fold(assumptions.clone(), |context, fact| {
                 context.assume_proposition(fact.proposition().clone())
             })
-    } else {
-        assumptions.clone()
     };
     let assumptions = &guard_assumptions;
     let proves_body_condition = |proposition: &Proposition| match proposition {
@@ -26719,21 +26450,6 @@ fn expand_composite_resource_tree(
     Some(expanded)
 }
 
-pub(super) fn expand_all_composite_resource_facts_and_propositions(
-    context: &ResourceContext,
-    definitions: &[CCompositeResourceDefinition],
-    memory: &CMemory,
-    assumptions: &PureFactContext,
-) -> Option<(ResourceContext, Vec<Proposition>)> {
-    expand_all_composite_resource_facts_and_propositions_with_state(
-        context,
-        definitions,
-        memory,
-        assumptions,
-        None,
-    )
-}
-
 pub(super) fn expand_all_composite_resource_facts_and_propositions_at_state(
     context: &ResourceContext,
     definitions: &[CCompositeResourceDefinition],
@@ -26919,10 +26635,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
         // to validate those facts; this is deliberately independent of the
         // population-wide accounting policy below. A body with no facts has
         // no additional proposition to validate here.
-        let legacy_counted =
-            definition.is_counted_population() && !state.uses_population_authority_semantics();
-        let check_declared_facts =
-            legacy_counted || include_ordinary || !definition.facts().is_empty();
+        let check_declared_facts = include_ordinary || !definition.facts().is_empty();
         if !check_declared_facts {
             continue;
         }
@@ -26958,7 +26671,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
                     &mut budget,
                 )?
             }
-            None if !legacy_counted && !include_ordinary => {
+            None if !include_ordinary => {
                 let mut population_state = state.clone();
                 for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
                     let argument = argument.as_c_value()?;
@@ -26994,7 +26707,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             }
             None => return None,
         };
-        if population_count.is_none() && (legacy_counted || include_ordinary) {
+        if population_count.is_none() && include_ordinary {
             return None;
         }
         let mut population_state = state.clone();
@@ -27022,11 +26735,10 @@ pub(super) fn evaluate_resource_population_fact_propositions(
         // that body is opaque in the surface proof context. Expose the body
         // only in this kernel-local state so heap-dependent invariants can
         // discharge their own loadability obligations.
-        if state.uses_population_authority_semantics()
-            && definition
-                .contains()
-                .iter()
-                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+        if definition
+            .contains()
+            .iter()
+            .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
         {
             let head = CResourceFact::own(CResource::Composite {
                 name: name.clone(),
@@ -27567,18 +27279,11 @@ pub(super) fn function_return_resources_definitionally_established(
     let mut claim_return_state = return_state.clone();
     claim_return_state.set_memory(exit_memory.clone());
     let definitions = function.composite_resource_definitions();
-    let post_resources = if claim_return_state.uses_population_authority_semantics() {
+    let post_resources = {
         expand_all_composite_resource_facts_at_state(
             claim_return_state.resources(),
             definitions,
             &claim_return_state,
-            assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts(
-            claim_return_state.resources(),
-            definitions,
-            claim_return_state.memory(),
             assumptions,
         )
     };
@@ -27695,12 +27400,8 @@ pub(super) fn function_return_resources_definitionally_established(
 }
 
 /// Definitional fact validation does not make exclusive units duplicable.
-/// Consume the explicit output frontier jointly. Under authority semantics
-/// expansion is limited to a required unit's own body and never searches
-/// unrelated available heads. Under legacy semantics a held folded composite
-/// may also be returned as its body: one held head is opened and replaced by
-/// its children, so it cannot additionally satisfy its own clause. Legacy
-/// counted populations are answered by their population rule, not consumed.
+/// Consume the explicit output frontier jointly. Expansion is limited to a
+/// required unit's own body and never searches unrelated available heads.
 pub(super) fn jointly_consume_returned_resource_units(
     available: &ResourceContext,
     required: &ResourceContext,
@@ -27708,70 +27409,6 @@ pub(super) fn jointly_consume_returned_resource_units(
     interface: &CFunctionContractInterface,
     assumptions: &PureFactContext,
 ) -> bool {
-    /// Heads opened by one joint consumption; the bound keeps a recursive
-    /// definition from unfolding further than its memory decides.
-    const OPENED_HEAD_LIMIT: usize = 64;
-
-    fn open_available_head(
-        available: &ResourceContext,
-        required: &CResourceFact,
-        state: &CState,
-        interface: &CFunctionContractInterface,
-        assumptions: &PureFactContext,
-        active: &mut BTreeSet<CResourceFact>,
-        opened: &mut BTreeSet<CResourceFact>,
-    ) -> Option<ResourceContext> {
-        if state.uses_population_authority_semantics() {
-            return None;
-        }
-        let heads = available
-            .facts()
-            .iter()
-            .filter(|fact| {
-                fact.is_own()
-                    && matches!(fact.resource(), CResource::Composite { .. })
-                    && !opened.contains(*fact)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        for head in heads {
-            if opened.len() >= OPENED_HEAD_LIMIT {
-                return None;
-            }
-            let Some(expanded) = expand_composite_resource_fact(
-                available,
-                &head,
-                interface.composite_resource_definitions(),
-                state.memory(),
-                assumptions,
-            ) else {
-                continue;
-            };
-            // An undecided guard keeps the head opaque: nothing was opened.
-            let held = |context: &ResourceContext| {
-                context.facts().iter().filter(|fact| **fact == head).count()
-            };
-            if held(&expanded) == held(available) {
-                continue;
-            }
-            // A head that did not supply this unit is not retried for it;
-            // on success it is gone from the remaining context anyway.
-            opened.insert(head);
-            if let Some(remaining) = consume(
-                expanded,
-                required,
-                state,
-                interface,
-                assumptions,
-                active,
-                opened,
-            ) {
-                return Some(remaining);
-            }
-        }
-        None
-    }
-
     fn consume(
         available: ResourceContext,
         required: &CResourceFact,
@@ -27779,7 +27416,6 @@ pub(super) fn jointly_consume_returned_resource_units(
         interface: &CFunctionContractInterface,
         assumptions: &PureFactContext,
         active: &mut BTreeSet<CResourceFact>,
-        opened: &mut BTreeSet<CResourceFact>,
     ) -> Option<ResourceContext> {
         // Views are duplicable; the caller already checked their complete
         // definitional validity before entering this quantity check.
@@ -27802,25 +27438,13 @@ pub(super) fn jointly_consume_returned_resource_units(
             return Some(remaining);
         }
         let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = required else {
-            return open_available_head(
-                &available,
-                required,
-                state,
-                interface,
-                assumptions,
-                active,
-                opened,
-            );
+            return None;
         };
-        let definition = interface.composite_resource_definition(name)?;
-        // A legacy counted population is not a set of linear units: its
-        // custody is the population count and one body is shared by every
-        // unit, so a unit the exit state does not hold exactly is answered
-        // by the population rule the transition applies, not consumed here.
-        // Authority populations hold ledger fragments and stay linear.
-        if !state.uses_population_authority_semantics() && definition.is_counted_population() {
-            return Some(available);
-        }
+        // Authority populations hold ledger fragments and stay linear: a
+        // unit the exit state does not hold exactly is consumed through its
+        // definition's body.
+        interface.composite_resource_definition(name)?;
+
         let unit = quantity_condition_holds(
             assumptions,
             ConditionTerm::Bitvector32Equal(
@@ -27850,52 +27474,23 @@ pub(super) fn jointly_consume_returned_resource_units(
             // no body at all is a token that only a held copy supplies: two
             // `Permit(x)` cannot come from one. A conditional body whose
             // guard is false keeps the legacy rule.
-            if expanded.facts().is_empty()
-                && (state.uses_population_authority_semantics() || definition.contains().is_empty())
-            {
+            if expanded.facts().is_empty() {
                 return None;
             }
             let mut remaining = available.clone();
             for child in expanded.facts() {
-                remaining = consume(
-                    remaining,
-                    child,
-                    state,
-                    interface,
-                    assumptions,
-                    active,
-                    opened,
-                )?;
+                remaining = consume(remaining, child, state, interface, assumptions, active)?;
             }
             Some(remaining)
         })();
         active.remove(required);
-        if result.is_some() {
-            return result;
-        }
-        open_available_head(
-            &available,
-            required,
-            state,
-            interface,
-            assumptions,
-            active,
-            opened,
-        )
+        result
     }
     let mut remaining = available.clone();
     let mut active = BTreeSet::new();
-    let mut opened = BTreeSet::new();
     for fact in required.facts() {
-        let Some(next) = consume(
-            remaining,
-            fact,
-            state,
-            interface,
-            assumptions,
-            &mut active,
-            &mut opened,
-        ) else {
+        let Some(next) = consume(remaining, fact, state, interface, assumptions, &mut active)
+        else {
             return false;
         };
         remaining = next;
@@ -31709,7 +31304,7 @@ fn unreturned_allocation_obligation(
         ));
     };
     let mut checked_return_frontier = returned_resources.clone();
-    if actual_state.uses_population_authority_semantics() {
+    {
         for fact in returned_resources.facts() {
             let CResource::Composite { name, .. } = fact.resource() else {
                 continue;
@@ -31749,7 +31344,7 @@ fn unreturned_allocation_obligation(
     }
     let returned_resources = &checked_return_frontier;
     let mut returned_read_state = actual_state.clone();
-    if actual_state.uses_population_authority_semantics() {
+    {
         for fact in returned_resources.facts() {
             let CResource::Composite { name, .. } = fact.resource() else {
                 continue;
@@ -32433,24 +32028,23 @@ fn function_outcome_from_body_with_resource_transfer(
     // Resource completion over an already completed outcome keeps its result.
     let value = if reestablish_population_invariants && function.return_aggregate_layout().is_some()
     {
-        let layout = function.return_aggregate_layout().expect("checked above");
-        if let CValue::Pointer(pointer) = &value
-            && aggregate_copy_reads_uninitialized(&state.memory, pointer.pointer(), layout)
-        {
-            return Ok((
-                CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
-                obligations,
-                None,
-            ));
+        match materialize_aggregate_return(&mut state, function, value) {
+            Ok(value) => value,
+            Err(AggregateReturnRefusal::UninitializedRead) => {
+                return Ok((
+                    CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+                    obligations,
+                    None,
+                ));
+            }
+            Err(AggregateReturnRefusal::InvalidValue) => {
+                return Ok((
+                    CFunctionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    obligations,
+                    None,
+                ));
+            }
         }
-        let Some(value) = materialize_aggregate_return(&mut state, function, value) else {
-            return Ok((
-                CFunctionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                obligations,
-                None,
-            ));
-        };
-        value
     } else {
         value
     };
@@ -32512,29 +32106,7 @@ fn function_outcome_from_body_with_resource_transfer(
             None,
         ));
     }
-    let population_transition = if caller_state.uses_population_authority_semantics() {
-        CCountedPopulationTransition::default()
-    } else {
-        match crate::instrumentation::measure_operation(
-            function.name(),
-            "contract resource transition",
-            "return counted population transition",
-            || {
-                apply_counted_population_transitions(
-                    caller_state,
-                    &mut state,
-                    function,
-                    argument_values,
-                    assumptions,
-                    reestablish_population_invariants,
-                    budget,
-                )
-            },
-        )? {
-            Ok(transition) => transition,
-            Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
-        }
-    };
+    let population_transition = { CCountedPopulationTransition::default() };
     obligations.extend(
         population_transition
             .postcondition_obligations
@@ -32599,15 +32171,13 @@ fn function_outcome_from_body_with_resource_transfer(
     };
     // Authority members require actual joint custody before output projection.
     // Legacy counted resources retain their checked shared-body transition.
-    if state.uses_population_authority_semantics()
-        && !jointly_consume_returned_resource_units(
-            state.resources(),
-            &output_resources,
-            &state,
-            function.contract_interface(),
-            assumptions,
-        )
-    {
+    if !jointly_consume_returned_resource_units(
+        state.resources(),
+        &output_resources,
+        &state,
+        function.contract_interface(),
+        assumptions,
+    ) {
         return Ok((
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
                 "function body does not yet establish its joint returned resource units".into(),
@@ -32968,11 +32538,10 @@ fn contract_exit_outcome_with_boundary_transfer(
         };
         callee
     };
-    if caller_state.uses_population_authority_semantics()
-        && (authority_mode_consumes_member_contract(function.contract_interface())
-            || authority_mode_produces_member_contract(function.contract_interface())
-            || authority_mode_final_release_contract(function.contract_interface())
-            || authority_mode_exchanges_member_contract(function.contract_interface()))
+    if authority_mode_consumes_member_contract(function.contract_interface())
+        || authority_mode_produces_member_contract(function.contract_interface())
+        || authority_mode_final_release_contract(function.contract_interface())
+        || authority_mode_exchanges_member_contract(function.contract_interface())
     {
         let CStatementOutcome::Return { state, .. } = &outcome else {
             return Ok(Err(CRuntimeError::FunctionContract(
@@ -33176,8 +32745,7 @@ fn contract_exit_outcome_with_boundary_transfer(
             }
         }
     }
-    if caller_state.uses_population_authority_semantics()
-        && let CStatementOutcome::Return { state, .. } = &outcome
+    if let CStatementOutcome::Return { state, .. } = &outcome
         && let Err(error) = check_acquired_control_member_effects(
             &callee_state,
             state,
@@ -33210,8 +32778,7 @@ fn contract_exit_outcome_with_boundary_transfer(
     // crosses the checked resource transfer; any other contract keeps the
     // ordinary exit, which returns the body's own resources.
     if function_needs_outcome_resource_transfer(function)
-        || caller_state.uses_population_authority_semantics()
-            && function_changes_declared_resource_quantities(function)
+        || function_changes_declared_resource_quantities(function)
             && contract_reaches_population(function.contract_interface())
     {
         function_outcome_from_body_with_resource_transfer(
@@ -33379,8 +32946,7 @@ pub(super) fn apply_verified_contract_resource_transition(
     // As at call sites, the authority helper rules govern only contracts
     // that reach a population; an ordinary contract's exit transition folds
     // its produced composites as it does under legacy semantics.
-    if caller_state.uses_population_authority_semantics()
-        && contract_reaches_population(function.contract_interface())
+    if contract_reaches_population(function.contract_interface())
         && !authority_mode_supports_resource_contract(function.contract_interface())
     {
         return Ok(Err(CRuntimeError::FunctionContract(
@@ -33484,30 +33050,26 @@ pub(super) fn function_outcome_from_body(
                     obligations,
                 );
             };
-            let value = if let Some(layout) = function.return_aggregate_layout() {
-                // The return materializer copies the callee's aggregate into
-                // a caller-visible slot. Reading an unwritten field there is
-                // an uninitialized read, not a contract violation, so check
-                // the source before materializing.
-                if let CValue::Pointer(pointer) = &value
-                    && !pointer.is_null()
-                    && aggregate_copy_reads_uninitialized(&state.memory, pointer.pointer(), layout)
-                {
-                    return (
-                        CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
-                        obligations,
-                    );
+            let value = if function.return_aggregate_layout().is_some() {
+                match materialize_aggregate_return(&mut state, function, value) {
+                    Ok(value) => value,
+                    Err(AggregateReturnRefusal::UninitializedRead) => {
+                        return (
+                            CFunctionOutcome::UndefinedBehavior(
+                                CUndefinedBehavior::UninitializedRead,
+                            ),
+                            obligations,
+                        );
+                    }
+                    Err(AggregateReturnRefusal::InvalidValue) => {
+                        return (
+                            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                format!("{} returned an invalid struct value", function.name()),
+                            )),
+                            obligations,
+                        );
+                    }
                 }
-                let Some(value) = materialize_aggregate_return(&mut state, function, value) else {
-                    return (
-                        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
-                            "{} returned an invalid struct value",
-                            function.name()
-                        ))),
-                        obligations,
-                    );
-                };
-                value
             } else {
                 value
             };
@@ -33565,12 +33127,7 @@ pub(super) fn function_outcome_from_body(
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             caller_state.population_access = state.population_access.clone();
             caller_state.counted_populations = state.counted_populations;
-            if return_resources.is_none() && !caller_state.uses_population_authority_semantics() {
-                // An unprojected proof endpoint retains the checked body's
-                // local consumption evidence alongside its actual totals.
-                Arc::make_mut(&mut caller_state.population_effects).committed_consumptions =
-                    state.population_effects.committed_consumptions.clone();
-            }
+
             caller_state.restore_population_creation_after_call(
                 original_creation.as_ref(),
                 retired_creation.as_ref(),
@@ -33634,12 +33191,7 @@ pub(super) fn function_outcome_from_body(
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             caller_state.population_access = state.population_access.clone();
             caller_state.counted_populations = state.counted_populations;
-            if return_resources.is_none() && !caller_state.uses_population_authority_semantics() {
-                // An unprojected proof endpoint retains the checked body's
-                // local consumption evidence alongside its actual totals.
-                Arc::make_mut(&mut caller_state.population_effects).committed_consumptions =
-                    state.population_effects.committed_consumptions.clone();
-            }
+
             caller_state.restore_population_creation_after_call(
                 original_creation.as_ref(),
                 retired_creation.as_ref(),
@@ -33774,10 +33326,7 @@ mod population_creation_frame_tests {
 
     #[test]
     fn authority_mode_refuses_calls_that_reach_a_population() {
-        let legacy = CState::new();
         let authority = CState::new().with_population_creation_tracking();
-        assert!(authority_mode_call_refusal(&legacy).is_none());
-        assert!(authority_mode_call_refusal(&authority).is_some());
         let call = |helper: &CFunction| {
             execute_c_function_call_paths(
                 &authority,
@@ -33995,6 +33544,7 @@ mod verified_call_initialization_tests {
             )),
         ));
         CState::new()
+            .with_population_creation_tracking()
             .with_memory(CMemory::new().with_block(pointer.block.clone(), 4))
             .with_resource_context(resources)
     }
@@ -34133,6 +33683,7 @@ mod stable_view_call_tests {
             Bitvector32Term::Constant(owned_end),
         );
         CState::new()
+            .with_population_creation_tracking()
             .with_memory(
                 CMemory::new()
                     .with_block(pointer.block.clone(), bytes)
@@ -36277,6 +35828,7 @@ mod stable_view_call_tests {
             )))
         };
         let caller = CState::new()
+            .with_population_creation_tracking()
             .with_memory(
                 CMemory::new()
                     .with_block(viewed.block.clone(), 8)
@@ -36424,6 +35976,7 @@ mod stable_view_call_tests {
         let head =
             CResourceFact::own_composite("cell".into(), vec![CValue::pointer(pointer.clone())]);
         let caller = CState::new()
+            .with_population_creation_tracking()
             .with_memory(
                 CMemory::new()
                     .with_block(pointer.block.clone(), 8)
@@ -36737,53 +36290,6 @@ mod stable_view_call_tests {
             transfer
                 .callee_resources
                 .satisfies_fact(&CResourceFact::view_memory(viewed), &PureFactContext::new())
-        );
-    }
-
-    /// The count itself is still checked, by the counted-population
-    /// transition rather than by the planner.
-    #[test]
-    fn token_population_consume_without_a_known_count_is_refused() {
-        let pointer = pointer();
-        let function = token_population_reader("candidate_uncounted_population_reader", "slot");
-        let caller = caller(&pointer);
-        let arguments = vec![
-            CExpression::Value(CValue::pointer(pointer.clone())),
-            CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(4242)))),
-        ];
-        let refusal = || {
-            let environment =
-                CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
-                    function: function.clone(),
-                    loop_semantics: CLoopSemantics::Verify,
-                    applied_tactics: Default::default(),
-                });
-            let paths = execute_c_function_call_paths(
-                &caller,
-                &function,
-                &arguments,
-                &nonnegative_quantity(Variable(4242)),
-                &environment,
-                CExecutionSemantics::APPLY_VERIFIED_RULES,
-                &mut ExecutionBudget::new(),
-            )
-            .expect("the population call should execute");
-            let [
-                CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
-                    ..
-                },
-            ] = paths.as_slice()
-            else {
-                panic!("an uninitialized population should refuse: {paths:?}");
-            };
-            error.clone()
-        };
-        let refusal = refusal();
-        assert!(
-            matches!(&refusal, CRuntimeError::FunctionContract(message)
-                if message.contains("counted population `slot` is not initialized")),
-            "{refusal:?}"
         );
     }
 }

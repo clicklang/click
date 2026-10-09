@@ -633,11 +633,13 @@ impl<'a> Proof<'a> {
         // the body's facts and the C's own reads of those cells share one
         // load identity. See `materialize_unfolded_instance_arm_cells`.
         //
-        // Select the arm under the premises the rewrite published, including
-        // any refutation that decided it. Spell its pointer bindings under
-        // the entry premises used by the kernel rewrite: a newly published
-        // alias must not rename a cell after its body facts were recorded.
+        // Use the kernel's exact opening delta for pointer spelling. Later
+        // body facts must not rename a cell after its equation was recorded.
         let after = if unfold {
+            let naming_assumptions = rewrite.naming_facts.into_iter().fold(
+                self.facts().assumptions().clone(),
+                PureFactContext::assume_proposition,
+            );
             crate::surface::proof::resources::materialize_unfolded_instance_arm_cells(
                 context.resource_environment,
                 context.click_function_environment,
@@ -646,7 +648,7 @@ impl<'a> Proof<'a> {
                 after,
                 instance,
                 facts.assumptions(),
-                self.facts().assumptions(),
+                &naming_assumptions,
             )
         } else {
             after
@@ -1502,9 +1504,10 @@ impl<'a> Proof<'a> {
     /// The law replaces `f(args)` by one of exactly two expressions: the fold's
     /// initial value over an empty range, or the fold's body at the predecessor
     /// endpoint accumulated onto `f(args)` at that endpoint. Both are candidate
-    /// spellings only; the one installed is the one that lowers back to exactly
-    /// the refreshed kernel proposition, so a later tactic that dispatches on
-    /// the written goal reads this step's checked claim rather than a guess.
+    /// spellings only; the installed candidate lowers to the refreshed kernel
+    /// proposition or the same normalized Integer claim, or to true when a
+    /// premise-free Integer certificate checks the refreshed proposition.
+    /// Later tactics still check that original kernel goal.
     fn refreshed_fold_law_surface_goal(
         &self,
         application: &ClickFunctionApplication,
@@ -1583,7 +1586,48 @@ impl<'a> Proof<'a> {
             else {
                 continue;
             };
-            if lower(&rewritten).as_ref() == Some(refreshed_kernel) {
+            let lowered = lower(&rewritten);
+            if lowered.as_ref() == Some(refreshed_kernel) {
+                return Some(rewritten);
+            }
+            let checked_claim =
+                crate::kernel::proof::integer_arithmetic::integer_affine_claim(refreshed_kernel);
+            // Constant folding in a source subexpression can change the raw
+            // term structure without changing its checked Integer claim.
+            // These are the same normalized claims used by the kernel's
+            // Integer certificate checker; no ambient premises participate.
+            if let (Some(source_claim), Some(checked_claim)) = (
+                lowered
+                    .as_ref()
+                    .and_then(crate::kernel::proof::integer_arithmetic::integer_affine_claim),
+                checked_claim.as_ref(),
+            ) && source_claim == *checked_claim
+            {
+                return Some(rewritten);
+            }
+            // After the last Integer application disappears, ordinary
+            // expression lowering can reduce the written comparison to true
+            // (e.g. `0 - 0 == 0`). The refreshed kernel goal still retains
+            // the Integer subtraction. Keep that spelling only when a
+            // premise-free checked Integer certificate proves the same truth;
+            // this changes presentation, never the kernel obligation.
+            if lowered
+                == Some(Proposition::ConditionIs(
+                    ConditionTerm::Constant(true),
+                    true,
+                ))
+                && let Some(claim) = checked_claim
+                && (crate::kernel::proof::integer_arithmetic::IntegerArithmeticCertificate {
+                    nodes: vec![
+                        crate::kernel::proof::integer_arithmetic::IntegerArithmeticNode::Trivial {
+                            result: claim,
+                        },
+                    ],
+                    conclusion: 0,
+                })
+                .check(refreshed_kernel, &[])
+                .is_ok()
+            {
                 return Some(rewritten);
             }
         }
@@ -1989,9 +2033,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !matches!(resource, ResourceClause::Named { .. })
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
@@ -2070,9 +2112,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !matches!(resource, ResourceClause::Named { .. })
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
@@ -2167,9 +2207,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !self.is_authority_transfer_wrapper(resource)
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
@@ -2221,7 +2259,7 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             false,
         )?;
-        if checked.state.uses_population_authority_semantics() {
+        {
             execution
                 .core
                 .record_return_transfer_wrapper_rewrite(
@@ -2260,9 +2298,7 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        if self.execution().is_some()
             && !self.is_authority_transfer_wrapper(resource)
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
@@ -2348,10 +2384,7 @@ impl<'a> Proof<'a> {
         let CFunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
-        if state.uses_population_authority_semantics()
-            && self.is_authority_transfer_wrapper(resource)
-            && family_reaches_population
-        {
+        if self.is_authority_transfer_wrapper(resource) && family_reaches_population {
             let selected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
@@ -2400,11 +2433,7 @@ impl<'a> Proof<'a> {
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Constructing an ordinary family's token creates no population
         // member; an authorized family's member needs its authority.
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
-            && !self.names_unauthorized_family(resource)
-        {
+        if self.execution().is_some() && !self.names_unauthorized_family(resource) {
             return Err(self.step_error(
                 "resource construction may create untracked members in authority mode",
             ));

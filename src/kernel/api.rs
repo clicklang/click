@@ -5669,7 +5669,7 @@ mod proof_case_evidence_tests {
         assert_eq!(core.execution_evidence[1].len(), 3);
         assert_eq!(core.execution_evidence[2].len(), 3);
         assert!(proof_case_partitions_are_exhaustive(
-            &core.execution_evidence.to_vec()
+            core.execution_evidence.as_slice()
         ));
         // The forked traces share the original's prefix.
         assert!(
@@ -5869,7 +5869,7 @@ pub fn checked_owned_resource_count_lower_bound(
         | CResource::Iterated(_) => return None,
     };
     let mut checked_facts = assumptions.clone();
-    let count = if state.uses_population_authority_semantics() {
+    let count = {
         let arguments = arguments
             .iter()
             .map(|argument| match argument {
@@ -5904,34 +5904,12 @@ pub fn checked_owned_resource_count_lower_bound(
             return None;
         };
         value.clone()
-    } else {
-        match state.counted_population(name, arguments) {
-            Some(count) => count.clone(),
-            None => {
-                let zero = Bitvector32Term::Constant(0);
-                let quantity_is_zero = quantity == zero
-                    || crate::kernel::PureFactContext::settles_exactly(
-                        assumptions,
-                        &Proposition::ConditionIs(
-                            ConditionTerm::Bitvector32Equal(
-                                Box::new(quantity.clone()),
-                                Box::new(zero.clone()),
-                            ),
-                            true,
-                        ),
-                    );
-                if !quantity_is_zero {
-                    return None;
-                }
-                zero
-            }
-        }
     };
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
         true,
     );
-    if state.uses_population_authority_semantics() {
+    {
         let reversed =
             Proposition::ConditionIs(ConditionTerm::signed_greater_equal(count, quantity), true);
         if !PureFactContext::settles_exactly(&checked_facts, &conclusion)
@@ -6507,18 +6485,11 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                 "contract certification",
                 "contract entry resource expansion",
                 || {
-                    if entry_state.uses_population_authority_semantics() {
+                    {
                         super::functions::expand_all_composite_resource_facts_at_state(
                             entry_state.resources(),
                             function.composite_resource_definitions(),
                             &entry_state,
-                            &assumptions,
-                        )
-                    } else {
-                        expand_all_composite_resource_facts(
-                            entry_state.resources(),
-                            function.composite_resource_definitions(),
-                            entry_state.memory(),
                             &assumptions,
                         )
                     }
@@ -6664,15 +6635,14 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             entry_state.resources(),
                             premise,
                             &reuse_assumptions,
-                        ) || entry_state.uses_population_authority_semantics()
-                            && opened_entry_levels().iter().any(|resources| {
-                                resources_certify_loadability(
-                                    &entry_state,
-                                    resources,
-                                    premise,
-                                    &reuse_assumptions,
-                                )
-                            }))
+                        ) || opened_entry_levels().iter().any(|resources| {
+                            resources_certify_loadability(
+                                &entry_state,
+                                resources,
+                                premise,
+                                &reuse_assumptions,
+                            )
+                        }))
             };
         let authorized = |checked: &CCheckedFunctionExecution| {
             checked

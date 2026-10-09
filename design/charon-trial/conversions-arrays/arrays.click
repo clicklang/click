@@ -1,14 +1,16 @@
 verifying "arrays.rs";
 
-void Guard_drop(struct Guard* self) {
-    requires separate(memory(*self), memory(self->slot[0..1]));
-    owns self->slot;
-    owns self->saved;
-    owns self->slot[0..1];
-    ensures self->slot == old(self->slot);
-    ensures self->saved == old(self->saved);
-    ensures self->slot[0] == old(self->saved);
-} by { execute(); simp(); }
+impl Drop for Guard {
+    fn drop(&mut self) {
+        requires separate(memory(*self), memory(self.slot[0..1]));
+        owns self.slot;
+        owns self.saved;
+        owns *self.slot;
+        ensures self.slot == old(self.slot);
+        ensures self.saved == old(self.saved);
+        ensures *self.slot == old(self.saved);
+    } by { execute(); simp(); }
+}
 
 fn guarded_array(value: &mut i32, x: u16) -> u32 {
     owns value[0..1];

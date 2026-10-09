@@ -61,10 +61,8 @@ pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
         BTreeMap::new(),
     )
     .map(|(proposition, _, facts)| {
-        let facts = if post_state.uses_population_authority_semantics() {
+        let facts = {
             facts
-        } else {
-            Vec::new()
         };
         (proposition, facts)
     })

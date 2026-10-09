@@ -16757,3 +16757,108 @@ fn c_style_click_comments_preserve_loading_and_expansion_offsets() {
     let error = verifying_source_paths("\n /* missing close").unwrap_err();
     assert!(error.message().contains("unterminated block comment"));
 }
+
+fn empty_fold_difference_source() -> &'static str {
+    r#"function marks(end: int32, value: int32) -> Integer {
+ (0..end).fold(0, |acc, k| { acc + to_integer(value) })
+}
+theorem empty_difference(end: int32, x: int32, y: int32) {
+ requires end <= 0;
+ ensures marks(end, x) - marks(end, y) == 0 by {
+  peel(marks(end, x)) using { end <= 0; }
+  peel(marks(end, y)) using { end <= 0; }
+  arithmetic() using { }
+ }
+}
+theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
+ requires end <= 0;
+ ensures marks(end, x) - marks(end, y) == (to_integer(y) - to_integer(z)) * marks(end, z) by {
+  peel(marks(end, x)) using { end <= 0; }
+  peel(marks(end, y)) using { end <= 0; }
+  peel(marks(end, z)) using { end <= 0; }
+  arithmetic() using { }
+ }
+}
+"#
+}
+
+// Peeling the last fold must leave a checked spelling for arithmetic expansion.
+#[test]
+fn peeled_empty_fold_differences_keep_checked_integer_spelling() {
+    let source = empty_fold_difference_source();
+    verify_c0_sources(source, &[]).unwrap();
+    for claim in ["empty_difference.ensures_0", "empty_product.ensures_0"] {
+        let expanded = expand_c0_claim_source_by_label(source, &[], claim).unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: empty-fold result mutation"]
+fn peeled_empty_fold_differences_reject_nonzero_results() {
+    let source = empty_fold_difference_source();
+    let invalid = source.replace("marks(end, y) == 0 by", "marks(end, y) == 1 by");
+    assert_ne!(invalid, source);
+    let error = verify_c0_sources(&invalid, &[]).expect_err("false empty difference was accepted");
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{}",
+        error.message()
+    );
+}
+
+fn empty_fold_order_source() -> &'static str {
+    r#"function marks(end: int32) -> Integer {
+ (0..end).fold(0, |acc, k| { acc + to_integer(k) })
+}
+theorem empty_order(end: int32) {
+ requires end <= 0;
+ ensures 0 <= marks(end) by {
+  peel(marks(end)) using { end <= 0; }
+  arithmetic() using { marks(end) == 0; }
+ }
+ ensures marks(end) <= 0 by {
+  peel(marks(end)) using { end <= 0; }
+  arithmetic() using { }
+ }
+}
+"#
+}
+
+// A constant order after peeling must retain its relation at the conclusion,
+// rather than print the generic equality certificate for Boolean truth.
+#[test]
+fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
+    let source = empty_fold_order_source();
+    verify_c0_sources(source, &[]).unwrap();
+    for claim in ["empty_order.ensures_0", "empty_order.ensures_1"] {
+        let expanded = expand_c0_claim_source_by_label(source, &[], claim).unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: empty-fold order and certificate mutations"]
+fn peeled_empty_fold_order_rejects_false_comparisons() {
+    let source = empty_fold_order_source();
+    for (before, after) in [
+        ("0 <= marks(end)", "1 <= marks(end)"),
+        ("marks(end) <= 0", "marks(end) <= -1"),
+    ] {
+        let invalid = source.replacen(before, after, 1);
+        assert_ne!(invalid, source);
+        let error = verify_c0_sources(&invalid, &[]).expect_err("false empty order accepted");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+    let expanded = expand_c0_claim_source_by_label(source, &[], "empty_order.ensures_0").unwrap();
+    let invalid = expanded.replacen("trivial => 0 <= 0", "trivial => 0 == 0", 1);
+    assert_ne!(invalid, expanded);
+    assert!(
+        verify_c0_sources(&invalid, &[]).is_err(),
+        "changed conclusion relation accepted"
+    );
+}

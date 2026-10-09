@@ -2929,6 +2929,9 @@ mod tests {
             ProofObligation<(), Arc<OutcomeProofState<()>>>,
             ProofExecutionState<()>,
         >;
+        // One entry state: every snapshot below must be the very same state,
+        // creation ledger included.
+        let entry = CState::new().with_population_creation_tracking();
         let root = |facts: ProofFacts, core: ExecutionProofCore| -> TestProof {
             ProofObject::root(
                 (),
@@ -2974,10 +2977,10 @@ mod tests {
             )
             .with_fact(Proposition::Predicate {
                 name: "invariant".into(),
-                arguments: vec![Term::CState(Box::new(CState::new()))],
+                arguments: vec![Term::CState(Box::new(entry.resource_state_snapshot()))],
             });
             let core = ExecutionProofCore::at_entry(
-                CState::new(),
+                entry.clone(),
                 ExecutionFrontier {
                     region: ExecutionRegionKind::LoopBody,
                     position: FrontierPosition::RegionBoundary,
@@ -3001,8 +3004,8 @@ mod tests {
             );
             let (body, scope) = unprepared
                 .open_invariant_body(
-                    &CState::new(),
-                    &CState::new(),
+                    &entry.clone(),
+                    &entry.clone(),
                     &checks,
                     &[],
                     &[],
@@ -3046,7 +3049,7 @@ mod tests {
             );
             let mut stale = core.clone();
             // Even an equal-valued replacement snapshot is not the saved one.
-            stale.state = CState::new().into();
+            stale.state = CState::new().with_population_creation_tracking().into();
             assert!(
                 root(facts.clone(), stale)
                     .validate_checked_invariant_lowerings(&checks, &[])

@@ -1,11 +1,11 @@
 verifying "copy.rs";
-void __rust_q_I22_copy_source_after_call_I3_set(struct __rust_q_I22_copy_source_after_call_I5_Words* words, uint32 value) {
+fn copy_source_after_call::set(words: &mut copy_source_after_call::Words, value: u32) {
  owns words->_0[0..4]; ensures words->_0[0] == value;
 } by { execute(); simp(); }
-void __rust_q_I22_copy_source_after_call_I7_consume(struct __rust_q_I22_copy_source_after_call_I5_Words* target, struct __rust_q_I22_copy_source_after_call_I5_Words other) {
+fn copy_source_after_call::consume(target: &mut copy_source_after_call::Words, other: copy_source_after_call::Words) {
  owns target->_0[0..4]; ensures target->_0[0] == old(other._0[0]);
 } by { execute(); simp(); }
-uint32 __rust_q_I22_copy_source_after_call_I6_caller(uint32 value) {
+fn copy_source_after_call::caller(value: u32) -> u32 {
  ensures result == value;
  } by {
  execute_until(assignment(__rust_mir_14, 0));

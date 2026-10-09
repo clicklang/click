@@ -42,6 +42,7 @@ mod surface_lowering;
 mod surface_synthesis;
 mod theorem_application;
 mod timing;
+mod wide_arithmetic;
 use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
@@ -2473,11 +2474,7 @@ fn evaluate_entry_resource_context(
     // kernel's certified entry. Retain them in the proof context as well;
     // otherwise the checked boundary loses the very premise used above to
     // admit a symbolic `owns n of ...` clause.
-    let entry_quantity_facts = if state.uses_population_authority_semantics() {
-        quantity_assumptions
-    } else {
-        Vec::new()
-    };
+    let entry_quantity_facts = { quantity_assumptions };
     let state = project_initial_composite_resource_cores(
         resource_environment,
         parsed_function.parameters(),
@@ -2743,3 +2740,9 @@ fn note_automatic_body_joined_apart(joined_apart: bool) -> AutomaticBodyJoinedAp
 fn automatic_body_joined_apart() -> bool {
     AUTOMATIC_BODY_JOINED_APART.with(std::cell::Cell::get)
 }
+
+#[cfg(test)]
+pub(in crate::surface) use proof_object::take_outcome_fact_reads;
+
+#[cfg(test)]
+pub(in crate::surface) use proof_object::take_terminal_publication_visits;

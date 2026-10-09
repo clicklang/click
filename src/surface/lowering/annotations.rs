@@ -568,7 +568,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
         else {
             continue;
         };
-        let entry_state = CState::new();
+        let entry_state = CState::new().with_population_creation_tracking();
         let mut lowerer = AnnotationLowerer {
             capture_referenced_names: None,
             structural_clauses: &[],
@@ -603,7 +603,6 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             next_quantifier_variable: 3_200_000,
             branch_join_target: None,
             snapshots: None,
-            count_assumptions: None,
         };
         let Ok(body) = lowerer
             .lower_contract_integer_to_spec(definition.body(), &SpecElaborationContext::default())
@@ -624,7 +623,7 @@ fn lower_kernel_pure_function_definition(
     click_function_environment: &ClickFunctionEnvironment,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Option<crate::kernel::CPureFunctionDefinition> {
-    let entry_state = CState::new();
+    let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: &[],
@@ -659,7 +658,6 @@ fn lower_kernel_pure_function_definition(
         next_quantifier_variable: 3_200_000,
         branch_join_target: None,
         snapshots: None,
-        count_assumptions: None,
     };
     let mut parameters = Vec::new();
     let mut context = SpecElaborationContext::default();
@@ -711,7 +709,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
     else {
         return Ok(None);
     };
-    let entry_state = CState::new();
+    let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: &[],
@@ -746,7 +744,6 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         next_quantifier_variable: 3_200_000,
         branch_join_target: None,
         snapshots: None,
-        count_assumptions: None,
     };
     let all_predicates = predicate_environment
         .definitions
@@ -793,7 +790,7 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
     let body = definition
         .composite_body()
         .expect("only composite definitions have logical facts");
-    let entry_state = CState::new();
+    let entry_state = CState::new().with_population_creation_tracking();
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         structural_clauses: &[],
@@ -828,7 +825,6 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         next_quantifier_variable: 3_200_000,
         branch_join_target: None,
         snapshots: None,
-        count_assumptions: None,
     };
     let all_predicates = predicate_environment
         .definitions
@@ -1031,7 +1027,6 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         next_quantifier_variable: 3_000_000,
         branch_join_target: None,
         snapshots: None,
-        count_assumptions: None,
     };
     // Loop-level resource declarations are lowered once, before the body, so
     // every loop reaches its footprint and its body resource context without
@@ -1263,7 +1258,6 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         next_quantifier_variable: 3_300_000,
         branch_join_target: Some(branch_join_target),
         snapshots: None,
-        count_assumptions: None,
     };
     lowerer
         .click_proposition_to_spec_proposition(proposition, &SpecElaborationContext::default())
@@ -1285,7 +1279,6 @@ fn fixed_state_elaboration<'a>(
     current_values: BTreeMap<String, CValue>,
     result: Option<&CValue>,
     snapshots: &'a RecordedSnapshots,
-    assumptions: &'a PureFactContext,
     predicate_environment: &'a PredicateEnvironment,
     click_function_environment: &'a ClickFunctionEnvironment,
     _opaque_click_functions: BTreeSet<String>,
@@ -1313,7 +1306,6 @@ fn fixed_state_elaboration<'a>(
         loop_resources: BTreeMap::new(),
         inherits_resource_derived_frame: false,
         snapshots: Some(snapshots),
-        count_assumptions: Some(assumptions),
     };
     // The proof's current locals are fixed values in every context: a name a
     // snapshot or the entry does not bind keeps its current value, as the
@@ -1357,7 +1349,6 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    assumptions: &PureFactContext,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     opaque_click_functions: BTreeSet<String>,
@@ -1371,7 +1362,6 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
         current_values,
         result,
         snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions,
@@ -1414,7 +1404,6 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    assumptions: &PureFactContext,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     opaque_click_functions: BTreeSet<String>,
@@ -1428,7 +1417,6 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
         current_values,
         result,
         snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions,
@@ -1450,7 +1438,6 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
     current_values: BTreeMap<String, CValue>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    assumptions: &PureFactContext,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     opaque_click_functions: BTreeSet<String>,
@@ -1464,7 +1451,6 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
         &crate::persistent::PersistentMap::default(),
         result,
         snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions,
@@ -1487,7 +1473,6 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    assumptions: &PureFactContext,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     opaque_click_functions: BTreeSet<String>,
@@ -1501,7 +1486,6 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
         current_values,
         result,
         snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions,
@@ -1564,7 +1548,6 @@ pub(in crate::surface) fn elaborate_fixed_state_expression(
     current_values: BTreeMap<String, CValue>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    assumptions: &PureFactContext,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     opaque_click_functions: BTreeSet<String>,
@@ -1579,7 +1562,6 @@ pub(in crate::surface) fn elaborate_fixed_state_expression(
         BTreeMap::new(),
         result,
         snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions,
@@ -1597,7 +1579,6 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&CValue>,
     snapshots: &RecordedSnapshots,
-    assumptions: &PureFactContext,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     opaque_click_functions: BTreeSet<String>,
@@ -1611,7 +1592,6 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
         current_values,
         result,
         snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions,
@@ -1668,7 +1648,6 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         next_quantifier_variable: 3_100_000,
         branch_join_target: None,
         snapshots: None,
-        count_assumptions: None,
     };
     lowerer.click_proposition_to_spec_proposition(
         proposition,
@@ -1699,7 +1678,7 @@ pub(in crate::surface) fn function_contract_summary(
     let resolved_block = resolved_function_block(function_block)?;
     let function_block: &FunctionBlock = &resolved_block;
     let entry_state = crate::kernel::initialize_c_function_globals(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         &parsed_function.to_kernel_function(),
     );
     let mut lowerer = AnnotationLowerer {
@@ -1735,7 +1714,6 @@ pub(in crate::surface) fn function_contract_summary(
         next_quantifier_variable: 3_100_000,
         branch_join_target: None,
         snapshots: None,
-        count_assumptions: None,
     };
     let mut context = SpecElaborationContext::for_function_contract();
     // Parameters shadow file-scope spellings in both current and old clauses.
@@ -2111,9 +2089,6 @@ struct AnnotationLowerer<'a> {
     /// The states a proof recorded at program points and marks, when the
     /// proposition is stated inside a proof.
     snapshots: Option<&'a RecordedSnapshots>,
-    /// The proof's fact context, under which a count at a recorded state
-    /// selects its populations.
-    count_assumptions: Option<&'a PureFactContext>,
 }
 
 pub(in crate::surface) fn parameter_pointer_element_widths(
@@ -4840,31 +4815,26 @@ impl AnnotationLowerer<'_> {
                 else {
                     return Err("`count(...)` expects a declared resource".to_string());
                 };
-                let authority_mode = self.entry_state.uses_population_authority_semantics()
-                    || environment
-                        .snapshot_state
-                        .as_ref()
-                        .is_some_and(CState::uses_population_authority_semantics);
-                if authority_mode {
-                    if environment.snapshot_state.is_some() {
-                        return Err(
-                            "`count(R(p))` at a recorded state is unavailable in authority mode"
-                                .to_string(),
-                        );
-                    }
-                    if arguments.is_empty()
-                        || matches!(arguments[0], ContractExpression::ResourceWildcard)
-                        || (arguments.iter().skip(1).any(|argument| {
-                            matches!(argument, ContractExpression::ResourceWildcard)
-                        }) && arguments.iter().skip(1).any(|argument| {
+                if environment.snapshot_state.is_some() {
+                    return Err(
+                        "`count(R(p))` at a recorded state is unavailable in authority mode"
+                            .to_string(),
+                    );
+                }
+                if arguments.is_empty()
+                    || matches!(arguments[0], ContractExpression::ResourceWildcard)
+                    || (arguments
+                        .iter()
+                        .skip(1)
+                        .any(|argument| matches!(argument, ContractExpression::ResourceWildcard))
+                        && arguments.iter().skip(1).any(|argument| {
                             !matches!(argument, ContractExpression::ResourceWildcard)
                         }))
-                    {
-                        return Err(
-                            "authority-mode count requires R(anchor), R(anchor, _, ...), or an exact member"
-                                .to_string(),
-                        );
-                    }
+                {
+                    return Err(
+                        "authority-mode count requires R(anchor), R(anchor, _, ...), or an exact member"
+                            .to_string(),
+                    );
                 }
                 let arguments = arguments
                     .iter()
@@ -4875,34 +4845,6 @@ impl AnnotationLowerer<'_> {
                             .map(Some),
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                // A count at a recorded state is that state's population.
-                if let Some(state) = &environment.snapshot_state {
-                    let values = arguments
-                        .iter()
-                        .map(|argument| match argument {
-                            None => Some(None),
-                            Some(SpecExpression::Value(value)) => {
-                                Some(Some(AlgebraicValue::C(value.clone())))
-                            }
-                            Some(_) => None,
-                        })
-                        .collect::<Option<Vec<_>>>()
-                        .ok_or_else(|| {
-                            format!("`count({name})` at a recorded state needs fixed arguments")
-                        })?;
-                    let assumptions = self.count_assumptions.cloned().unwrap_or_default();
-                    let total = state
-                        .counted_population_sum(name, &values, &assumptions)
-                        .ok_or_else(|| {
-                            format!(
-                                "`count({name})` at a recorded state has no total that is a count: \
-                                 its populations' quantities do not add up, or another tracked \
-                                 population of the family is neither proven equal nor proven \
-                                 different from the counted one"
-                            )
-                        })?;
-                    return Ok(SpecExpression::Value(CValue::Int32(total)));
-                }
                 let count = SpecExpression::CountedResourceCount {
                     name: name.clone(),
                     arguments,
@@ -7097,7 +7039,7 @@ mod integer_source_quantifier_tests {
         else {
             panic!("expected proposition")
         };
-        let state = CState::new();
+        let state = CState::new().with_population_creation_tracking();
 
         // The final execution identity must not move the quantifier allocator
         // back into the execution band's range. The first quantifier identity
@@ -7120,7 +7062,6 @@ mod integer_source_quantifier_tests {
                 &integer_values,
                 None,
                 &RecordedSnapshots::new(),
-                &PureFactContext::new(),
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),
                 BTreeSet::new(),

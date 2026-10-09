@@ -4634,11 +4634,96 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
          views *bytes; ensures result == bytes[index]; } by { execute(); simp(); }",
     )
     .expect("the Rust spelling parses");
+    // A trait's type argument names the method as the importer does:
+    // a scalar by its name, a reference as `ref_`, a record as `value_`.
+    for (header, method, name, parameter, c_parameter) in [
+        (
+            "MulAssign<u32>",
+            "mul_assign",
+            "Lanes_mul_assign_u32",
+            "rhs: u32",
+            "uint32 rhs",
+        ),
+        (
+            "AddAssign<&Lanes>",
+            "add_assign",
+            "Lanes_add_assign_ref_Lanes",
+            "other: &Lanes",
+            "const struct Lanes* other",
+        ),
+        (
+            "AddAssign<&mut Lanes>",
+            "add_assign",
+            "Lanes_add_assign_ref_mut_Lanes",
+            "other: &mut Lanes",
+            "struct Lanes* other",
+        ),
+    ] {
+        assert_eq!(
+            parser::parse(&format!(
+                "verifying \"l.rs\"; impl {header} for Lanes {{ fn {method}(&mut self, {parameter}) {{ \
+                 ensures 0 == 0; }} by {{ execute(); simp(); }} }}"
+            ))
+            .unwrap_or_else(|error| panic!("{header}: {error:?}")),
+            parser::parse(&format!(
+                "verifying \"l.rs\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
+                 ensures 0 == 0; }} by {{ execute(); simp(); }}"
+            ))
+            .expect("the C-shaped spelling parses"),
+            "{header}"
+        );
+    }
+    // A path names an item of a crate as the importer names it: a function,
+    // a type, and an inherent method of a type in the type's own module.
+    for (rust, c_shaped) in [
+        (
+            "fn quad::walk(bytes: &[u8]) -> u32 { ensures result == 0u32; } @",
+            "uint32 __rust_q_I4_quad_I4_walk(const uint8* bytes, uint64 bytes_len) \
+             { ensures result == 0u32; }",
+        ),
+        (
+            "fn demo::set(words: &mut demo::inner::Words, value: u32) { ensures 0 == 0; } @",
+            "void __rust_q_I4_demo_I3_set(struct __rust_q_I4_demo_I5_inner_I5_Words* words, \
+             uint32 value) { ensures 0 == 0; }",
+        ),
+        (
+            "impl demo::Value { fn new(seed: u32) -> u32 { ensures result == seed; } @ }",
+            "uint32 __rust_q_I4_demo_T25___rust_q_I4_demo_I5_Value_I3_new(uint32 seed) \
+             { ensures result == seed; }",
+        ),
+        (
+            "impl Drop for demo::Token { fn drop(&mut self) { ensures 0 == 0; } @ }",
+            "void __rust_q_I4_demo_I5_Token_drop(struct __rust_q_I4_demo_I5_Token* self) \
+             { ensures 0 == 0; }",
+        ),
+        (
+            "impl AddAssign<&a::b::Lanes> for a::b::Lanes { fn add_assign(&mut self, \
+             other: &a::b::Lanes) { ensures 0 == 0; } @ }",
+            "void __rust_q_I1_a_I1_b_I5_Lanes_add_assign_ref___rust_q_I1_a_I1_b_I5_Lanes(\
+             struct __rust_q_I1_a_I1_b_I5_Lanes* self, \
+             const struct __rust_q_I1_a_I1_b_I5_Lanes* other) { ensures 0 == 0; }",
+        ),
+    ] {
+        let rust = rust.replace('@', "by { execute(); simp(); }");
+        assert_eq!(
+            parser::parse(&format!("verifying \"lib.rs\"; {rust}"))
+                .unwrap_or_else(|error| panic!("{rust}: {error:?}")),
+            parser::parse(&format!(
+                "verifying \"lib.rs\"; {c_shaped} by {{ execute(); simp(); }}"
+            ))
+            .unwrap_or_else(|error| panic!("{c_shaped}: {error:?}")),
+            "{rust}"
+        );
+    }
     // An `impl` block holds `fn` contracts and nothing else, and is Rust.
     for (source, expected) in [
         (
             "verifying \"g.rs\"; impl Guard { resource r() { } }",
             "an `impl` block holds `fn` contracts",
+        ),
+        (
+            "verifying \"g.rs\"; impl MulAssign<u32> { fn mul_assign(&mut self, rhs: u32) { ensures 0 == 0; } by { execute(); simp(); } }",
+            "a trait with a type argument is implemented `for` a type",
         ),
         (
             "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); simp(); } }",

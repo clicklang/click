@@ -10094,13 +10094,23 @@ pub struct CFunctionExecutionCandidates {
 
 /// Immutable publication of one complete outcome frontier. Proof forks retain
 /// this collection, rather than copying every sibling path and the source body.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub(super) struct CFunctionExecutionCandidatesData {
     pub(super) state: CState,
-    pub(super) function: CFunction,
-    pub(super) arguments: Vec<CExpression>,
-    pub(super) paths: Vec<CFunctionExecutionCandidate>,
+    pub(super) function: Arc<CFunction>,
+    pub(super) arguments: Arc<Vec<CExpression>>,
+    pub(super) paths: super::proof::PersistentVector<CFunctionExecutionCandidate>,
+    pub(super) common_facts: Option<ExecutionFacts>,
 }
+impl PartialEq for CFunctionExecutionCandidatesData {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+            && self.function == other.function
+            && self.arguments == other.arguments
+            && self.paths == other.paths
+    }
+}
+impl Eq for CFunctionExecutionCandidatesData {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionExecutionCandidate {

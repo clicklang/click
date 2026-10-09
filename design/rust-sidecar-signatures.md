@@ -154,13 +154,31 @@ impl Drop for Guard {
 
 A method is declared inside `impl Type` or `impl Trait for Type` and its
 receiver is `self`, `&self` or `&mut self`. `Guard_drop` stops being a name
-an author writes. Tuple fields are `.0`, `.1`.
+an author writes. Tuple fields are `.0`, `.1`. An operator trait carries its
+type argument, `impl MulAssign<u32> for U32X4`, which is how the importer
+tells the implementations for one type apart.
 
 ### 6. Types and literals inside contracts
 
 Types named in a contract or proof (`forall (k: usize)`, casts) are Rust
 types, and a cast is `expr as T`. Literals take Rust suffixes (`4usize`).
 `result` stays the name of the returned value.
+
+### 7. Paths
+
+Decided 2026-10-08: an item in a module is named by its path, as Rust names
+it from outside the crate. `fn quad::walk(...)`, a type
+`adler2::algo::U32X4` wherever a type is written, and `impl` blocks for
+either. A path is the importer's qualified name underneath
+(`__rust_q_I4_quad_I4_walk`), so nothing downstream changes. `mod` blocks
+were considered and left out as more than is needed now.
+
+One case has no spelling yet. The importer names an inherent method by the
+module its `impl` block is in, and a block may be in another module than
+its type (`impl Adler32` in `adler2::algo`, for `adler2::Adler32`). Rust
+does not write that module anywhere, so a sidecar cannot either without
+resolving it from the import. An inherent block is taken to be in its
+type's module, and the other case keeps the importer's name.
 
 ## Order of work
 
