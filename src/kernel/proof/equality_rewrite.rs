@@ -431,7 +431,7 @@ fn rewrite_through_registered_pointer_read(
     };
     let (source, address) = crate::kernel::eval::typed_pointer_read_variable(pointer)
         .and_then(|variable| crate::kernel::registered_load_origin_for_variable(&variable))
-        .unwrap_or_else(|| (memory, *address));
+        .unwrap_or((memory, *address));
     let rewritten_address = rewrite_address(&address);
     if rewritten_address == address {
         return Some(pointer.clone());
