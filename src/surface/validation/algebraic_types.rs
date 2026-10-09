@@ -282,7 +282,11 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 arguments,
                 parameter_types,
             } => {
-                if !resource_type_arguments.is_empty() {
+                // `authority(R(..))` is the one owned clause whose argument is
+                // a resource type. It sits beside named children like any
+                // other owned resource; other resource type arguments are
+                // still unsupported here.
+                if !resource_type_arguments.is_empty() && name != "authority" {
                     return Err(ClickError::new(
                         "resource type arguments in owned resource bodies are not supported yet",
                     ));

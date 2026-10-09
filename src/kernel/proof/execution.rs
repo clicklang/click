@@ -2166,11 +2166,21 @@ impl CheckedResourceRewrite {
                             | crate::kernel::CResourceTerm::PopulationAuthority { .. }
                     )
                 };
-                if !definition.children.is_empty()
+                // A named child is admitted when its own definition reaches no
+                // population, so it cannot hide a member or an authority; the
+                // exchange then moves only memory, tokens, and this body's own
+                // authority, which the ledger equality below checks.
+                let ordinary_child = |child: &crate::kernel::CResourceChildSpec| {
+                    function
+                        .composite_resource_definition(&child.resource)
+                        .is_some_and(|child| !child.reaches_population())
+                };
+                if !definition.children.iter().all(ordinary_child)
                     || !definition.contains().iter().all(memory_only)
                     || definition.matched.as_ref().is_some_and(|body| {
                         body.arms.iter().any(|arm| {
-                            !arm.children.is_empty() || !arm.contains.iter().all(memory_only)
+                            !arm.children.iter().all(ordinary_child)
+                                || !arm.contains.iter().all(memory_only)
                         })
                     })
                 {
