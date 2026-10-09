@@ -1,8 +1,118 @@
-// Root deletion with a deeper black-leaf successor. The result identifies
+// Deletion at any tree position with a deeper black-leaf successor identifies
 // the nonnull parent at which erase-color repair must begin.
 verifying "rb_erase_augmented.c";
 
 import "../rbtree-model/rbtree_spine_resources.click";
+
+function erase_deep_context(tree: RbTree, up: Context) -> Context {
+    match tree {
+        RbTree::Empty => up,
+        RbTree::Node(node, parent, color, left, right) => rb_successor_context(erase_minimum_identity(rb_minimum(right)), parent, color, left, right, up),
+    }
+}
+
+function erase_deep_model(tree: RbTree) -> RbTree {
+    match tree {
+        RbTree::Empty => RbTree::Empty,
+        RbTree::Node(node, parent, color, left, right) => rb_successor_splice(erase_minimum_identity(rb_minimum(right)), parent, color, left, right),
+    }
+}
+
+void __rb_change_child(struct rb_node* old, struct rb_node* new,
+                       struct rb_node* parent, struct rb_root* root) {
+    consumes before: ctx_at(old, root);
+    owns old->__rb_parent_color;
+    requires old != 0;
+    requires ctx_node_is(before.model, parent) == 1;
+    produces after: ctx_at(new, root);
+    ensures after.model == old(before.model);
+    ensures old->__rb_parent_color == old(old->__rb_parent_color);
+} by {
+    have old != 0 by { assumption(); }
+    match before.model {
+        Context::Top => {
+            have parent == 0 by {
+                have ctx_node_is(Context::Top, parent) == 1 by {
+                    rewrite(Context::Top == before.model); assumption();
+                }
+                if parent == 0 { assumption(); } else {
+                    have ctx_node_is(Context::Top, parent) != 1 by {
+                        unfold(ctx_node_is(Context::Top, parent)); normalize() using { not(parent == 0); };
+                    }
+                    contradiction(ctx_node_is(Context::Top, parent) == 1);
+                }
+            }
+            unfold(before);
+            execute();
+            let after = fold(ctx_at(new, root), { model: Context::Top });
+            simp();
+        },
+        Context::Left(identity, grandparent, color, sibling_model, outer_model) => {
+            have parent == identity by {
+                have ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) == 1 by {
+                    rewrite(Context::Left(identity, grandparent, color, sibling_model, outer_model) == before.model); assumption();
+                }
+                if parent == identity { assumption(); } else {
+                    have ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) != 1 by {
+                        unfold(ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent)); normalize() using { not(parent == identity); };
+                    }
+                    contradiction(ctx_node_is(Context::Left(identity, grandparent, color, sibling_model, outer_model), parent) == 1);
+                }
+            }
+            let { sibling: sibling, up: outer } = unfold(before);
+            execute();
+            let after = fold(ctx_at(new, root), {
+                model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
+            }, { sibling: sibling, up: outer });
+            simp();
+        },
+        Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
+            have parent == identity by {
+                have ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) == 1 by {
+                    rewrite(Context::Right(identity, grandparent, color, sibling_model, outer_model) == before.model); assumption();
+                }
+                if parent == identity { assumption(); } else {
+                    have ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) != 1 by {
+                        unfold(ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent)); normalize() using { not(parent == identity); };
+                    }
+                    contradiction(ctx_node_is(Context::Right(identity, grandparent, color, sibling_model, outer_model), parent) == 1);
+                }
+            }
+            let { sibling: sibling, up: outer } = unfold(before);
+            match sibling.model {
+                RbTree::Empty => {
+                    unfold(sibling);
+                    have identity->rb_left == 0 by { simp(); }
+                    have parent->rb_left == 0 by { simp(); }
+                    have old != 0 by { assumption(); }
+                    have parent->rb_left != old by {
+                        if parent->rb_left == old {
+                            have old == 0 by { normalize() using { parent->rb_left == old; parent->rb_left == 0; } }
+                            contradiction(old != 0);
+                        } else { assumption(); }
+                    }
+                    execute();
+                    let sibling = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
+                    let after = fold(ctx_at(new, root), {
+                        model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
+                    }, { sibling: sibling, up: outer });
+                    simp();
+                },
+                RbTree::Node(sid, sp, sc, sl, sr) => {
+                    let { left: left, right: right } = unfold(sibling);
+                    execute();
+                    let sibling = fold(rb_at(parent->rb_left), {
+                        model: RbTree::Node(sid, sp, sc, sl, sr)
+                    }, { left: left, right: right });
+                    let after = fold(ctx_at(new, root), {
+                        model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
+                    }, { sibling: sibling, up: outer });
+                    simp();
+                },
+            }
+        },
+    }
+}
 
 tactic open_erase_spine_link(focus: struct rb_node*, parent: struct rb_node*, anchor: struct rb_node*) {
     consumes c: erase_spine_at(focus, anchor);
@@ -211,16 +321,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     const struct rb_augment_callbacks* augment) {
     consumes tree: rb_at(node);
     consumes up: ctx_at(node, root);
-    requires up.model == Context::Top;
     requires tree.model != RbTree::Empty;
-    requires rb_parent_is(tree.model, 0) == 1;
-    requires rb_color(tree.model) == Color::Black;
     requires rb_left(tree.model) != RbTree::Empty;
     requires rb_right(tree.model) != RbTree::Empty;
     requires rb_left(rb_right(tree.model)) != RbTree::Empty;
     requires erase_minimum_child(rb_minimum(rb_right(tree.model))) == RbTree::Empty;
     requires erase_minimum_color(rb_minimum(rb_right(tree.model))) == Color::Black;
-    requires rb_parent_consistent(tree.model, 0) == 1;
+    requires ctx_consistent(up.model, tree.model, 0) == 1;
+    requires ctx_rb(up.model, black_height(tree.model), rb_color(tree.model)) == 1;
     requires is_rb(tree.model) == 1;
     owns erase_callbacks(augment);
     produces node->__rb_parent_color;
@@ -229,12 +337,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
     produces hole: rb_at(0);
     produces deficit: ctx_at(0, root);
     ensures hole.model == RbTree::Empty;
-    ensures deficit.model == rb_successor_context(
-        erase_minimum_identity(rb_minimum(rb_right(old(tree.model)))), 0, Color::Black,
-        rb_left(old(tree.model)), rb_right(old(tree.model)), Context::Top);
+    ensures deficit.model == erase_deep_context(old(tree.model), old(up.model));
     ensures ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1;
     ensures ctx_consistent(deficit.model, hole.model, 0) == 1;
-    ensures rb_inorder(plug(deficit.model, hole.model))
+    ensures plug(deficit.model, hole.model) == plug(old(up.model), erase_deep_model(old(tree.model)));
+    ensures rb_inorder(erase_deep_model(old(tree.model)))
         == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model))));
     ensures result == rb_min_parent(rb_right(old(tree.model)));
     ensures result != 0;
@@ -259,43 +366,20 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 rewrite(right_model == rb_right(tree.model)); assumption();
             }
             have rb_left(right_model) != RbTree::Empty by { rewrite(right_model == rb_right(tree.model)); assumption(); }
-            have rb_parent_is(RbTree::Node(identity, parent_model, color, left_model, right_model), 0) == 1 by {
+            have ctx_consistent(up.model, RbTree::Node(identity, parent_model, color, left_model, right_model), 0) == 1 by {
                 rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model) == tree.model); assumption();
             }
-            apply(rb_parent_is_node_parent(identity, parent_model, color, left_model, right_model, 0));
-            have color == Color::Black by {
-                unfold(rb_color(RbTree::Node(identity, parent_model, color, left_model, right_model)));
-                rewrite(color == rb_color(RbTree::Node(identity, parent_model, color, left_model, right_model)));
-                rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model) == tree.model); assumption();
-            }
-            have rb_parent_consistent(RbTree::Node(identity, parent_model, color, left_model, right_model), 0) == 1 by {
-                rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model) == tree.model); assumption();
-            }
-            apply(rb_parent_consistent_node_right(identity, parent_model, color, left_model, right_model, 0));
+            apply(erase_context_parent(up.model, identity, parent_model, color, left_model, right_model));
+            apply(ctx_consistent_node_children(up.model, identity, parent_model, color, left_model, right_model, 0));
             have is_rb(RbTree::Node(identity, parent_model, color, left_model, right_model)) == 1 by {
                 rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model) == tree.model); assumption();
             }
-            have ctx_rb(Context::Top, black_height(RbTree::Node(identity, parent_model, color, left_model, right_model)),
-                rb_color(RbTree::Node(identity, parent_model, color, left_model, right_model))) == 1 by {
-                unfold(rb_color(RbTree::Node(identity, parent_model, color, left_model, right_model)));
-                rewrite(color == Color::Black);
-                unfold(ctx_rb(Context::Top, black_height(RbTree::Node(identity, parent_model, Color::Black, left_model, right_model)), Color::Black));
-                unfold(color_black(Color::Black)); normalize();
-            }
-            have ctx_consistent(Context::Top, RbTree::Node(identity, parent_model, color, left_model, right_model), 0) == 1 by {
-                unfold(ctx_consistent(Context::Top, RbTree::Node(identity, parent_model, color, left_model, right_model), 0));
-                rewrite(rb_parent_consistent(RbTree::Node(identity, parent_model, color, left_model, right_model), 0) == 1); normalize();
+            have ctx_rb(up.model, black_height(RbTree::Node(identity, parent_model, color, left_model, right_model)), rb_color(RbTree::Node(identity, parent_model, color, left_model, right_model))) == 1 by {
+                rewrite(RbTree::Node(identity, parent_model, color, left_model, right_model) == tree.model); assumption();
             }
             have rb_left(old(tree.model)) == left_model by { simp(); }
             have rb_right(old(tree.model)) == right_model by { simp(); }
-            unfold(up);
             let { left: l, right: r } = unfold(tree);
-            have color_bit(Color::Black) == 1 by { unfold(color_bit(Color::Black)); normalize(); }
-            have (node->__rb_parent_color & 1) == 1 by {
-                rewrite((node->__rb_parent_color & 1) == color_bit(color));
-                rewrite(color == Color::Black); unfold(color_bit(Color::Black)); normalize();
-            }
-            have node->__rb_parent_color == 1 by { simp(); }
             match left_model {
                 RbTree::Empty => { contradiction(left_model == RbTree::Empty); },
                 RbTree::Node(lid, lp, lc, ll, lr) => {
@@ -323,7 +407,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     have plug(erase_context(c.model), t.model) == rl by {
                                         rewrite(c.model == EraseSpine::Top);
                                         unfold(erase_context(EraseSpine::Top));
-                                        unfold(plug(Context::Top, t.model)); simp();
+                                        unfold(plug(old(up.model), t.model)); simp();
                                     }
                                     have successor == erase_spine_parent(c.model, child) by {
                                         rewrite(c.model == EraseSpine::Top);
@@ -412,7 +496,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have rb_minimum(right_model) == RbMinimum::Found(mid, Color::Black, RbTree::Empty) by {
                                                         rewrite(Color::Black == mc); rewrite(RbTree::Empty == mr); assumption();
                                                     }
-                                                    apply(rb_erase_black_successor_splice(identity, mid, parent_model, color, left_model, right_model, Context::Top, 0));
+                                                    apply(rb_erase_black_successor_splice(identity, mid, parent_model, color, left_model, right_model, up.model, 0));
                                                     have erase_minimum_identity(rb_minimum(right_model)) == mid by {
                                                         rewrite(rb_minimum(right_model) == RbMinimum::Found(mid, mc, mr));
                                                         unfold(erase_minimum_identity(RbMinimum::Found(mid, mc, mr))); normalize();
@@ -448,19 +532,35 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     let { frame: link_frame } = open_erase_spine_link(successor, parent, child, { c: path });
                                                     have link_frame.model == at(opened_spine, path.model) by { assumption(); }
                                                     have link_frame.model == mu by { simp(); }
+                                                    mark moving;
                                                     step(); step(); step(); step();
+                                                    have successor == mid by { simp(); }
+                                                    have child->__rb_parent_color == ((at(moving, child->__rb_parent_color) & 1) | address(mid)) by { simp(); }
+                                                    have aligned(successor, 8) by { simp(); }
+                                                    apply(packed_parent_word(mid, at(moving, child->__rb_parent_color)));
+                                                    have child->__rb_parent_color == address(mid) + (child->__rb_parent_color & 1) by {
+                                                        rewrite(child->__rb_parent_color == ((at(moving, child->__rb_parent_color) & 1) | address(mid)));
+                                                        assumption();
+                                                    }
+                                                    have (child->__rb_parent_color & 1) == (at(moving, child->__rb_parent_color) & 1) by {
+                                                        rewrite(child->__rb_parent_color == ((at(moving, child->__rb_parent_color) & 1) | address(mid)));
+                                                        assumption();
+                                                    }
+                                                    have (child->__rb_parent_color & 1) == color_bit(rc) by { simp(); }
                                                     have node->rb_left == lid by { simp(); }
                                                     unfold(erase_callbacks(augment));
                                                     have min_right.model == RbTree::Empty by { rewrite(min_right.model == mr); assumption(); }
                                                     unfold(min_right);
                                                     have color_bit(mc) == 1 by { rewrite(mc == Color::Black); unfold(color_bit(Color::Black)); normalize(); }
                                                     have (successor->__rb_parent_color & 1) == 1 by { simp(); }
-                                                    execute_until(statement(62));
-                                                    let hole = fold(rb_at(0), { model: RbTree::Empty });
-                                                    mark closing_spine;
-                                                    let { c: path2 } = close_erase_spine_link(0, parent, child, { frame: link_frame });
-                                                    have path2.model == at(closing_spine, link_frame.model) by { assumption(); }
-                                                    have path2.model == mu by { simp(); }
+                                                    execute_until(statement(54));
+                                                    have separate(memory(child->rb_right), memory(mid->__rb_parent_color)) by { simp(); }
+                                                    have separate(memory(child->rb_right), memory(mid->rb_right)) by { simp(); }
+                                                    have separate(memory(child->rb_right), memory(lid->__rb_parent_color)) by { simp(); }
+                                                    have separate(memory(child->rb_right), memory(node->__rb_parent_color)) by { simp(); }
+                                                    have separate(memory(child->rb_right), memory(parent->rb_left)) by { simp(); }
+                                                    have separate(memory(child->rb_right), memory(mid->rb_left)) by { simp(); }
+                                                    have separate(memory(child->rb_right), memory(child->__rb_parent_color)) by { simp(); }
                                                     let moved_left = fold(rb_at(lid), {
                                                         model: RbTree::Node(lid, mid, lc, ll, lr)
                                                     }, { left: ll_tree, right: lr_tree });
@@ -468,24 +568,89 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         rewrite(left_model == RbTree::Node(lid, lp, lc, ll, lr));
                                                         unfold(rb_reparent(RbTree::Node(lid, lp, lc, ll, lr), mid)); normalize();
                                                     }
-                                                    have ctx_node_is(Context::Top, 0) == 1 by { unfold(ctx_node_is(Context::Top, 0)); normalize(); }
-                                                    have Context::Top == ctx_reroot(Context::Top, 0) by { unfold(ctx_reroot(Context::Top, 0)); normalize(); }
-                                                    let root_context = fold(ctx_at(mid, root), { model: Context::Top });
+                                                    have tmp == parent_model by { simp(); }
+                                                    have ctx_node_is(up.model, tmp) == 1 by {
+                                                        rewrite(tmp == parent_model); assumption();
+                                                    }
+                                                    have (successor->__rb_parent_color & 1) == 1 by { simp(); }
+                                                    have parent->rb_left == 0 by { simp(); }
+                                                    have successor == mid by { simp(); }
+                                                    have aligned(successor, 8) by { simp(); }
+                                                    have child->__rb_parent_color == address(mid) + (child->__rb_parent_color & 1) by { simp(); }
+                                                    have (child->__rb_parent_color & 1) == color_bit(rc) by { simp(); }
+                                                    have child == rid by { simp(); }
+                                                    have separate(memory(child->__rb_parent_color), memory(mid->__rb_parent_color)) by { simp(); }
+                                                    fold(erase_callbacks(augment));
+                                                    mark transplant;
+                                                    let { after: root_context } = step(__rb_change_child(node, successor, tmp, root), { before: up });
+                                                    have child->rb_right == at(transplant, child->rb_right) by { simp(); }
+                                                    have child->__rb_parent_color == at(transplant, child->__rb_parent_color) by { normalize() using { child == rid; }; }
+                                                    have parent->rb_left == at(transplant, parent->rb_left) by { normalize(); }
+                                                    have node->rb_left == lid by { simp(); }
+                                                    have parent->rb_left == 0 by { simp(); }
+                                                    have root_context.model == at(transplant, up.model) by { assumption(); }
+                                                    have root_context.model == old(up.model) by { simp(); }
+                                                    have mid->__rb_parent_color == at(transplant, mid->__rb_parent_color) by { simp(); }
+                                                    have (mid->__rb_parent_color & 1) == 1 by { simp(); }
+                                                    have successor == mid by { simp(); }
+                                                    have (successor->__rb_parent_color & 1) == 1 by {
+                                                        rewrite(successor == mid); assumption();
+                                                    }
+                                                    mark parent_link_changed;
+                                                    execute_until(statement(62));
+                                                    have tmp == mid by { simp(); }
+                                                    let hole = fold(rb_at(0), { model: RbTree::Empty });
+                                                    have parent->rb_left == 0 by { simp(); }
+                                                    mark closing_spine;
+                                                    let { c: path2 } = close_erase_spine_link(0, parent, child, { frame: link_frame });
+                                                    have path2.model == at(closing_spine, link_frame.model) by { assumption(); }
+                                                    have path2.model == mu by { simp(); }
                                                     apply(rb_reparent_parent_is(left_model, mid));
                                                     have rb_parent_is(rb_reparent(left_model, mid), mid) == 1 by { assumption(); }
+                                                    have mid->rb_left == lid by { simp(); }
+                                                    have mid->rb_right == child by { simp(); }
                                                     let above = fold(ctx_at(child, root), {
-                                                        model: Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)
+                                                        model: Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))
                                                     }, { sibling: moved_left, up: root_context });
                                                     have ctx_node_is(above.model, mid) == 1 by {
-                                                        rewrite(above.model == Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top));
-                                                        unfold(ctx_node_is(Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top), mid)); normalize();
+                                                        rewrite(above.model == Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)));
+                                                        unfold(ctx_node_is(Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)), mid)); normalize();
                                                     }
                                                     have above.model == ctx_reroot(above.model, mid) by {
-                                                        rewrite(above.model == Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top));
-                                                        unfold(ctx_reroot(Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top), mid)); normalize();
+                                                        rewrite(above.model == Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)));
+                                                        unfold(ctx_reroot(Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)), mid)); normalize();
                                                     }
+                                                    have child == rid by { simp(); }
+                                                    have tmp == mid by { simp(); }
+                                                    have child->rb_right == at(transplant, child->rb_right) by {
+                                                        transport(at(transplant, child->rb_right) == at(transplant, child->rb_right), child->rb_right == at(transplant, child->rb_right)) using {
+                                                            separate(memory(child->rb_right), memory(mid->__rb_parent_color));
+                                                            separate(memory(child->rb_right), memory(mid->rb_right));
+                                                            separate(memory(child->rb_right), memory(mid->rb_left));
+                                                            separate(memory(child->rb_right), memory(child->__rb_parent_color));
+                                                            tmp == mid;
+                                                            child == rid;
+                                                            at(transplant, node->rb_left) == lid;
+                                                            separate(memory(child->rb_right), memory(lid->__rb_parent_color));
+                                                            separate(memory(child->rb_right), memory(node->__rb_parent_color));
+                                                            separate(memory(child->rb_right), memory(parent->rb_left));
+                                                        };
+                                                    }
+                                                    have child->__rb_parent_color == at(transplant, child->__rb_parent_color) by {
+                                                        transport(at(parent_link_changed, child->__rb_parent_color) == at(transplant, child->__rb_parent_color), child->__rb_parent_color == at(transplant, child->__rb_parent_color)) using {
+                                                            at(parent_link_changed, child->__rb_parent_color) == at(transplant, child->__rb_parent_color);
+                                                            at(parent_link_changed, successor) == mid;
+                                                            at(parent_link_changed, child) == rid;
+                                                            separate(memory(child->__rb_parent_color), memory(mid->__rb_parent_color));
+                                                            child == rid;
+                                                            tmp == mid;
+                                                        };
+                                                    }
+                                                    have child->__rb_parent_color == address(mid) + (child->__rb_parent_color & 1) by { simp(); }
+                                                    have (child->__rb_parent_color & 1) == color_bit(rc) by { simp(); }
+                                                    have right_sibling.model == rr by { simp(); }
                                                     let anchor_frame = fold(erase_anchor_frame(child, root), {
-                                                        model: EraseAnchorFrame::At(mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))
+                                                        model: EraseAnchorFrame::At(mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))
                                                     }, { right: right_sibling, up: above });
                                                     have erase_spine_links(path2.model, child) == 1 by {
                                                         rewrite(path2.model == mu); rewrite(child == rid); assumption();
@@ -493,80 +658,82 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     mark grafting;
                                                     let { context: deficit } = graft_erase_spine(0, child, root, { c: path2, base: anchor_frame });
                                                     have deficit.model == ctx_concat(erase_context(at(grafting, path2.model)),
-                                                        erase_anchor_context(child, EraseAnchorFrame::At(mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)))) by { assumption(); }
+                                                        erase_anchor_context(child, EraseAnchorFrame::At(mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))))) by { assumption(); }
                                                     have at(grafting, path2.model) == mu by { assumption(); }
                                                     have erase_anchor_context(child, EraseAnchorFrame::At(mid, rc, rr,
-                                                        Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)))
-                                                        == Context::Left(rid, mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)) by {
+                                                        Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))))
+                                                        == Context::Left(rid, mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))) by {
                                                         unfold(erase_anchor_context(child, EraseAnchorFrame::At(mid, rc, rr,
-                                                            Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))));
+                                                            Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))));
                                                         rewrite(child == rid); normalize();
                                                     }
                                                     have deficit.model == ctx_concat(erase_context(mu),
-                                                        Context::Left(rid, mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))) by {
+                                                        Context::Left(rid, mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))) by {
                                                         rewrite(mu == at(grafting, path2.model));
-                                                        rewrite(Context::Left(rid, mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))
+                                                        rewrite(Context::Left(rid, mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))
                                                             == erase_anchor_context(child, EraseAnchorFrame::At(mid, rc, rr,
-                                                                Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))));
+                                                                Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))));
                                                         assumption();
                                                     }
                                                     apply(erase_spine_min_context(mu, RbTree::Node(mid, mp, mc, RbTree::Empty, mr),
-                                                        Context::Left(rid, mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))));
+                                                        Context::Left(rid, mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))));
                                                     apply(rb_min_context_nonempty_left(rid, mid, rc, rl, rr,
-                                                        Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)));
-                                                    have rb_successor_context(mid, 0, Color::Black, left_model, right_model, Context::Top)
+                                                        Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))));
+                                                    have rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model))
                                                         == ctx_concat(erase_context(mu), Context::Left(rid, mid, rc, rr,
-                                                            Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))) by {
-                                                        unfold(rb_successor_context(mid, 0, Color::Black, left_model, right_model, Context::Top));
+                                                            Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))) by {
+                                                        unfold(rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model)));
                                                         rewrite(right_model == RbTree::Node(rid, rp, rc, rl, rr));
                                                         unfold(rb_reparent(RbTree::Node(rid, rp, rc, rl, rr), mid));
                                                         rewrite(rb_min_context(RbTree::Node(rid, mid, rc, rl, rr),
-                                                            Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))
+                                                            Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))
                                                             == rb_min_context(rl, Context::Left(rid, mid, rc, rr,
-                                                                Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))));
+                                                                Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))));
                                                         rewrite(rl == plug(erase_context(mu), RbTree::Node(mid, mp, mc, RbTree::Empty, mr)));
                                                         rewrite(rb_min_context(plug(erase_context(mu), RbTree::Node(mid, mp, mc, RbTree::Empty, mr)),
-                                                            Context::Left(rid, mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)))
+                                                            Context::Left(rid, mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))))
                                                             == rb_min_context(RbTree::Node(mid, mp, mc, RbTree::Empty, mr),
-                                                                ctx_concat(erase_context(mu), Context::Left(rid, mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)))));
+                                                                ctx_concat(erase_context(mu), Context::Left(rid, mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))))));
                                                         unfold(rb_min_context(RbTree::Node(mid, mp, mc, RbTree::Empty, mr),
-                                                            ctx_concat(erase_context(mu), Context::Left(rid, mid, rc, rr, Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top))))); normalize();
+                                                            ctx_concat(erase_context(mu), Context::Left(rid, mid, rc, rr, Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model)))))); normalize();
                                                     }
-                                                    have deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, Context::Top) by {
-                                                        rewrite(parent_model == 0); rewrite(color == Color::Black);
-                                                        rewrite(rb_successor_context(mid, 0, Color::Black, left_model, right_model, Context::Top)
+                                                    have deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model)) by {
+                                                        rewrite(rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model))
                                                             == ctx_concat(erase_context(mu), Context::Left(rid, mid, rc, rr,
-                                                                Context::Right(mid, 0, Color::Black, rb_reparent(left_model, mid), Context::Top)))); assumption();
+                                                                Context::Right(mid, parent_model, color, rb_reparent(left_model, mid), old(up.model))))); assumption();
                                                     }
-                                                    have deficit.model == rb_successor_context(
-                                                        erase_minimum_identity(rb_minimum(rb_right(old(tree.model)))), 0, Color::Black,
-                                                        rb_left(old(tree.model)), rb_right(old(tree.model)), Context::Top) by {
-                                                        rewrite(rb_left(old(tree.model)) == left_model); rewrite(rb_right(old(tree.model)) == right_model);
-                                                        rewrite(erase_minimum_identity(rb_minimum(right_model)) == mid);
-                                                        rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, Context::Top));
-                                                        rewrite(parent_model == 0); rewrite(color == Color::Black); normalize();
+                                                    have deficit.model == erase_deep_context(old(tree.model), old(up.model)) by {
+                                                        rewrite(old(tree.model) == RbTree::Node(identity, parent_model, color, left_model, right_model));
+                                                        unfold(erase_deep_context(RbTree::Node(identity, parent_model, color, left_model, right_model), old(up.model)));
+                                                        rewrite(erase_minimum_identity(rb_minimum(right_model)) == mid); assumption();
                                                     }
                                                     have ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1 by {
-                                                        rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, Context::Top)); assumption();
+                                                        rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model))); assumption();
                                                     }
                                                     have ctx_consistent(deficit.model, hole.model, 0) == 1 by {
                                                         rewrite(hole.model == RbTree::Empty);
-                                                        rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, Context::Top)); assumption();
+                                                        rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model))); assumption();
                                                     }
-                                                    have rb_inorder(plug(deficit.model, hole.model))
-                                                        == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                    have plug(deficit.model, hole.model) == plug(old(up.model), erase_deep_model(old(tree.model))) by {
                                                         rewrite(hole.model == RbTree::Empty);
-                                                        rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, Context::Top));
-                                                        rewrite(plug(rb_successor_context(mid, parent_model, color, left_model, right_model, Context::Top), RbTree::Empty)
-                                                            == plug(Context::Top, rb_successor_splice(mid, parent_model, color, left_model, right_model)));
-                                                        unfold(plug(Context::Top, rb_successor_splice(mid, parent_model, color, left_model, right_model)));
-                                                        rewrite(rb_left(old(tree.model)) == left_model); rewrite(rb_right(old(tree.model)) == right_model); assumption();
+                                                        rewrite(old(tree.model) == RbTree::Node(identity, parent_model, color, left_model, right_model));
+                                                        unfold(erase_deep_model(RbTree::Node(identity, parent_model, color, left_model, right_model)));
+                                                        rewrite(erase_minimum_identity(rb_minimum(right_model)) == mid);
+                                                        rewrite(deficit.model == rb_successor_context(mid, parent_model, color, left_model, right_model, old(up.model))); assumption();
+                                                    }
+                                                    have rb_inorder(erase_deep_model(old(tree.model))) == list_append(rb_inorder(rb_left(old(tree.model))), rb_inorder(rb_right(old(tree.model)))) by {
+                                                        rewrite(old(tree.model) == RbTree::Node(identity, parent_model, color, left_model, right_model));
+                                                        unfold(erase_deep_model(RbTree::Node(identity, parent_model, color, left_model, right_model)));
+                                                        unfold(rb_left(RbTree::Node(identity, parent_model, color, left_model, right_model)));
+                                                        unfold(rb_right(RbTree::Node(identity, parent_model, color, left_model, right_model)));
+                                                        rewrite(erase_minimum_identity(rb_minimum(right_model)) == mid); assumption();
                                                     }
                                                     have rebalance == rb_min_parent(rb_right(old(tree.model))) by {
                                                         rewrite(rb_right(old(tree.model)) == right_model);
                                                         rewrite(rb_min_parent(right_model) == mp); simp();
                                                     }
                                                     have rebalance != 0 by { simp(); }
+                                                    unfold(erase_callbacks(augment));
                                                     execute(); fold(erase_callbacks(augment)); simp();
                                                 },
                                             }

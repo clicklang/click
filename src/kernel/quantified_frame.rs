@@ -314,3 +314,67 @@ fn loads_unchanged(
         assumptions,
     ) || assumptions.memory_loads_proven_equal(left, &right_at_left_address)
 }
+
+#[cfg(test)]
+mod wide_condition_tests {
+    use super::*;
+
+    // Adding a wide condition constructor must retain the load checker's exact
+    // width/history requirements and must not identify different scalar values.
+    #[test]
+    fn wide_equality_frame_checks_read_kind_history_and_other_operand() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "wide-equality-frame".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let assumptions = PureFactContext::new();
+        let before = CMemory::new().with_block("wide-equality-frame", 16);
+        let after = before.clone().store(
+            pointer.offset_by_bytes(8),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(3)),
+        );
+        let load = |memory: &CMemory, kind| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer.clone()),
+                kind,
+            )
+        };
+        let condition =
+            |read, value| ConditionTerm::Bitvector64Equal(Box::new(read), Box::new(value));
+        let stamp = Bitvector32Term::UInt64Constant(0x1_0000_0001);
+        let source = condition(load(&before, LoadKind::Bits64), stamp.clone());
+        let target = condition(load(&after, LoadKind::Bits64), stamp.clone());
+        let carried = |target: &ConditionTerm| {
+            conditions_equal_with_load_atoms(&source, target, &|left, right| {
+                loads_unchanged(left, right, &assumptions)
+            })
+        };
+        assert!(carried(&target));
+        assert!(!carried(&condition(
+            load(&after, LoadKind::Bits32),
+            stamp.clone()
+        )));
+        assert!(!carried(&condition(
+            load(&after, LoadKind::Bits64),
+            Bitvector32Term::UInt64Constant(1),
+        )));
+        let partial = before.clone().store(
+            pointer.offset_by_bytes(4),
+            CValue::Int32(Bitvector32Term::Constant(0)),
+        );
+        assert!(!carried(&condition(
+            load(&partial, LoadKind::Bits64),
+            stamp
+        )));
+        assert!(!conditions_equal_with_load_atoms(
+            &source,
+            &ConditionTerm::Bitvector32Equal(
+                Box::new(load(&after, LoadKind::Bits64)),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+            &|_, _| true,
+        ));
+    }
+}

@@ -76,8 +76,8 @@ return the exact successor transplant with red-black validity, parent
 consistency, preserved in-order contents, detached-node ownership, and null
 fixup. A shared model theorem connects the leaf and nonempty-child splices.
 
-`rbtree_erase_black_spine.click` covers root deletion with a deeper black-leaf
-successor. After splicing out the leaf, `graft_erase_spine` joins the retained
+`rbtree_erase_black_spine.click` covers deletion at any tree position with a
+deeper black-leaf successor. After splicing out the leaf, `graft_erase_spine` joins the retained
 descent path to the transplanted successor's context. The contract returns an
 empty hole, the exact deficit context, its red-black and parent-consistency
 invariants, preserved in-order contents, detached-node ownership, and the
@@ -92,8 +92,10 @@ by deeper non-root deletion.
 
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
-all immediate-successor exits now verify at any tree position. Root deletion also covers every deeper-successor exit. Deeper successors
-with a non-root erased node remain. The C file retains all branches; each sidecar states its coverage.
+all immediate-successor exits now verify at any tree position, as does a deeper
+black-leaf successor. Root deletion also covers every deeper-successor exit.
+Non-root deeper red-leaf and nonempty-child successors remain. The C file
+retains all branches; each sidecar states its coverage.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is

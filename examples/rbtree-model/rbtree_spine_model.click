@@ -304,3 +304,74 @@ function erase_anchor_context(anchor: struct rb_node*, frame: EraseAnchorFrame) 
         EraseAnchorFrame::At(parent, color, sibling, above) => Context::Left(anchor, parent, color, sibling, above),
     }
 }
+
+// Parent facts shared by deeper successor transplants at any tree position.
+theorem packed_parent_word(p: struct rb_node*, word: uint64) {
+    requires aligned(p, 8);
+    ensures (((word & 1) | address(p)) & 1) == (word & 1) by {
+        arithmetic() using { aligned(p, 8); }
+    }
+    ensures ((word & 1) | address(p)) == address(p) + (((word & 1) | address(p)) & 1) by {
+        have (((word & 1) | address(p)) & 1) == (word & 1) by {
+            arithmetic() using { aligned(p, 8); }
+        }
+        rewrite((((word & 1) | address(p)) & 1) == (word & 1));
+        arithmetic() using { aligned(p, 8); }
+    }
+}
+
+theorem erase_context_parent(ctx: Context, node: struct rb_node*, parent: struct rb_node*,
+    color: Color, left: RbTree, right: RbTree) {
+    requires ctx_consistent(ctx, RbTree::Node(node, parent, color, left, right), 0) == 1;
+    ensures ctx_node_is(ctx, parent) == 1 by {
+        induct(ctx) as ih {
+            Context::Top => {
+                apply(ctx_consistent_top(RbTree::Node(node, parent, color, left, right), 0));
+                apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, 0));
+                unfold(ctx_node_is(Context::Top, parent));
+                normalize() using { parent == 0; };
+            }
+            Context::Left(id, gp, c, sibling, up) => {
+                apply(ctx_consistent_left_focus(id, gp, c, sibling, up, RbTree::Node(node, parent, color, left, right), 0));
+                apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, id));
+                unfold(ctx_node_is(Context::Left(id, gp, c, sibling, up), parent));
+                normalize() using { parent == id; };
+            }
+            Context::Right(id, gp, c, sibling, up) => {
+                apply(ctx_consistent_right_focus(id, gp, c, sibling, up, RbTree::Node(node, parent, color, left, right), 0));
+                apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, id));
+                unfold(ctx_node_is(Context::Right(id, gp, c, sibling, up), parent));
+                normalize() using { parent == id; };
+            }
+        }
+    }
+    ensures ctx == ctx_reroot(ctx, parent) by {
+        induct(ctx) as ih {
+            Context::Top => {
+                apply(ctx_consistent_top(RbTree::Node(node, parent, color, left, right), 0));
+                apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, 0));
+                unfold(ctx_reroot(Context::Top, parent));
+                normalize();
+            }
+            Context::Left(id, gp, c, sibling, up) => {
+                apply(ctx_consistent_left_focus(id, gp, c, sibling, up, RbTree::Node(node, parent, color, left, right), 0));
+                apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, id));
+                unfold(ctx_reroot(Context::Left(id, gp, c, sibling, up), parent));
+                rewrite(parent == id); normalize();
+            }
+            Context::Right(id, gp, c, sibling, up) => {
+                apply(ctx_consistent_right_focus(id, gp, c, sibling, up, RbTree::Node(node, parent, color, left, right), 0));
+                apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right, id));
+                unfold(ctx_reroot(Context::Right(id, gp, c, sibling, up), parent));
+                rewrite(parent == id); normalize();
+            }
+        }
+    }
+    ensures rb_parent_consistent(RbTree::Node(node, parent, color, left, right), parent) == 1 by {
+        apply(ctx_consistent_node_children(ctx, node, parent, color, left, right, 0));
+        have parent == parent by { normalize(); }
+        apply(rb_node_is_equal(parent, parent));
+        apply(rb_parent_consistent_node(node, parent, color, left, right, parent));
+        assumption();
+    }
+}

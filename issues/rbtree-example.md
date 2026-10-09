@@ -34,19 +34,19 @@ the path, and `rb_erase_no_fixup_successor_splice` proves balance, exact
 in-order removal, and parent consistency for both complete transplants.
 The leaf and nonempty-child C branches join before the shared reconstruction. The
 contract also returns detached-node ownership and null fixup.
-Root deletion with a deeper black-leaf successor now also verifies in
+Deletion at any tree position with a deeper black-leaf successor verifies in
 `rbtree_erase_black_spine.click`: the terminating graft helper joins the
 retained descent spine to the transplanted successor's context. Its contract
 returns the empty deficit hole, exact context, red-black and parent-consistency
 invariants, in-order contents, detached-node ownership, and the nonnull minimum
 parent for color repair. Both deeper sidecars share the spine model and resource
-modules. All 124 expansion-audit sites pass across the shared spine model and
-the two deeper sidecars. All 13 `__rb_erase_augmented` sidecars verify in
-176 seconds.
-All ten deeper-successor mutation checks pass: six run in the
-ordinary gate (8.1–9.7 seconds), while right attachment, right-parent update,
-wrong black-leaf fixup parent, and spurious red-leaf fixup (10.1–11.1 seconds)
-run nightly. Non-root deeper successors remain in chunk 11.
+modules. The generalized black-leaf proof preserves the outer context through
+one verified parent-link call and reconstructs the exact deficit at any tree
+position. All 136 expansion-audit sites pass across the shared model and
+black-leaf sidecar; its four splice/fixup mutations are rejected, and the
+root red-leaf/nonempty-child sidecar still verifies. Deeper-successor mutation
+checks run nightly. Non-root deeper
+red-leaf and nonempty-child successors remain in chunk 11.
 The C parent-link helper now verifies separately in `rbtree_change_child.click`
 for root, left, and right links. Its contract transfers the surrounding context
 to the new focus with the same model and preserves the old node's tag; three
@@ -97,6 +97,13 @@ normalization route. `normalize() using { child == identity; }` can follow
 the typed memory history to a wide stored value using the cited alias and
 the call’s recorded caller-owned ranges. The original `normalize()` remains
 context-free; partial overwrites and withdrawn aliases do not recover a value.
+The structural frame comparator also now includes 64-bit equality. Its missing
+case blocked the parent-word frame across the successor’s final tag write. A
+quantified wide-array equality reproduces the refusal on the prior checker and
+passes with the same checked load-history rule used for 32-bit equality. The
+black-leaf sidecar now verifies through its final augmentation callback for
+root, left-child, and right-child transplants, retaining the original outer
+context. The callback resource stays folded across the parent-link helper call.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
@@ -1168,9 +1175,10 @@ exact remaining models, whole-tree balance, parent consistency, in-order
 contents, and null fixup. Black-leaf cases retain the exact one-black-level
 deficit and return the correct fixup parent for chunk 12.
 
-Root deletion with a deeper black-leaf successor also verifies in
-`rbtree_erase_black_spine.click`. Non-root deeper successors remain. The model
-selectors, reconstruction equations, and nonempty-child blackening connection
+Deletion at any tree position with a deeper black-leaf successor verifies in
+`rbtree_erase_black_spine.click`. Non-root deeper red-leaf and nonempty-child
+successors remain. The model selectors, reconstruction equations, and
+nonempty-child blackening connection
 already cover arbitrary depth through `rb_min_parent`,
 `rb_min_context_cut_child`, and `rb_erase_nonempty_successor_splice`.
 Depends on 7 and 10.
