@@ -42,6 +42,7 @@ mod surface_lowering;
 mod surface_synthesis;
 mod theorem_application;
 mod timing;
+mod wide_arithmetic;
 use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,

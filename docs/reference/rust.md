@@ -270,7 +270,18 @@ fn empty(bytes: &[u8]) -> bool {
 A method's contract is written in an `impl` block, `impl Type { ... }` or
 `impl Trait for Type { ... }`, and its receiver is `self`, `&self` or
 `&mut self`. It is the contract of the function the C-shaped spelling calls
-`Type_name`:
+`Type_name`. A trait with a type argument names its methods by that argument
+too, as the importer does: the method of `impl MulAssign<u32> for Lanes` is
+`Lanes_mul_assign_u32`, and of `impl AddAssign<&Lanes> for Lanes`,
+`Lanes_add_assign_ref_Lanes`.
+
+An item of a crate import is named by its path from the crate:
+`fn quad::walk(bytes: &[u8]) -> u32`, a type `quad::Quad`, and
+`impl adler2::algo::U32X4 { ... }`. The path stands for the name the
+importer gives the item (`__rust_q_I4_quad_I4_walk`), which is what a claim
+label and a diagnostic still print. An inherent `impl` block is taken to be
+in its type's own module; a method whose block is in another module keeps
+the importer's name.
 
 <!-- verified-example: tests/fixtures/rust-verification/impl_blocks.click -->
 ```click

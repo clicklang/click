@@ -1,13 +1,13 @@
 verifying "quad.rs";
-struct __rust_q_I4_quad_I4_Quad __rust_q_I4_quad_I4_load(const uint8* bytes, uint64 bytes_len) {
- requires bytes_len == 4u64; views bytes[0..4];
+fn quad::load(bytes: &[u8]) -> quad::Quad {
+ requires bytes.len() == 4u64; views bytes[0..4];
  ensures result.lanes[0] == bytes[0];
  ensures result.lanes[1] == bytes[1];
  ensures result.lanes[2] == bytes[2];
  ensures result.lanes[3] == bytes[3];
 } by { execute(); simp(); }
-uint32 __rust_q_I4_quad_I4_walk(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 16u64;
+fn quad::walk(bytes: &[u8]) -> u32 {
+    requires bytes.len() == 16u64;
     views bytes[0..16];
     ensures result == 0u32;
 } by {
@@ -20,7 +20,7 @@ uint32 __rust_q_I4_quad_I4_walk(const uint8* bytes, uint64 bytes_len) {
     loop {
         decreases __rust_mir_6_remaining;
         views bytes[0..16];
-        invariant bytes_len == 16u64;
+        invariant bytes.len() == 16u64;
         invariant viewable(bytes[0..16]);
         invariant __rust_mir_6_size == 4u64;
         invariant 0 <= __rust_mir_6_remaining and __rust_mir_6_remaining <= 16;

@@ -1,16 +1,18 @@
 verifying "operators.rs";
 
-void U32X4_mul_assign_u32(struct U32X4* self, uint32 rhs) {
-    requires rhs == 0u32 or self->_0[0] <= 4294967295u32 / rhs;
-    requires rhs == 0u32 or self->_0[1] <= 4294967295u32 / rhs;
-    requires rhs == 0u32 or self->_0[2] <= 4294967295u32 / rhs;
-    requires rhs == 0u32 or self->_0[3] <= 4294967295u32 / rhs;
-    owns self->_0[0..4];
-    ensures self->_0[0] == old(self->_0[0]) * rhs;
-    ensures self->_0[1] == old(self->_0[1]) * rhs;
-    ensures self->_0[2] == old(self->_0[2]) * rhs;
-    ensures self->_0[3] == old(self->_0[3]) * rhs;
-} by { execute(); simp(); }
+impl MulAssign<u32> for U32X4 {
+    fn mul_assign(&mut self, rhs: u32) {
+        requires rhs == 0u32 or self->_0[0] <= 4294967295u32 / rhs;
+        requires rhs == 0u32 or self->_0[1] <= 4294967295u32 / rhs;
+        requires rhs == 0u32 or self->_0[2] <= 4294967295u32 / rhs;
+        requires rhs == 0u32 or self->_0[3] <= 4294967295u32 / rhs;
+        owns self->_0[0..4];
+        ensures self->_0[0] == old(self->_0[0]) * rhs;
+        ensures self->_0[1] == old(self->_0[1]) * rhs;
+        ensures self->_0[2] == old(self->_0[2]) * rhs;
+        ensures self->_0[3] == old(self->_0[3]) * rhs;
+    } by { execute(); simp(); }
+}
 
 fn scaled(words: &mut U32X4, factor: u32) {
     requires factor == 0u32 or words->_0[0] <= 4294967295u32 / factor;
@@ -24,14 +26,16 @@ fn scaled(words: &mut U32X4, factor: u32) {
     ensures words->_0[3] == old(words->_0[3]) * factor;
 } by { execute(); simp(); }
 
-void U32X4_rem_assign_u32(struct U32X4* self, uint32 quotient) {
-    requires quotient != 0u32;
-    owns self->_0[0..4];
-    ensures self->_0[0] == old(self->_0[0]) % quotient;
-    ensures self->_0[1] == old(self->_0[1]) % quotient;
-    ensures self->_0[2] == old(self->_0[2]) % quotient;
-    ensures self->_0[3] == old(self->_0[3]) % quotient;
-} by { execute(); simp(); }
+impl RemAssign<u32> for U32X4 {
+    fn rem_assign(&mut self, quotient: u32) {
+        requires quotient != 0u32;
+        owns self->_0[0..4];
+        ensures self->_0[0] == old(self->_0[0]) % quotient;
+        ensures self->_0[1] == old(self->_0[1]) % quotient;
+        ensures self->_0[2] == old(self->_0[2]) % quotient;
+        ensures self->_0[3] == old(self->_0[3]) % quotient;
+    } by { execute(); simp(); }
+}
 
 fn reduced(words: &mut U32X4, divisor: u32) {
     requires divisor != 0u32;
@@ -42,27 +46,29 @@ fn reduced(words: &mut U32X4, divisor: u32) {
     ensures words->_0[3] == old(words->_0[3]) % divisor;
 } by { execute(); simp(); }
 
-void U32X4_add_assign_ref_U32X4(struct U32X4* self, const struct U32X4* other) {
-    requires separate(memory(self->_0[0..4]), memory(other->_0[0..4]));
-    views other->_0[0..4];
-    requires self->_0[0] <= 1000u32;
-    requires other->_0[0] <= 1000u32;
-    requires self->_0[1] <= 1000u32;
-    requires other->_0[1] <= 1000u32;
-    requires self->_0[2] <= 1000u32;
-    requires other->_0[2] <= 1000u32;
-    requires self->_0[3] <= 1000u32;
-    requires other->_0[3] <= 1000u32;
-    owns self->_0[0..4];
-    ensures self->_0[0] == old(self->_0[0]) + old(other->_0[0]);
-    ensures other->_0[0] == old(other->_0[0]);
-    ensures self->_0[1] == old(self->_0[1]) + old(other->_0[1]);
-    ensures other->_0[1] == old(other->_0[1]);
-    ensures self->_0[2] == old(self->_0[2]) + old(other->_0[2]);
-    ensures other->_0[2] == old(other->_0[2]);
-    ensures self->_0[3] == old(self->_0[3]) + old(other->_0[3]);
-    ensures other->_0[3] == old(other->_0[3]);
-} by { execute(); simp(); }
+impl AddAssign<&U32X4> for U32X4 {
+    fn add_assign(&mut self, other: &U32X4) {
+        requires separate(memory(self->_0[0..4]), memory(other->_0[0..4]));
+        views other->_0[0..4];
+        requires self->_0[0] <= 1000u32;
+        requires other->_0[0] <= 1000u32;
+        requires self->_0[1] <= 1000u32;
+        requires other->_0[1] <= 1000u32;
+        requires self->_0[2] <= 1000u32;
+        requires other->_0[2] <= 1000u32;
+        requires self->_0[3] <= 1000u32;
+        requires other->_0[3] <= 1000u32;
+        owns self->_0[0..4];
+        ensures self->_0[0] == old(self->_0[0]) + old(other->_0[0]);
+        ensures other->_0[0] == old(other->_0[0]);
+        ensures self->_0[1] == old(self->_0[1]) + old(other->_0[1]);
+        ensures other->_0[1] == old(other->_0[1]);
+        ensures self->_0[2] == old(self->_0[2]) + old(other->_0[2]);
+        ensures other->_0[2] == old(other->_0[2]);
+        ensures self->_0[3] == old(self->_0[3]) + old(other->_0[3]);
+        ensures other->_0[3] == old(other->_0[3]);
+    } by { execute(); simp(); }
+}
 
 fn added(words: &mut U32X4, other: &U32X4) {
     requires separate(memory(words->_0[0..4]), memory(other->_0[0..4]));

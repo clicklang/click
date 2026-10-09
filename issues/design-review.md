@@ -80,15 +80,18 @@ Remaining:
   Lacker's agreement.
 - Refuse `->` and the C-shaped signature for a Rust source, with the
   spelling to write. Not ready. The plain functions of the sidecars under
-  `design/charon-trial` take Rust signatures as of 2026-10-08. Still
-  C-shaped: methods written as free functions there (`Guard_drop`,
-  `U32X4_mul_assign_u32`), which need `impl` blocks; functions named by a
-  mangled path (`__rust_q_I6_adler2_..._mul_assign_u32`,
-  `__rust_q_I4_quad_I4_load`), for which the Rust grammar has no spelling;
-  the five frozen originals, which are hash-pinned and stay; and about 90
-  sidecars written inline in the tests (`tests/rust_import.rs`,
-  `src/languages/rust/charon.rs`). Convert those, give the mangled ones a
-  spelling, then refuse.
+  `design/charon-trial` take Rust signatures as of 2026-10-08, and their
+  methods are `impl` blocks, operator traits included
+  (`impl MulAssign<u32> for U32X4`). An item in a module is named by its
+  path, `fn quad::walk(...)` and `quad::Quad` (decided 2026-10-08), and the
+  four small crate sidecars use it. Still C-shaped: the Adler sidecars,
+  whose tests cut `helpers.click` apart by its text and have to change
+  with it; one inherent method whose `impl` block is in another module
+  than its type (`Adler32::compute`), which has no spelling; the five
+  frozen originals, which are hash-pinned and stay; and about 90 sidecars
+  written inline in the tests. A claim label and a diagnostic still print
+  the importer's name (`__rust_q_I4_quad_I4_walk.contract`). Convert
+  those, then refuse.
 - Diagnostics and `click expand` print C-shaped spellings for a Rust
   sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
   the sidecar writes. Decided 2026-10-08: do this after the
@@ -124,16 +127,19 @@ Remaining:
   `uint64` and `int64` are in the standard library. Two things are left.
   `simp` does not search for a 64-bit chain as it does for `int32`; that
   is smart-tactic reach, and the explicit theorems cover the need.
-  `arithmetic` accepts only `int32` and `Integer` goals, so a linear
-  64-bit fact such as `i + 2u64 <= length` from `i + 1u64 < length` has
-  no direct step. It is a lemma through `to_integer` and the
-  `uint64_*_to_integer` bridges, about twenty lines each;
-  `mdtests/a_size_t_loop_stepping_by_two_closes_with_explicit_steps.md`
-  proves a `size_t` loop that way. A 64-bit reading for `arithmetic`
-  would make each lemma one step. Describe it to Lacker before building.
+  `arithmetic() using` proves a linear `uint64` order goal (Lacker said to
+  build it on 2026-10-08): it bridges the listed premises and the goal to
+  Integer order, shows each sum and difference stays in range, and
+  expands to those `apply` steps. Left: `int64` goals, which lack two
+  bridges (`int64_less_than_of_to_integer`, definedness of a sum from
+  Integer bounds); equality goals and premises at either width; and a goal
+  that needs three order premises at once, since the Integer step
+  underneath combines two. Regression for the first: the `uint64` loop of
+  `mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md` with
+  a `long` index.
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
-  regressions. Check with Lacker before starting it.
+  regressions. Lacker said to go ahead on 2026-10-08.
 - A 64-bit index expression that is not a lone parameter still takes the
   cast in a contract. It follows stage 3.
 

@@ -74,6 +74,13 @@ Caller-kept ranges now also follow exact aliases of a field's base, including
 aliases introduced by unfolding a modeled node. Typed evidence checks the whole
 access before allowing a framed read. Tests reject overwritten fields, partial
 coverage, and withdrawn aliases, and bound lookup work with unrelated ownership.
+
+Opening a parent with named children now retains its direct pointer aliases
+before naming the immediate fields and child arguments. Surface materialization
+uses that same checked naming context, while pure body facts keep their model
+bindings. Reduced refolds after unrelated stores and a call pass; stale-pointer
+and unproved-fold-alias variants are rejected. Existing exact scalar and
+nonnull body-fact proofs retain their original spellings.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
