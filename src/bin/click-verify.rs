@@ -880,12 +880,24 @@ fn format_source_tactic(
         |column| format!("tactic@{line}:{column}"),
     );
     let mut report = format!("{location}:");
+    let line_count = tactic.lines().count();
     for (index, line) in tactic.lines().enumerate() {
+        if line_count > 10 && (8..line_count - 2).contains(&index) {
+            if index == 8 {
+                report.push_str(&format!("\n  … {} source lines omitted", line_count - 10));
+            }
+            continue;
+        }
         report.push_str("\n  ");
-        if index == 0 {
-            report.push_str(line);
+        let line = if index == 0 {
+            line
         } else {
-            report.push_str(line.strip_prefix(source_indent).unwrap_or(line));
+            line.strip_prefix(source_indent).unwrap_or(line)
+        };
+        let mut characters = line.chars();
+        report.extend(characters.by_ref().take(160));
+        if characters.next().is_some() {
+            report.push('…');
         }
     }
     report
@@ -1731,6 +1743,41 @@ mod directory_tests;
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn source_tactic_excerpt_bounds_lines_and_unicode_width() {
+        assert_eq!(
+            format_source_tactic("loop {\n    step();\n  }", "  ", 7, Some(3)),
+            "tactic@7:3:\n  loop {\n    step();\n  }"
+        );
+        let source = format!("loop {{\n{}\n}}", ("λ".repeat(400) + "\n").repeat(300));
+        let report = format_source_tactic(&source, "", 7, None);
+        assert!(report.contains("source lines omitted"));
+        assert!(report.lines().count() <= 12);
+        assert!(report.lines().all(|line| line.chars().count() <= 163));
+        assert!(report.ends_with("\n  }"));
+    }
+
+    #[test]
+    fn loop_entry_refusal_bounds_unexecuted_preservation_source() {
+        let source = format!(
+            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nexecute_until(loop(0));\nloop {{ invariant i == 1; preserve by {{\n{}step();\n}} }}\nexecute();\n}}",
+            "have 0 == 0 by { normalize(); }\n".repeat(300)
+        );
+        let (root, path) = temporary_project(
+            "loop-entry-excerpt",
+            "void loop_wall() { int32 i = 0; while (i < 1) { i++; } }",
+            &source,
+        );
+        let report = entry_with([path.display().to_string()])
+            .expect_err("the false entry invariant must still be rejected");
+        fs::remove_dir_all(root).unwrap();
+        assert!(report.contains("loop 0 invariant 0 entry"), "{report}");
+        assert!(report.contains("tactic@"), "{report}");
+        assert!(report.contains("invariant i == 1"), "{report}");
+        assert!(report.contains("source lines omitted"), "{report}");
+        assert!(report.lines().count() <= 40, "{report}");
+    }
 
     #[test]
     fn trace_source_locations_resolve_each_claim_once() {

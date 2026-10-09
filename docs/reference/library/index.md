@@ -3087,3 +3087,15 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     }
 }
 ```
+
+### `int32_remainder_to_integer`
+
+```click
+theorem int32_remainder_to_integer(left: int32, right: int32) {
+    requires defined(left % right);
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+```
+
+Connects a defined signed machine remainder to mathematical truncation. Native definedness excludes both a zero divisor and `INT32_MIN % -1`; a nonzero mathematical divisor alone does not establish that the C operation is defined.

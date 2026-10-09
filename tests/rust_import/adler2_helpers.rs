@@ -11,6 +11,7 @@ const THREE_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/three-byte-compute.click");
 const FOUR_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
+const SMALL_PARTITION: &str = include_str!("../../design/charon-trial/adler2/partition.click");
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
 
@@ -1356,4 +1357,49 @@ fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
     assert_cli(&p, &["audit", "--claim", claim]);
     assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn charon_adler2_small_partition_verifies_and_expands() {
+    click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
+    for claim in [
+        "adler_small_prefix_divisible.ensures_0",
+        "adler_small_tail_metadata.ensures_0",
+        "adler_signed_small_prefix.ensures_0",
+    ] {
+        let expanded =
+            click::surface::expand_c0_claim_source_by_label(SMALL_PARTITION, &[], claim).unwrap();
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}
+
+#[test]
+fn charon_adler2_small_partition_rejects_false_metadata() {
+    for (before, after) in [
+        (
+            "adler_vector_prefix(n) <= 22204 by",
+            "adler_vector_prefix(n) <= 22203 by",
+        ),
+        (
+            "ensures truncating_remainder(n, 4) <= 3",
+            "ensures truncating_remainder(n, 4) <= 2",
+        ),
+        (
+            "ensures (int32)(uint32)(n - n % 4u64) % 4 == 0",
+            "ensures (int32)(uint32)(n - n % 4u64) % 4 == 1",
+        ),
+        (
+            "ensures n - (n - n % 4u64) == n % 4u64",
+            "ensures n - (n - n % 4u64) == n % 4u64 + 1u64",
+        ),
+        ("ensures n % 4u64 <= 3u64", "ensures n % 4u64 <= 2u64"),
+        ("requires n <= 22207u64;", "requires n <= 22208u64;"),
+    ] {
+        let invalid = SMALL_PARTITION.replace(before, after);
+        assert_ne!(invalid, SMALL_PARTITION, "{before}");
+        assert!(
+            click::surface::verify_c0_sources(&invalid, &[]).is_err(),
+            "{before}"
+        );
+    }
 }

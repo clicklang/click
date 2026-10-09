@@ -1033,6 +1033,14 @@ theorem use_scaled_product(value: Integer, amount: Integer, size: Integer, lower
  ensures value * amount <= upper * size by apply(integer_scaled_product_bounds(value, amount, size, lower, upper));
 }
 
+theorem use_int32_remainder_to_integer(left: int32, right: int32) {
+    requires defined(left % right);
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right)) by {
+        apply(int32_remainder_to_integer(left, right));
+    }
+}
+
 ```
 
 ```expect

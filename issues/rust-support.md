@@ -28,21 +28,21 @@ compiler-observed source closure. Concrete constructors, record returns and
 parameters, and selected resolved operators execute verified imported bodies.
 
 The unchanged pinned adler2 2.0.1 selection imports successfully. Constructors,
-constants, lane helper contracts, numeric ceilings, and lane-step preservation
-lemmas verify. Caller proofs cover empty input and one-, two-, three-, and
-four-byte constructor-state inputs. The four-byte step establishes and preserves
-lane bounds across the original helper calls. These boundary proofs do not
-establish arbitrary-batch induction or the complete checksum specification.
+constants, lane helper bodies, numeric ceilings, and lane preservation verify.
+The original computation has a terminating whole-body bounds proof for every
+multiple-of-four length up to 22,204 bytes from any canonical initial state.
+It carries all eight lane ceilings, the shared input view, and actual iterator
+state through reductions, recombination, scalar sums, and final 16-bit stores.
+Both output fields remain below 65,521. Checked partition lemmas relate full-width
+lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
+Full outer batches, short-tail loop induction, and checksum correctness remain
+incomplete.
 
-Symbolic-loop regressions cover record and scalar-array storage starts, shared
+Composition regressions cover record and scalar-array storage starts, shared
 chunk-view transport, and all four returned/copied vector lanes across local
-stores. Automatic scope exits retire construction ownership. The original
-Adler four-byte caller now proves a terminating symbolic vector loop, including
-all eight lane values and bounds, input-view preservation and iterator ranking.
-A proof from any canonical initial state covers every multiple-of-four length up to
-22,204 bytes, carrying all eight lane ceilings, the shared view, and actual
-iterator ranking through reductions, recombination, scalar sums, and final
-16-bit stores. Full outer batches and short tails remain incomplete. The small-batch postcondition bounds both output fields.
+stores. Automatic scope exits retire construction ownership. Negative tests
+reject missing input authority, noncanonical seeds, and false induction or
+final bounds. Whole-proof verification and tool agreement run nightly.
 
 Detailed support boundaries and reproducible commands belong in
 [the Rust reference](../docs/reference/rust.md). Current checksum evidence lives

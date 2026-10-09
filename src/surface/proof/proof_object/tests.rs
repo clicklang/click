@@ -2578,6 +2578,114 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
 }
 
 #[test]
+fn loop_entry_simp_keeps_checked_unspellable_assumptions_and_scales() {
+    let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
+    let state = CState::new();
+    let result = int32(0);
+    let arguments = vec![CExpression::Value(result.clone())];
+    let snapshots = RecordedSnapshots::new();
+    let surfaces = SurfacePropositionMap::default();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    // Loop producers may capture a value that the phase's source naming
+    // tables do not spell. The producer's kernel judgment is authoritative;
+    // its source proposition is a presentation, not a replacement judgment.
+    let surface = ClickProposition::Comparison {
+        left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+    };
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::uint64_less_than(
+            Bitvector32Term::Variable(crate::kernel::Variable(1_000_000)),
+            Bitvector32Term::UInt64Constant(22208),
+        ),
+        true,
+    );
+    let obligation = crate::kernel::ProofObligation::new(goal.clone());
+    let mut previous_work = None;
+    for size in [16_u32, 64, 256, 1024, 4096] {
+        let mut facts = (0..size)
+            .map(|index| {
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_than(
+                        Bitvector32Term::Variable(crate::kernel::Variable(1_000_000)),
+                        Bitvector32Term::UInt64Constant(22209 + u64::from(index)),
+                    ),
+                    true,
+                )
+            })
+            .collect::<Vec<_>>();
+        facts.push(goal.clone());
+        let root = Proof::for_fixed_state_frontier(
+            "loop entry unspellable assumption",
+            0,
+            &facts,
+            parsed.parameters(),
+            &arguments,
+            &state,
+            &state,
+            Some(&result),
+            &snapshots,
+            &surfaces,
+            &predicates,
+            &functions,
+            &theorems,
+            &[],
+            &[],
+        );
+        let scope = root
+            .begin_loop_entry_goal(surface.clone(), &obligation)
+            .unwrap();
+        let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+            scope.try_simp_closure().unwrap().unwrap()
+        });
+        assert_eq!(
+            checked.body().certificate().steps(),
+            &[ProofStep::Assumption]
+        );
+        let completion = checked.completed_loop_entry_goal().unwrap();
+        assert_eq!(completion.proposition(), &goal);
+        assert!(
+            completion
+                .root_assumptions()
+                .shares_assumptions_with(root.facts())
+        );
+        assert!(checked.join().unwrap().facts().contains(&goal));
+        if let Some(previous) = previous_work {
+            assert!(
+                work <= previous + 2000,
+                "{size}: {work} units after {previous}"
+            );
+        }
+        previous_work = Some(work);
+        let missing = Proof::for_fixed_state_frontier(
+            "loop entry missing assumption",
+            0,
+            &facts[..facts.len() - 1],
+            parsed.parameters(),
+            &arguments,
+            &state,
+            &state,
+            Some(&result),
+            &snapshots,
+            &surfaces,
+            &predicates,
+            &functions,
+            &theorems,
+            &[],
+            &[],
+        );
+        let missing = missing
+            .begin_loop_entry_goal(surface.clone(), &obligation)
+            .unwrap();
+        assert!(missing.apply_step(ProofStep::Assumption).is_err());
+        assert!(missing.join().is_err());
+    }
+}
+
+#[test]
 fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test function should parse");
