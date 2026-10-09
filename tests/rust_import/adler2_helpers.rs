@@ -16,6 +16,9 @@ const TAIL_BOUNDS: &str = include_str!("../../design/charon-trial/adler2/tail-bo
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
 
+const GENERAL_COMPUTE: &str =
+    include_str!("../../design/charon-trial/adler2/general-compute.click");
+
 fn compute_proof(contract: &str) -> String {
     let computation = HELPERS.split_once("# Empty-input boundary").unwrap().1;
     let getters = &computation[computation.find("\nuint32 ").unwrap()..];
@@ -37,13 +40,18 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let general_partition = if contract.contains("adler_general_bounded_tail_metadata(") {
+        GENERAL_PARTITION
+    } else {
+        ""
+    };
     let tail_bounds = if contract.contains("adler_tail_iterator_step(") {
         TAIL_BOUNDS
     } else {
         ""
     };
     format!(
-        "{}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{tail_bounds}\n{contract}\n{getters}",
+        "{}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1684,10 +1692,7 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
             "base + (total - (remaining - 22208)) by",
             "base + (total - (remaining - 22204)) by",
         ),
-        (
-            "ensures (t + pos) + 4 <= n by",
-            "ensures (t + pos) + 4 < n by",
-        ),
+        ("and (t + pos) + 4 <= n by", "and (t + pos) + 4 < n by"),
         ("<= 2147483647u64;", "<= 2147483648u64;"),
         ("<= 22204 by", "<= 22200 by"),
         (
@@ -1705,5 +1710,59 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
             click::surface::verify_c0_sources(&invalid, &[]).is_err(),
             "{before}"
         );
+    }
+}
+
+#[test]
+#[ignore = "nightly: whole unchanged computation for all signed-range lengths"]
+fn charon_adler2_general_compute_proves_original_body() {
+    let p = compute_project(GENERAL_COMPUTE);
+    C0VerificationSession::new_program_prepared(
+        &compute_proof(GENERAL_COMPUTE),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: general computation authority, seeds and final bounds"]
+fn charon_adler2_general_compute_rejects_invalid_contracts() {
+    for (before, after) in [
+        (" views bytes[0..(int32)(uint32)bytes_len];", ""),
+        (" requires (uint32)self->a <= 65520u32;", ""),
+        (" requires (uint32)self->b <= 65520u32;", ""),
+        ("ensures self->a < 65521;", "ensures self->a < 1;"),
+    ] {
+        reject_compute(GENERAL_COMPUTE, before, after);
+    }
+}
+
+#[test]
+#[ignore = "nightly: general whole-body proof-tool agreement and expansion"]
+fn charon_adler2_general_compute_tools_recheck_original_contract() {
+    let p = compute_project(GENERAL_COMPUTE);
+    let claim = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract";
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    assert_cli(&p, &["audit", "--claim", claim]);
+    assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: actual general outer and tail cursor rejection"]
+fn charon_adler2_general_compute_rejects_false_iterator_state() {
+    for (before, after) in [
+        (
+            "have __rust_mir_27_cursor == old(bytes) by { simp(); }",
+            "have __rust_mir_27_cursor == old(bytes) + 1 by { assumption(); }",
+        ),
+        (
+            "have __rust_mir_138_cursor == remainder by { simp(); }",
+            "have __rust_mir_138_cursor == remainder + 1 by { assumption(); }",
+        ),
+    ] {
+        reject_compute(GENERAL_COMPUTE, before, after);
     }
 }

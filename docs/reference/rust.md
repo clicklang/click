@@ -135,7 +135,10 @@ The unchanged adler2 trial proves `Adler32::default` and `Adler32::new` return
 `a = 1`, `b = 0`. Concrete assignment operators also accept supported
 by-value record operands through the checked call interface. Selecting the
 complete checksum loop now produces a locked, prepared import, and its
-`MOD` and `CHUNK_SIZE` initializer contracts verify. The checksum
+`MOD` and `CHUNK_SIZE` initializer contracts verify. Its unchanged whole body
+has a bounds and termination proof for canonical seeds and input lengths
+through 2,147,483,647 bytes, including full batches and both remainders.
+The checksum
 postcondition remains unproved. General trait dispatch and arbitrary Rust
 crates remain outside the supported subset.
 

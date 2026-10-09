@@ -844,7 +844,7 @@ theorem adler_bounded_slice_access(t: int32, pos: int32, length: int32, n: int32
  requires pos + 4 <= length;
  requires defined(t + length);
  requires t + length <= n;
- ensures 0 <= t + pos and (t + pos) + 4 <= n by {
+ ensures defined(t + pos) and defined((t + pos) + 4) and 0 <= t + pos and (t + pos) + 4 <= n by {
   have defined(pos + 4) by { simp() using { 0 <= pos; pos <= 22204; } }
   apply(int32_add_to_integer(pos, 4)) using { defined(pos + 4); }
   apply(int32_add_to_integer(t, length)) using { defined(t + length); }
@@ -882,7 +882,7 @@ theorem adler_bounded_slice_access(t: int32, pos: int32, length: int32, n: int32
   have to_integer((t + pos) + 4) <= to_integer(n) by { arithmetic() using { to_integer((t + pos) + 4) == to_integer(t + pos) + to_integer(4); to_integer(t + pos) == to_integer(t) + to_integer(pos); to_integer(pos + 4) == to_integer(pos) + to_integer(4); to_integer(pos + 4) <= to_integer(length); to_integer(t + length) == to_integer(t) + to_integer(length); to_integer(t + length) <= to_integer(n); } }
   apply(int32_less_equal_of_to_integer(0, t + pos)) using { to_integer(0) <= to_integer(t + pos); }
   apply(int32_less_equal_of_to_integer((t + pos) + 4, n)) using { to_integer((t + pos) + 4) <= to_integer(n); }
-  both { assumption(); } and { assumption(); }
+  both { both { both { assumption(); } and { assumption(); } } and { assumption(); } } and { assumption(); }
  }
 }
 
@@ -964,5 +964,39 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
     }
    }
   }
+ }
+}
+
+theorem adler_current_window(total: int32, remaining: int32) {
+ requires 0 <= total;
+ requires total <= 22204;
+ requires 0 <= remaining;
+ requires remaining <= total;
+ ensures defined(total - remaining - 4) and defined((total - remaining - 4) + 4) and (total - remaining - 4) + 4 <= total by {
+  apply(int32_nonnegative_subtract_within_value_is_defined(total, remaining)) using { 0 <= remaining; remaining <= total; }
+  apply(int32_subtract_to_integer(total, remaining)) using { defined(total - remaining); }
+  apply(int32_less_equal_to_integer(0, remaining)) using { 0 <= remaining; }
+  apply(int32_less_equal_to_integer(remaining, total)) using { remaining <= total; }
+  apply(int32_less_equal_to_integer(total, 22204)) using { total <= 22204; }
+  have 0 <= to_integer(total - remaining) by { rewrite(to_integer(total - remaining) == to_integer(total) - to_integer(remaining)); arithmetic() using { to_integer(remaining) <= to_integer(total); } }
+  have to_integer(total - remaining) <= 22204 by { rewrite(to_integer(total - remaining) == to_integer(total) - to_integer(remaining)); arithmetic() using { to_integer(0) <= to_integer(remaining); to_integer(total) <= to_integer(22204); } }
+  have to_integer(total - remaining) - to_integer(4) >= -2147483648 by { arithmetic() using { 0 <= to_integer(total - remaining); } }
+  have to_integer(total - remaining) - to_integer(4) <= 2147483647 by { arithmetic() using { to_integer(total - remaining) <= 22204; } }
+  apply(int32_subtract_defined_by_integer_bounds(total - remaining, 4)) using { to_integer(total - remaining) - to_integer(4) >= -2147483648; to_integer(total - remaining) - to_integer(4) <= 2147483647; }
+  have defined(total - remaining - 4) by { both { assumption(); } and { assumption(); } }
+  apply(int32_subtract_to_integer(total - remaining, 4)) using { defined(total - remaining - 4); }
+  have to_integer(total - remaining - 4) + to_integer(4) >= -2147483648 by { rewrite(to_integer(total - remaining - 4) == to_integer(total - remaining) - to_integer(4)); arithmetic() using { 0 <= to_integer(total - remaining); } }
+  have to_integer(total - remaining - 4) + to_integer(4) <= 2147483647 by { rewrite(to_integer(total - remaining - 4) == to_integer(total - remaining) - to_integer(4)); arithmetic() using { to_integer(total - remaining) <= 22204; } }
+  apply(int32_add_defined_by_integer_bounds(total - remaining - 4, 4)) using { to_integer(total - remaining - 4) + to_integer(4) >= -2147483648; to_integer(total - remaining - 4) + to_integer(4) <= 2147483647; }
+  have defined((total - remaining - 4) + 4) by { both { assumption(); } and { assumption(); } }
+  apply(int32_add_to_integer(total - remaining - 4, 4)) using { defined((total - remaining - 4) + 4); }
+  have to_integer((total - remaining - 4) + 4) <= to_integer(total) by {
+   rewrite(to_integer((total - remaining - 4) + 4) == to_integer(total - remaining - 4) + to_integer(4));
+   rewrite(to_integer(total - remaining - 4) == to_integer(total - remaining) - to_integer(4));
+   rewrite(to_integer(total - remaining) == to_integer(total) - to_integer(remaining));
+   arithmetic() using { to_integer(0) <= to_integer(remaining); }
+  }
+  apply(int32_less_equal_of_to_integer((total - remaining - 4) + 4, total)) using { to_integer((total - remaining - 4) + 4) <= to_integer(total); }
+  both { both { assumption(); } and { assumption(); } } and { assumption(); }
  }
 }
