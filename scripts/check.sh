@@ -158,6 +158,9 @@ fi
 # audits the C++ path.
 if [[ "${1:-}" == "--audit" ]]; then
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
+    # The C++ mdtests are audited through the pinned exporter.
+    export CLICK_CPP_EXPORTER
+    CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
     cargo build --release --bin click
     exec target/release/click audit --keep-going --time-limit 180m \
         --exclude examples/multifile-registry \
