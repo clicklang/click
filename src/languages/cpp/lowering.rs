@@ -1241,6 +1241,13 @@ impl LoweringContext<'_> {
                 }
                 _ => Err("C++ load is outside direct bool/reference lowering".into()),
             },
+            CppExpression::AddressOf { place, .. } if !place.projections.is_empty() => {
+                // Address formation checks storage, not a read of the field value.
+                Ok(c_checked_object_address(c_typed_load(
+                    self.lower_place(place)?,
+                    CType::Int32,
+                )))
+            }
             CppExpression::AddressOf {
                 place, value_type, ..
             } => match (&self.place(place)?.value_type, value_type) {

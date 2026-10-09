@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 46;
+    artifact["schema"] = 47;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -2772,11 +2772,13 @@ private:
           parameter == nullptr
               ? nullptr
               : parameter->getType()->getAs<clang::LValueReferenceType>();
-      if (parameter == nullptr || parameter->getDeclContext() != function ||
+      const bool integer_field = llvm::isa<clang::MemberExpr>(operand) &&
+          operand->isLValue() && context_.hasSameType(operand->getType().getUnqualifiedType(), context_.IntTy);
+      if (!integer_field && (parameter == nullptr || parameter->getDeclContext() != function ||
           reference_type == nullptr ||
           !context_.hasSameType(
               reference_type->getPointeeType().getUnqualifiedType(),
-              context_.IntTy)) {
+              context_.IntTy))) {
         fail(address->getOperatorLoc(),
              "supported C++ address-of must name an int reference in the current function");
         return std::nullopt;

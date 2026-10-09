@@ -460,6 +460,15 @@ complete before automatic cleanup. User-defined copies, moves, returns of whole
 automatic records, prvalue record construction and aggregate-return calls remain outside this slice. Artifact
 schema 46 requires an explicit refresh of earlier locks.
 
+Taking the address of a supported int32 record field uses its checked Clang
+projection and the shared storage-lifetime checks. It preserves const
+qualification inherited from the root object and does not read the field or
+grant permission to dereference the resulting pointer. Constructor initializers
+can therefore store a pointer to a field of the destination object. This differs
+from copying an existing descriptor, which preserves pointer values rather than
+rebasing them to a new object. Artifact schema 47 requires refreshing earlier
+locks. Returned construction destinations remain the next shared-model work.
+
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
 requirement. Select an ordinary declaration with `Class::helper`; reachable

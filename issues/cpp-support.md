@@ -254,19 +254,38 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
    nonempty subtraction and pointer formation from the actual backing range.
-4. **Construction destination and copy elision (decision pending).**
-   The shared C aggregate return path copies fields into caller-visible storage.
-   C++ can instead construct a returned value directly in its destination.
-   Constructors that observe or expose their object's address can distinguish
-   these behaviors, even when the class is trivially copyable. `std::span`'s
-   selected constructors are address-independent, but general prvalue admission
-   must not silently assume that property. Recommend adding construction
-   destinations to the shared aggregate model before admitting returned C++
-   constructors. The narrower alternative is a checked profile that rejects
-   constructors observing or exposing their own address and defers general
-   construction identity. Both preserve the approved native reference and
-   descriptor-copy contracts; neither warrants a separate C++ memory model.
-   Existing-object lvalue copies remain available independently of this choice.
+4. **Shared construction destination design (dependency).**
+   The accepted direction, kernel/interface design work, identity regressions and
+   cross-language compatibility criteria now live in
+   [aggregate-construction-design.md](aggregate-construction-design.md).
+   C++ returned construction, destination forwarding and temporary retirement
+   depend on that work. The int32 field-address and constructor/copy identity
+   prerequisites are implemented; artifact schema 47 requires refreshing earlier
+   locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
+   above as the concrete C++ acceptance target.
+
+### Work independent of returned construction
+
+The accepted bounded span/reference profile now verifies unchanged pinned
+`std::span<int>::front()` with `1 <= N <= 1,073,741,823`: its native reference
+aliases the first backing element and preserves its old value using descriptor
+and backing views. Ordinary, expanded and retained verification pass; empty
+callers, missing bounds/views and false alias/value claims are refused.
+
+Pinned `size_bytes()` is also verified with descriptor views alone, without
+backing storage authority: its result is the native modulo-2^64 product of the
+extent and four-byte element size. Empty, bounded and wrapping extents retain
+that meaning. Expanded/retained verification and missing-authority/false-product
+refusals are covered.
+
+The next independent target is unchanged pinned indexed access: `operator[]`
+with a native unsigned index smaller than the bounded extent, returning the
+corresponding backing reference. It needs direct operator-method naming and
+selection, but no by-value result, constructor or temporary materialization.
+
+`first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
+behind the shared construction dependency. Other scalar/import work still needs
+an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
