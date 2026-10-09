@@ -158,6 +158,10 @@ impl<'a> Proof<'a> {
         &self,
         surface_premises: &[ClickProposition],
     ) -> Result<Self, Option<String>> {
+        // The caller wraps a refusal in the original arithmetic step's
+        // diagnostic. Preserve bridge failures with raw summaries: rendering
+        // their nested goals/premises here would embed a second diagnostic
+        // inside that summary (and violate ClickError's debug invariant).
         let Some(carrier) = self.goal().and_then(Carrier::of) else {
             return Err(None);
         };
@@ -195,10 +199,11 @@ impl<'a> Proof<'a> {
         for premise in surface_premises {
             let kernel = self
                 .lower_cited_surface_proposition(premise, "`arithmetic using` premise")
-                .map_err(|_| {
+                .map_err(|error| {
                     Some(format!(
-                        "the premise `{}` could not be read",
-                        spell(premise)
+                        "the premise `{}` could not be read: {}",
+                        spell(premise),
+                        error.raw_summary()
                     ))
                 })?;
             if Carrier::of(&kernel) != Some(carrier) {
@@ -252,10 +257,11 @@ impl<'a> Proof<'a> {
                                 )],
                             ))
                             .map(|proof| (proof, observed))
-                            .map_err(|_| {
+                            .map_err(|error| {
                                 format!(
-                                    "the premise `{}` could not be carried to Integer order",
-                                    spell(premise)
+                                    "the premise `{}` could not be carried to Integer order: {}",
+                                    spell(premise),
+                                    error.raw_summary()
                                 )
                             })
                     }
@@ -291,7 +297,13 @@ impl<'a> Proof<'a> {
                                     proposition.clone(),
                                     vec![ProofStep::ArithmeticUsing(facts.clone())],
                                 ))
-                                .map_err(|_| out_of_range(proposition))
+                                .map_err(|error| {
+                                    format!(
+                                        "{}: {}",
+                                        out_of_range(proposition),
+                                        error.raw_summary()
+                                    )
+                                })
                         };
                         // What the observation bridge requires.
                         let required = match carrier {
@@ -341,7 +353,13 @@ impl<'a> Proof<'a> {
                                                     vec![bridge, ProofStep::Assumption],
                                                 ))
                                             })
-                                            .map_err(|_| out_of_range(&upper))
+                                            .map_err(|error| {
+                                                format!(
+                                                    "{}: {}",
+                                                    out_of_range(&upper),
+                                                    error.raw_summary()
+                                                )
+                                            })
                                     })
                                     .map(|proof| (proof, defined))
                             }
@@ -362,10 +380,11 @@ impl<'a> Proof<'a> {
                                     )],
                                 ))
                                 .map(|proof| (proof, equation))
-                                .map_err(|_| {
+                                .map_err(|error| {
                                     format!(
-                                        "`{}` could not be observed term by term",
-                                        describe(operation)
+                                        "`{}` could not be observed term by term: {}",
+                                        describe(operation),
+                                        error.raw_summary()
                                     )
                                 })
                         })
@@ -411,10 +430,11 @@ impl<'a> Proof<'a> {
                 observed_goal.clone(),
                 vec![ProofStep::ArithmeticUsing(facts)],
             ))
-            .map_err(|_| {
+            .map_err(|error| {
                 Some(format!(
-                    "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer `arithmetic` step, which combines at most two order premises; state an intermediate fact with `have` first",
-                    spell(&observed_goal)
+                    "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer `arithmetic` step, which combines at most two order premises; state an intermediate fact with `have` first: {}",
+                    spell(&observed_goal),
+                    error.raw_summary()
                 ))
             })?;
         let applied = proof
@@ -427,7 +447,12 @@ impl<'a> Proof<'a> {
                 vec![goal_lower, goal_upper],
                 vec![observed_goal],
             ))
-            .map_err(|_| Some("the Integer claim could not be carried back".to_string()))?;
+            .map_err(|error| {
+                Some(format!(
+                    "the Integer claim could not be carried back: {}",
+                    error.raw_summary()
+                ))
+            })?;
         if applied.is_complete() || applied.goal() != self.goal() {
             return Ok(applied);
         }
