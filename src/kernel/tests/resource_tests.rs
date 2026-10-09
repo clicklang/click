@@ -2461,13 +2461,13 @@ fn resource_field_schemas_are_typed_shared_and_non_countable() {
     ];
     let schema = ResourceFieldSchema::new(fields.clone()).unwrap();
     assert_eq!(schema.fields(), fields);
-    assert!(!schema.is_countable());
+    assert!(!schema.is_fieldless());
     let copy = schema.clone();
     assert!(std::ptr::eq(
         schema.fields().as_ptr(),
         copy.fields().as_ptr()
     ));
-    assert!(ResourceFieldSchema::new(vec![]).unwrap().is_countable());
+    assert!(ResourceFieldSchema::new(vec![]).unwrap().is_fieldless());
     assert!(ResourceFieldSchema::new(vec![fields[0].clone(), fields[0].clone()]).is_none());
     assert!(
         ResourceFieldSchema::new(vec![("".into(), ResourceFieldType::C(CType::Int32))]).is_none()
@@ -5076,7 +5076,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
 fn integer_resource_fields_require_mathematical_values() {
     let schema =
         ResourceFieldSchema::new(vec![("total".into(), ResourceFieldType::Integer)]).unwrap();
-    assert!(!schema.is_countable());
+    assert!(!schema.is_fieldless());
     let make = |value| {
         ResourceInstance::new(
             Variable(1),

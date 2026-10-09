@@ -4942,7 +4942,6 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                         }
                     }
-                    let authority_mode = matches!(outcome, CFunctionOutcome::Return { .. });
                     // Resource closers carry the same checked claim
                     // evidence, whether written as assumption or selected by
                     // simp. Validate their jointly returned units rather than
@@ -4963,12 +4962,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
                     let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if {
-                        let assumptions = &receipt_assumptions;
-                        if authority_mode {
-                            resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, assumptions)
-                        } else {
-                            state.resources().clone().without_facts(checked_returned_resources.facts(), assumptions).is_some()
-                        }
+                        resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, &receipt_assumptions)
                     });
                     checked_resource_transitions_by_path[path_index] = !deferred_resource_transition
                         && (resource_transition_applied

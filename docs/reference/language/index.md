@@ -1469,10 +1469,12 @@ another, resource parameters, and body witnesses. Fields precede any guard
 and cannot be declared inside it. Qualified C types, struct types/pointers,
 arrays, and function-pointer field types are not supported in this slice.
 
-Resources with fields are non-countable and intended for exclusive
-instance-based ownership. Both `count(resource(...))` and quantities such as
-`1 of resource(...)` are rejected. Field-free resources keep their existing
-rules. Named ownership binds an exclusive instance with arbitrary typed fields:
+Resources with fields are intended for exclusive instance-based ownership:
+each member is a separately named instance, so quantities such as
+`1 of resource(...)` are rejected. Fields do not decide whether a family can be
+counted; `count(resource(...))` is admitted exactly when the family is declared
+`authorized resource`, with or without fields. Named ownership binds an
+exclusive instance with arbitrary typed fields:
 
 <!-- verified-example: mdtests/resource_instance_bindings.md -->
 ```click

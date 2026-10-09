@@ -6,7 +6,7 @@ fn authority_test_scope(
     has_fields: bool,
 ) -> DeclaredResourceScope {
     DeclaredResourceScope {
-        authority_mode: false,
+        family_rules: false,
         definitions: BTreeMap::from([(
             "reference".to_string(),
             DeclaredResourceInfo {
@@ -303,8 +303,37 @@ fn authority_field_schema_and_count_admission_are_independent_of_instance_fields
         expand_declared_resource_expression(count.clone(), &scope).is_err(),
         "legacy mode keeps its migration boundary"
     );
-    scope.authority_mode = true;
+    scope.family_rules = true;
     assert!(
         matches!(expand_declared_resource_expression(count, &scope).unwrap(), ContractExpression::ResourceCount(resource) if matches!(resource.as_ref(), ResourceClause::Declared { type_schema: Some(schema), .. } if schema.fields().len() == 1))
     );
+}
+
+/// Milestone 7's exit gate: field presence no longer selects countability.
+/// Under the family rules a count is admitted exactly when the family is
+/// `authorized`, whether or not it declares fields.
+#[test]
+fn authorization_not_field_presence_selects_countability() {
+    let pointer = ContractExpression::CFragment(CExpression::Variable("p".into()));
+    let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
+    for has_fields in [false, true] {
+        for authorized in [false, true] {
+            let mut scope =
+                authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, has_fields);
+            scope.family_rules = true;
+            let info = scope.definitions.get_mut("reference").unwrap();
+            info.authorized = authorized;
+            if has_fields {
+                info.fields = std::sync::Arc::new(BTreeMap::from([(
+                    "serial".into(),
+                    (0, ClickType::C(C0Type::Int32)),
+                )]));
+            }
+            assert_eq!(
+                expand_declared_resource_expression(count.clone(), &scope).is_ok(),
+                authorized,
+                "has_fields={has_fields} authorized={authorized}"
+            );
+        }
+    }
 }

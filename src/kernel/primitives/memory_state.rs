@@ -6304,7 +6304,7 @@ impl CState {
         let CResource::PopulationAuthority(description) = authority.resource() else {
             return Err("population import requires authority".into());
         };
-        if !description.schema().is_countable() {
+        if !description.schema().is_fieldless() {
             if authority
                 .owned_quantity_term()
                 .and_then(Bitvector32Term::as_const)
@@ -6463,7 +6463,7 @@ impl CState {
         {
             return Err("Requires one declared owned authority".into());
         }
-        if !scope.schema().is_countable() {
+        if !scope.schema().is_fieldless() {
             return self.import_opaque_population_inputs(authority);
         }
         let events = self

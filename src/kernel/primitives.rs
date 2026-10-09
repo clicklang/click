@@ -1807,7 +1807,7 @@ impl ResourceFieldSchema {
         &self.fields
     }
 
-    pub fn is_countable(&self) -> bool {
+    pub fn is_fieldless(&self) -> bool {
         self.fields.is_empty()
     }
 }
@@ -6737,7 +6737,7 @@ impl ResourceInstance {
         fields: ResourceArguments,
         resource_arguments: Vec<super::ResourceReference>,
     ) -> Option<Self> {
-        if schema.is_countable() || schema.fields().len() != fields.len() {
+        if schema.is_fieldless() || schema.fields().len() != fields.len() {
             return None;
         }
         for ((_, ty), value) in schema.fields().iter().zip(fields.iter()) {

@@ -6755,7 +6755,7 @@ impl ResourceDefinition {
         self.field_schema.as_ref()
     }
 
-    pub fn is_countable(&self) -> bool {
+    pub fn is_fieldless(&self) -> bool {
         self.fields().is_empty()
     }
 
