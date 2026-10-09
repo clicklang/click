@@ -265,11 +265,79 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
             }
         })
         .collect();
+    let (premises, nodes) = cited_premises_only(premises, nodes);
     ArithmeticCertificate::special(SpecialArithmeticCertificate {
-        premises: premises.to_vec(),
+        premises,
         nodes,
         conclusion: plan.conclusion,
     })
+}
+
+/// The premise indices a node cites, for renumbering.
+fn cited_premise_indices(node: &mut SpecialArithmeticNode) -> Vec<&mut usize> {
+    match node {
+        SpecialArithmeticNode::IntegerProductBounds { bounds, .. }
+        | SpecialArithmeticNode::IntegerDivisionBounds { bounds, .. }
+        | SpecialArithmeticNode::IntegerMultiplyOrder { bounds, .. }
+        | SpecialArithmeticNode::IntegerQuotientBound { bounds, .. }
+        | SpecialArithmeticNode::IntegerBoundExclusion { bounds, .. }
+        | SpecialArithmeticNode::IntegerRelationTransport { bounds, .. }
+        | SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, .. }
+        | SpecialArithmeticNode::IntegerQuotientShift { bounds, .. }
+        | SpecialArithmeticNode::IntegerCastIdentity { bounds, .. }
+        | SpecialArithmeticNode::UnsignedSumBound { bounds, .. }
+        | SpecialArithmeticNode::SignedDefined { bounds, .. } => bounds.iter_mut().collect(),
+        SpecialArithmeticNode::PointerTranslation {
+            relation, bounds, ..
+        } => std::iter::once(relation).chain(bounds.iter_mut()).collect(),
+        SpecialArithmeticNode::PointerAlignment { premise, .. } => premise.iter_mut().collect(),
+        SpecialArithmeticNode::PointerWordEquality {
+            relation,
+            alignments,
+            ..
+        } => std::iter::once(relation)
+            .chain(alignments.iter_mut())
+            .collect(),
+        SpecialArithmeticNode::PointerWordFromAlignment { alignments, .. } => {
+            alignments.iter_mut().collect()
+        }
+        SpecialArithmeticNode::FloatReflexive { finite, .. } => vec![finite],
+    }
+}
+
+/// The certificate's premises narrowed to those its nodes cite, in their
+/// original order, with the nodes renumbered to match. The planner offers
+/// every candidate fact; a certificate that listed the unused ones would
+/// require each to be exactly available again when it is rechecked, though
+/// the proof never depends on them.
+fn cited_premises_only(
+    premises: &[ClickProposition],
+    mut nodes: Vec<SpecialArithmeticNode>,
+) -> (Vec<ClickProposition>, Vec<SpecialArithmeticNode>) {
+    let mut cited = vec![false; premises.len()];
+    for node in &mut nodes {
+        for index in cited_premise_indices(node) {
+            if let Some(flag) = cited.get_mut(*index) {
+                *flag = true;
+            }
+        }
+    }
+    let mut renumbered = vec![None; premises.len()];
+    let mut kept = Vec::new();
+    for (index, premise) in premises.iter().enumerate() {
+        if cited[index] {
+            renumbered[index] = Some(kept.len());
+            kept.push(premise.clone());
+        }
+    }
+    for node in &mut nodes {
+        for index in cited_premise_indices(node) {
+            if let Some(Some(new)) = renumbered.get(*index) {
+                *index = *new;
+            }
+        }
+    }
+    (kept, nodes)
 }
 
 fn is_positive_alignment(p: &Proposition) -> bool {
@@ -765,6 +833,57 @@ fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer
 mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, CComparisonOperator, Variable};
+
+    fn bound(value: usize) -> ClickProposition {
+        ClickProposition::Comparison {
+            left: ContractExpression::IntegerLiteral("0".to_string()),
+            operator: ComparisonOperator::LessEqual,
+            right: ContractExpression::IntegerLiteral(value.to_string()),
+        }
+    }
+
+    #[test]
+    fn certificates_keep_only_the_premises_their_nodes_cite() {
+        let premises = (0..6).map(bound).collect::<Vec<_>>();
+        let goal = bound(99);
+        let nodes = vec![
+            SpecialArithmeticNode::PointerTranslation {
+                relation: 4,
+                bounds: vec![1, 4],
+                result: goal.clone(),
+            },
+            SpecialArithmeticNode::SignedDefined {
+                width: crate::kernel::SignedDefinedWidth::Int32,
+                bounds: vec![1],
+                result: goal.clone(),
+            },
+            SpecialArithmeticNode::PointerAlignment {
+                premise: None,
+                result: goal.clone(),
+            },
+        ];
+        let (kept, nodes) = cited_premises_only(&premises, nodes);
+        assert_eq!(kept, vec![bound(1), bound(4)]);
+        assert_eq!(
+            nodes,
+            vec![
+                SpecialArithmeticNode::PointerTranslation {
+                    relation: 1,
+                    bounds: vec![0, 1],
+                    result: goal.clone(),
+                },
+                SpecialArithmeticNode::SignedDefined {
+                    width: crate::kernel::SignedDefinedWidth::Int32,
+                    bounds: vec![0],
+                    result: goal.clone(),
+                },
+                SpecialArithmeticNode::PointerAlignment {
+                    premise: None,
+                    result: goal,
+                },
+            ]
+        );
+    }
 
     #[test]
     fn deep_float_candidate_is_rejected_before_recursive_helpers() {
