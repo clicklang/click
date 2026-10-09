@@ -205,6 +205,7 @@ if [[ -n "$ci_artifacts" ]]; then
     CLICK_REQUIRE_FRONTENDS=1
 fi
 skipped_frontends=()
+unit_filter=()
 frontend_missing() {
     local name="$1" reason="$2" suites="$3"
     if [[ -n "${CLICK_REQUIRE_FRONTENDS:-}" ]]; then
@@ -249,6 +250,12 @@ else
     frontend_missing "C++" "$reason" \
         "tests/cpp_import.rs, tests/bitcoin_core_money_range.rs, C++ mdtests and examples"
     drop_test_targets cpp_import bitcoin_core_money_range
+    # The `click` command tests that run a C++ mdtest through the exporter.
+    unit_filter=(--filterset 'not (binary_id(clicklang::bin/click) & (
+        test(=audit::tests::cpp_mdtest_audit_inventories_imported_semantics)
+        | test(=expand::tests::cpp_mdtest_expansion_rechecks_the_imported_source)
+        | test(=expand::tests::a_line_in_a_call_outcome_arm_selects_its_smart_tactic)
+        | test(=profile::tests::cpp_mdtests_profile_the_compiler_imported_source)))')
     export CLICK_SKIP_CPP_FRONTEND=1
 fi
 
@@ -289,7 +296,7 @@ if [[ -n "$ci_artifacts" ]]; then
     exit 0
 fi
 
-cargo nextest run "${unit_targets[@]}" "${nextest_args[@]}"
+cargo nextest run "${unit_targets[@]}" "${unit_filter[@]}" "${nextest_args[@]}"
 # The fixture harnesses run one at a time, and each verifies its fixtures on
 # every core. Their proof verdicts come from deterministic tactic-work
 # budgets; nextest's outer timeout is process-level hang containment, not a
