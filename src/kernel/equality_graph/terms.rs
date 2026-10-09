@@ -659,28 +659,6 @@ impl TermClasses {
         left == right || self.root(left) == self.root(right)
     }
 
-    /// Conservative, indexed test for a non-singleton class. Weight includes
-    /// registered uses as well as members; subtracting the distinct uses is
-    /// exact for a singleton and may overestimate after a merge, which is
-    /// appropriate for a freshness check that refuses uncertain aliases.
-    pub(super) fn int32_may_have_aliases(&mut self, term: &crate::kernel::Bitvector32Term) -> bool {
-        let id = self.intern_int32(term);
-        self.register_pending_loads();
-        let root = self.root(id);
-        id != root
-            || self.weight(root) > 1 + self.uses.get(&root).map_or(0, PersistentSet::len)
-            // A scalar displacement can be equated without merging its
-            // operand: x+5 == y+4 leaves x's own class a singleton. The
-            // population pointer index does not enumerate such arithmetic
-            // spellings, so this case must use general alias reasoning.
-            || self.uses.get(&root).is_some_and(|uses| {
-                uses.iter().any(|parent| {
-                    crate::instrumentation::record_deterministic_work(1);
-                    matches!(self.applications.get(parent), Some(Application::Int32Add(..) | Application::Int32Binary(..)))
-                })
-            })
-    }
-
     pub(super) fn add_int32_equality(
         &mut self,
         left: &crate::kernel::Bitvector32Term,

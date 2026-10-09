@@ -1239,12 +1239,6 @@ pub(in crate::kernel) fn collect_c_state_bound_variables(
     for fact in state.resources.facts() {
         collect_resource_bound_variables(fact.resource(), variables);
     }
-    for population in state.counted_populations.iter() {
-        for argument in population.arguments.iter() {
-            collect_algebraic_value_bound_variables(argument, variables);
-        }
-        collect_bitvector_bound_variables(&population.count, variables);
-    }
 }
 
 pub(in crate::kernel) fn collect_statement_outcome_bound_variables(
@@ -3794,35 +3788,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
     }
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_population_counts(
-    populations: &crate::kernel::primitives::CountedPopulations,
-    from: Variable,
-    to: &Bitvector32Term,
-) -> crate::kernel::primitives::CountedPopulations {
-    populations
-        .iter()
-        .map(|population| CCountedPopulation {
-            name: population.name.clone(),
-            arguments: population
-                .arguments
-                .iter()
-                .map(|argument| {
-                    substitute_bitvector_variable_in_algebraic_value(argument, from, to)
-                })
-                .collect(),
-            count: match substitute_bitvector_variable_in_c_value(
-                &CValue::Int32(population.count.clone()),
-                from,
-                to,
-            ) {
-                CValue::Int32(count) => count,
-                _ => unreachable!("an int32 population count remains int32"),
-            },
-            family_observation_marker: population.family_observation_marker,
-        })
-        .collect()
-}
-
 fn substitute_bitvector_variable_in_c_state(
     state: &CState,
     from: Variable,
@@ -3942,11 +3907,7 @@ fn substitute_bitvector_variable_in_c_state(
         next_local_frame: state.next_local_frame,
         next_local_lifetime: state.next_local_lifetime,
         enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
-        counted_populations: substitute_bitvector_variable_in_population_counts(
-            &state.counted_populations,
-            from,
-            to,
-        ),
+        observed_population_families: state.observed_population_families.clone(),
         population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
             creation: state.population_effects.creation.clone(),
             predicate_count_permissions: state
@@ -6601,26 +6562,6 @@ fn substitute_pointer_variable_in_c_function_outcome(
     }
 }
 
-fn substitute_pointer_variable_in_population_counts(
-    populations: &crate::kernel::primitives::CountedPopulations,
-    from: Variable,
-    to: &Pointer,
-) -> crate::kernel::primitives::CountedPopulations {
-    populations
-        .iter()
-        .map(|population| CCountedPopulation {
-            name: population.name.clone(),
-            arguments: population
-                .arguments
-                .iter()
-                .map(|argument| substitute_pointer_variable_in_algebraic_value(argument, from, to))
-                .collect(),
-            count: population.count.clone(),
-            family_observation_marker: population.family_observation_marker,
-        })
-        .collect()
-}
-
 fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &Pointer) -> CState {
     let bindings = std::sync::Arc::new(
         state
@@ -6746,11 +6687,7 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
         next_local_frame: state.next_local_frame,
         next_local_lifetime: state.next_local_lifetime,
         enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
-        counted_populations: substitute_pointer_variable_in_population_counts(
-            &state.counted_populations,
-            from,
-            to,
-        ),
+        observed_population_families: state.observed_population_families.clone(),
         population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
             creation: state.population_effects.creation.clone(),
             predicate_count_permissions: state

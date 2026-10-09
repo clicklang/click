@@ -78,7 +78,7 @@ The third query finds explicit coefficient clauses, including unrelated resource
 
 ## Kernel, surface, and documentation consumers
 
-The kernel regression anchors are `src/kernel/tests/resource_tests.rs` (including `resource_field_schemas_are_typed_shared_and_non_countable`, population/count witness tests), `src/kernel/tests/contract_execution_tests.rs` (cross-contract population counts), and `src/kernel/tests/resource_scaling_tests.rs` (partition cost and alias refusal). Count-related tests also occur in `src/kernel/tests/{canonicalization,execution,iterated_ownership,loan_model,memory_reasoning,state_identity}_tests.rs` and `src/kernel/functions/callback_contract_tests.rs`; use the discovery commands before changing the kernel. The executable mechanism currently spans `src/kernel/primitives/counted_populations.rs`, `src/kernel/population_access.rs`, `src/kernel/proof/{population_initialization,population_consumption}.rs`, `src/kernel/resource_tracker/`, `src/kernel/mutexes/{population,invariant_interface,assumed_protocol}.rs`, and `src/kernel/primitives/contracts.rs`. Surface classification and lowering occur in `src/surface.rs`, `src/surface/parser.rs`, `src/surface/validation/{definition_validation,declaration_expansion}.rs`, and `src/surface/verification.rs`. These are code locations, not approved new semantics.
+The kernel regression anchors are `src/kernel/tests/resource_tests.rs` (including `resource_field_schemas_are_typed_shared_and_non_countable`, population/count witness tests), `src/kernel/tests/contract_execution_tests.rs` (cross-contract population counts), and `src/kernel/tests/resource_scaling_tests.rs` (partition cost and alias refusal). Count-related tests also occur in `src/kernel/tests/{canonicalization,execution,iterated_ownership,loan_model,memory_reasoning,state_identity}_tests.rs` and `src/kernel/functions/callback_contract_tests.rs`; use the discovery commands before changing the kernel. The executable mechanism currently spans `src/kernel/primitives/observed_population_families.rs`, `src/kernel/population_access.rs`, `src/kernel/proof/{population_initialization,population_consumption}.rs`, `src/kernel/resource_tracker/`, `src/kernel/mutexes/{population,invariant_interface,assumed_protocol}.rs`, and `src/kernel/primitives/contracts.rs`. Surface classification and lowering occur in `src/surface.rs`, `src/surface/parser.rs`, `src/surface/validation/{definition_validation,declaration_expansion}.rs`, and `src/surface/verification.rs`. These are code locations, not approved new semantics.
 
 The existing `constructs`/`construct(...)` route is a separate establishment surface to review: parsing is in `src/surface/parser.rs`, declaration checks in `src/surface/validation/definition_validation.rs`, outcome application in `src/surface/proof/proof_object/step_application.rs`, and the checked operation in `src/kernel/functions.rs` through `src/kernel/api.rs`. It currently authorizes exactly one owned abstract token from a function contract, with duplicate-token rejection; it does not establish a population authority today.
 
@@ -1735,3 +1735,17 @@ authority no longer saves counts. `docs/concepts/resources.md` still
 describes consuming close; chunk 4 updates it with the public resource
 documentation. `mdtests/population_consumption_at_close.md` already uses
 authority and still passes.
+
+#### Chunk 2d: the legacy count store
+
+Once the transition was gone, nothing in production wrote a count to the
+legacy store. Its only remaining entries were the family observation markers
+seeded at proof entry, which authority loan classification reads. The store is
+replaced by a set of observed family names, and every reader of a legacy count
+is reduced to the answer it gave with no count present: body access keys use
+the spelled arguments, a destructive population unfold is refused as before,
+population facts are evaluated only from the body, and a `count(..)` refusal no
+longer offers a population-version explanation, since no state holds a count
+version to compare. The resource index's write-only population head index is
+deleted. State equality on populations compares body access and the observed
+family set.
