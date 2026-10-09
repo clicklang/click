@@ -1339,6 +1339,12 @@ of `first_of_four(bytes + index)`, is covered by it when `index <= length`
 and `4 <= length - index`
 (`mdtests/a_callee_takes_a_window_of_a_64_bit_range.md`). This holds for
 `views`; an owned window is not yet split out of an owned 64-bit range.
+A stored cursor can name the same window when a checked equality relates it
+to the input's native index. Address normalization and the cursor's indexed
+alias are checked separately; the alias supplies no access authority and the
+complete extent still needs its unsigned bounds. The cursor and short-extent
+regressions are in
+`mdtests/a_callee_takes_a_wide_window_through_a_checked_cursor.md`.
 
 A cast written in a place keeps its meaning: `bytes[(int32)index]` is the
 element at the truncated index, which is not the element the code reads at

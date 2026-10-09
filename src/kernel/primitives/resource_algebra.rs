@@ -8230,48 +8230,72 @@ fn wide_memory_range_covers_window(
     if !holds(first.clone(), last.clone()) {
         return false;
     }
-    let aligned = assumptions
-        .pointer_at_known_base(required.base(), available.base())
-        .unwrap_or_else(|| required.base().clone());
-    let Some(index) = assumptions.wide_element_index_of_access(
-        &aligned,
-        available.base(),
-        available.element_width(),
-    ) else {
+    let mut selected = required.base().clone();
+    if let Some(offset) = crate::kernel::equality_graph::AffineOffset::of(&selected.offset)
+        .and_then(|offset| offset.to_offset_term())
+    {
+        selected.offset = offset;
+    }
+    if !pointers_proven_equal_for_memory_resolution(&selected, required.base(), assumptions) {
         return false;
-    };
-    if let Bitvector32Term::UInt64Subtract(whole, taken) = &index
-        && first.uint64_as_const() == Some(0)
-        && assumptions.decide(&ConditionTerm::uint64_equal(
-            last.clone(),
-            taken.as_ref().clone(),
-        )) == Some(true)
-        && assumptions.uint64_values_equal_for_range_resolution(end, whole)
-        && holds(taken.as_ref().clone(), end.clone())
-    {
-        // Full-width equality and count <= whole establish both subtraction
-        // without underflow and (whole - count) + count == whole as integers.
-        return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
     }
-    if let Bitvector32Term::UInt64Subtract(whole, skipped) = &last
-        && first.uint64_as_const() == Some(0)
-        && assumptions.uint64_values_equal_for_range_resolution(&index, skipped)
-        && assumptions.uint64_values_equal_for_range_resolution(end, whole)
-        && holds(index.clone(), end.clone())
-    {
-        // The same suffix can be stated as p + offset [0..whole - offset].
-        // Both whole and offset are full-width identities, and offset <= end
-        // excludes subtraction underflow before translating the endpoint.
-        return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
-    }
-    (start.uint64_as_const() == Some(0) || holds(start.clone(), index.clone()))
-        && ((holds(index.clone(), end.clone())
-            && holds(
+    let aligned = assumptions
+        .pointer_at_known_base(&selected, available.base())
+        .unwrap_or_else(|| selected.clone());
+    let covers_index = |index: Bitvector32Term| {
+        if let Bitvector32Term::UInt64Subtract(whole, taken) = &index
+            && first.uint64_as_const() == Some(0)
+            && assumptions.decide(&ConditionTerm::uint64_equal(
                 last.clone(),
-                Bitvector32Term::uint64_subtract(end.clone(), index.clone()),
-            ))
-            || (holds(last.clone(), end.clone())
-                && holds(index, Bitvector32Term::uint64_subtract(end.clone(), last))))
+                taken.as_ref().clone(),
+            )) == Some(true)
+            && assumptions.uint64_values_equal_for_range_resolution(end, whole)
+            && holds(taken.as_ref().clone(), end.clone())
+        {
+            // Full-width equality and count <= whole establish both subtraction
+            // without underflow and (whole - count) + count == whole as integers.
+            return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
+        }
+        if let Bitvector32Term::UInt64Subtract(whole, skipped) = &last
+            && first.uint64_as_const() == Some(0)
+            && assumptions.uint64_values_equal_for_range_resolution(&index, skipped)
+            && assumptions.uint64_values_equal_for_range_resolution(end, whole)
+            && holds(index.clone(), end.clone())
+        {
+            // A native suffix keeps its complete endpoint and underflow guard.
+            return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
+        }
+        (start.uint64_as_const() == Some(0) || holds(start.clone(), index.clone()))
+            && ((holds(index.clone(), end.clone())
+                && holds(
+                    last.clone(),
+                    Bitvector32Term::uint64_subtract(end.clone(), index.clone()),
+                ))
+                || (holds(last.clone(), end.clone())
+                    && holds(
+                        index,
+                        Bitvector32Term::uint64_subtract(end.clone(), last.clone()),
+                    )))
+    };
+    // Only aliases explicitly indexed for this selected address are candidates.
+    // Each candidate still owes exact address equality and the complete native
+    // extent; equality proposes a spelling, never memory authority.
+    std::iter::once(aligned)
+        .chain(assumptions.exact_pointer_aliases(&selected).cloned())
+        .chain(assumptions.exact_pointer_offset_aliases(&selected))
+        .any(|candidate| {
+            crate::instrumentation::record_deterministic_work(1);
+            if !pointers_proven_equal_for_memory_resolution(&candidate, &selected, assumptions) {
+                return false;
+            }
+            assumptions
+                .wide_element_index_of_access(
+                    &candidate,
+                    available.base(),
+                    available.element_width(),
+                )
+                .is_some_and(&covers_index)
+        })
 }
 
 /// Whether two ranges, at least one of them wide, are proven to share an

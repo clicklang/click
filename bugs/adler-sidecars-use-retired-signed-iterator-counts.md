@@ -2,8 +2,8 @@
 
 The native Charon adapter now keeps chunk and scalar iterator remaining counts
 as full-width `usize` (`uint64` on the pinned target). The unchanged Adler
-sidecars still assert the former implicit `int32` projection. This breaks the
-published whole-body bounds proof even for its explicitly bounded input domain.
+general sidecar still asserts the former implicit `int32` projection. This breaks the
+published general whole-body bounds proof even for its explicitly bounded input domain.
 
 Reproduced twice on upstream `91d54ac32`, with the original pinned adler2 source,
 artifact, and import lock unchanged:

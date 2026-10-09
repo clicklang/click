@@ -2,9 +2,10 @@
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
 proves the four-lane helper bodies and the native-count small-batch bounds proof.
-The general and four-byte sidecars still need explicit native-count updates after
-the adapter's full-width iterator change; their previously checked results do
-not currently reverify. See the [tracked regression](../../../bugs/adler-sidecars-use-retired-signed-iterator-counts.md).
+The four-byte sidecar now checks native remaining counts with bounded signed
+observations and an explicit loop certificate. The general sidecar still needs
+native-count updates after the adapter's full-width iterator change; its
+previously checked whole-body bounds result does not currently reverify. See the [tracked regression](../../../bugs/adler-sidecars-use-retired-signed-iterator-counts.md).
 **The general Adler-32 checksum postcondition remains unproved.**
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
