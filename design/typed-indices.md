@@ -241,6 +241,10 @@ Four more, the same day:
   never narrowed it names another address than the body's `bytes[index]`
   unless the index is known to fit, and the two are not equated
   automatically. The mismatch says to drop the cast.
+- A cast written in a range bound, `bytes[0..(int32)length]`, means what
+  it says in the same way (decided 2026-10-09): the range up to the
+  truncated length, a 32-bit range whose bound has to be shown to fit.
+  The kernel used to drop one such cast and read the range as 64-bit.
 - A signed 64-bit bound, `views a[0..n]` with `long n`, keeps the stage 1
   cast until the unsigned series has landed. A signed wide kind follows it
   by the same mechanism.

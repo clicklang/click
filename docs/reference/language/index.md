@@ -1337,6 +1337,10 @@ read through 32-bit indices and needs its bound shown to fit.
 A cast written in a place keeps its meaning: `bytes[(int32)index]` is the
 element at the truncated index, which is not the element the code reads at
 `bytes[index]` (`mdtests/a_cast_in_a_place_reads_the_truncated_index.md`).
+A cast written in a range bound does the same: `bytes[0..(int32)length]` is
+the range up to the truncated length, read through 32-bit indices, and does
+not hold the element the code reads at a 64-bit index
+(`mdtests/a_cast_in_a_range_bound_truncates_the_bound.md`).
 
 <!-- verified-example: mdtests/a_64_bit_range_needs_no_bound_on_its_length.md -->
 ```click

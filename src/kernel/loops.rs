@@ -8544,18 +8544,6 @@ pub(crate) fn place_index_from_wide(index: CExpression) -> CExpression {
     }
 }
 
-/// The bound a cast `(int32)bound` wraps.
-fn wide_bound_before_its_cast(bound: &CExpression) -> &CExpression {
-    match bound {
-        CExpression::Cast {
-            expression,
-            target_type: CType::Int32,
-            ..
-        } => expression,
-        bound => bound,
-    }
-}
-
 pub(super) fn evaluate_loop_effect_segment(
     state: &CState,
     segment: &CMemorySegment,
@@ -8588,13 +8576,9 @@ pub(super) fn evaluate_loop_effect_segment(
             budget
         )?,
         Ok(CValue::Int32(Bitvector32Term::Constant(0)))
-    ) && let Ok(CValue::UInt64(end)) = evaluate_loop_effect_segment_value(
-        state,
-        wide_bound_before_its_cast(&segment.end),
-        assumptions,
-        "segment end",
-        budget,
-    )? && end.uint64_as_const().is_none()
+    ) && let Ok(CValue::UInt64(end)) =
+        evaluate_loop_effect_segment_value(state, &segment.end, assumptions, "segment end", budget)?
+        && end.uint64_as_const().is_none()
     {
         return Ok(Ok(EvaluatedMemorySegment {
             base,
@@ -8723,8 +8707,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     if matches!(
         evaluate(&segment.start, "segment start")?,
         Ok(CValue::Int32(Bitvector32Term::Constant(0)))
-    ) && let Ok(CValue::UInt64(end)) =
-        evaluate(wide_bound_before_its_cast(&segment.end), "segment end")?
+    ) && let Ok(CValue::UInt64(end)) = evaluate(&segment.end, "segment end")?
         && end.uint64_as_const().is_none()
     {
         return Ok(Ok((
@@ -8874,8 +8857,9 @@ fn evaluate_loop_effect_segment_value_with_facts(
             contexts.len(),
             contexts.join("; "),
             if narrowing {
-                "; a place takes a 32-bit index, so the contract has to state that this bound \
-                 fits one, as in `requires n <= 2147483647`"
+                "; this bound is converted to a 32-bit index, so the contract has to state that \
+                 it fits one, as in `requires n <= 2147483647`; a range from zero to an unsigned \
+                 64-bit bound written without a cast needs no such bound"
             } else {
                 ""
             }
