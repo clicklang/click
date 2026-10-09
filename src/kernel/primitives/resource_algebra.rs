@@ -2926,6 +2926,17 @@ impl ResourceContext {
         fact.is_own().then_some(fact)
     }
 
+    /// The view fact a live occurrence holds, for a caller that already has
+    /// the occurrence from an indexed lookup.
+    pub(crate) fn view_fact_for_occurrence(
+        &self,
+        occurrence: ResourceOccurrenceId,
+    ) -> Option<&CResourceFact> {
+        let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
+        let fact = self.storage.facts.get(entry)?;
+        fact.is_view().then_some(fact)
+    }
+
     /// Reserve a concrete owned footprint from its live byte fragments. Each
     /// step checks and consumes the actual indexed occurrence; a view, gap,
     /// stale occurrence, or unsupported coordinate proves no ownership. The
