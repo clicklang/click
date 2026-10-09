@@ -4043,6 +4043,32 @@ pub(crate) fn wide_read_has_recorded_value(
     {
         return false;
     }
+    // Wide reads do not enter the int32 congruence graph. Two spellings of
+    // one address can nevertheless read the same eight bytes: first check
+    // the selected pointer equality, then retain both reads' memory history.
+    // A cached read may name an earlier snapshot than its surface expression,
+    // so a shared current snapshot is sufficient but not necessary.
+    if let (
+        Some(Bitvector32Term::MemoryLoad(left_memory, left_pointer, LoadKind::Bits64)),
+        Some(Bitvector32Term::MemoryLoad(right_memory, right_pointer, LoadKind::Bits64)),
+    ) = (&left_origin, &right_origin)
+        && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+            left_pointer,
+            right_pointer,
+            assumptions,
+        )
+    {
+        if left_memory == right_memory {
+            return true;
+        }
+        if let (Some(left_cell), Some(right_cell)) = (
+            memory_dag_cell_source_with_hop_limit(left_memory, left_pointer, 8, assumptions, 64),
+            memory_dag_cell_source_with_hop_limit(right_memory, left_pointer, 8, assumptions, 64),
+        ) && left_cell.node() == right_cell.node()
+        {
+            return true;
+        }
+    }
     let stored_value_matches = |read: Option<&Bitvector32Term>, other: &Bitvector32Term| {
         let Some(Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits64)) = read else {
             return false;
@@ -4053,9 +4079,29 @@ pub(crate) fn wide_read_has_recorded_value(
         else {
             return false;
         };
-        let Some(CValue::Int64(value) | CValue::UInt64(value)) =
-            cell.resolved_value(pointer, LoadKind::Bits64)
-        else {
+        let value = cell.resolved_value(pointer, LoadKind::Bits64).or_else(|| {
+            // The cheap history classifier may stop at a store whose address
+            // uses a recorded pointer-load identity. Check that one endpoint
+            // with the full pointer matcher; never search earlier writes or
+            // accept an overlapping store of a different width.
+            let step = cell.node().derivation()?;
+            let CMemoryDerivation::Store {
+                pointer: write,
+                value,
+                ..
+            } = step.as_ref()
+            else {
+                return None;
+            };
+            (LoadKind::Bits64.reads_value(value)
+                && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                    write,
+                    pointer,
+                    assumptions,
+                ))
+            .then(|| value.clone())
+        });
+        let Some(CValue::Int64(value) | CValue::UInt64(value)) = value else {
             return false;
         };
         &value == other

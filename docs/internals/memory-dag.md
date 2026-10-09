@@ -182,6 +182,15 @@ alias unless its whole range is proved separate. An unknown symbolic index
 never causes lookup to enumerate every element, including during refolding
 and failed old-value searches.
 
+Wide scalar reads use selected pointer equalities without entering the int32
+congruence graph. Equal addresses give equal eight-byte reads in one snapshot,
+or when bounded history walks reach the same source node. Each walk retains
+the full access width and stops after at most 64 edges. If the cheap address
+classifier stops at a store, the full pointer matcher may identify that exact
+store as the read's source, provided its value has the matching width. This
+check neither searches earlier writes nor preserves an old value across a
+whole or partial overwrite.
+
 Seeded runs keep their source snapshots, but do not retain named slot values.
 Reading a slot goes through the load-naming cache scoped to the current
 load-origin epoch. A reusable verification session retains the arena and its
