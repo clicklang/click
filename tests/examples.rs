@@ -1735,22 +1735,17 @@ fn rbtree_erase_color_uses_the_unchanged_pinned_function() {
     );
 }
 
-fn erase_color_red_left_refuses_mutation(before: &str, after: &str) {
+fn erase_color_refuses_mutation(sidecar: &str, before: &str, after: &str) {
     // The pinned function repeats each update in its two mirrored arms.
     // Replacing both preserves statement positions; this sidecar checks left.
-    erase_source_refuses_replacement(
-        "rbtree_erase_color_red_left.click",
-        "rb_erase_color.c",
-        before,
-        after,
-        2,
-    );
+    erase_source_refuses_replacement(sidecar, "rb_erase_color.c", before, after, 2);
 }
 
 #[test]
 #[ignore = "nightly: erase-color verification takes about 7s"]
 fn rbtree_erase_color_red_left_requires_parent_blackening() {
-    erase_color_red_left_refuses_mutation(
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_left.click",
         "rb_set_black(parent);",
         "parent->__rb_parent_color = parent->__rb_parent_color;",
     );
@@ -1759,7 +1754,8 @@ fn rbtree_erase_color_red_left_requires_parent_blackening() {
 #[test]
 #[ignore = "nightly: erase-color verification takes about 7s"]
 fn rbtree_erase_color_red_left_requires_sibling_recoloring() {
-    erase_color_red_left_refuses_mutation(
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_left.click",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
     );
@@ -1768,8 +1764,39 @@ fn rbtree_erase_color_red_left_requires_sibling_recoloring() {
 #[test]
 #[ignore = "nightly: erase-color verification takes about 7s"]
 fn rbtree_erase_color_red_left_requires_the_sibling_parent() {
-    erase_color_red_left_refuses_mutation(
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_left.click",
         "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
         "rb_set_parent_color(sibling, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 4s"]
+fn rbtree_erase_color_root_left_requires_sibling_recoloring() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_root_left.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 4s"]
+fn rbtree_erase_color_root_left_requires_the_sibling_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_root_left.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 4s"]
+fn rbtree_erase_color_root_left_requires_the_null_parent_cursor() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_root_left.click",
+        "parent = rb_parent(node);",
+        "parent = node;",
     );
 }
