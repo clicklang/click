@@ -267,8 +267,9 @@ the current frontier before selecting execution or outcome checking. Thus after
 at `q`; ownership at the entry value of `p` does not suffice. Capture uses indexed
 lookups for the written names, without scanning unrelated locals. Storage
 operands such as `&x` retain the C place, and explicit snapshot selectors remain
-intact during current-value substitution. The resource
-definition, read obligations, and ownership checks remain unchanged. Named-instance
+intact during current-value substitution. Failing population-body folds render
+the written resource operand, preserving C names even when checking captured
+values. The resource definition, read obligations, and ownership checks remain unchanged. Named-instance
 folds continue to resolve their arguments when constructing the instance.
 
 A proof `if` or `match` interface may rejoin before the first C statement.

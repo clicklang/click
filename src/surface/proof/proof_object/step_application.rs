@@ -933,11 +933,12 @@ impl<'a> Proof<'a> {
             ProofStep::FoldResource(resource) => {
                 // Resolve proof bindings before either the execution or
                 // outcome path interprets ordinary resource arguments.
+                let source_resource = resource;
                 let resource = &self.resolve_proof_resource_arguments(resource)?;
                 if self.focused_outcome_data().is_some() {
                     self.apply_outcome_resource_fold(resource)
                 } else {
-                    self.apply_execution_resource_fold(resource)
+                    self.apply_execution_resource_fold(resource, source_resource)
                 }
             }
             ProofStep::ConstructResource(resource) => {

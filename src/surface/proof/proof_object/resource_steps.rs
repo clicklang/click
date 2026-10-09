@@ -128,6 +128,7 @@ impl<'a> Proof<'a> {
     fn apply_execution_population_member_exchange(
         &self,
         resource: &ResourceClause,
+        source_resource: &ResourceClause,
         produce: bool,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let declared = match resource {
@@ -207,7 +208,7 @@ impl<'a> Proof<'a> {
                 {
                     let fact = resource_argument_substitutions(
                         definition,
-                        resource,
+                        source_resource,
                         context.claim_label,
                         context.tactic_index,
                     )
@@ -2055,7 +2056,7 @@ impl<'a> Proof<'a> {
             && !self.is_authority_transfer_wrapper(resource)
             && !self.names_unauthorized_family(resource)
         {
-            return self.apply_execution_population_member_exchange(resource, false);
+            return self.apply_execution_population_member_exchange(resource, resource, false);
         }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, true);
@@ -2126,6 +2127,7 @@ impl<'a> Proof<'a> {
     pub(super) fn apply_execution_resource_fold(
         &self,
         resource: &ResourceClause,
+        source_resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if self.execution().is_some()
             && !matches!(resource, ResourceClause::Named { .. })
@@ -2134,7 +2136,11 @@ impl<'a> Proof<'a> {
             && !self.is_authority_transfer_wrapper(resource)
             && !self.names_unauthorized_family(resource)
         {
-            return self.apply_execution_population_member_exchange(resource, true);
+            return self.apply_execution_population_member_exchange(
+                resource,
+                source_resource,
+                true,
+            );
         }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, false);
@@ -2163,6 +2169,7 @@ impl<'a> Proof<'a> {
         let checked = fold_composite_resource_for_proof(
             context.resource_environment,
             resource,
+            source_resource,
             context.claim_label,
             context.tactic_index,
             self.facts().clone(),
