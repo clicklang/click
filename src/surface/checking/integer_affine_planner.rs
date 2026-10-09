@@ -57,7 +57,37 @@ pub(in crate::surface) fn plan_integer_affine_certificate(
 
     // Any number of listed equalities may participate, through elimination
     // rather than through a wider combination search.
-    plan_by_equality_elimination(&claims, &expected)
+    if let Some(certificate) = plan_by_equality_elimination(&claims, &expected) {
+        return Some(certificate);
+    }
+    if expected.relation != IntegerAffineRelation::Equal {
+        return None;
+    }
+
+    // An equality can require different order premises in each direction,
+    // with listed equalities substituted into both. Reuse the bounded order
+    // planner twice, then let the kernel check the opposite conclusions.
+    let plan_direction = |reverse| {
+        let direction = equality_direction(&expected, reverse);
+        plan_from_selected_claims(&claims, &direction)
+            .or_else(|| plan_by_equality_elimination(&claims, &direction))
+    };
+    let mut lower = plan_direction(false)?;
+    let upper = plan_direction(true)?;
+    let offset = lower.nodes.len();
+    for node in &upper.nodes {
+        charge_planner_work(1)?;
+        lower
+            .nodes
+            .push(remapped_node(node, |source| source.checked_add(offset))?);
+    }
+    lower.nodes.push(IntegerArithmeticNode::EqualityFromBounds {
+        lower: lower.conclusion,
+        upper: upper.conclusion.checked_add(offset)?,
+        result: expected,
+    });
+    lower.conclusion = lower.nodes.len() - 1;
+    Some(lower)
 }
 
 /// Decide `expected` from the selected claims by direct combination: an exact
@@ -1366,6 +1396,35 @@ mod tests {
             .map(|index| equal(variable(index), variable(index + 1)))
             .collect::<Vec<_>>();
         (equal(variable(0), variable(length)), premises)
+    }
+
+    /// The two directions use distinct bounds after substitution. Check the
+    /// resulting certificate, and ensure dropping either selected bound cannot
+    /// produce a certificate or validate the original one.
+    #[test]
+    fn substituted_equality_requires_both_checked_order_directions() {
+        let a = IntegerTerm::var(Variable(190));
+        let d = IntegerTerm::var(Variable(191));
+        let two = IntegerTerm::constant_i64(2);
+        let premises = [
+            equal(a.clone(), d.clone()),
+            less_equal(d.clone(), two.clone()),
+            less_equal(two.clone(), d),
+        ];
+        let goal = equal(a, two);
+        let certificate = plan_integer_affine_certificate(&goal, &premises)
+            .expect("both substituted bounds should prove equality");
+        certificate.check(&goal, &premises).unwrap();
+        for omitted in [1, 2] {
+            let incomplete = premises
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != omitted)
+                .map(|(_, premise)| premise.clone())
+                .collect::<Vec<_>>();
+            assert!(plan_integer_affine_certificate(&goal, &incomplete).is_none());
+            assert!(certificate.check(&goal, &incomplete).is_err());
+        }
     }
 
     #[test]

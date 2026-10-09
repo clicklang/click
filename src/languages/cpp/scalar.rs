@@ -26,6 +26,24 @@ pub(super) struct Scalar {
 impl Scalar {
     pub fn of(value: &CppType) -> Option<Self> {
         let (kind, is_const) = match value {
+            CppType::Enumeration {
+                is_scoped: true,
+                is_fixed: true,
+                underlying_type,
+                is_const,
+                ..
+            } if matches!(
+                underlying_type.as_ref(),
+                CppType::Integer {
+                    bits: 8,
+                    signed: false,
+                    is_const: false,
+                    ..
+                }
+            ) =>
+            {
+                (ScalarKind::UInt8, *is_const)
+            }
             CppType::Boolean { bits: 8, is_const } => (ScalarKind::Bool, *is_const),
             CppType::Integer {
                 bits,
@@ -58,6 +76,21 @@ impl Scalar {
 
     pub fn is(value: &CppType, kind: ScalarKind, is_const: bool) -> bool {
         Self::of(value) == Some(Self { kind, is_const })
+    }
+
+    /// The bounded native object-pointer profile. Enum values share uint8
+    /// contracts, but that alone cannot grant character alias access.
+    pub fn pointer_element(value: &CppType, allow_const: bool) -> Option<Self> {
+        if !matches!(value, CppType::Integer { .. }) {
+            return None;
+        }
+        Self::of(value).filter(|scalar| {
+            (allow_const || !scalar.is_const)
+                && matches!(
+                    scalar.kind,
+                    ScalarKind::Int32 | ScalarKind::UInt32 | ScalarKind::UInt8
+                )
+        })
     }
 }
 
@@ -93,6 +126,24 @@ impl ScalarKind {
             Self::UInt64 => C0Type::UInt64,
             Self::Int128 => C0Type::Int128,
             Self::UInt128 => C0Type::UInt128,
+        }
+    }
+
+    pub fn pointer_kernel_type(self) -> Option<CType> {
+        match self {
+            Self::Int32 => Some(CType::Int32Pointer),
+            Self::UInt32 => Some(CType::UInt32Pointer),
+            Self::UInt8 => Some(CType::UInt8Pointer),
+            _ => None,
+        }
+    }
+
+    pub fn pointer_proof_type(self) -> Option<C0Type> {
+        match self {
+            Self::Int32 => Some(C0Type::Int32Pointer),
+            Self::UInt32 => Some(C0Type::UInt32Pointer),
+            Self::UInt8 => Some(C0Type::UInt8Pointer),
+            _ => None,
         }
     }
 

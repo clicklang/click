@@ -123,8 +123,9 @@ an optional header appears, stale configs, artifact tampering, import identity,
 and original-source diagnostics. They do not claim that the complete captured
 Linux translation unit verifies.
 
-The gate also builds `tools/cpp-exporter/main.cpp` against exactly Clang and
-LLVM 19.1.7, then runs `tests/cpp_import.rs`. Set `LLVM_CONFIG` when the pinned
+When the pinned toolchain is installed, the gate also builds
+`tools/cpp-exporter/main.cpp` against exactly Clang and LLVM 19.1.7, then runs
+`tests/cpp_import.rs` (see [frontend toolchains](#frontend-toolchains)). Set `LLVM_CONFIG` when the pinned
 `llvm-config` is not installed in a standard versioned location. On macOS,
 Homebrew's `llvm@19` package provides the expected toolchain. On Linux, Clang
 borrows the C++ standard library headers of the newest GCC installation it
@@ -224,17 +225,36 @@ Objects in both arms, conditional construction with another cleanup lifetime,
 deeper nested blocks, shadowing while objects are live, and broader overlapping
 forms remain focused frontend errors.
 Other coverage exercises source/signature mismatch diagnostics, const-write
-rejection, and smart-tactic inventory. Missing Clang development tooling fails
-the gate, and unsupported C++ does not fall back to the C parser.
+rejection, and smart-tactic inventory. Unsupported C++ does not fall back to
+the C parser.
 
 ## What the gate runs
 
 `scripts/check.sh` with no options is the single source of truth for "is this
 tree green". It checks formatting (including the Rust exporter), environment
 setup regressions, Clippy, the mdBook render, and docs lint; builds the C++ and
-Rust exporters; then runs the unit, API, documentation, and import tests in
+Rust exporters whose toolchains are installed; then runs the unit, API, documentation, and import tests in
 parallel, followed by the mdtest and example harnesses one at a time, since
 each of those verifies a whole corpus on every core.
+
+### Frontend toolchains
+
+C verification needs neither frontend toolchain. The C++ suites need LLVM and
+Clang 19.1.7 for the exporter, and the Rust import tests need Charon's pinned
+`rustc`. When `scripts/build-cpp-exporter.sh --check` or
+`scripts/build-charon.sh --check` reports its toolchain missing,
+`scripts/check.sh` skips the suites that need it and runs the rest. Without
+the C++ toolchain it leaves out `tests/cpp_import.rs`,
+`tests/bitcoin_core_money_range.rs`, the four `click` command tests that run a
+C++ mdtest (named in its filterset), and, through `CLICK_SKIP_CPP_FRONTEND`,
+the C++ mdtests and examples. Without Charon it leaves out
+`tests/rust_import.rs`. The gate names each skipped suite when it starts and
+again after its elapsed time, so a partial run cannot pass for a full one.
+
+CI and the nightly workflow build both toolchains and run every suite. Install
+the toolchain before changing a frontend, or set `CLICK_REQUIRE_FRONTENDS=1`
+to make a missing toolchain fail the local gate. An installed toolchain whose
+build fails always fails the gate.
 
 ### The gate has a ten-minute budget
 

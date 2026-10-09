@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # Build the repository-owned semantic exporter against the pinned Clang API.
+#
+# `--check` only checks that the pinned toolchain is installed, without
+# building: it exits 0 when it is, and otherwise names what is missing.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+check_only=""
+if [[ "${1:-}" == "--check" ]]; then
+    check_only=1
+elif [[ -n "${1:-}" ]]; then
+    echo "usage: scripts/build-cpp-exporter.sh [--check]" >&2
+    exit 2
+fi
 
 expected_version=19.1.7
 if [[ -n "${LLVM_CONFIG:-}" ]]; then
@@ -19,6 +30,10 @@ else
     exit 1
 fi
 
+if [[ ! -x "$llvm_config" ]]; then
+    echo "error: LLVM_CONFIG names $llvm_config, which is not an executable" >&2
+    exit 1
+fi
 actual_version="$("$llvm_config" --version)"
 if [[ "$actual_version" != "$expected_version" ]]; then
     echo "error: LLVM $expected_version is required; $llvm_config reports $actual_version" >&2
@@ -74,6 +89,10 @@ if ! printf '#include <algorithm>\nint main() { return 0; }\n' \
         echo "Install the C++ standard library development headers for the pinned toolchain." >&2
     fi
     exit 1
+fi
+
+if [[ -n "$check_only" ]]; then
+    exit 0
 fi
 
 read -r -a llvm_cxxflags <<<"$("$llvm_config" --cxxflags)"

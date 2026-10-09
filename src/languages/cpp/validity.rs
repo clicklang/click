@@ -16,6 +16,36 @@ impl CppType {
     fn check_aliases(&self, accepts_source: &impl Fn(&str) -> bool) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match self {
+            Self::Enumeration {
+                declaration_id,
+                name,
+                underlying_type,
+                is_scoped,
+                is_fixed,
+                span,
+                ..
+            } => {
+                identity(declaration_id, name, "enum")?;
+                span.check_source(accepts_source(&span.file))?;
+                if !is_scoped
+                    || !is_fixed
+                    || !matches!(
+                        underlying_type.as_ref(),
+                        CppType::Integer {
+                            bits: 8,
+                            signed: false,
+                            is_const: false,
+                            ..
+                        }
+                    )
+                {
+                    return Err(
+                        "C++ enum requires a scoped declaration with fixed unsigned-byte backing"
+                            .into(),
+                    );
+                }
+                underlying_type.check_aliases(accepts_source)
+            }
             Self::Integer { source_aliases, .. } => {
                 let mut identities = BTreeSet::new();
                 for alias in source_aliases {
@@ -211,7 +241,8 @@ impl Metadata<'_> {
                 span
             }
             CppExpression::LogicalNot { value, span, .. }
-            | CppExpression::IntegralCast { value, span, .. } => {
+            | CppExpression::IntegralCast { value, span, .. }
+            | CppExpression::EnumCast { value, span, .. } => {
                 self.expression(value)?;
                 span
             }
