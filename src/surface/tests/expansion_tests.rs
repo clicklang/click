@@ -16862,3 +16862,46 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
         "changed conclusion relation accepted"
     );
 }
+
+// The arithmetic planner's affine sum is constant even though this goal
+// retains signed subexpressions. Its generated Add node must still recheck.
+#[test]
+fn signed_bounded_subtraction_preserves_generated_child_sum() {
+    let (source, sources) = mdtest_sources("mdtests/signed_arithmetic_bounded_subtraction.md");
+    let borrowed = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &borrowed).unwrap();
+    let expanded = expand_c0_claim_source(&source, &borrowed, "f", CProofClaim::Grouped).unwrap();
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        verify_c0_sources(&expanded, &borrowed)
+    });
+    result.unwrap();
+    assert_eq!(planning, 0, "expanded child sums must check without search");
+}
+
+#[test]
+#[ignore = "nightly: whole-proof arithmetic mutations and certificate rechecks"]
+fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
+    let (source, sources) = mdtest_sources("mdtests/signed_arithmetic_bounded_subtraction.md");
+    let borrowed = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace("(8 - x) <= (8 - x) + 4", "(8 - x) + 4 <= (8 - x)"),
+        source.replace("requires 4 <= x;", ""),
+        source.replace("requires x <= 8;", ""),
+    ] {
+        verify_c0_sources(&invalid, &borrowed)
+            .expect_err("false or undefined subtraction must be refused");
+    }
+    let expanded = expand_c0_claim_source(&source, &borrowed, "f", CProofClaim::Grouped).unwrap();
+    // Changing only the generated constant sum must not change the checked
+    // children, even if its replacement is itself a true inequality.
+    let forged = expanded.replacen("-4 <= 0", "-3 <= 0", 1);
+    assert_ne!(forged, expanded, "expected the nonzero cancellation node");
+    verify_c0_sources(&forged, &borrowed)
+        .expect_err("a different generated child sum must be refused");
+}

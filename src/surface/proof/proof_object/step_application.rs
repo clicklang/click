@@ -1903,7 +1903,10 @@ impl<'a> Proof<'a> {
                     .ok_or_else(|| {
                         self.step_error("signed_int32 addition exceeds the verification budget")
                     })?;
-                    let lowered_result = lower_prop(self, result, "signed_int32 addition result")?;
+                    // Keep the exact affine slack and comparison relation.
+                    // Ordinary lowering folds a true literal comparison to
+                    // truth, losing the sum this node must independently check.
+                    let lowered_result = lower_addend(result, "signed_int32 addition result")?;
                     let actual = claim(&lowered_result, "signed_int32 addition result")?;
                     if !(crate::kernel::proof::signed_arithmetic::charge_claim_pair_work(
                         &actual, &expected,
