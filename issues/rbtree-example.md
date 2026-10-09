@@ -1228,8 +1228,13 @@ C keeps every case. `rbtree_erase_color_inner_left.click` now verifies cases 3
 and 4 for an empty deficit, a red inner leaf, and an empty far child, under
 arbitrary outer contexts and either parent color. It returns the exact balanced,
 parent-consistent root and unchanged in-order contents; all 95 expansion-audit
-sites and three link/parent mutations pass. Red-sibling rotations and rotations
-after deficit propagation remain.
+sites and three link/parent mutations pass.
+`rbtree_erase_color_red_sibling_left.click` verifies cases 1 and 2 for an empty
+deficit, red sibling, and black near leaf, retaining an opaque far subtree.
+It returns the exact balanced root, parent consistency, and unchanged in-order
+contents under arbitrary outer contexts; 104 audit sites and three rotation
+mutations pass. Red-sibling cases followed by further rotations, and rotations
+after deficit propagation, remain.
 Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
@@ -1243,7 +1248,9 @@ near child, with 111 passing audit sites and two near-child mutations.
 `rbtree_erase_color_inner_right.click` covers the mirrored cases 3 and 4 for a
 red inner leaf and empty far child, with the same exact root guarantees,
 95 passing audit sites, and three link/parent mutations.
-Red-sibling rotations, rotations after propagation, and the complete
+`rbtree_erase_color_red_sibling_right.click` covers mirrored cases 1 and 2 with
+an opaque far subtree, 104 passing audit sites, and three rotation mutations.
+Other red-sibling continuations, rotations after propagation, and the complete
 `rb_erase` wrapper remain. Depends on 12.
 
 ### Augmented
