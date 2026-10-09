@@ -1151,6 +1151,11 @@ and a body fact such as `fact parent->left == child` instantiates to the link
 the body just walked. The fold's field values are read the same way, so one
 tactic never straddles two states
 (`mdtests/fold_argument_reads_current_cursor.md`).
+A resource argument may also read an owned field through a proved model-pointer
+alias. Named folds retain the facts already checked at that point when
+evaluating those arguments; a model pointer without read authority is refused
+(`mdtests/fold_argument_reads_through_model_pointer.md` and
+`mdtests/fold_argument_model_pointer_needs_read_authority.md`).
 
 ### Conditional and recursive bodies
 

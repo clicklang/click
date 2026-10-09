@@ -422,12 +422,13 @@ impl<'a> Proof<'a> {
             // arguments, so `fold(cell_at(id), ...)` names the pointer a
             // `have` goal spelling `id` does.
             let resource = &self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
-            let lowered = lower_resource_clause_at_current_locals(
+            let lowered = lower_resource_clause_at_current_locals_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 before,
                 outcome.map(|goal| &*goal.data.core.result),
+                self.facts().assumptions(),
             )?;
             let CResourceFact::Own(CResource::Composite { name, arguments }, _) = lowered else {
                 return Err(self.step_error("fold construction requires an owned resource"));

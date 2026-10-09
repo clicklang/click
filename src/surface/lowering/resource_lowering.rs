@@ -1499,6 +1499,27 @@ pub(in crate::surface) fn lower_interface_resource_clause(
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
+    lower_resource_clause_at_current_locals_with_assumptions(
+        resource,
+        parameters,
+        arguments,
+        state,
+        None,
+        assumptions,
+    )
+}
+
+/// Lower a proof resource argument at the current C bindings, retaining only
+/// the facts already checked at this frontier. These facts can identify an
+/// owned cell through an alias; they do not assume the proposed fold's body.
+pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptions(
+    resource: &ResourceClause,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+    result: Option<&CValue>,
+    assumptions: &PureFactContext,
+) -> Result<CResourceFact, ClickError> {
     let values =
         parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
     let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
@@ -1510,7 +1531,7 @@ pub(in crate::surface) fn lower_interface_resource_clause(
             &values,
             state,
             state,
-            None,
+            result,
             false,
             assumptions,
         )?;
@@ -1528,7 +1549,7 @@ pub(in crate::surface) fn lower_interface_resource_clause(
         &values,
         state,
         state,
-        None,
+        result,
         false,
         assumptions,
     )
