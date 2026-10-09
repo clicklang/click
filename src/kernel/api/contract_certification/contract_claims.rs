@@ -2809,6 +2809,10 @@ pub fn c_verified_function_rule(
 pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunctionRule> {
     (!function.is_program_entry()
         && function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Copy
+        && function
+            .contract_interface()
+            .construction_parameter()
+            .is_none()
         && function.opaque_contract_supported()
         && !function.contract_claims().is_empty()
         && function_contract_claims_are_complete(&function))

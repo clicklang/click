@@ -5935,8 +5935,10 @@ fn execute_verified_function_applications_with_suspension(
             symbolic_contract_result(interface, result_identity)
         };
         let mut post_state = entry_state.clone().with_memory(memory);
-        if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
-            construction_return::initialize_summary(&mut post_state, interface);
+        if interface.aggregate_return_mode() == CAggregateReturnMode::Construction
+            || interface.construction_parameter().is_some()
+        {
+            construction_return::initialize_summary(&mut post_state, &entry_contract_state);
         }
         // Construction initialization is part of this checked call effect,
         // so its endpoint must include the initialized value fields.
@@ -32556,6 +32558,13 @@ fn function_outcome_from_body_with_resource_transfer(
         ));
     };
 
+    if reestablish_population_invariants
+        && let Some(error) =
+            construction_return::complete_parameter(&state, function.contract_interface())
+    {
+        return Ok((CFunctionOutcome::RuntimeError(error), obligations, None));
+    }
+
     // A body return still names its aggregate source; copy it to the
     // caller-visible result object before retiring the source's activation.
     // Resource completion over an already completed outcome keeps its result.
@@ -33592,6 +33601,11 @@ pub(super) fn function_outcome_from_body(
 ) -> (CFunctionOutcome, Vec<ProofObligation>) {
     match outcome {
         CStatementOutcome::Return { value, mut state } => {
+            if let Some(error) =
+                construction_return::complete_parameter(&state, function.contract_interface())
+            {
+                return (CFunctionOutcome::RuntimeError(error), obligations);
+            }
             if let Some(undefined_behavior) =
                 freed_pointer_return_conversion(&state, function, &value, assumptions)
             {

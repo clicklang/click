@@ -3172,6 +3172,7 @@ pub struct CFunctionContractInterface {
     pub(crate) return_pointee_constant: bool,
     pub(crate) return_aggregate_layout: Option<CAggregateLayout>,
     pub(crate) aggregate_return_mode: CAggregateReturnMode,
+    pub(crate) construction_parameter: Option<(usize, CAggregateLayout)>,
     pub(crate) exceptional_signature: CExceptionalSignature,
     pub(crate) parameters: Vec<CParameter>,
     /// Explicit resource-instance binders introduced by a named contract.

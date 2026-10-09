@@ -310,6 +310,24 @@ pub(in crate::surface) fn initial_call_state(
     // entry initialization unable to install its stable typed cells.
     let initial = CState::new().with_population_creation_tracking();
     let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
+    if let Some((index, layout)) = function.contract_interface().construction_parameter() {
+        let parameter = parameters
+            .get(index)
+            .ok_or_else(|| ClickError::new("constructor destination parameter is missing"))?;
+        // A symbolic block is an arbitrary input identity, not a fresh local.
+        // Install its raw storage before resource naming can seed typed cells.
+        let destination = Pointer::symbolic(input_pointer_variable(scope, index)?);
+        crate::kernel::register_block_alignment(&destination.block, layout.alignment_bytes());
+        arguments[index] = c_typed_pointer_value(
+            destination.clone(),
+            parameter.to_kernel_parameter().c_type(),
+        );
+        let memory = state
+            .memory()
+            .clone()
+            .with_uninitialized_block(destination.block, layout.size_bytes());
+        state = state.with_memory(memory);
+    }
     if parameters
         .iter()
         .any(|parameter| parameter.is_struct_value())

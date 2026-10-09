@@ -107,7 +107,11 @@ The shared kernel now supports complete-object destination returns, including
 body execution and body-certified summaries forwarded through two factories.
 The hidden result binding grants no storage or ownership; actual writes must
 initialize the modeled value fields. Existing C/Rust copy returns are unchanged.
-Source admission and expression lifetime lowering remain to be connected.
+Ordinary void constructors now bind an explicit destination parameter and
+complete its initialized fields through body-certified summaries. C++ local
+construction uses raw storage, while the shared lifetime-end statement covers
+temporary retirement. Returned-construction source admission and expression
+lifetime lowering remain to be connected.
 The precise compiler/ABI evidence is an admission gate for each new C++ return
 shape; the design does not treat a Clang expression category as sufficient
 evidence of copy elision.

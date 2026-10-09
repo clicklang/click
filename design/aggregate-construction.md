@@ -21,8 +21,9 @@ storage, with ownership supplied separately by their entry contract.
 Caller allocation now has a separate `c_allocate_aggregate_destination`
 operation. It allocates fresh automatic storage and its byte ownership without
 seeding field values. Re-declaration uses the existing retirement and fresh
-generation checks. Ordinary local declarations and the existing C++/Rust
-constructor placeholder protocol retain their behavior.
+generation checks. Ordinary local declarations and the existing Rust constructor placeholder
+protocol retain their behavior. C++ direct local constructors now use raw
+destination allocation.
 
 `CAggregateReturnMode::Construction` now binds the hidden result to exact call
 metadata before body execution. Completion validates the same pointer, layout,
@@ -34,6 +35,15 @@ Union/array layouts, subobject destinations, exceptional construction, external
 construction assumptions, and constructor callbacks remain refused. Contract
 matching, state substitution, branch joins, and checked snapshot comparisons
 include the destination and result mode. Source admission remains pending.
+
+Ordinary void constructors can designate a pointer parameter as their
+construction destination. The call binds its entry value once; reassignment of
+the parameter cannot replace the object checked at completion. The body must
+initialize every modeled value field, and only a body-certified summary can
+establish that initialization at a modular call. Native constructor contracts
+need write authority for the fields, not padding. C++ constructor lowering and
+Surface entry setup preserve this metadata and start with unwritten symbolic
+storage. Neither the native signature nor sidecar syntax changes.
 
 `c_end_automatic_lifetimes` makes a frontend-recorded expression boundary an
 explicit shared statement. It uses the existing automatic-storage retirement
@@ -124,7 +134,7 @@ before the field's value is written. Observing the field value still requires
 initialization and read authority. Copying a pointer never grants authority
 over its pointee.
 
-The existing `DeclareAggregate` constructor kind seeds scalar
+The legacy `DeclareAggregate` constructor kind seeds scalar
 placeholders so current constructor contracts can use the existing cell
 machinery. Its frontend overwrite obligation is not a completion certificate
 for the new result mode. The implementation must distinguish actual completed

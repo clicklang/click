@@ -6471,3 +6471,184 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         true,
     )));
 }
+
+// A modular ordinary-parameter constructor must establish initialization from
+// its checked body, without manufacturing values for unwritten padding.
+#[test]
+fn construction_parameter_summary_initializes_only_checked_fields() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let layout = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("self", 0, CType::Int32Pointer),
+            CAggregateField::new("value", 8, CType::Int32),
+        ],
+    );
+    let destination = c_variable("destination");
+    let field = c_cast(
+        c_pointer_offset_bytes(destination.clone(), 8),
+        CType::Int32Pointer,
+    );
+    let storage = CMemorySegment::new(destination.clone(), c_int32_literal(0), c_int32_literal(4));
+    let owner = CResourceSpec::owned_memory(storage.clone());
+    let function = c_function(
+        CType::Void,
+        "construct_parameter",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("input", CType::Int32),
+        ],
+        c_seq(
+            c_typed_store(destination, field.clone(), CType::Int32Pointer),
+            c_seq(
+                c_typed_store(field, c_variable("input"), CType::Int32),
+                c_return(c_void_value()),
+            ),
+        ),
+    )
+    .with_construction_parameter(0, layout.clone())
+    .with_resource_summary(vec![owner.clone()], vec![owner])
+    .with_contract(
+        vec![],
+        vec![],
+        vec![storage],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::effect(0),
+            CFunctionContractClaim::ensure_resource(0, 0),
+        ],
+        true,
+    );
+    let at = Pointer::symbolic(Variable(873_011));
+    register_block_alignment(&at.block, 8);
+    let entry = CState::new()
+        .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), 16))
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(at.clone(), 0u32.into(), 4u32.into())),
+        ));
+    let execution = certify_contract_with_kernel_artifacts(
+        entry.clone(),
+        function.clone(),
+        vec![
+            c_pointer_value(at.clone()),
+            CExpression::Value(int32(Bitvector32Term::Variable(Variable(873_012)))),
+        ],
+        vec![],
+        CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        CFunctionContractExecutionMode::VerifyLoops,
+    );
+    let claims =
+        c_verified_function_contract_claims(&function, &execution).expect("constructor claims");
+    let rule = c_verified_function_rule(function.clone(), &claims).expect("constructor rule");
+    assert!(c_external_function_rule(function.clone()).is_none());
+    assert!(CFunctionContract::new("ConstructorCallback", function.clone()).is_none());
+    assert!(
+        c_verified_function_rule(
+            function
+                .clone()
+                .with_construction_parameter(1, layout.clone()),
+            &claims
+        )
+        .is_none()
+    );
+    let environment = CExecutionEnvironment::new()
+        .with_function(function)
+        .with_verified_function_rule(rule);
+    // A returned-construction factory uses the same ordinary constructor
+    // summary while retaining its own hidden destination across the void call.
+    let result = c_variable(C_CONTRACT_RESULT_NAME);
+    let storage = CMemorySegment::new(result.clone(), c_int32_literal(0), c_int32_literal(4));
+    let owner = CResourceSpec::owned_memory(storage.clone());
+    let factory = c_function(
+        CType::VoidPointer,
+        "parameter_factory",
+        vec![c_parameter("input", CType::Int32)],
+        c_seq(
+            c_call(
+                "construct_parameter",
+                vec![
+                    c_cast(result.clone(), CType::Int32Pointer),
+                    c_variable("input"),
+                ],
+            ),
+            c_return(result),
+        ),
+    )
+    .with_construction_return(layout.clone())
+    .with_resource_summary(vec![owner.clone()], vec![owner])
+    .with_contract(
+        vec![],
+        vec![],
+        vec![storage],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::effect(0),
+            CFunctionContractClaim::ensure_resource(0, 0),
+        ],
+        true,
+    );
+    let execution = certify_contract_with_kernel_artifacts(
+        entry.with_aggregate_return_destination(at, layout.clone()),
+        factory.clone(),
+        vec![CExpression::Value(int32(Bitvector32Term::Variable(
+            Variable(873_012),
+        )))],
+        vec![],
+        environment.clone(),
+        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        CFunctionContractExecutionMode::VerifyLoops,
+    );
+    let claims = c_verified_function_contract_claims(&factory, &execution)
+        .expect("factory calling ordinary constructor");
+    let rule = c_verified_function_rule(factory.clone(), &claims).expect("factory rule");
+    let environment = environment
+        .with_function(factory)
+        .with_verified_function_rule(rule);
+    let paths = prove_symbolic_c_execution_paths_with_environment(
+        CState::new(),
+        c_seq(
+            c_allocate_aggregate_destination("node", layout),
+            c_seq(
+                c_call_assign("node", "parameter_factory", vec![c_int32_literal(37)]),
+                c_return(c_typed_load(
+                    c_pointer_offset_bytes(c_variable("node"), 8),
+                    CType::Int32,
+                )),
+            ),
+        ),
+        PureFactContext::new(),
+        environment,
+        CExecutionSemantics::APPLY_VERIFIED_RULES,
+    );
+    let [path] = paths.paths() else {
+        panic!("one constructor summary path");
+    };
+    let Proposition::CStatementVerifies {
+        outcome: CStatementOutcome::Return { state, .. },
+        ..
+    } = crate::kernel::api::proof_evidence_conclusion(path.theorem())
+    else {
+        let conclusion = crate::kernel::api::proof_evidence_conclusion(path.theorem());
+        match conclusion {
+            Proposition::CStatementVerifies { outcome, .. }
+            | Proposition::CStatementExecutes { outcome, .. } => match outcome {
+                CStatementOutcome::RuntimeError(error) => panic!("constructor summary: {error:?}"),
+                CStatementOutcome::UndefinedBehavior(error) => {
+                    panic!("constructor summary: {error:?}")
+                }
+                _ => panic!("unexpected constructor summary outcome"),
+            },
+            _ => panic!("unexpected constructor summary theorem"),
+        }
+    };
+    let at = state.locals().aggregate_object_pointer("node").unwrap();
+    assert!(state.memory().has_initialized_bytes_at(at, 8));
+    assert!(
+        state
+            .memory()
+            .has_initialized_bytes_at(&at.offset_by_bytes(8), 4)
+    );
+    assert!(!state.memory().has_initialized_bytes_at(at, 16));
+}

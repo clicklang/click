@@ -22,7 +22,7 @@ use super::{
 };
 use crate::kernel::{
     CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId, LoadSourceOwnerId,
-    c_add, c_and, c_assign, c_begin_aggregate_construction, c_call, c_call_assign, c_cast,
+    c_add, c_allocate_aggregate_destination, c_and, c_assign, c_call, c_call_assign, c_cast,
     c_checked_object_address, c_copy_aggregate, c_declare, c_declare_aggregate,
     c_declare_with_all_qualifiers, c_divide, c_equal, c_function, c_greater_equal, c_greater_than,
     c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply, c_not_equal, c_parameter,
@@ -232,6 +232,9 @@ fn lower_function(
         body,
     )
     .with_return_pointee_constant(return_constant);
+    if let CppFunctionKind::Constructor { record_name, .. } = &source.function_kind {
+        function = function.with_construction_parameter(0, context.record_layout(record_name)?);
+    }
     if let CppType::Record { name, .. } = &source.return_type {
         function = function.with_return_aggregate_layout(context.record_layout(name)?);
     }
@@ -501,7 +504,7 @@ impl LoweringContext<'_> {
                         vec![c_cast(c_variable(local.name.clone()), CType::Int32Pointer)];
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
                     Ok(c_seq(
-                        c_begin_aggregate_construction(local.name.clone(), layout),
+                        c_allocate_aggregate_destination(local.name.clone(), layout),
                         c_call(
                             self.names.require(&callee.declaration_id)?.to_owned(),
                             lowered_arguments,

@@ -3479,24 +3479,24 @@ fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> V
     objects
 }
 
-fn contains_aggregate_construction_begin(statement: &CStatement, expected: &str) -> bool {
+fn contains_raw_aggregate_destination(statement: &CStatement, expected: &str) -> bool {
     match statement {
         CStatement::DeclareAggregate {
             name,
-            kind: click::kernel::CAggregateDeclarationKind::Constructor,
+            kind: click::kernel::CAggregateDeclarationKind::ConstructionDestination,
             ..
         } => name == expected,
         CStatement::Seq(first, second) => {
-            contains_aggregate_construction_begin(first, expected)
-                || contains_aggregate_construction_begin(second, expected)
+            contains_raw_aggregate_destination(first, expected)
+                || contains_raw_aggregate_destination(second, expected)
         }
         CStatement::If {
             then_branch,
             else_branch,
             ..
         } => {
-            contains_aggregate_construction_begin(then_branch, expected)
-                || contains_aggregate_construction_begin(else_branch, expected)
+            contains_raw_aggregate_destination(then_branch, expected)
+                || contains_raw_aggregate_destination(else_branch, expected)
         }
         _ => false,
     }
@@ -4216,7 +4216,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     ));
 
     let lowered = lower_import(&import).expect("lower construction through the shared call rules");
-    assert!(contains_aggregate_construction_begin(
+    assert!(contains_raw_aggregate_destination(
         lowered.kernel_function().body(),
         "state"
     ));
@@ -4225,6 +4225,13 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
         "RestoreState_constructor"
     ));
     assert_eq!(lowered.reachable_kernel_functions().len(), 1);
+    assert_eq!(
+        lowered.reachable_kernel_functions()[0]
+            .contract_interface()
+            .construction_parameter()
+            .map(|(index, _)| index),
+        Some(0),
+    );
     assert_eq!(
         lowered.reachable_kernel_functions()[0].parameters()[0].c_type(),
         CType::Int32Pointer

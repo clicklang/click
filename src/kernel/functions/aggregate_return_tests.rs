@@ -507,49 +507,77 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
 
 #[test]
 fn construction_completion_work_scales_with_value_fields() {
-    let mut samples = Vec::new();
-    for count in [8, 32, 128] {
-        let _session = crate::kernel::VerificationSession::enter();
-        // Leave padding between fields so initialization retains separate
-        // runs instead of measuring only one contiguous initialized range.
-        let layout = CAggregateLayout::new(
-            count * 8,
-            8,
-            (0..count)
-                .map(|index| CAggregateField::new(format!("field{index}"), index * 8, CType::Int32))
-                .collect(),
+    for parameter in [false, true] {
+        let mut samples = Vec::new();
+        for count in [8, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            // Leave padding between fields so initialization retains separate
+            // runs instead of measuring only one contiguous initialized range.
+            let layout = CAggregateLayout::new(
+                count * 8,
+                8,
+                (0..count)
+                    .map(|index| {
+                        CAggregateField::new(format!("field{index}"), index * 8, CType::Int32)
+                    })
+                    .collect(),
+            );
+            let at = Pointer::symbolic(Variable(873_004));
+            register_block_alignment(&at.block, 8);
+            let caller = CState::new()
+                .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own_memory(CMemoryRange::new(
+                        at.clone(),
+                        0u32.into(),
+                        (count * 2).into(),
+                    )),
+                ))
+                .with_aggregate_return_destination(at.clone(), layout.clone());
+            let function = if parameter {
+                c_function(
+                    CType::Void,
+                    "wide_constructor",
+                    vec![c_parameter("destination", CType::Int32Pointer)],
+                    c_skip(),
+                )
+                .with_construction_parameter(0, layout)
+            } else {
+                c_function(CType::VoidPointer, "wide_result", vec![], c_skip())
+                    .with_construction_return(layout)
+            };
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut state = caller.clone().with_local(
+                    "destination",
+                    CValue::typed_pointer(at.clone(), CType::Int32Pointer),
+                );
+                construction_return::bind(&caller, function.contract_interface(), &mut state)
+                    .unwrap();
+                construction_return::initialize_summary(&mut state, &caller);
+                if parameter {
+                    assert!(
+                        construction_return::complete_parameter(
+                            &state,
+                            function.contract_interface()
+                        )
+                        .is_none()
+                    );
+                } else {
+                    construction_return::complete(
+                        &state,
+                        function.contract_interface(),
+                        CValue::typed_pointer(at.clone(), CType::VoidPointer),
+                    )
+                    .unwrap();
+                }
+            });
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+            "{samples:?}"
         );
-        let at = Pointer::symbolic(Variable(873_004));
-        register_block_alignment(&at.block, 8);
-        let caller = CState::new()
-            .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_memory(CMemoryRange::new(
-                    at.clone(),
-                    0u32.into(),
-                    (count * 2).into(),
-                )),
-            ))
-            .with_aggregate_return_destination(at.clone(), layout.clone());
-        let function = c_function(CType::VoidPointer, "wide_result", vec![], c_skip())
-            .with_construction_return(layout);
-        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut state = caller.clone();
-            construction_return::bind(&caller, function.contract_interface(), &mut state).unwrap();
-            construction_return::initialize_summary(&mut state, function.contract_interface());
-            construction_return::complete(
-                &state,
-                function.contract_interface(),
-                CValue::typed_pointer(at.clone(), CType::VoidPointer),
-            )
-            .unwrap();
-        });
-        samples.push(work);
     }
-    assert!(
-        samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
-        "{samples:?}"
-    );
 }
 
 #[test]
@@ -1132,4 +1160,103 @@ fn forgotten_construction_writes_keep_their_address_variables_reserved() {
     );
     assert!(cached.contains(&alias_variable));
     assert_eq!(whole, cached);
+}
+
+// A constructor keeps its native void signature. Completion checks the entry
+// destination even when the ordinary pointer parameter has been reassigned.
+#[test]
+fn construction_parameter_completion_checks_original_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for complete in [false, true] {
+        let field = c_cast(
+            c_pointer_offset_bytes(c_variable("destination"), 8),
+            CType::Int32Pointer,
+        );
+        let body = c_seq(
+            c_typed_store(
+                c_variable("destination"),
+                field.clone(),
+                CType::Int32Pointer,
+            ),
+            if complete {
+                c_typed_store(field, c_variable("input"), CType::Int32)
+            } else {
+                c_skip()
+            },
+        );
+        let function = destination_procedure("initialize_node", body)
+            .with_construction_parameter(0, node_layout());
+        let caller = allocate_destination(&CState::new(), "node");
+        let at = caller.locals.slot("node").unwrap().clone();
+        let paths = execute_c_function_call_paths(
+            &caller,
+            &function,
+            &[c_pointer_value(at.clone()), c_int32_literal(37)],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one constructor path");
+        };
+        if complete {
+            let CFunctionOutcome::Return { state, .. } = &path.outcome else {
+                panic!("constructor completion failed");
+            };
+            assert!(
+                state.aggregate_destination.is_none(),
+                "callee destination cannot replace caller metadata"
+            );
+            assert!(!aggregate_copy_reads_uninitialized(
+                &state.memory,
+                &at,
+                &node_layout()
+            ));
+            assert!(
+                !state.memory.has_initialized_bytes_at(&at, 16),
+                "padding stays unwritten"
+            );
+        } else {
+            assert!(matches!(
+                path.outcome,
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(_))
+            ));
+        }
+    }
+    // Reassigning the parameter to an unrelated initialized object does not
+    // complete the original destination.
+    let function = c_function(
+        CType::Void,
+        "redirect_constructor",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("other", CType::Int32Pointer),
+        ],
+        c_seq(
+            c_assign("destination", c_variable("other")),
+            c_return(c_void_value()),
+        ),
+    )
+    .with_construction_parameter(0, node_layout());
+    let caller = allocate_destination(&allocate_destination(&CState::new(), "node"), "other");
+    let at = caller.locals.slot("node").unwrap().clone();
+    let other = caller.locals.slot("other").unwrap().clone();
+    let memory = caller.memory.clone().with_initialized_object(&other, 16);
+    let caller = caller.with_memory(memory);
+    let paths = execute_c_function_call_paths(
+        &caller,
+        &function,
+        &[c_pointer_value(at), c_pointer_value(other)],
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    assert!(paths.iter().all(|path| matches!(
+        path.outcome,
+        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(_))
+    )));
 }

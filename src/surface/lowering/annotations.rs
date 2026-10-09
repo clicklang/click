@@ -1105,7 +1105,23 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             .get(struct_name)
             .expect("struct return has a parsed layout")
             .to_kernel_aggregate_layout();
-        function = function.with_return_aggregate_layout(layout);
+        function = match parsed_kernel_function
+            .contract_interface()
+            .aggregate_return_mode()
+        {
+            crate::kernel::CAggregateReturnMode::Copy => {
+                function.with_return_aggregate_layout(layout)
+            }
+            crate::kernel::CAggregateReturnMode::Construction => {
+                function.with_construction_return(layout)
+            }
+        };
+    }
+    if let Some((index, layout)) = parsed_kernel_function
+        .contract_interface()
+        .construction_parameter()
+    {
+        function = function.with_construction_parameter(index, layout.clone());
     }
     let mut function = function
         .with_global_variables(parsed_kernel_function.global_variables().to_vec())
