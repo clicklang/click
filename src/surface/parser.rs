@@ -10231,9 +10231,11 @@ impl Parser {
             let Some(expression) = contract_expression_as_c_fragment(&operand) else {
                 return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value"));
             };
-            operand = crate::surface::lowering::contract_c_unary(
-                operand,
-                CExpression::Cast {
+            // Keep the same operand-bearing representation as a C-style
+            // scalar cast, including its proof-expression identity.
+            operand = ContractExpression::CUnary {
+                operand: Box::new(operand),
+                lowered: CExpression::Cast {
                     expression: Box::new(expression),
                     target_type,
                     integer_mode: crate::kernel::CIntegerCastMode::Standard,
@@ -10242,7 +10244,7 @@ impl Parser {
                     pointee_constant: false,
                     explicit_qualification: false,
                 },
-            );
+            };
         }
         Ok(operand)
     }
