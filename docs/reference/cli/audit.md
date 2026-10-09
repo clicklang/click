@@ -35,17 +35,12 @@ The rewritten claim must contain no smart tactics and pass retained and cold
 verification, including the performance comparison. A failed whole-claim
 expansion fails the audit.
 
-When a cursor or bounded selection covers only part of a claim, each selected
-site gets these checks:
-
-1. expands the source site;
-2. verifies the rewritten proof unit in the retained session;
-3. reverifies it through the ordinary targeted verification entry point;
-4. confirms that the claim's smart-site multiset strictly shrinks and that no
-   new smart tactic appears;
-5. re-expands to confirm the fixed point;
-6. on the first site in a claim, compares cold original and rewritten
-   verification.
+A cursor, site cap, or changed-source selection can select part of a claim.
+The selected sites are captured together in one verification and applied as
+one rewrite. The audit checks that each emitted region contains only simple
+tactics, then verifies the rewritten proof unit once in the retained session
+and once through ordinary cold targeted verification. It compares that cold
+work with the original claim. Unselected automation remains in the source.
 
 Every audit check counts deterministic work units, the units the tactic
 budgets are charged, so the same source reaches the same verdict on any
@@ -74,7 +69,7 @@ phase keeps the per-tactic work budgets [`click verify`](verify.md#deterministic
 | `--start-at PATH:LINE:COLUMN` | none | Resume inclusively at a source location. |
 | `--claim CLAIM` | all | Select an exact claim. Repeat the option to select several claims. |
 | `--changed-since REVISION` | none | Select claims affected since a Git revision. |
-| `--verbose` | off | Print one success row per smart site instead of one per claim. |
+| `--verbose` | off | Include phase costs for each claim batch. |
 | `--keep-going` | off | Continue after failures instead of stopping at the first failure. |
 | `--exclude PATH` | none | Leave out a proof container, or every one under a directory. Repeat the option for several. A path that matches nothing in the audited path is an error. |
 | `--max-sites COUNT` | unlimited | Run a positive bounded number of sites and print the next cursor. |
@@ -85,7 +80,7 @@ ambiguous claim across sidecars are errors.
 
 ## Output and exit behavior
 
-Passing progress is one row per claim unless `--verbose` is set. A bounded or
+Passing progress is one row per claim; `--verbose` includes its phase costs. A bounded or
 timed-out run prints a resumable `--start-at` command with the active selection
 and output mode. The summary distinguishes passing sites, site failures, claim failures,
 session failures, and incomplete work.
