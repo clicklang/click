@@ -1573,23 +1573,25 @@ fn close_claim_directly_from_outcome<'a>(
                                     arguments,
                                 )
                             };
-                            let unseparated =
+                            let unseparated = describe_read_address_mismatch(
+                                &kernel_left,
+                                &kernel_right,
+                                parameters,
+                                arguments,
+                            )
+                            .map(|mismatch| format!("; {mismatch}"))
+                            .or_else(|| {
                                 describe_unseparated_write(&kernel_left, parameters, arguments)
-                                    .or_else(|| {
-                                        describe_unseparated_write(
-                                            &kernel_right,
-                                            parameters,
-                                            arguments,
-                                        )
-                                    })
-                                    .or_else(|| {
-                                        model_field(&kernel_left, snapshot_role(left))
-                                            .or_else(|| {
-                                                model_field(&kernel_right, snapshot_role(right))
-                                            })
-                                            .map(|mismatch| format!("; {mismatch}"))
-                                    })
-                                    .unwrap_or_default();
+                            })
+                            .or_else(|| {
+                                describe_unseparated_write(&kernel_right, parameters, arguments)
+                            })
+                            .or_else(|| {
+                                model_field(&kernel_left, snapshot_role(left))
+                                    .or_else(|| model_field(&kernel_right, snapshot_role(right)))
+                                    .map(|mismatch| format!("; {mismatch}"))
+                            })
+                            .unwrap_or_default();
                             format!(
                                 "; left side evaluated to {rendered_left}, right side evaluated to {rendered_right}{unseparated}"
                             )

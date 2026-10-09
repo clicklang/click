@@ -5058,7 +5058,7 @@ impl SharedCMemory {
     /// Producer-recorded identity of unchanged program bytes, for graph load
     /// congruence only. This is trusted-kernel metadata, not snapshot equality
     /// or access authority. It is fixed at first interning and looked up in O(1).
-    pub(in crate::kernel) fn read_identity(&self) -> (u32, u32) {
+    pub(crate) fn read_identity(&self) -> (u32, u32) {
         C_MEMORY_ARENA.with(|arena| {
             let arena = arena.borrow();
             if arena.0 != self.arena {
