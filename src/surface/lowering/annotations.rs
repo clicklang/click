@@ -5832,6 +5832,9 @@ impl AnnotationLowerer<'_> {
         segment: &ContractSegment,
         environment: &SpecElaborationContext,
     ) -> u32 {
+        if let Some(width) = segment.field_element_width() {
+            return width;
+        }
         self.c_expression_array_element_type(&segment.base, environment)
             .unwrap_or(CType::Int32)
             .byte_width()
