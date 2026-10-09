@@ -268,7 +268,14 @@ source and does not bind the parameters a second time. Interface clauses still
 require checked resources and facts from both arms. Positive pointer equalities
 may normalize through the arm's maintained equality graph when a logical read
 has a different spelling; ownership, viewability, and other safety obligations
-still need their own checked evidence.
+still need their own checked evidence. Concrete interface clauses are lowered
+in that exact arm's maintained fact context, so a wide read through a model
+pointer can recover the same cached value used by the arm's explicit proof.
+Non-exact condition and read-validity reasoning stays deferred during lowering.
+Every lowered fact and safety obligation is still checked separately; lowering
+grants no ownership or read validity. The abstract successor retains state-only
+lowering so its propositions match the exact exported facts. Both paths share
+persistent contexts without rebuilding or scanning their premises.
 
 An interface `branch ensuring` may join different heap lifetimes when the
 interface includes an owned, arm-sensitive resource that represents the
