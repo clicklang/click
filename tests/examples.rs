@@ -1965,3 +1965,27 @@ fn rbtree_erase_color_outer_right_requires_parent_blackening() {
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_RED);",
     );
 }
+
+#[test]
+#[ignore = "nightly: parent-update mutation verifies a whole sidecar"]
+fn rbtree_set_parent_preserves_color() {
+    erase_source_refuses_replacement(
+        "rbtree_set_parent.click",
+        "rbtree.h",
+        "rb->__rb_parent_color = rb_color(rb) | (unsigned long)p;",
+        "rb->__rb_parent_color = (unsigned long)p;",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: parent-update mutation verifies a whole sidecar"]
+fn rbtree_set_parent_requires_new_parent() {
+    erase_source_refuses_replacement(
+        "rbtree_set_parent.click",
+        "rbtree.h",
+        "rb->__rb_parent_color = rb_color(rb) | (unsigned long)p;",
+        "rb->__rb_parent_color = rb_color(rb) | (unsigned long)rb;",
+        1,
+    );
+}

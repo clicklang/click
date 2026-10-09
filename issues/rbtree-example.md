@@ -1213,7 +1213,10 @@ parent-consistent whole-root model with unchanged in-order contents. Structural
 context descent checks every continuing back edge. All 39 audit sites and
 four mutation checks pass. `rbtree_rotate_set_parents.click` verifies the
 shared incoming-link and packed-word updates for rotations at any tree
-position, with 35 passing audit sites. `rbtree_erase_color_outer_left.click`
+position, with 35 passing audit sites. `rbtree_set_parent.click` verifies
+reparenting a nonempty subtree of either color while preserving its children,
+with 11 passing audit sites and two parent/color mutations.
+`rbtree_erase_color_outer_left.click`
 now verifies the case-4 left rotation for an empty deficit, empty near child,
 and red far leaf under arbitrary outer contexts and either parent color. It
 returns the exact balanced, parent-consistent root with unchanged in-order
