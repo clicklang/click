@@ -1773,7 +1773,7 @@ fn charon_adler2_general_compute_proves_original_body() {
 #[ignore = "nightly: general computation authority, seeds and final bounds"]
 fn charon_adler2_general_compute_rejects_invalid_contracts() {
     for (before, after) in [
-        (" views bytes[0..(int32)(uint32)bytes_len];", ""),
+        (" views bytes[0..bytes_len];", ""),
         (" requires (uint32)self->a <= 65520u32;", ""),
         (" requires (uint32)self->b <= 65520u32;", ""),
         ("ensures self->a < 65521;", "ensures self->a < 1;"),
