@@ -6109,6 +6109,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     let proof_destination = Pointer::symbolic(Variable(873_001));
     register_block_alignment(&proof_destination.block, 8);
     let proof_state = CState::new()
+        .with_population_creation_tracking()
         .with_memory(CMemory::new().with_uninitialized_block(proof_destination.block.clone(), 16))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(
@@ -6287,7 +6288,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         callee = name;
     }
     let paths = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         c_seq(
             c_allocate_aggregate_destination("node", layout),
             c_seq(
@@ -6411,6 +6412,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     let at = Pointer::symbolic(Variable(873_011));
     register_block_alignment(&at.block, 8);
     let entry = CState::new()
+        .with_population_creation_tracking()
         .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), 16))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(at.clone(), 0u32.into(), 4u32.into())),
@@ -6495,7 +6497,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         .with_function(factory)
         .with_verified_function_rule(rule);
     let paths = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         c_seq(
             c_allocate_aggregate_destination("node", layout),
             c_seq(

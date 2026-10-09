@@ -56,7 +56,7 @@ fn allocate_destination(state: &CState, name: &str) -> CState {
 #[test]
 fn raw_construction_allocation_owns_storage_without_initializing_values() {
     let _session = crate::kernel::VerificationSession::enter();
-    let state = allocate_destination(&CState::new(), "node");
+    let state = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
     let destination = state.locals.slot("node").unwrap().clone();
     assert!(state.memory.has_block(&destination.block));
     assert!(!state.memory.has_initialized_bytes_at(&destination, 16));
@@ -145,7 +145,7 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
     };
     let middle = forward("forward_node_result", "construct_node");
     let outer = forward("outer_node_result", "forward_node_result");
-    let caller = allocate_destination(&CState::new(), "node");
+    let caller = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
     let destination = caller.locals.slot("node").unwrap().clone();
     let caller = caller.with_aggregate_return_destination(destination.clone(), node_layout());
     let paths = execute_c_function_call_paths(
@@ -188,7 +188,7 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
 #[test]
 fn construction_return_rejects_missing_binding_authority_and_partial_values() {
     let _session = crate::kernel::VerificationSession::enter();
-    let raw = allocate_destination(&CState::new(), "node");
+    let raw = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
     let destination = raw.locals.slot("node").unwrap().clone();
     let selected = raw
         .clone()
@@ -288,7 +288,7 @@ fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
         )
         .with_construction_return(node_layout())
         .with_resource_summary(vec![storage.clone()], vec![storage.clone()]);
-        let raw = allocate_destination(&CState::new(), "node");
+        let raw = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
         let at = raw.locals.slot("node").unwrap().clone();
         let selected = raw.with_aggregate_return_destination(at.clone(), node_layout());
         let paths = execute_c_function_call_paths(
@@ -327,7 +327,8 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
     let mut work_by_size = Vec::new();
     for count in [16, 128, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut caller = allocate_destination(&CState::new(), "node");
+        let mut caller =
+            allocate_destination(&CState::new().with_population_creation_tracking(), "node");
         let at = caller.locals.slot("node").unwrap().clone();
         caller = caller.with_aggregate_return_destination(at, node_layout());
         for index in 0..count {
@@ -343,8 +344,12 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
         }
         let function = construction_function("node", node_construction_body());
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            construction_return::bind(&caller, function.contract_interface(), &mut CState::new())
-                .unwrap();
+            construction_return::bind(
+                &caller,
+                function.contract_interface(),
+                &mut CState::new().with_population_creation_tracking(),
+            )
+            .unwrap();
         });
         work_by_size.push(work);
     }
@@ -409,7 +414,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             c_copy_aggregate(c_variable("node"), c_variable("temporary"), node_layout()),
         ]);
         let paths = execute_c_statement_paths(
-            &CState::new(),
+            &CState::new().with_population_creation_tracking(),
             &prefix,
             &PureFactContext::new(),
             &environment,
@@ -524,15 +529,25 @@ fn construction_completion_work_scales_with_value_fields() {
             );
             let at = Pointer::symbolic(Variable(873_004));
             register_block_alignment(&at.block, 8);
-            let caller = CState::new()
-                .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
-                .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own_memory(CMemoryRange::new(
-                        at.clone(),
+            // Native constructor contracts hold separate field owners; include
+            // their growing index, rather than only one whole-object owner.
+            let resources = if parameter {
+                (0..count).fold(ResourceContext::new(), |resources, index| {
+                    resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                        at.offset_by_bytes(index * 8),
                         0u32.into(),
-                        (count * 2).into(),
-                    )),
+                        1u32.into(),
+                    )))
+                })
+            } else {
+                ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+                    CMemoryRange::new(at.clone(), 0u32.into(), (count * 2).into()),
                 ))
+            };
+            let caller = CState::new()
+                .with_population_creation_tracking()
+                .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
+                .with_resource_context(resources)
                 .with_aggregate_return_destination(at.clone(), layout.clone());
             let function = if parameter {
                 c_function(
@@ -584,8 +599,9 @@ fn construction_completion_work_scales_with_value_fields() {
 fn construction_destination_survives_substitution_and_requires_agreement_at_join() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(873_003);
-    let state =
-        CState::new().with_aggregate_return_destination(Pointer::symbolic(variable), node_layout());
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_aggregate_return_destination(Pointer::symbolic(variable), node_layout());
     let mut variables = BTreeSet::new();
     collect_c_state_bitvector_variables(&state, &mut variables);
     assert!(variables.contains(&variable));
@@ -649,7 +665,10 @@ fn supplied_constructor_destination_survives_two_procedure_boundaries() {
             vec![c_variable("destination"), c_variable("input")],
         ),
     );
-    let caller = allocate_destination(&CState::new(), "caller_node");
+    let caller = allocate_destination(
+        &CState::new().with_population_creation_tracking(),
+        "caller_node",
+    );
     let destination = caller.locals.slot("caller_node").unwrap().clone();
     assert!(!caller.memory.has_initialized_bytes_at(&destination, 16));
     let paths = execute_c_function_call_paths(
@@ -702,7 +721,9 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
             source.offset_by_bytes(8),
             CValue::Int32(Bitvector32Term::Constant(37)),
         );
-    let mut state = CState::new().with_memory(memory);
+    let mut state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(memory);
     let function = copy_function();
     let first = complete_aggregate_return(
         &mut state,
@@ -755,7 +776,9 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
                 source.offset_by_bytes(8),
                 CValue::Int32(Bitvector32Term::Constant(23)),
             );
-        let mut state = CState::new().with_memory(memory);
+        let mut state = CState::new()
+            .with_population_creation_tracking()
+            .with_memory(memory);
         state.locals.set_aggregate_object_at(
             "descriptor".to_string(),
             node_layout(),
@@ -805,8 +828,9 @@ fn aggregate_copy_symbolic_result_has_a_fresh_identity_per_call() {
 fn aggregate_copy_return_refuses_partial_initialization_without_changing_state() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = CMemory::frame_local_pointer(100, "partial");
-    let mut state =
-        CState::new().with_memory(CMemory::new().with_block(source.block.clone(), 16).store(
+    let mut state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(CMemory::new().with_block(source.block.clone(), 16).store(
             source.clone(),
             CValue::typed_pointer(source.offset_by_bytes(8), CType::Int32Pointer),
         ));
@@ -830,6 +854,7 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Pointer::symbolic(Variable(870_003));
     let mut state = CState::new()
+        .with_population_creation_tracking()
         .with_memory(CMemory::new().with_uninitialized_block(source.block.clone(), 16));
     let value = CValue::typed_pointer(source.clone(), CType::VoidPointer);
     assert_eq!(
@@ -874,11 +899,16 @@ fn symbolic_construction_storage_is_unreadable_until_written() {
             } else {
                 raw.clone()
             };
-            let state = CState::new().with_memory(memory).with_resource_context(
-                ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                    CMemoryRange::new(source.clone(), 0u32.into(), 1u32.into()),
-                )),
-            );
+            let state = CState::new()
+                .with_population_creation_tracking()
+                .with_memory(memory)
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own_memory(CMemoryRange::new(
+                        source.clone(),
+                        0u32.into(),
+                        1u32.into(),
+                    )),
+                ));
             let paths = execute_c_statement_paths(
                 &state,
                 &c_return(c_typed_load(c_pointer_value(source.clone()), CType::Int32)),
@@ -933,11 +963,16 @@ fn symbolic_construction_storage_respects_known_aliases() {
                         None,
                     );
                 }
-                let state = CState::new().with_memory(memory).with_resource_context(
-                    ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                        CMemoryRange::new(source.clone(), 0u32.into(), 1u32.into()),
-                    )),
-                );
+                let state = CState::new()
+                    .with_population_creation_tracking()
+                    .with_memory(memory)
+                    .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                        CResourceFact::own_memory(CMemoryRange::new(
+                            source.clone(),
+                            0u32.into(),
+                            1u32.into(),
+                        )),
+                    ));
                 let paths = execute_c_statement_paths(
                     &state,
                     &c_return(c_typed_load(c_pointer_value(read.clone()), CType::Int32)),
@@ -1186,7 +1221,8 @@ fn construction_parameter_completion_checks_original_storage() {
         );
         let function = destination_procedure("initialize_node", body)
             .with_construction_parameter(0, node_layout());
-        let caller = allocate_destination(&CState::new(), "node");
+        let caller =
+            allocate_destination(&CState::new().with_population_creation_tracking(), "node");
         let at = caller.locals.slot("node").unwrap().clone();
         let paths = execute_c_function_call_paths(
             &caller,
@@ -1240,7 +1276,10 @@ fn construction_parameter_completion_checks_original_storage() {
         ),
     )
     .with_construction_parameter(0, node_layout());
-    let caller = allocate_destination(&allocate_destination(&CState::new(), "node"), "other");
+    let caller = allocate_destination(
+        &allocate_destination(&CState::new().with_population_creation_tracking(), "node"),
+        "other",
+    );
     let at = caller.locals.slot("node").unwrap().clone();
     let other = caller.locals.slot("other").unwrap().clone();
     let memory = caller.memory.clone().with_initialized_object(&other, 16);
