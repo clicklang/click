@@ -620,9 +620,6 @@ mod loop_rule_tests {
         candidate.recursive = true;
         invalid.push(candidate);
         let mut candidate = definition.clone();
-        candidate.counted_population = true;
-        invalid.push(candidate);
-        let mut candidate = definition.clone();
         candidate.facts.push(SpecProposition::Comparison {
             left: SpecExpression::Value(int32(0)),
             operator: CComparisonOperator::Equal,

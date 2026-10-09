@@ -992,14 +992,13 @@ fn prepare_function_claim_path(
         function.composite_resource_definitions(),
         &entry_state,
         &assumptions,
-        false,
     ) else {
         return Err("the counted population facts cannot be evaluated"
             .to_string()
             .into());
     };
     for fact in population_facts {
-        assumptions = assumptions.assume_proposition(fact.proposition);
+        assumptions = assumptions.assume_proposition(fact);
     }
     let deferred_body_outcome = if deferred_contract_exit {
         match outcome {

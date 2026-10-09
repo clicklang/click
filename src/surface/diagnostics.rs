@@ -1383,7 +1383,6 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::LiveAllocationLeak {
             allocation,
             resource,
-            hint,
         } => {
             let mut message = format!(
                 "live allocation obligation was neither returned nor freed: `{}`",
@@ -1392,10 +1391,6 @@ pub(super) fn describe_runtime_error(
             if let Some(resource) = resource {
                 message.push_str("; held by ");
                 message.push_str(&describe_resource_fact(resource, parameters, arguments));
-            }
-            if let Some(hint) = hint {
-                message.push(' ');
-                message.push_str(hint);
             }
             message
         }

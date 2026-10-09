@@ -2307,26 +2307,10 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         let crate::kernel::CResource::Composite { arguments, .. } = selected.resource() else {
             unreachable!()
         };
-        if definition.is_counted_population()
-            && selected.is_own()
-            && !selected.has_proven_positive_quantity(assumptions)
-        {
-            return Err("population body access requires a positive owned quantity".into());
-        }
-        let population_residual = definition
-            .is_counted_population()
-            .then(|| {
-                before_state
-                    .resources()
-                    .clone()
-                    .without_fact_incrementally(selected, assumptions)
-            })
-            .flatten();
-        if population_residual.is_none()
-            && before_state
-                .resources()
-                .directly_supporting_fact(selected, assumptions)
-                .is_none()
+        if before_state
+            .resources()
+            .directly_supporting_fact(selected, assumptions)
+            .is_none()
             && after_state
                 .resources()
                 .directly_supporting_fact(selected, after_facts.assumptions())
@@ -2335,21 +2319,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             return Err(
                 "the rewritten composite is absent from both resource representations".to_string(),
             );
-        }
-        // A destructive population unfold needs a counted total to recover the
-        // body from the entire owned population. Authority populations carry
-        // no such total, so the unfold is refused; an `open` retains
-        // membership and has its own ordered restoration scope instead.
-        if definition.is_counted_population()
-            && selected.is_own()
-            && population_residual.is_some()
-            && before_state.population_access == after_state.population_access
-            && after_state
-                .resources()
-                .directly_supporting_fact(selected, assumptions)
-                .is_none()
-        {
-            return Err("population cleanup requires an active population".into());
         }
         let access_key = (name.clone(), arguments.clone());
         if !before_state
@@ -2379,12 +2348,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             );
         }
         let expansion_matches = |folded: &CState, exposed: &CState| {
-            if definition.is_counted_population()
-                && selected.is_own()
-                && std::ptr::eq(folded, before_state)
-            {
-                return false;
-            }
             let Some(authority) = folded
                 .resources()
                 .directly_supporting_fact(selected, assumptions)
@@ -2417,12 +2380,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             )
         };
         let open_borrow_matches = |folded: &CState, opened: &CState| {
-            if definition.is_counted_population()
-                && selected.is_own()
-                && before_state.population_access == after_state.population_access
-            {
-                return false;
-            }
             let Some(authority) = folded
                 .resources()
                 .directly_supporting_fact(selected, assumptions)
@@ -2487,41 +2444,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         let child_context =
             ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
-        // Opening a closed population exposes its invariant at the tracked
-        // current total, which can now differ from its entry observation after
-        // a checked consuming close. Ordinary composite projection alone has
-        // no population ledger with which to interpret that Count.
-        if definition.is_counted_population()
-            && before_state.population_body_is_open(name, arguments)
-                != after_state.population_body_is_open(name, arguments)
-        {
-            let population_facts =
-                crate::kernel::functions::evaluate_resource_population_fact_propositions(
-                    &temporary,
-                    std::slice::from_ref(&definition),
-                    after_state,
-                    assumptions,
-                    true,
-                )
-                .ok_or("cannot expose the population invariant at its current count")?;
-            for fact in population_facts {
-                if before_state.population_body_is_open(name, arguments)
-                    && fact.is_body_fact
-                    && !crate::kernel::PureFactContext::settles_exactly(
-                        assumptions,
-                        &fact.proposition,
-                    )
-                {
-                    return Err(format!(
-                        "Requires {} at population close",
-                        fact.source_fact
-                            .as_deref()
-                            .unwrap_or("the population invariant")
-                    ));
-                }
-                allowed.push(fact.proposition);
-            }
-        }
         allowed.push(Proposition::CResourceComposition(child_context.clone()));
         allowed.extend(
             after_state
