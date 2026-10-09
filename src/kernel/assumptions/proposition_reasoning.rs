@@ -171,11 +171,11 @@ pub(crate) fn finite_forall_goal_instances(
     ) {
         if values.len() == variables.len() {
             let mut instantiated = body.clone();
-            for (variable, value) in variables.iter().zip(values.iter()) {
+            for ((variable, value), range) in variables.iter().zip(values.iter()).zip(ranges) {
                 instantiated = substitute_bitvector_variable_in_proposition(
                     &instantiated,
                     *variable,
-                    &signed_i64_bitvector_constant(*value),
+                    &range.constant(*value),
                 );
             }
             instances.push((values.clone(), instantiated));
@@ -2582,11 +2582,11 @@ impl PureFactContext {
     ) {
         if values.len() == variables.len() {
             let mut instantiated = body.clone();
-            for (variable, value) in variables.iter().zip(values.iter()) {
+            for ((variable, value), range) in variables.iter().zip(values.iter()).zip(ranges) {
                 instantiated = substitute_bitvector_variable_in_proposition(
                     &instantiated,
                     *variable,
-                    &signed_i64_bitvector_constant(*value),
+                    &range.constant(*value),
                 );
             }
             instantiations.push(instantiated);

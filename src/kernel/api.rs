@@ -3971,7 +3971,7 @@ pub fn forall_instantiation_candidate_values(
     {
         crate::instrumentation::record_deterministic_work(width);
         for value in range.lower..=range.upper {
-            candidates.insert(signed_i64_bitvector_constant(value));
+            candidates.insert(range.constant(value));
         }
     }
     candidates.into_iter().collect()
