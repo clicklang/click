@@ -921,6 +921,10 @@ impl<'a> Proof<'a> {
                 premises,
             } => self.apply_function_unfold(application, Some(premises)),
             ProofStep::UnfoldResource(resource) => {
+                // Resolve proof bindings before either the execution or
+                // outcome path interprets ordinary resource arguments.
+                let resource =
+                    &self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
                 if self.focused_outcome_data().is_some() {
                     self.apply_outcome_resource_unfold(resource)
                 } else {
@@ -928,6 +932,10 @@ impl<'a> Proof<'a> {
                 }
             }
             ProofStep::FoldResource(resource) => {
+                // Resolve proof bindings before either the execution or
+                // outcome path interprets ordinary resource arguments.
+                let resource =
+                    &self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
                 if self.focused_outcome_data().is_some() {
                     self.apply_outcome_resource_fold(resource)
                 } else {
