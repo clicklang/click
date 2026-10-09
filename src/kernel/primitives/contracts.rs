@@ -2678,6 +2678,7 @@ impl CExecutionEnvironment {
         mut self,
         definitions: BTreeMap<String, CCompositeResourceDefinition>,
     ) -> Self {
+        self.modeled_mutex_definition_list = definitions.values().cloned().collect();
         self.modeled_mutex_definitions = std::sync::Arc::new(definitions);
         self
     }

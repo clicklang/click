@@ -5958,6 +5958,7 @@ fn execute_verified_function_applications_with_suspension(
                 helper.guard.as_ref(),
                 payload,
                 definition,
+                &environment.modeled_mutex_definition_list,
                 &effective_assumptions,
                 budget,
             ) {

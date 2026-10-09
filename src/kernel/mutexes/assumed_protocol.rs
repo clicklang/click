@@ -149,8 +149,7 @@ impl AssumedMutexProtocol {
             epoch: Some(fresh_acquisition_epoch()?),
             mutex: self.mutex().clone(),
         }));
-        let (memory, payload) =
-            self.acquire_payload(state, assumptions, definition, output, budget)?;
+        let (memory, payload) = self.acquire_payload(state, definition, output, budget)?;
         let resources = state
             .resources
             .clone()
@@ -195,7 +194,6 @@ impl AssumedMutexProtocol {
     fn acquire_payload(
         &self,
         state: &CState,
-        assumptions: &PureFactContext,
         definition: Option<&crate::kernel::CCompositeResourceDefinition>,
         output: Option<crate::kernel::Variable>,
         budget: &mut crate::kernel::ExecutionBudget,
@@ -215,7 +213,13 @@ impl AssumedMutexProtocol {
             }
             return Ok((state.memory.clone(), None));
         };
-        fresh_protected_payload(state, assumptions, description, definition, output, budget)
+        // A release forgets everything the thread stops owning
+        // (`forget_released_protected_memory`), so this thread holds no
+        // observation of the protected memory here and acquisition need not
+        // change memory. Its footprint may then depend on memory and reach
+        // named children.
+        let instance = mint_protected_instance(description, definition, output, budget)?;
+        Ok((state.memory.clone(), Some(instance)))
     }
 
     pub(super) fn release(
@@ -224,7 +228,14 @@ impl AssumedMutexProtocol {
         guard: &AssumedMutexGuard,
         assumptions: &PureFactContext,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
-        self.release_with_payload(state, guard, assumptions, None)
+        self.release_with_payload(
+            state,
+            guard,
+            assumptions,
+            None,
+            &[],
+            &mut crate::kernel::ExecutionBudget::beside_live_state(),
+        )
     }
 
     pub(super) fn release_with_payload(
@@ -233,6 +244,8 @@ impl AssumedMutexProtocol {
         guard: &AssumedMutexGuard,
         assumptions: &PureFactContext,
         selected: Option<crate::kernel::Variable>,
+        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
         if guard.protocol != *self {
             return Err(MutexTransitionError::MissingGuard(self.mutex().clone()));
@@ -285,16 +298,28 @@ impl AssumedMutexProtocol {
             .clone()
             .without_fact_delaying_normalization(&guard.fact, assumptions)
             .ok_or_else(|| MutexTransitionError::MissingGuard(self.mutex().clone()))?;
-        let resources = if let Some(restored) = restored {
+        let resources = if let Some(restored) = &restored {
             resources
-                .without_fact_delaying_normalization(&restored, assumptions)
-                .ok_or_else(|| MutexTransitionError::MissingInvariant(restored))?
+                .without_fact_delaying_normalization(restored, assumptions)
+                .ok_or_else(|| MutexTransitionError::MissingInvariant(restored.clone()))?
         } else {
             resources
+        };
+        let memory = match &restored {
+            Some(released) => forget_released_protected_memory(
+                state,
+                released,
+                &resources,
+                definitions,
+                assumptions,
+                budget,
+            )?,
+            None => state.memory.clone(),
         };
         let evidence = self.evidence(loans, transition, &next)?;
         let mut state = state.clone();
         state.resources = resources;
+        state.memory = memory;
         state.loan_ledger = Some(next);
         Ok(AssumedMutexTransition { state, evidence })
     }
@@ -392,6 +417,7 @@ pub(in crate::kernel) fn opaque_runtime_transition(
         acquire,
         assumptions,
         None,
+        &[],
         None,
         &mut crate::kernel::ExecutionBudget::beside_live_state(),
     )
@@ -403,6 +429,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
     acquire: bool,
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    definitions: &[crate::kernel::CCompositeResourceDefinition],
     payload_identity: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
@@ -412,6 +439,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
         acquire,
         assumptions,
         definition,
+        definitions,
         payload_identity,
         budget,
         None,
@@ -424,6 +452,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
     acquire: bool,
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    definitions: &[crate::kernel::CCompositeResourceDefinition],
     payload_identity: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
     selected_use: Option<&CResourceFact>,
@@ -509,10 +538,14 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
         if selected_use.is_some_and(|selected| selected != &guard.protocol.use_fact) {
             return Err("guard lifetime belongs to a different selected mutex_use".into());
         }
-        let mut transition =
-            guard
-                .protocol
-                .release_with_payload(state, guard, assumptions, payload_identity)?;
+        let mut transition = guard.protocol.release_with_payload(
+            state,
+            guard,
+            assumptions,
+            payload_identity,
+            definitions,
+            budget,
+        )?;
         let receipts = held.receipts.without_key(mutex);
         let holder = guard.protocol.holder;
         let count = held
@@ -536,20 +569,14 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
     }
 }
 
-pub(super) fn fresh_protected_payload(
-    state: &CState,
-    assumptions: &PureFactContext,
+/// A fresh instance of the protected resource with arbitrary fields, as an
+/// acquisition hands it out. Memory is not changed here.
+fn mint_protected_instance(
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CCompositeResourceDefinition>,
     output: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
-) -> Result<
-    (
-        crate::kernel::CMemory,
-        Option<crate::kernel::ResourceInstance>,
-    ),
-    MutexTransitionError,
-> {
+) -> Result<crate::kernel::ResourceInstance, MutexTransitionError> {
     use crate::kernel::{ResourceInstance, functions::ModelFieldMintSite, model_fields::ModelMint};
     let definition =
         definition.ok_or("protected mutex acquisition requires its resource declaration")?;
@@ -559,11 +586,10 @@ pub(super) fn fresh_protected_payload(
         || definition.matched.is_some()
         || definition.condition.is_some()
         || !definition.witnesses.is_empty()
-        || !definition.children.is_empty()
         || !definition.resource_parameters().is_empty()
         || !description.resource_arguments().is_empty()
     {
-        return Err("protected mutex acquisition requires an unconditional leaf resource".into());
+        return Err("protected mutex acquisition requires an unconditional resource".into());
     }
     let identity = match output {
         Some(identity) => identity,
@@ -582,14 +608,79 @@ pub(super) fn fresh_protected_payload(
         budget,
     )
     .map_err(|_| "protected resource model allocation exceeded its budget")?;
-    let instance = ResourceInstance::new(
+    Ok(ResourceInstance::new(
         identity,
         description.family().into(),
         description.arguments().iter().cloned().collect(),
         description.schema().clone(),
         fields,
     )
-    .ok_or("protected mutex type requires an exclusive resource")?;
+    .ok_or("protected mutex type requires an exclusive resource")?)
+}
+
+/// Memory after a thread releases `released` to its mutex. Other threads may
+/// change that memory before this one acquires it again, so every
+/// observation inside its footprint goes. The footprint is derived here,
+/// while the thread still owns the resource and its memory names the
+/// footprint exactly, rather than at the next acquisition, when the cached
+/// values that would name it may be stale. Because every release forgets
+/// this way, acquisition itself changes no memory.
+///
+/// A footprint the derivation cannot name forgets every cell the thread does
+/// not keep owning in `residual`.
+fn forget_released_protected_memory(
+    state: &CState,
+    released: &CResourceFact,
+    residual: &crate::kernel::ResourceContext,
+    definitions: &[crate::kernel::CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    budget: &mut crate::kernel::ExecutionBudget,
+) -> Result<crate::kernel::CMemory, MutexTransitionError> {
+    let ranges = crate::kernel::functions::checked_owned_memory_ranges(
+        released,
+        definitions,
+        state,
+        assumptions,
+    )
+    .ok_or("protected mutex resource has no checked memory footprint")?;
+    if ranges.is_empty() {
+        return Ok(state.memory.clone());
+    }
+    let kept = ranges
+        .iter()
+        .any(crate::kernel::CMemoryRange::is_unnamed_footprint)
+        .then(|| {
+            crate::kernel::functions::call_kept_ownership(residual, definitions, state, assumptions)
+        });
+    let variable = budget
+        .allocate_kernel_variable()
+        .map_err(|_| "protected memory release exceeded its budget")?;
+    Ok(state
+        .memory
+        .clone()
+        .with_call_memory_havoc(variable, &ranges, assumptions, kept.as_ref()))
+}
+
+pub(super) fn fresh_protected_payload(
+    state: &CState,
+    assumptions: &PureFactContext,
+    description: &crate::kernel::ResourceDescription,
+    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    output: Option<crate::kernel::Variable>,
+    budget: &mut crate::kernel::ExecutionBudget,
+) -> Result<
+    (
+        crate::kernel::CMemory,
+        Option<crate::kernel::ResourceInstance>,
+    ),
+    MutexTransitionError,
+> {
+    use crate::kernel::{ResourceInstance, functions::ModelFieldMintSite, model_fields::ModelMint};
+    if definition.is_some_and(|definition| !definition.children.is_empty()) {
+        return Err("protected mutex acquisition requires an unconditional leaf resource".into());
+    }
+    let instance = mint_protected_instance(description, definition, output, budget)?;
+    let definition = definition.expect("minting checked the declaration");
     let fact = CResourceFact::own(CResource::Instance(instance.clone()));
     let ranges = crate::kernel::functions::checked_owned_memory_ranges(
         &fact,
@@ -784,6 +875,8 @@ mod tests {
                 &guard,
                 &assumptions,
                 Some(replacement.identity()),
+                std::slice::from_ref(&definition),
+                &mut budget,
             )
             .unwrap();
         assert!(
@@ -807,11 +900,25 @@ mod tests {
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(wrong.clone())));
         assert!(
             protocol
-                .release_with_payload(&wrong_state, &guard, &assumptions, Some(wrong.identity()))
+                .release_with_payload(
+                    &wrong_state,
+                    &guard,
+                    &assumptions,
+                    Some(wrong.identity()),
+                    std::slice::from_ref(&definition),
+                    &mut budget,
+                )
                 .is_err()
         );
         let released = protocol
-            .release(&first.state, &guard, &assumptions)
+            .release_with_payload(
+                &first.state,
+                &guard,
+                &assumptions,
+                None,
+                std::slice::from_ref(&definition),
+                &mut budget,
+            )
             .unwrap();
         assert!(
             released

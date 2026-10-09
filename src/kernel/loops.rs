@@ -1274,6 +1274,7 @@ fn execute_modeled_pthread_mutex_paths(
                         acquiring,
                         &current,
                         definition,
+                        &environment.modeled_mutex_definition_list,
                         selected_role(MutexResourceRole::State),
                         budget,
                     )

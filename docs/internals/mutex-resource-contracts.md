@@ -320,6 +320,19 @@ Typed permissions also identify the protected resource with
 `mutex_use(mu, counter_state(p))`. Their runtime acquisition returns a fresh
 state, and release accepts a restored replacement instance of that same type.
 
+Unlocking forgets the memory the released instance owns, so that a thread
+caches nothing about protected memory while it does not hold it. The
+footprint is derived at release, while the thread still owns the instance and
+its memory names the footprint exactly; a footprint the derivation cannot name
+forgets every cell the thread does not keep owning. Acquisition then changes
+no memory: it mints the fresh instance, and its unfolding names the protected
+memory again. The protected resource may own named children, and its
+footprint may depend on memory, such as a vector reached through a pointer
+cell. Field schemas must not be matched, conditional, recursive or
+witness-bearing. `mdtests/mutex_protected_named_child.md` acquires a named
+child, and `mdtests/mutex_protected_pointer_footprint_stale_read_rejected.md`
+refuses a value read through a pointer in an earlier critical section.
+
 ### Acquiring and releasing helpers
 
 A verified helper can expose those transfers in an ordinary contract:
@@ -368,10 +381,10 @@ produced or consumed guard, and, for typed use, one matching protected-state
 transfer. Viewed or conditional resource clauses and additional mutex protocol
 transfers are outside this subset. Empty-mutex helpers can use unary
 `mutex_use(mu)` without a state clause; they cannot stand in for a typed
-transfer that must restore exposed protected state. The same protected-resource
-restrictions as runtime typed use apply: unconditional leaf resources with
-fixed memory footprints. These transfers are synchronous and stay on the same
-thread. They do not permit moving pthread guard ownership to a worker.
+transfer that must restore exposed protected state. Helper transfers accept
+only unconditional leaf resources with fixed memory footprints; runtime typed
+use also accepts named children and memory-dependent footprints. These
+transfers are synchronous and stay on the same thread. They do not permit moving pthread guard ownership to a worker.
 
 A worker created with `pthread_create` under `runtime "modeled-pthread"`
 receives its preserved `mutex_use` the same way, as a loan split from the
