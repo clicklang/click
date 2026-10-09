@@ -380,6 +380,10 @@ impl LoweringContext<'_> {
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
+                (CppType::Integer { .. }, CppInitializer::Uninitialized) => Ok(c_declare(
+                    local.name.clone(),
+                    cpp_scalar_kernel_type(&local.value_type)?,
+                )),
                 (CppType::LvalueReference { pointee }, CppInitializer::Value { value }) => {
                     let address = self.lower_expression(value)?;
                     let carrier = reference_carrier_name(&local.name);

@@ -5089,6 +5089,10 @@ impl CHeapMemory {
 pub struct CBlock {
     pub(super) size: Bitvector32Term,
     pub(super) read_only: bool,
+    /// A complete automatic scalar's declared type, independent of whether
+    /// its representation has been initialized. Untyped blocks and arrays
+    /// carry no scalar declaration.
+    pub(super) declared_scalar_type: Option<CType>,
 }
 
 /// An interned, immutable memory snapshot for embedding inside terms.

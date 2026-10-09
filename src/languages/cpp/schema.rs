@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 52;
+pub(crate) const EXPORT_SCHEMA: u32 = 53;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -810,6 +810,8 @@ fn validate_scalar_conversions(
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppInitializer {
+    /// Default-initialize an automatic scalar without inventing a value.
+    Uninitialized,
     /// Initialize a new object from an admitted construction-return call.
     ConstructionCall {
         callee: CppFunctionReference,
@@ -1645,11 +1647,17 @@ impl CppRecord {
                 return Err(format!("C++ record `{}` has a duplicate field", self.name));
             }
             let (size, alignment) = match &field.value_type {
-                CppType::Integer { .. } => match Scalar::mutable_kind(&field.value_type) {
-                    Some(ScalarKind::Int32 | ScalarKind::UInt32) => (4, 4),
-                    Some(ScalarKind::Int64 | ScalarKind::UInt64) => (8, 8),
-                    _ => return Err("record field requires a mutable 32/64-bit integer".into()),
-                },
+                CppType::Integer { .. } => {
+                    match Scalar::mutable_kind(&field.value_type) {
+                        Some(ScalarKind::UInt8) => (1, 1),
+                        Some(ScalarKind::Int32 | ScalarKind::UInt32) => (4, 4),
+                        Some(ScalarKind::Int64 | ScalarKind::UInt64) => (8, 8),
+                        _ => return Err(
+                            "record field requires a mutable 32/64-bit integer or unsigned byte"
+                                .into(),
+                        ),
+                    }
+                }
                 CppType::Pointer { pointee } => {
                     require_int32(pointee, false, "record pointer field")?;
                     (8, 8)
@@ -2792,6 +2800,9 @@ impl CppInitializer {
             _ => {}
         }
         match (self, local_type) {
+            (Self::Uninitialized, CppType::Integer { .. }) => {
+                require_scalar_integer(local_type, "uninitialized automatic local")
+            }
             (
                 Self::ConstructionCall {
                     callee,
@@ -4874,6 +4885,7 @@ impl CppInitializer {
         referenced_constants: &mut BTreeSet<String>,
     ) -> Result<(), String> {
         match self {
+            Self::Uninitialized => Ok(()),
             Self::Value { value } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
@@ -5156,7 +5168,7 @@ fn require_scalar_integer(value: &CppType, label: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{label} requires a mutable signed or unsigned 32/64/128-bit integer"
+            "{label} requires a mutable signed or unsigned 32/64/128-bit integer or unsigned byte"
         ))
     }
 }

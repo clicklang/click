@@ -440,12 +440,22 @@ arguments still need support.
 
 The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
 32/64-bit integer locals declared directly
-in the function body. Each local requires an initializer, which may be an
-already-supported integer expression or a supported direct call. Local
+in the function body. An integer local may omit its initializer: declaration
+creates uninitialized storage, and a read is refused until execution establishes
+initialization. Explicit initialization may use an already-supported integer
+expression or a supported direct call. Reference and record locals retain their
+initialization requirements. Local
 declaration identity comes from Clang; direct-call initialization lowers to the
 kernel's ordinary `Declare` and `CallAssign` statements, while later reads and
 assignments use the existing scalar rules. This makes call results usable
 without treating a compiler-resolved C++ expression as C source text.
+
+Native `unsigned char` values use `uint8` contracts, preserving Clang's
+resolved promotions and modulo narrowing conversions. Parameters, returns,
+call captures, automatic locals and byte fields share the existing scalar
+lowering. Byte fields retain their one-byte layout and independent authority.
+This admission does not include signed/plain character types, `char8_t`,
+byte pointers or enums; nominal `std::byte` identity checking is a later step.
 
 The `pointer` fixture distinguishes a mutable `int*` parameter from an `int&`
 in the Clang artifact. A caller may take the address of its mutable reference
@@ -498,7 +508,7 @@ trivial copy assignment and an exact nominal RHS temporary lasting for the full
 expression. Click constructs into distinct raw RHS storage, copies into the live
 LHS and retires the RHS. References into separate backing remain usable only
 under the caller's existing authority. Move assignment, user-defined assignment
-and other materialization shapes remain refused. Artifact schema 52 requires an
+and other materialization shapes remain refused. Artifact schema 53 requires an
 explicit refresh of earlier locks.
 
 Taking the address of a supported int32 record field uses its checked Clang
@@ -507,7 +517,7 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 52 requires refreshing earlier
+rebasing them to a new object. Artifact schema 53 requires refreshing earlier
 locks. Returned constructors use the narrower eligibility restriction above.
 
 Native int32 reference results and locals can also bind supported record fields
@@ -526,7 +536,7 @@ or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 52; refresh earlier locks.
+These nodes use artifact schema 53; refresh earlier locks.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
