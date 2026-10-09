@@ -535,6 +535,33 @@ impl LoweringContext<'_> {
                 self.lower_expression(value)?,
                 CType::Int32,
             )),
+            CppStatement::MemberConstruct {
+                object,
+                field,
+                callee,
+                arguments,
+                ..
+            } => {
+                let place = self.place(object)?;
+                let (_, offset) = self.records.resolve_path(
+                    &place.value_type,
+                    object
+                        .projections
+                        .iter()
+                        .map(super::schema::CppProjection::as_ref)
+                        .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
+                )?;
+                let destination = c_cast(
+                    c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
+                    CType::Int32Pointer,
+                );
+                let mut lowered = vec![destination];
+                lowered.extend(self.lower_call_arguments(arguments)?);
+                Ok(c_call(
+                    self.names.require(&callee.declaration_id)?.to_owned(),
+                    lowered,
+                ))
+            }
             CppStatement::MemberStore {
                 object,
                 field,

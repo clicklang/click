@@ -48,8 +48,10 @@ object footprint. This footprint does not fix the containing allocation's size;
 field liveness comes from the entry contract. At a call, constructors can select
 an aligned subobject within a known parent allocation. Completion and summaries
 initialize only the child's fields, preserving the parent's extent and sibling
-storage. C++ embedded-constructor source lowering remains to be connected.
-Neither the native signature nor sidecar syntax changes.
+storage. C++ member-initializer lists now lower embedded construction to these
+checked child calls, within the existing selected-file, explicit non-default
+`noexcept` constructor profile. Children require trivial destruction. Neither
+the native signature nor sidecar syntax changes.
 
 `c_end_automatic_lifetimes` makes a frontend-recorded expression boundary an
 explicit shared statement. It uses the existing automatic-storage retirement

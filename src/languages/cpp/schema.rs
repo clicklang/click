@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 49;
+pub(crate) const EXPORT_SCHEMA: u32 = 50;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -861,6 +861,15 @@ pub enum CppStatement {
         value: CppExpression,
         span: CppSpan,
     },
+    /// A resolved constructor call for one embedded field in a constructor's
+    /// declaration-ordered member-initializer prefix.
+    MemberConstruct {
+        object: CppPlaceReference,
+        field: CppFieldReference,
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        span: CppSpan,
+    },
     /// A Clang-resolved trivial copy construction from a live record lvalue.
     ReturnRecord {
         source: CppPlaceReference,
@@ -1507,10 +1516,15 @@ fn validate_reachable_records(
 }
 
 impl CppRecord {
-    fn require_flat_local_layout(&self) -> Result<(), String> {
+    fn require_constructor_local_layout(&self) -> Result<(), String> {
         if self.base.is_some() {
             return Err("automatic C++ objects with base subobjects remain unsupported".into());
         }
+        Ok(())
+    }
+
+    fn require_flat_local_layout(&self) -> Result<(), String> {
+        self.require_constructor_local_layout()?;
         if self
             .fields
             .iter()
@@ -1851,6 +1865,7 @@ impl CppFunction {
                 ));
             }
         }
+        let mut constructor_field_count = 0;
         if let CppFunctionKind::Constructor {
             record_declaration_id,
             record_name,
@@ -1867,27 +1882,67 @@ impl CppFunction {
                     self.name
                 ));
             }
+            constructor_field_count = record.fields.len();
             for (statement, expected_field) in self.body.iter().zip(&record.fields) {
-                let CppStatement::MemberStore {
-                    object,
-                    field,
-                    value,
-                    ..
-                } = statement
-                else {
-                    return Err(format!(
-                        "C++ constructor `{}` must begin with member initialization in declaration order",
-                        self.name
-                    ));
+                let (object, field) = match statement {
+                    CppStatement::MemberStore {
+                        object,
+                        field,
+                        value,
+                        ..
+                    } => {
+                        if value.references_place(&self_parameter.declaration_id)
+                            && !matches!(value, CppExpression::AddressOf { place, .. }
+                                if place.declaration_id == self_parameter.declaration_id && !place.projections.is_empty())
+                        {
+                            return Err(format!(
+                                "C++ constructor `{}` has an invalid initializer for field `{}`",
+                                self.name, expected_field.name
+                            ));
+                        }
+                        (object, field)
+                    }
+                    CppStatement::MemberConstruct {
+                        object,
+                        field,
+                        callee,
+                        arguments,
+                        span,
+                    } => {
+                        let field_type = validate_member_reference(
+                            object,
+                            field,
+                            &places,
+                            records,
+                            logical_source,
+                        )?;
+                        if !matches!(
+                            field_type,
+                            CppType::Record {
+                                is_const: false,
+                                ..
+                            }
+                        ) {
+                            return Err(
+                                "C++ embedded construction requires a mutable record field".into(),
+                            );
+                        }
+                        validate_call(callee, arguments, span, &places, records, logical_source)?;
+                        (object, field)
+                    }
+                    _ => {
+                        return Err(format!(
+                            "C++ constructor `{}` must begin with member initialization in declaration order",
+                            self.name,
+                        ));
+                    }
                 };
                 if object.declaration_id != self_parameter.declaration_id
                     || object.name != self_parameter.name
                     || field.record_declaration_id != *record_declaration_id
                     || field.declaration_id != expected_field.declaration_id
                     || field.name != expected_field.name
-                    || (value.references_place(&self_parameter.declaration_id)
-                        && !matches!(value, CppExpression::AddressOf { place, .. }
-                            if place.declaration_id == self_parameter.declaration_id && !place.projections.is_empty()))
+                    || !object.projections.is_empty()
                 {
                     return Err(format!(
                         "C++ constructor `{}` has an invalid initializer for field `{}`",
@@ -1932,7 +1987,7 @@ impl CppFunction {
         let mut nested_scope_outer_cleanup_counts = Vec::new();
         let mut has_conditional_cleanup_scope = false;
         let mut has_exception_cleanup_scope = false;
-        for statement in &self.body {
+        for (statement_index, statement) in self.body.iter().enumerate() {
             if let CppStatement::Declare {
                 local,
                 initializer,
@@ -1963,7 +2018,11 @@ impl CppFunction {
                             ));
                         }
                         let record = validate_record_reference(records, declaration_id, name)?;
-                        record.require_flat_local_layout()?;
+                        if matches!(initializer, CppInitializer::Constructor { .. }) {
+                            record.require_constructor_local_layout()?;
+                        } else {
+                            record.require_flat_local_layout()?;
+                        }
                         aggregate_locals += 1;
                         if record.destructor.is_some() {
                             if !matches!(initializer, CppInitializer::Constructor { .. }) {
@@ -2291,6 +2350,12 @@ impl CppFunction {
                     &self.name,
                 )?;
             } else {
+                if matches!(statement, CppStatement::MemberConstruct { .. })
+                    && statement_index < constructor_field_count
+                {
+                    // The constructor prefix above checked this exact member.
+                    continue;
+                }
                 statement.validate(&places, records, logical_source)?;
             }
         }
@@ -2380,6 +2445,7 @@ impl CppStatement {
             _ => {}
         }
         match self {
+            Self::MemberConstruct { .. } => Err("C++ embedded construction is only supported in the constructor member-initializer prefix".into()),
             Self::Unreachable { span } => span.validate(logical_source),
             Self::TrivialCopy {
                 target,
@@ -3504,7 +3570,7 @@ fn validate_nested_scope(
                 return Err("the nested-scope slice requires destructible record objects".into());
             };
             let record = validate_record_reference(records, declaration_id, name)?;
-            record.require_flat_local_layout()?;
+            record.require_constructor_local_layout()?;
             if record.destructor.is_none()
                 || !matches!(initializer, CppInitializer::Constructor { .. })
             {
@@ -3619,6 +3685,7 @@ impl CppStatement {
             | Self::Assign { .. }
             | Self::Store { .. }
             | Self::MemberStore { .. }
+            | Self::MemberConstruct { .. }
             | Self::TrivialCopy { .. }
             | Self::Assume { .. }
             | Self::LibraryAssert { .. }
@@ -3677,6 +3744,9 @@ fn validate_reachable_calls(
                 callee, arguments, ..
             }
             | CollectedCall::Constructor {
+                callee, arguments, ..
+            }
+            | CollectedCall::MemberConstructor {
                 callee, arguments, ..
             } => (*callee, *arguments),
             CollectedCall::Destructor { callee, .. } => (*callee, &[][..]),
@@ -3760,6 +3830,43 @@ fn validate_reachable_calls(
                     records,
                 )?;
             }
+            CollectedCall::MemberConstructor { object, field, .. } => {
+                let CppFunctionKind::Constructor {
+                    record_declaration_id,
+                    record_name,
+                } = &target.function_kind
+                else {
+                    return Err("C++ embedded construction refers to a non-constructor".into());
+                };
+                let root = places
+                    .place_type(&object.declaration_id)
+                    .ok_or("unknown embedded-construction object")?;
+                let (field_type, _) = records.resolve_path(
+                    root,
+                    object
+                        .projections
+                        .iter()
+                        .map(CppProjection::as_ref)
+                        .chain(std::iter::once(ProjectionRef::Field(field))),
+                )?;
+                if !matches!(field_type, CppType::Record { declaration_id, name, is_const: false }
+                    if declaration_id == record_declaration_id && name == record_name)
+                {
+                    return Err(
+                        "C++ embedded constructor does not match its nominal field type".into(),
+                    );
+                }
+                let Some((_, explicit_parameters)) = target.parameters.split_first() else {
+                    return Err("C++ embedded constructor is missing its object parameter".into());
+                };
+                validate_call_arguments(
+                    &places,
+                    target.name.as_str(),
+                    explicit_parameters,
+                    arguments,
+                    records,
+                )?;
+            }
             CollectedCall::Destructor { object, .. } => {
                 let CppFunctionKind::Destructor {
                     record_declaration_id,
@@ -3817,6 +3924,12 @@ enum CollectedCall<'a> {
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
     },
+    MemberConstructor {
+        object: &'a CppPlaceReference,
+        field: &'a CppFieldReference,
+        callee: &'a CppFunctionReference,
+        arguments: &'a [CppCallArgument],
+    },
     Destructor {
         object: &'a CppPlaceReference,
         callee: &'a CppFunctionReference,
@@ -3827,6 +3940,21 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
     for statement in statements {
         collect_statement_expression_calls(statement, calls);
         match statement {
+            CppStatement::MemberConstruct {
+                object,
+                field,
+                callee,
+                arguments,
+                ..
+            } => {
+                calls.push(CollectedCall::MemberConstructor {
+                    object,
+                    field,
+                    callee,
+                    arguments,
+                });
+                collect_nested_calls(arguments, calls);
+            }
             CppStatement::Declare {
                 local,
                 initializer:
@@ -4451,7 +4579,9 @@ fn validate_statement_constant_references(
                     referenced_constants,
                 )?;
             }
-            CppStatement::Call { arguments, .. } | CppStatement::ReturnCall { arguments, .. } => {
+            CppStatement::Call { arguments, .. }
+            | CppStatement::ReturnCall { arguments, .. }
+            | CppStatement::MemberConstruct { arguments, .. } => {
                 for argument in arguments {
                     argument.validate_constant_references(
                         logical_source,

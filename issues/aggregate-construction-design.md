@@ -111,7 +111,8 @@ Ordinary void constructors now bind an explicit destination parameter and
 complete its initialized fields through body-certified summaries, including
 aligned subobjects without resizing their parent allocation. Constructor proof
 entries describe an unwritten footprint without fixing the parent's extent.
-C++ local construction uses raw storage, while the shared lifetime-end statement covers
+C++ local construction uses raw storage and explicit embedded constructor calls,
+while the shared lifetime-end statement covers
 temporary retirement. Returned-construction source admission and expression
 lifetime lowering remain to be connected.
 The precise compiler/ABI evidence is an admission gate for each new C++ return

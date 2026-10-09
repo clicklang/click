@@ -357,6 +357,19 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::MemberConstruct {
+                    object,
+                    field,
+                    callee,
+                    arguments,
+                    span,
+                } => {
+                    self.reference(object)?;
+                    self.field(field)?;
+                    self.callee(callee)?;
+                    self.arguments(arguments)?;
+                    span
+                }
                 CppStatement::MemberStore {
                     object,
                     field,

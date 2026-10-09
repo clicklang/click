@@ -466,7 +466,7 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 49 requires refreshing earlier
+rebasing them to a new object. Artifact schema 50 requires refreshing earlier
 locks. Returned construction destinations remain the next shared-model work.
 
 Native int32 reference results and locals can also bind supported record fields
@@ -484,7 +484,7 @@ or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 49; refresh earlier locks.
+These nodes use artifact schema 50; refresh earlier locks.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
@@ -977,8 +977,8 @@ address. The root's constness controls binding to mutable references, including
 implicit method receivers; it cannot be discarded by projecting a mutable field.
 Callee contracts require authority at the selected subobject or scalar leaf and
 preserve sibling frames. Plain scalar locals, temporary objects, arbitrary record
-pointers, inherited subobjects and automatic objects with embedded records remain
-outside this reference-call slice.
+pointers and inherited subobjects remain outside this reference-call slice.
+Automatic embedded construction uses the constructor profile below.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one
@@ -992,7 +992,15 @@ The `constructor-local` fixture permits that one automatic object to use one
 public, explicit, non-default `noexcept` constructor. Its member-initializer
 list must initialize every field in declaration order; the constructor body
 and its implicit call at the declaration are both lowered and verified through
-the ordinary modular call rules.
+the ordinary modular call rules. Embedded record fields with trivial destruction
+can use their own resolved constructors in that same ordered initializer prefix.
+Each child call uses its exact field address and native contract; it neither
+resizes the parent allocation nor initializes siblings. Repeated initialization
+outside the prefix, mismatched nominal constructor targets, base construction,
+and nontrivial embedded destruction remain refused. Constructor proof entries
+describe unwritten object footprints without fixing their containing allocation's
+extent. Ordinary, expanded and retained checks cover an automatic descriptor
+with a pointer field and a nested uint64 extent while preserving backing memory.
 
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact

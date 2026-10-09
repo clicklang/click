@@ -33,7 +33,7 @@ profile decision before implementation:
   constructors, free operator selection, or aggregate results.
 - **Expression and lifetime profiles.** Converted call arguments, call-based
   brace initialization, arithmetic/composed expressions around calls, broader
-  memory-reading siblings, embedded automatic records and nontrivial destruction,
+  memory-reading siblings and nontrivial embedded destruction,
   and header constructor/destructor bodies need explicit sequencing, aliasing,
   lifetime, or admission choices. Broader cleanup/unwind remains owned by
   [control-flow.md](control-flow.md).
@@ -265,7 +265,7 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    [aggregate-construction-design.md](aggregate-construction-design.md).
    C++ returned construction, destination forwarding and temporary retirement
    depend on that work. The int32 field-address and constructor/copy identity
-   prerequisites are implemented; artifact schema 49 requires refreshing earlier
+   prerequisites are implemented; artifact schema 50 requires refreshing earlier
    locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
    above as the concrete C++ acceptance target.
 
@@ -315,7 +315,7 @@ path, retaining const qualification and requiring caller-held authority for
 loads and writes. Literal `nullptr` and zero conversions to mutable `int*` reuse
 the shared C null pointer value, without grants of storage authority. Nonliteral
 `nullptr_t` conversions, other pointee types and nonzero integer casts remain
-outside this profile. Artifact schema 49 requires refreshing earlier locks.
+outside this profile. Artifact schema 50 requires refreshing earlier locks.
 
 `first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
 behind the shared construction dependency. Other scalar/import work still needs
@@ -324,10 +324,12 @@ an exact source and contract selection under the profile boundaries above.
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields and the pointer-offset forms above. Prvalue aggregate returns, copy initialization and
-automatic embedded descriptor construction still need frontend admission. Some of
-those are implementation work once the profiles above are chosen; they do not
-justify a separate C++ memory model.
+fields and the pointer-offset forms above. Selected-file embedded member
+construction now uses checked child-constructor calls in declaration order,
+with unwritten destination footprints, native contracts and sibling/backing
+frames. Prvalue aggregate returns, copy initialization and pinned library
+constructor bodies still need frontend admission; they do not justify a separate
+C++ memory model.
 
 Acceptance should include the unchanged helper, a modular caller that reads
 the returned last element, and a caller that mutates it under existing write

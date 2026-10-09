@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 49;
+    artifact["schema"] = 50;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -467,10 +467,6 @@ private:
                "supported constructor is missing a validated member initializer");
           return std::nullopt;
         }
-        auto value = lower_expression(initializer->getInit(), constructor);
-        if (!value) {
-          return std::nullopt;
-        }
         llvm::json::Object object;
         object["declaration_id"] = object_self_id(constructor);
         object["name"] = "self";
@@ -481,10 +477,39 @@ private:
         field_reference["name"] = field->getNameAsString();
         field_reference["span"] = span(field->getSourceRange());
         llvm::json::Object statement;
-        statement["kind"] = "member_store";
         statement["object"] = std::move(object);
         statement["field"] = std::move(field_reference);
-        statement["value"] = std::move(*value);
+        if (field->getType()->isRecordType()) {
+          const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(initializer->getInit()->IgnoreParenImpCasts());
+          const auto *selected = construction == nullptr ? nullptr : construction->getConstructor();
+          const auto *definition = selected == nullptr ? nullptr : llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(selected->getDefinition());
+          if (construction == nullptr || definition == nullptr ||
+              construction->getConstructionKind() != clang::CXXConstructionKind::Complete ||
+              definition->getParent()->getCanonicalDecl() != field->getType()->getAsCXXRecordDecl()->getCanonicalDecl() ||
+              construction->getNumArgs() != definition->getNumParams()) {
+            fail(initializer->getSourceLocation(), "embedded C++ field initialization requires a resolved direct constructor call");
+            return std::nullopt;
+          }
+          llvm::json::Array arguments;
+          for (unsigned index = 0; index < construction->getNumArgs(); ++index) {
+            auto argument = lower_call_argument(construction->getArg(index), definition->getParamDecl(index), constructor);
+            if (!argument) return std::nullopt;
+            arguments.push_back(std::move(*argument));
+          }
+          if (!remember_function(definition)) return std::nullopt;
+          llvm::json::Object reference;
+          reference["declaration_id"] = declaration_id(definition);
+          reference["name"] = constructor_name(definition);
+          reference["span"] = span(initializer->getSourceRange());
+          statement["kind"] = "member_construct";
+          statement["callee"] = std::move(reference);
+          statement["arguments"] = std::move(arguments);
+        } else {
+          auto value = lower_expression(initializer->getInit(), constructor);
+          if (!value) return std::nullopt;
+          statement["kind"] = "member_store";
+          statement["value"] = std::move(*value);
+        }
         statement["span"] = span(initializer->getSourceRange());
         statements.push_back(std::move(statement));
       }
