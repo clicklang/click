@@ -11,6 +11,9 @@ use super::thread_confinement::confined_resource_name;
 use crate::kernel::ResourceDescription;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod aggregate_return_tests;
+
 fn execute_c_function_body_paths(
     state: &CState,
     function: &CFunction,
