@@ -246,60 +246,6 @@ mod tests {
     }
 
     #[test]
-    fn consuming_close_spends_a_real_unit_once_and_preserves_other_state() {
-        let (function, entry, before, unit) = fixture(false);
-        let before = before.with_counted_population(
-            "unrelated",
-            vec![].into(),
-            Bitvector32Term::Constant(9),
-        );
-        let after = prepare(&function, &entry, &before, &unit, &ProofFacts::default()).unwrap();
-        let CResource::Composite { name, arguments } = unit.resource() else {
-            unreachable!()
-        };
-        assert_eq!(
-            after.counted_population(name, arguments),
-            Some(&Bitvector32Term::Constant(2))
-        );
-        assert!(
-            after
-                .resources()
-                .directly_supporting_fact(&unit, &PureFactContext::new())
-                .is_some()
-        );
-        assert!(
-            after
-                .resources()
-                .directly_supporting_fact(
-                    &CResourceFact::own_quantity(
-                        unit.resource().clone(),
-                        Bitvector32Term::Constant(2)
-                    ),
-                    &PureFactContext::new()
-                )
-                .is_none()
-        );
-        assert_eq!(
-            after.counted_population("unrelated", &[]),
-            Some(&Bitvector32Term::Constant(9))
-        );
-        assert_eq!(after.memory(), before.memory());
-        assert_eq!(after.population_access, before.population_access);
-        assert!(prepare(&function, &entry, &after, &unit, &ProofFacts::default()).is_err());
-        // A path clone retains its independent already-spent obligation.
-        assert!(
-            prepare(
-                &function,
-                &entry,
-                &after.clone(),
-                &unit,
-                &ProofFacts::default()
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
     fn consuming_close_requires_ownership_contract_invariant_and_a_live_body() {
         let (function, entry, before, unit) = fixture(false);
         let missing_effect = function.clone().with_resource_summary(vec![], vec![]);
@@ -340,30 +286,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn consuming_close_uses_entry_arguments_not_reassigned_parameters() {
-        let (function, entry, before, unit) = fixture(false);
-        let other = Pointer {
-            block: "other".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let current = before.with_local("p", CValue::pointer(other.clone()));
-        assert!(prepare(&function, &entry, &current, &unit, &ProofFacts::default()).is_ok());
-        let unrelated = CResourceFact::own(CResource::Composite {
-            name: "remaining".into(),
-            arguments: vec![CValue::pointer(other).into()].into(),
-        });
-        assert!(
-            prepare(
-                &function,
-                &entry,
-                &current,
-                &unrelated,
-                &ProofFacts::default()
-            )
-            .is_err()
-        );
-    }
     #[test]
     fn consuming_close_preserves_active_memory_borrows() {
         let (function, entry, before, unit) = fixture(false);

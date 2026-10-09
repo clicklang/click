@@ -26,12 +26,14 @@ fn parent(size: usize) -> CState {
         resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(index, 0, 2)));
     }
     CState::new()
+        .with_population_creation_tracking()
         .with_memory(memory)
         .with_resource_context(resources)
 }
 
 fn byte_parent() -> CState {
     CState::new()
+        .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
                 .with_block(pointer(0).block, 4)
@@ -1259,11 +1261,13 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let view = CResourceFact::view_memory(CMemoryRange::new(local.clone(), 0.into(), 1.into()));
-    let state = CState::new().with_memory(
-        CMemory::new()
-            .with_block(local.block.clone(), 4)
-            .store(local.clone(), int32(7)),
-    );
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(
+            CMemory::new()
+                .with_block(local.block.clone(), 4)
+                .store(local.clone(), int32(7)),
+        );
     let original = ThreadContext::new(state).unwrap();
     for reverse in [false, true] {
         let mut budget = ExecutionBudget::new();
@@ -1704,6 +1708,7 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
             offset: PointerOffsetTerm::Constant(0),
         };
         let state = CState::new()
+            .with_population_creation_tracking()
             .with_memory(CMemory::new().with_block(local.block.clone(), 8))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 CResourceFact::own_memory(CMemoryRange::new(local.clone(), 0.into(), 2.into())),
@@ -1750,7 +1755,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     );
     let (reader, termination) = certify_worker(reader);
     let mut declaration = crate::kernel::eval::execute_c_statement_paths(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         &c_declare("job", CType::Int32Array(2)),
         &PureFactContext::new(),
         &CExecutionEnvironment::new(),

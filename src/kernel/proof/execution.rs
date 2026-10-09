@@ -7045,8 +7045,9 @@ fn check_evidence_events_with_call_events(
                 state = rewrite.after_state.clone();
                 continue;
             }
-            // A checked iterated step is not replayed: the authority ledger
-            // records the step's events, so replay rechecks it from the start.
+            // A checked iterated step does not advance an existing trace: the
+            // authority ledger records its events, so the trace is checked
+            // again from the start.
             CheckedExecutionEvent::IteratedStep(_) => return None,
             CheckedExecutionEvent::TacticApplication(application) => {
                 current_facts = application.advance_checked(&state, &current_facts)?;

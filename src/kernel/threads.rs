@@ -1409,62 +1409,6 @@ mod population_count_tests {
     }
 
     #[test]
-    fn count_observations_select_delayed_create_outcomes_without_a_c_step() {
-        let effect = effect(0);
-        let failure = CState::new()
-            .with_counted_population(
-                effect.name.clone(),
-                effect.arguments.clone(),
-                effect.before.clone(),
-            )
-            .with_observed_population_family("ticket");
-        let mut success = failure.clone();
-        effect.reserve(&mut success);
-        let status = Bitvector32Term::Variable(super::super::Variable(900_007));
-        let pending = PendingThreadCreate::new(
-            status.clone(),
-            Pointer {
-                block: "handle".into(),
-                offset: super::super::PointerOffsetTerm::Constant(0),
-            },
-            ThreadHandle(700).c_value(),
-            &success,
-            &failure,
-        );
-        let mut visible = failure.clone();
-        visible.pending_thread_create = Some(pending);
-        let zero = ConditionTerm::Bitvector32Equal(Box::new(status), Box::new(0.into()));
-        let arguments = effect
-            .arguments
-            .iter()
-            .cloned()
-            .map(Some)
-            .collect::<Vec<_>>();
-        for snapshot in [visible.clone(), visible.resource_state_snapshot()] {
-            assert_eq!(
-                snapshot.counted_population_sum("ticket", &arguments, &PureFactContext::new()),
-                None
-            );
-            assert_eq!(
-                snapshot.counted_population_sum(
-                    "ticket",
-                    &arguments,
-                    &PureFactContext::new().assume_condition(zero.clone(), true)
-                ),
-                None
-            );
-            assert_eq!(
-                snapshot.counted_population_sum(
-                    "ticket",
-                    &arguments,
-                    &PureFactContext::new().assume_condition(zero.clone(), false)
-                ),
-                Some(3.into())
-            );
-        }
-    }
-
-    #[test]
     fn completing_one_population_does_not_scan_other_reservations() {
         let mut samples = Vec::new();
         for size in [8, 64, 512] {

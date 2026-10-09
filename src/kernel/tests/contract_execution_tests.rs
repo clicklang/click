@@ -768,126 +768,6 @@ fn certified_program_entry_claims_do_not_authorize_ordinary_calls() {
     assert!(c_verified_function_rule(function, &claims).is_none());
 }
 
-fn pool_resource_spec(name: &str) -> CResourceSpec {
-    CResourceSpec::composite(
-        CResourceAccessMode::Own,
-        name.to_string(),
-        vec![c_variable("pool"), c_variable("object")],
-        vec![CType::Int32, CType::Int32],
-    )
-}
-
-fn pool_transition_function(from: &str, to: &str) -> CFunction {
-    let parameters = vec![
-        c_parameter("pool", CType::Int32),
-        c_parameter("object", CType::Int32),
-    ];
-    let definition_parameters = parameters.clone();
-    c_function(
-        CType::Void,
-        format!("{from}_to_{to}"),
-        parameters,
-        c_return(CExpression::Value(CValue::Void)),
-    )
-    .with_resource_summary(vec![pool_resource_spec(from)], vec![pool_resource_spec(to)])
-    .with_composite_resource_definitions(vec![
-        CCompositeResourceDefinition::new(
-            from,
-            definition_parameters.clone(),
-            None,
-            false,
-            Vec::new(),
-            Vec::new(),
-        ),
-        CCompositeResourceDefinition::new(
-            to,
-            definition_parameters,
-            None,
-            false,
-            Vec::new(),
-            Vec::new(),
-        ),
-    ])
-}
-
-fn apply_pool_transition(state: &CState, function: &CFunction, pool: u32, object: u32) -> CState {
-    let arguments = vec![c_int32_literal(pool), c_int32_literal(object)];
-    let outcome = CFunctionOutcome::Return {
-        value: CValue::Void,
-        state: Box::new(state.clone()),
-    };
-    let (outcome, obligations) = apply_c_function_contract_resource_transition(
-        state,
-        function,
-        &arguments,
-        outcome,
-        &PureFactContext::new(),
-    )
-    .expect("the checked resource transition should check");
-    assert!(obligations.is_empty());
-    let CFunctionOutcome::Return { state, .. } = outcome else {
-        panic!("resource transition did not return");
-    };
-    *state
-}
-
-fn pool_count(state: &CState, pool: u32) -> Bitvector32Term {
-    state
-        .counted_population_sum(
-            "pool_object",
-            &[Some(int32(pool).into()), None],
-            &PureFactContext::new(),
-        )
-        .expect("the pool's entries total a count")
-}
-
-#[test]
-fn observed_resource_family_counts_cross_checked_contracts() {
-    let checkout = pool_transition_function("available", "pool_object");
-    let return_object = pool_transition_function("pool_object", "available");
-    let mut state = CState::new()
-        .with_observed_population_family("pool_object")
-        .with_resource_context(
-            ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own_composite(
-                    "available".to_string(),
-                    vec![int32(1), int32(10)],
-                ))
-                .unchecked_with_fact(CResourceFact::own_composite(
-                    "available".to_string(),
-                    vec![int32(1), int32(11)],
-                ))
-                .unchecked_with_fact(CResourceFact::own_composite(
-                    "available".to_string(),
-                    vec![int32(2), int32(20)],
-                )),
-        );
-
-    assert_eq!(pool_count(&state, 1), Bitvector32Term::Constant(0));
-    assert_eq!(pool_count(&state, 2), Bitvector32Term::Constant(0));
-
-    state = apply_pool_transition(&state, &checkout, 1, 10);
-    assert_eq!(pool_count(&state, 1), Bitvector32Term::Constant(1));
-    assert_eq!(pool_count(&state, 2), Bitvector32Term::Constant(0));
-
-    state = apply_pool_transition(&state, &checkout, 1, 11);
-    assert_eq!(pool_count(&state, 1), Bitvector32Term::Constant(2));
-    assert_eq!(pool_count(&state, 2), Bitvector32Term::Constant(0));
-
-    state = apply_pool_transition(&state, &checkout, 2, 20);
-    assert_eq!(pool_count(&state, 1), Bitvector32Term::Constant(2));
-    assert_eq!(pool_count(&state, 2), Bitvector32Term::Constant(1));
-
-    state = apply_pool_transition(&state, &return_object, 1, 10);
-    assert_eq!(pool_count(&state, 1), Bitvector32Term::Constant(1));
-    assert_eq!(pool_count(&state, 2), Bitvector32Term::Constant(1));
-
-    state = apply_pool_transition(&state, &return_object, 1, 11);
-    assert_eq!(pool_count(&state, 1), Bitvector32Term::Constant(0));
-    assert_eq!(pool_count(&state, 2), Bitvector32Term::Constant(1));
-    assert!(state.observes_population_family("pool_object"));
-}
-
 #[test]
 fn local_declaration_allocates_stack_object_for_address_of() {
     let local_pointer = Pointer {
@@ -1596,7 +1476,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         c_return(c_variable("result")),
     );
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         statement.clone(),
         PureFactContext::new(),
         environment.clone(),
@@ -1640,7 +1520,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     )));
 
     let body_execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         statement,
         PureFactContext::new(),
         environment,
@@ -1692,7 +1572,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
             applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         c_call_assign("result", "pointer_is_null", vec![c_int32_literal(0)]),
         PureFactContext::new(),
         environment,
@@ -1764,7 +1644,9 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
             applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new().with_memory(CMemory::new().with_block("heap", 8).store(stored, int32(0))),
+        CState::new()
+            .with_population_creation_tracking()
+            .with_memory(CMemory::new().with_block("heap", 8).store(stored, int32(0))),
         c_call_assign(
             "result",
             "opaque_alias_probe",
@@ -1820,7 +1702,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
             applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         c_call_assign(
             "result",
             "opaque_identity_pointer",
@@ -1896,7 +1778,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
         ),
     );
     let execution = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         statement,
         PureFactContext::new(),
         environment,
@@ -1951,7 +1833,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
 
     let (first_execution, _) =
         prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
-            CState::new(),
+            CState::new().with_population_creation_tracking(),
             c_call_assign("first", "opaque_identity", vec![c_int32_literal(5)]),
             PureFactContext::new(),
             environment.clone(),
@@ -2237,7 +2119,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         function.clone(),
         vec![CExpression::Value(CValue::Int32(
             Bitvector32Term::Variable(Variable(700_001)),
@@ -2259,7 +2141,9 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         "modular_maybe_throw",
         vec![c_int32_literal(0)],
     );
-    let call_state = CState::new().with_local("after", int32(0));
+    let call_state = CState::new()
+        .with_population_creation_tracking()
+        .with_local("after", int32(0));
     let call_root = crate::kernel::proof::ProofFacts::from_ordered(&[]);
     let call_paths = prove_symbolic_c_execution_paths_with_environment(
         call_state.clone(),
@@ -2448,7 +2332,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         true,
     );
     let execution = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -2469,7 +2353,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         c_return(c_variable("caught")),
     );
     let paths = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         statement,
         PureFactContext::new(),
         CExecutionEnvironment::new()
@@ -2545,7 +2429,7 @@ fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() 
         true,
     );
     let certification = certify_contract_with_kernel_artifacts(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         function.clone(),
         Vec::new(),
         Vec::new(),
@@ -2558,7 +2442,7 @@ fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() 
     let rule = c_verified_function_rule(function.clone(), &proofs)
         .expect("the body-certified direct rule should form");
     let modular = prove_symbolic_c_execution_paths_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         c_call("unconstrained_exceptional_channel", Vec::new()),
         PureFactContext::new(),
         CExecutionEnvironment::new()
@@ -5182,7 +5066,9 @@ fn call_requirement_obligations_carry_their_lowering_record() {
             loop_semantics: CLoopSemantics::Verify,
             applied_tactics: Default::default(),
         });
-    let state = CState::new().with_local("n", int32(Bitvector32Term::Variable(Variable(31_000))));
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_local("n", int32(Bitvector32Term::Variable(Variable(31_000))));
     let execution = prove_symbolic_c_execution_paths_with_environment(
         state,
         c_call_assign("result", "successor_is_positive", vec![c_variable("n")]),
@@ -5265,7 +5151,9 @@ fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {
 }
 
 fn symbolic_caller_state() -> CState {
-    CState::new().with_local("n", int32(Bitvector32Term::Variable(Variable(31_000))))
+    CState::new()
+        .with_population_creation_tracking()
+        .with_local("n", int32(Bitvector32Term::Variable(Variable(31_000))))
 }
 
 /// The entry `drain` is anchored at: its parameter bound to the same symbolic

@@ -13412,7 +13412,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         Variable(80_010),
     )))];
     let artifacts = prove_checked_c_function_execution_with_environment(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments.clone(),
         PureFactContext::new(),
@@ -13421,7 +13421,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         CFunctionContractExecutionMode::VerifyLoops,
     );
     let certified = prove_c_function_contract_execution_paths_with_checked_artifacts(
-        CState::new(),
+        CState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments,
         CExecutionEnvironment::new(),
@@ -13483,7 +13483,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         "mixed call outcomes",
         0,
         ExecutionProofState::at_entry(
-            CState::new(),
+            CState::new().with_population_creation_tracking(),
             ExecutionFrontier::default(),
             RecordedSnapshots::new(),
             SurfacePropositionMap::default(),

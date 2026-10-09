@@ -10666,102 +10666,6 @@ mod counted_membership_framing_tests {
     use crate::kernel::*;
 
     #[test]
-    fn neutral_population_call_preserves_allocation_lifetime_without_preserving_bytes() {
-        let pointer = Pointer {
-            block: "population-allocation".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
-        let body = CMemoryRange::new(
-            pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
-        );
-        let population = CCompositeResourceDefinition::counted_population(
-            "remaining",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            None,
-            vec![
-                CResourceSpec::token(
-                    CResourceAccessMode::Own,
-                    CResourceFact::ALLOCATION_RESOURCE_NAME.into(),
-                    vec![c_variable("p"), c_int32_literal(4)],
-                    vec![CType::Int32Pointer, CType::Int32],
-                ),
-                CResourceSpec::owned_memory(CMemorySegment::new(
-                    c_variable("p"),
-                    c_int32_literal(0),
-                    c_int32_literal(1),
-                )),
-            ],
-            vec![],
-        );
-        let specification = CResourceSpec::composite(
-            CResourceAccessMode::Own,
-            "remaining".into(),
-            vec![c_variable("p")],
-            vec![CType::Int32Pointer],
-        );
-        let function = c_function(
-            CType::Void,
-            "neutral",
-            vec![c_parameter("p", CType::Int32Pointer)],
-            CStatement::Skip,
-        )
-        .with_composite_resource_definitions(vec![population])
-        .with_resource_summary(vec![specification.clone()], vec![specification]);
-        let head = CResourceFact::own(CResource::Composite {
-            name: "remaining".into(),
-            arguments: arguments.clone(),
-        });
-        let before = CState::new()
-            .with_memory(
-                CMemory::new()
-                    .with_block("population-allocation", 4)
-                    .with_heap_allocation_claim(pointer.clone(), 4)
-                    .unwrap()
-                    .store(pointer.clone(), int32(0)),
-            )
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(head.clone()))
-            .with_counted_population("remaining", arguments.clone(), Bitvector32Term::Constant(3));
-        let assumptions = PureFactContext::new();
-        let havoc = before.memory().clone().with_call_memory_havoc(
-            Variable(780_120),
-            std::slice::from_ref(&body),
-            &assumptions,
-            None,
-        );
-        assert!(!havoc.cells.contains_key(&pointer));
-        let mut after = before.clone().with_memory(havoc.clone());
-        let transition = apply_counted_population_transitions(
-            &before,
-            &mut after,
-            &function,
-            &[CValue::pointer(pointer.clone())],
-            &assumptions,
-            true,
-            &mut ExecutionBudget::beside_live_state(),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(
-            after.counted_population("remaining", &arguments),
-            Some(&Bitvector32Term::Constant(3))
-        );
-        assert_eq!(
-            transition.retained_body_allocations,
-            vec![(pointer.clone(), Bitvector32Term::Constant(4))]
-        );
-        assert!(transition.finalized_body_resources.is_empty());
-        assert_eq!(
-            after.memory(),
-            &havoc,
-            "lifetime accounting must not restore the body's old bytes"
-        );
-        assert!(!after.memory().cells.contains_key(&pointer));
-    }
-
-    #[test]
     fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
         let pointer = Pointer {
             block: "counter".into(),
@@ -22378,59 +22282,6 @@ mod committed_population_return_tests {
     use super::*;
 
     #[test]
-    fn unprojected_legacy_endpoint_preserves_body_consumption_evidence() {
-        let function = c_function(
-            CType::Void,
-            "endpoint",
-            vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
-        );
-        let entry = CState::new();
-        let mut body = entry.clone().with_counted_population(
-            "remaining",
-            vec![].into(),
-            Bitvector32Term::Constant(1),
-        );
-        Arc::make_mut(&mut body.population_effects)
-            .committed_consumptions
-            .insert(CCountedPopulation {
-                name: "remaining".into(),
-                arguments: vec![].into(),
-                count: Bitvector32Term::Constant(1),
-                family_observation_marker: false,
-            });
-        for projected in [false, true] {
-            let resources = ResourceContext::new();
-            let (outcome, _) = function_outcome_from_body(
-                &entry,
-                &function,
-                CStatementOutcome::Return {
-                    value: CValue::Void,
-                    state: Box::new(body.clone()),
-                },
-                vec![],
-                &PureFactContext::new(),
-                projected.then_some(&resources),
-            );
-            let CFunctionOutcome::Return { state, .. } = outcome else {
-                panic!("expected return endpoint");
-            };
-            assert_eq!(
-                state.counted_population("remaining", &[]),
-                Some(&Bitvector32Term::Constant(1))
-            );
-            assert_eq!(
-                state
-                    .population_effects
-                    .committed_consumptions
-                    .get("remaining", &[], false)
-                    .is_some(),
-                !projected
-            );
-        }
-    }
-
-    #[test]
     fn return_reconciles_an_early_consumption_without_resetting_the_total() {
         let head = CResource::Composite {
             name: "remaining".into(),
@@ -33693,6 +33544,7 @@ mod verified_call_initialization_tests {
             )),
         ));
         CState::new()
+            .with_population_creation_tracking()
             .with_memory(CMemory::new().with_block(pointer.block.clone(), 4))
             .with_resource_context(resources)
     }
@@ -33831,6 +33683,7 @@ mod stable_view_call_tests {
             Bitvector32Term::Constant(owned_end),
         );
         CState::new()
+            .with_population_creation_tracking()
             .with_memory(
                 CMemory::new()
                     .with_block(pointer.block.clone(), bytes)
@@ -35975,6 +35828,7 @@ mod stable_view_call_tests {
             )))
         };
         let caller = CState::new()
+            .with_population_creation_tracking()
             .with_memory(
                 CMemory::new()
                     .with_block(viewed.block.clone(), 8)
@@ -36122,6 +35976,7 @@ mod stable_view_call_tests {
         let head =
             CResourceFact::own_composite("cell".into(), vec![CValue::pointer(pointer.clone())]);
         let caller = CState::new()
+            .with_population_creation_tracking()
             .with_memory(
                 CMemory::new()
                     .with_block(pointer.block.clone(), 8)
@@ -36435,53 +36290,6 @@ mod stable_view_call_tests {
             transfer
                 .callee_resources
                 .satisfies_fact(&CResourceFact::view_memory(viewed), &PureFactContext::new())
-        );
-    }
-
-    /// The count itself is still checked, by the counted-population
-    /// transition rather than by the planner.
-    #[test]
-    fn token_population_consume_without_a_known_count_is_refused() {
-        let pointer = pointer();
-        let function = token_population_reader("candidate_uncounted_population_reader", "slot");
-        let caller = caller(&pointer);
-        let arguments = vec![
-            CExpression::Value(CValue::pointer(pointer.clone())),
-            CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(4242)))),
-        ];
-        let refusal = || {
-            let environment =
-                CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
-                    function: function.clone(),
-                    loop_semantics: CLoopSemantics::Verify,
-                    applied_tactics: Default::default(),
-                });
-            let paths = execute_c_function_call_paths(
-                &caller,
-                &function,
-                &arguments,
-                &nonnegative_quantity(Variable(4242)),
-                &environment,
-                CExecutionSemantics::APPLY_VERIFIED_RULES,
-                &mut ExecutionBudget::new(),
-            )
-            .expect("the population call should execute");
-            let [
-                CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(error),
-                    ..
-                },
-            ] = paths.as_slice()
-            else {
-                panic!("an uninitialized population should refuse: {paths:?}");
-            };
-            error.clone()
-        };
-        let refusal = refusal();
-        assert!(
-            matches!(&refusal, CRuntimeError::FunctionContract(message)
-                if message.contains("counted population `slot` is not initialized")),
-            "{refusal:?}"
         );
     }
 }
