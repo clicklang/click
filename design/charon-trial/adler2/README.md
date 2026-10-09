@@ -86,6 +86,9 @@ including at the signed-index boundary. Native additions use checked Integer
 bridges and preserve their overflow prerequisites. A cursor-step lemma
 relates the original pointer advance to the decreasing outer remaining count;
 its pointer equalities grant no memory authority.
+The bounded-slice access lemma uses the actual final-batch length rather than
+requiring room for a complete batch. It preserves the nested signed additions'
+definedness even when the last four-byte read ends at `INT32_MAX`.
 No generated processed counter is used. These arithmetic lemmas do not yet
 establish the original outer-loop invariant or checksum result.
 
