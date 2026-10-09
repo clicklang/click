@@ -9023,6 +9023,15 @@ pub fn prove_uint64_integer_bridge(
             name == "uint64_less_equal_of_to_integer",
         ));
     }
+    // The unsigned observation is injective: equal observations are the
+    // same 64-bit pattern.
+    if name == "uint64_equal_of_to_integer" {
+        return Some(prove_integer_equality_bridge(
+            MachineIntegerType::UInt64,
+            left,
+            right,
+        ));
+    }
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt64, value)
             .expect("every uint64 bit pattern has an unsigned Integer interpretation")
@@ -9269,7 +9278,8 @@ fn prove_integer_equality_bridge(
         MachineIntegerType::Int64 => ConditionTerm::int64_equal(left, right),
         // Equality of the 32-bit pattern does not depend on its signedness.
         MachineIntegerType::UInt32 => ConditionTerm::equal(left, right),
-        _ => unreachable!("integer equality bridges admit only int32/int64/uint32"),
+        MachineIntegerType::UInt64 => ConditionTerm::uint64_equal(left, right),
+        _ => unreachable!("integer equality bridges admit only int32/int64/uint32/uint64"),
     };
     Theorem::new(Proposition::Implies(
         Box::new(integer),

@@ -132,9 +132,11 @@ Remaining:
   `arithmetic() using` proves a linear `uint64` or `int64` order goal
   (Lacker said to build it on 2026-10-08): it bridges the listed premises
   and the goal to Integer order, shows each sum and difference stays in
-  range, and expands to those `apply` steps. Left: equality goals and
-  premises at either width; and a goal that needs three order premises
-  at once, since the Integer step underneath combines two. A `long` loop
+  range, and expands to those `apply` steps. It proves an equality
+  the same way, and reads equality and negated-order premises
+  (`mdtests/a_uint64_equality_closes_with_arithmetic.md`). Left: a goal
+  that needs three order premises at once, since the Integer step
+  underneath combines two. A `long` loop
   is ranked by an `int64` measure
   (`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`).
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
