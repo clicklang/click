@@ -5359,7 +5359,7 @@ fn unrelated_order_fact_context(size: usize) -> PureFactContext {
     assumptions
 }
 
-/// Package 3 regression. The quantity relations behind counted populations and
+/// Package 3 regression. The quantity relations behind populations and
 /// the resource algebra are decided by exact lookup and the retained atomic
 /// condition checker, so an ambient context of unrelated bounded variables must
 /// not change their work. The general prover this replaced scanned every

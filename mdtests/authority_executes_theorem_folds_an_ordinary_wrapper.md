@@ -1,9 +1,9 @@
-# An executes theorem folds an ordinary wrapper in authority mode
+# An executes theorem folds an ordinary wrapper
 
 `box` applies the `lift` refinement theorem inside a callback execution proof,
 then folds `Box(data)`, a wrapper whose body is the declared `Buffer(data)`.
 
-Under authority semantics a wrapper fold on an outcome was recorded as a
+A wrapper fold on an outcome used to be recorded as a
 checked transfer-wrapper exchange on the completed C path. A callback
 execution proof has no completed C path, so the fold was refused with
 "return resource rewrite requires completed execution". `Box` reaches no

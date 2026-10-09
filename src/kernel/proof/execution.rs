@@ -1627,7 +1627,7 @@ impl CheckedResourceRewrite {
                 .as_ref()
                 .is_some_and(|children| !children.is_empty())
         {
-            return Err("authority-mode transfer wrapper has an unsupported body".into());
+            return Err("authority transfer wrapper has an unsupported body".into());
         }
         let description = crate::kernel::ResourceDescription::new(
             name.clone(),
@@ -1655,7 +1655,7 @@ impl CheckedResourceRewrite {
             before_state.memory(),
             assumptions,
         )
-        .ok_or("cannot instantiate authority-mode transfer wrapper")?;
+        .ok_or("cannot instantiate authority transfer wrapper")?;
         let exposing = before_state
             .resources()
             .satisfies_fact(selected, assumptions)
@@ -1865,11 +1865,11 @@ impl CheckedResourceRewrite {
                 let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) =
                     selected
                 else {
-                    return Err("authority-mode body access requires one owned member".into());
+                    return Err("member body access requires one owned member".into());
                 };
                 let definition = function
                     .composite_resource_definition(name)
-                    .ok_or("authority-mode body access needs its registered definition")?;
+                    .ok_or("member body access needs its registered definition")?;
                 if quantity.as_const() != Some(1)
                     || !definition.resource_parameters.is_empty()
                     || definition.matched.is_some()
@@ -1894,13 +1894,13 @@ impl CheckedResourceRewrite {
                     || selected_children.is_some()
                 {
                     return Err(
-                    "authority-mode body access requires a private body of owned memory or declared resources".into(),
+                    "member body access requires a private body of owned memory or declared resources".into(),
                 );
                 }
                 if !before_state.loan_bindings_are_consistent()
                     || !after_state.loan_bindings_are_consistent()
                 {
-                    return Err("authority-mode body access changed loan bindings".into());
+                    return Err("member body access changed loan bindings".into());
                 }
                 if !before_state
                     .resources()
@@ -1909,24 +1909,22 @@ impl CheckedResourceRewrite {
                         .resources()
                         .satisfies_fact(selected, after_facts.assumptions())
                 {
-                    return Err(
-                        "authority-mode body access requires the folded member throughout".into(),
-                    );
+                    return Err("member body access requires the folded member throughout".into());
                 }
                 let introduced = after_facts
                     .introduced_since(before_facts)
-                    .ok_or("authority-mode body access facts do not descend from their input")?;
+                    .ok_or("member body access facts do not descend from their input")?;
                 let assumptions = before_facts.assumptions();
                 let was_open = before_state.population_body_is_open(name, arguments);
                 let now_open = after_state.population_body_is_open(name, arguments);
                 if was_open == now_open {
-                    return Err("authority-mode body access must open or close one member".into());
+                    return Err("member body access must open or close one member".into());
                 }
                 if !before_state.population_access.checks_rewrite(
                     &after_state.population_access,
                     &(name.clone(), arguments.clone()),
                 ) {
-                    return Err("authority-mode body access changed another open scope".into());
+                    return Err("member body access changed another open scope".into());
                 }
                 let singleton = ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(selected.clone());
@@ -1937,7 +1935,7 @@ impl CheckedResourceRewrite {
                     before_state.memory(),
                     assumptions,
                 )
-                .ok_or("authority-mode body access cannot instantiate its private body")?;
+                .ok_or("member body access cannot instantiate its private body")?;
                 let children = expanded.facts();
                 // The exact owned member checked above carries its private body,
                 // including at an abstract helper entry. Body access does not
@@ -1953,33 +1951,31 @@ impl CheckedResourceRewrite {
                             // open; no body facts or memory are published here.
                             continue;
                         }
-                        return Err(
-                            "authority-mode body access contains a nonprivate resource".into()
-                        );
+                        return Err("member body access contains a nonprivate resource".into());
                     };
                     let (Some(start), Some(end)) =
                         (range.start().as_const(), range.end().as_const())
                     else {
-                        return Err("authority-mode private body needs concrete bounds".into());
+                        return Err("member private body needs concrete bounds".into());
                     };
                     let bytes = (end as i32)
                         .checked_sub(start as i32)
                         .filter(|length| *length > 0)
                         .and_then(|length| length.checked_mul(range.element_width() as i32))
                         .and_then(|bytes| u32::try_from(bytes).ok())
-                        .ok_or("authority-mode private body needs a positive bounded range")?;
+                        .ok_or("member private body needs a positive bounded range")?;
                     let base = range
                         .base()
                         .offset_by_elements(range.start().clone(), range.element_width());
                     if !before_state.memory().access_in_bounds(&base, bytes)
                         && base.block != crate::kernel::PointerBlock::ExternalArgument
                     {
-                        return Err("authority-mode private body exceeds live storage".into());
+                        return Err("member private body exceeds live storage".into());
                     }
                     if let Some(ledger) = before_state.loan_ledger() {
                         ledger
                             .permits_memory_access_with_assumptions(range, assumptions)
-                            .map_err(|_| "authority-mode private body has an active borrow")?;
+                            .map_err(|_| "member private body has an active borrow")?;
                     }
                 }
                 let child_context = ResourceContext::new_with_equalities(assumptions)
@@ -2021,9 +2017,7 @@ impl CheckedResourceRewrite {
                             .iter()
                             .any(|(_, fact)| !assumptions.proves_exact(fact))
                     {
-                        return Err(
-                            "authority-mode body close requires its current declared facts".into(),
-                        );
+                        return Err("member body close requires its current declared facts".into());
                     }
                     allowed.extend(body_facts.propositions);
                 }
@@ -2042,7 +2036,7 @@ impl CheckedResourceRewrite {
                         )
                 }) {
                     return Err(format!(
-                        "authority-mode body access introduced an unchecked pure fact: {}",
+                        "member body access introduced an unchecked pure fact: {}",
                         truncate_debug(unchecked, 240)
                     ));
                 }
@@ -2054,13 +2048,13 @@ impl CheckedResourceRewrite {
                             children.iter().cloned(),
                             assumptions,
                         )
-                        .map_err(|_| "authority-mode body access duplicates private ownership")?
+                        .map_err(|_| "member body access duplicates private ownership")?
                 } else {
                     let mut resources = before_state.resources().clone();
                     for child in children {
                         resources = resources
                             .without_fact_incrementally(child, assumptions)
-                            .ok_or("authority-mode body close lacks its private ownership")?;
+                            .ok_or("member body close lacks its private ownership")?;
                     }
                     resources
                 };
@@ -2072,7 +2066,7 @@ impl CheckedResourceRewrite {
                         &expected_resources.loan_dependencies,
                     )
                 {
-                    return Err("authority-mode body access has the wrong resource exchange".into());
+                    return Err("member body access has the wrong resource exchange".into());
                 }
                 if now_open {
                 memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
@@ -2081,7 +2075,7 @@ impl CheckedResourceRewrite {
                 after_state.memory(),
                 assumptions,
             ) {
-                return Err("authority-mode body close changed C memory".into());
+                return Err("member body close changed C memory".into());
             }
                 let same_bindings = match (
                     &before_state.resource_bindings,
@@ -2124,9 +2118,7 @@ impl CheckedResourceRewrite {
                     || before_state.enclosing_frame_holds_locals
                         != after_state.enclosing_frame_holds_locals
                 {
-                    return Err(
-                        "authority-mode body access changed unrelated execution state".into(),
-                    );
+                    return Err("member body access changed unrelated execution state".into());
                 }
                 return Ok(Self {
                     before_state: before_state.clone(),
@@ -2182,10 +2174,7 @@ impl CheckedResourceRewrite {
                         })
                     })
                 {
-                    return Err(
-                        "authority-mode named resource rewrite requires an ordinary memory body"
-                            .into(),
-                    );
+                    return Err("named resource rewrite requires an ordinary memory body".into());
                 }
             }
             let unfold = before_state
@@ -9629,7 +9618,7 @@ impl ExecutionProofCore {
             return Err("an iterated ownership step was recorded after the trace completed".into());
         }
         // An iterated step regroups owned memory only; it creates, moves or
-        // retires no population member, so authority semantics apply it as is.
+        // retires no population member, so it applies as is.
         let before_state = self.reached_state().clone();
         let after_state =
             crate::kernel::apply_iterated_step(&before_state, &step, before_facts.assumptions())?;
@@ -16365,7 +16354,7 @@ mod authority_transfer_wrapper_scaling_tests {
             &open_facts,
             &CheckedCallEvents::default(),
         )
-        .expect("ordinary named memory is a checked representation exchange in authority mode");
+        .expect("ordinary named memory is a checked representation exchange");
         let forged_facts = open_facts
             .clone()
             .with_fact(Proposition::CMemoryReadDefined {

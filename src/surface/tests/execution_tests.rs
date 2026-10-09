@@ -17,7 +17,7 @@ fn authority_stack_project(click_source: &str) -> ClickProject {
 }
 
 #[test]
-fn authority_mode_establishes_and_retires_empty_stack_population() {
+fn authority_establishes_and_retires_empty_stack_population() {
     let c_source = r#"
         int32 value(void) {
             int32 x = 7;
@@ -48,7 +48,7 @@ fn authority_mode_establishes_and_retires_empty_stack_population() {
 }
 
 #[test]
-fn authority_mode_conserves_one_local_member() {
+fn authority_conserves_one_local_member() {
     let c_source = r#"
         int32 value(void) {
             int32 x = 7;
@@ -82,7 +82,7 @@ fn authority_mode_conserves_one_local_member() {
 }
 
 #[test]
-fn authority_mode_cannot_reestablish_after_retirement() {
+fn authority_cannot_reestablish_after_retirement() {
     let c_source = r#"
         int32 value(void) {
             int32 x = 7;
@@ -113,7 +113,7 @@ fn authority_mode_cannot_reestablish_after_retirement() {
 }
 
 #[test]
-fn authority_mode_rejects_automatic_storage_end_with_live_authority() {
+fn authority_rejects_automatic_storage_end_with_live_authority() {
     let c_source = r#"
         int32 value(void) {
             int32 x = 7;
@@ -142,7 +142,7 @@ fn authority_mode_rejects_automatic_storage_end_with_live_authority() {
 }
 
 #[test]
-fn authority_mode_imported_pointer_without_live_storage_cannot_establish_population() {
+fn authority_imported_pointer_without_live_storage_cannot_establish_population() {
     let c_source = r#"
         int32 value(int32* p) {
             return 7;
@@ -173,7 +173,7 @@ fn authority_mode_imported_pointer_without_live_storage_cannot_establish_populat
 }
 
 #[test]
-fn authority_mode_cannot_create_untracked_member_before_establishment() {
+fn authority_cannot_create_untracked_member_before_establishment() {
     let c_source = r#"
         int32 value(void) {
             int32 x = 7;
@@ -208,7 +208,7 @@ fn authority_mode_cannot_create_untracked_member_before_establishment() {
 }
 
 #[test]
-fn authority_mode_rejects_double_member_consumption() {
+fn authority_rejects_double_member_consumption() {
     let c_source = "int32 value(void) { int32 x = 7; return x; }";
     let click_source = r#"
         authorized resource reference(p: int32*) {}
@@ -239,7 +239,7 @@ fn authority_mode_rejects_double_member_consumption() {
 }
 
 #[test]
-fn authority_mode_cannot_retire_with_live_member() {
+fn authority_cannot_retire_with_live_member() {
     let c_source = "int32 value(void) { int32 x = 7; return x; }";
     let click_source = r#"
         authorized resource reference(p: int32*) {}
@@ -265,7 +265,7 @@ fn authority_mode_cannot_retire_with_live_member() {
 }
 
 #[test]
-fn authority_mode_count_requires_owned_authority() {
+fn authority_count_requires_owned_authority() {
     let c_source = "int32 value(int32* p) { return 7; }";
     let click_source = r#"
         authorized resource reference(p: int32*) {}
@@ -289,7 +289,7 @@ fn authority_mode_count_requires_owned_authority() {
 }
 
 #[test]
-fn authority_mode_refuses_legacy_count_observation() {
+fn authority_count_of_a_population_without_authority_is_refused() {
     let c_source = "int32 value(int32* p) { return 7; }";
     let click_source = r#"
         authorized abstract resource reference(p: int32*);
@@ -306,12 +306,12 @@ fn authority_mode_refuses_legacy_count_observation() {
         &authority_stack_project(click_source),
         &[("authority_stack.c", c_source)],
     )
-    .expect_err("count cannot read the legacy population ledger in authority mode");
+    .expect_err("a count needs the population's authority");
     assert!(error.message().contains("count"), "{error:?}");
 }
 
 #[test]
-fn authority_mode_plain_c_helper_call_follows_the_ordinary_call_rules() {
+fn authority_plain_c_helper_call_follows_the_ordinary_call_rules() {
     let c_source = r#"
         int32 helper(void) { return 7; }
         int32 value(void) {
@@ -334,7 +334,7 @@ fn authority_mode_plain_c_helper_call_follows_the_ordinary_call_rules() {
         &[("authority_stack.c", c_source)],
     )
     .expect_err("an unverified helper without a contract cannot be called opaquely");
-    // The helper's contract moves no resource, so authority mode adds no
+    // The helper's contract moves no resource, so population rules add no
     // refusal of its own; the ordinary rule for unverified callees applies.
     assert!(
         error
@@ -345,7 +345,7 @@ fn authority_mode_plain_c_helper_call_follows_the_ordinary_call_rules() {
 }
 
 #[test]
-fn authority_mode_calls_a_verified_helper_without_population_effects() {
+fn authority_calls_a_verified_helper_without_population_effects() {
     let c_source = r#"
         int32 helper(void) { return 7; }
         int32 value(void) { return helper(); }
@@ -375,7 +375,7 @@ fn authority_mode_calls_a_verified_helper_without_population_effects() {
 }
 
 #[test]
-fn authority_mode_helper_returns_the_same_authority_and_member() {
+fn authority_helper_returns_the_same_authority_and_member() {
     let c_source = r#"
         int32 helper(int32* p) { return 7; }
         int32 value(void) {
@@ -420,7 +420,7 @@ fn authority_mode_helper_returns_the_same_authority_and_member() {
 }
 
 #[test]
-fn authority_mode_helper_consumes_one_member_and_returns_authority() {
+fn authority_helper_consumes_one_member_and_returns_authority() {
     let c_source = r#"
         int32 drop_reference(int32* p) { return 7; }
         int32 value(void) {
@@ -466,7 +466,7 @@ fn authority_mode_helper_consumes_one_member_and_returns_authority() {
 }
 
 #[test]
-fn authority_mode_helper_produces_one_member_and_returns_authority() {
+fn authority_helper_produces_one_member_and_returns_authority() {
     let c_source = r#"
         int32 add_reference(int32* p) { return 7; }
         int32 value(void) {
@@ -512,7 +512,7 @@ fn authority_mode_helper_produces_one_member_and_returns_authority() {
 }
 
 #[test]
-fn authority_mode_helper_cannot_claim_creation_without_folding_member() {
+fn authority_helper_cannot_claim_creation_without_folding_member() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
         authorized resource reference(p: int32*) {}
@@ -538,7 +538,7 @@ fn authority_mode_helper_cannot_claim_creation_without_folding_member() {
 }
 
 #[test]
-fn authority_mode_helper_cannot_birth_imported_member_twice() {
+fn authority_helper_cannot_birth_imported_member_twice() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
         authorized resource reference(p: int32*) {}
@@ -563,7 +563,7 @@ fn authority_mode_helper_cannot_birth_imported_member_twice() {
 }
 
 #[test]
-fn authority_mode_creating_helper_requires_caller_authority() {
+fn authority_creating_helper_requires_caller_authority() {
     let c_source = r#"
         int32 add_reference(int32* p) { return 7; }
         int32 value(void) {
@@ -599,7 +599,7 @@ fn authority_mode_creating_helper_requires_caller_authority() {
 }
 
 #[test]
-fn authority_mode_helper_cannot_create_private_memory_from_opaque_authority() {
+fn authority_helper_cannot_create_private_memory_from_opaque_authority() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
         authorized resource reference(p: int32*) { owns p[0..1]; }
@@ -626,7 +626,7 @@ fn authority_mode_helper_cannot_create_private_memory_from_opaque_authority() {
 }
 
 #[test]
-fn authority_mode_helper_cannot_claim_consumption_without_spending_member() {
+fn authority_helper_cannot_claim_consumption_without_spending_member() {
     let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
     let click_source = r#"
         authorized resource reference(p: int32*) {}
@@ -649,7 +649,7 @@ fn authority_mode_helper_cannot_claim_consumption_without_spending_member() {
 }
 
 #[test]
-fn authority_mode_helper_cannot_spend_imported_member_twice() {
+fn authority_helper_cannot_spend_imported_member_twice() {
     let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
     let click_source = r#"
         authorized resource reference(p: int32*) {}
@@ -674,7 +674,7 @@ fn authority_mode_helper_cannot_spend_imported_member_twice() {
 }
 
 #[test]
-fn authority_mode_consuming_helper_requires_caller_member() {
+fn authority_consuming_helper_requires_caller_member() {
     let c_source = r#"
         int32 drop_reference(int32* p) { return 7; }
         int32 value(void) {
@@ -1260,7 +1260,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
         .store(local_i, int32(3))
         .without_local_block(&"local:i".into());
 
-    // Authority semantics give the entry a creation ledger with a fresh
+    // The entry has a creation ledger with a fresh
     // identity; it records nothing here.
     assert!(
         verified

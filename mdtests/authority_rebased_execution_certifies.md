@@ -1,4 +1,4 @@
-# A checked execution from a separately built entry certifies in authority mode
+# A checked execution from a separately built entry certifies
 
 The checked execution started from an entry state built separately from the
 contract's, differing only in an empty creation ledger. Certification

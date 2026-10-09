@@ -1,7 +1,7 @@
 # predicate preconditions cannot silently reset authority counts
 
 The predicate equates the unchanged C counter to a positive authenticated
-population. Capturing a legacy empty model would incorrectly unfold this
+population. Capturing an empty model would incorrectly unfold this
 predicate to a zero counter. The false zero postcondition must be refused.
 
 ```c filename=inspect.c

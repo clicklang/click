@@ -1,4 +1,4 @@
-# Named callback contracts retain authority semantics at their entry boundary
+# Named callback contracts check authority at their entry boundary
 
 ```c filename=callback.c
 void invoke(void (*callback)(int32*), int32* pool) { callback(pool); }

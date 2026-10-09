@@ -1,4 +1,4 @@
-# A contract producing a string literal exits ordinarily in authority mode
+# A contract producing a string literal exits ordinarily
 
 The entry state owns the function's own string literals. The contract
 produces that storage and reaches no population, so it takes the ordinary

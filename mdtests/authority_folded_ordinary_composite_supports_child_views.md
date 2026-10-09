@@ -1,12 +1,11 @@
-# A folded ordinary composite supports its children's views in authority mode
+# A folded ordinary composite supports its children's views
 
 Each arm calls a helper that returns `ready_permit(key)`, then folds the
 permit into `ready_bundle(key)`. The branch interface keeps the bundle and
 views the permit inside it.
 
-A fold consumes the contained children. Under legacy semantics the folded head
-then supports views of those children. Authority mode kept only the checked
-exchange for every family, so the view was gone and the kernel rejected the
+A fold consumes the contained children, and the folded head then supports
+views of those children. The checked exchange was once kept for every family, so the view was gone and the kernel rejected the
 interface. `ready_bundle` is not `authorized` and reaches no population. Its
 fold now keeps the ordinary law, which supports the children's views. A
 family that reaches a population still keeps only the checked exchange.

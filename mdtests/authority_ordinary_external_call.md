@@ -1,7 +1,7 @@
-# An ordinary external contract applies in authority mode
+# An ordinary external contract applies
 
 `set_one` moves only memory, so its assumed contract reaches no population
-and the call applies in an authority-mode project.
+and the call applies.
 
 ```c filename=ordinary_external_call.c
 extern void set_one(int32* p);

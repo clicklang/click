@@ -1,4 +1,4 @@
-# An ordinary recursive resource unfolds by its definition in authority mode
+# An ordinary recursive resource unfolds by its definition
 
 The list resource is recursive and declared without `authorized`, so it
 reaches no population. Its unfold is checked by its definition, not as a

@@ -1,8 +1,7 @@
-# An outcome refold of an ordinary family stays on the completed path in authority mode
+# An outcome refold of an ordinary family stays on the completed path
 
 After `execute()`, `identity` unfolds, refolds and unfolds again the
-`marker(x)` it owns. Under authority semantics each outcome unfold is
-retained as a checked exchange on the completed C path, but the refold was
+`marker(x)` it owns. Each outcome unfold is retained as a checked exchange on the completed C path, but the refold was
 not. The second unfold then started from the path's retained state, where
 `marker(x)` was already unfolded, and was refused as "the rewritten composite
 is absent from both resource representations". An outcome fold is now

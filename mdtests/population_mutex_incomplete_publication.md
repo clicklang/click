@@ -1,4 +1,4 @@
-A hidden unit prevents publication of the complete population
+# A hidden unit prevents publication of the complete population
 
 A member hidden in another wrapper before publication is still part of the
 population. The published control's count includes it, so a smaller total

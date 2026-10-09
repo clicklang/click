@@ -1,4 +1,4 @@
-# An ordinary consumes/produces contract refolds its family at exit in authority mode
+# An ordinary consumes/produces contract refolds its family at exit
 
 `box_renew` unfolds the `boxed(box)` it consumes, replaces the allocation,
 and returns without an explicit `fold`. Under both resource semantics the

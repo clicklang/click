@@ -1580,7 +1580,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         collect_resource_count_families(definition.body(), &mut observed_population_families);
         collect_called_predicates(definition.body(), &mut pending_predicates);
     }
-    // Authority-mode count observations are lowered by the same checked
+    // Count observations are lowered by the same checked
     // ownership rule at contract boundaries and in proof expressions.
     for family in &observed_population_families {
         state = state.with_observed_population_family(family.clone());

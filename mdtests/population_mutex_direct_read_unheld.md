@@ -1,4 +1,4 @@
-# Guarded membership does not authorize a direct C read
+# Membership does not authorize a direct C read
 
 Members of the population carry no access to the counter. While the control
 that owns it is held by the mutex, a direct C read of the counter has no

@@ -1744,7 +1744,7 @@ fn a_call_binds_the_one_possible_instance_and_refuses_to_choose() {
 }
 
 #[test]
-fn resource_fields_preserve_checked_types_and_do_not_lower_to_legacy_resources() {
+fn resource_fields_preserve_checked_types_in_their_lowered_schema() {
     let file = parser::parse(
         r#"
         spec enum Mark { Clear, Set, }
@@ -1804,7 +1804,7 @@ fn resource_fields_preserve_checked_types_and_do_not_lower_to_legacy_resources()
     assert_ne!(
         lowered[0],
         lowered[0].clone().with_instance_schema(None),
-        "field metadata must never be erased into a legacy composite"
+        "field metadata must never be erased from the lowered definition"
     );
 }
 

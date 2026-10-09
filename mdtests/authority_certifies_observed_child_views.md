@@ -1,9 +1,9 @@
-# Contract certification accepts views of observed children in authority mode
+# Contract certification accepts views of observed children
 
 `tree_sum` views `tree(node)` and observes the trees of both children before
 reading their values. This is reduced from `examples/binary-tree`.
 
-Two certification checks failed under authority semantics:
+Two certification checks used to fail:
 
 - The entry check expands the held resources one level. The observations had
   already projected `tree(node->left)` and `tree(node->right)` as views, and

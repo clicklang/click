@@ -148,11 +148,11 @@ fn only_successful_real_malloc_records_creation() {
     };
     assert!(!after_free.population_storage_created_here(created));
 
-    let legacy = resolved_malloc(
+    let untracked = resolved_malloc(
         &pending_malloc(&CState::new().with_local("p", CValue::pointer(Pointer::null()))),
         true,
     );
-    assert!(legacy.population_effects.creation.is_none());
+    assert!(untracked.population_effects.creation.is_none());
 }
 
 #[test]

@@ -601,7 +601,7 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
     assert_eq!(
         refusal,
         CRuntimeError::FunctionContract(
-            "generic resource construction cannot create members in authority mode".into()
+            "generic resource construction cannot create members".into()
         )
     );
 

@@ -1,12 +1,12 @@
-# A call discharges a constant ensure premise in authority mode
+# A call discharges a constant ensure premise
 
 `choose` states each result as an implication on its selector argument. At a
 call with a constant selector, lowering turns each premise into a constant
 condition such as `0 == 0` or `1 == 0`. The call rule publishes an ensure's
 consequent once its premise is settled. A closed constant premise settles
-without the call context, under either resource semantics.
+without the call context.
 
-Authority mode used to accept only premises stated in the call context, so it
+The call rule used to accept only premises stated in the call context, so it
 kept every ensure as an implication. A caller that read `result.value` then
 had no fact for it.
 

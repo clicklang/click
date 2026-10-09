@@ -1,8 +1,7 @@
-# Iterated ownership gathers and scatters in authority mode
+# Iterated ownership gathers and scatters
 
 Gathering and scattering regroup owned memory only; they create, move or
-retire no population member, so an authority-mode project applies them as
-it does without authority semantics.
+retire no population member, so they apply as ordinary memory steps.
 
 ```c filename=iterated_ownership_gather_scatter.c
 void init_cells(int32* data, int32* occupied, int32 capacity) {

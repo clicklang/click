@@ -438,11 +438,11 @@ fn is_modeled_pthread_call(function_name: &str, environment: &CExecutionEnvironm
         })
 }
 
-fn authority_mode_call_refusal_path() -> CStatementExecutionPath {
+fn authority_call_refusal_path() -> CStatementExecutionPath {
     CStatementExecutionPath {
         loop_invariant_correspondence: Default::default(),
         outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
-            super::functions::AUTHORITY_MODE_ASSUMED_CALL_REFUSAL.to_string(),
+            super::functions::AUTHORITY_ASSUMED_CALL_REFUSAL.to_string(),
         )),
         facts: Vec::new().into(),
         obligations: Vec::new(),
@@ -477,12 +477,12 @@ pub(super) fn execute_c_call_assign_paths(
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
-                    || super::functions::authority_mode_preserves_assumed_resource_contract(
+                    || super::functions::authority_preserves_assumed_resource_contract(
                         rule.function.contract_interface(),
                     )
             })
     {
-        return Ok(vec![authority_mode_call_refusal_path()]);
+        return Ok(vec![authority_call_refusal_path()]);
     }
     if environment
         .modeled_pthread_binding
@@ -780,12 +780,12 @@ pub(super) fn execute_c_call_paths(
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
-                    || super::functions::authority_mode_preserves_assumed_resource_contract(
+                    || super::functions::authority_preserves_assumed_resource_contract(
                         rule.function.contract_interface(),
                     )
             })
     {
-        return Ok(vec![authority_mode_call_refusal_path()]);
+        return Ok(vec![authority_call_refusal_path()]);
     }
     if environment
         .modeled_pthread_binding

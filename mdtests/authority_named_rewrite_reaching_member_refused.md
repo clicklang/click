@@ -28,5 +28,5 @@ void remember(int32* p) {
 ```
 
 ```expect
-fail: authority-mode named resource rewrite requires an ordinary memory body
+fail: named resource rewrite requires an ordinary memory body
 ```

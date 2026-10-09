@@ -1,11 +1,11 @@
-# Loop exits join after one of them ends an address-taken local in authority mode
+# Loop exits join after one of them ends an address-taken local
 
 One exit of `inner_addr` declares `inner`, takes its address and writes
 through it before breaking. The other exit never declares it. When the first
 exit breaks, `inner`'s lifetime ends, so both exits leave the same storage
 behind.
 
-Under authority semantics each storage transition mints a fresh identity for
+Each storage transition mints a fresh identity for
 the creation ledger. The two exits therefore held ledgers that record the same
 state under different names, and the loop join refused them with "loop exits
 reach different states ... the symbolic state". The join now compares the

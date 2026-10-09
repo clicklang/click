@@ -1,8 +1,7 @@
-# An ordinary composite of tokens folds by its definition in authority mode
+# An ordinary composite of tokens folds by its definition
 
 The composite and the resources it holds are declared without `authorized`,
-so the composite reaches no population. In an authority-mode project it folds
-and unfolds by its definition rather than as a population transfer wrapper.
+so the composite reaches no population. It folds and unfolds by its definition rather than as a population transfer wrapper.
 
 ```c filename=use_bundle.c
 int32 use_bundle(int32 x) {

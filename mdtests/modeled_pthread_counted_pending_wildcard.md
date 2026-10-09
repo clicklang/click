@@ -38,5 +38,5 @@ int32 run(void* p) {
 ```
 
 ```expect
-fail: authority-mode count requires R(anchor), R(anchor, _, ...), or an exact member
+fail: count requires R(anchor), R(anchor, _, ...), or an exact member
 ```

@@ -1,4 +1,4 @@
-# Separately proved claims certify in authority mode
+# Separately proved claims certify
 
 Each claim has its own proof, so each proof builds its own entry state with
 a fresh, empty creation ledger. Certification identifies ledgers that record

@@ -1,4 +1,4 @@
-# Loop exits after calls join in authority mode
+# Loop exits after calls join
 
 Each exit reaches the join through a different call, so its creation ledger
 is a different successor. Neither ledger records any storage, member or

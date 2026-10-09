@@ -1,4 +1,4 @@
-# A loop proof certifies its contract in authority mode
+# A loop proof certifies its contract
 
 The certified path belongs to the function with its loop annotations; the
 entry resource transfer, checked from the same signature and contract, does
