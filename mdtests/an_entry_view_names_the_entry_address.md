@@ -30,5 +30,5 @@ void f(struct holder* p, int32* other, int32 n) {
 ```
 
 ```expect
-fail: `other[0]` may have changed since earlier in this function: the store to `p[0]` may have written it, because `other` may point into `p`.
+fail: `other[0]` may have changed since earlier in this function: the store to `p->buf` may have written `other[0]`. Establish that the two accesses touch separate bytes.
 ```
