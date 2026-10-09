@@ -97,10 +97,9 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (21)
+## P2: after launch (20)
 
 - [Design review of the proof language: open items](design-review.md)
-- [Shared aggregate construction and return destinations](aggregate-construction-design.md)
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
 

@@ -8,11 +8,10 @@ Adler-32 implementations against one mathematical specification, then derive
 result equality under matched input and state conditions. This is P1; the Linux
 rbtree remains the key launch demo.
 
-Shared construction/return-destination work is tracked in
-[aggregate-construction-design.md](aggregate-construction-design.md). It must
-preserve the existing Rust aggregate return, initialization and move/drop
-protocols. The checksum milestones below can continue with their current
-semantics; they are not blocked on that design.
+The implemented shared construction/return-destination contract is recorded in
+[aggregate construction](../design/aggregate-construction.md). It preserves
+existing Rust aggregate return, initialization and move/drop protocols. The
+checksum milestones below can continue with their current semantics; they are not blocked on that design.
 
 Experimental Rust support and the checksum demonstration are independently
 reviewable milestones. Document and ship the supported subset without waiting

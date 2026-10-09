@@ -1,12 +1,13 @@
 # Aggregate construction and return destinations
 
-This is the implementation contract for
-[shared aggregate construction](../issues/aggregate-construction-design.md).
+This records the implemented shared aggregate construction and return-destination
+contract.
 The shared kernel supports a bounded complete-object construction return mode.
 Existing C aggregate returns remain field copies. C++ now admits bounded
 returned construction and forwarding under a body-validated copy-equivalence
 restriction. Assignment uses a distinct RHS temporary and full-expression
-retirement; the pinned end-to-end target remains pending.
+retirement. The unchanged pinned `SpanPopBack<int>` and its read/write callers
+verify under the bounded profile below.
 
 The copy-return implementation now checks source initialization inside the
 materialization transition, before allocating or copying a result. Kernel tests
@@ -37,7 +38,8 @@ Construction returns still require complete-object destinations. Union/array
 layouts, exceptional construction, external construction assumptions, and
 constructor callbacks remain refused. Contract
 matching, state substitution, branch joins, and checked snapshot comparisons
-include the destination and result mode. Source admission remains pending.
+include the destination and result mode. C++ source admission uses the bounded
+copy-equivalence restriction below.
 
 Ordinary void constructors can designate a pointer parameter as their
 construction destination. The call binds its entry value once; reassignment of
@@ -60,8 +62,8 @@ the native signature nor sidecar syntax changes.
 `c_end_automatic_lifetimes` makes a frontend-recorded expression boundary an
 explicit shared statement. It uses the existing automatic-storage retirement
 checks, removes only the named objects and their ownership, and preserves copied
-pointer values and independently live backing storage. C++ lowering must still
-select and emit those boundaries when returned construction is admitted.
+pointer values and independently live backing storage. C++ lowering records and
+emits full-expression retirement for admitted assignment temporaries.
 
 ## Surface and source boundary
 
@@ -286,8 +288,34 @@ contract. Establish that from checked constructors/copies, not a span intrinsic.
 Pinned runtime `first(K)` now has ordinary, expanded and retained returned
 construction coverage for `0 <= K <= N` within the accepted bound. Equal
 endpoints require no stable-view loan, so a zero-count caller passes with only
-descriptor views. `SpanPopBack` and its read/write callers are the remaining
-acceptance work.
+descriptor views.
+
+Unchanged Bitcoin v31.1 `SpanPopBack<int>` verifies for
+`1 <= N <= 1,073,741,823`, with native uint64 extent, mutable descriptor fields,
+an initialized backing view and descriptor/backing separation. Its pointer is
+unchanged, its length becomes `N-1`, and the returned reference retains the
+original last element's address and value. The entire original backing array
+remains unchanged through assignment and RHS descriptor retirement. The proof
+states current-array reads against entry-array reads, including the element
+outside the shortened descriptor.
+
+Modular callers read the saved reference using views, or write it using an
+existing backing owner. The write caller establishes the new last value and a
+frame for every other original element. Singleton callers construct an empty
+RHS descriptor and then read or write the still-live original element;
+three-element and symbolic-length fixtures also pass. Ordinary, expanded and
+retained verification cover the helper and callers. Missing descriptor/backing
+authority, nonempty and extent bounds, descriptor/backing separation, out-of-range
+`first`, and views-only writes are refused.
+
+Captured interior addresses retain one checked additive spelling per address
+class for indexed supplier selection. This metadata preserves the explicit
+base; it grants no authority or bounds. Alignment expands at most one retained
+spelling per path, and deterministic multi-size tests cover unrelated owners in
+the same address space. Separation may relate eight-byte descriptor fields to
+four-byte elements: each access must fit its own certificate side in full.
+Constant cross-width containment uses exact byte intervals; symbolic cross-width
+containment remains refused.
 
 Primary code owners are [shared interfaces](../src/kernel/primitives/contracts.rs),
 [interface carriers](../src/kernel/primitives.rs),

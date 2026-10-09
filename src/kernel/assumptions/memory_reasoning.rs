@@ -2169,9 +2169,8 @@ impl PureFactContext {
         ) else {
             return false;
         };
-        if left.element_width() != right.element_width() {
-            return false;
-        }
+        // Separate sides need not have the same logical element width.
+        // Each query is contained in its own certificate side below.
         if self
             .resource_compositions
             .iter()

@@ -6176,11 +6176,14 @@ pub(super) fn memory_range_contained_for_memory_resolution(
     parent: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    if range.element_width() != parent.element_width() {
-        return false;
-    }
+    // Exact constant byte intervals cover typed accesses even when one side
+    // uses raw bytes or int32 words. Symbolic cross-width containment remains
+    // refused; the recursive element-index rules below require equal widths.
     if memory_range_shallowly_contained_with_facts(range, parent, assumptions) {
         return true;
+    }
+    if range.element_width() != parent.element_width() {
+        return false;
     }
     if super::reasoning::resolution_interrupted() {
         return false;

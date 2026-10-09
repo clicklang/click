@@ -4408,5 +4408,602 @@ fn check_pinned_std_span_first(empty: bool, expand_and_retain: bool) {
                 .is_err()
         );
     }
+    if expand_and_retain {
+        let beyond = source.replace(
+            " requires count <= span._M_extent._M_extent_value;",
+            " requires span._M_extent._M_extent_value < count;",
+        );
+        let error =
+            verify_program_prepared_project(&read_click_project(&path, &beyond).unwrap(), &import)
+                .unwrap_err();
+        assert!(
+            error.message().contains("probe.contract"),
+            "{}",
+            error.message()
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn pinned_span_last_index_contracts() -> &'static str {
+    r#"theorem bounded_span_back_address(pointer: int32*, index: uint64) {
+ requires index <= 1073741822u64;
+ ensures pointer + (int32)index == pointer + index by { simp() using { index <= 1073741822u64; } }
+}
+theorem bounded_span_last_index(n: uint64) {
+ requires 1u64 <= n;
+ requires n <= 1073741823u64;
+ ensures 1 <= (int32)n and (int32)n <= 1073741823 and 0 <= (int32)n - 1 and (int32)n - 1 < (int32)n and 0 <= (int32)(n - 1u64) and (int32)(n - 1u64) < (int32)n and n - 1u64 <= 1073741822u64 and (int32)(n - 1u64) == (int32)n - 1 by {
+ apply(uint64_less_equal_to_integer(1u64, n));
+ apply(uint64_less_equal_to_integer(n, 1073741823u64));
+ apply(uint64_subtract_to_integer(n, 1u64));
+ have 0 <= to_integer((n - 1u64)) by {
+     arithmetic() using {
+         1 <= to_integer(n);
+         to_integer(n) <= 1073741823;
+         to_integer((n - 1u64)) == to_integer(n) - 1;
+     }
+ }
+ have to_integer((n - 1u64)) <= 1073741822 by {
+     arithmetic() using {
+         1 <= to_integer(n);
+         to_integer(n) <= 1073741823;
+         to_integer((n - 1u64)) == to_integer(n) - 1;
+         0 <= to_integer((n - 1u64));
+     }
+ }
+ have n - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((n - 1u64), 1073741822u64));
+ have to_integer((int32)n) == to_integer(n) by {
+ arithmetic_certificate special {
+ premise 0: 1 <= to_integer(n) => 1 <= to_integer(n);
+ premise 1: to_integer(n) <= 1073741823 => to_integer(n) <= 1073741823;
+ integer_cast_identity bounds [0, 1] => to_integer((int32)n) == to_integer(n); conclusion 0;
+ }
+ }
+ have 1 <= to_integer((int32)n) by {
+     arithmetic() using {
+         1 <= to_integer(n);
+         to_integer((int32)n) == to_integer(n);
+     }
+ }
+ apply(int32_less_equal_of_to_integer(1, (int32)n));
+ have to_integer((int32)n) <= 1073741823 by {
+ arithmetic() using {
+  to_integer((int32)n) == to_integer(n);
+  to_integer(n) <= 1073741823;
+ }
+ }
+ apply(int32_less_equal_of_to_integer((int32)n, 1073741823));
+ have 0 <= (int32)n - 1 by {
+     arithmetic() using {
+         1 <= (int32)n;
+         (int32)n <= 1073741823;
+     }
+ }
+ have (int32)n - 1 < (int32)n by {
+     arithmetic() using {
+         1 <= (int32)n;
+         (int32)n <= 1073741823;
+     }
+ }
+ have to_integer((int32)(n - 1u64)) == to_integer(n - 1u64) by {
+ arithmetic_certificate special {
+ premise 0: 0 <= to_integer(n - 1u64) => 0 <= to_integer(n - 1u64);
+ premise 1: to_integer(n - 1u64) <= 1073741822 => to_integer(n - 1u64) <= 1073741822;
+ integer_cast_identity bounds [0, 1] => to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); conclusion 0;
+ }
+ }
+ have to_integer((int32)n) - to_integer(1) >= -2147483648 by {
+ arithmetic() using { 1 <= to_integer((int32)n); }
+ }
+ have to_integer((int32)n) - to_integer(1) <= 2147483647 by {
+ arithmetic() using { to_integer((int32)n) <= 1073741823; }
+ }
+ have to_integer(n) <= 2147483647 by { arithmetic() using { to_integer(n) <= 1073741823; } }
+ have n <= 2147483647u64 by apply(uint64_less_equal_of_to_integer(n, 2147483647u64));
+ have defined((int32)n - 1) by {
+ apply(int32_subtract_defined_by_integer_bounds((int32)n, 1));
+ simp();
+ }
+ apply(int32_subtract_to_integer((int32)n, 1)) using { defined((int32)n - 1); }
+ have to_integer((int32)(n - 1u64)) == to_integer((int32)n - 1) by {
+ arithmetic() using {
+  to_integer((int32)(n - 1u64)) == to_integer(n - 1u64);
+  to_integer(n - 1u64) == to_integer(n) - 1;
+  to_integer((int32)n) == to_integer(n);
+  to_integer((int32)n - 1) == to_integer((int32)n) - to_integer(1);
+ }
+ }
+ apply(int32_equal_of_to_integer((int32)(n - 1u64), (int32)n - 1));
+ have 0 <= (int32)(n - 1u64) by { rewrite((int32)(n - 1u64) == (int32)n - 1); assumption(); }
+ have (int32)(n - 1u64) < (int32)n by { rewrite((int32)(n - 1u64) == (int32)n - 1); assumption(); }
+ simp();
+ }
+}
+theorem bounded_span_last_address(pointer: int32*, n: uint64) {
+ requires 1u64 <= n;
+ requires n <= 1073741823u64;
+ requires n - 1u64 <= 1073741822u64;
+ ensures pointer + ((int32)n - 1) == pointer + (n - 1u64) by {
+  apply(bounded_span_last_index(n));
+  have (int32)n - 1 == (int32)(n - 1u64) by { simp() using { (int32)(n - 1u64) == (int32)n - 1; } }
+  rewrite((int32)n - 1 == (int32)(n - 1u64));
+  simp() using { n - 1u64 <= 1073741822u64; }
+ }
+}
+"#
+}
+
+fn pinned_span_back_signed_address_contracts() -> &'static str {
+    r#"int32& span__int__value_unsigned_long_18446744073709551615_back(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_ptr;
+ views this->_M_extent._M_extent_value;
+ views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];
+ requires 1u64 <= this->_M_extent._M_extent_value;
+ requires this->_M_extent._M_extent_value <= 1073741823u64;
+ ensures &result == this->_M_ptr + ((int32)this->_M_extent._M_extent_value - 1);
+ ensures &result == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64);
+ ensures result == old(this->_M_ptr[this->_M_extent._M_extent_value - 1u64]);
+} by {
+ apply(uint64_less_equal_to_integer(1u64, this->_M_extent._M_extent_value));
+ apply(uint64_less_equal_to_integer(this->_M_extent._M_extent_value, 1073741823u64));
+ apply(uint64_subtract_to_integer(this->_M_extent._M_extent_value, 1u64));
+ have 0 <= to_integer((this->_M_extent._M_extent_value - 1u64)) by {
+     arithmetic() using {
+         1 <= to_integer(this->_M_extent._M_extent_value);
+         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
+         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
+     }
+ }
+ have to_integer((this->_M_extent._M_extent_value - 1u64)) <= 1073741822 by {
+     arithmetic() using {
+         1 <= to_integer(this->_M_extent._M_extent_value);
+         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
+         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
+         0 <= to_integer((this->_M_extent._M_extent_value - 1u64));
+     }
+ }
+ have this->_M_extent._M_extent_value - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((this->_M_extent._M_extent_value - 1u64), 1073741822u64));
+ have to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value) by {
+ arithmetic_certificate special {
+ premise 0: 1 <= to_integer(this->_M_extent._M_extent_value) => 1 <= to_integer(this->_M_extent._M_extent_value);
+ premise 1: to_integer(this->_M_extent._M_extent_value) <= 1073741823 => to_integer(this->_M_extent._M_extent_value) <= 1073741823;
+ integer_cast_identity bounds [0, 1] => to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value); conclusion 0;
+ }
+ }
+ have 1 <= to_integer((int32)this->_M_extent._M_extent_value) by {
+     arithmetic() using {
+         1 <= to_integer(this->_M_extent._M_extent_value);
+         to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value);
+     }
+ }
+ apply(int32_less_equal_of_to_integer(1, (int32)this->_M_extent._M_extent_value));
+ have 0 <= (int32)this->_M_extent._M_extent_value - 1 by {
+     arithmetic() using {
+         1 <= (int32)this->_M_extent._M_extent_value;
+         (int32)this->_M_extent._M_extent_value <= 1073741823;
+     }
+ }
+ have (int32)this->_M_extent._M_extent_value - 1 < (int32)this->_M_extent._M_extent_value by {
+     arithmetic() using {
+         1 <= (int32)this->_M_extent._M_extent_value;
+         (int32)this->_M_extent._M_extent_value <= 1073741823;
+     }
+ }
+ apply(bounded_span_last_index(this->_M_extent._M_extent_value));
+ execute();
+ apply(bounded_span_last_address(this->_M_ptr, this->_M_extent._M_extent_value));
+ rewrite(this->_M_ptr + ((int32)this->_M_extent._M_extent_value - 1) == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64));
+ simp();
+}
+"#
+}
+
+// The original Bitcoin helper preserves a saved reference and the complete
+// incoming backing frame while retiring only its constructed RHS descriptor.
+#[test]
+#[ignore = "nightly: 20s parallel pinned symbolic SpanPopBack and full backing frame"]
+fn pinned_span_pop_back_constructs_shorter_descriptor_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::Reference);
+}
+
+#[test]
+#[ignore = "nightly: 131s parallel pinned SpanPopBack expansion and retained verification"]
+fn pinned_span_pop_back_expands_and_retains_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::ProofTools);
+}
+
+#[test]
+#[ignore = "nightly: 22s parallel pinned SpanPopBack read caller"]
+fn pinned_span_pop_back_read_caller_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::Read);
+}
+
+#[test]
+#[ignore = "nightly: 53s parallel pinned SpanPopBack owned write caller"]
+fn pinned_span_pop_back_write_caller_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::Write);
+}
+
+#[test]
+#[ignore = "nightly: 55s parallel pinned singleton SpanPopBack after empty RHS descriptor retirement"]
+fn pinned_span_pop_back_singleton_read_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::SingletonRead);
+}
+
+#[test]
+#[ignore = "nightly: 53s parallel pinned singleton SpanPopBack write after empty RHS descriptor retirement"]
+fn pinned_span_pop_back_singleton_write_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::SingletonWrite);
+}
+
+#[test]
+#[ignore = "nightly: 41s parallel pinned three-element SpanPopBack"]
+fn pinned_span_pop_back_several_elements_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::Several);
+}
+
+#[test]
+#[ignore = "nightly: 154s parallel pinned SpanPopBack read expansion and retained verification"]
+fn pinned_span_pop_back_read_expands_and_retains_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::ReadTools);
+}
+
+#[test]
+#[ignore = "nightly: 254s parallel pinned SpanPopBack write expansion and retained verification"]
+fn pinned_span_pop_back_write_expands_and_retains_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::WriteTools);
+}
+
+#[test]
+#[ignore = "nightly: 186s parallel pinned SpanPopBack authority and bounds refusals"]
+fn pinned_span_pop_back_requires_authority_bounds_and_separation_offline() {
+    check_pinned_span_pop_back(SpanPopBackPhase::Refusals);
+}
+
+#[derive(Clone, Copy)]
+enum SpanPopBackPhase {
+    Reference,
+    ProofTools,
+    Read,
+    Write,
+    SingletonRead,
+    SingletonWrite,
+    Several,
+    ReadTools,
+    WriteTools,
+    Refusals,
+}
+
+fn check_pinned_span_pop_back(phase: SpanPopBackPhase) {
+    let harness = match phase {
+        SpanPopBackPhase::SingletonRead | SpanPopBackPhase::Read | SpanPopBackPhase::ReadTools => {
+            "#include <span.h>\nint probe(std::span<int>& span) { int& back = SpanPopBack(span); return back; }\n"
+        }
+        SpanPopBackPhase::SingletonWrite
+        | SpanPopBackPhase::Write
+        | SpanPopBackPhase::WriteTools => {
+            "#include <span.h>\nint probe(std::span<int>& span, int input) { int& back = SpanPopBack(span); back = input; return back; }\n"
+        }
+        _ => "#include <span.h>\nint& probe(std::span<int>& span) { return SpanPopBack(span); }\n",
+    };
+    let (root, import) = pinned_span_fixture_with_dependencies(
+        "pop-back",
+        harness,
+        &[
+            "sysroot/usr/include/c++/12/bits/ptr_traits.h",
+            "bitcoin-src/src/span.h",
+        ],
+    );
+    let pop_back = import
+        .export()
+        .reachable_functions
+        .iter()
+        .find(|function| function.name.starts_with("SpanPopBack"))
+        .unwrap()
+        .name
+        .clone();
+    let mut source = format!(
+        "{}{}{}{}",
+        pinned_span_construction_contracts(&import),
+        pinned_span_last_index_contracts(),
+        pinned_span_back_signed_address_contracts(),
+        r#"
+bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_extent._M_extent_value;
+ ensures this->_M_extent._M_extent_value == 0u64 implies result == 1;
+ ensures this->_M_extent._M_extent_value != 0u64 implies result == 0;
+} by { execute(); simp(); }
+theorem last_span_cells_separate(span: struct span__int__value_unsigned_long_18446744073709551615*, n: uint64) {
+ requires 1u64 <= n;
+ requires n <= 1073741823u64;
+ requires separate(memory(span->_M_ptr), memory(span->_M_ptr[0..(int32)n]));
+ requires separate(memory(span->_M_extent._M_extent_value), memory(span->_M_ptr[0..(int32)n]));
+ ensures separate(memory(span->_M_ptr), memory(span->_M_ptr[n - 1u64])) and separate(memory(span->_M_extent._M_extent_value), memory(span->_M_ptr[n - 1u64])) by {
+  apply(bounded_span_last_index(n));
+  apply(bounded_span_last_address(span->_M_ptr, n));
+  have separate(memory(span->_M_ptr), memory(span->_M_ptr[(int32)n - 1])) by { assumption(); }
+  have separate(memory(span->_M_extent._M_extent_value), memory(span->_M_ptr[(int32)n - 1])) by { assumption(); }
+  have span->_M_ptr + (n - 1u64) == span->_M_ptr + ((int32)n - 1) by { simp() using { span->_M_ptr + ((int32)n - 1) == span->_M_ptr + (n - 1u64); } }
+  rewrite(span->_M_ptr + (n - 1u64) == span->_M_ptr + ((int32)n - 1));
+  assumption();
+ }
+}
+theorem bounded_span_prefix(n: uint64) {
+ requires 1u64 <= n;
+ requires n <= 1073741823u64;
+ ensures n - 1u64 <= n and n - 1u64 <= 1073741822u64 and 0 <= (int32)(n - 1u64) and (int32)(n - 1u64) <= (int32)n by {
+  apply(uint64_less_equal_to_integer(1u64, n));
+  apply(uint64_less_equal_to_integer(n, 1073741823u64));
+  apply(uint64_subtract_to_integer(n, 1u64));
+  have 0 <= to_integer(n - 1u64) by {
+   arithmetic() using { 1 <= to_integer(n); to_integer(n - 1u64) == to_integer(n) - 1; }
+  }
+  have to_integer(n - 1u64) <= to_integer(n) by {
+   arithmetic() using { to_integer(n - 1u64) == to_integer(n) - 1; }
+  }
+  have to_integer(n - 1u64) <= 1073741822 by {
+   arithmetic() using { to_integer(n) <= 1073741823; to_integer(n - 1u64) == to_integer(n) - 1; }
+  }
+  apply(uint64_less_equal_of_to_integer(n - 1u64, 1073741822u64));
+  have to_integer((int32)n) == to_integer(n) by {
+   arithmetic_certificate special {
+    premise 0: 1 <= to_integer(n) => 1 <= to_integer(n);
+    premise 1: to_integer(n) <= 1073741823 => to_integer(n) <= 1073741823;
+    integer_cast_identity bounds [0, 1] => to_integer((int32)n) == to_integer(n); conclusion 0;
+   }
+  }
+  have to_integer((int32)(n - 1u64)) == to_integer(n - 1u64) by {
+   arithmetic_certificate special {
+    premise 0: 0 <= to_integer(n - 1u64) => 0 <= to_integer(n - 1u64);
+    premise 1: to_integer(n - 1u64) <= 1073741822 => to_integer(n - 1u64) <= 1073741822;
+    integer_cast_identity bounds [0, 1] => to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); conclusion 0;
+   }
+  }
+  have 0 <= to_integer((int32)(n - 1u64)) by {
+   arithmetic() using { 0 <= to_integer(n - 1u64); to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); }
+  }
+  have to_integer((int32)(n - 1u64)) <= to_integer((int32)n) by {
+   arithmetic() using { to_integer(n - 1u64) <= to_integer(n); to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); to_integer((int32)n) == to_integer(n); }
+  }
+  apply(int32_less_equal_of_to_integer(0, (int32)(n - 1u64)));
+  apply(int32_less_equal_of_to_integer((int32)(n - 1u64), (int32)n));
+  apply(uint64_less_equal_of_to_integer(n - 1u64, n));
+  simp();
+ }
+}
+int32& POP_BACK(struct span__int__value_unsigned_long_18446744073709551615& span) {
+ owns span._M_ptr;
+ owns span._M_extent._M_extent_value;
+ views span._M_ptr[0..(int32)span._M_extent._M_extent_value];
+ requires separate(memory(span._M_ptr), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
+ requires separate(memory(span._M_extent._M_extent_value), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
+
+ requires separate(memory(span._M_extent._M_extent_value), memory(span._M_ptr[span._M_extent._M_extent_value - 1u64]));
+ requires separate(memory(span._M_ptr), memory(span._M_ptr[span._M_extent._M_extent_value - 1u64]));
+ requires 1u64 <= span._M_extent._M_extent_value;
+ requires span._M_extent._M_extent_value <= 1073741823u64;
+ ensures span._M_ptr == old(span._M_ptr);
+ ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64;
+ ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);
+ ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
+ ensures forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) implies span._M_ptr[k] == old(span._M_ptr[k]) };
+} by {
+ apply(bounded_span_last_index(span._M_extent._M_extent_value));
+ apply(bounded_span_prefix(span._M_extent._M_extent_value));
+ apply(bounded_span_last_address(span._M_ptr, span._M_extent._M_extent_value));
+ have span._M_ptr + (span._M_extent._M_extent_value - 1u64) == span._M_ptr + ((int32)span._M_extent._M_extent_value - 1) by { simp() using { span._M_ptr + ((int32)span._M_extent._M_extent_value - 1) == span._M_ptr + (span._M_extent._M_extent_value - 1u64); } }
+ step(); step(); step(); step();
+ have back == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) by simp;
+ have &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) by simp;
+ have size == span._M_extent._M_extent_value by simp;
+ have 1u64 <= size by simp;
+ have size <= 1073741823u64 by simp;
+ apply(bounded_span_last_index(size));
+ apply(bounded_span_prefix(size));
+ have (int32)size == (int32)span._M_extent._M_extent_value by simp;
+
+ have 0 <= (int32)(size - 1u64) by simp;
+ have (int32)(size - 1u64) <= (int32)span._M_extent._M_extent_value by simp;
+ have size - 1u64 <= span._M_extent._M_extent_value by { simp() using { size == span._M_extent._M_extent_value; size - 1u64 <= size; } }
+ step(); step(); step();
+ have back == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) by simp;
+ step();
+ have back == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) by simp;
+ execute();
+ have span._M_ptr == old(span._M_ptr) by simp;
+ have forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) implies span._M_ptr[k] == old(span._M_ptr[k]) } by {
+  intro() as k; intro();
+  simp();
+ }
+ have span._M_ptr == old(span._M_ptr) by simp;
+ have &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) by simp;
+ rewrite(&result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64));
+ simp(); }
+int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+ owns span._M_ptr;
+ owns span._M_extent._M_extent_value;
+ views span._M_ptr[0..(int32)span._M_extent._M_extent_value];
+ requires separate(memory(span._M_ptr), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
+ requires separate(memory(span._M_extent._M_extent_value), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));
+
+ requires 1u64 <= span._M_extent._M_extent_value;
+ requires span._M_extent._M_extent_value <= 1073741823u64;
+ ensures span._M_ptr == old(span._M_ptr);
+ ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64;
+ ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);
+ ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
+ ensures forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) implies span._M_ptr[k] == old(span._M_ptr[k]) };
+} by { apply(last_span_cells_separate(&span, span._M_extent._M_extent_value)); execute(); simp(); }
+"#
+    )
+    .replace("POP_BACK", &pop_back);
+    if matches!(
+        phase,
+        SpanPopBackPhase::Read
+            | SpanPopBackPhase::Write
+            | SpanPopBackPhase::SingletonRead
+            | SpanPopBackPhase::SingletonWrite
+            | SpanPopBackPhase::ReadTools
+            | SpanPopBackPhase::WriteTools
+    ) {
+        let start = source.rfind("int32& probe(").unwrap();
+        let mut caller = source[start..].replace("int32& probe(", "int32 probe(");
+        if matches!(
+            phase,
+            SpanPopBackPhase::Write
+                | SpanPopBackPhase::SingletonWrite
+                | SpanPopBackPhase::WriteTools
+        ) {
+            caller = caller.replace("& span) {", "& span, int32 input) {");
+            caller = caller.replace(" views span._M_ptr[", " owns span._M_ptr[");
+            caller = caller.replace(" ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);", "");
+            caller = caller.replace(" ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);", " ensures result == input;\n ensures span._M_ptr[old(span._M_extent._M_extent_value) - 1u64] == input;");
+            caller = caller.replace(
+                "implies span._M_ptr[k]",
+                "and k != old((int32)span._M_extent._M_extent_value) - 1 implies span._M_ptr[k]",
+            );
+            caller = caller.replace(" execute(); simp();", r#"
+ apply(bounded_span_last_index(span._M_extent._M_extent_value));
+ apply(bounded_span_last_address(span._M_ptr, span._M_extent._M_extent_value));
+ step(); step();
+ have &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) by simp;
+ apply(bounded_span_last_index(old(span._M_extent._M_extent_value)));
+ apply(bounded_span_last_address(old(span._M_ptr), old(span._M_extent._M_extent_value)));
+ have &back == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) by { simp() using { &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); } }
+ execute();
+ have span._M_ptr == old(span._M_ptr) by simp;
+ have forall (k: int32) { 0 <= k and k < old((int32)span._M_extent._M_extent_value) and k != old((int32)span._M_extent._M_extent_value) - 1 implies span._M_ptr[k] == old(span._M_ptr[k]) } by {
+  intro() as k; intro(); simp();
+ }
+ have old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) by { simp() using { old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); } }
+ have result == input by simp;
+ have span._M_ptr[old(span._M_extent._M_extent_value) - 1u64] == input by {
+  simp() using { span._M_ptr == old(span._M_ptr); old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64) == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1); result == input; }
+ }
+ simp();"#);
+        } else {
+            caller = caller.replace(" ensures &result == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64);", "");
+            caller = caller.replace(" execute(); simp();", r#"
+ step(); step();
+ apply(bounded_span_last_index(old(span._M_extent._M_extent_value)));
+ apply(bounded_span_last_address(old(span._M_ptr), old(span._M_extent._M_extent_value)));
+ have &back == old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) by { simp() using { &back == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); old(span._M_ptr) + (old((int32)span._M_extent._M_extent_value) - 1) == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - 1u64); } }
+ execute(); simp();"#);
+        }
+        source.truncate(start);
+        source.push_str(&caller);
+    }
+    if matches!(
+        phase,
+        SpanPopBackPhase::SingletonRead | SpanPopBackPhase::SingletonWrite
+    ) {
+        let start = source.rfind("int32 probe(").unwrap();
+        let caller = source[start..].replace(" requires 1u64 <= span._M_extent._M_extent_value;", " requires span._M_extent._M_extent_value == 1u64;\n requires 1u64 <= span._M_extent._M_extent_value;")
+            .replace(" ensures span._M_ptr == old(span._M_ptr);", " ensures span._M_extent._M_extent_value == 0u64;\n ensures span._M_ptr == old(span._M_ptr);");
+        let mut caller = caller;
+        let finish = caller.rfind("simp();").unwrap();
+        caller.insert_str(finish, r#"
+ have old(span._M_extent._M_extent_value) == 1u64 by { assumption(); }
+ have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64 by simp;
+ have span._M_extent._M_extent_value == 0u64 by { simp() using { old(span._M_extent._M_extent_value) == 1u64; span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) - 1u64; } }
+"#);
+        source.truncate(start);
+        source.push_str(&caller);
+    }
+    if matches!(phase, SpanPopBackPhase::Several) {
+        let start = source.rfind("int32& probe(").unwrap();
+        let caller = source[start..].replace(" requires 1u64 <= span._M_extent._M_extent_value;", " requires span._M_extent._M_extent_value == 3u64;\n requires 1u64 <= span._M_extent._M_extent_value;");
+        source.truncate(start);
+        source.push_str(&caller);
+    }
+    let path = root.join("span.click");
+    fs::write(&path, &source).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
+    verify_program_prepared_project(&project, &import).unwrap();
+    if matches!(phase, SpanPopBackPhase::Refusals) {
+        let start = source.rfind("int32& probe(").unwrap();
+        let prefix = &source[..start];
+        let caller = &source[start..];
+        for (name, original, replacement) in [
+            (
+                "descriptor authority",
+                " owns span._M_ptr;",
+                " views span._M_ptr;",
+            ),
+            (
+                "backing authority",
+                " views span._M_ptr[0..(int32)span._M_extent._M_extent_value];",
+                "",
+            ),
+            (
+                "nonempty input",
+                " requires 1u64 <= span._M_extent._M_extent_value;",
+                " requires span._M_extent._M_extent_value == 0u64;",
+            ),
+            (
+                "extent bound",
+                " requires span._M_extent._M_extent_value <= 1073741823u64;",
+                "",
+            ),
+            (
+                "descriptor/backing separation",
+                " requires separate(memory(span._M_ptr), memory(span._M_ptr[0..(int32)span._M_extent._M_extent_value]));",
+                "",
+            ),
+        ] {
+            assert!(
+                caller.contains(original),
+                "missing refusal mutation: {name}"
+            );
+            let missing = format!("{prefix}{}", caller.replace(original, replacement));
+            let error = verify_program_prepared_project(
+                &read_click_project(&path, &missing).unwrap(),
+                &import,
+            )
+            .unwrap_err();
+            assert!(
+                error.message().contains("probe.contract"),
+                "{name}: {}",
+                error.message()
+            );
+        }
+    }
+    if matches!(phase, SpanPopBackPhase::WriteTools) {
+        let start = source.rfind("int32 probe(").unwrap();
+        let missing = format!(
+            "{}{}",
+            &source[..start],
+            source[start..].replace(" owns span._M_ptr[", " views span._M_ptr[")
+        );
+        let error =
+            verify_program_prepared_project(&read_click_project(&path, &missing).unwrap(), &import)
+                .unwrap_err();
+        assert!(
+            error.message().contains("probe.contract"),
+            "{}",
+            error.message()
+        );
+    }
+    if matches!(
+        phase,
+        SpanPopBackPhase::ProofTools | SpanPopBackPhase::ReadTools | SpanPopBackPhase::WriteTools
+    ) {
+        for claim in [format!("{pop_back}.contract"), "probe.contract".to_owned()] {
+            let expanded =
+                expand_program_prepared_project_claim_source_by_label(&project, &import, &claim)
+                    .unwrap();
+            let rewritten = project.with_entry_source(expanded.clone());
+            verify_program_prepared_project(&rewritten, &import).unwrap();
+            let (session, _) =
+                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            let position =
+                program_prepared_project_tactic_source_position(&rewritten, &import, &claim, 0)
+                    .unwrap();
+            session
+                .verify_at_project(&expanded, position.line, position.column)
+                .unwrap();
+        }
+    }
     fs::remove_dir_all(root).unwrap();
 }

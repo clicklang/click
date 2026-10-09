@@ -2342,3 +2342,59 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
         "captured address queried unrelated state: {samples:?}"
     );
 }
+
+// A modular reference result must retain its checked base even beside other
+// owners in the same external address space. Equality selects that occurrence;
+// the existing owner, width and signed bounds still authorize the access.
+#[test]
+fn captured_interior_address_selects_its_base_beside_same_block_owners() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(973_100)),
+    };
+    let captured = Pointer::symbolic(Variable(973_101));
+    let i = Bitvector32Term::Variable(Variable(973_102));
+    let n = Bitvector32Term::Variable(Variable(973_103));
+    let empty = PureFactContext::new();
+    let facts = empty
+        .clone()
+        .assume_condition(
+            ConditionTerm::pointer_equal(captured.clone(), base.offset_by_elements(i.clone(), 4)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i, n.clone()), true);
+    let range = CMemoryRange::new(base, 0u32.into(), n);
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let mut frame = ResourceContext::new_with_equalities(&empty)
+            .unchecked_with_fact(CResourceFact::own_memory(range.clone()));
+        for k in 0..size {
+            let field = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(974_000 + k)),
+            };
+            frame = frame.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(field, 0u32.into(), 1u32.into(), 8),
+            ));
+        }
+        frame.synchronize_memory_equalities(&facts);
+        let sibling = frame.clone();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..16 {
+                assert_eq!(frame.memory_write_range(&captured, 4, &facts), Some(&range));
+                assert!(frame.permits_memory_read(&captured, 4, &facts));
+            }
+        });
+        assert!(sibling.memory_write_range(&captured, 4, &empty).is_none());
+        samples.push(work);
+    }
+    assert!(
+        samples[3] <= samples[0] * 4 + 512,
+        "captured base lookup scanned unrelated owners: {samples:?}"
+    );
+}

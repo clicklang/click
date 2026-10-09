@@ -7422,3 +7422,52 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
         );
     }
 }
+
+#[test]
+fn explicit_separation_frames_accesses_with_different_element_widths() {
+    let field = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(97_700)),
+    };
+    let data = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(97_701)),
+    };
+    let n = Bitvector32Term::Variable(Variable(97_702));
+    let i = Bitvector32Term::Variable(Variable(97_703));
+    let field_range =
+        CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), 1u32.into(), 8);
+    let data_range = CMemoryRange::new(data.clone(), 0u32.into(), n.clone());
+    let facts = PureFactContext::new()
+        .assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(field_range.clone())),
+            right: Box::new(CResource::Memory(data_range)),
+        })
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n), true);
+    let cell = CMemoryRange::new(data.offset_by_int32_elements(i), 0u32.into(), 1u32.into());
+    assert!(
+        facts.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+            &field_range,
+            &cell
+        )
+    );
+    // The same eight-byte field expressed as two int32 words is fully covered.
+    let words = CMemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
+    assert!(
+        facts.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+            &words, &cell
+        )
+    );
+    // Containment is of the complete access, not just its starting address.
+    let beyond_field = CMemoryRange::new(field, 0u32.into(), 3u32.into());
+    assert!(
+        !facts.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+            &beyond_field,
+            &cell
+        )
+    );
+}

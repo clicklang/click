@@ -16419,3 +16419,86 @@ int32& probe(struct View& view, uint64 n) {
             .is_err()
     );
 }
+
+// A symbolic last-element reference survives descriptor assignment and both
+// temporary and local retirement; the original backing view is still required.
+#[test]
+#[ignore = "nightly: 2.9s symbolic saved-reference assignment and missing-view refusal"]
+fn construction_assignment_saved_reference_offset_read_offline() {
+    let project = Project::with_fixture(
+        "construct-assignment.cpp",
+        "probe",
+        r#"int* identity(int* p) noexcept { return p; }
+struct View {
+ int* data;
+ int size;
+ View(int* p, int n) noexcept : data(identity(p)), size(n) {}
+ View& operator=(const View&) noexcept = default;
+};
+View resize(const View& view, int n) noexcept { return View(view.data, n); }
+int& last(const View& view) noexcept { return *(view.data + (view.size - 1)); }
+int& probe(View& view, int n) noexcept {
+ int size = view.size;
+ int& back = last(view);
+ view = resize(view, size - 1);
+ return back;
+}
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[2],
+        click::languages::cpp::CppStatement::AssignConstructionCall { .. }
+    ));
+    let proof = r#"verifying "construct-assignment.cpp";
+int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
+void View_constructor(struct View* this, int32* p, int32 n) {
+ owns this->data;
+ owns this->size;
+ ensures this->data == p;
+ ensures this->size == n;
+} by { execute(); simp(); }
+struct View resize(const struct View& view, int32 n) {
+ views view.data;
+ ensures result.data == old(view.data);
+ ensures result.size == n;
+ ensures view.data == old(view.data);
+} by { execute(); simp(); }
+int32& last(const struct View& view) {
+ views view.data;
+ views view.size;
+ views view.data[0..view.size];
+ requires 1 <= view.size;
+ requires view.size <= 1073741823;
+ ensures &result == old(view.data) + (old(view.size) - 1);
+ ensures result == old(view.data[view.size - 1]);
+} by { have 0 <= view.size - 1 by { arithmetic() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { arithmetic() using { 1 <= view.size; view.size <= 1073741823; } } execute(); simp(); }
+int32& probe(struct View& view, int32 n) {
+ owns view.data;
+ owns view.size;
+ views view.data[0..view.size];
+ requires 1 <= view.size;
+ requires view.size <= 1073741823;
+ ensures &result == old(view.data) + (old(view.size) - 1);
+ ensures result == old(view.data[view.size - 1]);
+ ensures view.data == old(view.data);
+ ensures view.size == old(view.size) - 1;
+
+} by { have 0 <= view.size - 1 by { arithmetic() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { arithmetic() using { 1 <= view.size; view.size <= 1073741823; } } execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    let missing = proof.replace(
+        " views view.data[0..view.size];
+ requires 1 <= view.size;
+ requires view.size <= 1073741823;",
+        "",
+    );
+    let path = project.directory.join("missing.click");
+    fs::write(&path, &missing).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &missing).unwrap(), &import)
+            .is_err()
+    );
+}
