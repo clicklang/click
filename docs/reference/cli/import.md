@@ -847,12 +847,19 @@ artifact. Reference typedefs compare their resolved pointee types, retaining
 width and const qualification. Function-directed proof expansion prints a
 reference result's address as `&result` and its referent as `result`.
 
-The unchanged pinned libstdc++ `std::span<int>::back()` now verifies for a
-one-element backing range, including its constexpr assertion, nested observers,
-native size arithmetic and reference identity/value. Ordinary, expanded and
-retained proofs agree offline. Symbolic backing lengths and the descriptor
-aggregate results needed by Bitcoin's complete `SpanPopBack` remain roadmap
-work.
+The unchanged pinned libstdc++ `std::span<int>::back()` now verifies for both a
+one-element range and a symbolic range with `1 <= N <= 1,073,741,823`. Its
+contracts preserve native uint64 size arithmetic and prove the returned address
+and old last-cell value. Explicit checked Integer bridges establish nonempty
+subtraction and the range of the narrowed backing count. The shared kernel
+projects native indices only with full-width bounds or exact constants;
+low-word bounds alone cannot justify a wide displacement. Checked full-width
+result equalities transport an explicitly proved index bound across observer
+calls, without transferring backing ownership. Ordinary, expanded and retained
+proofs agree offline, and missing bounds/views, empty spans, false aliases and
+values, and invalid byte extents are refused. Descriptor aggregate results,
+construction and copy initialization needed by Bitcoin's complete `SpanPopBack`
+remain roadmap work.
 
 An ordinary `if` can use a direct Boolean free-function or method call as its
 whole condition. The artifact keeps this effectful call separate from pure

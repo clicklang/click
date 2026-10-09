@@ -1246,6 +1246,191 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[derive(Clone, Copy)]
+enum SpanBackPhase {
+    Ordinary,
+    ExpandBack,
+    ExpandCaller,
+    RejectBounds,
+    RejectAuthority,
+    RejectValue,
+}
+
+fn check_pinned_std_span_back_symbolic_bounded_range(phase: SpanBackPhase) {
+    let (root, import) = pinned_span_fixture(
+        "symbolic-back",
+        "#include <span.h>\nint& probe(std::span<int>& span) { return span.back(); }\n",
+    );
+    let source = r#"verifying "span-probe.cpp";
+bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
+uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_extent_value;
+ ensures result == this->_M_extent_value;
+} by { execute(); simp(); }
+uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_extent._M_extent_value;
+ ensures result == this->_M_extent._M_extent_value;
+} by { execute(); simp(); }
+bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_extent._M_extent_value;
+ ensures this->_M_extent._M_extent_value == 0u64 implies result == 1;
+ ensures this->_M_extent._M_extent_value != 0u64 implies result == 0;
+} by { execute(); simp(); }
+int32& span__int__value_unsigned_long_18446744073709551615_back(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_ptr;
+ views this->_M_extent._M_extent_value;
+ views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];
+ requires 1u64 <= this->_M_extent._M_extent_value;
+ requires this->_M_extent._M_extent_value <= 1073741823u64;
+ ensures &result == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64);
+ ensures result == old(this->_M_ptr[this->_M_extent._M_extent_value - 1u64]);
+} by {
+ apply(uint64_less_equal_to_integer(1u64, this->_M_extent._M_extent_value));
+ apply(uint64_less_equal_to_integer(this->_M_extent._M_extent_value, 1073741823u64));
+ apply(uint64_subtract_to_integer(this->_M_extent._M_extent_value, 1u64));
+ have 0 <= to_integer((this->_M_extent._M_extent_value - 1u64)) by {
+     arithmetic() using {
+         1 <= to_integer(this->_M_extent._M_extent_value);
+         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
+         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
+     }
+ }
+ have to_integer((this->_M_extent._M_extent_value - 1u64)) <= 1073741822 by {
+     arithmetic() using {
+         1 <= to_integer(this->_M_extent._M_extent_value);
+         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
+         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
+         0 <= to_integer((this->_M_extent._M_extent_value - 1u64));
+     }
+ }
+ have this->_M_extent._M_extent_value - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((this->_M_extent._M_extent_value - 1u64), 1073741822u64));
+ have to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value) by {
+ arithmetic_certificate special {
+ premise 0: 1 <= to_integer(this->_M_extent._M_extent_value) => 1 <= to_integer(this->_M_extent._M_extent_value);
+ premise 1: to_integer(this->_M_extent._M_extent_value) <= 1073741823 => to_integer(this->_M_extent._M_extent_value) <= 1073741823;
+ integer_cast_identity bounds [0, 1] => to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value); conclusion 0;
+ }
+ }
+ have 1 <= to_integer((int32)this->_M_extent._M_extent_value) by {
+     arithmetic() using {
+         1 <= to_integer(this->_M_extent._M_extent_value);
+         to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value);
+     }
+ }
+ apply(int32_less_equal_of_to_integer(1, (int32)this->_M_extent._M_extent_value));
+ have 0 <= (int32)this->_M_extent._M_extent_value - 1 by {
+     arithmetic() using {
+         1 <= (int32)this->_M_extent._M_extent_value;
+         (int32)this->_M_extent._M_extent_value <= 1073741823;
+     }
+ }
+ have (int32)this->_M_extent._M_extent_value - 1 < (int32)this->_M_extent._M_extent_value by {
+     arithmetic() using {
+         1 <= (int32)this->_M_extent._M_extent_value;
+         (int32)this->_M_extent._M_extent_value <= 1073741823;
+     }
+ }
+ execute(); simp();
+}
+int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+ views span._M_ptr;
+ views span._M_extent._M_extent_value;
+ views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
+ requires 1u64 <= span._M_extent._M_extent_value;
+ requires span._M_extent._M_extent_value <= 1073741823u64;
+ ensures &result == span._M_ptr + (span._M_extent._M_extent_value - 1u64);
+ ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
+} by { execute(); simp(); }
+"#;
+    let path = root.join("span.click");
+    fs::write(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    match phase {
+        SpanBackPhase::Ordinary => {
+            verify_program_prepared_project(&project, &import).unwrap();
+        }
+        SpanBackPhase::ExpandBack | SpanBackPhase::ExpandCaller => {
+            verify_program_prepared_project(&project, &import).unwrap();
+            let claim = match phase {
+                SpanBackPhase::ExpandBack => {
+                    "span__int__value_unsigned_long_18446744073709551615_back.contract"
+                }
+                _ => "probe.contract",
+            };
+            let expanded =
+                expand_program_prepared_project_claim_source_by_label(&project, &import, claim)
+                    .unwrap();
+            let rewritten = project.with_entry_source(expanded.clone());
+            verify_program_prepared_project(&rewritten, &import).unwrap();
+            let (session, _) =
+                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            let position =
+                program_prepared_project_tactic_source_position(&rewritten, &import, claim, 0)
+                    .unwrap();
+            session
+                .verify_at_project(&expanded, position.line, position.column)
+                .unwrap();
+        }
+        SpanBackPhase::RejectBounds
+        | SpanBackPhase::RejectAuthority
+        | SpanBackPhase::RejectValue => {
+            let hostile = match phase {
+                SpanBackPhase::RejectBounds => [
+                    source.replace(" requires 1u64 <= this->_M_extent._M_extent_value;", ""),
+                    source.replace(" requires this->_M_extent._M_extent_value <= 1073741823u64;", ""),
+                    source.replace("requires 1u64 <= this->_M_extent._M_extent_value;", "requires this->_M_extent._M_extent_value == 0u64;"),
+                ],
+                SpanBackPhase::RejectAuthority => [
+                    source.replace(" views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];", ""),
+                    source.replace(" views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];", ""),
+                    source.replace(" views this->_M_extent._M_extent_value;", ""),
+                ],
+                _ => [
+                    source.replace("ensures &result == span._M_ptr + (span._M_extent._M_extent_value - 1u64);", "ensures &result == span._M_ptr + span._M_extent._M_extent_value;"),
+                    source.replace("ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);", "ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) + 1;"),
+                    source.replace(" requires span._M_extent._M_extent_value <= 1073741823u64;", " requires span._M_extent._M_extent_value <= 1073741824u64;"),
+                ],
+            };
+            for bad in hostile {
+                assert_ne!(bad, source);
+                assert!(
+                    verify_program_prepared_project(
+                        &read_click_project(&path, &bad).unwrap(),
+                        &import
+                    )
+                    .is_err()
+                );
+            }
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_std_span_back_symbolic_bounded_range_offline() {
+    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::Ordinary);
+}
+#[test]
+fn pinned_std_span_back_symbolic_expansion_and_retained_verification_offline() {
+    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::ExpandBack);
+}
+#[test]
+fn pinned_std_span_back_symbolic_caller_expansion_and_retained_verification_offline() {
+    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::ExpandCaller);
+}
+#[test]
+fn pinned_std_span_back_symbolic_refuses_missing_bounds_and_empty_ranges_offline() {
+    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectBounds);
+}
+#[test]
+fn pinned_std_span_back_symbolic_refuses_missing_descriptor_and_backing_views_offline() {
+    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectAuthority);
+}
+#[test]
+fn pinned_std_span_back_symbolic_refuses_false_alias_value_and_extent_claims_offline() {
+    check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectValue);
+}
+
 #[test]
 fn pinned_std_span_data_preserves_pointer_identity_without_backing_authority_offline() {
     let (root, import) = pinned_span_fixture(

@@ -203,10 +203,17 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    agree. Shared aggregate results, construction and copy initialization remain
    implementation work;
    `SpanPopBack` has not been verified. The unchanged pinned `back()` now
-   verifies for a one-element backing range through its actual constexpr
-   assertion and nested observer calls, with ordinary, expanded and retained
-   offline proofs of alias identity and referent value. Missing backing views,
-   empty size and false aliases are refused. Symbolic lengths remain to prove.
+   verifies for both a one-element backing range and the accepted symbolic
+   domain `1 <= N <= 1,073,741,823`, through its actual constexpr assertion and
+   nested observer calls. Explicit shared Integer/conversion certificates prove
+   native nonempty subtraction and the backing-count/index bridge. The kernel
+   projects unsigned native indices through full-width bounds and checked scalar
+   result equalities; bounds on low words alone remain insufficient. Ordinary,
+   expanded and retained offline proofs establish native alias identity and old
+   referent value. Missing bounds, descriptor/backing views, empty size, false
+   aliases/values and invalid byte extents are refused. Deterministic scaling
+   checks cover unrelated facts. Aggregate results, construction and copy
+   initialization are next.
    **Expression observers (accepted).** Admit nested calls in unsequenced
    operands only when verified read-only observer contracts establish operand
    independence. General interfering calls remain deferred. For example,
@@ -234,8 +241,7 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    locations; undeclared macro dependencies are refused. Reference typedefs
    retain resolved widths/qualification, and generated reference-result proofs
    use the native address/referent spellings. Aggregate results, construction,
-   copy initialization and symbolic backing bounds are the next implementation
-   work;
+   copy initialization are the next implementation work;
    interfering expressions remain
    refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
