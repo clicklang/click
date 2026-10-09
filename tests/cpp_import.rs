@@ -1408,7 +1408,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 48);
+    assert_eq!(prepared.export().schema, 49);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -2645,7 +2645,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -2762,7 +2762,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -2873,7 +2873,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2934,7 +2934,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2980,7 +2980,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3610,7 +3610,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3688,7 +3688,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3806,7 +3806,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3944,7 +3944,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -4046,7 +4046,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -4146,7 +4146,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -4286,7 +4286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -4437,7 +4437,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let destructor = import
         .export()
         .reachable_functions
@@ -4625,7 +4625,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -4729,7 +4729,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 48);
+    assert_eq!(import.export().schema, 49);
     let destructor = import
         .export()
         .reachable_functions
@@ -5528,7 +5528,7 @@ fn cpp_pointer_offsets_reject_unmodelled_wide_subtraction_and_wider_indices() {
 }
 
 #[test]
-fn cpp_pointer_slice_rejects_differences_null_multilevel_and_pointer_locals() {
+fn cpp_pointer_slice_rejects_differences_multilevel_and_pointer_locals() {
     let project = Project::pointer();
 
     fs::write(
@@ -5539,16 +5539,6 @@ fn cpp_pointer_slice_rejects_differences_null_multilevel_and_pointer_locals() {
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("bump_reference.cpp:2"), "{error}");
     assert!(error.contains("pointer arithmetic"), "{error}");
-    assert!(!project.artifact().exists());
-
-    fs::write(
-        project.source(),
-        "int read_pointer(int* pointer) noexcept { return *pointer; }\n\nint bump_reference(int& value) noexcept {\n    int result = read_pointer(nullptr);\n    return result;\n}\n",
-    )
-    .unwrap();
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("bump_reference.cpp:4"), "{error}");
-    assert!(error.contains("unsupported implicit conversion"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -10349,7 +10339,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 48);
+        assert_eq!(import.export().schema, 49);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -10533,7 +10523,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 48);
+            assert_eq!(import.export().schema, 49);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -15579,4 +15569,291 @@ int32& Cell_operator_index(struct Cell* this, uint64 index) {
         "{error}"
     );
     assert!(!unsupported.artifact().exists());
+}
+
+#[test]
+fn cpp_external_backing_reference_survives_descriptor_destruction_offline() {
+    check_cpp_descriptor_backing_lifetime(false);
+}
+
+#[test]
+fn cpp_external_backing_reference_remains_writable_after_descriptor_destruction_offline() {
+    check_cpp_descriptor_backing_lifetime(true);
+}
+
+fn check_cpp_descriptor_backing_lifetime(writes: bool) {
+    let harness = "struct View { int* data; explicit View(int* input) noexcept : data(input) {} ~View() noexcept { data = nullptr; } int& get() const noexcept { return *data; } }; int& run(int* data) noexcept { View view(data); return view.get(); }";
+    let cpp = if writes {
+        format!(
+            "{harness} int write(int* data, int input) noexcept {{ int& element = run(data); element = input; return element; }}"
+        )
+    } else {
+        harness.to_owned()
+    };
+    let project = Project::with_fixture("lifetime.cpp", if writes { "write" } else { "run" }, &cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "lifetime.cpp";
+void View_constructor(struct View* this, int32* input) {
+ owns this->data;
+ ensures this->data == input;
+} by { execute(); simp(); }
+void View_destructor(struct View* this) {
+ owns this->data;
+} by { execute(); simp(); }
+int32& View_get(const struct View* this) {
+ views this->data;
+ views this->data[0..1];
+ ensures &result == this->data;
+ ensures result == old(this->data[0]);
+} by { execute(); simp(); }
+int32& run(int32* data) {
+ views data[0..1];
+ ensures &result == data;
+ ensures result == old(data[0]);
+} by { execute(); simp(); }
+"#;
+    let source = if writes {
+        format!(
+            "{source}{}",
+            r#"
+int32 write(int32* data, int32 input) {
+ owns data[0..1];
+ ensures result == input;
+ ensures data[0] == input;
+} by { execute(); simp(); }
+"#
+        )
+    } else {
+        source.to_owned()
+    };
+    let source = source.as_str();
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = if writes {
+        vec![
+            source.replace(" owns data[0..1];", " views data[0..1];"),
+            source.replace(
+                " ensures data[0] == input;",
+                " ensures data[0] == old(data[0]);",
+            ),
+        ]
+    } else {
+        vec![
+            source.replace(" views data[0..1];", ""),
+            source.replace(" ensures &result == data;", " ensures &result == data + 1;"),
+        ]
+    };
+    for bad in hostile {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn cpp_literal_null_pointer_values_verify_without_storage_authority_offline() {
+    for expression in [
+        "nullptr",
+        "0",
+        "0UL",
+        "static_cast<int*>(nullptr)",
+        "static_cast<int*>(0)",
+    ] {
+        let cpp = format!("int* run() noexcept {{ return {expression}; }}");
+        let project = Project::with_fixture("null.cpp", "run", &cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = r#"verifying "null.cpp";
+int32* run() { ensures result == 0; } by { execute(); simp(); }
+"#;
+        check_return_call_sidecar(&project, &import, source);
+        let bad = source.replace("result == 0", "result != 0");
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn cpp_literal_null_pointer_dereference_requires_live_backing_offline() {
+    let project = Project::with_fixture(
+        "null.cpp",
+        "run",
+        "int read(int* data) noexcept { return *data; } int run() noexcept { return read(nullptr); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "null.cpp";
+int32 read(int32* data) { views data[0..1]; ensures result == data[0]; } by { execute(); simp(); }
+int32 run() { ensures 1 == 1; } by { execute(); simp(); }
+"#;
+    let path = project.directory.join("null.click");
+    fs::write(&path, source).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, source).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.message().contains("resource"), "{}", error.message());
+}
+
+#[test]
+fn cpp_null_pointer_conversions_keep_effectful_operands_and_other_types_outside_profile() {
+    for (cpp, message) in [
+        (
+            "decltype(nullptr) produce() noexcept { return nullptr; } int* run() noexcept { return produce(); }",
+            "unsupported C++ call-result conversion",
+        ),
+        (
+            "int* run() noexcept { return reinterpret_cast<int*>(1); }",
+            "unsupported explicit C++ conversion",
+        ),
+        (
+            "const int* run() noexcept { return nullptr; }",
+            "mutable int32 pointer",
+        ),
+        (
+            "long long* run() noexcept { return nullptr; }",
+            "mutable int32 pointer",
+        ),
+    ] {
+        let project = Project::with_fixture("null.cpp", "run", cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(message), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn cpp_reference_into_destroyed_local_backing_cannot_be_read_offline() {
+    let cpp = "struct Cell { int value; int state; explicit Cell(int input) noexcept : value(input), state(1) {} ~Cell() noexcept { state = 0; } int& get() noexcept { return value; } }; int& run(int input) noexcept { Cell cell(input); return cell.get(); }";
+    let project = Project::with_fixture("expired.cpp", "run", cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "expired.cpp";
+void Cell_constructor(struct Cell* this, int32 input) {
+ owns this->value;
+ owns this->state;
+ ensures this->value == input;
+ ensures this->state == 1;
+} by { execute(); simp(); }
+void Cell_destructor(struct Cell* this) {
+ owns this->state;
+ ensures this->state == 0;
+} by { execute(); simp(); }
+int32& Cell_get(struct Cell* this) {
+ views this->value;
+ ensures &result == &this->value;
+ ensures result == old(this->value);
+} by { execute(); simp(); }
+int32& run(int32 input) { ensures result == input; } by { execute(); simp(); }
+"#;
+    let path = project.directory.join("expired.click");
+    fs::write(&path, source).unwrap();
+    let alias_only = source.replace(
+        "int32& run(int32 input) { ensures result == input; }",
+        "int32& run(int32 input) { ensures 1 == 1; }",
+    );
+    fs::write(&path, &alias_only).unwrap();
+    verify_program_prepared_project(&read_click_project(&path, &alias_only).unwrap(), &import)
+        .unwrap();
+    fs::write(&path, source).unwrap();
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, source).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.message().contains("run"), "{}", error.message());
+    assert!(
+        error.message().contains("resource") || error.message().contains("live"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn cpp_field_reference_results_preserve_addresses_and_backing_authority_offline() {
+    let cpp = "struct Cell { int value; int& get() noexcept { return value; } }; int write(Cell& cell, int input) noexcept { int& element = cell.get(); element = input; return element; }";
+    let project = Project::with_fixture("field.cpp", "write", cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "field.cpp";
+int32& Cell_get(struct Cell* this) {
+ views this->value;
+ ensures &result == &this->value;
+ ensures result == old(this->value);
+} by { execute(); simp(); }
+int32 write(struct Cell& cell, int32 input) {
+ owns cell.value;
+ ensures result == input;
+ ensures cell.value == input;
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    for bad in [
+        source.replace(" owns cell.value;", " views cell.value;"),
+        source.replace(
+            " ensures &result == &this->value;",
+            " ensures &result == &this->value + 1;",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn cpp_const_field_reference_results_retain_qualification_offline() {
+    let cpp = "struct Cell { int value; const int& get() const noexcept { return value; } }; const int& run(const Cell& cell) noexcept { return cell.get(); }";
+    let project = Project::with_fixture("field.cpp", "run", cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "field.cpp";
+const int32& Cell_get(const struct Cell* this) {
+ views this->value;
+ ensures &result == &this->value;
+ ensures result == old(this->value);
+} by { execute(); simp(); }
+const int32& run(const struct Cell& cell) {
+ views cell.value;
+ ensures &result == &cell.value;
+ ensures result == old(cell.value);
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let bad = source.replace("const int32& run", "int32& run");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &bad).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn cpp_same_type_explicit_pointer_cast_preserves_identity_offline() {
+    let project = Project::with_fixture(
+        "pointer.cpp",
+        "run",
+        "int* run(int* input) noexcept { return static_cast<int*>(input); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "pointer.cpp";
+int32* run(int32* input) { ensures result == input; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
 }

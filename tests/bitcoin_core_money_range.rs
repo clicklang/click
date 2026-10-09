@@ -1409,6 +1409,7 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
  ensures span._M_ptr[0] == input;
  ensures span._M_ptr == old(span._M_ptr);
  ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
+ ensures forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != 0 implies span._M_ptr[k] == old(span._M_ptr[k]) };
 } by {
  apply(uint64_less_equal_to_integer(1u64, span._M_extent._M_extent_value));
  apply(uint64_less_equal_to_integer(span._M_extent._M_extent_value, 1073741823u64));
@@ -1426,7 +1427,15 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
  }
  }
  apply(int32_less_equal_of_to_integer(1, (int32)span._M_extent._M_extent_value));
- execute(); simp(); }
+ execute();
+ have span._M_ptr == old(span._M_ptr) by simp();
+ have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
+ transport(
+  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != 0 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
+  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != 0 implies span._M_ptr[k] == old(span._M_ptr[k]) }
+ );
+ simp(); }
+
 "#
         )
     } else {
@@ -1549,15 +1558,28 @@ fn pinned_std_span_front_reference_writes_require_backing_ownership_offline() {
 #[derive(Clone, Copy)]
 enum SpanIndexPhase {
     VerifyAndExpand,
+    WriteCaller,
+    ExpandWriteCaller,
+    RetainWriteCaller,
+    RejectWriteCaller,
     RejectBounds,
     RejectAuthorityAndClaims,
 }
 
 fn check_pinned_std_span_index(phase: SpanIndexPhase) {
-    let (root, import) = pinned_span_fixture(
-        "symbolic-index",
-        "#include <span.h>\nint& probe(std::span<int>& span, unsigned long index) { return span[index]; }\n",
+    let writes = matches!(
+        phase,
+        SpanIndexPhase::WriteCaller
+            | SpanIndexPhase::ExpandWriteCaller
+            | SpanIndexPhase::RetainWriteCaller
+            | SpanIndexPhase::RejectWriteCaller
     );
+    let harness = if writes {
+        "#include <span.h>\nint probe(std::span<int>& span, unsigned long index, int input) { int& element = span[index]; element = input; return element; }\n"
+    } else {
+        "#include <span.h>\nint& probe(std::span<int>& span, unsigned long index) { return span[index]; }\n"
+    };
+    let (root, import) = pinned_span_fixture("symbolic-index", harness);
     let source = r#"verifying "span-probe.cpp";
 theorem bounded_span_index_address(pointer: int32*, index: uint64) {
  requires index <= 1073741823u64;
@@ -1621,10 +1643,108 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span, u
  ensures result == old(span._M_ptr[index]);
 } by { execute(); simp(); }
 "#;
+    let source = if writes {
+        let caller = source.find("int32& probe(").unwrap();
+        let method = source.find("int32& span__int__").unwrap();
+        let body = source[method..caller]
+            .split_once("} by {\n")
+            .unwrap()
+            .1
+            .split_once(" execute();")
+            .unwrap()
+            .0;
+        let preparation = body.replace("this->", "span.").replace("__idx", "index");
+        format!(
+            "{}{}{}{}",
+            &source[..caller],
+            r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, uint64 index, int32 input) {
+ views span._M_ptr;
+ views span._M_extent._M_extent_value;
+ owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
+ requires index < span._M_extent._M_extent_value;
+ requires 1u64 <= span._M_extent._M_extent_value;
+ requires span._M_extent._M_extent_value <= 1073741823u64;
+ ensures result == input;
+ ensures span._M_ptr[index] == input;
+ ensures span._M_ptr == old(span._M_ptr);
+ ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
+ ensures forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)index implies span._M_ptr[k] == old(span._M_ptr[k]) };
+} by {
+"#,
+            preparation,
+            r#"
+ apply(bounded_span_index_address(span._M_ptr, index));
+ execute();
+ have span._M_ptr == old(span._M_ptr) by simp();
+ have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
+ apply(bounded_span_index_address(span._M_ptr, index));
+ have span._M_ptr + index == span._M_ptr + (int32)index by {
+  simp() using { span._M_ptr + (int32)index == span._M_ptr + index; }
+ }
+ transport(
+  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)index implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
+  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)index implies span._M_ptr[k] == old(span._M_ptr[k]) }
+ );
+ simp();
+}
+"#
+        )
+    } else {
+        source.to_owned()
+    };
+    let source = source.as_str();
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
     let project = read_click_project(&path, source).unwrap();
     match phase {
+        SpanIndexPhase::WriteCaller => {
+            verify_program_prepared_project(&project, &import).unwrap();
+        }
+        SpanIndexPhase::ExpandWriteCaller => {
+            let expanded = expand_program_prepared_project_claim_source_by_label(
+                &project,
+                &import,
+                "probe.contract",
+            )
+            .unwrap();
+            verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+        }
+        SpanIndexPhase::RetainWriteCaller => {
+            let (session, _) =
+                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            let position = program_prepared_project_tactic_source_position(
+                &project,
+                &import,
+                "probe.contract",
+                0,
+            )
+            .unwrap();
+            session
+                .verify_at_project(source, position.line, position.column)
+                .unwrap();
+        }
+        SpanIndexPhase::RejectWriteCaller => {
+            for bad in [
+                source.replace(
+                    " owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
+                    " views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
+                ),
+                source.replace(
+                    " ensures span._M_ptr[index] == input;",
+                    " ensures span._M_ptr[index] == old(span._M_ptr[index]);",
+                ),
+                source.replace(" and k != (int32)index implies", " implies"),
+            ] {
+                assert_ne!(bad, source);
+                assert!(
+                    verify_program_prepared_project(
+                        &read_click_project(&path, &bad).unwrap(),
+                        &import
+                    )
+                    .is_err()
+                );
+            }
+        }
         SpanIndexPhase::VerifyAndExpand => {
             verify_program_prepared_project(&project, &import).unwrap();
             for claim in [
@@ -1706,6 +1826,23 @@ fn pinned_std_span_index_refuses_missing_bounds_and_out_of_range_callers_offline
 #[test]
 fn pinned_std_span_index_refuses_missing_views_and_false_reference_claims_offline() {
     check_pinned_std_span_index(SpanIndexPhase::RejectAuthorityAndClaims);
+}
+
+#[test]
+fn pinned_std_span_index_owned_write_preserves_siblings_offline() {
+    check_pinned_std_span_index(SpanIndexPhase::WriteCaller);
+}
+#[test]
+fn pinned_std_span_index_owned_write_expands_offline() {
+    check_pinned_std_span_index(SpanIndexPhase::ExpandWriteCaller);
+}
+#[test]
+fn pinned_std_span_index_owned_write_retains_offline() {
+    check_pinned_std_span_index(SpanIndexPhase::RetainWriteCaller);
+}
+#[test]
+fn pinned_std_span_index_owned_write_refuses_views_and_false_frames_offline() {
+    check_pinned_std_span_index(SpanIndexPhase::RejectWriteCaller);
 }
 
 #[derive(Clone, Copy)]
@@ -2013,6 +2150,7 @@ int32& span__int__value_unsigned_long_18446744073709551615_back(const struct spa
  ensures span._M_ptr[span._M_extent._M_extent_value - 1u64] == input;
  ensures span._M_ptr == old(span._M_ptr);
  ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
+ ensures forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)span._M_extent._M_extent_value - 1 implies span._M_ptr[k] == old(span._M_ptr[k]) };
 } by {
  apply(uint64_less_equal_to_integer(1u64, span._M_extent._M_extent_value));
  apply(uint64_less_equal_to_integer(span._M_extent._M_extent_value, 1073741823u64));
@@ -2069,6 +2207,10 @@ int32& span__int__value_unsigned_long_18446744073709551615_back(const struct spa
   simp() using { span._M_ptr + ((int32)span._M_extent._M_extent_value - 1) == span._M_ptr + (span._M_extent._M_extent_value - 1u64); }
  }
  rewrite(span._M_ptr + (span._M_extent._M_extent_value - 1u64) == span._M_ptr + ((int32)span._M_extent._M_extent_value - 1));
+ transport(
+  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)span._M_extent._M_extent_value - 1 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
+  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)span._M_extent._M_extent_value - 1 implies span._M_ptr[k] == old(span._M_ptr[k]) }
+ );
  simp();
 }
 "#

@@ -175,6 +175,7 @@ impl Metadata<'_> {
             }
             CppExpression::RuntimeConstantEvaluation { span, .. }
             | CppExpression::IntegerLiteral { span, .. }
+            | CppExpression::NullPointer { span, .. }
             | CppExpression::CompilerConstant { span, .. } => span,
             CppExpression::ConstantReference { constant, span, .. } => {
                 identity(

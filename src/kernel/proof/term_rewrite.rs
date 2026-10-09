@@ -7281,6 +7281,7 @@ mod tests {
             .is_err()
         );
         let mut costs = Vec::new();
+        let mut preparation_overheads = Vec::new();
         for size in [0, 8, 64, 512] {
             let mut explicit = conditions.clone();
             for offset in 0..size {
@@ -7300,6 +7301,7 @@ mod tests {
                 assert_ne!(rewrite.offset(&native), native);
             });
             assert!(pointer_prep > size as usize);
+            preparation_overheads.push(pointer_prep - size as usize);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..64 {
                     assert_ne!(rewrite.offset(&native), native);
@@ -7308,6 +7310,12 @@ mod tests {
             assert!(rewrite.refusal().is_none());
             costs.push(work);
         }
+        assert!(
+            preparation_overheads
+                .iter()
+                .all(|cost| *cost == preparation_overheads[0]),
+            "pointer-bound preparation must charge one pass over explicit premises: {preparation_overheads:?}"
+        );
         assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
     }
 }

@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 48;
+pub(crate) const EXPORT_SCHEMA: u32 = 49;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -461,7 +461,10 @@ pub enum CppBinaryOperator {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppExpression {
     /// The compiler primitive evaluated in a selected runtime function body.
-    RuntimeConstantEvaluation { value_type: CppType, span: CppSpan },
+    RuntimeConstantEvaluation {
+        value_type: CppType,
+        span: CppSpan,
+    },
     LogicalNot {
         value: Box<CppExpression>,
         value_type: CppType,
@@ -476,6 +479,10 @@ pub enum CppExpression {
     },
     IntegerLiteral {
         value: String,
+        value_type: CppType,
+        span: CppSpan,
+    },
+    NullPointer {
         value_type: CppType,
         span: CppSpan,
     },
@@ -3008,6 +3015,7 @@ impl CppExpression {
         match self {
             Self::ObserverCall { value_type, .. }
             | Self::IntegerLiteral { value_type, .. }
+            | Self::NullPointer { value_type, .. }
             | Self::RuntimeConstantEvaluation { value_type, .. }
             | Self::LogicalNot { value_type, .. }
             | Self::CompilerConstant { value_type, .. }
@@ -3028,6 +3036,7 @@ impl CppExpression {
                 .iter()
                 .any(|argument| argument.references_place(declaration_id)),
             Self::IntegerLiteral { .. }
+            | Self::NullPointer { .. }
             | Self::RuntimeConstantEvaluation { .. }
             | Self::CompilerConstant { .. }
             | Self::ConstantReference { .. } => false,
@@ -3097,6 +3106,10 @@ impl CppExpression {
                 if !valid {
                     return Err(format!("unsupported C++ integer constant `{value}`"));
                 }
+                span.validate(logical_source)
+            }
+            Self::NullPointer { value_type, span } => {
+                require_mutable_int32_pointer(value_type, "null pointer literal")?;
                 span.validate(logical_source)
             }
             Self::ConstantReference {
@@ -4583,6 +4596,7 @@ impl CppExpression {
                 right.validate_constant_references(logical_source, constants, referenced_constants)
             }
             Self::IntegerLiteral { .. }
+            | Self::NullPointer { .. }
             | Self::RuntimeConstantEvaluation { .. }
             | Self::CompilerConstant { .. }
             | Self::Load { .. }
@@ -4897,6 +4911,48 @@ mod tests {
             is_const,
             source_aliases: Vec::new(),
         }
+    }
+
+    #[test]
+    fn null_pointer_literals_require_the_supported_pointer_type() {
+        let places = validation_places([]);
+        let records = RecordIndex::default();
+        let validate = |value_type| {
+            CppExpression::NullPointer {
+                value_type,
+                span: cleanup_span(),
+            }
+            .validate(&places, &records, "fixture.cpp")
+        };
+        assert!(
+            validate(CppType::Pointer {
+                pointee: Box::new(signed_integer(32, false))
+            })
+            .is_ok()
+        );
+        for value_type in [
+            signed_integer(32, false),
+            CppType::Pointer {
+                pointee: Box::new(signed_integer(32, true)),
+            },
+            CppType::Pointer {
+                pointee: Box::new(signed_integer(64, false)),
+            },
+            CppType::LvalueReference {
+                pointee: Box::new(signed_integer(32, false)),
+            },
+        ] {
+            assert!(validate(value_type).is_err());
+        }
+        let mut malformed = serde_json::to_value(CppExpression::NullPointer {
+            value_type: CppType::Pointer {
+                pointee: Box::new(signed_integer(32, false)),
+            },
+            span: cleanup_span(),
+        })
+        .unwrap();
+        malformed["address"] = serde_json::json!(4);
+        assert!(serde_json::from_value::<CppExpression>(malformed).is_err());
     }
 
     fn return_call() -> CppStatement {
