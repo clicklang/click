@@ -633,3 +633,101 @@ fn uint64_to_int64_ordinary_cast_requires_exact_representable_range() {
         );
     }
 }
+
+#[test]
+fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
+    for signed in [false, true] {
+        let pointer = Pointer {
+            block: "wide-cached-read".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let bits = if signed {
+            Bitvector32Term::Int64Constant(0x1_0000_0001)
+        } else {
+            Bitvector32Term::UInt64Constant(0x1_0000_0001)
+        };
+        let value = if signed {
+            CValue::Int64(bits.clone())
+        } else {
+            CValue::UInt64(bits.clone())
+        };
+        let memory = intern_c_memory(
+            CMemory::new()
+                .with_block("wide-cached-read", 8)
+                .store(pointer.clone(), value),
+        );
+        let load =
+            |kind| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
+        assert_eq!(
+            crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Bits64)),
+            bits
+        );
+        assert_ne!(
+            crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Bits32)),
+            bits
+        );
+        let overwritten = intern_c_memory(
+            memory
+                .as_ref()
+                .clone()
+                .without_possible_aliasing_cells(
+                    &pointer.offset_by_bytes(4),
+                    4,
+                    &PureFactContext::new(),
+                )
+                .store(
+                    pointer.offset_by_bytes(4),
+                    CValue::Int32(Bitvector32Term::Constant(0)),
+                ),
+        );
+        let changed =
+            Bitvector32Term::MemoryLoad(overwritten, Box::new(pointer.clone()), LoadKind::Bits64);
+        assert!(
+            !crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
+                &changed,
+                &load(LoadKind::Bits64),
+                &PureFactContext::new()
+            )
+        );
+    }
+}
+
+#[test]
+fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let pointer = Pointer {
+            block: "wide-cached-scaling".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let bits = Bitvector32Term::UInt64Constant(0x1_0000_0001);
+        let mut memory = CMemory::new().with_block("wide-cached-scaling", (count + 1) * 8);
+        for index in 1..=count {
+            memory = memory.store(
+                pointer.offset_by_bytes(index * 8),
+                CValue::UInt64(Bitvector32Term::UInt64Constant(index as u64)),
+            );
+        }
+        memory = memory.store(pointer.clone(), CValue::UInt64(bits.clone()));
+        let load = Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory),
+            Box::new(pointer),
+            LoadKind::Bits64,
+        );
+        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        crate::kernel::memory_provenance::reset_atomic_canonicalization_term_visits();
+        let (result, work) = crate::persistent::measure_persistent_work(|| {
+            crate::kernel::api::canonicalize_atomic_loads(&load)
+        });
+        assert_eq!(result, bits);
+        samples.push((
+            crate::kernel::memory_provenance::atomic_canonicalization_term_visits(),
+            work,
+        ));
+    }
+    assert!(
+        samples.iter().all(|(visits, _)| *visits == samples[0].0),
+        "{samples:?}"
+    );
+    assert!(samples[2].1 <= samples[0].1 * 4 + 32, "{samples:?}");
+}

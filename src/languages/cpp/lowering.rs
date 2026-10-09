@@ -221,16 +221,21 @@ fn lower_function(
     let return_type = match &source.function_kind {
         CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => CType::Void,
         _ if source.return_type == CppType::Void => CType::Void,
+        _ if matches!(source.return_type, CppType::Record { .. }) => CType::Int32Pointer,
         _ => cpp_return_scalar_type(&source.return_type)?,
     };
     let return_constant = matches!(&source.return_type, CppType::LvalueReference { pointee } if is_const_int32(pointee));
-    Ok(c_function(
+    let mut function = c_function(
         return_type,
         names.require(&source.declaration_id)?.to_owned(),
         parameters,
         body,
     )
-    .with_return_pointee_constant(return_constant))
+    .with_return_pointee_constant(return_constant);
+    if let CppType::Record { name, .. } = &source.return_type {
+        function = function.with_return_aggregate_layout(context.record_layout(name)?);
+    }
+    Ok(function)
 }
 
 pub(super) use crate::languages::c::syntax::reference_carrier_name;
@@ -540,6 +545,13 @@ impl LoweringContext<'_> {
                     value_type,
                 ))
             }
+            CppStatement::Unreachable { span } => Ok(crate::kernel::c_labeled_assert(
+                c_cast(CExpression::Value(int32(0)), CType::Bool),
+                format!(
+                    "C++ __builtin_unreachable at {}:{}:{}",
+                    span.file, span.start_line, span.start_column
+                ),
+            )),
             CppStatement::Assume { condition, span } => Ok(crate::kernel::c_labeled_assert(
                 self.lower_expression(condition)?,
                 format!(
@@ -572,7 +584,8 @@ impl LoweringContext<'_> {
                     span.start_column
                 ),
             )),
-            CppStatement::Return { .. }
+            CppStatement::ReturnRecord { .. }
+            | CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
             | CppStatement::TryCatchInt32 { .. }
@@ -652,6 +665,27 @@ impl LoweringContext<'_> {
         unwind_base: usize,
     ) -> Result<CStatement, String> {
         match statement {
+            CppStatement::ReturnRecord {
+                source, value_type, ..
+            } => {
+                let CppType::Record { name, .. } = value_type else {
+                    return Err("C++ record return has no nominal record type".into());
+                };
+                let layout = self.record_layout(name)?;
+                let capture = self.return_capture_name.clone();
+                let mut result = c_seq(
+                    c_declare_aggregate(capture.clone(), layout.clone()),
+                    c_copy_aggregate(
+                        c_variable(capture.clone()),
+                        self.lower_place(source)?,
+                        layout,
+                    ),
+                );
+                for cleanup in state.exit(0) {
+                    result = c_seq(result, self.lower_cleanup(cleanup)?);
+                }
+                Ok(c_seq(result, c_return(c_variable(capture))))
+            }
             CppStatement::Return { value, .. } => {
                 let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                 self.lower_scalar_return(evaluation, &state.exit(0).collect::<Vec<_>>(), &[])
@@ -948,6 +982,14 @@ impl LoweringContext<'_> {
                     conversions: &[],
                 });
             }
+            CppExpression::LogicalNot { value, .. } => {
+                let input = self.normalize_expression(value)?;
+                (
+                    input.prefix,
+                    c_cast(crate::kernel::c_not(input.value), CType::Bool),
+                    input.may_throw,
+                )
+            }
             CppExpression::IntegralCast {
                 value, value_type, ..
             } => {
@@ -1095,6 +1137,14 @@ impl LoweringContext<'_> {
 
     fn lower_expression(&mut self, expression: &CppExpression) -> Result<CExpression, String> {
         match expression {
+            CppExpression::RuntimeConstantEvaluation { .. } => {
+                Ok(c_cast(CExpression::Value(int32(0)), CType::Bool))
+            }
+            CppExpression::LogicalNot { value, .. } => Ok(c_cast(
+                crate::kernel::c_not(self.lower_expression(value)?),
+                CType::Bool,
+            )),
+
             CppExpression::ObserverCall { .. } => Err(
                 "C++ expression observers are supported in normalized scalar values only".into(),
             ),
@@ -1191,6 +1241,13 @@ impl LoweringContext<'_> {
                 }
                 _ => Err("C++ load is outside direct bool/reference lowering".into()),
             },
+            CppExpression::AddressOf { place, .. } if !place.projections.is_empty() => {
+                // Address formation checks storage, not a read of the field value.
+                Ok(c_checked_object_address(c_typed_load(
+                    self.lower_place(place)?,
+                    CType::Int32,
+                )))
+            }
             CppExpression::AddressOf {
                 place, value_type, ..
             } => match (&self.place(place)?.value_type, value_type) {
@@ -1420,7 +1477,8 @@ fn expression_contains_observer(expression: &CppExpression) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match expression {
         CppExpression::ObserverCall { .. } => true,
-        CppExpression::IntegralCast { value, .. }
+        CppExpression::LogicalNot { value, .. }
+        | CppExpression::IntegralCast { value, .. }
         | CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),
         CppExpression::Binary { left, right, .. } => {

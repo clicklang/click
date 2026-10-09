@@ -2383,6 +2383,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_subtract_defined_by_integer_bounds"
                 | "int32_equal_of_to_integer"
                 | "int32_add_to_integer"
+                | "int32_remainder_to_integer"
                 | "int32_less_equal_of_to_integer"
                 | "int64_less_equal_to_integer"
                 | "int64_less_than_to_integer"
@@ -2443,6 +2444,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_add_to_integer"
                 | "uint32_subtract_to_integer"
                 | "uint32_mul_to_integer"
+                | "uint32_mul_guard_by_integer_bound"
                 | "uint32_remainder_less_than_divisor"
                 | "uint32_remainder_of_lt"
                 | "uint32_less_equal_to_integer"
@@ -2498,6 +2500,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_less_equal_to_integer"
         | "uint64_less_equal_of_to_integer" => (2, 1),
         "uint64_divide_to_integer" | "uint64_remainder_to_integer" => (2, 2),
+        "int32_remainder_to_integer" => (2, 2),
         "int32_increment_upper_bound" | "int32_increment_strictly_increases" => (2, 1),
         "int32_increment_lower_bound"
         | "int32_increment_greater_equal_lower_bound"
@@ -2535,6 +2538,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint32_add_to_integer"
         | "uint32_subtract_to_integer"
         | "uint32_mul_to_integer"
+        | "uint32_mul_guard_by_integer_bound"
         | "uint32_less_equal_to_integer"
         | "uint32_less_equal_of_to_integer"
         | "uint32_remainder_less_than_divisor"
@@ -2688,6 +2692,9 @@ fn verify_kernel_standard_theorem_axiom(
             "uint32_mul_to_integer" => {
                 crate::kernel::prove_uint32_mul_to_integer(value, uint32_parameter(1)?)
             }
+            "uint32_mul_guard_by_integer_bound" => {
+                crate::kernel::prove_uint32_mul_guard_by_integer_bound(value, uint32_parameter(1)?)
+            }
             "uint32_positive_predecessor_strictly_decreases" => {
                 prove_uint32_positive_predecessor_strictly_decreases(value)
             }
@@ -2753,6 +2760,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "int32_add_to_integer" => {
                 crate::kernel::prove_int32_add_to_integer(value, int32_parameter(1)?)
+            }
+            "int32_remainder_to_integer" => {
+                crate::kernel::prove_int32_remainder_to_integer(value, int32_parameter(1)?)
             }
             "int32_equal_of_to_integer" => {
                 crate::kernel::prove_int32_equal_of_to_integer(value, int32_parameter(1)?)

@@ -2490,14 +2490,14 @@ fn rust_split_at_metadata_and_reads_verify() {
     for incorrect in [
         sidecar.replace("ensures result == mid;", "ensures result == 0u64;"),
         sidecar.replace(
-            "ensures result == bytes_len - mid;",
+            "ensures result == bytes.len() - mid;",
             "ensures result == mid;",
         ),
         sidecar.replace(
-            "ensures result == bytes[(int32)(uint32)mid];",
+            "ensures result == bytes[mid];",
             "ensures result == bytes[0];",
         ),
-        sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
+        sidecar.replace("views bytes[0..bytes.len()];", ""),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
@@ -3064,12 +3064,12 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     for incorrect in [
         sidecar.replace("ensures result == 4u64;", "ensures result == 1u64;"),
         sidecar.replace(
-            "uint8 read(const uint8* bytes) {\n    views bytes[0..1];",
-            "uint8 read(const uint8* bytes) {",
+            "fn read(bytes: &[u8; 3]) -> u8 {\n    views bytes[0..1];",
+            "fn read(bytes: &[u8; 3]) -> u8 {",
         ),
         sidecar.replace(
-            "uint8 mutate(uint8* bytes) {\n    owns bytes[1..2];",
-            "uint8 mutate(uint8* bytes) {\n    views bytes[1..2];",
+            "fn mutate(bytes: &mut [u8; 3]) -> u8 {\n    owns bytes[1..2];",
+            "fn mutate(bytes: &mut [u8; 3]) -> u8 {\n    views bytes[1..2];",
         ),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
@@ -3186,8 +3186,8 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
             "requires index == 18446744073709551615u64;",
         ),
         sidecar.replace(
-            "requires bytes_len <= 18446744073709551614u64;",
-            "requires bytes_len == 18446744073709551615u64;",
+            "requires bytes.len() <= 18446744073709551614u64;",
+            "requires bytes.len() == 18446744073709551615u64;",
         ),
     ] {
         assert!(C0VerificationSession::new_program_prepared(&changed, &prepared).is_err());

@@ -22,6 +22,255 @@ use click::surface::{
     program_prepared_project_tactic_source_position, verify_program_prepared_project,
 };
 
+#[test]
+fn trivial_record_return_preserves_nested_descriptor_values_offline() {
+    let project = Project::with_fixture(
+        "copy.cpp",
+        "copy",
+        "struct Extent { unsigned long size; }; struct View { int* data; Extent extent; }; View copy(const View& input) noexcept { return input; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[0],
+        CppStatement::ReturnRecord { .. }
+    ));
+    let proof = r#"verifying "copy.cpp";
+struct View copy(const struct View& input) {
+ views input.data;
+ views input.extent.size;
+ ensures result.data == input.data;
+ ensures result.extent.size == input.extent.size;
+ ensures input.data == old(input.data);
+ ensures input.extent.size == old(input.extent.size);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    let whole = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&whole, &import, "copy.contract")
+            .unwrap();
+    verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
+    for invalid in [
+        proof.replace(" views input.data;", ""),
+        proof.replace(" views input.extent.size;", ""),
+        proof.replace(
+            "result.extent.size == input.extent.size",
+            "result.extent.size == input.extent.size + 1u64",
+        ),
+        proof.replace("result.data == input.data", "result.data != input.data"),
+    ] {
+        let path = project.directory.join("invalid.click");
+        fs::write(&path, &invalid).unwrap();
+        let parsed = read_click_project(&path, &invalid).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => forged["function"]["body"][0]["value_type"]["name"] = "Other".into(),
+            1 => forged["function"]["body"][0]["source"]["declaration_id"] = "expired_local".into(),
+            2 => forged["function"]["body"][0]["span"]["file"] = "unlocked.cpp".into(),
+            3 => {
+                let record = artifact["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|record| record["name"] == "View")
+                    .unwrap();
+                let field = &record["fields"][0];
+                forged["function"]["body"][0]["source"]["projections"] = serde_json::json!([{
+                    "record_declaration_id":record["declaration_id"], "declaration_id":field["declaration_id"], "name":field["name"], "span":field["span"]
+                }]);
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(
+            project.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        if mutation == 3 {
+            assert!(
+                error.contains("same nominal source and result record"),
+                "{error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn projected_trivial_record_return_verifies_without_copying_siblings() {
+    let project = Project::with_fixture(
+        "copy.cpp",
+        "copy",
+        "struct Extent { unsigned long size; }; struct View { int* data; Extent extent; }; Extent copy(const View& input) noexcept { return input.extent; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        r#"verifying "copy.cpp";
+struct Extent copy(const struct View& input) {
+ views input.extent.size;
+ ensures result.size == input.extent.size;
+ ensures input.extent.size == old(input.extent.size);
+} by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn record_return_refuses_nontrivial_copy_move_and_prvalue_construction() {
+    for source in [
+        "struct View { int value; View(const View& other) noexcept : value(other.value + 1) {} }; View copy(const View& input) noexcept { return input; }",
+        "struct View { int value; View(View&&) noexcept = default; }; View copy(View& input) noexcept { return static_cast<View&&>(input); }",
+        "struct View { int value; }; View copy(const View& input) noexcept { return View{input.value}; }",
+    ] {
+        let project = Project::with_fixture("copy.cpp", "copy", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("record return requires")
+                || error.contains("must remain trivially copyable"),
+            "{error}"
+        );
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn constructor_destination_preserves_pointer_to_its_own_field_offline() {
+    let project = Project::with_fixture(
+        "identity.cpp",
+        "probe",
+        r#"
+struct Node {
+    int* self;
+    int value;
+    explicit Node(int input) noexcept : self(&value), value(input) {}
+};
+int probe(int input) noexcept {
+    Node node(input);
+    return *node.self;
+}
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "identity.cpp";
+void Node_constructor(struct Node* this, int32 input) {
+ owns this->value;
+ owns this->self;
+ ensures this->value == input;
+ ensures this->self == &this->value;
+} by { execute(); simp(); }
+int32 probe(int32 input) {
+ ensures result == input;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
+    for label in ["Node_constructor.contract", "probe.contract"] {
+        let expanded =
+            expand_program_prepared_project_claim_source_by_label(&parsed, &import, label).unwrap();
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+    }
+    for invalid in [
+        proof.replace("this->self == &this->value", "this->self != &this->value"),
+        proof.replace("result == input", "result == input + 1"),
+        proof.replace(" owns this->value;", ""),
+    ] {
+        let path = project.directory.join("invalid.click");
+        fs::write(&path, &invalid).unwrap();
+        let parsed = read_click_project(&path, &invalid).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn record_field_address_preserves_const_qualification_offline() {
+    let project = Project::with_fixture(
+        "address.cpp",
+        "probe",
+        "struct Node { int value; }; const int& probe(const Node& input) noexcept { return *(&input.value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        r#"verifying "address.cpp";
+const int32& probe(const struct Node& input) {
+ views input.value;
+ ensures &result == &input.value;
+ ensures result == input.value;
+} by { execute(); simp(); }
+"#,
+    );
+    use sha2::{Digest, Sha256};
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    artifact["function"]["body"][0]["value"]["address"]["value_type"]["pointee"]["is_const"] =
+        false.into();
+    let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+    let mut lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+    lock["artifact_bytes"] = bytes.len().into();
+    fs::write(project.artifact(), bytes).unwrap();
+    fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("field address changed type or const qualification"),
+        "{error}"
+    );
+}
+
+#[test]
+fn record_copy_keeps_self_pointer_value_without_rebasing_it() {
+    let project = Project::with_fixture(
+        "copy.cpp",
+        "probe",
+        "struct Node { int* self; int value; }; int* probe(Node& target, const Node& source) noexcept { target = source; return target.self; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "copy.cpp";
+int32* probe(struct Node& target, const struct Node& source) {
+ owns target.self;
+ owns target.value;
+ views source.self;
+ views source.value;
+ requires source.self == &source.value;
+ ensures target.self == source.self;
+ ensures result == &source.value;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    let invalid = proof.replace("result == &source.value", "result == &target.value");
+    let path = project.directory.join("invalid.click");
+    fs::write(&path, &invalid).unwrap();
+    let parsed = read_click_project(&path, &invalid).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
 const SOURCE: &str = include_str!("../examples/basic-cpp/increment.cpp");
 
 #[test]
@@ -848,6 +1097,294 @@ uint64 probe(struct Count& count) {
 }
 
 #[test]
+fn declared_macro_definitions_keep_expansion_locations_and_locks_offline() {
+    let mut project = Project::with_fixture(
+        "macro.cpp",
+        "probe",
+        "#include \"read.h\"\nint probe(int value) noexcept { return read(value); }",
+    );
+    fs::write(project.directory.join("read.h"), "#include \"check.h\"\ninline int read(int value) noexcept { CHECK(value > 0); return value; }\n").unwrap();
+    let macro_body = "#define CHECK(value) do { if (__builtin_is_constant_evaluated() && !(value)) { __builtin_unreachable(); } } while (false)\n";
+    fs::write(project.directory.join("check.h"), macro_body).unwrap();
+    project
+        .dependencies
+        .extend(["check.h".into(), "read.h".into()]);
+    project.write_config("probe");
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let canonical_header = project.directory.join("check.h").canonicalize().unwrap();
+    assert!(
+        import
+            .export()
+            .preprocessor_files
+            .iter()
+            .any(|file| file.canonical_path == canonical_header.to_string_lossy())
+    );
+    let sidecar = "verifying \"macro.cpp\";\nint32 read(int32 value) { ensures result == value; } by { execute(); simp(); }\nint32 probe(int32 value) { ensures result == value; } by { execute(); simp(); }\n";
+    check_return_call_sidecar(&project, &import, sidecar);
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    let condition = &artifact["reachable_functions"][0]["body"][0]["then_branch"][0]["condition"];
+    assert_eq!(condition["span"]["file"], "read.h");
+    assert_eq!(condition["span"]["start_line"], 2);
+    fs::write(
+        project.directory.join("check.h"),
+        macro_body.replace("!(value)", "(value)"),
+    )
+    .unwrap();
+    assert!(load_import(&project.config()).is_err());
+}
+
+#[test]
+fn reference_result_claim_and_simp_expansion_preserve_address_and_value_spelling() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        "int& helper(int& value) noexcept { return value; } int& probe(int& value) noexcept { return helper(value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32& helper(int32& value) { views value; ensures &result == &value; ensures result == old(value); } by { execute(); simp(); }
+int32& probe(int32& value) { views value; ensures &result == &value; ensures result == old(value); } by { execute(); simp(); }
+"#;
+    let path = project.directory.join("reference.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&parsed, &import, "probe.contract", 1)
+            .unwrap();
+    for expanded in [
+        click::surface::expand_program_prepared_project_claim_source_by_label(
+            &parsed,
+            &import,
+            "probe.contract",
+        )
+        .unwrap(),
+        expand_program_prepared_project_tactic_source_at(
+            &parsed,
+            &import,
+            position.line,
+            position.column,
+        )
+        .unwrap(),
+    ] {
+        assert!(!expanded.contains("result[0]"), "{expanded}");
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+    }
+}
+
+#[test]
+fn reference_aliases_preserve_resolved_types_and_const_qualification_offline() {
+    for (native_type, sidecar_type) in [("int&", "int32&"), ("const int&", "const int32&")] {
+        let cpp = format!(
+            "using Reference = {native_type}; Reference probe(int* data) noexcept {{ return *data; }}"
+        );
+        let project = Project::with_fixture("reference.cpp", "probe", &cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"reference.cpp\";\n{sidecar_type} probe(int32* data) {{ views data[0..1]; ensures &result == data; }} by {{ execute(); simp(); }}\n"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let path = project.directory.join("bad.click");
+        let mismatched = source.replace(
+            sidecar_type,
+            if native_type == "int&" {
+                "const int32&"
+            } else {
+                "int32&"
+            },
+        );
+        fs::write(&path, &mismatched).unwrap();
+        assert!(
+            verify_program_prepared_project(
+                &read_click_project(&path, &mismatched).unwrap(),
+                &import
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline() {
+    for (cpp, expected) in [
+        (
+            "bool probe() noexcept { return __builtin_is_constant_evaluated(); }",
+            0,
+        ),
+        (
+            "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { return evaluated(); }",
+            0,
+        ),
+        (
+            "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { if constexpr (evaluated()) { return true; } else { return false; } }",
+            1,
+        ),
+        (
+            "bool probe() noexcept { if (__builtin_is_constant_evaluated()) { return true; } else { return false; } }",
+            0,
+        ),
+    ] {
+        let project = Project::with_fixture("evaluation.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let helper = if import
+            .export()
+            .reachable_functions
+            .iter()
+            .any(|function| function.name == "evaluated")
+        {
+            "bool evaluated() { ensures result == 0; } by { execute(); simp(); }\n"
+        } else {
+            ""
+        };
+        let source = format!(
+            "verifying \"evaluation.cpp\";\n{helper}bool probe() {{ ensures result == {expected}; }} by {{ execute(); simp(); }}\n"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace(
+            &format!("result == {expected}"),
+            &format!("result == {}", 1 - expected),
+        );
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn boolean_primitive_artifacts_refuse_forged_types_contexts_and_locations() {
+    use sha2::{Digest, Sha256};
+    for cpp in [
+        "bool probe() noexcept { return __builtin_is_constant_evaluated(); }",
+        "bool probe(int value) noexcept { return !value; }",
+    ] {
+        let project = Project::with_fixture("boolean.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        for mutation in 0..3 {
+            let mut forged = artifact.clone();
+            let expression = &mut forged["function"]["body"][0]["value"];
+            match mutation {
+                0 => expression["value_type"]["bits"] = 64.into(),
+                1 => expression["constant_context"] = true.into(),
+                2 => expression["span"]["file"] = "unlocked.h".into(),
+                _ => unreachable!(),
+            }
+            let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+            let mut forged_lock = lock.clone();
+            forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+            forged_lock["artifact_bytes"] = bytes.len().into();
+            fs::write(project.artifact(), bytes).unwrap();
+            fs::write(
+                project.lock(),
+                serde_json::to_vec_pretty(&forged_lock).unwrap(),
+            )
+            .unwrap();
+            assert!(
+                load_import(&project.config()).is_err(),
+                "accepted mutation {mutation}"
+            );
+        }
+    }
+}
+
+#[test]
+fn unreachable_builtin_requires_an_unreachable_execution_path_offline() {
+    let project = Project::with_fixture(
+        "unreachable.cpp",
+        "probe",
+        "int probe(bool enter) noexcept { if (enter) { __builtin_unreachable(); } return 0; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = "verifying \"unreachable.cpp\";\nint32 probe(bool enter) { requires enter == 0; ensures result == 0; } by { execute(); simp(); }\n";
+    check_return_call_sidecar(&project, &import, source);
+    for hostile in [
+        source.replace("requires enter == 0;", ""),
+        source.replace("enter == 0", "enter == 1"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        let error =
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .unwrap_err();
+        assert!(
+            error.message().contains("__builtin_unreachable"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
+    for (cpp, helper, parameters, requires) in [
+        (
+            "bool probe(bool flag) noexcept { return !flag; }",
+            "",
+            "bool flag",
+            "flag == 0",
+        ),
+        (
+            "bool probe(unsigned long value) noexcept { return !value; }",
+            "",
+            "uint64 value",
+            "value == 0u64",
+        ),
+        (
+            "bool ready() noexcept { return false; } bool probe() noexcept { return !ready(); }",
+            "bool ready() { ensures result == 0; } by { execute(); simp(); }",
+            "",
+            "1 == 1",
+        ),
+        (
+            "bool ready() noexcept { return false; } bool probe() noexcept { if (!ready()) { return true; } else { return false; } }",
+            "bool ready() { ensures result == 0; } by { execute(); simp(); }",
+            "",
+            "1 == 1",
+        ),
+    ] {
+        let project = Project::with_fixture("negation.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == 1; }} by {{ execute(); simp(); }}\n"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace("ensures result == 1;", "ensures result == 0;");
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &hostile).unwrap();
+        assert!(
+            verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
+                .is_err()
+        );
+        if parameters == "uint64 value" {
+            let high = source
+                .replace("value == 0u64", "value == 4294967296u64")
+                .replace("result == 1", "result == 0");
+            check_return_call_sidecar(&project, &import, &high);
+        }
+    }
+}
+
+#[test]
 fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let project = Project::new();
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -871,7 +1408,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 45);
+    assert_eq!(prepared.export().schema, 47);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -2108,7 +2645,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -2225,7 +2762,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -2336,7 +2873,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2397,7 +2934,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2443,7 +2980,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3073,7 +3610,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3151,7 +3688,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3269,7 +3806,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3407,7 +3944,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3509,7 +4046,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3609,7 +4146,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3749,7 +4286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3900,7 +4437,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let destructor = import
         .export()
         .reachable_functions
@@ -4088,7 +4625,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -4192,7 +4729,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 45);
+    assert_eq!(import.export().schema, 47);
     let destructor = import
         .export()
         .reachable_functions
@@ -9812,7 +10349,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 45);
+        assert_eq!(import.export().schema, 47);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -9996,7 +10533,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 45);
+            assert_eq!(import.export().schema, 47);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -12885,17 +13422,16 @@ fn condition_calls_validate_target_result_arguments_and_metadata() {
 }
 
 #[test]
-fn condition_calls_refuse_unsupported_unary_operators() {
-    for condition in ["!predicate()", "+predicate()"] {
-        let source = format!(
-            "bool predicate() noexcept {{ return true; }} int number() noexcept {{ return 1; }} int choose() noexcept {{ if ({condition}) {{ return 1; }} else {{ return 2; }} }}"
-        );
-        let project = Project::with_fixture("condition.cpp", "choose", &source);
-        let error = refresh_import(&project.config()).unwrap_err();
-        assert!(error.len() < 8000, "{error}");
-        assert!(!project.artifact().exists());
-        assert!(!project.lock().exists());
-    }
+fn condition_calls_refuse_unsupported_unary_plus() {
+    let condition = "+predicate()";
+    let source = format!(
+        "bool predicate() noexcept {{ return true; }} int number() noexcept {{ return 1; }} int choose() noexcept {{ if ({condition}) {{ return 1; }} else {{ return 2; }} }}"
+    );
+    let project = Project::with_fixture("condition.cpp", "choose", &source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.len() < 8000, "{error}");
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
 }
 
 #[test]
@@ -13417,7 +13953,7 @@ fn locked_header_graph_verifies_concrete_template_instances_only() {
 }
 
 #[test]
-fn locked_header_graph_retains_object_constant_and_macro_boundaries() {
+fn locked_header_graph_retains_object_constant_and_undeclared_macro_boundaries() {
     for (header, diagnostic) in [
         (
             "inline constexpr int value = 7; inline int read() noexcept { return value; }",
@@ -13429,7 +13965,7 @@ fn locked_header_graph_retains_object_constant_and_macro_boundaries() {
         ),
         (
             "#include \"macro.h\"\ninline int read() noexcept { return VALUE; }",
-            "executable source locations must stay within their function source",
+            "differ from configured dependencies",
         ),
     ] {
         let mut project = Project::with_fixture(
@@ -14685,6 +15221,146 @@ int32 run(int32& value) { owns value; ensures result == 1; ensures value == 1; }
     }
 }
 
+/// A failure's "C operation" line prints a read through a scalar reference
+/// parameter as the sidecar writes it, `value`, not as the kernel term
+/// `load_int32(&value)`.
+#[test]
+fn cpp_scalar_reference_reads_print_as_referents_in_a_c_operation_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "read",
+        "int read(int& value) noexcept { return value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 read(int32& value) { ensures result == result; } by { execute(); simp(); }\n";
+    let path = project.directory.join("bad.click");
+    fs::write(&path, text).unwrap();
+    let error = verify_program_prepared_project(&read_click_project(&path, text).unwrap(), &import)
+        .expect_err("the contract lacks the authority the function uses");
+    assert!(
+        error.message().contains("C operation: return value"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        !error.message().contains("load_int32(&"),
+        "{}",
+        error.message()
+    );
+}
+
+/// A read at the start of a struct referent prints as the field it is,
+/// `c.first`, and the refusal names the referent's fields, because the
+/// parameter carries its record's layout for presentation.
+#[test]
+fn cpp_struct_reference_reads_print_as_fields_in_a_c_operation_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "get",
+        "struct cell { int first; int second; };\nint get(cell& c) noexcept { return c.first; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 get(struct cell& c) { views c.second; ensures result == result; } by { execute(); simp(); }\n";
+    let path = project.directory.join("bad.click");
+    fs::write(&path, text).unwrap();
+    let error = verify_program_prepared_project(&read_click_project(&path, text).unwrap(), &import)
+        .expect_err("the contract views another field than the one the function reads");
+    assert!(
+        error.message().contains("C operation: return c.first"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        !error.message().contains("load_int32(&"),
+        "{}",
+        error.message()
+    );
+}
+
+/// `click expand` writes a branch condition over a scalar reference with the
+/// bare name the sidecar uses, and the expansion verifies.
+#[test]
+fn cpp_expansion_writes_a_branch_over_a_reference_by_its_referent_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "pick",
+        "int pick(int& value) noexcept { if (value > 0) { return 1; } return 0; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 pick(int32& value) { views value; ensures result >= 0; } by { execute(); simp(); }\n";
+    let path = project.directory.join("pick.click");
+    fs::write(&path, text).unwrap();
+    let parsed = read_click_project(&path, text).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let first = sites.first().unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        &import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    assert!(!expanded.contains("load_int32(&"), "{expanded}");
+    verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+/// `click expand` writes a branch condition over a field of a struct
+/// reference as the sidecar writes that field, and the expansion verifies.
+#[test]
+fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "pick",
+        "struct cell { int first; int second; };\nint pick(cell& c) noexcept { if (c.second > 0) { return 1; } return 0; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 pick(struct cell& c) { views c.second; ensures result >= 0; } by { execute(); simp(); }\n";
+    let path = project.directory.join("pick.click");
+    fs::write(&path, text).unwrap();
+    let parsed = read_click_project(&path, text).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let first = sites.first().unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        &import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    assert!(
+        expanded.contains("if at(statement(0).entry, c.second) > "),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("load_int32("), "{expanded}");
+    verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 #[test]
 fn cpp_const_reference_locals_bind_pointer_storage_without_loading_offline() {
     let project = Project::with_fixture(
@@ -14763,4 +15439,75 @@ const int32& run(const int32& value) { ensures &result == &value; } by { execute
         verify_program_prepared_project(&read_click_project(&path, &hostile).unwrap(), &import)
             .is_err()
     );
+}
+
+#[test]
+fn cpp_bounded_native_descriptor_last_reference_verifies_offline() {
+    let project = Project::with_fixture(
+        "bounds.cpp",
+        "run",
+        "struct View { int* data; unsigned long size; }; int& run(const View& view) noexcept { return *(view.data + (view.size - 1UL)); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "bounds.cpp";
+int32& run(const struct View& view) {
+ views view.data;
+ views view.size;
+ views view.data[0..((int32)view.size)];
+ requires 1u64 <= view.size;
+ requires view.size <= 1073741823u64;
+ ensures &result == view.data + ((int32)view.size - 1);
+ ensures result == old(view.data[(int32)view.size - 1]);
+} by {
+ apply(uint64_less_equal_to_integer(1u64, view.size));
+ apply(uint64_less_equal_to_integer(view.size, 1073741823u64));
+ apply(uint64_subtract_to_integer(view.size, 1u64));
+ have 0 <= to_integer((view.size - 1u64)) by {
+     arithmetic() using {
+         1 <= to_integer(view.size);
+         to_integer(view.size) <= 1073741823;
+         to_integer((view.size - 1u64)) == to_integer(view.size) - 1;
+     }
+ }
+ have to_integer((view.size - 1u64)) <= 1073741822 by {
+     arithmetic() using {
+         1 <= to_integer(view.size);
+         to_integer(view.size) <= 1073741823;
+         to_integer((view.size - 1u64)) == to_integer(view.size) - 1;
+         0 <= to_integer((view.size - 1u64));
+     }
+ }
+ have view.size - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((view.size - 1u64), 1073741822u64));
+ have to_integer((int32)view.size) == to_integer(view.size) by {
+ arithmetic_certificate special {
+ premise 0: 1 <= to_integer(view.size) => 1 <= to_integer(view.size);
+ premise 1: to_integer(view.size) <= 1073741823 => to_integer(view.size) <= 1073741823;
+ integer_cast_identity bounds [0, 1] => to_integer((int32)view.size) == to_integer(view.size); conclusion 0;
+ }
+ }
+ have 1 <= to_integer((int32)view.size) by {
+     arithmetic() using {
+         1 <= to_integer(view.size);
+         to_integer((int32)view.size) == to_integer(view.size);
+     }
+ }
+ apply(int32_less_equal_of_to_integer(1, (int32)view.size));
+ have 0 <= (int32)view.size - 1 by {
+     arithmetic() using {
+         1 <= (int32)view.size;
+         (int32)view.size <= 1073741823;
+     }
+ }
+ have (int32)view.size - 1 < (int32)view.size by {
+     arithmetic() using {
+         1 <= (int32)view.size;
+         (int32)view.size <= 1073741823;
+     }
+ }
+ execute(); simp();
+}
+ "#;
+    check_arithmetic_sidecar(&project, &import, source);
 }

@@ -16,7 +16,10 @@ than risking a native stack overflow.
 Identifiers start with an ASCII letter or underscore and continue with ASCII
 letters, decimal digits, or underscores. Keywords cannot be identifiers.
 Whitespace separates tokens. Line comments start with `//`; block comments
-start with `/*` and end with `*/`.
+start with `/*` and end with `*/`. Block comments do not nest; an unclosed
+block comment is a syntax error. The existing `#` line-comment spelling is
+also accepted. Comments preserve source locations and are ignored when
+loading imports or selecting proof steps.
 
 Integer literals are decimal. Character literals use single quotes, including
 the ordinary C escapes accepted by the parser. String literals occur in source

@@ -504,11 +504,11 @@ pub(in crate::kernel) fn int32_element_index_from_offset(
 /// thing that turns a 64-bit index into a 32-bit one.
 ///
 /// An `Int64Scaled` displacement scales its *64-bit* value, so the term
-/// holding that value names an element index only where the facts pin it to a
-/// number an `int32` holds — and then that number is the index, exactly, with
-/// nothing read as a residue. `size_t index; … values[index]` under
-/// `index == 1` is the shape, and it is what the membership and permission
-/// rules were getting out of the residue arm.
+/// holding that value names an element index only where full-width evidence
+/// places it in the signed word range. Exact constants work for either sign;
+/// unsigned symbolic values require their native upper bound. Checked scalar
+/// aliases preserve that bound, including a constant subtraction whose bound
+/// the proof establishes explicitly. No low-word fact establishes high bits.
 pub(in crate::kernel) fn element_index_from_offset_with_facts(
     offset: &PointerOffsetTerm,
     element_width: u32,
@@ -535,14 +535,56 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
             // leaves the rest, and `exact_signed_constant` accepts those.
             // `unsigned` is part of the question rather than a check after
             // it, because the two readings of one word are different numbers.
-            let index = crate::kernel::assumptions::exact_sixty_four_bit_constant(
+            if let Some(index) = crate::kernel::assumptions::exact_sixty_four_bit_constant(
                 value,
                 *unsigned,
                 assumptions,
-            )?;
-            i32::try_from(index)
-                .ok()
-                .map(|index| Bitvector32Term::Constant(index as u32))
+            ) {
+                return i32::try_from(index)
+                    .ok()
+                    .map(|index| Bitvector32Term::Constant(index as u32));
+            }
+            if !*unsigned {
+                return None;
+            }
+            let bounded =
+                |candidate: &Bitvector32Term| assumptions.uint64_index_fits_int32(candidate);
+            if bounded(value) {
+                return Some(Bitvector32Term::uint32_from_64(value.as_ref().clone()));
+            }
+            // Modular calls can name an unchanged native index through a
+            // checked scalar-result equality. Transport the bound through
+            // that full-width equality, never through equality of low words.
+            for (alias, fact) in assumptions.exact_uint64_equalities(value) {
+                crate::instrumentation::record_deterministic_work(1);
+                if bounded(alias) {
+                    crate::kernel::assumptions::record_implicit_reasoning_provenance(
+                        assumptions,
+                        &Proposition::ConditionIs(fact.clone(), true),
+                    );
+                    return Some(Bitvector32Term::uint32_from_64(alias.clone()));
+                }
+            }
+            // A constant subtraction retains equality of the full-width
+            // operands. Its bound must still be proved explicitly; this does
+            // not infer nonemptiness or arithmetic ranges from a low word.
+            if let Bitvector32Term::UInt64Subtract(left, right) = value.as_ref()
+                && right.uint64_as_const().is_some()
+            {
+                for (alias, fact) in assumptions.exact_uint64_equalities(left) {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let candidate =
+                        Bitvector32Term::uint64_subtract(alias.clone(), right.as_ref().clone());
+                    if bounded(&candidate) {
+                        crate::kernel::assumptions::record_implicit_reasoning_provenance(
+                            assumptions,
+                            &Proposition::ConditionIs(fact.clone(), true),
+                        );
+                        return Some(Bitvector32Term::uint32_from_64(candidate));
+                    }
+                }
+            }
+            None
         }
         _ => None,
     }

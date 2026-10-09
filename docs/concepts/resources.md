@@ -1526,6 +1526,14 @@ regressions are `mdtests/fold_pointer_argument_body_fact.md` with its negative
 `mdtests/rb_at_link_helpers.md` and `mdtests/rb_first_last.md` for the
 parent/child consistency this makes statable in the body.
 
+A checked pointer equality also lets a fold use an available body fact under
+an equal pointer spelling. This includes C pointers represented by a symbolic
+base plus a scaled offset, both in pointer comparisons and inside pure-function
+arguments. The checker looks up exact aliases only for pointers in the requested
+fact, substitutes one spelling, and still requires exact evidence for the
+result. It neither derives a missing nonnull fact nor grants ownership through
+an equality. Null itself is not used to enumerate unrelated empty links.
+
 Naming reaches those cells too. A cell a contract `owns` is materialized at
 function entry and keeps one load identity, so a fact about it survives a write
 to a separately owned sibling even inside a single inlined statement

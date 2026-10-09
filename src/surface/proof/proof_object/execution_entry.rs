@@ -224,6 +224,88 @@ impl<'a> Proof<'a> {
                     .to_proof_tactics(),
             )
         };
+        if let Some(capture) = expansion_capture.as_deref()
+            && capture.batch.is_some()
+            && context.constants.proof_site.as_ref() == Some(&capture.site)
+        {
+            let mut selected = Vec::new();
+            fn collect(
+                tactic: &PostExecutionTactic,
+                index: usize,
+                source: usize,
+                capture: &ExpansionCapture,
+                selected: &mut Vec<(usize, usize)>,
+            ) {
+                if capture.selects(&capture.site, source) {
+                    selected.push((index, source));
+                }
+                if let PostExecutionTactic::If {
+                    then_tactics,
+                    else_tactics,
+                    ..
+                } = tactic
+                {
+                    for nested in then_tactics.iter().chain(else_tactics) {
+                        collect(
+                            &nested.tactic,
+                            nested.tactic_index,
+                            nested.source_index,
+                            capture,
+                            selected,
+                        );
+                    }
+                }
+            }
+            collect(&tactic, tactic_index, source_index, capture, &mut selected);
+            let skeleton = if selected.is_empty() {
+                None
+            } else {
+                Some(
+                    execution
+                        .presentation
+                        .expansion
+                        .batch_branch_skeleton
+                        .clone()
+                        .map_or_else(|| branch_skeleton().map(Arc::new), Ok)?,
+                )
+            };
+            let post_index = execution.presentation.post_execution_tactics.len();
+            let (state, ()) = self
+                .state
+                .clone()
+                .edit_frontier_presentation(|presentation| {
+                    if let Some(skeleton) = skeleton {
+                        presentation.expansion.batch_branch_skeleton = Some(skeleton.clone());
+                        for (index, source) in selected {
+                            presentation.expansion.batch_deferred_captures.insert(
+                                source,
+                                DeferredTacticCapture {
+                                    tactic_index: index,
+                                    source_index: source,
+                                    post_execution_index: if source == source_index {
+                                        post_index
+                                    } else {
+                                        DeferredTacticCapture::NESTED
+                                    },
+                                    branch_skeleton: skeleton.clone(),
+                                    can_expand_execution_prefix: matches!(
+                                        &tactic,
+                                        PostExecutionTactic::Simp
+                                            | PostExecutionTactic::SimpUsing(_)
+                                            | PostExecutionTactic::Have(_)
+                                    ),
+                                },
+                            );
+                        }
+                    }
+                    presentation.defer_post_execution(tactic_index, source_index, tactic);
+                })
+                .map_err(|_| self.step_error("batch capture lost its terminal frontier"))?;
+            return Ok(Self {
+                state,
+                ..self.clone()
+            });
+        }
         // A tactic nested in a deferred `if` arm is drained at a flattened
         // position no deferral can know; its capture matches by tactic
         // index alone (`DeferredTacticCapture::NESTED`).
@@ -244,7 +326,7 @@ impl<'a> Proof<'a> {
                         tactic_index: nested_tactic_index,
                         source_index: nested_source_index,
                         post_execution_index: DeferredTacticCapture::NESTED,
-                        branch_skeleton: branch_skeleton()?,
+                        branch_skeleton: Arc::new(branch_skeleton()?),
                         can_expand_execution_prefix: false,
                     })
                 } else {
@@ -260,7 +342,7 @@ impl<'a> Proof<'a> {
                     tactic_index,
                     source_index,
                     post_execution_index: execution.presentation.post_execution_tactics.len(),
-                    branch_skeleton: branch_skeleton()?,
+                    branch_skeleton: Arc::new(branch_skeleton()?),
                     can_expand_execution_prefix: matches!(
                         &tactic,
                         PostExecutionTactic::Simp

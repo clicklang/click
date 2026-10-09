@@ -1885,36 +1885,36 @@ impl<'a> Proof<'a> {
                 }
                 (Some(capture), None) if parent_capture.is_none() => {
                     let mut capture = capture.clone();
-                    capture.branch_skeleton = if call_outcomes {
+                    capture.branch_skeleton = Arc::new(if call_outcomes {
                         vec![ProofTactic::CallOutcomes(ProofCallOutcomes {
-                            returned_tactics: capture.branch_skeleton,
+                            returned_tactics: capture.branch_skeleton.as_ref().clone(),
                             threw_tactics: Vec::new(),
                         })]
                     } else {
                         vec![ProofTactic::If(ProofIf {
                             condition: surface_condition.clone(),
                             ensuring: None,
-                            then_tactics: capture.branch_skeleton,
+                            then_tactics: capture.branch_skeleton.as_ref().clone(),
                             else_tactics: Vec::new(),
                         })]
-                    };
+                    });
                     Some(capture)
                 }
                 (None, Some(capture)) if parent_capture.is_none() => {
                     let mut capture = capture.clone();
-                    capture.branch_skeleton = if call_outcomes {
+                    capture.branch_skeleton = Arc::new(if call_outcomes {
                         vec![ProofTactic::CallOutcomes(ProofCallOutcomes {
                             returned_tactics: Vec::new(),
-                            threw_tactics: capture.branch_skeleton,
+                            threw_tactics: capture.branch_skeleton.as_ref().clone(),
                         })]
                     } else {
                         vec![ProofTactic::If(ProofIf {
                             condition: surface_condition.clone(),
                             ensuring: None,
                             then_tactics: Vec::new(),
-                            else_tactics: capture.branch_skeleton,
+                            else_tactics: capture.branch_skeleton.as_ref().clone(),
                         })]
-                    };
+                    });
                     Some(capture)
                 }
                 (None, None) => None,
@@ -1925,6 +1925,68 @@ impl<'a> Proof<'a> {
                 }
             };
 
+        let parent_batch = &parent_execution
+            .presentation
+            .expansion
+            .batch_deferred_captures;
+        let mut batch = parent_batch.clone();
+        for (arm_index, arm_expansion) in [then_expansion, else_expansion].into_iter().enumerate() {
+            for (index, arm_capture) in &arm_expansion.batch_deferred_captures {
+                if let Some(parent) = parent_batch.get(index) {
+                    if parent != arm_capture {
+                        return Err(
+                            self.step_error("terminal arm changed an inherited batch cursor")
+                        );
+                    }
+                    continue;
+                }
+                if let Some(existing) = batch.get(index) {
+                    if existing.source_index != arm_capture.source_index {
+                        return Err(self
+                            .step_error("terminal arms disagree about a selected source cursor"));
+                    }
+                    let mut combined = existing.clone();
+                    let mut skeleton = combined.branch_skeleton.as_ref().clone();
+                    match skeleton.as_mut_slice() {
+                        [ProofTactic::If(branch)] if !call_outcomes && arm_index == 1 => {
+                            branch.else_tactics = arm_capture.branch_skeleton.as_ref().clone();
+                        }
+                        [ProofTactic::CallOutcomes(branch)] if call_outcomes && arm_index == 1 => {
+                            branch.threw_tactics = arm_capture.branch_skeleton.as_ref().clone();
+                        }
+                        _ => {
+                            return Err(self.step_error(
+                                "selected batch cursor lost its terminal branch owner",
+                            ));
+                        }
+                    }
+                    combined.branch_skeleton = Arc::new(skeleton);
+                    batch.insert(*index, combined);
+                    continue;
+                }
+                let mut captured = arm_capture.clone();
+                let (first, second) = if arm_index == 0 {
+                    (captured.branch_skeleton.as_ref().clone(), Vec::new())
+                } else {
+                    (Vec::new(), captured.branch_skeleton.as_ref().clone())
+                };
+                captured.branch_skeleton = Arc::new(if call_outcomes {
+                    vec![ProofTactic::CallOutcomes(ProofCallOutcomes {
+                        returned_tactics: first,
+                        threw_tactics: second,
+                    })]
+                } else {
+                    vec![ProofTactic::If(ProofIf {
+                        condition: surface_condition.clone(),
+                        ensuring: None,
+                        then_tactics: first,
+                        else_tactics: second,
+                    })]
+                });
+                batch.insert(*index, captured);
+            }
+        }
+        execution.presentation.expansion.batch_deferred_captures = batch;
         // Terminal arm tactics are source-order cursors, not semantic state.
         // Preserve only the append-only suffix each checked arm added after
         // the split root, nested under the exact condition this audited join

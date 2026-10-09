@@ -35,6 +35,16 @@ ensures result == x by {
 }
 ```
 
+A callback statement may lower to several checked operations. If a script
+stops before its remaining callback calls, its diagnostic names a missing
+resource or contract needed to continue, when a short checked continuation
+finds one. The continuation is diagnostic only; the unfinished script is
+still refused. A changed callback cell needs a contract fact for its current
+pointer. Consuming the resource that supplied its view first makes the load
+fail for missing read permission
+(`mdtests/rb_augment_callbacks_helper_rejects_changed_cell.md` and
+`mdtests/rb_augment_callbacks_helper_consumes_suite.md`).
+
 Inside an `open(resource)` scope, a named resource fold after `execute()`
 uses each returned path's state before the scope closes, just as a fold after
 execution outside the scope does. A proposed field value must still match

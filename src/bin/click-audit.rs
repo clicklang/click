@@ -72,12 +72,13 @@ expansion fixed point (the audited smart tactic is gone from its claim and
 the emitted expansion introduced no new smart tactic). By default it stops at
 the first failure and prints an inclusive --start-at resume command.
 Successful progress is concise by default: one row per claim. `--verbose`
-restores one row per smart site.
+includes the phase costs for each claim batch.
 
 A claim whose sites are all selected is expanded once, with every site
 together, since expanding one site runs its whole claim. Failure of that whole-claim
-expansion fails the audit. Sites are audited one at a time, as above, only
-when the selection covers the claim in part.
+expansion fails the audit. A partial selection is captured together in one verification as well;
+its fixed-point check covers only the emitted regions, leaving unselected
+smart tactics unchanged.
 
 The audit's own checks count deterministic work units, the ones the tactic
 budgets are charged, so machine load cannot change them; wall-clock time is
@@ -786,10 +787,8 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             }
         }
 
-        // A wholly selected claim is expanded once, with all its sites
-        // together: expanding a site runs its whole claim, so expanding them
-        // one at a time runs the claim once per site. A site cap still
-        // selects the whole claim when its remaining allowance covers it.
+        // Every selected slice of a claim shares one capture and one rewrite
+        // check. A cap limits the slice before either expansion route runs.
         let claim_key = (site.click_path.clone(), site.claim.clone());
         let claim_sites = selected[cursor..]
             .iter()
@@ -802,12 +801,13 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                 .is_none_or(|previous| {
                     previous.click_path != site.click_path || previous.claim != site.claim
                 });
-        if at_claim_start
-            && arguments
+        let claim_sites = claim_sites.min(
+            arguments
                 .max_sites
-                .is_none_or(|limit| claim_sites <= limit.saturating_sub(attempted_sites))
-            && inventoried_claim_counts.get(&claim_key) == Some(&claim_sites)
-        {
+                .map_or(usize::MAX, |limit| limit.saturating_sub(attempted_sites)),
+        );
+        let whole_claim = inventoried_claim_counts.get(&claim_key) == Some(&claim_sites);
+        if at_claim_start {
             print!(
                 "CLAIM [{}/{}] {}  {} ({claim_sites} sites) ... ",
                 selected_claim_order[&claim_key],
@@ -822,7 +822,17 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                 .as_mut()
                 .expect("the selected sidecar session was initialized")
                 .1;
-            match audit_claim_rewrite(site, current, &arguments.limits, deadline) {
+            let audit = if whole_claim {
+                audit_claim_rewrite(site, current, &arguments.limits, deadline)
+            } else {
+                audit_selected_claim_rewrite(
+                    &selected[cursor..cursor + claim_sites],
+                    current,
+                    &arguments.limits,
+                    deadline,
+                )
+            };
+            match audit {
                 Ok(costs) => {
                     if arguments.verbose {
                         println!("ok ({claim_sites} sites together: {costs})");
@@ -1752,6 +1762,128 @@ fn audit_claim_rewrite(
     ))
 }
 
+/// A partial selection uses one capture and one rewritten claim check,
+/// regardless of its site count. Its fixed-point inventory consults only
+/// emitted regions, so unselected automation remains outside the request.
+fn audit_selected_claim_rewrite(
+    sites: &[AuditSite],
+    worker: &mut AuditSessionWorker,
+    limits: &AuditLimits,
+    deadline: Instant,
+) -> Result<String, String> {
+    let first = &sites[0];
+    let positions = sites
+        .iter()
+        .map(|site| site.click_position.clone())
+        .collect::<Vec<_>>();
+    let source = &worker.source;
+    let (artifact, expansion) = run_phase("expansion", limits.expansion.within(deadline)?, || {
+        use click::surface::*;
+        match &source.inputs {
+            CInput::Bundle(sources) => match &source.project {
+                Some(project) => {
+                    expand_c0_project_tactics_source_at(project, &source_refs(sources), &positions)
+                }
+                None => expand_c0_tactics_source_at(
+                    &source.click_source,
+                    &source_refs(sources),
+                    &positions,
+                ),
+            },
+            CInput::Prepared(imports) => match &source.project {
+                Some(project) => {
+                    expand_c0_prepared_project_tactics_source_at(project, imports, &positions)
+                }
+                None => {
+                    expand_c0_prepared_tactics_source_at(&source.click_source, imports, &positions)
+                }
+            },
+            CInput::PreparedProgram(import) => match &source.project {
+                Some(project) => {
+                    expand_program_prepared_project_tactics_source_at(project, import, &positions)
+                }
+                None => expand_program_prepared_tactics_source_at(
+                    &source.click_source,
+                    import,
+                    &positions,
+                ),
+            },
+        }
+        .map_err(|error| error.report())
+    })?;
+    let ((), fixed_point) = run_phase(
+        "selected fixed point",
+        limits.expansion.within(deadline)?,
+        || {
+            let remaining =
+                smart_sites_for_source(&artifact.source, &source.inputs, source.project.as_ref())?;
+            let positions = remaining
+                .into_iter()
+                .map(|site| ((site.position.line, site.position.column), site.tactic_name))
+                .collect::<BTreeMap<_, _>>();
+            let (mut line, mut column, mut region) = (1, 1, 0);
+            for (offset, character) in artifact.source.char_indices() {
+                while artifact
+                    .replacement_spans
+                    .get(region)
+                    .is_some_and(|span| span.end <= offset)
+                {
+                    region += 1;
+                }
+                if artifact
+                    .replacement_spans
+                    .get(region)
+                    .is_some_and(|span| span.contains(&offset))
+                    && let Some(tactic) = positions.get(&(line, column))
+                {
+                    return Err(format!(
+                        "selected expansion introduced smart tactic `{tactic}`; its rewrite is not a fixed point"
+                    ));
+                }
+                if character == '\n' {
+                    line += 1;
+                    column = 1;
+                } else {
+                    column += 1;
+                }
+            }
+            Ok(())
+        },
+    )?;
+    let expanded = if let Some(mdtest) = &source.mdtest {
+        mdtest.replace_click_source(&source.container_source, &artifact.source)?
+    } else {
+        artifact.source
+    };
+    if expanded == source.container_source {
+        return Err("expansion returned the original sidecar unchanged".into());
+    }
+    let original = source.container_source.clone();
+    let original_cost = cold_verify(
+        &original,
+        source,
+        &first.claim,
+        limits.verification.within(deadline)?,
+        "original proof-unit verification",
+    )?;
+    let expanded_cost = cold_verify(
+        &expanded,
+        source,
+        &first.claim,
+        limits.verification.within(deadline)?,
+        "expanded proof-unit verification",
+    )?;
+    if let Some(regression) =
+        performance_regression(original_cost, expanded_cost, limits.performance_slack)
+    {
+        return Err(regression);
+    }
+    let retained = verify_rewrite_in_session(worker, &first.claim, &expanded, limits, deadline)?;
+    Ok(format!(
+        "expand {expansion}, fixed point {fixed_point}, verify {retained}, cold original {original_cost}, cold rewritten {expanded_cost}"
+    ))
+}
+
 /// The proof container with every smart site of `claim_label` expanded.
 fn expand_claim_with_source(
     click_path: &Path,
@@ -1807,6 +1939,20 @@ fn claim_smart_sites(
     project: Option<&ClickProject>,
     claim_label: &str,
 ) -> Result<Vec<String>, String> {
+    smart_sites_for_source(source, inputs, project).map(|sites| {
+        sites
+            .into_iter()
+            .filter(|site| site.claim_label == claim_label)
+            .map(|site| site.tactic_name)
+            .collect()
+    })
+}
+
+fn smart_sites_for_source(
+    source: &str,
+    inputs: &CInput,
+    project: Option<&ClickProject>,
+) -> Result<Vec<click::surface::SmartTacticSourceSite>, String> {
     let sites = match inputs {
         CInput::Bundle(sources) => match project {
             Some(project) => c0_project_smart_tactic_source_sites(
@@ -1830,20 +1976,7 @@ fn claim_smart_sites(
             None => program_prepared_smart_tactic_source_sites(source, import),
         },
     };
-    sites
-        .map(|sites| {
-            sites
-                .into_iter()
-                .filter(|site| site.claim_label == claim_label)
-                .map(|site| site.tactic_name)
-                .collect::<Vec<_>>()
-        })
-        .map_err(|error| {
-            format!(
-                "could not inventory smart tactics for `{claim_label}`: {}",
-                error.report()
-            )
-        })
+    sites.map_err(|error| error.report())
 }
 
 fn audit_site_rewrite(

@@ -1106,6 +1106,10 @@ fn expand_c0_tactic_source_at_context(
             expand_c0_claim_source(click_source, c_sources, function_name, *claim)
         };
     }
+    let _parameter_places = selected
+        .function_block
+        .as_ref()
+        .map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
@@ -1344,6 +1348,11 @@ fn expand_program_prepared_tactic_source_at_context(
             *claim,
         );
     }
+    let block = selected.function_block.as_ref();
+    let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
+        block.is_some_and(|block| block.signature().returns_reference()),
+    );
+    let _parameter_places = block.map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
@@ -1478,6 +1487,10 @@ fn expand_c0_prepared_tactic_source_at_context(
             expand_c0_prepared_claim_source(click_source, imports, function_name, *claim)
         };
     }
+    let _parameter_places = selected
+        .function_block
+        .as_ref()
+        .map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
@@ -1674,6 +1687,11 @@ fn rewrite_verified_pure_theorem(
 /// Written nesting is not a driver bound: terminal cases can be processed
 /// iteratively. As with tactic expansion, the caller verifies the rewrite.
 fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickError> {
+    let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
+        theorem.function_block.signature().returns_reference(),
+    );
+    let _reference_carriers =
+        super::diagnostics::ParameterPlaceScope::enter(&theorem.function_block);
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
         return Ok(super::printing::format_proof_certificate(&certificate));
@@ -1777,8 +1795,18 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
             index += character.len_utf8();
             continue;
         }
-        if character == '#' {
+        if character == '#' || source[index..].starts_with("//") {
             index += source[index..].find('\n').unwrap_or(source.len() - index);
+            continue;
+        }
+        if source[index..].starts_with("/*") {
+            let Some(end) = source[index + 2..].find("*/") else {
+                return Err(ClickError::new(format!(
+                    "{}: unterminated block comment",
+                    position_at_offset(source, index)
+                )));
+            };
+            index += 2 + end + 2;
             continue;
         }
         let start = index;
@@ -2349,6 +2377,16 @@ pub(super) struct ExpansionCapture {
     /// occurrence bookkeeping runs unchanged; the answer is the nested
     /// tactic's own checked delta recorded here.
     pub(super) nested: Option<Arc<NestedTacticCapture>>,
+    pub(super) replaces_from: Option<usize>,
+    /// A partial selection shares one verification. Persistent recorder state
+    /// keeps speculative driver clones independent without copying all sites.
+    pub(super) batch: Option<Box<BatchExpansionCapture>>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct BatchExpansionCapture {
+    pub(super) targets: imbl::OrdMap<usize, ExpansionCapture>,
+    pub(super) active_source: Option<usize>,
 }
 
 impl ExpansionCapture {
@@ -2360,6 +2398,8 @@ impl ExpansionCapture {
             result: None,
             dropped_path_occurrence: false,
             nested: None,
+            batch: None,
+            replaces_from: None,
         }
     }
 
@@ -2391,6 +2431,75 @@ impl ExpansionCapture {
             result: None,
             dropped_path_occurrence: false,
             nested: None,
+            batch: None,
+            replaces_from: None,
+        }
+    }
+
+    pub(super) fn for_tactics(site: ProofSite, targets: &[(usize, Vec<usize>)]) -> Self {
+        let mut capture = Self::for_site(site.clone());
+        let mut grouped = BTreeMap::<usize, Vec<Vec<usize>>>::new();
+        for (index, path) in targets {
+            grouped.entry(*index).or_default().push(path.clone());
+        }
+        let mut nested = BTreeMap::new();
+        let targets = grouped
+            .into_iter()
+            .map(|(index, paths)| {
+                let mut target = Self::for_tactic(site.clone(), index);
+                let mut children = BTreeMap::new();
+                for path in paths.into_iter().filter(|path| !path.is_empty()) {
+                    let mut full = vec![index];
+                    full.extend(path);
+                    let recorder = Arc::new(NestedTacticCapture::new(site.clone(), full.clone()));
+                    children.insert(full.clone(), recorder.clone());
+                    nested.insert(full, recorder);
+                }
+                if !children.is_empty() {
+                    target.nested = Some(Arc::new(NestedTacticCapture::collection(
+                        site.clone(),
+                        children,
+                    )));
+                }
+                (index, target)
+            })
+            .collect();
+        capture.batch = Some(Box::new(BatchExpansionCapture {
+            targets,
+            active_source: None,
+        }));
+        if !nested.is_empty() {
+            capture.nested = Some(Arc::new(NestedTacticCapture::collection(site, nested)));
+        }
+        capture
+    }
+
+    pub(super) fn selects(&self, site: &ProofSite, index: usize) -> bool {
+        self.site == *site
+            && self
+                .batch
+                .as_ref()
+                .map_or(self.source_index == Some(index), |batch| {
+                    batch.targets.contains_key(&index)
+                })
+    }
+
+    pub(super) fn target_mut(&mut self, index: usize) -> Option<&mut Self> {
+        if self.batch.is_some() {
+            self.batch.as_mut()?.targets.get_mut(&index)
+        } else if self.source_index == Some(index) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn active_target_mut(&mut self) -> Option<&mut Self> {
+        if self.batch.is_some() {
+            let batch = self.batch.as_mut()?;
+            batch.targets.get_mut(&batch.active_source?)
+        } else {
+            Some(self)
         }
     }
 
@@ -2422,6 +2531,7 @@ pub(in crate::surface) struct NestedTacticCapture {
     /// `if` or `cases` arm.
     pub(in crate::surface) path: Vec<usize>,
     state: std::sync::Mutex<NestedTacticCaptureState>,
+    children: BTreeMap<Vec<usize>, Arc<NestedTacticCapture>>,
 }
 
 #[derive(Debug, Default)]
@@ -2439,6 +2549,24 @@ impl NestedTacticCapture {
             site,
             path,
             state: std::sync::Mutex::new(NestedTacticCaptureState::default()),
+            children: BTreeMap::new(),
+        }
+    }
+
+    fn collection(site: ProofSite, children: BTreeMap<Vec<usize>, Arc<Self>>) -> Self {
+        Self {
+            site,
+            path: Vec::new(),
+            state: std::sync::Mutex::default(),
+            children,
+        }
+    }
+
+    pub(in crate::surface) fn at_path(self: &Arc<Self>, path: &[usize]) -> Option<Arc<Self>> {
+        if self.path == path {
+            Some(self.clone())
+        } else {
+            self.children.get(path).cloned()
         }
     }
 
@@ -2547,6 +2675,9 @@ struct LocatedSourceTactic {
     /// source index: an expansion that stands for a run of tactics ending at
     /// the selected one replaces from an earlier one of these.
     sibling_starts: Vec<(usize, usize)>,
+    /// The function block the selected site belongs to, for printing its
+    /// parameters' places. Filled for the one tactic an expansion selects.
+    function_block: Option<FunctionBlock>,
 }
 
 thread_local! {
@@ -2563,6 +2694,437 @@ thread_local! {
 /// before the closer are part of what it replaces.
 pub(in crate::surface) fn note_expansion_replaces_from(source_index: usize) {
     EXPANSION_REPLACES_FROM.with(|from| from.set(Some(source_index)));
+}
+
+pub(in crate::surface) fn take_expansion_replaces_from() -> Option<usize> {
+    EXPANSION_REPLACES_FROM.with(std::cell::Cell::take)
+}
+
+/// A selected rewrite and the emitted regions in its Click source. Audit
+/// uses these regions to check its fixed point without expanding unselected
+/// automation between them.
+#[derive(Clone, Debug)]
+pub struct SelectedTacticExpansion {
+    pub source: String,
+    pub replacement_spans: Vec<Range<usize>>,
+}
+
+impl SelectedTacticExpansion {
+    fn whole_rewrite(original: &str, source: String) -> Self {
+        let prefix = original
+            .chars()
+            .zip(source.chars())
+            .take_while(|(a, b)| a == b)
+            .map(|(c, _)| c.len_utf8())
+            .sum::<usize>();
+        let suffix = original[prefix..]
+            .chars()
+            .rev()
+            .zip(source[prefix..].chars().rev())
+            .take_while(|(a, b)| a == b)
+            .map(|(c, _)| c.len_utf8())
+            .sum::<usize>();
+        let replacement_spans = std::iter::once(prefix..source.len() - suffix).collect();
+        Self {
+            source,
+            replacement_spans,
+        }
+    }
+}
+
+/// Expands just the requested sites of one claim in a shared verification.
+pub fn expand_c0_tactics_source_at(
+    source: &str,
+    c_sources: &[(&str, &str)],
+    positions: &[SourcePosition],
+) -> Result<SelectedTacticExpansion, ClickError> {
+    expand_selected_tactics_context(None, source, &CSourceContext::bundle(c_sources), positions)
+}
+
+pub fn expand_c0_project_tactics_source_at(
+    project: &ClickProject,
+    c_sources: &[(&str, &str)],
+    positions: &[SourcePosition],
+) -> Result<SelectedTacticExpansion, ClickError> {
+    let source = project
+        .entry_source()
+        .ok_or_else(|| ClickError::new("missing entry source"))?;
+    expand_selected_tactics_context(
+        Some(project),
+        source,
+        &CSourceContext::bundle(c_sources).with_click_project(project),
+        positions,
+    )
+}
+
+pub fn expand_c0_prepared_tactics_source_at(
+    source: &str,
+    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    positions: &[SourcePosition],
+) -> Result<SelectedTacticExpansion, ClickError> {
+    expand_selected_tactics_context(None, source, &CSourceContext::prepared(imports), positions)
+}
+
+pub fn expand_c0_prepared_project_tactics_source_at(
+    project: &ClickProject,
+    imports: &[crate::languages::c::compiler_import::PreparedCImport],
+    positions: &[SourcePosition],
+) -> Result<SelectedTacticExpansion, ClickError> {
+    let source = project
+        .entry_source()
+        .ok_or_else(|| ClickError::new("missing entry source"))?;
+    expand_selected_tactics_context(
+        Some(project),
+        source,
+        &CSourceContext::prepared(imports).with_click_project(project),
+        positions,
+    )
+}
+
+pub fn expand_program_prepared_tactics_source_at(
+    source: &str,
+    import: &impl crate::languages::PreparedProgramSource,
+    positions: &[SourcePosition],
+) -> Result<SelectedTacticExpansion, ClickError> {
+    expand_selected_tactics_context(None, source, &CSourceContext::program(import)?, positions)
+}
+
+pub fn expand_program_prepared_project_tactics_source_at(
+    project: &ClickProject,
+    import: &impl crate::languages::PreparedProgramSource,
+    positions: &[SourcePosition],
+) -> Result<SelectedTacticExpansion, ClickError> {
+    let source = project
+        .entry_source()
+        .ok_or_else(|| ClickError::new("missing entry source"))?;
+    expand_selected_tactics_context(
+        Some(project),
+        source,
+        &CSourceContext::program(import)?.with_click_project(project),
+        positions,
+    )
+}
+
+fn expand_selected_tactics_context(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &CSourceContext<'_>,
+    positions: &[SourcePosition],
+) -> Result<SelectedTacticExpansion, ClickError> {
+    if positions.is_empty() {
+        return Ok(SelectedTacticExpansion {
+            source: source.to_string(),
+            replacement_spans: Vec::new(),
+        });
+    }
+    let file = match project {
+        Some(project) => resolve_click_project_context(project, inputs)?,
+        None => parse_source_with_c_layouts_context(source, inputs)?,
+    };
+    let wanted = positions
+        .iter()
+        .map(|p| (p.line, p.column))
+        .collect::<BTreeSet<_>>();
+    let mut offsets = BTreeSet::new();
+    let (mut line, mut column) = (1, 1);
+    for (offset, character) in source.char_indices() {
+        crate::instrumentation::record_deterministic_work(1);
+        if offset % 1024 == 0 && crate::instrumentation::deadline_exceeded() {
+            return Err(ClickError::new(
+                "selected expansion exceeded its time limit",
+            ));
+        }
+        if wanted.contains(&(line, column)) {
+            offsets.insert(offset);
+        }
+        if character == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    let entries = source_tactic_entries(source, &file)?;
+    let mut selected = BTreeMap::<usize, LocatedSourceTactic>::new();
+    for entry in &entries {
+        if !offsets.contains(&entry.anchor) {
+            continue;
+        }
+        if let EntrySelection::Located(located) = &entry.selection {
+            selected
+                .entry(entry.anchor)
+                .or_insert_with(|| located.clone());
+        }
+    }
+    if selected.len() != wanted.len() {
+        return Err(ClickError::new(
+            "selected audit locations no longer name proof tactics",
+        ));
+    }
+    let selected = selected.into_values().collect::<Vec<_>>();
+    let site = selected[0].site.clone();
+    if selected.iter().any(|target| target.site != site) {
+        return Err(ClickError::new(
+            "batch expansion requires sites from one claim",
+        ));
+    }
+    if let ProofSite::TheoremEnsure {
+        theorem_name,
+        ensure_index,
+    } = &site
+    {
+        let verified = match project {
+            Some(project) => verify_click_project_theorem_context(project, inputs, theorem_name)?,
+            None => verify_click_theorems_with_context(source, inputs)?,
+        };
+        return rewrite_verified_pure_theorem(source, &verified, theorem_name, *ensure_index)
+            .map(|rewritten| SelectedTacticExpansion::whole_rewrite(source, rewritten));
+    }
+    let reference_result = match &site {
+        ProofSite::FunctionClaim { function_name, .. }
+        | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(&file)
+            .find(|block| block.signature().name() == function_name)
+            .is_some_and(|block| block.signature().returns_reference()),
+        ProofSite::TheoremEnsure { .. } => false,
+    };
+    let _reference_result_source =
+        super::diagnostics::ReferenceResultSourceScope::enter(reference_result);
+    let whole = selected
+        .iter()
+        .any(|target| matches!(target.edit, TacticSourceEdit::WholeProof(_)));
+    let targets = selected
+        .iter()
+        .map(|t| (t.source_index, t.nested.clone()))
+        .collect::<Vec<_>>();
+    let mut capture = if whole {
+        ExpansionCapture::for_site(site.clone())
+    } else {
+        ExpansionCapture::for_tactics(site.clone(), &targets)
+    };
+    take_expansion_replaces_from();
+    let whole_function = match &site {
+        ProofSite::FunctionClaim {
+            function_name,
+            claim,
+        } if whole => Some((function_name, *claim)),
+        _ => None,
+    };
+    let (verified, _) = instrumentation::with_default_tactic_limits(|| {
+        crate::surface::verification::verify_c0_sources_with_context(
+            source,
+            inputs,
+            whole_function.map(|(name, _)| VerificationTarget::Function(name.clone())),
+            None,
+            if whole_function.is_some() {
+                None
+            } else {
+                Some(&mut capture)
+            },
+            Some(file),
+        )
+    })?;
+    if let Some((name, claim)) = whole_function {
+        let theorem = select_expansion_theorem(&verified, name, claim)?;
+        let mut tactics = theorem.expanded_proof_certificate()?.to_proof_tactics();
+        if theorem.function_block.is_tactic_procedure() {
+            remove_tactic_procedure_ending(
+                &mut tactics,
+                1 + theorem.function_block.ensures().len(),
+            )
+            .map_err(|()| ClickError::new("expanded tactic procedure lost its checked ending"))?;
+        }
+        capture.result = Some(Ok(tactics));
+    }
+    let sibling_starts = entries
+        .iter()
+        .filter_map(|entry| match &entry.selection {
+            EntrySelection::Located(sibling)
+                if sibling.site == site && sibling.nested.is_empty() =>
+            {
+                Some((sibling.source_index, entry.span.start))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let edit_span = |target: &LocatedSourceTactic| {
+        let mut span = match &target.edit {
+            TacticSourceEdit::Partial(span) | TacticSourceEdit::PartialProofClause(span) => {
+                span.clone()
+            }
+            TacticSourceEdit::WholeProof(edit) => edit.span().clone(),
+        };
+        if let Some(from) = capture
+            .batch
+            .as_ref()
+            .and_then(|batch| batch.targets.get(&target.source_index))
+            .and_then(|recorder| recorder.replaces_from)
+            .and_then(|index| sibling_starts.get(&index))
+        {
+            span.start = span.start.min(*from);
+        }
+        span
+    };
+    let mut selected = selected;
+    selected.sort_by_key(|target| {
+        let span = edit_span(target);
+        (span.start, std::cmp::Reverse(span.end))
+    });
+    let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+    for target in selected {
+        let owned_span = edit_span(&target);
+        if edits
+            .last()
+            .is_some_and(|(span, _)| owned_span.start >= span.start && owned_span.end <= span.end)
+        {
+            continue;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        let recorder = capture
+            .batch
+            .as_ref()
+            .and_then(|batch| batch.targets.get(&target.source_index))
+            .unwrap_or(&capture);
+        let result = if target.nested.is_empty() {
+            recorder.result.clone()
+        } else {
+            let mut path = vec![target.source_index];
+            path.extend(&target.nested);
+            recorder
+                .nested
+                .as_ref()
+                .and_then(|nested| nested.at_path(&path))
+                .and_then(|nested| nested.result())
+        };
+        let tactics = match result {
+            Some(result) => result.map_err(ClickError::new)?,
+            None if recorder.dropped_path_occurrence => Vec::new(),
+            None => {
+                return Err(ClickError::new(format!(
+                    "selected {} tactic {} retained no expansion",
+                    site.description(),
+                    target.source_index
+                )));
+            }
+        };
+        let (mut span, replacement) = match target.edit {
+            TacticSourceEdit::Partial(span) => (
+                span,
+                super::printing::format_partial_tactic_sequence(&tactics),
+            ),
+            TacticSourceEdit::PartialProofClause(span) => (
+                span,
+                super::printing::format_proof_certificate(
+                    &ProofCertificate::from_proof_tactics(&tactics)
+                        .map_err(|error| ClickError::new(error.message().to_string()))?,
+                ),
+            ),
+            TacticSourceEdit::WholeProof(edit) => {
+                let replacement = super::printing::format_proof_certificate(
+                    &ProofCertificate::from_proof_tactics(&tactics)
+                        .map_err(|error| ClickError::new(error.message().to_string()))?,
+                );
+                let span = edit.span().clone();
+                let replacement = match edit {
+                    ProofSourceEdit::Explicit(_) => replacement,
+                    ProofSourceEdit::DefaultTerminator { .. } => format!(" {replacement}"),
+                    ProofSourceEdit::OmittedLoopPhase { phase, .. } => {
+                        format!("    {phase} {}\n", replacement.replace('\n', "\n    "))
+                    }
+                };
+                (span, replacement)
+            }
+        };
+        if let Some(from) = recorder
+            .replaces_from
+            .and_then(|index| sibling_starts.get(&index))
+        {
+            span.start = span.start.min(*from);
+        }
+        let replacement = if replacement.is_empty()
+            && source[..span.start].trim_end().ends_with('{')
+            && source[span.end..].trim_start().starts_with('}')
+        {
+            "assumption();".to_string()
+        } else {
+            replacement
+        };
+        edits.push((
+            span.clone(),
+            indent_replacement(source, span.start, &replacement),
+        ));
+    }
+    // A prefix expansion owns any selected edits within that prefix. Reject
+    // crossing ranges rather than constructing an ambiguous rewrite.
+    edits.sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
+    let mut retained: Vec<(Range<usize>, String)> = Vec::new();
+    for (span, replacement) in edits {
+        if let Some((previous, _)) = retained.last() {
+            if span.end <= previous.end {
+                continue;
+            }
+            if span.start < previous.end {
+                return Err(ClickError::new(
+                    "selected expansion edits overlap without one owning the other",
+                ));
+            }
+        }
+        retained.push((span, replacement));
+    }
+    let mut rewritten = String::with_capacity(source.len());
+    let mut cursor = 0;
+    let mut replacement_spans = Vec::new();
+    for (span, replacement) in retained {
+        rewritten.push_str(&source[cursor..span.start]);
+        let replacement_start = rewritten.len();
+        rewritten.push_str(&replacement);
+        replacement_spans.push(replacement_start..rewritten.len());
+        cursor = span.end;
+    }
+    rewritten.push_str(&source[cursor..]);
+    // Removing several no-op occurrences can empty a proof block together.
+    // Fill only blocks touched by this rewrite, preserving unrelated syntax.
+    let tokens = scan_source_tokens(&rewritten)?;
+    let mut region = 0;
+    let mut empty_blocks = Vec::new();
+    for window in tokens.windows(3) {
+        while replacement_spans
+            .get(region)
+            .is_some_and(|span| span.end < window[1].span.end)
+        {
+            region += 1;
+        }
+        if window[0].text == "by"
+            && window[1].text == "{"
+            && window[2].text == "}"
+            && replacement_spans.get(region).is_some_and(|span| {
+                span.start <= window[2].span.start && span.end >= window[1].span.end
+            })
+        {
+            empty_blocks.push(window[1].span.end);
+        }
+    }
+    for offset in empty_blocks.into_iter().rev() {
+        let filler = " assumption(); ";
+        rewritten.insert_str(offset, filler);
+        for span in &mut replacement_spans {
+            if span.start >= offset {
+                span.start += filler.len();
+            }
+            if span.end >= offset {
+                span.end += filler.len();
+            }
+        }
+    }
+    if let Some(project) = project {
+        let rewritten_project = project.with_entry_source(rewritten.clone());
+        resolve_click_project_context(&rewritten_project, inputs)?;
+    } else {
+        parse_source_with_c_layouts_context(&rewritten, inputs)?;
+    }
+    Ok(SelectedTacticExpansion {
+        source: rewritten,
+        replacement_spans,
+    })
 }
 
 impl LocatedSourceTactic {
@@ -2934,6 +3496,13 @@ fn locate_source_tactic_file(
                     _ => None,
                 })
                 .collect();
+            located.function_block = match &located.site {
+                ProofSite::FunctionClaim { function_name, .. }
+                | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(file)
+                    .find(|block| block.signature().name() == function_name)
+                    .cloned(),
+                ProofSite::TheoremEnsure { .. } => None,
+            };
             Ok(located)
         }
         EntrySelection::Unaddressable(reason) => Err(ClickError::new(reason.clone())),
@@ -3185,6 +3754,7 @@ fn proof_tactic_entries(
             nested: Vec::new(),
             edit: TacticSourceEdit::WholeProof(edit.clone()),
             sibling_starts: Vec::new(),
+            function_block: None,
         }),
     };
     let omitted_proof_span = || match edit {
@@ -3240,6 +3810,7 @@ fn proof_tactic_entries(
                         nested: Vec::new(),
                         edit,
                         sibling_starts: Vec::new(),
+                        function_block: None,
                     }),
                 };
                 entries.push(entry.clone());
@@ -3398,6 +3969,7 @@ fn block_tactic_entries(
                 nested: path.clone(),
                 edit: TacticSourceEdit::Partial(span.clone()),
                 sibling_starts: Vec::new(),
+                function_block: None,
             }),
         };
         entries.push(entry.clone());

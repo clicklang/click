@@ -1002,6 +1002,11 @@ theorem uint32_mul_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left * right) == to_integer(left) * to_integer(right);
 }
 
+theorem uint32_mul_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) * to_integer(right) <= 4294967295;
+    ensures right == 0u32 or left <= 4294967295u32 / right;
+}
+
 theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right);
@@ -1105,6 +1110,12 @@ theorem int64_equal_of_to_integer(left: int64, right: int64) {
 theorem int32_subtract_to_integer(left: int32, right: int32) {
     requires defined(left - right);
     ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+
+theorem int32_remainder_to_integer(left: int32, right: int32) {
+    requires defined(left % right);
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
 }
 
 theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {

@@ -2393,6 +2393,31 @@ pub(in crate::kernel) fn typed_ranges_disjoint_from_pointer_evidence(
         .collect()
 }
 
+/// A typed pointer read may recover a stored pointer in a different block.
+/// Compare the complete stored value, never just its offset.
+pub(crate) fn pointer_read_has_stored_value(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    let Some(Bitvector32Term::MemoryLoad(memory, address, kind)) =
+        crate::kernel::equality_graph::logical_pointer_read_term(left)
+    else {
+        return false;
+    };
+    let bytes = crate::kernel::load_term_access_width(&memory, &address, kind);
+    if bytes != crate::kernel::C_POINTER_BYTE_WIDTH {
+        return false;
+    }
+    let Some(cell) = memory_dag_cell_source(&memory, &address, bytes, assumptions, true) else {
+        return false;
+    };
+    let Some(CValue::Pointer(stored)) = cell.resolved_value(&address, kind) else {
+        return false;
+    };
+    stored.pointer() == right || assumptions.pointers_known_equal(stored.pointer(), right)
+}
+
 /// Whether a pointer-valued load resolves through the recorded memory DAG to
 /// a stored pointer whose offset is `right`. This is the pointer counterpart
 /// of the integer load-equality transport: pointer offsets are represented as
@@ -4000,12 +4025,44 @@ fn cell_integer_for_read(
         | CValue::UInt8(value)
         | CValue::UInt16(value)
         | CValue::UInt32(value)
+        | CValue::Int64(value)
+        | CValue::UInt64(value)
             if &value != load =>
         {
             Some(value)
         }
         _ => None,
     }
+}
+
+/// Compare only the two named wide reads, retaining their kind and recorded
+/// history. Do not route wide arithmetic through the int32 equality graph.
+pub(crate) fn wide_loads_have_same_canonical_value(
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> bool {
+    let origin = |term: &Bitvector32Term| match term {
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::eval::registered_load_origin_term_for_variable(variable)
+        }
+        Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+        _ => None,
+    };
+    let (Some(left), Some(right)) = (origin(left), origin(right)) else {
+        return false;
+    };
+    if !matches!(
+        (&left, &right),
+        (
+            Bitvector32Term::MemoryLoad(_, _, LoadKind::Bits64),
+            Bitvector32Term::MemoryLoad(_, _, LoadKind::Bits64)
+        )
+    ) {
+        return false;
+    }
+    crate::kernel::canonical_term(&left) == crate::kernel::canonical_term(&right)
+        && !crate::kernel::reasoning::load_equality_refuted_by_history(&left, &right, assumptions)
 }
 
 /// Deep, assumption-free canonical form for a term: every load resolves its

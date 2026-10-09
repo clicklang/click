@@ -2,7 +2,8 @@
 
 The owned suite is opened for the first callback and closed exactly once.
 It is then consumed by a checked helper between the first and later callback
-calls. The old `Copy` fact is therefore unavailable afterward.
+calls. The old `Copy` fact is therefore unavailable afterward. The suite also supplied
+the cell views, so the next callback first fails to read `augment->copy`.
 
 ```c filename=rb_augment_callbacks_consumes_suite.c
 struct node { struct node *left; struct node *right; };
@@ -75,5 +76,5 @@ void erase_discarded(struct node* node, struct node* parent,
 ```
 
 ```expect
-fail: the verifier cannot yet certify it for these 2 contract claims
+fail: missing resource fact `views augment->copy`
 ```

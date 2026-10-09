@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 45;
+    artifact["schema"] = 47;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1041,6 +1041,16 @@ private:
           return lower_library_assertion(call, callee, function, contract->second);
         }
       }
+      if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_unreachable) {
+        if (call->getNumArgs() != 0) {
+          fail(call->getExprLoc(), "C++ __builtin_unreachable requires no arguments");
+          return std::nullopt;
+        }
+        llvm::json::Object result;
+        result["kind"] = "unreachable";
+        result["span"] = span(call->getSourceRange());
+        return Json(std::move(result));
+      }
       if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_assume) {
         if (call->getNumArgs() != 1 || !checked_boolean_condition(call->getArg(0), function, false)) {
           fail(call->getExprLoc(), "C++ __builtin_assume requires a total scalar condition without memory reads or side effects");
@@ -1147,42 +1157,63 @@ private:
       }
       llvm::json::Object result;
       const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
-      auto scalar_call = lower_scalar_call_source(returned->getRetValue());
-      if (!scalar_call) return std::nullopt;
-      const auto *call = scalar_call->call;
-      if (call != nullptr) {
-        const auto *callee = call->getDirectCallee();
-        if (callee == nullptr ||
-            !(reference_return != nullptr
-                ? context_.hasSameType(callee->getReturnType(), function->getReturnType()) &&
-                  returned->getRetValue()->isLValue() && scalar_call->conversions.empty()
-                : context_.hasSameType(returned->getRetValue()->getType(), function->getReturnType()))) {
-          fail(call->getExprLoc(), "C++ return call requires matching final value "
-                                   "and caller return types");
+      if (function->getReturnType()->isRecordType()) {
+        const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(
+            returned->getRetValue()->IgnoreParenImpCasts());
+        const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
+        if (returned->getNRVOCandidate() != nullptr ||
+            constructor == nullptr || !constructor->isCopyConstructor() ||
+            !constructor->isTrivial() || constructor->isDeleted() ||
+            !constructor->getParent()->hasTrivialDestructor() ||
+            construction->getNumArgs() != 1 || !construction->getArg(0)->isLValue() ||
+            !context_.hasSameUnqualifiedType(construction->getType(), function->getReturnType())) {
+          fail(returned->getReturnLoc(), "C++ record return requires a resolved trivial copy constructor from a live record lvalue with trivial destruction");
           return std::nullopt;
         }
-        auto lowered = lower_call_operation(call, function, true);
-        auto value_type = lower_type(reference_return != nullptr ? function->getReturnType() : returned->getRetValue()->getType(),
-                                     returned->getRetValue()->getExprLoc(),
-                                     direct_source_alias(function->getTypeSourceInfo()));
-        if (!lowered || !value_type) {
-          return std::nullopt;
-        }
-        result["kind"] = "return_call";
-        if (!scalar_call->conversions.empty())
-          result["conversions"] = std::move(scalar_call->conversions);
-        result["callee"] = std::move(lowered->callee);
-        result["arguments"] = std::move(lowered->arguments);
+        auto source = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), function);
+        auto value_type = lower_type(function->getReturnType(), returned->getReturnLoc());
+        if (!source || !value_type) return std::nullopt;
+        result["kind"] = "return_record";
+        result["source"] = std::move(*source);
         result["value_type"] = std::move(*value_type);
       } else {
-        auto value = reference_return != nullptr
-            ? lower_reference_binding(returned->getRetValue(), function->getReturnType(), function)
-            : lower_expression(returned->getRetValue(), function);
-        if (!value) {
-          return std::nullopt;
+        auto scalar_call = lower_scalar_call_source(returned->getRetValue());
+        if (!scalar_call) return std::nullopt;
+        const auto *call = scalar_call->call;
+        if (call != nullptr) {
+          const auto *callee = call->getDirectCallee();
+          if (callee == nullptr ||
+              !(reference_return != nullptr
+                  ? context_.hasSameType(callee->getReturnType(), function->getReturnType()) &&
+                    returned->getRetValue()->isLValue() && scalar_call->conversions.empty()
+                  : context_.hasSameType(returned->getRetValue()->getType(), function->getReturnType()))) {
+            fail(call->getExprLoc(), "C++ return call requires matching final value "
+                                     "and caller return types");
+            return std::nullopt;
+          }
+          auto lowered = lower_call_operation(call, function, true);
+          auto value_type = lower_type(reference_return != nullptr ? function->getReturnType() : returned->getRetValue()->getType(),
+                                       returned->getRetValue()->getExprLoc(),
+                                       direct_source_alias(function->getTypeSourceInfo()));
+          if (!lowered || !value_type) {
+            return std::nullopt;
+          }
+          result["kind"] = "return_call";
+          if (!scalar_call->conversions.empty())
+            result["conversions"] = std::move(scalar_call->conversions);
+          result["callee"] = std::move(lowered->callee);
+          result["arguments"] = std::move(lowered->arguments);
+          result["value_type"] = std::move(*value_type);
+        } else {
+          auto value = reference_return != nullptr
+              ? lower_reference_binding(returned->getRetValue(), function->getReturnType(), function)
+              : lower_expression(returned->getRetValue(), function);
+          if (!value) {
+            return std::nullopt;
+          }
+          result["kind"] = "return";
+          result["value"] = std::move(*value);
         }
-        result["kind"] = "return";
-        result["value"] = std::move(*value);
       }
       llvm::json::Array cleanups;
       const auto cleanup = cleanup_locals_.find(function->getCanonicalDecl());
@@ -1433,7 +1464,10 @@ private:
       call_candidate = cast->getSubExpr()->IgnoreParens();
     }
     const auto *call = llvm::dyn_cast<clang::CallExpr>(call_candidate);
-    if (call != nullptr && !is_numeric_limits_max_call(call)) {
+    const bool ordinary_call = call != nullptr && !is_numeric_limits_max_call(call) &&
+        !(call->getDirectCallee() != nullptr &&
+          call->getDirectCallee()->getBuiltinID() == clang::Builtin::BI__builtin_is_constant_evaluated);
+    if (ordinary_call) {
       if (casts.size() > kMaxScalarConversions) {
         fail(expression->getExprLoc(),
              "C++ artifact budget exhausted: scalar call-result conversions (limit " +
@@ -1481,7 +1515,7 @@ private:
       }
     }
     return ScalarCallSource{
-        call != nullptr && !is_numeric_limits_max_call(call) ? call : nullptr,
+        ordinary_call ? call : nullptr,
         std::move(call_conversions)};
   }
 
@@ -1973,6 +2007,9 @@ private:
       const auto *value = scalar_list_initializer(list);
       return value != nullptr && checked_boolean_condition(value, caller, field_reads);
     }
+    if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_LNot)
+      return checked_boolean_condition(unary->getSubExpr(), caller, field_reads);
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() == clang::BO_LAnd)
         return checked_boolean_condition(binary->getLHS(), caller, field_reads) &&
@@ -1991,7 +2028,8 @@ private:
   std::optional<Json> lower_if_condition(const clang::Expr *expression,
                                         const clang::FunctionDecl *function) {
     const auto *call = llvm::dyn_cast<clang::CallExpr>(expression->IgnoreParens());
-    if (call == nullptr)
+    if (call == nullptr || (call->getDirectCallee() != nullptr &&
+        call->getDirectCallee()->getBuiltinID() == clang::Builtin::BI__builtin_is_constant_evaluated))
       return lower_expression(expression, function);
     if (!call->getType()->isBooleanType()) {
       fail(call->getExprLoc(), "C++ condition calls require a Boolean result");
@@ -2547,6 +2585,19 @@ private:
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(expression)) {
       const auto *callee = call->getDirectCallee();
+      if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_is_constant_evaluated) {
+        if (call->getNumArgs() != 0 || !call->getType()->isBooleanType()) {
+          fail(call->getExprLoc(), "unsupported C++ runtime constant-evaluation primitive signature");
+          return std::nullopt;
+        }
+        auto value_type = lower_type(call->getType(), call->getExprLoc());
+        if (!value_type) return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "runtime_constant_evaluation";
+        result["value_type"] = std::move(*value_type);
+        result["span"] = span(call->getSourceRange());
+        return Json(std::move(result));
+      }
       if (callee == nullptr || callee->getBuiltinID() != 0 ||
           callee->getReturnType()->isReferenceType() || callee->getReturnType()->isVoidType()) {
         fail(call->getExprLoc(), "C++ expression observers require a direct scalar value call; compiler builtins and reference results remain unsupported");
@@ -2602,6 +2653,21 @@ private:
       result["value"] = std::move(*value);
       result["value_type"] = std::move(*value_type);
       result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
+    }
+    if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_LNot) {
+      auto value = lower_expression(unary->getSubExpr(), function);
+      auto value_type = lower_type(unary->getType(), unary->getExprLoc());
+      if (!value || !value_type || !unary->getSubExpr()->getType()->isIntegerType()) {
+        fail(unary->getExprLoc(), "C++ logical negation requires a supported integral operand");
+        return std::nullopt;
+      }
+      llvm::json::Object result;
+      result["kind"] = "logical_not";
+      result["value"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(unary->getSourceRange());
       return Json(std::move(result));
     }
     if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
@@ -2706,11 +2772,13 @@ private:
           parameter == nullptr
               ? nullptr
               : parameter->getType()->getAs<clang::LValueReferenceType>();
-      if (parameter == nullptr || parameter->getDeclContext() != function ||
+      const bool integer_field = llvm::isa<clang::MemberExpr>(operand) &&
+          operand->isLValue() && context_.hasSameType(operand->getType().getUnqualifiedType(), context_.IntTy);
+      if (!integer_field && (parameter == nullptr || parameter->getDeclContext() != function ||
           reference_type == nullptr ||
           !context_.hasSameType(
               reference_type->getPointeeType().getUnqualifiedType(),
-              context_.IntTy)) {
+              context_.IntTy))) {
         fail(address->getOperatorLoc(),
              "supported C++ address-of must name an int reference in the current function");
         return std::nullopt;
@@ -3559,6 +3627,21 @@ private:
     clang::SourceLocation begin =
         source_manager_.getSpellingLoc(range.getBegin());
     clang::SourceLocation end = source_manager_.getSpellingLoc(range.getEnd());
+    if (begin.isValid() && end.isValid() &&
+        (executable_source(begin) != source || executable_source(end) != source) &&
+        (range.getBegin().isMacroID() || range.getEnd().isMacroID())) {
+      // Macro bodies can be spelled in another explicitly selected dependency.
+      // Keep their definitions in the locked source inventory and label the
+      // executable operation at Clang's expansion site in this function.
+      const auto begin_source = executable_source(begin);
+      const auto end_source = executable_source(end);
+      if (begin_source && end_source) {
+        if (*begin_source != logical_source_) dependency_sources_.insert(*begin_source);
+        if (*end_source != logical_source_) dependency_sources_.insert(*end_source);
+        begin = source_manager_.getExpansionLoc(range.getBegin());
+        end = source_manager_.getExpansionLoc(range.getEnd());
+      }
+    }
     if (!begin.isValid() || !end.isValid() || executable_source(begin) != source ||
         executable_source(end) != source) {
       fail(

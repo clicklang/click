@@ -473,6 +473,22 @@ impl PureFactContext {
                 {
                     return Some(true);
                 }
+                if let ConditionTerm::Bitvector64Equal(left, right) = condition
+                    && crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
+                        left, right, self,
+                    )
+                {
+                    return Some(true);
+                }
+                if let ConditionTerm::PointerEqual(left, right) = condition
+                    && (crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                        left, right, self,
+                    ) || crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                        right, left, self,
+                    ))
+                {
+                    return Some(true);
+                }
                 // The Integer carrier's counterpart of the fold congruence
                 // the int32 equality above reaches through
                 // `range_fold_terms_alpha_equivalent`: two range folds with

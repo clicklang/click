@@ -1,8 +1,9 @@
 # Unchanged adler2 crate adapter trial
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
-proves the four-lane helper bodies and the original computation for zero through
-four input bytes from `a = 1`, `b = 0`. **The general Adler-32 checksum postcondition remains
+proves the four-lane helper bodies, zero through four constructor-state input
+bytes, and arbitrary multiples of four up to 22,204 bytes from canonical initial
+states (`a,b < 65521`). **The general Adler-32 checksum postcondition remains
 unproved.**
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
@@ -357,3 +358,28 @@ that input boundary; subsequent increments added checked constructors, by-value
 operator operands, and scalar constant initializers. The historical result's
 rejection is not the current adapter status. Schema-3 configurations retain
 their single-file interpretation.
+
+## Arbitrary small-batch induction
+
+The [small-batch contract](small-batch-compute.click) verifies the unchanged
+`Adler32::compute` body for every length divisible by four in `0..22204`,
+starting from any canonical state with `a,b < 65521`. Both unsigned length and
+signed index remainder conditions are explicit. The proof uses the original stored iterator
+remaining value and cursor, carries all eight lane ceilings and the shared
+input view, and proves termination. It then checks the original reductions,
+weighted recombination, both four-lane scalar sums, and final 16-bit stores.
+The checked postcondition bounds both output fields below 65,521.
+
+The fixture is assembled with the existing helper bodies, recombination
+lemmas, and iterator bounds by the Rust import tests. The whole verification
+unit passes; normal tests reject a missing input view, an admitted full outer
+batch, and either missing canonical seed bound. Whole-proof verification and late false-bound checks run nightly.
+Outer batches, lengths with a short byte tail, and the mathematical checksum
+postcondition remain unproved by this contract.
+
+The [partition lemmas](partition.click) independently prove the metadata split
+for lengths through 22,207: the rounded prefix fits the signed index type and
+is divisible by four, while the original nested subtraction gives exactly the
+zero-to-three-byte remainder. Verification and expanded-proof checks pass;
+false prefix ceilings, tail bounds, divisibility, and byte accounting fail.
+These arithmetic lemmas do not yet establish the original short-tail loop.

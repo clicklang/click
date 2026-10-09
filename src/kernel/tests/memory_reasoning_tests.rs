@@ -7189,3 +7189,85 @@ mod loadable_extent_graph_tests {
         }
     }
 }
+
+#[test]
+fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
+    let native = Bitvector32Term::Variable(Variable(983_110));
+    let alias = Bitvector32Term::Variable(Variable(983_111));
+    let last = |n| Bitvector32Term::uint64_subtract(n, Bitvector32Term::UInt64Constant(1));
+    let wide = |n| PointerOffsetTerm::Int64Scaled {
+        value: Box::new(n),
+        byte_width: 4,
+        unsigned: true,
+    };
+    let projected = Bitvector32Term::uint32_from_64(last(native.clone()));
+    let query = wide(last(alias.clone()));
+    let bound = ConditionTerm::uint64_less_equal(
+        last(native.clone()),
+        Bitvector32Term::UInt64Constant(1_073_741_822),
+    );
+    let equality = ConditionTerm::uint64_equal(alias.clone(), native.clone());
+    let project = |facts: &PureFactContext| {
+        crate::kernel::reasoning::element_index_from_offset_with_facts(&query, 4, facts)
+    };
+    assert_eq!(project(&PureFactContext::new()), None);
+    let bounded = PureFactContext::new().assume_condition(bound.clone(), true);
+    assert_eq!(project(&bounded), None);
+    let equal_only = PureFactContext::new().assume_condition(equality.clone(), true);
+    assert_eq!(project(&equal_only), None);
+    let low_bound = ConditionTerm::signed_less_equal(
+        projected.clone(),
+        Bitvector32Term::Constant(1_073_741_822),
+    );
+    assert_eq!(
+        project(&equal_only.clone().assume_condition(low_bound, true)),
+        None
+    );
+    let signed_bound = ConditionTerm::int64_signed_less_equal(
+        last(native.clone()),
+        Bitvector32Term::Int64Constant(1_073_741_822),
+    );
+    assert_eq!(
+        project(&equal_only.clone().assume_condition(signed_bound, true)),
+        None
+    );
+    let mut measured = Vec::new();
+    for count in [0, 8, 64, 512] {
+        let mut facts = bounded.clone().assume_condition(equality.clone(), true);
+        for i in 0..count {
+            facts = facts.assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    Bitvector32Term::Variable(Variable(984_000 + i)),
+                    Bitvector32Term::UInt64Constant(7),
+                ),
+                true,
+            );
+        }
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| project(&facts));
+        assert_eq!(answer, Some(projected.clone()));
+        measured.push(work);
+        assert!(facts.element_index_rebuild_is_exact_for_width(&query, 4));
+        // Element projection is exact even though scaling the largest index
+        // exceeds the signed byte word. It grants no unbounded byte projection.
+        assert!(!facts.element_index_rebuild_is_exact_for_width(&query, 1));
+    }
+    assert!(
+        measured.windows(2).all(|pair| pair[0] == pair[1]),
+        "{measured:?}"
+    );
+    for value in [0, 1_073_741_823, 1u64 << 32, u64::MAX] {
+        let actual = value.wrapping_sub(1);
+        let offset = wide(last(Bitvector32Term::UInt64Constant(value)));
+        let answer = crate::kernel::reasoning::element_index_from_offset_with_facts(
+            &offset,
+            4,
+            &PureFactContext::new(),
+        );
+        assert_eq!(
+            answer,
+            i32::try_from(actual)
+                .ok()
+                .map(|x| Bitvector32Term::Constant(x as u32))
+        );
+    }
+}

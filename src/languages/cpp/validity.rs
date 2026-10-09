@@ -173,7 +173,8 @@ impl Metadata<'_> {
                 self.arguments(arguments)?;
                 span
             }
-            CppExpression::IntegerLiteral { span, .. }
+            CppExpression::RuntimeConstantEvaluation { span, .. }
+            | CppExpression::IntegerLiteral { span, .. }
             | CppExpression::CompilerConstant { span, .. } => span,
             CppExpression::ConstantReference { constant, span, .. } => {
                 identity(
@@ -208,7 +209,8 @@ impl Metadata<'_> {
                 self.field(field)?;
                 span
             }
-            CppExpression::IntegralCast { value, span, .. } => {
+            CppExpression::LogicalNot { value, span, .. }
+            | CppExpression::IntegralCast { value, span, .. } => {
                 self.expression(value)?;
                 span
             }
@@ -365,6 +367,17 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::ReturnRecord {
+                    source,
+                    value_type,
+                    cleanups,
+                    span,
+                } => {
+                    self.reference(source)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.cleanups(cleanups)?;
+                    span
+                }
                 CppStatement::Return {
                     value,
                     cleanups,
@@ -374,6 +387,7 @@ impl Metadata<'_> {
                     self.cleanups(cleanups)?;
                     span
                 }
+                CppStatement::Unreachable { span } => span,
                 CppStatement::Throw { value, span }
                 | CppStatement::Assume {
                     condition: value,

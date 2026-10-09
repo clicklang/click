@@ -31,9 +31,12 @@ impl CStatementSiteScope {
     pub(in crate::surface) fn enter(
         layout: &crate::surface::lowering::SourceExecutionLayout,
         statement_index: usize,
+        function: &syntax::C0Function,
     ) -> Self {
         let site = layout.site(statement_index).cloned();
         C_STATEMENT_SITES.with(|sites| sites.borrow_mut().push(site));
+        REFERENCE_CARRIERS
+            .with(|carriers| carriers.borrow_mut().push(reference_carriers(function)));
         Self(())
     }
 }
@@ -43,7 +46,130 @@ impl Drop for CStatementSiteScope {
         C_STATEMENT_SITES.with(|sites| {
             sites.borrow_mut().pop();
         });
+        REFERENCE_CARRIERS.with(|carriers| {
+            carriers.borrow_mut().pop();
+        });
     }
+}
+
+/// What a parameter's pointer points at, for printing a read through it as
+/// the sidecar writes it.
+#[derive(Clone, Debug)]
+enum PointeeShape {
+    /// `int32& value`: a read of the carrier is `value`.
+    ScalarReferent,
+    /// A struct: a read at a scalar field's offset is that field, `c.field`
+    /// through a reference and `p->field` through a pointer.
+    Struct {
+        fields: Vec<crate::surface::FieldPlace>,
+    },
+}
+
+thread_local! {
+    /// The parameters whose reads are printed as places, by the name each
+    /// has in a kernel term. The printer of a kernel term has no parameter
+    /// list; a step scope or an expansion scope supplies this one.
+    static REFERENCE_CARRIERS: std::cell::RefCell<Vec<BTreeMap<String, PointeeShape>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, PointeeShape> {
+    function
+        .parameters()
+        .iter()
+        .filter(|parameter| syntax::referent_of_carrier(parameter.name()).is_some())
+        .map(|parameter| {
+            let shape = match parameter.struct_name() {
+                None => PointeeShape::ScalarReferent,
+                Some(struct_name) => PointeeShape::Struct {
+                    fields: parameter
+                        .pointee_struct_layout()
+                        .or_else(|| function.structs().get(struct_name))
+                        .map(crate::surface::scalar_field_places)
+                        .unwrap_or_default(),
+                },
+            };
+            (parameter.name().to_string(), shape)
+        })
+        .collect()
+}
+
+/// While alive, names the reference and struct parameters of the function
+/// whose proof text is being written, so `click expand` spells a read
+/// through one as the sidecar does.
+#[must_use]
+pub(in crate::surface) struct ParameterPlaceScope(());
+
+impl ParameterPlaceScope {
+    pub(in crate::surface) fn enter(block: &crate::surface::FunctionBlock) -> Self {
+        let parameters = block.signature().parameters();
+        // The name a parameter or local has in a kernel term: a reference
+        // is carried by a pointer named for its address.
+        let variable = |name: &str| {
+            let reference = parameters
+                .iter()
+                .any(|parameter| parameter.name() == name && parameter.is_reference());
+            if reference && syntax::referent_of_carrier(name).is_none() {
+                syntax::reference_carrier_name(name)
+            } else {
+                name.to_string()
+            }
+        };
+        let mut shapes: BTreeMap<_, _> = parameters
+            .iter()
+            .filter(|parameter| parameter.is_reference() && parameter.struct_name().is_none())
+            .map(|parameter| (variable(parameter.name()), PointeeShape::ScalarReferent))
+            .collect();
+        for (name, fields) in block.parameter_field_places() {
+            shapes.insert(
+                variable(name),
+                PointeeShape::Struct {
+                    fields: fields.clone(),
+                },
+            );
+        }
+        REFERENCE_CARRIERS.with(|scopes| scopes.borrow_mut().push(shapes));
+        Self(())
+    }
+}
+
+impl Drop for ParameterPlaceScope {
+    fn drop(&mut self) {
+        REFERENCE_CARRIERS.with(|scopes| {
+            scopes.borrow_mut().pop();
+        });
+    }
+}
+
+/// A typed read through `pointer`, as a sidecar writes it, when `pointer`
+/// is a parameter the innermost scope names, or a field's offset from one.
+fn describe_read_through_parameter(
+    pointer: &CExpression,
+    value_type: CType,
+    pointee_constant: bool,
+) -> Option<String> {
+    let (variable, offset_bytes) = match pointer {
+        CExpression::Variable(variable) => (variable, 0),
+        CExpression::PointerOffsetBytes { pointer, bytes } => match pointer.as_ref() {
+            CExpression::Variable(variable) => (variable, *bytes),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    REFERENCE_CARRIERS.with(|shapes| match shapes.borrow().last()?.get(variable)? {
+        PointeeShape::ScalarReferent if offset_bytes == 0 => {
+            syntax::referent_of_carrier(variable).map(str::to_string)
+        }
+        PointeeShape::ScalarReferent => None,
+        PointeeShape::Struct { fields } => fields
+            .iter()
+            .find(|field| {
+                field.offset_bytes == offset_bytes
+                    && field.value_type == value_type
+                    && field.pointee_constant == pointee_constant
+            })
+            .map(|field| describe_field_place(variable, &field.name)),
+    })
 }
 
 /// The line naming where the C statement being stepped was written, as
@@ -1209,14 +1335,20 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::UnsupportedOpaqueFunctionContract(name) => format!(
             "cannot execute call to `{name}` opaquely: its contract refers to an internal program point that is unavailable at the call site"
         ),
-        crate::kernel::CRuntimeError::AbstractFunctionPointerCall(name) => format!(
-            "cannot verify call through {}: no matching named contract is available for this value",
-            if is_call_result_temporary(name) {
-                "a function pointer loaded from memory".to_string()
+        crate::kernel::CRuntimeError::AbstractFunctionPointerCall(name) => {
+            if let Some(source) = super::proof::callback_source_name(name) {
+                format!("cannot verify call: no contract fact for the function pointer `{source}` with this call signature")
             } else {
-                format!("function pointer `{name}`")
+                format!(
+                    "cannot verify call through {}: no matching named contract is available for this value",
+                    if is_call_result_temporary(name) {
+                        "a function pointer loaded from memory".to_string()
+                    } else {
+                        format!("function pointer `{name}`")
+                    }
+                )
             }
-        ),
+        }
         crate::kernel::CRuntimeError::FunctionContract(message) => {
             format!(
                 "function contract could not be applied: {}",
@@ -4421,9 +4553,64 @@ pub(in crate::surface) fn is_call_result_temporary(name: &str) -> bool {
     name.starts_with("__click_call_result")
 }
 
+pub(in crate::surface) fn describe_callback_source(expression: &syntax::C0Expression) -> String {
+    match expression {
+        syntax::C0Expression::Field {
+            pointer,
+            source: Some(source),
+            ..
+        } => {
+            let base = match pointer.as_ref() {
+                syntax::C0Expression::PointerOffsetBytes { pointer, .. } => pointer.as_ref(),
+                pointer => pointer,
+            };
+            match base {
+                syntax::C0Expression::AddressOf(object) => {
+                    format!(
+                        "{}.{}",
+                        describe_callback_source(object),
+                        source.field_name()
+                    )
+                }
+                pointer => format!(
+                    "{}->{}",
+                    describe_callback_source(pointer),
+                    source.field_name()
+                ),
+            }
+        }
+        expression => describe_c_expression(&expression.to_kernel_expression()),
+    }
+}
+
+thread_local! {
+    static REFERENCE_RESULT_SOURCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Kernel reference results carry addresses. Function-directed proof printing
+/// must spell that carrier as `&result`, and a load through it as `result`.
+pub(super) struct ReferenceResultSourceScope(bool);
+
+impl ReferenceResultSourceScope {
+    pub(super) fn enter(reference: bool) -> Self {
+        Self(REFERENCE_RESULT_SOURCE.with(|slot| slot.replace(reference)))
+    }
+}
+
+impl Drop for ReferenceResultSourceScope {
+    fn drop(&mut self) {
+        REFERENCE_RESULT_SOURCE.with(|slot| slot.set(self.0));
+    }
+}
+
 pub(super) fn describe_c_expression(expression: &CExpression) -> String {
     match expression {
         CExpression::Value(value) => describe_c_value(value, &[], &[]),
+        CExpression::Variable(name)
+            if name == "result" && REFERENCE_RESULT_SOURCE.with(std::cell::Cell::get) =>
+        {
+            "&result".into()
+        }
         CExpression::Variable(name) => name.clone(),
         CExpression::FunctionAddress(name) => format!("&{name}"),
         CExpression::Cast {
@@ -4508,8 +4695,16 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::TypedLoad {
             pointer,
             value_type,
+            volatile,
+            pointee_constant,
             ..
         } => {
+            if !*volatile
+                && let Some(place) =
+                    describe_read_through_parameter(pointer, *value_type, *pointee_constant)
+            {
+                return place;
+            }
             let name = match value_type {
                 CType::Int128 => "load_int128",
                 CType::UInt128 => "load_uint128",

@@ -450,6 +450,25 @@ The proof interface spells that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
 
+C++ record returns from live record lvalues admit Clang-resolved trivial copy
+construction with trivial destruction and no base subobjects. Sidecars retain
+`struct View` result types and `result.field` contracts, including embedded scalar
+leaves, through the shared aggregate return model and checked nominal layouts.
+Each copied leaf needs initialized read authority. Copying a pointer field does
+not transfer ownership of its pointees or grant permission to read them. Copies
+complete before automatic cleanup. User-defined copies, moves, returns of whole
+automatic records, prvalue record construction and aggregate-return calls remain outside this slice. Artifact
+schema 46 requires an explicit refresh of earlier locks.
+
+Taking the address of a supported int32 record field uses its checked Clang
+projection and the shared storage-lifetime checks. It preserves const
+qualification inherited from the root object and does not read the field or
+grant permission to dereference the resulting pointer. Constructor initializers
+can therefore store a pointer to a field of the destination object. This differs
+from copying an existing descriptor, which preserves pointer values rather than
+rebasing them to a new object. Artifact schema 47 requires refreshing earlier
+locks. Returned construction destinations remain the next shared-model work.
+
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
 requirement. Select an ordinary declaration with `Class::helper`; reachable
@@ -830,6 +849,36 @@ constructor arguments and other expression-call contexts remain unsupported.
 Ordinary, expanded and retained proofs cover symbolic field reads, nested
 arguments, signed widening and short-circuit permissions; false claims, writes,
 owning contracts and forged call identities/types/spans are refused.
+
+Integral logical negation also uses shared C truth conversion and returns a
+native Boolean, including full-width unsigned values and observer results.
+In selected runtime function bodies, `__builtin_is_constant_evaluated()`
+returns false. Clang still selects manifestly constant `if constexpr` branches;
+this operation does not replace compile-time evaluation. Automatic const and
+constexpr initializers remain outside the admitted local profile.
+`__builtin_unreachable()` becomes a checked false assertion: its execution
+path must be proved unreachable.
+
+Macros from declared dependency headers retain their locked definitions and
+use Clang's expansion locations within the executable function. Missing macro
+dependencies are refused, and changing a definition invalidates the offline
+artifact. Reference typedefs compare their resolved pointee types, retaining
+width and const qualification. Function-directed proof expansion prints a
+reference result's address as `&result` and its referent as `result`.
+
+The unchanged pinned libstdc++ `std::span<int>::back()` now verifies for both a
+one-element range and a symbolic range with `1 <= N <= 1,073,741,823`. Its
+contracts preserve native uint64 size arithmetic and prove the returned address
+and old last-cell value. Explicit checked Integer bridges establish nonempty
+subtraction and the range of the narrowed backing count. The shared kernel
+projects native indices only with full-width bounds or exact constants;
+low-word bounds alone cannot justify a wide displacement. Checked full-width
+result equalities transport an explicitly proved index bound across observer
+calls, without transferring backing ownership. Ordinary, expanded and retained
+proofs agree offline, and missing bounds/views, empty spans, false aliases and
+values, and invalid byte extents are refused. Descriptor aggregate results,
+construction and copy initialization needed by Bitcoin's complete `SpanPopBack`
+remain roadmap work.
 
 An ordinary `if` can use a direct Boolean free-function or method call as its
 whole condition. The artifact keeps this effectful call separate from pure

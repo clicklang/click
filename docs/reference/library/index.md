@@ -1183,6 +1183,19 @@ Unsigned multiplication agrees with Integer multiplication under the native no-o
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_mul_guard_by_integer_bound`
+
+```click
+theorem uint32_mul_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) * to_integer(right) <= 4294967295;
+    ensures right == 0u32 or left <= 4294967295u32 / right;
+}
+```
+
+A mathematical product bound establishes the native checked-multiplication guard used by Rust. The zero right operand needs no division. Combine this rule with `uint32_mul_to_integer` to prove an exact product from Integer bounds; bounding the already wrapped machine product is insufficient.
+
+**Verified use:** [`mdtests/integer_uint32_product_bound_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_product_bound_guard.md).
+
 ### `uint64_add_to_integer`
 
 ```click
@@ -3074,3 +3087,15 @@ theorem integer_scaled_product_bounds(value: Integer, amount: Integer, size: Int
     }
 }
 ```
+
+### `int32_remainder_to_integer`
+
+```click
+theorem int32_remainder_to_integer(left: int32, right: int32) {
+    requires defined(left % right);
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+```
+
+Connects a defined signed machine remainder to mathematical truncation. Native definedness excludes both a zero divisor and `INT32_MIN % -1`; a nonzero mathematical divisor alone does not establish that the C operation is defined.

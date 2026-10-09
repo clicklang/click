@@ -36,21 +36,25 @@ A fact or a failed goal about a referent prints it as the sidecar writes
 it: `value`, `owns value`, and `box.first` for a read at the start of a
 struct referent.
 
-One printing gap remains. The "C operation" line of a failure, and a
-condition `click expand` writes from a lowered C expression, print
-`load_int32(&value)`. That parses back correctly, but it is not what a
-sidecar writes. The printer there has no parameter list, and the same shape
-through a struct reference, `load_int64(&box)`, is the struct's first field,
-not the struct. Lowering a scalar referent's read as an index of its carrier
-would let the printer tell the two apart; it changes the lowered program and
-the tests that pin its shape.
+The "C operation" line of a failure prints a read through a reference as
+the sidecar writes it, `value` or `c.first`: a step records the stepped
+function's reference parameters, and the printer of a kernel term consults
+them (`describe_read_through_reference` in `src/surface/diagnostics.rs`).
+`click expand` does the same from the sidecar's function block
+(`ParameterPlaceScope`): a read through a scalar reference is `value`, and
+a read at a scalar field of a struct is the field place, `c.second` through
+`struct cell& c` and `p->second` through a struct pointer, parameter or
+local.
 
-Regression: `click expand` on a branch over a scalar reference writes the
-condition with the bare name, and on a branch over a struct reference's
-first field writes `box.field`.
+One gap remains: a field of a struct nested in another (`p->inner.x`) is
+still expanded in kernel spelling, `load_int32(byte_offset(p, 4))`, because
+the printer matches scalar fields of the outer struct only. It parses back
+and verifies.
 
-Done when: no diagnostic or expansion prints `load_...(&name)` for a
-reference parameter.
+Regression: `click expand` on a branch over `p->inner.x` writes the
+condition with the field place.
+
+Done when: no expansion prints `load_...` for a field of a struct.
 
 ### A4. Rust sidecars in Rust syntax: respelling and the refusals
 
@@ -68,8 +72,14 @@ copies under `design/charon-trial`.
 
 Remaining:
 
-- Most of the examples' contracts and proofs still write `bytes_len`, `->` and
-  `(int32)index`. Respell them.
+- Five examples keep `bytes_len` and `(int32)` casts in their contracts and
+  proofs: `rust-loops`, `rust-iterators`, `rust-iter-references`,
+  `rust-byte-sum` and `rust-chunks-exact`. A test compares each one's
+  contract, as parsed, with its frozen original under `design/charon-trial`
+  (`charon_migrated_sidecars_preserve_original_source_contracts`), and the
+  respelled form parses to a different tree. Respell them once that test
+  compares meaning, not syntax. A cast on an index that is not a lone
+  parameter stays everywhere until typed indices cover it (A5).
 - Then refuse `->` and the C-shaped signature for a Rust source, with the
   spelling to write.
 - Diagnostics and `click expand` print C-shaped spellings for a Rust
@@ -87,17 +97,26 @@ prints a C-shaped place.
 
 ### A5. An index keeps its type until it is an offset
 
-Direction accepted 2026-10-08; design, kernel survey and order of work in
-`design/typed-indices.md`. Not started.
+Design, kernel survey and order of work: `design/typed-indices.md`.
 
-An index or range bound of any integer type is accepted and converted to an
-offset in its own way: `int32` by sign extension, `uint64` and `usize` by
-value. Stage 1 keeps the 32-bit cap on a range's extent and removes the
-casts from C and Rust contracts. Stage 2 widens the extent to `isize::MAX`
-and removes `requires n <= 2147483647`. Stage 3 brings order reasoning over
-64-bit terms up to the 32-bit level.
+Stage 1 is built: a 64-bit range bound of any form, and a 64-bit parameter
+written alone as an index, need no cast. The contract still states
+`requires n <= 2147483647`, and one that does not is refused at setup with
+the requirement to state.
 
-Start stage 1 after the Rust sidecar work in A4 has landed.
+Remaining:
+
+- **Stage 3, order reasoning over 64-bit terms.** It is the next thing to
+  do, ahead of stage 2: a C function that reads `bytes[index + 1]` with a
+  `size_t` index cannot be verified today whatever its contract says. The
+  body's read is refused with "missing resource fact
+  `views bytes[(truncate32(index) + 1)]`" under `requires index + 1 <
+  length`. Regression: that function verifying.
+- **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
+  2147483647`. It cannot be done piece by piece and needs scaling
+  regressions. Check with Lacker before starting it.
+- A 64-bit index expression that is not a lone parameter still takes the
+  cast in a contract. It follows stage 3.
 
 Done when: no contract casts an index, and a slice contract states no bound
 on its length.

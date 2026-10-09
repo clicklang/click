@@ -202,9 +202,18 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    hostile artifact paths are refused. Ordinary, expanded and retained proofs
    agree. Shared aggregate results, construction and copy initialization remain
    implementation work;
-   `SpanPopBack` has not been verified. The unchanged pinned `back()` additionally
-   needs its constexpr assertion's single-execution loop wrapper and nested
-   observer calls in expressions admitted through ordinary source lowering.
+   `SpanPopBack` has not been verified. The unchanged pinned `back()` now
+   verifies for both a one-element backing range and the accepted symbolic
+   domain `1 <= N <= 1,073,741,823`, through its actual constexpr assertion and
+   nested observer calls. Explicit shared Integer/conversion certificates prove
+   native nonempty subtraction and the backing-count/index bridge. The kernel
+   projects unsigned native indices through full-width bounds and checked scalar
+   result equalities; bounds on low words alone remain insufficient. Ordinary,
+   expanded and retained offline proofs establish native alias identity and old
+   referent value. Missing bounds, descriptor/backing views, empty size, false
+   aliases/values and invalid byte extents are refused. Deterministic scaling
+   checks cover unrelated facts. Aggregate results, construction and copy
+   initialization are next.
    **Expression observers (accepted).** Admit nested calls in unsequenced
    operands only when verified read-only observer contracts establish operand
    independence. General interfering calls remain deferred. For example,
@@ -225,20 +234,64 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    Shared storage checks now transport live-range evidence across verified
    pointer equalities, without granting read or initialization authority;
    missing, expired and one-past storage still fails.
-   The constexpr assertion condition still needs admission;
+   Integral logical negation, runtime `__builtin_is_constant_evaluated()` and
+   checked-unreachable statements now admit the constexpr assertion condition.
+   Clang's manifestly constant branch selection remains distinct from runtime
+   execution. Declared macros keep locked definitions and executable expansion
+   locations; undeclared macro dependencies are refused. Reference typedefs
+   retain resolved widths/qualification, and generated reference-result proofs
+   use the native address/referent spellings. Trivial record returns from live
+   lvalues now use shared aggregate values and checked nominal layouts, including
+   nested descriptor fields. The source must use Clang's resolved trivial copy
+   constructor; whole automatic objects eligible for named copy elision, moves,
+   user-defined copies, prvalue construction and nontrivial destruction remain refused. Every copied leaf needs initialized read authority;
+   copying a pointer field grants no pointee authority. Offline ordinary, expanded,
+   retained and forged-metadata checks cover this slice (artifact schema 46).
+   Construction and copy initialization are the next implementation work;
    interfering expressions remain
    refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
    nonempty subtraction and pointer formation from the actual backing range.
+4. **Shared construction destination design (dependency).**
+   The accepted direction, kernel/interface design work, identity regressions and
+   cross-language compatibility criteria now live in
+   [aggregate-construction-design.md](aggregate-construction-design.md).
+   C++ returned construction, destination forwarding and temporary retirement
+   depend on that work. The int32 field-address and constructor/copy identity
+   prerequisites are implemented; artifact schema 47 requires refreshing earlier
+   locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
+   above as the concrete C++ acceptance target.
+
+### Work independent of returned construction
+
+The accepted bounded span/reference profile now verifies unchanged pinned
+`std::span<int>::front()` with `1 <= N <= 1,073,741,823`: its native reference
+aliases the first backing element and preserves its old value using descriptor
+and backing views. Ordinary, expanded and retained verification pass; empty
+callers, missing bounds/views and false alias/value claims are refused.
+
+Pinned `size_bytes()` is also verified with descriptor views alone, without
+backing storage authority: its result is the native modulo-2^64 product of the
+extent and four-byte element size. Empty, bounded and wrapping extents retain
+that meaning. Expanded/retained verification and missing-authority/false-product
+refusals are covered.
+
+The next independent target is unchanged pinned indexed access: `operator[]`
+with a native unsigned index smaller than the bounded extent, returning the
+corresponding backing reference. It needs direct operator-method naming and
+selection, but no by-value result, constructor or temporary materialization.
+
+`first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
+behind the shared construction dependency. Other scalar/import work still needs
+an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields and the pointer-offset forms above. Shared aggregate returns and
-automatic embedded descriptor objects still
-need frontend admission. Some of
+fields and the pointer-offset forms above. Prvalue aggregate returns, copy initialization and
+automatic embedded descriptor construction still need frontend admission. Some of
 those are implementation work once the profiles above are chosen; they do not
 justify a separate C++ memory model.
 

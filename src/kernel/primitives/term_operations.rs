@@ -1445,6 +1445,10 @@ impl Bitvector32Term {
                 (Self::UInt64Constant(a), b) => Self::add(Self::Constant(a as u32), root(b)),
                 (a, b) => root(Self::UInt64Add(Box::new(a), Box::new(b))),
             },
+            Self::UInt64Subtract(a, b) => match (*a, *b) {
+                (a, Self::UInt64Constant(b)) => Self::subtract(root(a), Self::Constant(b as u32)),
+                (a, b) => root(Self::UInt64Subtract(Box::new(a), Box::new(b))),
+            },
             value => root(value),
         }
     }

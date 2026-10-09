@@ -479,10 +479,11 @@ struct Parser {
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
-    /// The `usize` parameters of the Rust signature being parsed, slice
-    /// lengths included. One written alone as an index is converted to the
-    /// 32-bit index a place takes.
-    rust_usize_params: BTreeSet<String>,
+    /// The 64-bit integer parameters of the signature being parsed: a Rust
+    /// `usize` and a slice's length, a C `uint64`, `int64` or `size_t`. One
+    /// written alone as an index is converted to the 32-bit index a place
+    /// takes (`design/typed-indices.md`, stage 1).
+    wide_index_params: BTreeSet<String>,
     /// The type of the `impl` block being parsed: its methods are the
     /// functions `Type_name`, and `self` is their receiver.
     rust_impl_type: Option<String>,
@@ -801,7 +802,7 @@ impl Parser {
             hidden_child_fields: BTreeMap::new(),
             verifies_rust: false,
             rust_slice_params: BTreeSet::new(),
-            rust_usize_params: BTreeSet::new(),
+            wide_index_params: BTreeSet::new(),
             rust_impl_type: None,
             tokens,
             positions,
@@ -3217,6 +3218,34 @@ impl Parser {
                 .map(Requirement::Proposition),
         );
 
+        let mut parameter_field_places: BTreeMap<_, _> = signature
+            .parameters()
+            .iter()
+            .filter_map(|parameter| {
+                let layout = self.struct_layouts.get(parameter.struct_name()?)?;
+                Some((
+                    parameter.name().to_string(),
+                    super::scalar_field_places(layout),
+                ))
+            })
+            .collect();
+        // A local of struct-pointer type is printed as a parameter is. The
+        // signature wins a shared spelling.
+        for (name, struct_name) in self
+            .local_struct_pointers_by_function
+            .get(signature.name())
+            .into_iter()
+            .flat_map(|locals| &locals.struct_pointers)
+        {
+            if signature
+                .parameters()
+                .iter()
+                .all(|parameter| parameter.name() != name)
+                && let Some(layout) = self.struct_layouts.get(struct_name)
+            {
+                parameter_field_places.insert(name.clone(), super::scalar_field_places(layout));
+            }
+        }
         Ok(FunctionBlock {
             signature,
             external,
@@ -3232,6 +3261,7 @@ impl Parser {
             ensure_source_clauses,
             grouped_proof,
             parameter_struct_casts,
+            parameter_field_places,
         })
     }
 
@@ -3318,7 +3348,7 @@ impl Parser {
             });
         }
         self.rust_slice_params.clear();
-        self.rust_usize_params.clear();
+        self.wide_index_params.clear();
         if self.peek_ident() == Some("fn") {
             return self.parse_rust_function_signature();
         }
@@ -3378,6 +3408,17 @@ impl Parser {
         if diverges && self.peek_ident() == Some("throws") {
             return Err(self.error("`throws` must come before `diverges` in a signature"));
         }
+        self.wide_index_params = parsed_parameters
+            .parameters
+            .iter()
+            .filter(|parameter| {
+                matches!(
+                    parameter.click_type(),
+                    ClickType::C(C0Type::UInt64 | C0Type::Int64)
+                )
+            })
+            .map(|parameter| parameter.name().to_string())
+            .collect();
         let struct_params = parsed_parameters.struct_params;
         let struct_array_params = parsed_parameters.struct_array_params;
         let reference_params = parsed_parameters.reference_params;
@@ -3447,7 +3488,7 @@ impl Parser {
                 // sidecar names the slice once and reads `bytes.len()`.
                 let length = format!("{parameter_name}_len");
                 self.rust_slice_params.insert(parameter_name.clone());
-                self.rust_usize_params.insert(length.clone());
+                self.wide_index_params.insert(length.clone());
                 parameters.push(
                     self.parse_parameter_array_suffix(parameter_name, element)?
                         .parameter,
@@ -3471,7 +3512,7 @@ impl Parser {
                 continue;
             }
             if self.peek_ident() == Some("usize") {
-                self.rust_usize_params.insert(parameter_name.clone());
+                self.wide_index_params.insert(parameter_name.clone());
             }
             let parsed_type = self.parse_rust_type()?;
             let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
@@ -3648,17 +3689,18 @@ impl Parser {
         ContractExpression::CFragment(CExpression::Variable(name))
     }
 
-    /// An index or range bound in a Rust sidecar. A place takes a 32-bit
-    /// index, so a `usize` parameter or a slice length written alone is the
-    /// cast the C-shaped spelling writes, `(int32)index`. The contract still
-    /// states the bound that makes the cast exact. Any other expression is
-    /// left as written.
+    /// An index or range bound. A place takes a 32-bit index, so a 64-bit
+    /// parameter or a slice length written alone is converted as the cast
+    /// `(int32)index` converts it. The contract still states the bound that
+    /// makes the conversion exact. Any other expression is left as written:
+    /// a range bound is converted where it is lowered, whatever it is, and
+    /// an index that is not a lone parameter takes the cast.
     #[inline(never)]
     fn rust_place_index(&self, index: ContractExpression) -> ContractExpression {
         let ContractExpression::CFragment(CExpression::Variable(name)) = &index else {
             return index;
         };
-        if !self.rust_usize_params.contains(name) {
+        if !self.wide_index_params.contains(name) {
             return index;
         }
         let lowered = CExpression::Cast {

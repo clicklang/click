@@ -475,6 +475,88 @@ fn note_dropped_execution_region(
     let Some(site) = proof_site else {
         return;
     };
+    if let Some(capture) = expansion_capture.as_ref()
+        && capture.site == *site
+        && let Some(batch) = &capture.batch
+    {
+        let mut dropped = Vec::new();
+        let mut pending = vec![region];
+        while let Some(node) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            let mut mark = |start: usize, count: usize| {
+                dropped.extend(
+                    batch
+                        .targets
+                        .range(start..start.saturating_add(count))
+                        .map(|(index, _)| *index),
+                );
+            };
+            match node {
+                InternalProofNode::Done => {}
+                InternalProofNode::Linear {
+                    tactics,
+                    continuation,
+                } => {
+                    for indexed in tactics {
+                        mark(
+                            indexed.source_index,
+                            source_tactic_count(std::slice::from_ref(&indexed.tactic)),
+                        );
+                    }
+                    pending.push(continuation);
+                }
+                InternalProofNode::Match {
+                    source_index,
+                    arms,
+                    continuation,
+                    ..
+                } => {
+                    mark(*source_index, 1);
+                    pending.extend(arms);
+                    pending.push(continuation);
+                }
+                InternalProofNode::Open {
+                    source_index,
+                    body,
+                    continuation,
+                    ..
+                } => {
+                    mark(*source_index, 1);
+                    pending.extend([body.as_ref(), continuation.as_ref()]);
+                }
+                InternalProofNode::Branch {
+                    source_index,
+                    then_branch: first,
+                    else_branch: second,
+                    continuation,
+                    ..
+                }
+                | InternalProofNode::If {
+                    source_index,
+                    then_branch: first,
+                    else_branch: second,
+                    continuation,
+                    ..
+                }
+                | InternalProofNode::CallOutcomes {
+                    source_index,
+                    returned_branch: first,
+                    threw_branch: second,
+                    continuation,
+                    ..
+                } => {
+                    mark(*source_index, 1);
+                    pending.extend([first.as_ref(), second.as_ref(), continuation.as_ref()]);
+                }
+            }
+        }
+        if let Some(capture) = expansion_capture {
+            for index in dropped {
+                note_dropped_path_tactic_occurrence(capture.target_mut(index));
+            }
+        }
+        return;
+    }
     let Some(wanted) = selected_tactic_index_for_site(expansion_capture.as_deref(), site) else {
         return;
     };
@@ -899,8 +981,7 @@ fn advance_checked_linear_continuation<'a>(
         if indexed.source_index != owning_source_index
             && !matches!(indexed.tactic, ProofTactic::Loop(_))
             && let Some(site) = proof_site
-            && selected_tactic_index_for_site(expansion_capture.as_deref(), site)
-                == Some(indexed.source_index)
+            && capture_selects_source(expansion_capture.as_deref(), site, indexed.source_index)
         {
             let certificate = next.certificate_since(&checkpoint)?;
             record_proof_site_tactic_expansion(
@@ -1032,6 +1113,11 @@ fn try_check_flat_function_proof_inner<'a>(
     };
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
+        if remaining.is_empty()
+            && let Some(error) = proof.unfinished_callback_diagnostic()?
+        {
+            return Err(error);
+        }
         if let Some((indexed, reason)) = remaining.first().and_then(|indexed| {
             pre_exit_outcome_tactic_error(&indexed.tactic).map(|reason| (indexed, reason))
         }) {
@@ -1719,6 +1805,11 @@ fn try_check_structural_function_proof_inner<'a>(
     }
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
+        if remaining.is_empty()
+            && let Some(error) = proof.unfinished_callback_diagnostic()?
+        {
+            return Err(error);
+        }
         if let Some((indexed, reason)) = remaining.first().and_then(|indexed| {
             pre_exit_outcome_tactic_error(&indexed.tactic).map(|reason| (indexed, reason))
         }) {
@@ -2319,8 +2410,11 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                         proof = proof.apply_step(ProofStep::Step)?;
                         if indexed.source_index != owning_source_index
                             && let Some(site) = proof_site
-                            && selected_tactic_index_for_site(expansion_capture.as_deref(), site)
-                                == Some(indexed.source_index)
+                            && capture_selects_source(
+                                expansion_capture.as_deref(),
+                                site,
+                                indexed.source_index,
+                            )
                         {
                             let certificate = proof.certificate_since(&checkpoint)?;
                             record_proof_site_tactic_expansion(
@@ -2995,8 +3089,7 @@ fn advance_focused_execution_arm<'a>(
         if indexed.source_index != owning_source_index
             && !matches!(indexed.tactic, ProofTactic::Loop(_))
             && let Some(site) = proof_site
-            && selected_tactic_index_for_site(expansion_capture.as_deref(), site)
-                == Some(indexed.source_index)
+            && capture_selects_source(expansion_capture.as_deref(), site, indexed.source_index)
         {
             let certificate = next.certificate_since(&checkpoint)?;
             record_proof_site_tactic_expansion(
@@ -3037,8 +3130,7 @@ fn record_source_successor_smart_expansions(
     for (_, source_index, smart) in arm_steps {
         if *smart
             && *source_index != owning_source_index
-            && selected_tactic_index_for_site(expansion_capture.as_deref(), site)
-                == Some(*source_index)
+            && capture_selects_source(expansion_capture.as_deref(), site, *source_index)
         {
             record_proof_site_tactic_expansion(
                 expansion_capture.as_deref_mut(),
@@ -3476,11 +3568,8 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     return decline();
                 };
                 proof = nested.restore_execution_tactic_attribution(&owner)?;
-                let selected_source_index = proof_site.as_ref().and_then(|site| {
-                    selected_tactic_index_for_site(expansion_capture.as_deref(), site)
-                });
-                if selected_source_index == Some(*source_index)
-                    && let Some(site) = proof_site
+                if let Some(site) = proof_site
+                    && capture_selects_source(expansion_capture.as_deref(), site, *source_index)
                 {
                     record_proof_site_tactic_expansion(
                         expansion_capture.as_deref_mut(),

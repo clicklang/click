@@ -26,6 +26,10 @@ pub(super) struct InvariantCloserStep {
 #[derive(Clone, Default)]
 pub(super) struct ExpansionCursor {
     pub(super) deferred_tactic_capture: Option<DeferredTacticCapture>,
+    /// Global source occurrences, not local tactic ordinals: a loop body and
+    /// its continuation can reuse a local ordinal.
+    pub(super) batch_deferred_captures: imbl::OrdMap<usize, DeferredTacticCapture>,
+    pub(super) batch_branch_skeleton: Option<Arc<Vec<ProofTactic>>>,
     pub(super) deferred_expansion_path_choices: PersistentSequence<SurfacePathChoice>,
 }
 
@@ -83,7 +87,7 @@ pub(super) struct DeferredTacticCapture {
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) post_execution_index: usize,
-    pub(super) branch_skeleton: Vec<ProofTactic>,
+    pub(super) branch_skeleton: Arc<Vec<ProofTactic>>,
     pub(super) can_expand_execution_prefix: bool,
 }
 
@@ -386,7 +390,11 @@ pub(super) fn finish_proof_site_expansion_capture(
     let Some(capture) = capture else {
         return;
     };
-    if capture.site != *site || capture.source_index.is_some() || capture.result.is_some() {
+    if capture.site != *site
+        || capture.source_index.is_some()
+        || capture.batch.is_some()
+        || capture.result.is_some()
+    {
         return;
     }
     capture.active = true;
@@ -402,10 +410,19 @@ pub(super) fn record_proof_site_tactic_expansion(
     let Some(capture) = capture else {
         return;
     };
-    if capture.site != *site || capture.source_index != Some(source_index) {
+    if capture.site != *site {
         return;
     }
+    let replaces_from = if capture.batch.is_some() {
+        crate::surface::expansion::take_expansion_replaces_from()
+    } else {
+        None
+    };
+    let Some(capture) = capture.target_mut(source_index) else {
+        return;
+    };
     capture.active = true;
+    capture.replaces_from = replaces_from.or(capture.replaces_from);
     match &mut capture.result {
         None => capture.result = Some(Ok(tactics.to_vec())),
         Some(Ok(existing)) if existing == tactics => {}
@@ -431,6 +448,27 @@ pub(super) fn record_proof_site_tactic_expansion(
 pub(super) fn note_dropped_path_tactic_occurrence(capture: Option<&mut ExpansionCapture>) {
     if let Some(capture) = capture {
         capture.dropped_path_occurrence = true;
+    }
+}
+
+pub(super) fn capture_selects_source(
+    capture: Option<&ExpansionCapture>,
+    site: &ProofSite,
+    source_index: usize,
+) -> bool {
+    capture.is_some_and(|capture| capture.selects(site, source_index))
+}
+
+pub(super) fn selected_tactic_indices_for_site(
+    capture: Option<&ExpansionCapture>,
+    site: &ProofSite,
+) -> Vec<usize> {
+    let Some(capture) = capture.filter(|capture| capture.site == *site) else {
+        return Vec::new();
+    };
+    match &capture.batch {
+        Some(batch) => batch.targets.keys().copied().collect(),
+        None => capture.source_index.into_iter().collect(),
     }
 }
 
@@ -477,6 +515,13 @@ pub(super) fn begin_tactic_expansion_capture(
     let Some(capture) = capture else {
         return false;
     };
+    if proof_site != Some(&capture.site) {
+        return false;
+    }
+    let outer = capture;
+    let Some(capture) = outer.target_mut(source_index) else {
+        return false;
+    };
     let sibling_branch_capture = capture.active
         && !cursor.deferred_expansion_path_choices.is_empty()
         && capture.source_index == Some(source_index)
@@ -488,6 +533,9 @@ pub(super) fn begin_tactic_expansion_capture(
         return false;
     }
     capture.active = true;
+    if let Some(batch) = &mut outer.batch {
+        batch.active_source = Some(source_index);
+    }
     true
 }
 
@@ -506,6 +554,9 @@ pub(super) fn finish_tactic_expansion_capture(
     let Some(capture) = capture else {
         return;
     };
+    let Some(capture) = capture.active_target_mut() else {
+        return;
+    };
     if capture.result.is_some() {
         return;
     }
@@ -521,7 +572,13 @@ pub(super) fn finish_tactic_expansion_capture(
 }
 
 pub(super) fn tactic_expansion_capture_is_active(capture: Option<&ExpansionCapture>) -> bool {
-    capture.is_some_and(|capture| capture.active)
+    capture.is_some_and(|capture| match &capture.batch {
+        Some(batch) => batch
+            .active_source
+            .and_then(|index| batch.targets.get(&index))
+            .is_some_and(|target| target.active),
+        None => capture.active,
+    })
 }
 
 /// Takes one path-local selected-tactic expansion while leaving the capture
@@ -536,6 +593,9 @@ pub(super) fn take_path_tactic_expansion_capture(
             "selected-tactic expansion capture was lost between branch paths",
         ));
     };
+    let capture = capture
+        .active_target_mut()
+        .ok_or_else(|| ClickError::new("selected branch capture lost its active source"))?;
     let result = capture.result.take().ok_or_else(|| {
         ClickError::new("selected tactic completed without recording its branch expansion")
     })?;
@@ -556,12 +616,17 @@ pub(super) fn resume_deferred_tactic_expansion_capture(
             "selected-tactic expansion capture was lost before deferred finalization",
         ));
     };
-    if proof_site != Some(&capture.site) || capture.source_index != Some(deferred.source_index) {
+    if proof_site != Some(&capture.site) || !capture.selects(&capture.site, deferred.source_index) {
         return Err(ClickError::new(
             "deferred tactic capture no longer matches the selected proof occurrence",
         ));
     }
-    capture.active = true;
+    if let Some(batch) = &mut capture.batch {
+        batch.active_source = Some(deferred.source_index);
+    }
+    if let Some(target) = capture.target_mut(deferred.source_index) {
+        target.active = true;
+    }
     Ok(())
 }
 
@@ -1392,6 +1457,7 @@ pub(super) struct LoopReturnProof {
     pub(super) case_path: Vec<ProofCaseChoice>,
     pub(super) tactics: PersistentSequence<DeferredPostExecutionTactic>,
     pub(super) capture: Option<DeferredTacticCapture>,
+    pub(super) batch_captures: imbl::OrdMap<usize, DeferredTacticCapture>,
 }
 
 #[derive(Clone)]
@@ -2020,6 +2086,7 @@ mod loop_return_routing_tests {
                         case_path: Vec::new(),
                         tactics: PersistentSequence::default(),
                         capture: None,
+                        batch_captures: imbl::OrdMap::new(),
                     }),
                     Vec::new(),
                     vec![ProofTactic::Assumption],

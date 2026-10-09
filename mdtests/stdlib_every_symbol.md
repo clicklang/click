@@ -88,6 +88,15 @@ theorem use_uint32_mul_to_integer(left: uint32, right: uint32) {
     }
 }
 
+theorem use_uint32_mul_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) * to_integer(right) <= 4294967295;
+    ensures right == 0u32 or left <= 4294967295u32 / right by {
+        apply(uint32_mul_guard_by_integer_bound(left, right)) using {
+            to_integer(left) * to_integer(right) <= 4294967295;
+        }
+    }
+}
+
 theorem use_uint64_add_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by apply(uint64_add_to_integer(left, right));
@@ -1022,6 +1031,14 @@ theorem use_scaled_product(value: Integer, amount: Integer, size: Integer, lower
  requires 0 <= amount; requires amount <= size;
  ensures lower * size <= value * amount by apply(integer_scaled_product_bounds(value, amount, size, lower, upper));
  ensures value * amount <= upper * size by apply(integer_scaled_product_bounds(value, amount, size, lower, upper));
+}
+
+theorem use_int32_remainder_to_integer(left: int32, right: int32) {
+    requires defined(left % right);
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right)) by {
+        apply(int32_remainder_to_integer(left, right));
+    }
 }
 
 ```

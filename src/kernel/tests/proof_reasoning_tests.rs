@@ -9456,6 +9456,85 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
 }
 
 #[test]
+fn int32_remainder_bridge_matches_independent_signed_boundary_models() {
+    let left = Bitvector32Term::Variable(Variable(940));
+    let right = Bitvector32Term::Variable(Variable(941));
+    let theorem = prove_int32_remainder_to_integer(left.clone(), right.clone());
+    let Proposition::Implies(native_defined, rest) = theorem.proposition() else {
+        panic!("missing native definedness");
+    };
+    let Proposition::And(nonzero, no_overflow) = native_defined.as_ref() else {
+        panic!("definedness must exclude both zero and overflow");
+    };
+    assert_eq!(
+        nonzero.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+            false
+        )
+    );
+    assert_eq!(
+        no_overflow.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::signed_divide_overflows(left.clone(), right.clone()),
+            false
+        )
+    );
+    let Proposition::Implies(integer_nonzero, conclusion) = rest.as_ref() else {
+        panic!("missing mathematical domain");
+    };
+    let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int32, term).unwrap();
+    assert_eq!(
+        integer_nonzero.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
+            true
+        )
+    );
+    assert_eq!(
+        conclusion.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                observe(Bitvector32Term::Remainder(
+                    left.clone().into(),
+                    right.clone().into()
+                ))
+                .into(),
+                IntegerTerm::truncating_remainder(observe(left), observe(right)).into(),
+            ),
+            true
+        )
+    );
+    for a in [
+        i32::MIN,
+        i32::MIN + 1,
+        -22207,
+        -5551,
+        -4,
+        -1,
+        0,
+        1,
+        4,
+        5551,
+        22207,
+        i32::MAX,
+    ] {
+        for b in [i32::MIN, -5551, -4, -1, 0, 1, 4, 5551, i32::MAX] {
+            let defined = b != 0 && !(a == i32::MIN && b == -1);
+            assert_eq!(a.checked_rem(b).is_some(), defined, "{a} % {b}");
+            if let Some(remainder) = a.checked_rem(b) {
+                let mathematical = num_bigint::BigInt::from(a) % num_bigint::BigInt::from(b);
+                assert_eq!(
+                    num_bigint::BigInt::from(remainder),
+                    mathematical,
+                    "{a} % {b}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
     fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u32 {
         match term {
@@ -9474,6 +9553,7 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
     }
     fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
         match term {
+            IntegerTerm::Constant(value) => value.clone(),
             IntegerTerm::Machine(value) => {
                 assert_eq!(value.ty(), MachineIntegerType::UInt32);
                 machine(value.value(), a, b).into()
@@ -9496,6 +9576,9 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
                 integer(left, a, b) == integer(right, a, b)
             }
+            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
+                integer(left, a, b) <= integer(right, a, b)
+            }
             _ => panic!("unexpected multiplication bridge proposition {p:?}"),
         }
     }
@@ -9505,6 +9588,13 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
     );
     let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
         panic!("missing no-wrap guard")
+    };
+    let guard_theorem = prove_uint32_mul_guard_by_integer_bound(
+        Bitvector32Term::Variable(Variable(910)),
+        Bitvector32Term::Variable(Variable(911)),
+    );
+    let Proposition::Implies(product_bound, native_guard) = guard_theorem.proposition() else {
+        panic!("missing mathematical product bound")
     };
     let samples = [
         0,
@@ -9525,6 +9615,12 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             let safe = u64::from(a) * u64::from(b) <= u64::from(u32::MAX);
             assert_eq!(holds(premise, a, b), safe, "guard for {a} * {b}");
             assert_eq!(holds(conclusion, a, b), safe, "observation for {a} * {b}");
+            assert_eq!(holds(product_bound, a, b), safe, "bound for {a} * {b}");
+            assert_eq!(
+                holds(native_guard, a, b),
+                safe,
+                "derived guard for {a} * {b}"
+            );
         }
     }
     for b in samples.into_iter().filter(|b| *b > 1) {
@@ -9533,6 +9629,12 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             let safe = a == last_safe;
             assert_eq!(holds(premise, a, b), safe, "quotient boundary {a} * {b}");
             assert_eq!(holds(conclusion, a, b), safe, "product boundary {a} * {b}");
+            assert_eq!(holds(product_bound, a, b), safe, "bound boundary {a} * {b}");
+            assert_eq!(
+                holds(native_guard, a, b),
+                safe,
+                "derived boundary {a} * {b}"
+            );
         }
     }
 }

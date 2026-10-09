@@ -17,7 +17,7 @@ correctness property is preservation of node identity and in-order order
 while links and colors change; a contract that consumes one well-formed
 tree and produces another cannot state that without an abstract model.
 
-## State, 2026-10-08: handoff
+## State, 2026-10-09: handoff
 
 Insert is finished. The black-successor splice's deficit-start model proof
 in [chunk 10](#erase-d3-d4-d10) covers immediate and deep successors.
@@ -33,13 +33,38 @@ innermost link around one shared C continuation. `refold_erase_spine` rebuilds
 the path, and `rb_erase_no_fixup_successor_splice` proves balance, exact
 in-order removal, and parent consistency for both complete transplants.
 The leaf and nonempty-child C branches join before the shared reconstruction. The
-contract also returns detached-node ownership and null fixup. All 61 sidecar
-smart sites and eight new model-theorem sites pass expansion audit. Six mutation
-checks cover the deeper links, replacement parent, blackening, and spurious
-fixup. Four run in the ordinary gate (8.8–9.7 seconds); the right-attachment
-and red-leaf fixup mutations (10.1 and 11 seconds) run nightly with the full
-erase project. Deeper black-leaf successors and non-root deeper successors
-remain in chunk 11.
+contract also returns detached-node ownership and null fixup.
+Root deletion with a deeper black-leaf successor now also verifies in
+`rbtree_erase_black_spine.click`: the terminating graft helper joins the
+retained descent spine to the transplanted successor's context. Its contract
+returns the empty deficit hole, exact context, red-black and parent-consistency
+invariants, in-order contents, detached-node ownership, and the nonnull minimum
+parent for color repair. Both deeper sidecars share the spine model and resource
+modules. All 124 expansion-audit sites pass across the shared spine model and
+the two deeper sidecars. All 13 `__rb_erase_augmented` sidecars verify in
+176 seconds.
+All ten deeper-successor mutation checks pass: six run in the
+ordinary gate (8.1–9.7 seconds), while right attachment, right-parent update,
+wrong black-leaf fixup parent, and spurious red-leaf fixup (10.1–11.1 seconds)
+run nightly. Non-root deeper successors remain in chunk 11.
+The C parent-link helper now verifies separately in `rbtree_change_child.click`
+for root, left, and right links. Its contract transfers the surrounding context
+to the new focus with the same model and preserves the old node's tag; three
+mutation checks reject missing link updates in about two seconds each, and all
+ten helper expansion-audit sites pass. Deeper non-root proofs can use
+this verified call instead of duplicating the parent-link cases.
+The next proof exposed a missing 64-bit equality case in explicit pointer-offset
+rewriting. Field facts now rewrite through a loaded pointer alias at both
+32- and 64-bit widths; positive and false-conclusion fixtures cover the fix.
+The non-root continuation also exposed missing 64-bit cached-read normalization
+after a store followed by a named-resource call. Signed and unsigned wide reads
+now reuse their exact cached value, preserving read kind and recorded history;
+explicit `normalize` establishes the framed equality. Regressions reject changed
+and partially overwritten values and check scaling with unrelated cached cells.
+Pointer-valued fields copied between independently returned nodes now also
+retain their full value across a framed call. The checked memory walk recovers
+the stored pointer, including its block, instead of comparing only read offsets.
+The reduced caller and an overwrite negative exercise this non-root splice path.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
@@ -70,6 +95,17 @@ Tracing the black-leaf prototype exposed repeated project resolution for
 each written tactic location. The CLI now resolves a claim's locations
 together and reuses them, with deterministic scaling checks. The original
 trace finishes in about 15 seconds instead of hitting its 60-second bound.
+The black-leaf context folds also exposed an alias gap for C pointers with a
+symbolic base and scaled offset. Fold-body checks now query exact aliases of
+the pointers in the requested fact, including pure-function arguments, and
+require exact evidence for the rewritten fact. Kernel regressions cover
+nonnull and parent-function facts, missing evidence, false conclusions, and
+16/64/256 unrelated aliases including null links.
+Documenting the shared spine modules exposed a parser/documentation mismatch:
+Click now accepts the documented `//` and `/* ... */` comments in both parsing
+and source-location scanning. Regressions cover imported modules, expansion
+offsets, literal contents, division, and unterminated block comments; the
+existing `#` spelling remains supported.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.

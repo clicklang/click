@@ -2263,7 +2263,7 @@ pub(in crate::surface) fn verify_c0_sources_with_environment(
 
 /// [`verify_c0_sources_in_context`], with a proof failure that names no
 /// source located by what was being verified when it arose.
-fn verify_c0_sources_with_context(
+pub(in crate::surface) fn verify_c0_sources_with_context(
     click_source: &str,
     c_sources: &CSourceContext<'_>,
     verification_target: Option<VerificationTarget>,
@@ -2359,7 +2359,12 @@ fn verify_c0_sources_in_context(
                 tactic_expansion_required_functions(
                     &file,
                     &parsed_sources,
-                    (capture.site.clone(), capture.source_index),
+                    (
+                        capture.site.clone(),
+                        capture
+                            .source_index
+                            .or_else(|| capture.batch.as_ref().map(|_| 0)),
+                    ),
                 )
             })
             .transpose()?;

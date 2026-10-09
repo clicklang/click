@@ -11,6 +11,9 @@ const THREE_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/three-byte-compute.click");
 const FOUR_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
+const SMALL_PARTITION: &str = include_str!("../../design/charon-trial/adler2/partition.click");
+const SMALL_BATCH_COMPUTE: &str =
+    include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
 
 fn compute_proof(contract: &str) -> String {
     let computation = HELPERS.split_once("# Empty-input boundary").unwrap().1;
@@ -1309,4 +1312,123 @@ fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
 #[ignore = "nightly: original four-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
     recheck_compute_tools(FOUR_BYTE_COMPUTE, 4);
+}
+
+#[test]
+fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch() {
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        " views bytes[0..(int32)(uint32)bytes_len];",
+        "",
+    );
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        " requires bytes_len <= 22204u64;\n requires bytes_len < 22208u64;",
+        " requires bytes_len <= 22208u64;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: original 0..22204-byte vector computation from canonical initial states"]
+fn charon_adler2_small_batch_compute_proves_original_body() {
+    let p = compute_project(SMALL_BATCH_COMPUTE);
+    C0VerificationSession::new_program_prepared(
+        &compute_proof(SMALL_BATCH_COMPUTE),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn charon_adler2_small_batch_compute_requires_canonical_a() {
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        " requires (uint32)self->a <= 65520u32;",
+        "",
+    );
+}
+
+#[test]
+fn charon_adler2_small_batch_compute_requires_canonical_b() {
+    reject_compute(
+        SMALL_BATCH_COMPUTE,
+        " requires (uint32)self->b <= 65520u32;",
+        "",
+    );
+}
+
+#[test]
+#[ignore = "nightly: arbitrary small-batch induction and final-store rejection checks"]
+fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() {
+    for (before, after) in [
+        (
+            "have __rust_mir_62_remaining == old((int32)(uint32)bytes_len) by { simp(); }",
+            "have __rust_mir_62_remaining == old((int32)(uint32)bytes_len) + 4 by { assumption(); }",
+        ),
+        ("ensures self->a < 65521;", "ensures self->a < 1;"),
+        ("ensures self->b < 65521;", "ensures self->b < 1;"),
+    ] {
+        reject_compute(SMALL_BATCH_COMPUTE, before, after);
+    }
+}
+
+#[test]
+#[ignore = "nightly: arbitrary small-batch proof-tool agreement and expansion"]
+fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
+    let p = compute_project(SMALL_BATCH_COMPUTE);
+    let claim = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract";
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    // Helpers and arithmetic lemmas have their own audits. Selecting the
+    // complete computation claim keeps this long nightly check within one
+    // bounded audit run and still expands every smart site of the body.
+    assert_cli(&p, &["audit", "--claim", claim]);
+    assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn charon_adler2_small_partition_verifies_and_expands() {
+    click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
+    for claim in [
+        "adler_small_prefix_divisible.ensures_0",
+        "adler_small_tail_metadata.ensures_0",
+        "adler_signed_small_prefix.ensures_0",
+    ] {
+        let expanded =
+            click::surface::expand_c0_claim_source_by_label(SMALL_PARTITION, &[], claim).unwrap();
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}
+
+#[test]
+fn charon_adler2_small_partition_rejects_false_metadata() {
+    for (before, after) in [
+        (
+            "adler_vector_prefix(n) <= 22204 by",
+            "adler_vector_prefix(n) <= 22203 by",
+        ),
+        (
+            "ensures truncating_remainder(n, 4) <= 3",
+            "ensures truncating_remainder(n, 4) <= 2",
+        ),
+        (
+            "ensures (int32)(uint32)(n - n % 4u64) % 4 == 0",
+            "ensures (int32)(uint32)(n - n % 4u64) % 4 == 1",
+        ),
+        (
+            "ensures n - (n - n % 4u64) == n % 4u64",
+            "ensures n - (n - n % 4u64) == n % 4u64 + 1u64",
+        ),
+        ("ensures n % 4u64 <= 3u64", "ensures n % 4u64 <= 2u64"),
+        ("requires n <= 22207u64;", "requires n <= 22208u64;"),
+    ] {
+        let invalid = SMALL_PARTITION.replace(before, after);
+        assert_ne!(invalid, SMALL_PARTITION, "{before}");
+        assert!(
+            click::surface::verify_c0_sources(&invalid, &[]).is_err(),
+            "{before}"
+        );
+    }
 }

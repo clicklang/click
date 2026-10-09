@@ -76,10 +76,24 @@ return the exact successor transplant with red-black validity, parent
 consistency, preserved in-order contents, detached-node ownership, and null
 fixup. A shared model theorem connects the leaf and nonempty-child splices.
 
+`rbtree_erase_black_spine.click` covers root deletion with a deeper black-leaf
+successor. After splicing out the leaf, `graft_erase_spine` joins the retained
+descent path to the transplanted successor's context. The contract returns an
+empty hole, the exact deficit context, its red-black and parent-consistency
+invariants, preserved in-order contents, detached-node ownership, and the
+nonnull minimum parent where color repair must begin.
+
+`rbtree_change_child.click` verifies the shared C parent-link replacement
+helper for root, left-child, and right-child links. Its contract retargets an
+owned context while preserving its exact model and the old node's tag. Holding
+that tag separates the old node from a nonempty sibling. Three mutation checks
+reject a missing update on each link. This supplies the context transfer needed
+by deeper non-root deletion.
+
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
-all immediate-successor exits now verify at any tree position. Deeper successors
-with black-leaf replacements or a non-root erased node remain. The C file retains all branches; each sidecar states its coverage.
+all immediate-successor exits now verify at any tree position. Root deletion also covers every deeper-successor exit. Deeper successors
+with a non-root erased node remain. The C file retains all branches; each sidecar states its coverage.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
@@ -122,22 +136,19 @@ returning the erased node's parent instead of the successor.
 Non-root replacement-child mutations also reject a missing child parent/color
 write and a write that leaves the child red.
 
-`rbtree_erase_spine.click` defines the left-only ownership path needed by the
-deeper-successor branch. Its anchor owns only the original right child's left
-link, leaving that child's parent/color and right link available for transplant.
-The checked, terminating `refold_erase_spine` tactic reconstructs that left
-subtree with the exact `plug` model. The C descent loop is the next consumer.
-The verifier now preserves its resource binders and caller frame on loop exits;
-standalone `do_while_*` regressions cover the reconstructed path, returned
-ownership, and preservation of unrelated fields across subsequent stores.
+The shared `rbtree_spine_model.click` and `rbtree_spine_resources.click`
+modules define the left-only descent path. Its anchor owns only the original
+right child's left link, leaving that child's parent/color and right link
+available for transplant. The terminating `refold_erase_spine` tactic rebuilds
+a balanced subtree; `graft_erase_spine` instead keeps an empty deficit hole and
+joins the path to its new outer context. Both preserve exact models.
 
-The spine model also proves that a nonempty focus has the same minimum as the
-reconstructed subtree, that removing and blackening that minimum commutes with
-reconstructing its ancestor frames, and that parent consistency determines the
-focus parent from the spine. These are model lemmas for the deeper transplant;
-they do not yet establish its C postconditions.
+The spine lemmas connect minimum identity, minimum parent, and minimum context
+to the original subtree, commute minimum removal with path reconstruction, and
+recover each frame's parent link from whole-tree parent consistency. The two
+C sidecars use these shared lemmas after the unchanged descent loop.
 
-Deeper-successor mutations reject a missing parent-left splice, a missing
-right-subtree attachment or parent update, the wrong replacement-child parent,
-and a red replacement. Each check takes about 8–9 seconds and stays in the
-ordinary gate; the pinned-source check also remains there.
+Deeper-successor mutation checks reject missing splice and attachment writes,
+wrong replacement parents or colors, spurious red-leaf fixup, and missing or
+misdirected black-leaf fixup. The pinned-source check remains in the ordinary
+gate; slow mutation checks run nightly.

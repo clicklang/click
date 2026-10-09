@@ -8947,22 +8947,7 @@ pub fn prove_uint32_subtract_to_integer(left: Bitvector32Term, right: Bitvector3
 /// checked-multiplication guard. The zero factor branch does not divide by zero.
 /// Definedness of a wrapping u32 product alone is insufficient.
 pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    let premise = Proposition::Or(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
-            true,
-        )),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_equal(
-                left.clone(),
-                Bitvector32Term::unsigned_divide(
-                    Bitvector32Term::Constant(u32::MAX),
-                    right.clone(),
-                ),
-            ),
-            true,
-        )),
-    );
+    let premise = uint32_mul_guard(left.clone(), right.clone());
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
@@ -8975,6 +8960,48 @@ pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term
             ConditionTerm::IntegerEqual(product.into(), exact.into()),
             true,
         )),
+    ))
+}
+
+fn uint32_mul_guard(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    Proposition::Or(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(
+                left,
+                Bitvector32Term::unsigned_divide(Bitvector32Term::Constant(u32::MAX), right),
+            ),
+            true,
+        )),
+    )
+}
+
+/// A mathematical product that fits u32 establishes Rust's checked native
+/// multiplication guard. Unsigned observations are nonnegative, so the
+/// nonzero branch is exactly left <= floor(u32::MAX / right).
+pub fn prove_uint32_mul_guard_by_integer_bound(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    let product =
+        IntegerTerm::Multiply(observe(left.clone()).into(), observe(right.clone()).into());
+    let premise = Proposition::ConditionIs(
+        ConditionTerm::IntegerLessEqual(
+            product.into(),
+            IntegerTerm::constant_i64(i64::from(u32::MAX)).into(),
+        ),
+        true,
+    );
+    Theorem::new(Proposition::Implies(
+        Box::new(premise),
+        Box::new(uint32_mul_guard(left, right)),
     ))
 }
 
@@ -9290,6 +9317,44 @@ fn prove_signed_integer_equality_bridge(
 /// Exact mathematical observation of a defined signed 32-bit subtraction.
 pub fn prove_int32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
     prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, true)
+}
+
+/// Exact mathematical remainder of a defined signed 32-bit operation.
+/// Both zero division and MIN / -1 are excluded by the native definedness
+/// premise, even though mathematical remainder itself has no overflow.
+pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
+            .expect("typed signed operands have exact Integer interpretations")
+    };
+    let native_defined = Proposition::And(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+            false,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::signed_divide_overflows(left.clone(), right.clone()),
+            false,
+        )),
+    );
+    let integer_nonzero = Proposition::ConditionIs(
+        ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
+        true,
+    );
+    let exact = IntegerTerm::truncating_remainder(observe(left.clone()), observe(right.clone()));
+    let machine = Bitvector32Term::Remainder(left.into(), right.into());
+    Theorem::new(Proposition::Implies(
+        native_defined.into(),
+        Proposition::Implies(
+            integer_nonzero.into(),
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+                true,
+            )
+            .into(),
+        )
+        .into(),
+    ))
 }
 
 /// Exact mathematical observation of a defined signed 64-bit addition.

@@ -1000,6 +1000,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                             Box::new(rewrite_term(right)),
                         )
                     }
+                    ConditionTerm::Bitvector64Equal(left, right) => {
+                        ConditionTerm::Bitvector64Equal(
+                            Box::new(rewrite_term(left)),
+                            Box::new(rewrite_term(right)),
+                        )
+                    }
                     _ => {
                         return Err(
                             "`rewrite` pointer-offset equality does not occur in this goal"

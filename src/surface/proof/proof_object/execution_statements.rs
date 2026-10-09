@@ -134,6 +134,68 @@ fn c_branch_condition_at_frontier(
 }
 
 impl<'a> Proof<'a> {
+    /// Refuses an exhausted script at its actual frontier. A disposable
+    /// descendant checks at most six straight-line operations, enough for
+    /// the next two callback statements, solely to name a concrete missing
+    /// view or contract. It never completes or publishes the source proof.
+    pub(in crate::surface::proof) fn unfinished_callback_diagnostic(
+        &self,
+    ) -> Result<Option<ClickError>, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Ok(None);
+        };
+        let sources = context.parsed_function.callback_statement_sources();
+        if sources.is_empty() {
+            return Ok(None);
+        }
+        let unfinished = "the proof stops before function exit; finish the remaining C operations with `step()` or `execute()`";
+        let mut pending = self.clone();
+        for _ in 0..6 {
+            check_verification_deadline()?;
+            let Some(execution) = pending.execution() else {
+                break;
+            };
+            let remaining = match &execution.core.frontier.position {
+                FrontierPosition::FunctionEntry => context.function.body(),
+                FrontierPosition::StatementEntry { remaining } => remaining.as_ref(),
+                _ => break,
+            };
+            let Ok((statement, _)) = split_next_source_operation(remaining) else {
+                break;
+            };
+            let carrier = match &statement {
+                CStatement::Declare { name, .. } | CStatement::Assign { name, .. } => Some(name),
+                CStatement::Call { function_name, .. }
+                | CStatement::CallAssign { function_name, .. } => Some(function_name),
+                _ => break,
+            };
+            let is_callback = carrier.is_some_and(|name| sources.contains_key(name));
+            match pending.apply_step(ProofStep::Step) {
+                Ok(next) => pending = next,
+                Err(error) => {
+                    check_verification_deadline()?;
+                    if error.kind() != ClickErrorKind::Proof {
+                        return Err(error);
+                    }
+                    if is_callback {
+                        let prefix = "the proof stops before this callback; continuing its checked operations would fail";
+                        let mut error = error.with_context(prefix);
+                        if let Some(diagnostic) = &mut error.diagnostic {
+                            let diagnostic = std::sync::Arc::make_mut(diagnostic);
+                            diagnostic.reason = diagnostics::bound_error_message(format!(
+                                "{prefix}: {}",
+                                diagnostic.reason
+                            ));
+                        }
+                        return Ok(Some(error));
+                    }
+                    break;
+                }
+            }
+        }
+        Ok(Some(self.step_error(unfinished)))
+    }
+
     /// The named premises a smart bundle closure may cite for a ranking
     /// member: the loop guard and the declared invariants, both read at
     /// iteration entry, then the function's written preconditions, then the

@@ -170,6 +170,7 @@ pub(crate) use functions::{
 pub use loops::CLoopBinder;
 #[cfg(test)]
 pub(crate) use loops::c_loop_state_components_match_at_back_edge;
+pub(crate) use loops::place_index_from_wide;
 pub(crate) use loops::{
     c_loop_binder_state_components_match_at_back_edge, c_loop_binders,
     c_loop_condition_may_continue, c_loop_state_with_loop_binders_rebound,

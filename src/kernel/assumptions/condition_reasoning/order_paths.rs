@@ -1767,9 +1767,9 @@ impl PureFactContext {
         };
         match offset {
             PointerOffsetTerm::Constant(_) => true,
-            // A 64-bit index contributes an exact element index only when a
-            // 64-bit fact pins it to a signed int32 value. The plain element
-            // rebuilder still refuses an unpinned 64-bit index.
+            // Full-width constants or checked unsigned bounds make the
+            // element projection exact. The byte projection below still
+            // requires a constant whose scaled byte displacement fits.
             PointerOffsetTerm::Int64Scaled {
                 value,
                 byte_width,
@@ -1780,6 +1780,14 @@ impl PureFactContext {
                 }
                 if byte_path && *byte_width == 0 {
                     return true;
+                }
+                if !byte_path {
+                    return crate::kernel::reasoning::element_index_from_offset_with_facts(
+                        offset,
+                        element_width,
+                        self,
+                    )
+                    .is_some();
                 }
                 // An `Int64Scaled` scales its *sixty-four-bit* value, and the
                 // byte rebuilder scales it with the thirty-two-bit
@@ -1804,9 +1812,6 @@ impl PureFactContext {
                 ) else {
                     return false;
                 };
-                if !byte_path {
-                    return i32::try_from(value).is_ok();
-                }
                 value
                     .checked_mul(*byte_width)
                     .is_some_and(|bytes| i32::try_from(bytes).is_ok())
@@ -2163,11 +2168,32 @@ pub(in crate::kernel) fn condition_as_uint64_order_fact(
 }
 
 impl PureFactContext {
+    /// Check the full unsigned value's range through its own bound index.
+    /// This proves that taking its low word preserves its nonnegative signed
+    /// value; a bound on the low word alone supplies no evidence here.
+    pub(in crate::kernel) fn uint64_index_fits_int32(&self, term: &Bitvector32Term) -> bool {
+        let guard = ConditionTerm::uint64_less_equal(
+            term.clone(),
+            Bitvector32Term::UInt64Constant(i32::MAX as u64),
+        );
+        guard.reflexive_value() == Some(true)
+            || self.exact_condition_value(&guard) == Some(true)
+            || self.decide_uint64_constant_order_bounds_inner(&guard, true) == Some(true)
+    }
+
     /// Strengthen a constant bound using only the queried nonconstant endpoint's
     /// index. Never walk a shared constant's incident edges or unrelated facts.
     pub(super) fn decide_uint64_constant_order_bounds(
         &self,
         condition: &ConditionTerm,
+    ) -> Option<bool> {
+        self.decide_uint64_constant_order_bounds_inner(condition, false)
+    }
+
+    fn decide_uint64_constant_order_bounds_inner(
+        &self,
+        condition: &ConditionTerm,
+        literal_only: bool,
     ) -> Option<bool> {
         let (left, right, mut operator) = match condition {
             ConditionTerm::Bitvector64UnsignedLessThan(a, b) => (a, b, 0),
@@ -2193,7 +2219,12 @@ impl PureFactContext {
         let bounds = self.uint64_order_bounds.get(term)?;
         for (endpoint, other, strict, upper) in bounds.keys() {
             crate::instrumentation::record_deterministic_work(1);
-            let Some(bound) = self.wide_constant_from_equalities(other) else {
+            let bound = if literal_only {
+                other.uint64_as_const()
+            } else {
+                self.wide_constant_from_equalities(other)
+            };
+            let Some(bound) = bound else {
                 continue;
             };
             let bound = if *strict {
