@@ -1,7 +1,10 @@
-# Abstract mutex inputs retain their storage reservation
+# Owned memory is separate from an input mutex's storage
 
 This helper is verified independently, without a concrete initialization ledger.
-The C store is fixed; its contract must establish separation from the mutex.
+Initialization consumed ownership of the mutex's storage bytes, so no owned
+memory reaches them, and the store into owned `data` needs no separation
+premise. A reserved automatic mutex is protected where it is initialized: its
+owner checks every footprint it transfers against it.
 
 ```c filename=mutex_abstract_reserved_guard.c
 #include <pthread.h>
@@ -24,5 +27,5 @@ void write_value(struct holder *holder, int *data) {
 ```
 
 ```expect
-fail: Requires separate(
+pass
 ```

@@ -1,4 +1,7 @@
-# A use call does not preserve observations of mutex representation bytes
+# A live mutex's representation bytes cannot be read
+
+Initialization consumed ownership of the storage, so no observation of its
+bytes exists to preserve across a use call.
 
 ```c filename=mutex_use_balanced_storage_observation.c
 #include <pthread.h>
@@ -45,5 +48,5 @@ int32 run(struct holder *holder) {
 ```
 
 ```expect
-fail: ensures result == 1
+fail: missing resource fact `views ((char *)holder)[0..4]`
 ```

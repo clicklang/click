@@ -97,7 +97,6 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
         loop {
             owns guard: loop_guard(object);
             owns mutex_live(&object->mutex);
-            owns object->mutex;
             decreases n - i;
             invariant 0 <= i and i <= n;
             invariant guard.parity == (i + 1) % 2;

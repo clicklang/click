@@ -623,15 +623,24 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
                 .unwrap_or(pointer);
 
             if is_external_memory_pointer(&pointer) && !has_external_write_resource {
+                let missing = CMemoryRange::new(
+                    pointer.clone(),
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                );
+                // A live mutex holds storage its initialization consumed;
+                // name it rather than the missing ownership.
+                let error = crate::kernel::mutexes::consumed_storage_refusal(
+                    state,
+                    &missing,
+                    &effective_assumptions,
+                )
+                .unwrap_or_else(|| CRuntimeError::MissingResource {
+                    resource: Box::new(CResourceFact::own_memory(missing)),
+                });
                 return Ok(vec![CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                        resource: Box::new(CResourceFact::own_memory(CMemoryRange::new(
-                            pointer.clone(),
-                            Bitvector32Term::Constant(0),
-                            Bitvector32Term::Constant(1),
-                        ))),
-                    }),
+                    outcome: CStatementOutcome::RuntimeError(error),
                     facts,
                     obligations,
 
@@ -1709,11 +1718,19 @@ pub(crate) fn execute_c_realloc_assign_paths(
             ));
             let Some(resources) = resources.without_fact(&complete_access, &effective_assumptions)
             else {
+                // A live mutex consumed ownership of its storage; name it
+                // rather than the bytes it took.
+                let error = super::super::mutexes::storage_retirement_refusal(
+                    state,
+                    &old_allocation_range,
+                    &effective_assumptions,
+                )
+                .unwrap_or(CRuntimeError::MissingResource {
+                    resource: Box::new(complete_access),
+                });
                 paths.push(CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),
-                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                        resource: Box::new(complete_access),
-                    }),
+                    outcome: CStatementOutcome::RuntimeError(error),
                     facts: all_facts,
                     obligations: all_obligations,
 
@@ -2124,11 +2141,19 @@ fn execute_c_heap_free_paths(
         ));
         let Some(resources) = resources.without_fact(&complete_access, &effective_assumptions)
         else {
+            // A live mutex consumed ownership of its storage; name it rather
+            // than the bytes it took.
+            let error = super::super::mutexes::storage_retirement_refusal(
+                state,
+                &full_allocation_range,
+                &effective_assumptions,
+            )
+            .unwrap_or(CRuntimeError::MissingResource {
+                resource: Box::new(complete_access),
+            });
             paths.push(CStatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                    resource: Box::new(complete_access),
-                }),
+                outcome: CStatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
 

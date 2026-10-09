@@ -238,6 +238,10 @@ struct MutexLedgerStorage {
     /// Initializations whose symbolic provenance may name any automatic object.
     /// Kept separately so a scope exit never scans unrelated concrete mutexes.
     ambiguous_automatic_storage: PersistentMap<Pointer, ()>,
+    /// Initializations that consumed explicit ownership of their storage
+    /// bytes. Until destruction returns it nobody owns that storage, so
+    /// ownership alone keeps every write and transferred footprint off it.
+    consumed_storage: PersistentMap<Pointer, ()>,
     locked_count: usize,
     return_obligation_count: usize,
     /// A loop join need only revisit mutexes changed since its head. Keeping
@@ -351,18 +355,27 @@ pub(super) fn storage_write_refusal(
     if write.start() == write.end() {
         return None;
     }
-    if let Some(inputs) = &state.mutex_input_reservations {
-        // Contract inputs predate this body's fresh automatic objects.
-        if inputs.unnamed && !write.base().block.starts_with("local:") {
-            return Some(super::CRuntimeError::FunctionContract(
-                "Click cannot yet check this write because an input resource's mutex storage could not be determined".into(),
-            ));
-        }
-        if let Some(error) = ledger_storage_write_refusal(&inputs.ledger, write, assumptions) {
-            return Some(error);
-        }
+    // A contract input's mutex storage is not checked here. Its initializer
+    // consumed explicit ownership of the storage, or reserved it as automatic
+    // storage, which no resource can be folded over, and checked every
+    // footprint it transferred against it. No memory this body can own
+    // reaches it.
+    ledger_storage_write_refusal(state.mutex_ledger.as_ref()?, write, assumptions, false)
+}
+
+/// Missing ownership that reaches storage a live initialization consumed:
+/// the mutex holds those bytes, so diagnostics name it rather than the
+/// missing ownership. Free when no initialization consumed storage.
+pub(in crate::kernel) fn consumed_storage_refusal(
+    state: &CState,
+    missing: &super::CMemoryRange,
+    assumptions: &PureFactContext,
+) -> Option<super::CRuntimeError> {
+    let ledger = state.mutex_ledger.as_ref()?;
+    if ledger.storage.consumed_storage.is_empty() {
+        return None;
     }
-    ledger_storage_write_refusal(state.mutex_ledger.as_ref()?, write, assumptions)
+    ledger_storage_write_refusal(ledger, missing, assumptions, true)
 }
 
 /// A modular use call that may acquire cannot start while the caller owns a
@@ -383,17 +396,22 @@ pub(super) fn abstract_guard_acquisition_refusal(
         mutex,
         crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin().mutex_storage_bytes,
     );
-    ledger_storage_write_refusal(&inputs.guard_ledger, &requested, assumptions).map(|_| {
+    ledger_storage_write_refusal(&inputs.guard_ledger, &requested, assumptions, false).map(|_| {
         super::CRuntimeError::FunctionContract(
             "cannot establish that the mutex is available: an input mutex_guard may hold it".into(),
         )
     })
 }
 
+/// Whether `write` may reach storage `ledger` reserves. Storage whose
+/// ownership its initialization consumed is skipped unless `include_consumed`:
+/// ownership already keeps writes off it, and only a diagnostic for missing
+/// ownership asks about it.
 fn ledger_storage_write_refusal(
     ledger: &MutexLedger,
     write: &super::CMemoryRange,
     assumptions: &PureFactContext,
+    include_consumed: bool,
 ) -> Option<super::CRuntimeError> {
     if !ledger.has_any_mutex() || write.start() == write.end() {
         return None;
@@ -421,6 +439,9 @@ fn ledger_storage_write_refusal(
         .filter(|(mutex, _)| &mutex.block != block && !mutex.block.proven_distinct(block));
     for (mutex, bytes) in direct.iter().chain(possible_aliases) {
         crate::instrumentation::record_deterministic_work(1);
+        if !include_consumed && ledger.storage_consumed(mutex) {
+            continue;
+        }
         let storage = storage_range(mutex, *bytes);
         // Evaluate ranges in byte units with checked signed arithmetic. This
         // covers interior writes, adjacent fields, and mixed element widths.
@@ -804,8 +825,7 @@ pub(super) fn initialization_storage_refusal(
     let resolved = assumptions.equality_graph.storage_address(mutex);
     let range =
         super::CMemoryRange::new_with_element_width(mutex.clone(), 0u32.into(), bytes.into(), 1);
-    let automatic =
-        resolved.block.starts_with("local:") && state.memory.access_in_bounds(&resolved, bytes);
+    let automatic = storage_is_automatic(state, mutex, bytes, assumptions);
     if bytes == 0
         || state.memory.is_read_only_block(&resolved.block)
         || state.memory.is_ended_local_address(&resolved)
@@ -818,6 +838,14 @@ pub(super) fn initialization_storage_refusal(
                 .resources
                 .owns_storage_access(mutex, bytes, assumptions))
     {
+        // A live initialization consumed the ownership; name it.
+        if let Some(error) = state
+            .mutex_ledger
+            .as_ref()
+            .and_then(|ledger| ledger_storage_write_refusal(ledger, &range, assumptions, true))
+        {
+            return Some(error);
+        }
         return Some(super::CRuntimeError::MissingResource {
             resource: Box::new(CResourceFact::own_memory(range)),
         });
@@ -842,6 +870,18 @@ pub(super) fn initialization_storage_refusal(
             super::LoanRefusalOperation::MemoryAccess,
         )
         .map(|refusal| super::CRuntimeError::LoanRefusal(Box::new(refusal)))
+}
+
+/// Whether initialization storage is an automatic object, owned implicitly
+/// by its scope rather than by an explicit memory resource.
+pub(super) fn storage_is_automatic(
+    state: &CState,
+    mutex: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> bool {
+    let resolved = assumptions.equality_graph.storage_address(mutex);
+    resolved.block.starts_with("local:") && state.memory.access_in_bounds(&resolved, bytes)
 }
 
 /// A storage release must not leave a live initialization behind. Abstract
@@ -965,6 +1005,34 @@ impl MutexContext {
             evidence = append_checked_loan_evidence(&evidence, Some(Arc::new(checked)));
         }
         (self.state, evidence)
+    }
+
+    /// Initialization consumes explicit ownership of the storage bytes, and
+    /// destruction returns it. While the mutex is live nobody owns them, so
+    /// ownership alone separates every other owned byte from the storage.
+    /// Automatic storage is owned by its scope, not by a resource; it keeps
+    /// the ledger's write reservation instead.
+    pub(super) fn consume_initialized_storage(
+        mut self,
+        mutex: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, &'static str> {
+        if storage_is_automatic(&self.state, mutex, bytes, assumptions) {
+            return Ok(self);
+        }
+        let ledger = self.state.mutex_ledger.as_ref().expect("mutex ledger");
+        if ledger.get(mutex).is_none() {
+            return Err("initialized mutex storage is missing from its ledger");
+        }
+        self.state.resources = self
+            .state
+            .resources
+            .clone()
+            .without_owned_storage_access(mutex, bytes, assumptions)
+            .ok_or("mutex initialization requires owned storage")?;
+        self.state.mutex_ledger = Some(ledger.with_storage_consumed(mutex));
+        Ok(self)
     }
 
     /// Initialize a mutex that transfers no Click resource at lock/unlock.
@@ -1625,6 +1693,25 @@ impl MutexContext {
         } else {
             resources
         };
+        let resources = if ledger.storage_consumed(mutex) {
+            let bytes = ledger
+                .get(mutex)
+                .expect("initialized mutex")
+                .initialization()
+                .1;
+            resources
+                .try_compose_with_facts_delaying_normalization(
+                    [CResourceFact::own_memory(storage_range(mutex, bytes))],
+                    assumptions,
+                )
+                .map_err(|_| {
+                    MutexTransitionError::Refusal(
+                        "destroyed mutex storage conflicts with current ownership",
+                    )
+                })?
+        } else {
+            resources
+        };
         let mut state = self.state.clone();
         state.resources = resources;
         let next = ledger.without(mutex);
@@ -1774,6 +1861,7 @@ impl MutexLedger {
                 reserved: MutexStorageIndex::default(),
                 by_provenance: PersistentMap::default(),
                 ambiguous_automatic_storage: PersistentMap::default(),
+                consumed_storage: PersistentMap::default(),
                 locked_count: 0,
                 return_obligation_count: 0,
                 predecessor: None,
@@ -1839,10 +1927,17 @@ impl MutexLedger {
 
     /// Forget observations after an opaque helper may have acquired a typed use.
     /// The checked call transfer supplies authority; this only weakens its escrow.
+    ///
+    /// The previous footprint is derived from current memory, which names it
+    /// exactly while no other thread can have run since this thread last
+    /// observed it; once it has been forgotten later derivations name only
+    /// forgotten memory and forget nothing further. The fresh instance's
+    /// footprint is not derived here: unfolding names it in current memory.
     pub(super) fn havoc_protected_for_call(
         state: &CState,
         mutex: &Pointer,
         definition: &super::CCompositeResourceDefinition,
+        definitions: &[super::CCompositeResourceDefinition],
         assumptions: &PureFactContext,
         budget: &mut super::ExecutionBudget,
     ) -> Result<(CState, Vec<super::CMemoryRange>), MutexTransitionError> {
@@ -1863,39 +1958,49 @@ impl MutexLedger {
         let CResource::Instance(previous) = invariant.resource() else {
             return Err("typed mutex call requires a folded protected resource".into());
         };
-        let previous_ranges = super::functions::checked_owned_memory_ranges(
+        let ranges = super::functions::checked_owned_memory_ranges(
             invariant,
-            std::slice::from_ref(definition),
+            definitions,
             state,
             assumptions,
         )
         .ok_or("protected mutex resource has no checked memory footprint")?;
-        let (memory, payload) = assumed_protocol::fresh_protected_payload(
-            state,
-            assumptions,
+        let memory = if ranges.is_empty() {
+            state.memory.clone()
+        } else {
+            let kept = ranges
+                .iter()
+                .any(super::CMemoryRange::is_unnamed_footprint)
+                .then(|| {
+                    super::functions::call_kept_ownership(
+                        &state.resources,
+                        definitions,
+                        state,
+                        assumptions,
+                    )
+                });
+            state.memory.clone().with_call_memory_havoc(
+                budget
+                    .allocate_kernel_variable()
+                    .map_err(|_| "protected memory forgetting exceeded its budget")?,
+                &ranges,
+                assumptions,
+                kept.as_ref(),
+            )
+        };
+        let fresh = assumed_protocol::mint_protected_instance(
             interface.description(),
             Some(definition),
             Some(previous.identity()),
             budget,
         )?;
-        let invariant = payload.map(|instance| CResourceFact::own(CResource::Instance(instance)));
-        let ranges = super::functions::checked_owned_memory_ranges(
-            invariant.as_ref().expect("protected payload"),
-            std::slice::from_ref(definition),
-            state,
-            assumptions,
-        )
-        .ok_or("protected mutex resource has no checked memory footprint")?;
-        if ranges != previous_ranges {
-            return Err("typed mutex call requires an unchanged protected memory footprint".into());
-        }
         let mut next = state.clone();
         next.memory = memory;
         next.mutex_ledger = Some(ledger.with_inserted(
             mutex.clone(),
             MutexEntry::Unlocked {
                 initialization: *initialization,
-                invariant,
+                invariant: Some(CResourceFact::own(CResource::Instance(fresh))),
                 interface: Some(interface.clone()),
             },
         ));
@@ -2073,6 +2178,7 @@ impl MutexLedger {
                 } else {
                     self.storage.ambiguous_automatic_storage.clone()
                 },
+                consumed_storage: self.storage.consumed_storage.clone(),
                 entries: self.storage.entries.with_inserted(mutex.clone(), entry),
                 locked_count: self.storage.locked_count + usize::from(now_locked)
                     - usize::from(was_locked),
@@ -2112,6 +2218,7 @@ impl MutexLedger {
                 } else {
                     self.storage.ambiguous_automatic_storage.clone()
                 },
+                consumed_storage: self.storage.consumed_storage.without_key(mutex),
                 by_provenance: {
                     let provenance = StorageProvenance::of(&mutex.block);
                     let entries = self
@@ -2150,6 +2257,31 @@ impl MutexLedger {
                 changed_mutex: Some(mutex.clone()),
             }),
         }
+    }
+
+    fn with_storage_consumed(&self, mutex: &Pointer) -> Self {
+        let storage = &self.storage;
+        Self {
+            storage: Arc::new(MutexLedgerStorage {
+                identity: Self::fresh_identity(),
+                entries: storage.entries.clone(),
+                direct_loop_carriers: storage.direct_loop_carriers.clone(),
+                direct_loop_selection: storage.direct_loop_selection.clone(),
+                by_block: storage.by_block.clone(),
+                reserved: storage.reserved.clone(),
+                by_provenance: storage.by_provenance.clone(),
+                ambiguous_automatic_storage: storage.ambiguous_automatic_storage.clone(),
+                consumed_storage: storage.consumed_storage.with_inserted(mutex.clone(), ()),
+                locked_count: storage.locked_count,
+                return_obligation_count: storage.return_obligation_count,
+                predecessor: Some(storage.clone()),
+                changed_mutex: Some(mutex.clone()),
+            }),
+        }
+    }
+
+    fn storage_consumed(&self, mutex: &Pointer) -> bool {
+        self.storage.consumed_storage.contains_key(mutex)
     }
 
     pub(super) fn has_locked_guard(&self) -> bool {
@@ -3641,15 +3773,9 @@ mod tests {
         let snapshot = state.clone();
         assert!(state.mutex_ledger.is_none());
         assert!(state.resources.facts().is_empty());
-        assert!(storage_write_refusal(&state, &storage_range(&address, 4), &assumptions).is_some());
-        assert!(
-            storage_write_refusal(
-                &state,
-                &storage_range(&address.offset_by_bytes(40), 4),
-                &assumptions
-            )
-            .is_none()
-        );
+        // Ownership, not the reservation, keeps a body's writes off its input
+        // mutex storage: no memory the body can own reaches it.
+        assert!(storage_write_refusal(&state, &storage_range(&address, 4), &assumptions).is_none());
         assert!(
             storage_retirement_refusal(&state, &storage_range(&address, 64), &assumptions)
                 .is_some()
@@ -3668,21 +3794,17 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_input_storage_refuses_external_writes_but_not_fresh_locals() {
+    fn unresolved_input_storage_does_not_refuse_writes() {
         use super::super::*;
         let (mut state, local) = automatic_holder();
         state.mutex_input_reservations =
             MutexInputReservations::from_ranges([CMemoryRange::unnamed_footprint()]);
         let assumptions = PureFactContext::new();
         assert!(
-            matches!(storage_write_refusal(&state, &storage_range(&mutex(91_203), 4), &assumptions),
-            Some(CRuntimeError::FunctionContract(message)) if message.contains("mutex storage could not be determined"))
-        );
-        assert!(storage_write_refusal(&state, &storage_range(&local, 4), &assumptions).is_none());
-        assert!(
-            storage_write_refusal(&state, &storage_range(&mutex(91_203), 0), &assumptions)
+            storage_write_refusal(&state, &storage_range(&mutex(91_203), 4), &assumptions)
                 .is_none()
         );
+        assert!(storage_write_refusal(&state, &storage_range(&local, 4), &assumptions).is_none());
     }
 
     #[test]
@@ -3699,7 +3821,7 @@ mod tests {
             let (_, work) = crate::persistent::measure_persistent_work(|| {
                 for index in [0, size / 2, size - 1] {
                     assert!(
-                        storage_write_refusal(
+                        storage_retirement_refusal(
                             &state,
                             &storage_range(&base.offset_by_bytes(index * 64 + 39), 1),
                             &assumptions
@@ -3707,7 +3829,7 @@ mod tests {
                         .is_some()
                     );
                     assert!(
-                        storage_write_refusal(
+                        storage_retirement_refusal(
                             &state,
                             &storage_range(&base.offset_by_bytes(index * 64 + 40), 8),
                             &assumptions
@@ -4664,6 +4786,7 @@ mod tests {
                 &state,
                 &address,
                 &definition,
+                std::slice::from_ref(&definition),
                 &assumptions,
                 &mut budget,
             )
@@ -4713,6 +4836,7 @@ mod tests {
             released.state(),
             &address,
             &definition,
+            std::slice::from_ref(&definition),
             &assumptions,
             &mut budget,
         )

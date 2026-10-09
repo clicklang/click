@@ -25,7 +25,7 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_iteration_local_mutex.c";
 
 int32 run(struct holder *holder, int32 n) {
-    owns holder->anchor;
+    consumes holder->anchor;
     requires aligned(&holder->anchor, 8);
     owns holder->mu;
     requires aligned(&holder->mu, 8);

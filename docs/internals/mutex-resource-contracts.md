@@ -113,9 +113,23 @@ representation. It does not consume ownership of the surrounding allocation
 or unrelated fields. The lifecycle resource retains the storage dependency;
 it cannot outlive the allocation or local object containing the mutex.
 
-This is the proposed uniform ownership interface. The current implementation
-also uses storage reservations; migrating those reservations must neither
-return duplicate storage ownership nor lose allocation-lifetime protection.
+The implementation consumes explicit ownership of the storage bytes at
+initialization and returns it at destruction; storage cannot yet be named as a
+binder. While the mutex is live nobody owns those bytes, so ownership alone keeps
+every write and every transferred footprint off them, in this thread and in
+any thread the mutex is shared with. A worker writing protected memory reached
+through a pointer into another object therefore needs no separation premise
+(`mdtests/mutex_protected_pointer_write.md`), and a contract input's mutex
+storage is not checked against the body's writes. Freeing or reallocating the
+allocation, and a store or call that needs the bytes, report the live mutex
+rather than the missing ownership.
+
+Automatic storage is owned by its scope rather than by a resource, so there
+is nothing to consume. Its initialization keeps a write reservation in the
+ledger instead, which refuses stores and transferred footprints that may reach
+it. No resource can be folded over automatic memory, so a deposited protected
+resource cannot carry it either. Allocation-lifetime protection, retirement
+refusals, and scope-end checks are unchanged for both kinds.
 
 ### Acquisition
 
@@ -428,9 +442,9 @@ A synchronous helper may receive memory exposed by unfolding the protected
 state, using an ordinary `owns` or `views` contract. It need not receive the
 mutex guard when it does not perform a mutex operation. Argument binding and
 summary recovery preserve the caller's protocol ledgers, including folded
-guards and opaque acquisition receipts. Mutable footprints remain checked
-against mutex storage reservations; absence of a protocol clause does not
-authorize reinitialization or raw writes to a live mutex.
+guards and opaque acquisition receipts. A live mutex's storage is owned by no
+one, and automatic storage stays reserved, so absence of a protocol clause does
+not authorize reinitialization or raw writes to a live mutex.
 
 The worker admission restriction remains separate: this change does not relax
 suspended-worker protocol transfer or stateful population confinement.

@@ -15,7 +15,7 @@ target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_helper_reserved_storage.c";
 void reset(struct holder* p) {
-    owns p->mu;
+    consumes p->mu;
     requires aligned(&p->mu, 8);
 } by { execute(); simp(); }
 void run(struct holder* p) {
