@@ -2014,11 +2014,32 @@ fn rust_impl_method<'a>(
         };
         let close = matching_delimiter(tokens, open, "{", "}")?;
         let impl_type = tokens[open - 1].text.as_str();
-        if let Some(method) = name
+        // A trait with a type argument, `impl MulAssign<u32> for Type`,
+        // names its method `Type_mul_assign_u32`: the method's own name is
+        // then a prefix of what follows the type. Several blocks may
+        // implement for one type, so the block has to hold the method.
+        let has_argument = tokens[index..open].iter().any(|token| token.text == "<");
+        if let Some(rest) = name
             .strip_prefix(impl_type)
             .and_then(|rest| rest.strip_prefix('_'))
         {
-            return Ok(Some((open + 1..close, method)));
+            for at in open + 1..close {
+                if tokens[at].text != "fn" {
+                    continue;
+                }
+                let Some(method) = tokens.get(at + 1).map(|token| token.text.as_str()) else {
+                    continue;
+                };
+                let named = if has_argument {
+                    rest.strip_prefix(method)
+                        .is_some_and(|suffix| suffix.starts_with('_'))
+                } else {
+                    rest == method
+                };
+                if named {
+                    return Ok(Some((open + 1..close, &rest[..method.len()])));
+                }
+            }
         }
         index = close + 1;
     }
@@ -2055,9 +2076,26 @@ fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, C
             body_close,
         });
     }
+    // A Rust path, or a method of an `impl` block for one, is named as the
+    // parser names it; the declaration index reads those spellings.
+    if let Some(found) = declaration_source_index(tokens)?.remove(name) {
+        return Ok(found);
+    }
     Err(ClickError::new(format!(
         "could not locate Click function block `{name}`"
     )))
+}
+
+/// The segments of the Rust path that ends at token `end`, `a::b::name`.
+fn rust_path_ending_at(tokens: &[SourceToken], end: usize) -> Vec<&str> {
+    let mut segments = vec![tokens[end].text.as_str()];
+    let mut at = end;
+    // The scanner reads `::` as two `:` tokens.
+    while at >= 3 && tokens[at - 1].text == ":" && tokens[at - 2].text == ":" {
+        segments.insert(0, tokens[at - 3].text.as_str());
+        at -= 3;
+    }
+    segments
 }
 
 /// The `tactic name(...) { ... }` declaration of `name`. Only the declaration
@@ -3509,6 +3547,38 @@ fn locate_source_tactic_file(
     }
 }
 
+/// The suffix a trait's type argument gives its methods' names, read from
+/// the tokens of an `impl Trait<Arg> for Type` header as the parser reads it
+/// (`parse_rust_trait_argument`): `<u32>` is `u32`, `<&Lanes>` is
+/// `ref_Lanes`, and a record by value is `value_<length><name>`.
+fn rust_trait_argument_suffix(header: &[SourceToken], impl_type: &str) -> Option<String> {
+    let open = header.iter().position(|token| token.text == "<")?;
+    let close = header.iter().position(|token| token.text == ">")?;
+    let argument: Vec<&str> = header
+        .get(open + 1..close)?
+        .iter()
+        .map(|token| token.text.as_str())
+        .collect();
+    let (reference, mutable, path) = match argument.as_slice() {
+        ["&", "mut", path @ ..] => (true, true, path),
+        ["&", path @ ..] => (true, false, path),
+        path => (false, false, path),
+    };
+    let segments: Vec<&str> = path.iter().copied().filter(|text| *text != ":").collect();
+    if segments.is_empty() {
+        return None;
+    }
+    let name = super::parser::rust_path_name(&segments);
+    let name = name.as_str();
+    let name = if name == "Self" { impl_type } else { name };
+    let scalar = matches!(name, "i32" | "u8" | "u16" | "u32" | "usize" | "bool");
+    Some(match (reference, scalar) {
+        (false, true) => name.to_string(),
+        (false, false) => format!("value_{}{name}", name.len()),
+        (true, _) => format!("ref_{}{name}", if mutable { "mut_" } else { "" }),
+    })
+}
+
 /// Index top-level declaration bodies once. Proof bodies are skipped as a
 /// whole, so a use of a name inside a proof never shadows its declaration.
 fn declaration_source_index(
@@ -3517,13 +3587,15 @@ fn declaration_source_index(
     let mut result = std::collections::HashMap::new();
     let mut candidate = None;
     // Inside a Rust `impl` block a method `name` is the function `Type_name`.
-    let mut impl_block: Option<(String, usize)> = None;
+    // The block's type, its module when it is an inherent block for a type
+    // named by a path, its trait argument's suffix, and where it closes.
+    let mut impl_block: Option<(String, Option<String>, Option<String>, usize)> = None;
     let mut index = 0;
     while index < tokens.len() {
         crate::instrumentation::record_deterministic_work(1);
         if impl_block
             .as_ref()
-            .is_some_and(|(_, close)| index >= *close)
+            .is_some_and(|(_, _, _, close)| index >= *close)
         {
             impl_block = None;
         }
@@ -3531,7 +3603,18 @@ fn declaration_source_index(
             "impl" if impl_block.is_none() && candidate.is_none() => {
                 if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
                     let close = matching_delimiter(tokens, open, "{", "}")?;
-                    impl_block = Some((tokens[open - 1].text.clone(), close));
+                    let path = rust_path_ending_at(tokens, open - 1);
+                    let impl_type = super::parser::rust_path_name(&path);
+                    let inherent = tokens[index..open].iter().all(|token| token.text != "for");
+                    let module = (inherent && path.len() > 1).then(|| {
+                        path[..path.len() - 1]
+                            .iter()
+                            .fold("__rust_q".to_string(), |encoded, segment| {
+                                format!("{encoded}_I{}_{segment}", segment.len())
+                            })
+                    });
+                    let suffix = rust_trait_argument_suffix(&tokens[index..open], &impl_type);
+                    impl_block = Some((impl_type, module, suffix, close));
                     index = open + 1;
                     continue;
                 }
@@ -3541,9 +3624,18 @@ fn declaration_source_index(
             }
             "(" => {
                 if candidate.is_none() {
-                    candidate = index
-                        .checked_sub(1)
-                        .map(|before| tokens[before].text.clone());
+                    candidate = index.checked_sub(1).map(|before| {
+                        let path = rust_path_ending_at(tokens, before);
+                        match &impl_block {
+                            // A method's own name, and an item inside it.
+                            Some(_) => {
+                                path[1..].iter().fold(path[0].to_string(), |name, segment| {
+                                    format!("{name}_I{}_{segment}", segment.len())
+                                })
+                            }
+                            None => super::parser::rust_path_name(&path),
+                        }
+                    });
                 }
                 index = matching_delimiter(tokens, index, "(", ")")?;
             }
@@ -3551,7 +3643,16 @@ fn declaration_source_index(
                 let body_close = matching_delimiter(tokens, index, "{", "}")?;
                 if let Some(name) = candidate.take() {
                     let name = match &impl_block {
-                        Some((impl_type, _)) => format!("{impl_type}_{name}"),
+                        Some((impl_type, _, Some(suffix), _)) => {
+                            format!("{impl_type}_{name}_{suffix}")
+                        }
+                        Some((impl_type, module, None, _)) => {
+                            super::parser::rust_inherent_method_name(
+                                module.as_deref(),
+                                impl_type,
+                                &name,
+                            )
+                        }
                         None => name,
                     };
                     result.insert(

@@ -29,15 +29,17 @@ fn write_read(bytes: &mut [u8], index: usize, value: u8) -> u8 {
     ensures bytes[index] == value;
 } by { execute(); simp(); }
 
-void Guard_drop(struct Guard* self) {
-    requires separate(memory(*self), memory(self->slot[0..1]));
-    owns self->slot;
-    owns self->saved;
-    owns self->slot[0..1];
-    ensures self->slot == old(self->slot);
-    ensures self->saved == old(self->saved);
-    ensures self->slot[0] == old(self->saved);
-} by { execute(); simp(); }
+impl Drop for Guard {
+    fn drop(&mut self) {
+        requires separate(memory(*self), memory(self.slot[0..1]));
+        owns self.slot;
+        owns self.saved;
+        owns *self.slot;
+        ensures self.slot == old(self.slot);
+        ensures self.saved == old(self.saved);
+        ensures *self.slot == old(self.saved);
+    } by { execute(); simp(); }
+}
 
 fn guarded_read(value: &mut i32, bytes: &[u8], index: usize) -> u32 {
     requires bytes.len() <= 2147483647u64;

@@ -1597,11 +1597,11 @@ fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
     let p = loop_array_copy_project();
     let prepared = load_import(&p.config()).unwrap();
     let helper = LOOP_ARRAY_COPY_PROOF
-        .split("uint32 __rust_q_I4_quad_I4_walk")
-        .next()
-        .unwrap();
+        .split_once("fn quad::walk")
+        .expect("the sidecar states `walk` after its helper")
+        .0;
     let claim = format!(
-        "{helper} uint32 __rust_q_I4_quad_I4_walk(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == 0u64; ensures result == 0u32; }} by {{ execute(); simp(); }}"
+        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ execute(); simp(); }}"
     );
     C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
 }
