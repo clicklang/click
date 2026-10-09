@@ -265,6 +265,7 @@ fn integer_resource_match_binding_verifies_and_expands() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn tree_node_init_and_stored_child_links_expand() {
     let (source, c) = tree_node_init_fixture();
     verify_c0_sources(source, &c).unwrap();
@@ -1810,6 +1811,10 @@ fn resource_fields_preserve_checked_types_and_do_not_lower_to_legacy_resources()
 #[test]
 fn resource_fields_reject_counting_and_unimplemented_instance_operations() {
     let declaration = "resource cell(p: int32*) { field model: List<int32>; owns p[0..1]; }";
+    // `cell` is not `authorized`, so a count of it is refused before its
+    // fields matter; a quantity of a fielded family needs named members.
+    let unauthorized = "`count` names `cell`, which is not an authorized family; declare it `authorized resource cell(...)`";
+    let quantity = "resource `cell` has fields; quantities require separately named members";
     for expression in ["count(cell(p))", "List::Cons(count(cell(p)), List::Nil)"] {
         let result_type = if expression.starts_with("List") {
             "List<int32>"
@@ -1819,32 +1824,22 @@ fn resource_fields_reject_counting_and_unimplemented_instance_operations() {
         let source = format!(
             "function population(p: int32*) -> {result_type} {{ {expression} }} {declaration}"
         );
-        assert_eq!(
-            parser::parse(&source).unwrap_err().message(),
-            "resource `cell` has fields and is not countable"
-        );
+        assert_eq!(parser::parse(&source).unwrap_err().message(), unauthorized);
     }
-    for clause in [
-        "requires count(cell(p)) == 1;",
-        "requires count(cell(_)) == 1;",
-        "consumes 2 of cell(p);",
-        "produces 1 of cell(p);",
+    for (clause, expected) in [
+        ("requires count(cell(p)) == 1;", unauthorized),
+        ("requires count(cell(_)) == 1;", unauthorized),
+        ("consumes 2 of cell(p);", quantity),
+        ("produces 1 of cell(p);", quantity),
     ] {
         let source = format!("{declaration} int32 f(int32* p) {{ {clause} }}");
         let error = parser::parse(&source).unwrap_err();
-        assert_eq!(
-            error.message(),
-            "resource `cell` has fields and is not countable",
-            "{clause}"
-        );
+        assert_eq!(error.message(), expected, "{clause}");
     }
     let nested = format!(
         "{declaration} abstract resource credit(n: int32); int32 f(int32* p) {{ consumes credit(count(cell(p))); }}"
     );
-    assert_eq!(
-        parser::parse(&nested).unwrap_err().message(),
-        "resource `cell` has fields and is not countable"
-    );
+    assert_eq!(parser::parse(&nested).unwrap_err().message(), unauthorized);
     for tactic in [
         "apply(law(count(cell(p))));",
         "witness { x: count(cell(p)) };",
@@ -1853,10 +1848,7 @@ fn resource_fields_reject_counting_and_unimplemented_instance_operations() {
     {
         let source =
             format!("{declaration} int32 f(int32* p) {{ ensures result == 0 by {{ {tactic} }} }}");
-        assert_eq!(
-            parser::parse(&source).unwrap_err().message(),
-            "resource `cell` has fields and is not countable"
-        );
+        assert_eq!(parser::parse(&source).unwrap_err().message(), unauthorized);
     }
     for clause in [
         "consumes cell(p);",
@@ -2551,6 +2543,7 @@ fn aggregate_parameter_symbolic_index_expands_and_checks() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn resource_contract_regressions_expand_and_check() {
     for (fixture_name, function_name) in [
         ("aggregate_parameter_pointee_contract", "touch"),

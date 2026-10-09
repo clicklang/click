@@ -12,7 +12,7 @@ unsigned int read_locked(struct counter *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_body_helper.c";

@@ -4,7 +4,7 @@
 void observe(int32* pool) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource ticket(pool: int32*) { field serial: int32; }
 verifying "helper.c";
 void observe(int32* pool) {

@@ -10,7 +10,7 @@ void initialize(struct pool* pool, int32 amount) {
 void forward(struct pool* pool) { initialize(pool, 2); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: struct pool*) {}
 authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource storage(pool: struct pool*) {

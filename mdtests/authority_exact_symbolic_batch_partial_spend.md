@@ -13,7 +13,7 @@ void run(int32* o, int32 k) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource tok(o: int32*) {}
 verifying "exact_batches.c";
 void mint_n(int32* o, int32 n) {

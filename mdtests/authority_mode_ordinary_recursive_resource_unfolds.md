@@ -22,7 +22,7 @@ int32 list_zero(struct node* node) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 resource list(node: struct node*) {
     if node != 0 {
         owns node->value;

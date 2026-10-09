@@ -51,6 +51,7 @@ fn proof_match_fields_survive_function_unfold_in_have() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn modeled_tree_rotate_left_checks_model_and_ownership() {
     let source = include_str!("../../../../examples/modeled-binary-tree/modeled_binary_tree.click");
     let c = include_str!("../../../../examples/modeled-binary-tree/modeled_binary_tree.c");
@@ -107,6 +108,7 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn proof_match_closes_impossible_constructor_without_executing_c() {
     let source = SOURCE
         .replace(

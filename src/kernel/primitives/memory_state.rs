@@ -6235,7 +6235,8 @@ impl CState {
     }
 
     /// Equality that also identifies two creation ledgers recording the same
-    /// state under different fresh identities. Every other component is
+    /// state under different fresh identities or fresh storage anchors. Every
+    /// other component is
     /// still compared exactly, so a component naming either identity keeps
     /// the states apart.
     pub(crate) fn equal_up_to_creation_ledger_identity(&self, other: &Self) -> bool {
@@ -6248,7 +6249,10 @@ impl CState {
         ) else {
             return false;
         };
-        if left == right || !left.records_same_state_as(right) {
+        if left == right
+            || !(left.records_same_state_as(right)
+                || left.records_same_state_up_to_fresh_anchors(right))
+        {
             return false;
         }
         let mut renamed = self.clone();

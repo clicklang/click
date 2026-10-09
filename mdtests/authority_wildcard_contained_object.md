@@ -5,7 +5,7 @@ struct payload { int32 value; };
 int32 update(int32* pool, struct payload* p) { p->value = 7; return 7; }
 ```
 
-```click resource_semantics=authority
+```click
 resource slot(pool: int32*, p: struct payload*) { owns *p; }
 verifying "contained_object.c";
 int32 update(int32* pool, struct payload* p) {

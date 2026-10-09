@@ -88,7 +88,6 @@ fn verify(source: &str) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     verify_c0_project(&project, &[("conditional_release.c", C)])
 }
@@ -126,6 +125,7 @@ fn authority_conditional_release_keeps_undischarged_ensure_premise() {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
     let source = SOURCE.replace(
         "    ensures obj->payload == old(obj->payload);",
@@ -142,7 +142,6 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     let c = [("conditional_release.c", C)];
     let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
@@ -167,6 +166,7 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn authority_borrowed_member_handoff_expands_every_smart_site() {
     let fixture = crate::cli::parse_mdtest(
         std::path::Path::new("shared_heap_detach_old_resource_handoff.md"),
@@ -186,7 +186,6 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     verify_c0_project(&project, &c).expect("the original handoff proof verifies");
     let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
@@ -205,7 +204,6 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         });
         verify_c0_project(&expanded_project, &c).unwrap_or_else(|error| {
             panic!(
@@ -242,6 +240,7 @@ void release_one(struct child* obj) {{
 }
 
 #[test]
+#[ignore = "nightly: 14s in the parallel gate"]
 fn authority_nonterminal_detach_keeps_folded_named_output_once() {
     let fixture = crate::cli::parse_mdtest(
         std::path::Path::new("shared_heap_two_parent_caller.md"),
@@ -262,7 +261,6 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     crate::instrumentation::with_default_tactic_limits(|| {
@@ -348,6 +346,7 @@ fn strict_successor_bound_does_not_wrap_signed_maximum() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
     crate::instrumentation::with_default_tactic_limits(|| {
         let source = include_str!("../../../design/shared-heap-probes/shared_parent.click");
@@ -363,7 +362,6 @@ fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
             .with_c_profile(CProjectProfile {
                 target: None,
                 runtime: None,
-                resource_semantics: ResourceSemanticsMode::Authority,
             })
         };
         let project = project_for(source);

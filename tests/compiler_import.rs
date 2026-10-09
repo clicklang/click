@@ -86,6 +86,7 @@ impl Drop for Project {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
     let project = Project::new();
     create_lock(&project.config()).expect("lock real compiler input");
@@ -140,6 +141,7 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn compiler_import_define_changes_require_refresh_and_change_the_proof() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
@@ -155,6 +157,7 @@ fn compiler_import_define_changes_require_refresh_and_change_the_proof() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
@@ -169,6 +172,7 @@ fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
@@ -190,6 +194,7 @@ fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_lowering_error_points_to_original_header() {
     let project = Project::new();
     fs::write(
@@ -208,6 +213,7 @@ fn compiler_import_lowering_error_points_to_original_header() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies() {
     let project = Project::new();
     fs::write(
@@ -241,6 +247,7 @@ fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies(
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_rejects_semantic_directives_and_target_options() {
     let project = Project::new();
     project.configure(1, &["-fshort-wchar"]);
@@ -261,6 +268,7 @@ fn compiler_import_rejects_semantic_directives_and_target_options() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_results_bind_helpers_in_other_translation_units() {
     let project = Project::new();
     fs::write(
@@ -369,6 +377,7 @@ fn compiler_import_rejects_output_input_collisions_before_writing() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_preserves_explicit_external_assumption_reporting() {
     let project = Project::new();
     fs::write(
@@ -480,6 +489,7 @@ fn stage_real_gcc_headers(project: &Project, gcc_include: &Path) -> [PathBuf; 3]
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn userspace_compiler_import_verifies_profile_and_expansion() {
     let project = Project::new();
     configure_userspace(&project);
@@ -529,6 +539,7 @@ int answer(void) { return ANSWER; }
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
     let project = Project::new();
     fs::write(
@@ -581,6 +592,7 @@ fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn userspace_frozen_pthread_probe_records_real_header_boundary() {
     let project = Project::new();
     // Follow the same driver as the import config instead of hard-coding a
@@ -637,6 +649,7 @@ fn userspace_frozen_pthread_probe_records_real_header_boundary() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option() {
     let project = Project::new();
     let original_config = fs::read(project.config()).unwrap();

@@ -86,6 +86,7 @@ fn audits_checked_frontiers(fixture: &str) {
 macro_rules! iterator_checks {
     ($fixture:literal, $obligations:ident, $profile:ident, $expand:ident, $audit:ident) => {
         #[test]
+        #[ignore = "nightly: 8s in the parallel gate"]
         fn $obligations() {
             preserves_source_and_checks_obligations($fixture);
         }

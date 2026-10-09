@@ -3,10 +3,9 @@
 This records the selected lifetime protocol for the authority migration.
 See `issues/authority-migration.md` for rollout order and the
 [consumer inventory](authority-migration-inventory.md) for existing clients.
-The new abstract kernel model is additive; existing projects still use legacy
-counting. An authority-mode project can be selected with
-`{"resource_semantics":"authority"}` in `click.project.json`. Its restricted
-source slice admits an exact unary population established in the storage
+Authority semantics are now the only resource semantics. During the
+migration a project selected them with a temporary `resource_semantics`
+setting, which is now refused. The restricted source slice admits an exact unary population established in the storage
 creator's execution proof. A field-free resource with a private owned-memory
 body can be folded to create one member and unfolded to consume it while
 matching authority is owned. Opening an existing member temporarily exposes

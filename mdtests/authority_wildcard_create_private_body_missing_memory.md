@@ -5,7 +5,7 @@ void issue(int32* pool, int32* p) { p[0] = 7; }
 void caller(int32* pool, int32* p) { issue(pool, p); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_create_private_body_missing_memory.c";
 void issue(int32* pool, int32* p) {

@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn rust_default_is_native_charon_and_legacy_extraction_is_rejected() {
     let p = Project::new(SOURCE);
     let config: serde_json::Value = serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();

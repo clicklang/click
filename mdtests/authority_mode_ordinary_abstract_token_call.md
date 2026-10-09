@@ -23,7 +23,7 @@ int32 framed_token_caller(int32 key, int32 spare) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 abstract resource permit(key: int32);
 
 verifying "framed_callback_token.c";

@@ -127,6 +127,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
     for name in ["loops", "sum", "headers"] {
         let p = project(name, true);
@@ -267,6 +268,7 @@ fn assignment_frontier_sidecar() -> &'static str {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {
     let p = project("loops", true);
     let sidecar = assignment_frontier_sidecar();

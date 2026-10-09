@@ -9,7 +9,7 @@ struct object { int32 refs; };
 void release(struct object* obj) { obj->refs = 0; }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns authority(reference(obj));

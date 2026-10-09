@@ -1619,3 +1619,63 @@ them. Completion checks only the facts a return proof introduced since entry.
 Facts the entry held are the proof's assumptions, which certification
 already authorizes against the contract. Regression:
 `authority_outcome_haves_and_resource_folds_do_not_reimport_ambient_facts`.
+
+#### Chunk 1s: the switch
+
+Authority semantics are now the only resource semantics. The
+`resource_semantics` setting is gone from `click.project.json` and from
+mdtest fences; either spelling is refused with a message that names the
+retired setting. The four example and probe project files that only selected
+authority semantics are deleted. `RESOURCE_SEMANTICS_VERSION` is 57, so
+caches and certificates from either earlier mode are rejected and rebuilt.
+The kernel's legacy population machinery remains for now but is unreachable
+from the surface. A sidecar verified on its own, outside a project, now passes
+through the same declaration rules as a project unit. Only the standard
+library keeps the preliminary expansion. That expansion validates resource
+fields before it resolves their schemas, so a malformed field still reports its
+own cause. The library test for counting a fielded resource now expects the
+unauthorized-family refusal, or the named-member refusal for a quantity.
+
+A branch join compared the arms' creation ledgers by identity. After the
+switch the arms of the moved-child `match ... ensuring` in
+`examples/rbtree-erase/rbtree_erase_spine.click` each declare the same
+call-result local after their ledgers diverged, so each mints its own anchor
+for it, and the join refused equal states. The shared join abstraction now
+gives every arm the first arm's ledger when the two record the same state:
+under different identities, or with fresh anchors on the same storage that
+carry no established population. The kernel check and the surface join make
+the same choice. `a_branch_whose_arms_spell_one_allocation_differently_does_not_free_it_twice.md`
+had relied on the identity mismatch to refuse at the join; its arms record
+one state, and the second `free` refuses the double free.
+
+Retired fixtures, each covered by the authority replacement named earlier:
+
+- `population_count_alias_consumption_rejected.md`,
+  `population_count_distinct_arguments_consumption.md`,
+  `modeled_pthread_population_count_alias_rejected.md` and
+  `population_transfer_may_alias_tracked_population_rejected.md` (chunks 1i
+  and 1n);
+- `fold_negative_quantity_legacy_control.md` (chunk 1i);
+- `wrapped_range_cannot_reach_a_composite.md` (chunk 1n); and
+- `authority_resource_split_body_survives_view.md`, merged into
+  `resource_population_split_body_survives_view.md`, whose proof gains the
+  `unfold(wrapper(pair))` (chunk 1n).
+
+The two mutex fixtures of chunk 1j and four external-member fixtures expect
+one refusal for an unverified call whose assumed contract changes a
+population or mutex resource. The message names that cause and says to
+verify the function or give it a contract that returns those resources
+unchanged.
+
+Library tests that checked legacy rules are rewritten under authority rules
+where the property survives. Two that checked only legacy behavior are
+deleted: a population fold after an outcome, which authority semantics
+express as an ordinary fold, and the legacy checked-frame population
+transition of an outcome unfold.
+
+The switch also exposed a cost that depended on unrelated proofs. The
+registered-load interner cleaned a few weak entries on every intern and kept
+live ones on its queue, so a proof paid to revisit records that an earlier
+proof's session memos kept alive. Each record now removes its own entry when
+it drops, and an intern touches only its own bucket. Regression:
+`a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof`.

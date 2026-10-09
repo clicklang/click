@@ -111,6 +111,7 @@ fn click_addition_cancels_a_negated_pointer_base() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn resource_neutral_callee_preserves_callers_allocation_resource() {
     let push_c = r#"
         struct vector {

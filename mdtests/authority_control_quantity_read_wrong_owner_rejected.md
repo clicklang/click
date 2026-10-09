@@ -5,7 +5,7 @@ struct pool { int32 capacity; };
 void inspect(struct pool* pool, struct pool* other) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
     owns *pool;

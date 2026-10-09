@@ -8,7 +8,7 @@ extern void set_one(int32* p);
 void caller(int32* p) { set_one(p); }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "ordinary_external_call.c";
 
 extern void set_one(int32* p) {

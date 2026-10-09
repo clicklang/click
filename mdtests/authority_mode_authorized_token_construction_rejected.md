@@ -10,7 +10,7 @@ int32 bump(int32 result) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized abstract resource pair(returned: int32, input: int32);
 
 verifying "bump.c";

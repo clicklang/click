@@ -329,7 +329,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
     } = function_source_registry
         .claim_entries()
         .get_or_build(source_path, function_block, || {
-            initial_claim_context_with_mode(
+            initial_claim_context_with_caller_owner(
                 function_block,
                 parsed_function,
                 resource_environment,
@@ -337,7 +337,6 @@ pub(in crate::surface) fn prove_claim_by_tactics(
                 click_function_environment,
                 claim_label,
                 Some(&caller_source_owner),
-                function_source_registry.resource_semantics_mode(),
             )
         })
         .map_err(|error| error.at_declaration(function_block.signature().name()))?;
@@ -615,7 +614,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
     } = function_source_registry
         .claim_entries()
         .get_or_build(source_path, function_block, || {
-            initial_claim_context_with_mode(
+            initial_claim_context_with_caller_owner(
                 function_block,
                 parsed_function,
                 resource_environment,
@@ -623,7 +622,6 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
                 click_function_environment,
                 &proof_label,
                 Some(&caller_source_owner),
-                function_source_registry.resource_semantics_mode(),
             )
         })
         .map_err(|error| error.at_declaration(function_block.signature().name()))?;

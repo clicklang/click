@@ -144,6 +144,7 @@ fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn post_execution_have_expansion_preserves_later_smart_proofs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/bubble_sort3_loop_sorted.md");
@@ -238,6 +239,7 @@ fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/bubble_sort3_loop_permutation.md");
@@ -512,6 +514,7 @@ fn assert_static_array_call_requirement_expands_and_deletion(fixture: &str, have
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn static_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_local_arrays.md",
@@ -520,6 +523,7 @@ fn static_array_call_requirement_expands_and_deletion_rejects() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn parity_scalar_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_array_parity_scalar.md",
@@ -528,6 +532,7 @@ fn parity_scalar_array_call_requirement_expands_and_deletion_rejects() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn parity_multidimensional_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_array_parity_multidimensional.md",
@@ -536,6 +541,7 @@ fn parity_multidimensional_array_call_requirement_expands_and_deletion_rejects()
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn parity_fixed_multidimensional_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_array_parity_fixed_multidimensional.md",
@@ -1103,6 +1109,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 /// every goal, and checked the bound's arithmetic step against the
 /// `viewable` body.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
     let anchor = "            }\n            simp();\n        }\n        preserve";
     let quantified = "have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {\n                have";
@@ -1213,6 +1220,7 @@ fn post_execution_closer_continues_the_proof_a_witness_opened() {
 /// loop's store from the earlier cells by their indices alone, and
 /// `snapshot_read_alignment_fact_renders_as_aligned` covers the rendering.
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn entry_alignment_premise_expands_in_source_spelling() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/entry_alignment_premise_expands.md",
@@ -1225,6 +1233,7 @@ fn entry_alignment_premise_expands_in_source_spelling() {
 /// Written else nesting is not recursive driver depth: a failed allocation
 /// returns, so twelve null checks can expand and re-verify just like eleven.
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn expansion_reverifies_terminal_cases_past_the_old_nesting_bound() {
     let (click_source, c_sources) = mdtest_sources("mdtests/expand_sequential_null_checks.md");
     let c_sources = c_sources
@@ -2163,6 +2172,7 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
 /// Whole-claim expansion rebuilds a proof `match` from the paths through its
 /// arms. Each claim here verifies, and its expansion must too.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn whole_claim_expansion_of_proof_matches_rechecks() {
     for (mdtest, claim) in [
         ("proof_match_after_c_step", "read_after_step.contract"),
@@ -2417,6 +2427,7 @@ int32 early(int32 x) {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
     let (click, sources) = mdtest_sources("mdtests/sort3_sorted.md");
     let sources = sources
@@ -2472,6 +2483,7 @@ theorem choose_reflexive_arm() {{
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn deferred_preservation_simp_expands_at_its_original_source_site() {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/owned-vector/vector.click");
@@ -2629,6 +2641,7 @@ fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn branch_interface_service_simp_expands_and_rechecks() {
     let source = include_str!("../../../examples/perpetual-service/perpetual_service.click");
     let sources = [
@@ -2717,6 +2730,7 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn return_population_proofs_expand_without_effect_clauses() {
     for (fixture_name, functions) in [
         (
@@ -3867,6 +3881,7 @@ fn outcome_arithmetic_normalization_retains_selected_equality_paths() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn outcome_quantified_cells_retain_selected_instantiations() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests")
@@ -8948,7 +8963,9 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
     let error =
         result.expect_err("tampering with the resource selection must invalidate the proof");
     assert!(
-        error.message().contains("`unfold(marker((x + 1)))` failed"),
+        error
+            .message()
+            .contains("`open(marker((x + 1)))` Requires owns marker((x + 1))"),
         "the checked resource-entry operation should reject the tamper directly: {error:?}"
     );
 }
@@ -9152,7 +9169,9 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
     let error =
         result.expect_err("tampering with the nested resource selection must invalidate the proof");
     assert!(
-        error.message().contains("`unfold(cell((p + 1)))` failed"),
+        error
+            .message()
+            .contains("`open(cell((p + 1)))` Requires owns cell((p + 1))"),
         "the nested checked resource entry should reject the tamper directly: {error:?}"
     );
 }
@@ -9357,7 +9376,9 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
     let error =
         result.expect_err("tampering with the branch-arm resource must invalidate the proof");
     assert!(
-        error.message().contains("`unfold(cell((p + 1)))` failed"),
+        error
+            .message()
+            .contains("`open(cell((p + 1)))` Requires owns cell((p + 1))"),
         "the checked branch-arm resource entry should reject the tamper directly: {error:?}"
     );
 }
@@ -9469,7 +9490,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`unfold(marker((flag + 1)))` failed"),
+            .contains("`open(marker((flag + 1)))` Requires owns marker((flag + 1))"),
         "the checked nested branch-arm entry should reject the tamper directly: {error:?}"
     );
 }
@@ -10497,6 +10518,7 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn callback_status_proofs_expand_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_contract_executes_status.md");
     let mdtest = crate::cli::parse_mdtest(std::path::Path::new("status.md"), markdown).unwrap();
@@ -10604,6 +10626,7 @@ fn nested_callback_status_cases_verify() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn nested_callback_status_item_zero_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
     let c_sources = c_sources
@@ -10617,6 +10640,7 @@ fn nested_callback_status_item_zero_cases_expand_and_reverify() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn nested_callback_status_item_branch_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
     let c_sources = c_sources
@@ -10630,6 +10654,7 @@ fn nested_callback_status_item_branch_cases_expand_and_reverify() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn nested_callback_status_closer_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
     let c_sources = c_sources
@@ -10643,6 +10668,7 @@ fn nested_callback_status_closer_cases_expand_and_reverify() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn acquired_callback_ownership_expands_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_contract_executes_acquire.md");
     let mdtest = crate::cli::parse_mdtest(std::path::Path::new("acquire.md"), markdown).unwrap();
@@ -11365,18 +11391,17 @@ fn outcome_simp_with_no_open_claims_is_an_empty_proof_transition() {
         }
     "#;
     let click_source = r#"
-        authorized resource object_ref(obj: struct object*) {
+        resource object_cell(obj: struct object*) {
             owns *obj;
-            fact obj->refs == count(object_ref(obj));
+            fact obj->refs == 1;
         }
 
         verifying "release.c";
 
         void release(struct object* obj) {
-            requires obj->refs == 1;
-            consumes object_ref(obj);
+            consumes object_cell(obj);
         } by {
-            unfold(object_ref(obj));
+            unfold(object_cell(obj));
             execute();
             simp();
         }
@@ -11409,9 +11434,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
     let click_source = r#"
         authorized resource pool_object(pool: struct pool*) {}
 
-        authorized resource pool_slot(pool: struct pool*) {
-            views *pool;
-        }
+        authorized resource pool_slot(pool: struct pool*) {}
 
         predicate valid_pool(pool: struct pool*) {
             0 <= pool->checked_out and
@@ -11424,11 +11447,15 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         void init(struct pool* pool, int32 capacity) {
             requires 0 < capacity;
             owns *pool;
+            owns authority(pool_object(pool));
+            owns authority(pool_slot(pool));
+            requires count(pool_object(pool)) == 0;
+            requires count(pool_slot(pool)) == 0;
             produces capacity of pool_slot(pool);
             ensures valid_pool(pool);
         } by {
-            execute();
             fold(capacity of pool_slot(pool));
+            execute();
             simp();
         }
     "#;
@@ -11447,61 +11474,6 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
     assert!(expanded.contains("normalize();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the retained predicate closure should check independently");
-}
-
-#[test]
-fn outcome_predicate_unfold_uses_the_checked_frame_population_transition() {
-    let c_source = r#"
-        struct pool { int32 checked_out; };
-        struct object { int32 value; };
-
-        void give_back(struct pool* pool, struct object* object) {
-            pool->checked_out = pool->checked_out - 1;
-        }
-    "#;
-    let click_source = r#"
-        authorized resource pool_object(pool: struct pool*, object: struct object*) {
-            owns *object;
-        }
-
-        predicate valid_pool(pool: struct pool*) {
-            0 <= pool->checked_out and
-            pool->checked_out == count(pool_object(pool, _))
-        }
-
-        verifying "give_back.c";
-
-        void give_back(struct pool* pool, struct object* object) {
-            requires valid_pool(pool);
-            requires count(pool_object(pool, object)) == 1;
-            owns *pool;
-            consumes pool_object(pool, object);
-            produces *object;
-            ensures valid_pool(pool);
-        } by {
-            unfold(valid_pool);
-            unfold(pool_object(pool, object));
-            execute();
-            simp();
-        }
-    "#;
-    let sources = [("give_back.c", c_source)];
-
-    let verified = verify_c0_sources(click_source, &sources);
-    verified.expect("the checked frame population transition should reach the outcome Proof");
-
-    let expanded =
-        expand_c0_claim_source(click_source, &sources, "give_back", CProofClaim::Grouped)
-            .expect("the retained population transition should expand");
-    assert!(
-        expanded.contains(
-            "have 0 <= pool->checked_out and pool->checked_out == count(pool_object(pool, _)) by {"
-        ),
-        "{expanded}"
-    );
-    assert!(expanded.contains("unfold(valid_pool);"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
-        .expect("the retained population transition should check independently");
 }
 
 #[test]
@@ -11668,6 +11640,7 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn bound_universal_outcome_retains_instantiation_and_transport() {
     let c_source = r#"
         int32 bubble_pass3(int32 p[3]) {
@@ -11809,6 +11782,7 @@ fn bound_universal_bubble_pass3_max_suffix_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn bound_universal_bubble_sort3_two_pass_sorted_has_no_outcome_fallbacks() {
     let (filename, function) = BOUND_UNIVERSAL_FIXTURE_CASES[1];
     assert_bound_universal_fixture_has_no_outcome_fallbacks(filename, function);
@@ -12104,6 +12078,7 @@ fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn linked_list_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[0];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -12115,6 +12090,7 @@ fn linked_list_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn input_cursor_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[1];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -12126,6 +12102,7 @@ fn input_cursor_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 10s in the parallel gate"]
 fn owned_segmented_buffer_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[2];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -12149,6 +12126,7 @@ fn owned_string_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn recursive_zero_list_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[4];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -12171,6 +12149,7 @@ fn vector_push_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest
@@ -12209,6 +12188,7 @@ fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn negative_outcome_diagnostic_manifests_have_no_fallbacks() {
     let manifests = [
         (
@@ -13977,6 +13957,7 @@ fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
 /// `data + start` inside the composite buffer's owned range through the
 /// contract bounds without encoding them in the emitted statement step.
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn expanded_step_uses_the_whole_context_for_frame_evidence() {
     let click_source = include_str!("../../../examples/borrowed-slice/borrowed_slice.click");
     let c_sources = [
@@ -14394,9 +14375,9 @@ fn smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies() {
         .expect("the expanded post-return closer should independently reverify");
 }
 
-/// `object_retain_many` from `examples/refcount`, whose proof writes a smart
-/// `have` inside an `open(...)` body and closes a produced resource claim
-/// with a grouped `simp`.
+/// `object_retain_many` from `examples/refcount`, whose proof folds the
+/// produced references inside an `open(...)` body and closes the produced
+/// resource claim with a grouped `simp`.
 const PRODUCED_RESOURCE_C: &str = r#"
 struct object {
     int32 refs;
@@ -14408,35 +14389,29 @@ void object_retain_many(struct object* obj, int32 amount) {
 "#;
 
 const PRODUCED_RESOURCE_CLICK: &str = r#"
-authorized resource object_ref(obj: struct object*) {
+authorized resource reference(obj: struct object*) {}
+
+resource control(obj: struct object*) {
     owns allocation(obj, sizeof(struct object));
     owns *obj;
-    fact obj->refs == count(object_ref(obj));
+    owns authority(reference(obj));
+    fact obj->refs == count(reference(obj));
 }
 
 verifying "object_retain_many.c";
 
 void object_retain_many(struct object* obj, int32 amount) {
     requires 0 <= amount;
-    requires defined(1 + amount);
-    owns object_ref(obj);
-    produces amount of object_ref(obj);
+    requires defined(obj->refs + amount);
+    owns control(obj);
+    produces amount of reference(obj);
+    ensures defined(obj->refs);
 } by {
-    open(object_ref(obj)) {
-        have 1 == obj->refs by simp;
-        execute();
+    open(control(obj)) {
+        step();
+        fold(amount of reference(obj));
     }
-    have 1 <= 1 + amount by {
-        apply(int32_add_nonnegative_right_is_at_least_left(1, amount)) using {
-            0 <= amount;
-            defined(1 + amount);
-        }
-    }
-    have amount <= 1 + amount by {
-        apply(int32_add_nonnegative_left_is_at_least_right(1, amount)) using {
-            defined(1 + amount);
-        }
-    }
+    execute();
     simp();
 }
 "#;
@@ -15146,6 +15121,7 @@ fn the_iterated_ownership_claim_loop_expands_and_reverifies() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn the_iterated_ownership_release_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_release_loop.md",
@@ -15604,7 +15580,6 @@ fn authority_population_certification_expands_every_smart_site() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let project = project_for(source);
@@ -15659,7 +15634,6 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let project = project_for(source);
@@ -15705,7 +15679,6 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     });
     verify_c0_project(&valid_project, &[("keep.c", "void keep(int32* p) {}")])
         .expect("the same C body returns one borrowed exclusive unit");
@@ -15730,7 +15703,6 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         });
         if verify_c0_project(&project, &[("keep.c", "void keep(int32* p) {}")]).is_ok() {
             accepted_closers.push((produced, closer));
@@ -15743,6 +15715,7 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn authority_named_parent_keeps_actual_fields_across_unrelated_owned_call() {
     let source = r#"
 spec enum ParentLink { Empty, Linked(struct child*) }
@@ -15811,7 +15784,6 @@ void caller(struct parent* p, struct child* kid) {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let c = [("named.c", c_source)];
@@ -16016,6 +15988,7 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
 /// `if`, and inside one arm of a C `if`, every proof shape of every claim
 /// expands to source that re-verifies.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn throwing_call_forks_expand_and_reverify_in_every_position() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -16385,7 +16358,6 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         })
     };
     let project = project_for(&source);
@@ -16689,6 +16661,7 @@ fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
     let (source, sources) =
         mdtest_sources("mdtests/loop_invariant_through_loaded_pointer_field.md");
@@ -16704,6 +16677,7 @@ fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn padded_struct_field_loop_expansion_reverifies() {
     let (source, sources) =
         mdtest_sources("mdtests/loop_invariant_through_padded_pointer_field.md");

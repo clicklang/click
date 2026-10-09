@@ -28,7 +28,7 @@ int32 read_chosen() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "choose.c";
 
 struct pair choose(int32 choose_left, struct pair left, struct pair right) {

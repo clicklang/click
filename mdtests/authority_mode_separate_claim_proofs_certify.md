@@ -19,7 +19,7 @@ int32 set_then_read(int32 p[], int32 value) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "set_cell.c";
 verifying "set_then_read.c";
 

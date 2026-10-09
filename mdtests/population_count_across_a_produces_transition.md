@@ -12,7 +12,7 @@ void object_retain(int32* obj) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource object_ref(obj: int32*) {}
 
 verifying "population_count_across_a_produces_transition.c";

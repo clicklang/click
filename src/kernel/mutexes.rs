@@ -2778,6 +2778,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 2s in the parallel gate"]
     fn symbolic_guard_lookup_and_exchange_use_indexed_paths() {
         use super::super::CResourceSnapshot;
         let assumptions = PureFactContext::new();

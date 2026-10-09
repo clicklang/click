@@ -8,7 +8,7 @@ void independent() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, member: int32*) {}
 verifying "independent_pools.c";
 void independent() { ensures 1 == 1; } by {

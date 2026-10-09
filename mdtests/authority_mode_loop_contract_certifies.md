@@ -15,7 +15,7 @@ int32 count_to_three() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "count_to_three.c";
 
 int32 count_to_three() {

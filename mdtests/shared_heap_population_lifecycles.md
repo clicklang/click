@@ -106,7 +106,7 @@ int32 run_second_destroyed(int32 payload) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 spec enum ParentLink {
     Empty,
     Linked(struct child*),

@@ -43,7 +43,7 @@ void two_inits(struct pool* a, struct pool* b) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource pool_slot(pool: struct pool*) {
 }
 

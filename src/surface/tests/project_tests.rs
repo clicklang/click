@@ -774,6 +774,7 @@ int32 pipeline(struct counter* owner) {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn execute_until_expands_vector_storage_call_postconditions() {
     let init_c = r#"
 struct buffer {
@@ -1776,6 +1777,7 @@ int32 unrelated() { ensures result == 0; } by simp;
 /// facts deterministically, so repeated verification must stay green under
 /// the deterministic work budgets this test suite runs with.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn perpetual_service_example_verifies_stably_across_repeated_runs() {
     let project =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/perpetual-service");
@@ -1828,6 +1830,7 @@ fn perpetual_service_example_verifies_stably_across_repeated_runs() {
 /// to let a truncated kernel derivation surface as "missing pure fact" while
 /// the available-fact list printed the very fact it claimed was missing.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn truncated_service_step_reports_the_budget_not_a_missing_fact() {
     let project =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/perpetual-service");
@@ -1886,6 +1889,7 @@ fn example_project_creates_only_canonical_terms(project: &str, sidecar: &str) {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn owned_split_buffer_carried_load_facts_stay_on_direct_proof_path() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest
@@ -1902,11 +1906,13 @@ fn owned_split_buffer_carried_load_facts_stay_on_direct_proof_path() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn borrowed_slice_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("borrowed-slice", "borrowed_slice.click");
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn input_cursor_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("input-cursor", "input_cursor.click");
 }
@@ -1917,6 +1923,7 @@ fn linked_list_creates_only_canonical_terms() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn owned_segmented_buffer_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms(
         "owned-segmented-buffer",
@@ -1925,6 +1932,7 @@ fn owned_segmented_buffer_creates_only_canonical_terms() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn owned_string_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("owned-string", "owned_string.click");
 }
@@ -1949,6 +1957,7 @@ fn vector_push_creates_only_canonical_terms() {
 /// project the first one's DAG derivation for a same-content call-havoc
 /// snapshot, and the load registry its origins.
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn verifications_on_one_thread_are_independent() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for (project, sidecar) in [

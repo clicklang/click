@@ -29,7 +29,7 @@ int32 tree_sum(struct node* node) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 resource tree(node: struct node*) {
     if node != 0 {
         owns node->value;

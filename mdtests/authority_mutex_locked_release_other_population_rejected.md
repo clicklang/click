@@ -14,7 +14,7 @@ void release(struct object *obj, struct object *other) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "authority_mutex_locked_release_other_population_rejected.c";

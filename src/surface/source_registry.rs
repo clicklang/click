@@ -391,7 +391,6 @@ impl FunctionSourceRequirements {
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub(in crate::surface) struct FunctionSourceRegistry {
     functions: PersistentMap<String, FunctionSourceRequirements>,
-    resource_semantics_mode: ResourceSemanticsMode,
     claim_entries: ClaimEntryCache,
 }
 
@@ -472,23 +471,8 @@ impl FunctionSourceRegistry {
         }
         Ok(Self {
             functions,
-            resource_semantics_mode: ResourceSemanticsMode::Legacy,
             claim_entries: ClaimEntryCache::default(),
         })
-    }
-
-    pub(in crate::surface) fn with_resource_semantics_mode(
-        mut self,
-        mode: ResourceSemanticsMode,
-    ) -> Self {
-        self.resource_semantics_mode = mode;
-        // Entry contexts depend on the mode; never share them across modes.
-        self.claim_entries = ClaimEntryCache::default();
-        self
-    }
-
-    pub(in crate::surface) fn resource_semantics_mode(&self) -> ResourceSemanticsMode {
-        self.resource_semantics_mode
     }
 
     pub(in crate::surface) fn claim_entries(&self) -> &ClaimEntryCache {

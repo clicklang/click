@@ -12,7 +12,7 @@ unsigned int contribute_early(struct counter *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "negative_consumption.c";
 authorized resource remaining(p: struct counter*) {}
 resource control(p: struct counter*) {

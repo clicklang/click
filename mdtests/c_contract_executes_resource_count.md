@@ -5,7 +5,7 @@ resource model. Its scalar callback signature and exact-one claim remain.
 Pointer-anchored population preservation is covered by
 `authority_external_named_callback.md`.
 
-```click resource_semantics=authority
+```click
 resource Permit(x: int32) { field units: int32; }
 contract Raw(permit: Permit(x)) for void(int32 x) {
     owns permit;

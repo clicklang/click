@@ -5541,3 +5541,42 @@ fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
         assert!(*sample <= work[0] + 64 * index, "{work:?}");
     }
 }
+
+#[test]
+fn diverged_paths_that_create_the_same_storage_record_the_same_state() {
+    // Reduced from the moved-child `match ... ensuring` of
+    // `examples/rbtree-erase/rbtree_erase_spine.click`: each arm declares the
+    // same call-result local after the arms' ledgers have diverged, so each
+    // mints its own anchor for it. The branch join must see one state.
+    let start = CreationEvents::new();
+    let scratch = PointerBlock::Heap(940_120);
+    let shared = PointerBlock::Heap(940_121);
+    let retired_scratch = start
+        .created(scratch.clone())
+        .retired(&scratch)
+        .expect("an unused lifetime ends");
+    assert_ne!(retired_scratch, start);
+    let left = retired_scratch.created(shared.clone());
+    let right = start.created(shared.clone());
+    assert_ne!(left, right);
+    assert!(!left.records_same_state_as(&right));
+    assert!(left.records_same_state_up_to_fresh_anchors(&right));
+    assert!(right.records_same_state_up_to_fresh_anchors(&left));
+
+    // An anchor with an established population is named by its registration
+    // and population, so the two are no longer the same state.
+    let left_established = left
+        .establish(&shared, "reference")
+        .expect("the creating path establishes an empty population");
+    let right_established = right
+        .establish(&shared, "reference")
+        .expect("the creating path establishes an empty population");
+    assert!(!left_established.records_same_state_up_to_fresh_anchors(&right_established));
+
+    // Different storage is a different state, whatever its anchors.
+    let other = start.created(PointerBlock::Heap(940_122));
+    assert!(!left.records_same_state_up_to_fresh_anchors(&other));
+    assert!(
+        !left.records_same_state_up_to_fresh_anchors(&right.created(PointerBlock::Heap(940_123)))
+    );
+}

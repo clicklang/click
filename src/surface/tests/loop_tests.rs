@@ -38,6 +38,7 @@ fn loop_clauses_in(tactics: &[ProofTactic], clauses: &mut Vec<StructuralClause>)
 /// retained; a bare `close_invariants()` or a trailing `simp()` would be
 /// rejected here exactly as `ProofCertificate::from_proof_tactics` rejects it.
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn expanded_loop_phase_proofs_are_certificates() {
     for (filename, function) in [
         // Automatically planned initialization and preservation.
@@ -491,6 +492,7 @@ fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn remaining_loop_migration_fixtures_expand_and_recheck() {
     for (filename, function) in [
         ("loop_old_count_invariant", "loop_old_count_invariant"),
@@ -623,6 +625,7 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
     for (filename, function) in [
         ("c_decreases_recursive_in_loop.md", "recursive_loop"),
@@ -737,6 +740,7 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn explicit_swap_loop_transports_both_entry_bounds_and_expands() {
     let (c, click) = explicit_swap_loop_fixture(true);
     let sources = [("swap.c", c)];
@@ -846,6 +850,7 @@ fn guarded_member_closure_expands_to_intro_inside_both() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn explicit_invariant_body_quantified_bubble_census() {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/bubble_pass3_max_suffix.md");
@@ -2420,6 +2425,7 @@ fn conditional_loop_resources_reject_unsupported_binding_and_body_items() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn loop_return_closers_expand_in_their_preservation_arms() {
     for (fixture, function) in [
         (

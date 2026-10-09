@@ -115,6 +115,7 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
 }
 
 #[test]
+#[ignore = "nightly: 15s in the parallel gate"]
 fn rust_crate_rejects_escape_symlink_and_changed_configuration() {
     let p = crate_project();
     refresh_import(&p.config()).unwrap();
@@ -362,6 +363,7 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
 }
 
 #[test]
+#[ignore = "nightly: 20s in the parallel gate"]
 fn rust_crate_owned_operator_operands_copy_and_move_independently() {
     let p = Project::new("");
     let source = r#"
@@ -449,6 +451,7 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
 }
 
 #[test]
+#[ignore = "nightly: 15s in the parallel gate"]
 fn rust_crate_scalar_constants_execute_checked_initializers() {
     let p = Project::new("");
     let source = r#"

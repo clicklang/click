@@ -9,7 +9,7 @@ void inspect(struct object* obj) { }
 void broken(struct object* obj) { obj->refs = 0; inspect(obj); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns authority(reference(obj));

@@ -891,6 +891,7 @@ int32 flag(int32 x) {
 // macOS `/usr/bin/gcc` is Apple Clang and cannot exercise the GNU import path.
 #[cfg(not(target_os = "macos"))]
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn prepared_audit_reuses_validated_inputs_across_sites() {
     let directory =
         std::env::temp_dir().join(format!("click-audit-prepared-{}", std::process::id()));
@@ -951,35 +952,30 @@ fn smart_have_inside_an_open_scope_audits_instead_of_reporting_a_missing_tactic(
 void object_retain_many(struct object* obj, int32 amount) {
     obj->refs = obj->refs + amount;
 }"#;
-    let click_source = r#"resource object_ref(obj: struct object*) {
+    let click_source = r#"authorized resource reference(obj: struct object*) {}
+
+resource control(obj: struct object*) {
     owns allocation(obj, sizeof(struct object));
     owns *obj;
-    fact obj->refs == count(object_ref(obj));
+    owns authority(reference(obj));
+    fact obj->refs == count(reference(obj));
 }
 
 verifying "object_retain_many.c";
 
 void object_retain_many(struct object* obj, int32 amount) {
     requires 0 <= amount;
-    requires defined(1 + amount);
-    owns object_ref(obj);
-    produces amount of object_ref(obj);
+    requires defined(obj->refs + amount);
+    owns control(obj);
+    produces amount of reference(obj);
+    ensures defined(obj->refs);
 } by {
-    open(object_ref(obj)) {
-        have 1 == obj->refs by simp;
-        execute();
+    open(control(obj)) {
+        have obj->refs == count(reference(obj)) by simp;
+        step();
+        fold(amount of reference(obj));
     }
-    have 1 <= 1 + amount by {
-        apply(int32_add_nonnegative_right_is_at_least_left(1, amount)) using {
-            0 <= amount;
-            defined(1 + amount);
-        }
-    }
-    have amount <= 1 + amount by {
-        apply(int32_add_nonnegative_left_is_at_least_right(1, amount)) using {
-            defined(1 + amount);
-        }
-    }
+    execute();
     simp();
 }
 "#;
@@ -1000,7 +996,10 @@ void object_retain_many(struct object* obj, int32 amount) {
             + 1
     };
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
-    for needle in ["have 1 == obj->refs by simp;", "simp();\n}"] {
+    for needle in [
+        "have obj->refs == count(reference(obj)) by simp;",
+        "simp();\n}",
+    ] {
         let line = line_of(needle);
         let site = sites
             .iter()
@@ -1267,6 +1266,7 @@ int32 stop_at(int32 n) {
 /// expansions and cold reverifications. Before the session had a thread of
 /// its own, every expansion replaced the kernel tables its environment names.
 #[test]
+#[ignore = "nightly: 23s in the parallel gate"]
 fn reduced_arena_init_fixtures_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deadline = Instant::now() + Duration::from_secs(120);
@@ -1296,6 +1296,7 @@ fn reduced_arena_init_fixtures_audit_every_site() {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn a_field_selected_memory_endpoint_audits_every_site() {
     let path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/resource_field_memory_endpoint.md");
@@ -1320,6 +1321,7 @@ fn a_field_selected_memory_endpoint_audits_every_site() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn an_unfold_bound_scalar_field_audits_every_site() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/resource_unfold_binds_scalar_field.md");
@@ -1391,6 +1393,7 @@ int32 double_it(int32 x) {
 }
 
 #[test]
+#[ignore = "nightly: 41s in the parallel gate"]
 fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_site() {
     let fixture =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/rb_ascending_walk_to_root.md");
@@ -1457,6 +1460,7 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn short_circuit_conditions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deadline = Instant::now() + Duration::from_secs(120);
@@ -1560,6 +1564,7 @@ fn callers_with_seeded_array_requirements_audit_every_site() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn resource_proof_expansions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [
@@ -1591,6 +1596,7 @@ fn resource_proof_expansions_audit_every_site() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn nested_call_outcomes_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for relative in [
@@ -1651,6 +1657,7 @@ fn exceptional_call_paths_audit_every_site() {
 }
 
 #[test]
+#[ignore = "nightly: 9s in the parallel gate"]
 fn result_parameter_postconditions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for relative in [

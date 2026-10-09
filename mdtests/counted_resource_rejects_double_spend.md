@@ -17,7 +17,7 @@ int32 spend_ref_twice(int32 object) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 abstract resource object_ref(object: int32);
 
 verifying "spend_ref.c";

@@ -4,7 +4,7 @@
 int32 run() { int32 pool = 0; return 0; }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource ticket(pool: int32*) { field serial: int32; }
 resource control(pool: int32*) { owns authority(ticket(pool)); }
 verifying "field_family.c";

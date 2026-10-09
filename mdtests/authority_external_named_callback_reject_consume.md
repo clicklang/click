@@ -4,7 +4,7 @@
 void invoke(void (*callback)(int32*), int32* pool) { callback(pool); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource token(pool: int32*) {}
 contract void Keep(int32* pool) {
     owns authority(token(pool));
@@ -21,5 +21,5 @@ void invoke(void (*callback)(int32*), int32* pool) {
 ```
 
 ```expect
-fail: C calls are not yet supported by authority resource semantics
+fail: its assumed contract changes a population or mutex resource
 ```

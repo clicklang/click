@@ -16,7 +16,7 @@ int32 lifecycle(struct payload* first, struct payload* second) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource capacity(pool: int32*) {}
 authorized resource item(pool: int32*, p: struct payload*) { owns *p; }
 verifying "family_exchange.c";

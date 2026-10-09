@@ -23,13 +23,13 @@ use crate::kernel::{
     CTerminationRefusal, CTerminationVerdicts, CType, CUnsuitableCallback, CValue,
     CVerifiedLoopRule, CVerifiedPureTheorem, ConditionTerm, ExecutionBudget, ExecutionPureFact,
     Pointer, PointerBlock, PointerOffsetTerm, ProofObligation, Proposition, PropositionDerivation,
-    PureFactContext, ResourceArguments, ResourceContext, ResourceContextValidityError,
-    ResourceFamily, Sort, SpecAlgebraicExpression, SpecExpression, SpecMemory,
-    SpecPredicateArgument, SpecProposition, SpecResource, SymbolicCExecution, Term, Theorem,
-    Variable, abstract_c_state_for_join, assume_universally_quantified_pure_implication, c_assign,
-    c_condition_fact_has_memory, c_condition_fact_memories, c_contract_refinement_context,
-    c_declare, c_do_while_preservation_contexts, c_do_while_with_invariant_and_effect_checks,
-    c_function, c_function_contract_entry_state, c_function_contract_refinement_arguments,
+    PureFactContext, ResourceContext, ResourceContextValidityError, ResourceFamily, Sort,
+    SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
+    SpecResource, SymbolicCExecution, Term, Theorem, Variable, abstract_c_state_for_join,
+    assume_universally_quantified_pure_implication, c_assign, c_condition_fact_has_memory,
+    c_condition_fact_memories, c_contract_refinement_context, c_declare,
+    c_do_while_preservation_contexts, c_do_while_with_invariant_and_effect_checks, c_function,
+    c_function_contract_entry_state, c_function_contract_refinement_arguments,
     c_function_contract_refinement_context, c_function_entry_state, c_function_specification,
     c_function_termination_plan, c_if, c_loop_invariants_hold_at_entry,
     c_loop_preservation_contexts, c_pointer_offsets_proven_equal_for_effect,
@@ -224,7 +224,6 @@ pub fn accepted_proof_trace(
 }
 
 const POINTER_ARGUMENT_VARIABLE_BASE: u64 = 100_000;
-const COUNTED_POPULATION_VARIABLE_BASE: u64 = 200_000;
 /// Maximum UTF-8 bytes in an ordinary verifier error message. Set
 /// `CLICK_FULL_DIAGNOSTICS=1` when an engine investigation needs unbounded
 /// internal state.
@@ -564,25 +563,6 @@ pub struct ClickProject {
 pub struct CProjectProfile {
     pub target: Option<crate::languages::c::target::CTarget>,
     pub runtime: Option<crate::languages::c::thread_runtime::CThreadRuntime>,
-    pub resource_semantics: ResourceSemanticsMode,
-}
-
-/// Explicit semantics boundary for a complete verification unit. Existing
-/// projects use the legacy rules until their whole unit opts into authority.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub enum ResourceSemanticsMode {
-    #[default]
-    Legacy,
-    Authority,
-}
-
-impl ResourceSemanticsMode {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Legacy => "legacy",
-            Self::Authority => "authority",
-        }
-    }
 }
 
 impl ClickProject {
@@ -621,14 +601,6 @@ impl ClickProject {
 
     pub fn c_profile(&self) -> Option<&CProjectProfile> {
         self.c_profile.as_ref()
-    }
-
-    pub fn resource_semantics_mode(&self) -> ResourceSemanticsMode {
-        self.c_profile
-            .as_ref()
-            .map_or(ResourceSemanticsMode::Legacy, |profile| {
-                profile.resource_semantics
-            })
     }
 
     pub fn entry(&self) -> &str {

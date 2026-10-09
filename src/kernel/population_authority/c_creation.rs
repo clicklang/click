@@ -381,23 +381,52 @@ impl CreationEvents {
     pub(in crate::kernel) fn records_same_state_as(&self, other: &Self) -> bool {
         let (left, right) = (&self.0, &other.0);
         left.identity == right.identity
-            || left.invocation == right.invocation
-                && left.opaque_actor == right.opaque_actor
-                && left.pending == right.pending
-                && left.creators == right.creators
-                && left.anchors == right.anchors
+            || left.anchors == right.anchors
                 && left.authority == right.authority
-                && left.scopes == right.scopes
-                && left.exact_members == right.exact_members
-                && left.opaque_types == right.opaque_types
-                && left
-                    .symbolic_batches
-                    .shares_root_with(&right.symbolic_batches)
-                && left.symbolic_holders == right.symbolic_holders
-                && left.tainted == right.tainted
-                && left.opaque_imports.shares_root_with(&right.opaque_imports)
-                && left.opaque_holders == right.opaque_holders
-                && left.empty_populations == right.empty_populations
+                && Self::same_records_besides_anchors(left, right)
+    }
+
+    /// Whether two ledgers differ only in the fresh anchors their paths gave
+    /// the same storage. Two arms of a branch that each declare the same
+    /// local after their ledgers diverged each mint an anchor for it. An
+    /// anchor with no population established on it is named nowhere else, so
+    /// the two ledgers record the same state. This visits the anchor maps.
+    pub(in crate::kernel) fn records_same_state_up_to_fresh_anchors(&self, other: &Self) -> bool {
+        let (left, right) = (&self.0, &other.0);
+        if left.anchors.len() != right.anchors.len() {
+            return false;
+        }
+        let mut renamed = Vec::new();
+        for (block, anchor) in left.anchors.iter() {
+            match right.anchors.get(block) {
+                Some(other_anchor) if other_anchor == anchor => {}
+                Some(other_anchor) => renamed.push((*anchor, *other_anchor)),
+                None => return false,
+            }
+        }
+        !renamed.is_empty()
+            && left
+                .authority
+                .same_up_to_unestablished_anchors(&right.authority, &renamed)
+            && Self::same_records_besides_anchors(left, right)
+    }
+
+    fn same_records_besides_anchors(left: &Root, right: &Root) -> bool {
+        left.invocation == right.invocation
+            && left.opaque_actor == right.opaque_actor
+            && left.pending == right.pending
+            && left.creators == right.creators
+            && left.scopes == right.scopes
+            && left.exact_members == right.exact_members
+            && left.opaque_types == right.opaque_types
+            && left
+                .symbolic_batches
+                .shares_root_with(&right.symbolic_batches)
+            && left.symbolic_holders == right.symbolic_holders
+            && left.tainted == right.tainted
+            && left.opaque_imports.shares_root_with(&right.opaque_imports)
+            && left.opaque_holders == right.opaque_holders
+            && left.empty_populations == right.empty_populations
     }
 
     fn memoized_c_event(&self, key: CEvent, create: impl FnOnce() -> Self) -> Self {

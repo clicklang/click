@@ -9,7 +9,7 @@ The integer-only global population has been retired; the original C is unchanged
 int32 invoke(int32 (*callback)(int32), int32 x) { return callback(x); }
 ```
 
-```click resource_semantics=authority
+```click
 resource A(x: int32) {}
 resource B(x: int32) {}
 resource Ledger() { field remaining: int32; }

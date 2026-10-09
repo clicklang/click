@@ -22,7 +22,7 @@ int read_counter(struct counter *counter) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 

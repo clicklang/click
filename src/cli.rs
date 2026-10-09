@@ -100,8 +100,7 @@ use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::source as c_source;
 use crate::surface::verifying_source_paths;
 use crate::surface::{
-    CProjectProfile, ClickModuleSource, ClickProject, ResourceSemanticsMode, SourceContainer,
-    click_import_sites,
+    CProjectProfile, ClickModuleSource, ClickProject, SourceContainer, click_import_sites,
 };
 
 /// Parses a one-based `PATH:LINE:COLUMN` source location.
@@ -706,21 +705,20 @@ fn read_c_project_profile(
                 .ok_or_else(|| format!("unknown C runtime `{name}` in `{}`", path.display()))
         })
         .transpose()?;
-    let resource_semantics = match config.resource_semantics.as_deref() {
-        None | Some("legacy") => ResourceSemanticsMode::Legacy,
-        Some("authority") => ResourceSemanticsMode::Authority,
-        Some(name) => {
-            return Err(format!(
-                "unknown resource semantics `{name}` in `{}`; expected `legacy` or `authority`",
-                path.display()
-            ));
-        }
-    };
-    Ok(Some(CProjectProfile {
-        target,
-        runtime,
-        resource_semantics,
-    }))
+    if config.resource_semantics.is_some() {
+        return Err(retired_resource_semantics_setting(
+            &path.display().to_string(),
+        ));
+    }
+    Ok(Some(CProjectProfile { target, runtime }))
+}
+
+/// The diagnostic for the retired migration setting, in a project config or
+/// on an mdtest's ```click fence.
+fn retired_resource_semantics_setting(location: &str) -> String {
+    format!(
+        "`{location}` selects `resource_semantics`, a retired migration setting; authority semantics are now the only resource semantics, so remove it"
+    )
 }
 
 /// Loads the entry sidecar and its transitive local Click imports once, using
@@ -1263,11 +1261,7 @@ pub fn load_target_inputs(
         .clone()
         .ok_or_else(|| format!("mdtest `{}` has no ```click block", path.display()))?;
     let inputs = prepare_mdtest_inputs(&mdtest)?;
-    let project = apply_mdtest_resource_semantics(
-        path,
-        &mdtest,
-        read_mdtest_click_project(path, &mdtest, &click_source)?,
-    )?;
+    let project = read_mdtest_click_project(path, &mdtest, &click_source)?;
     Ok(LoadedTarget {
         click_source,
         project,
@@ -1333,9 +1327,6 @@ pub struct MdTest {
     pub cpp_source: Option<CppMdTestSource>,
     /// The single ```click block, if the file has one.
     pub click_source: Option<String>,
-    /// Test-only semantics selection on the ```click fence. This does not
-    /// alter the Click source or switch neighboring mdtests.
-    pub resource_semantics: Option<ResourceSemanticsMode>,
     /// The one-based line in the `.md` file where the ```click block's first
     /// body line sits, so positions inside the sidecar can be reported as
     /// positions in the markdown file.
@@ -1425,7 +1416,6 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
         c_start_lines: Vec::new(),
         cpp_source: None,
         click_source: None,
-        resource_semantics: None,
         click_start_line: 1,
         expectation: None,
     };
@@ -1493,7 +1483,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     ));
                 }
             }
-            Some(BlockKind::Click { resource_semantics }) => {
+            Some(BlockKind::Click) => {
                 if mdtest.click_source.replace(body).is_some() {
                     return Err(format!(
                         "`{}` has more than one ```click block",
@@ -1501,7 +1491,6 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     ));
                 }
                 mdtest.click_start_line = start_line;
-                mdtest.resource_semantics = resource_semantics;
             }
             Some(BlockKind::Expect) => {
                 let expectation = parse_expectation(path, start_line, &body)?;
@@ -1556,17 +1545,8 @@ pub fn read_mdtest_project_if_needed(
             ));
         }
     };
-    if has_imports
-        || has_config
-        || mdtest.resource_semantics.is_some()
-        || matches!(inputs, CInput::PreparedProgram(_))
-    {
-        apply_mdtest_resource_semantics(
-            path,
-            &mdtest,
-            read_mdtest_click_project(path, &mdtest, click_source)?,
-        )
-        .map(Some)
+    if has_imports || has_config || matches!(inputs, CInput::PreparedProgram(_)) {
+        read_mdtest_click_project(path, &mdtest, click_source).map(Some)
     } else {
         Ok(None)
     }
@@ -1590,29 +1570,6 @@ fn read_mdtest_click_project(
         );
     }
     Ok(project)
-}
-
-fn apply_mdtest_resource_semantics(
-    path: &Path,
-    mdtest: &MdTest,
-    project: ClickProject,
-) -> Result<ClickProject, String> {
-    let Some(resource_semantics) = mdtest.resource_semantics else {
-        return Ok(project);
-    };
-    let config_path = containing_directory(path).join("click.project.json");
-    if fs::symlink_metadata(&config_path).is_ok() {
-        return Err(format!(
-            "`{}` selects resource semantics in both its Click fence and `{}`",
-            path.display(),
-            config_path.display()
-        ));
-    }
-    Ok(project.with_c_profile(CProjectProfile {
-        target: None,
-        runtime: None,
-        resource_semantics,
-    }))
 }
 
 /// Prepares the source representation consumed by every mdtest driver. C++
@@ -1720,9 +1677,7 @@ enum BlockKind {
         function: String,
         profile: String,
     },
-    Click {
-        resource_semantics: Option<ResourceSemanticsMode>,
-    },
+    Click,
     Expect,
 }
 
@@ -1757,24 +1712,19 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
             }))
         }
         "click" => {
-            let resource_semantics = match parts.next() {
-                None => None,
-                Some("resource_semantics=authority") => Some(ResourceSemanticsMode::Authority),
-                Some("resource_semantics=legacy") => Some(ResourceSemanticsMode::Legacy),
-                Some(extra) => {
-                    return Err(format!(
-                        "`{}` has unexpected `{extra}` metadata on the `click` fence at line {line}; expected `resource_semantics=authority|legacy`",
-                        path.display()
-                    ));
-                }
-            };
             if let Some(extra) = parts.next() {
+                if extra.starts_with("resource_semantics=") {
+                    return Err(retired_resource_semantics_setting(&format!(
+                        "{}:{line}",
+                        path.display()
+                    )));
+                }
                 return Err(format!(
                     "`{}` has unexpected `{extra}` metadata on the `click` fence at line {line}",
                     path.display()
                 ));
             }
-            Ok(Some(BlockKind::Click { resource_semantics }))
+            Ok(Some(BlockKind::Click))
         }
         "expect" => {
             if let Some(extra) = parts.next() {
@@ -2107,7 +2057,7 @@ mod tests {
     }
 
     #[test]
-    fn project_config_selects_resource_semantics_for_the_whole_unit() {
+    fn project_config_refuses_the_retired_resource_semantics_setting() {
         let root = std::env::temp_dir().join(format!(
             "click-project-resource-semantics-{}-{}",
             std::process::id(),
@@ -2118,62 +2068,18 @@ mod tests {
         let click = "verifying \"entry.c\";\n";
         fs::write(&path, click).unwrap();
         fs::write(root.join("entry.c"), "int answer(void) { return 1; }\n").unwrap();
-        let mdtest_path = root.join("fixture.md");
-        fs::write(&mdtest_path, "# Fixture\n").unwrap();
-        let mdtest_inputs = CInput::Bundle(Vec::new());
-        let legacy = read_click_project(&path, click).unwrap();
-        assert_eq!(
-            legacy.resource_semantics_mode(),
-            ResourceSemanticsMode::Legacy
-        );
-        assert!(
-            read_mdtest_project_if_needed(&mdtest_path, click, &mdtest_inputs)
-                .unwrap()
-                .is_none(),
-            "unconfigured mdtests retain their direct source route"
-        );
-
-        fs::write(
-            root.join("click.project.json"),
-            r#"{"resource_semantics":"authority"}"#,
-        )
-        .unwrap();
-        let authority = read_click_project(&path, click).unwrap();
-        assert_eq!(
-            authority.resource_semantics_mode(),
-            ResourceSemanticsMode::Authority
-        );
-        assert_eq!(
-            authority
-                .with_entry_source("verifying \"other.c\";")
-                .resource_semantics_mode(),
-            ResourceSemanticsMode::Authority,
-            "proof rewrites must keep the selected semantics"
-        );
-        let loaded = load_target_inputs(&path, None).unwrap();
-        assert_eq!(
-            loaded.project.resource_semantics_mode(),
-            ResourceSemanticsMode::Authority,
-            "CLI verification, expansion, and audit share this loader"
-        );
-        let mdtest_project = read_mdtest_project_if_needed(&mdtest_path, click, &mdtest_inputs)
-            .unwrap()
+        for setting in ["authority", "legacy"] {
+            fs::write(
+                root.join("click.project.json"),
+                format!(r#"{{"resource_semantics":"{setting}"}}"#),
+            )
             .unwrap();
-        assert_eq!(
-            mdtest_project.resource_semantics_mode(),
-            ResourceSemanticsMode::Authority,
-            "the mdtest gate, profile, expansion, and audit retain explicit config"
-        );
-        fs::write(
-            root.join("click.project.json"),
-            r#"{"resource_semantics":"unknown"}"#,
-        )
-        .unwrap();
-        assert!(
-            read_click_project(&path, click)
-                .unwrap_err()
-                .contains("unknown resource semantics")
-        );
+            let error = read_click_project(&path, click).unwrap_err();
+            assert!(
+                error.contains("retired migration setting") && error.contains("remove it"),
+                "{error}"
+            );
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -2463,55 +2369,18 @@ mod tests {
             "```cpp filename=../demo.cpp function=demo profile=normal_only\nint demo() {}\n```\n",
             "```cpp filename=demo.cpp function=demo profile=unknown\nint demo() {}\n```\n",
             "```click extra\nverifying a.c;\n```\n",
-            "```click resource_semantics=unknown\nverifying a.c;\n```\n",
-            "```click resource_semantics=authority extra\nverifying a.c;\n```\n",
             "```expect extra\npass\n```\n",
         ] {
             assert!(parse_mdtest(path, source).is_err(), "{source}");
         }
-        let selected = parse_mdtest(
-            path,
-            "```click resource_semantics=authority\nverifying a.c;\n```\n",
-        )
-        .unwrap();
-        assert_eq!(
-            selected.resource_semantics,
-            Some(ResourceSemanticsMode::Authority)
-        );
-    }
-
-    #[test]
-    fn mdtest_fence_selects_authority_for_the_gate_and_cli_loader() {
-        let root = std::env::temp_dir().join(format!(
-            "click-mdtest-authority-{}-{}",
-            std::process::id(),
-            std::thread::current().name().unwrap_or("test")
-        ));
-        fs::create_dir_all(&root).unwrap();
-        let path = root.join("fixture.md");
-        fs::write(
-            &path,
-            "```c filename=fixture.c\nint answer(void) { return 1; }\n```\n```click resource_semantics=authority\nverifying \"fixture.c\";\n```\n```expect\npass\n```\n",
-        )
-        .unwrap();
-        let mdtest = read_mdtest(&path).unwrap();
-        let source = mdtest.click_source.as_deref().unwrap();
-        let inputs = prepare_mdtest_inputs(&mdtest).unwrap();
-        let gate_project = read_mdtest_project_if_needed(&path, source, &inputs)
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            gate_project.resource_semantics_mode(),
-            ResourceSemanticsMode::Authority
-        );
-        assert_eq!(
-            load_target_inputs(&path, None)
-                .unwrap()
-                .project
-                .resource_semantics_mode(),
-            ResourceSemanticsMode::Authority
-        );
-        fs::remove_dir_all(root).unwrap();
+        for setting in ["authority", "legacy"] {
+            let error = parse_mdtest(
+                path,
+                &format!("```click resource_semantics={setting}\nverifying a.c;\n```\n"),
+            )
+            .unwrap_err();
+            assert!(error.contains("retired migration setting"), "{error}");
+        }
     }
 
     #[test]

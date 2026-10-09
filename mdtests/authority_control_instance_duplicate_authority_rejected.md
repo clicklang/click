@@ -9,7 +9,7 @@ struct object { int refs; };
 void helper(struct object *obj) {}
 ```
 
-```click resource_semantics=authority
+```click
 verifying "authority_control_instance_duplicate_authority_rejected.c";
 authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {

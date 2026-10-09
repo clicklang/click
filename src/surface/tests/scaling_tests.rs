@@ -382,6 +382,7 @@ fn assert_near_linear_scaling(axis: &str, samples: &[ScalingSample]) {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
     let (replace_source, caller_source, base_click) =
         super::contract_tests::result_case_split_sources();
@@ -1607,6 +1608,7 @@ fn scaling_assertion_rejects_a_quadratic_curve() {
 /// version still holds must stop the walk rather than be unlinked from under
 /// it.
 #[test]
+#[ignore = "nightly: 9s in the parallel gate"]
 fn recorded_snapshot_history_drops_without_recursing() {
     let build = |size: usize| {
         let mut snapshots = RecordedSnapshots::new();
@@ -1851,6 +1853,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn model_ranked_loops_scale_near_linearly_with_their_back_edges() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -2215,6 +2218,7 @@ fn explicit_simple_project_with_ambient_facts(size: usize) -> (String, String) {
 /// then structurally compared once per certified path and claim, which grew a
 /// debug `click verify` about thirteen times per doubling.
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn wide_execution_match_join_has_near_linear_width_work() {
     let mut samples = Vec::new();
     let mut certificate_sizes = Vec::new();
@@ -2386,7 +2390,6 @@ fn authority_outcome_haves_and_resource_folds_do_not_reimport_ambient_facts() {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         });
         verify_c0_project(&project, sources).map(|_| ())
     });
@@ -2952,6 +2955,7 @@ fn roundtrip_sample_on_this_thread(unrelated: usize, extra_copies: usize) -> Sca
 /// flat here: `ensured resource composition` and `verified call return
 /// resource evaluation` charge the same work at every size.
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations() {
     const SIZES: [usize; 4] = [2, 4, 8, 16];
     let _ = roundtrip_sample(1, 0);
@@ -3068,6 +3072,7 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// a fresh fact context once per theorem, and a grouped proof issues one
 /// theorem per path.
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations() {
     const SIZES: [usize; 4] = [1, 2, 4, EXPANDED_ROUNDTRIP_MAX_UNRELATED];
     let marginal = expanded_roundtrip_samples(&SIZES)
@@ -3101,6 +3106,7 @@ fn expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations() {
 /// source falls from 0.76 to 0.52 units per byte as the quadratic terms,
 /// about 82 units against 9 bytes per squared allocation, take over.
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn expanded_roundtrip_work_per_source_byte_is_logarithmic() {
     const SIZES: [usize; 4] = [1, 2, 4, EXPANDED_ROUNDTRIP_MAX_UNRELATED];
     let samples = expanded_roundtrip_samples(&SIZES);
@@ -3206,6 +3212,7 @@ fn grouped_proof_finalization_reads_each_path_once() {
 /// from that origin: 30,000 units alone became over a million, and the
 /// arena's `arena_write` failed its budget only when `arena_init` ran first.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof() {
     const RESOURCES: &str = "resource box_state(b: struct box*) {
     field len: int32;
@@ -3447,6 +3454,7 @@ fn framed_field_cells_closure_steps(cells: usize) -> usize {
 /// matches a condition against every stated condition fact
 /// (`has_condition_fact`), which the growing set of framed-cell facts feeds.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn framed_field_cells_back_edge_closure_follows_its_certificate() {
     let samples = [1, 2, 4, 8]
         .into_iter()
@@ -3518,6 +3526,7 @@ fn many_clause_loop(clauses: usize) -> (String, String) {
 /// The guards now grow by one clause per declaration, so the bundle and the
 /// closer's work stay within a quadratic curve in the declarations.
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn many_clause_bundle_grows_at_most_quadratically() {
     let samples = [2, 4, 8, 16]
         .into_iter()
@@ -3763,6 +3772,7 @@ fn counter_call_chain(call_count: usize) -> (String, String) {
 /// lookup maintained as each fact is inserted, so the last call's lowering is
 /// flat in N and the whole proof is near-linear.
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     const LOWERING: &str = "verified call provisional ensure lowering";
     let mut last_lowering = Vec::new();
@@ -3984,6 +3994,7 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
 /// path, so they grow with the square of the path on either route (75, 159,
 /// 423, and 1335 entries here).
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn executing_a_fan_out_is_near_linear_in_its_length() {
     std::thread::Builder::new()
         .name("fan-out-execute".into())
@@ -4081,6 +4092,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn failing_fact_transport_plan_ignores_unrelated_candidates() {
     const COPY_SOURCE: &str = "int32 transport_copy(int32 dst[], int32 src[], int32 length) {\n    \
                                int32 i;\n    i = 0;\n    while (i < length) {\n        \
@@ -4362,6 +4374,7 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
 /// units (whole-bundle simplification failed, then the member planner
 /// succeeded) against about 19k for the explicit proof.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn close_invariants_without_the_explicit_transport_costs_a_small_multiple() {
     let markdown = include_str!("../../../mdtests/search_terminates_by_unmarked_count.md");
     let mdtest = crate::cli::parse_mdtest(
@@ -4495,6 +4508,7 @@ fn quantified_frame_samples(
 /// (`stores_to_bounded_unordered_indices_are_near_linear`), where it used to
 /// scan every index's bounds (40,117 to 142,848 units at 4 to 32 stores).
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn quantified_frame_is_near_linear_in_crossed_stores() {
     let samples = quantified_frame_samples("quantified frame across stores", |size| {
         quantified_frame_project(size, 1, 0)
@@ -4563,6 +4577,7 @@ fn many_viewed_arrays(size: usize, owned: bool) -> (String, String) {
 /// only the block's owned ranges when no projection support is recorded, so
 /// it no longer adds a second `N^2` term.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -4871,6 +4886,7 @@ fn stores_to_constant_indices_are_near_linear() {
 /// stores in reverse order. A cubic curve multiplies by eight per doubling;
 /// the bound admits the quadratic four and rejects that.
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn stores_to_chain_ordered_indices_are_quadratic_not_cubic() {
     for (label, fixture) in [
         (
@@ -5170,6 +5186,7 @@ fn loop_with_break_exits_work(exits: usize, c_branches: bool) -> usize {
 /// exits recorded pairwise again the last step is 4.75 times, and with the
 /// history walked in full again it is 9.5 times, against 3.97.
 #[test]
+#[ignore = "nightly: 20s in the parallel gate"]
 fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
     let samples =
         [32usize, 128, 512].map(|exits| (exits, loop_with_break_exits_work(exits, false)));
@@ -5240,6 +5257,7 @@ fn loop_with_break_exits_project(exit_count: usize) -> (String, String) {
 /// count here (the `k`th exit is `k` tests deep), so the measure is the
 /// `loop` tactic's own work, which is where the join is charged.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn loop_exit_join_scales_near_linearly_with_the_number_of_exits() {
     // The proof nests one `if` per exit, deeper than a test thread's stack.
     std::thread::Builder::new()
@@ -5380,6 +5398,7 @@ fn sequential_interface_joins_project(count: usize) -> (String, String) {
 /// through pointers loaded from memory; `examples/rbtree-insert` is the
 /// evidence for that one.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn sequential_interface_joins_scale_with_their_number() {
     let samples = [5, 10, 20, 40]
         .into_iter()
@@ -5425,6 +5444,7 @@ fn field_stores_project(count: usize) -> (String, String) {
 /// cells for every `step()`. The restored form is only read for a comparison
 /// that names a qualified object, and these name none.
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn stepping_a_store_does_not_rewrite_the_memory_its_fact_carries() {
     for size in [16, 64] {
         let (c_source, click_source) = field_stores_project(size);
@@ -5943,6 +5963,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn atomic_retained_evidence_expands_without_unrelated_conditions() {
     let cases = [
         (
@@ -6104,6 +6125,7 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
 /// (`bugs/early-return-paths-store-facts-whole.md` lists what remains), so
 /// only this search's own work is asserted.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn simp_snapshot_transport_search_is_linear_in_early_returns() {
     std::thread::Builder::new()
         .name("fan-out-transport".into())
@@ -6193,6 +6215,7 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
 /// regression below separately bounds construction; flat storage remains a
 /// known violation.
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn indexed_simp_premises_reduce_whole_early_return_work() {
     std::thread::Builder::new()
         .name("fan-out-indexed-premises".into())
@@ -6377,6 +6400,7 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn completed_early_return_contexts_are_reused_for_certification() {
     std::thread::Builder::new()
         .name("fan-out-context-reuse".into())
@@ -6397,6 +6421,7 @@ fn completed_early_return_contexts_are_reused_for_certification() {
 /// guard, which rejects 4x growth per doubling. Its 3x tolerance does not reject
 /// the separate context-build violation measured in the early-return report.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn explicit_early_return_proof_completes_through_sixty_four_returns() {
     std::thread::Builder::new()
         .name("fan-out-explicit".into())
@@ -6458,6 +6483,7 @@ fn early_return_execution_expansion_reverifies_16_returns() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn early_return_execution_expansion_reverifies_32_returns() {
     check_early_return_execution_expansion(32);
 }
@@ -6505,6 +6531,7 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
 /// Constant-pinned equality selection is separately covered by
 /// `indexed_simp_premises_reduce_whole_early_return_work`.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn simp_premise_spelling_is_linear_in_early_returns() {
     std::thread::Builder::new()
         .name("fan-out-spelling".into())

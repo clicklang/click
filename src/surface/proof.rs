@@ -1516,28 +1516,6 @@ pub(super) fn initial_claim_context_with_caller_owner(
     claim_label: &str,
     caller_owner: Option<&CallerSourceOwnerId>,
 ) -> Result<InitialClaimContext, ClickError> {
-    initial_claim_context_with_mode(
-        function_block,
-        parsed_function,
-        resource_environment,
-        predicate_environment,
-        click_function_environment,
-        claim_label,
-        caller_owner,
-        ResourceSemanticsMode::Legacy,
-    )
-}
-
-pub(super) fn initial_claim_context_with_mode(
-    function_block: &FunctionBlock,
-    parsed_function: &syntax::C0Function,
-    resource_environment: &ResourceEnvironment,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
-    claim_label: &str,
-    caller_owner: Option<&CallerSourceOwnerId>,
-    resource_semantics_mode: ResourceSemanticsMode,
-) -> Result<InitialClaimContext, ClickError> {
     let (mut state, arguments) = if let Some(startup) = &parsed_function.program_entry_state {
         if !function_block.requires().is_empty() || !parsed_function.parameters().is_empty() {
             return Err(ClickError::new(
@@ -1546,32 +1524,22 @@ pub(super) fn initial_claim_context_with_mode(
         }
         (
             crate::kernel::initialize_c_function_globals(
-                &match resource_semantics_mode {
-                    ResourceSemanticsMode::Legacy => startup.as_ref().clone(),
-                    ResourceSemanticsMode::Authority => {
-                        startup.as_ref().clone().with_population_creation_tracking()
-                    }
-                },
+                &startup.as_ref().clone().with_population_creation_tracking(),
                 &parsed_function.to_kernel_function(),
             ),
             vec![],
         )
     } else {
-        let authority_definitions = if resource_semantics_mode == ResourceSemanticsMode::Authority {
-            crate::surface::verification::composite_resource_definitions(
-                resource_environment,
-                predicate_environment,
-                click_function_environment,
-            )?
-        } else {
-            Vec::new()
-        };
+        let authority_definitions = crate::surface::verification::composite_resource_definitions(
+            resource_environment,
+            predicate_environment,
+            click_function_environment,
+        )?;
         initial_call_state(
             function_block.requires(),
             parsed_function.parameters(),
             &parsed_function.to_kernel_function(),
             &authority_definitions,
-            resource_semantics_mode,
         )?
     };
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
@@ -1616,42 +1584,6 @@ pub(super) fn initial_claim_context_with_mode(
     for family in &observed_population_families {
         state = state.with_observed_population_family(family.clone());
     }
-    let symbolic_population_families = function_block
-        .requires()
-        .iter()
-        .filter_map(|requirement| match requirement {
-            Requirement::Resource(resource) => declared_resource_family(resource),
-            _ => None,
-        })
-        .filter(|family| {
-            !function_block.ensures().iter().any(|ensure| {
-                ensure.borrowed()
-                    && matches!(ensure.ensure(), Ensure::Resource(resource)
-                        if declared_resource_family(resource) == Some(*family))
-            })
-        })
-        .map(str::to_string)
-        .collect::<BTreeSet<_>>();
-    let (population_state, population_facts) =
-        if resource_semantics_mode == ResourceSemanticsMode::Authority {
-            // The checked authority-mode function boundary accepts only
-            // borrow-and-return contracts for declared resources. Entry claims
-            // do not initialize or read a legacy population.
-            (state, Vec::new())
-        } else {
-            materialize_counted_population_bodies(
-                resource_environment,
-                parsed_function.parameters(),
-                &arguments,
-                state,
-                &observed_population_families,
-                &symbolic_population_families,
-                predicate_environment,
-                click_function_environment,
-                claim_label,
-            )?
-        };
-    state = population_state;
     // Keep an authority-only snapshot before folded composite cells or
     // observable body facts are materialized.  Those conveniences are valid
     // for lowering the proof's later pure context, but they must not help the
@@ -1750,7 +1682,6 @@ pub(super) fn initial_claim_context_with_mode(
             None => EntryFactOrigin::Derived,
         });
     }
-    requirement_pure_facts.extend(population_facts);
     // Each `_Bool` parameter's range, `flag == 0 or flag == 1`, is a
     // derived entry fact the kernel certifies from the parameter's normalized
     // value; without it a disjunction such as `result == 0 or result == 1`
@@ -2210,20 +2141,6 @@ fn refuse_overlapping_returned_places(
         spelled(&right),
     ))
     .with_kind(ClickErrorKind::Type))
-}
-
-fn declared_resource_family(resource: &ResourceClause) -> Option<&str> {
-    match resource {
-        ResourceClause::Conditional { resource, .. } => declared_resource_family(resource),
-        ResourceClause::Named { resource, .. } | ResourceClause::Quantified { resource, .. } => {
-            declared_resource_family(resource)
-        }
-        ResourceClause::Declared { name, .. } => Some(name),
-        ResourceClause::ViewMemory(_)
-        | ResourceClause::OwnMemory(_)
-        | ResourceClause::MemoryAggregate { .. }
-        | ResourceClause::Iterated(_) => None,
-    }
 }
 
 /// Removes loadability that projection derived as an entry-evaluator fact.

@@ -4,7 +4,7 @@
 void probe(int32* p, int32 amount) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource permit(p: int32*) {}
 verifying "observe_symbolic_total.c";
 void probe(int32* p, int32 amount) {
