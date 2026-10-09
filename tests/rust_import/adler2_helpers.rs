@@ -484,7 +484,9 @@ fn audit_mul_site(tactic: &str) {
         String::from_utf8_lossy(&result.stderr)
     );
     assert!(
-        stdout.contains("SUMMARY: 1 sites passed; 0 site failures; 0 claim failures; 0 session failures;"),
+        stdout.contains(
+            "SUMMARY: 1 sites passed; 0 site failures; 0 claim failures; 0 session failures;"
+        ),
         "{stdout}"
     );
 }
