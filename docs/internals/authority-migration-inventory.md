@@ -1679,3 +1679,19 @@ live ones on its queue, so a proof paid to revisit records that an earlier
 proof's session memos kept alive. Each record now removes its own entry when
 it drops, and an intern touches only its own bucket. Regression:
 `a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof`.
+
+### Milestone 7 chunk 2: legacy population machinery
+
+Chunk 2 deletes the population machinery that the switch left unreachable.
+It lands in steps, each with its own full gate.
+
+#### Chunk 2a: counted-population mutex custody
+
+Under authority semantics a mutex publishes an ordinary control, so mutex
+publication never selected population custody. The mutex ledger's
+population index stayed empty, and no path produced a `GuardedPopulation`
+atom. The custody module, the ledger index, its two lookups, the refusals
+that consulted them, and the `GuardedPopulation` resource with its family
+algebra are deleted. The authority mutex fixtures (`mutex_*.md`,
+`authority_mutex_*.md`) are the coverage that remains; none exercised
+custody.
