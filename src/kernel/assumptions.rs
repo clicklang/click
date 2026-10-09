@@ -3830,6 +3830,18 @@ impl PureFactContext {
         }
     }
 
+    /// Exact full-width equality neighbours of this term, with their checked
+    /// premise. This indexed query never searches unrelated snapshot facts.
+    pub(in crate::kernel) fn exact_uint64_equalities(
+        &self,
+        term: &Bitvector32Term,
+    ) -> impl Iterator<Item = (&Bitvector32Term, &ConditionTerm)> {
+        self.bitvector64_equality_facts
+            .get(term)
+            .into_iter()
+            .flat_map(|neighbors| neighbors.iter())
+    }
+
     /// The terms recorded as 64-bit equal to `term` by one exact fact, each
     /// with the stored fact so a certificate can cite it exactly. Loads may
     /// also match the same pointer in a snapshot whose differing cells are

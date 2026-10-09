@@ -367,6 +367,17 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::ReturnRecord {
+                    source,
+                    value_type,
+                    cleanups,
+                    span,
+                } => {
+                    self.reference(source)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.cleanups(cleanups)?;
+                    span
+                }
                 CppStatement::Return {
                     value,
                     cleanups,

@@ -3699,3 +3699,29 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         CExpressionOutcome::Value(_)
     ));
 }
+
+#[test]
+fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
+    let value = Bitvector32Term::Variable(Variable(983_120));
+    for decrement in [0, 1, 1u64 << 32, u64::MAX] {
+        assert_eq!(
+            Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
+                value.clone(),
+                Bitvector32Term::UInt64Constant(decrement)
+            )),
+            Bitvector32Term::subtract(
+                Bitvector32Term::uint32_from_64(value.clone()),
+                Bitvector32Term::Constant(decrement as u32)
+            ),
+        );
+        for input in [0, 1, (1u64 << 32) + 7, u64::MAX] {
+            assert_eq!(
+                Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
+                    Bitvector32Term::UInt64Constant(input),
+                    Bitvector32Term::UInt64Constant(decrement)
+                )),
+                Bitvector32Term::Constant(input.wrapping_sub(decrement) as u32),
+            );
+        }
+    }
+}

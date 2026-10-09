@@ -203,10 +203,17 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    agree. Shared aggregate results, construction and copy initialization remain
    implementation work;
    `SpanPopBack` has not been verified. The unchanged pinned `back()` now
-   verifies for a one-element backing range through its actual constexpr
-   assertion and nested observer calls, with ordinary, expanded and retained
-   offline proofs of alias identity and referent value. Missing backing views,
-   empty size and false aliases are refused. Symbolic lengths remain to prove.
+   verifies for both a one-element backing range and the accepted symbolic
+   domain `1 <= N <= 1,073,741,823`, through its actual constexpr assertion and
+   nested observer calls. Explicit shared Integer/conversion certificates prove
+   native nonempty subtraction and the backing-count/index bridge. The kernel
+   projects unsigned native indices through full-width bounds and checked scalar
+   result equalities; bounds on low words alone remain insufficient. Ordinary,
+   expanded and retained offline proofs establish native alias identity and old
+   referent value. Missing bounds, descriptor/backing views, empty size, false
+   aliases/values and invalid byte extents are refused. Deterministic scaling
+   checks cover unrelated facts. Aggregate results, construction and copy
+   initialization are next.
    **Expression observers (accepted).** Admit nested calls in unsequenced
    operands only when verified read-only observer contracts establish operand
    independence. General interfering calls remain deferred. For example,
@@ -233,22 +240,39 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    execution. Declared macros keep locked definitions and executable expansion
    locations; undeclared macro dependencies are refused. Reference typedefs
    retain resolved widths/qualification, and generated reference-result proofs
-   use the native address/referent spellings. Aggregate results, construction,
-   copy initialization and symbolic backing bounds are the next implementation
-   work;
+   use the native address/referent spellings. Trivial record returns from live
+   lvalues now use shared aggregate values and checked nominal layouts, including
+   nested descriptor fields. The source must use Clang's resolved trivial copy
+   constructor; whole automatic objects eligible for named copy elision, moves,
+   user-defined copies, prvalue construction and nontrivial destruction remain refused. Every copied leaf needs initialized read authority;
+   copying a pointer field grants no pointee authority. Offline ordinary, expanded,
+   retained and forged-metadata checks cover this slice (artifact schema 46).
+   Construction and copy initialization are the next implementation work;
    interfering expressions remain
    refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
    nonempty subtraction and pointer formation from the actual backing range.
+4. **Construction destination and copy elision (decision pending).**
+   The shared C aggregate return path copies fields into caller-visible storage.
+   C++ can instead construct a returned value directly in its destination.
+   Constructors that observe or expose their object's address can distinguish
+   these behaviors, even when the class is trivially copyable. `std::span`'s
+   selected constructors are address-independent, but general prvalue admission
+   must not silently assume that property. Recommend adding construction
+   destinations to the shared aggregate model before admitting returned C++
+   constructors. The narrower alternative is a checked profile that rejects
+   constructors observing or exposing their own address and defers general
+   construction identity. Both preserve the approved native reference and
+   descriptor-copy contracts; neither warrants a separate C++ memory model.
+   Existing-object lvalue copies remain available independently of this choice.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields and the pointer-offset forms above. Shared aggregate returns and
-automatic embedded descriptor objects still
-need frontend admission. Some of
+fields and the pointer-offset forms above. Prvalue aggregate returns, copy initialization and
+automatic embedded descriptor construction still need frontend admission. Some of
 those are implementation work once the profiles above are chosen; they do not
 justify a separate C++ memory model.
 

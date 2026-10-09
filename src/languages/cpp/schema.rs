@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 45;
+pub(crate) const EXPORT_SCHEMA: u32 = 46;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -854,6 +854,13 @@ pub enum CppStatement {
         value: CppExpression,
         span: CppSpan,
     },
+    /// A Clang-resolved trivial copy construction from a live record lvalue.
+    ReturnRecord {
+        source: CppPlaceReference,
+        value_type: CppType,
+        cleanups: Vec<CppCleanup>,
+        span: CppSpan,
+    },
     Return {
         value: CppExpression,
         cleanups: Vec<CppCleanup>,
@@ -1648,7 +1655,11 @@ impl CppFunction {
             | CppFunctionKind::StaticMethod { .. }
             | CppFunctionKind::Method { .. } => {
                 if self.return_type != CppType::Void {
-                    require_return_value_type(&self.return_type, "function return type")?;
+                    require_function_return_type(
+                        &self.return_type,
+                        records,
+                        "function return type",
+                    )?;
                 }
             }
             CppFunctionKind::Constructor {
@@ -1688,7 +1699,7 @@ impl CppFunction {
             {
                 return Err("C++ static helper has a mismatched class identity".into());
             }
-            require_return_value_type(&self.return_type, "static helper return type")?;
+            require_function_return_type(&self.return_type, records, "static helper return type")?;
             for parameter in &self.parameters {
                 if require_scalar_integer(&parameter.value_type, "static helper parameter").is_err()
                 {
@@ -2296,8 +2307,11 @@ impl CppFunction {
             ));
         }
         if destructible_locals != 0 {
-            let Some(CppStatement::Return { .. } | CppStatement::ReturnCall { .. }) =
-                self.body.last()
+            let Some(
+                CppStatement::ReturnRecord { .. }
+                | CppStatement::Return { .. }
+                | CppStatement::ReturnCall { .. },
+            ) = self.body.last()
             else {
                 return Err(format!(
                     "C++ function `{}` with automatic destruction requires one final return",
@@ -2386,28 +2400,7 @@ impl CppStatement {
                             .into(),
                     );
                 }
-                let mut pending = vec![validate_record_reference(records, declaration_id, name)?];
-                let mut checked = BTreeSet::new();
-                while let Some(record) = pending.pop() {
-                    if !checked.insert(&record.declaration_id) {
-                        continue;
-                    }
-                    crate::instrumentation::record_deterministic_work(1);
-                    if record.base.is_some() || record.destructor.is_some() {
-                        return Err("C++ trivial copies require records without base subobjects or nontrivial destruction".into());
-                    }
-                    for field in &record.fields {
-                        crate::instrumentation::record_deterministic_work(1);
-                        if let CppType::Record {
-                            declaration_id,
-                            name,
-                            ..
-                        } = &field.value_type
-                        {
-                            pending.push(validate_record_reference(records, declaration_id, name)?);
-                        }
-                    }
-                }
+                validate_trivial_record_value(records, declaration_id, name)?;
                 Ok(())
             }
             Self::Declare { .. } => {
@@ -2477,6 +2470,34 @@ impl CppStatement {
                         "C++ member store to `{}` has a mismatched value type",
                         field.name
                     ));
+                }
+                Ok(())
+            }
+            Self::ReturnRecord {
+                source,
+                value_type,
+                cleanups,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                require_function_return_type(value_type, records, "record return value")?;
+                let root = validate_root_reference(source, places, logical_source)?;
+                if matches!(root, CppType::Record { .. }) && source.projections.is_empty() {
+                    return Err("C++ record returns from whole automatic objects require copy-elision semantics".into());
+                }
+                let (source_type, _) = records.resolve_path(root, &source.projections)?;
+                if !matches!((source_type, value_type),
+                    (CppType::Record { declaration_id: a, name: an, .. },
+                     CppType::Record { declaration_id: b, name: bn, is_const: false })
+                    if a == b && an == bn)
+                {
+                    return Err(
+                        "C++ record return requires the same nominal source and result record"
+                            .into(),
+                    );
+                }
+                for cleanup in cleanups {
+                    cleanup.validate(places, records, logical_source)?;
                 }
                 Ok(())
             }
@@ -3502,7 +3523,9 @@ fn sequence_always_returns(statements: &[CppStatement]) -> bool {
 
 fn sequence_contains_return(statements: &[CppStatement]) -> bool {
     statements.iter().any(|statement| match statement {
-        CppStatement::Return { .. } | CppStatement::ReturnCall { .. } => true,
+        CppStatement::ReturnRecord { .. }
+        | CppStatement::Return { .. }
+        | CppStatement::ReturnCall { .. } => true,
         CppStatement::If {
             then_branch,
             else_branch,
@@ -3535,7 +3558,8 @@ fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
 impl CppStatement {
     fn always_returns(&self) -> bool {
         match self {
-            Self::Return { .. }
+            Self::ReturnRecord { .. }
+            | Self::Return { .. }
             | Self::ReturnCall { .. }
             | Self::Throw { .. }
             | Self::Unreachable { .. } => true,
@@ -3856,7 +3880,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                     calls.push(CollectedCall::Destructor { object, callee });
                 }
             }
-            CppStatement::Return { cleanups, .. } => {
+            CppStatement::ReturnRecord { cleanups, .. } | CppStatement::Return { cleanups, .. } => {
                 for cleanup in cleanups {
                     let CppCleanup::Destructor { object, callee, .. } = cleanup;
                     calls.push(CollectedCall::Destructor { object, callee });
@@ -4305,7 +4329,9 @@ fn validate_statement_constant_references(
 ) -> Result<(), String> {
     for statement in statements {
         match statement {
-            CppStatement::Unreachable { .. } | CppStatement::TrivialCopy { .. } => {}
+            CppStatement::Unreachable { .. }
+            | CppStatement::TrivialCopy { .. }
+            | CppStatement::ReturnRecord { .. } => {}
             CppStatement::Declare { initializer, .. } => {
                 initializer.validate_constant_references(
                     logical_source,
@@ -4716,6 +4742,9 @@ fn require_const_signed_int64(value: &CppType, label: &str) -> Result<(), String
 fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> Result<(), String> {
     for statement in statements {
         match statement {
+            CppStatement::ReturnRecord { value_type, .. } if value_type != return_type => {
+                return Err("C++ record return does not match the function return type".into());
+            }
             CppStatement::Return { value, .. }
                 if !same_scalar_type(value.value_type(), return_type) =>
             {
@@ -4745,6 +4774,53 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
         }
     }
     Ok(())
+}
+
+fn validate_trivial_record_value(
+    records: &RecordIndex<'_>,
+    declaration_id: &str,
+    name: &str,
+) -> Result<(), String> {
+    let mut pending = vec![validate_record_reference(records, declaration_id, name)?];
+    let mut checked = BTreeSet::new();
+    while let Some(record) = pending.pop() {
+        if !checked.insert(&record.declaration_id) {
+            continue;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        if record.base.is_some() || record.destructor.is_some() {
+            return Err("C++ trivial copies require records without base subobjects or nontrivial destruction".into());
+        }
+        for field in &record.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            if let CppType::Record {
+                declaration_id,
+                name,
+                ..
+            } = &field.value_type
+            {
+                pending.push(validate_record_reference(records, declaration_id, name)?);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn require_function_return_type(
+    value: &CppType,
+    records: &RecordIndex<'_>,
+    label: &str,
+) -> Result<(), String> {
+    if let CppType::Record {
+        declaration_id,
+        name,
+        is_const: false,
+    } = value
+    {
+        validate_trivial_record_value(records, declaration_id, name)
+    } else {
+        require_return_value_type(value, label)
+    }
 }
 
 fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String> {
