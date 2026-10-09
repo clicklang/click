@@ -1749,3 +1749,23 @@ longer offers a population-version explanation, since no state holds a count
 version to compare. The resource index's write-only population head index is
 deleted. State equality on populations compares body access and the observed
 family set.
+
+#### Chunk 2e: dead count-in-body consumers
+
+Some consumers of the count-in-body classification could no longer fire.
+- A family whose body owns an authority returns to the authority wrapper check
+  before the counted branches of resource rewrite checking. A count-in-body
+  family with no authority clause is refused at the surface. The counted
+  positive-quantity check, the residual, the cleanup refusal, the expansion and
+  open-borrow guards, and the open-body invariant exposure are deleted.
+- The population invariant check at verified call entry was disabled behind
+  `false &&`.
+- With the invariant exposure gone, nothing asks for the ordinary-population
+  refusal or for the source spelling of population facts, so both are deleted.
+- The leak hint suggested proving `count(..)` of the counted family, which
+  authority refuses because that family is a control rather than an
+  authorized member. The hint and its field are deleted.
+- The loop guard's counted test was implied by its empty-facts test.
+
+The live consumers stay for a later step, which replaces the classification
+with explicit criteria.

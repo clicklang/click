@@ -1542,17 +1542,13 @@ fn c_function_contract_entry_facts(
         function.composite_resource_definitions(),
         &entry_state,
         &assumptions,
-        false,
     )
     .ok_or_else(|| {
         "could not evaluate the tracked populations of the contract entry resources".to_string()
     })?;
     for fact in population_facts {
-        assumptions = entry_facts.assume(
-            assumptions,
-            CContractEntryFactOrigin::PopulationFact,
-            fact.proposition,
-        );
+        assumptions =
+            entry_facts.assume(assumptions, CContractEntryFactOrigin::PopulationFact, fact);
     }
     let expanded_required_resources = ({
         super::super::functions::expand_all_composite_resource_facts_at_state(

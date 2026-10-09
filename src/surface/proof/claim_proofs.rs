@@ -4734,7 +4734,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     .holder()
                                                     .cloned()
                                                     .map(Box::new),
-                                                hint: None,
                                             },
                                             parsed_function.parameters(),
                                             arguments,

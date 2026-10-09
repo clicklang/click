@@ -4197,9 +4197,6 @@ pub enum CRuntimeError {
         /// was lost instead of reverse-engineering resource definitions from
         /// a lowered allocation fact.
         resource: Option<Box<CResourceFact>>,
-        /// Advisory fix hint (e.g. proving a counted population non-empty).
-        /// Never affects checking; `None` preserves the historical message.
-        hint: Option<String>,
     },
     StaleResourceAfterFree {
         resource: Box<CResourceFact>,

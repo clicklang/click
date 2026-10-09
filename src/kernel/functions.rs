@@ -8113,38 +8113,8 @@ fn prepare_verified_function_call<'a>(
         entry_contract_state.clone()
     };
     let mut obligations = argument_obligations;
-    // A population unit is membership, not an unconditional license to
-    // assume the shared body's invariant at a new memory snapshot. In
-    // particular a call from inside an open update must restore the body
-    // before another contract can observe it. Ordinary folded heads still
-    // own their bodies internally and require no separate population check.
-    let population_inputs = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
-        transfer
-            .borrowed_inputs
-            .iter()
-            .chain(&transfer.consumed_inputs)
-            .filter(|input| {
-                false
-                    && match input.fact.resource() {
-                        CResource::Composite { name, .. } | CResource::Token { name, .. } => {
-                            contract_interface
-                                .composite_resource_definition(name)
-                                .is_some_and(|definition| {
-                                    definition.is_counted_population()
-                                        && !definition.facts().is_empty()
-                                        && !(definition.contains().iter().any(|child| {
-                                            matches!(
-                                                child.term(),
-                                                CResourceTerm::PopulationAuthority { .. }
-                                            )
-                                        }))
-                                })
-                        }
-                        _ => false,
-                    }
-            })
-            .map(|input| input.fact.clone()),
-    );
+    // A call from inside an open update must restore the body before
+    // another contract can observe it.
     for input in transfer
         .borrowed_inputs
         .iter()
@@ -8159,38 +8129,6 @@ fn prepare_verified_function_call<'a>(
                     "population body is open; pass explicit body pieces instead of population membership".into(),
                 )), facts, obligations, loan_evidence: empty_checked_loan_evidence_sequence(),
             }));
-        }
-    }
-    let Some(population_facts) = evaluate_resource_population_fact_propositions(
-        &population_inputs,
-        contract_interface.composite_resource_definitions(),
-        &entry_contract_state,
-        &path_assumptions,
-        false,
-    ) else {
-        return Ok(Err(CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                "could not evaluate population invariant at call entry".to_string(),
-            )),
-            facts,
-            obligations,
-            loan_evidence: empty_checked_loan_evidence_sequence(),
-        }));
-    };
-    for fact in population_facts {
-        if fact.is_body_fact
-            && !crate::kernel::PureFactContext::settles_exactly(
-                &path_assumptions,
-                &fact.proposition,
-            )
-        {
-            add_required_proof_obligation_with_context(
-                &mut obligations,
-                &path_assumptions,
-                fact.proposition,
-                Some("population invariant at call entry"),
-                None,
-            );
         }
     }
     // The transfer's exposed population body and its untouched caller
@@ -22079,19 +22017,6 @@ fn requirement_is_population_quantity(requirement: &CCheckedResourceFact) -> boo
         && requirement.fact.owned_quantity_term() != Some(&Bitvector32Term::Constant(1))
 }
 
-/// Only a counted population has a population-wide body.
-///
-/// An ordinary composite's body lives inside its head: installing it as owned
-/// authority beside the produced head let a caller write the body and still
-/// use the head's facts, which verified a false theorem (found on
-/// 2026-09-13 while landing stable views). The predicate that also admitted an unconditional,
-/// non-recursive composite with a snapshot-independent footprint was retired
-/// with the `track_ordinary_populations` parameter at step 8c; every caller
-/// had already stopped asking for it.
-fn definition_has_population_wide_body(definition: &CCompositeResourceDefinition) -> bool {
-    definition.is_counted_population()
-}
-
 fn resource_fact_composite_head(fact: &CResourceFact) -> Option<(bool, &str)> {
     let CResource::Composite { name, .. } = fact.resource() else {
         return None;
@@ -24599,7 +24524,6 @@ pub(super) fn loop_instance_guard(
         || spec.quantity() != &CResourceQuantity::One
         || !definition.facts.is_empty()
         || definition.recursive
-        || definition.counted_population
         || definition.parameters.len() != instance.arguments().len()
         || *snapshot != CResourceSnapshot::Current
         || spec.snapshot() != CResourceSnapshot::Current
@@ -25522,20 +25446,12 @@ fn expand_all_composite_resource_facts_and_propositions_with_state(
     Some((expanded, propositions))
 }
 
-pub(super) struct EvaluatedResourcePopulationFact {
-    pub(super) proposition: Proposition,
-    pub(super) source_fact: Option<String>,
-    // Semantic provenance must not depend on optional source diagnostics.
-    pub(super) is_body_fact: bool,
-}
-
 pub(super) fn evaluate_resource_population_fact_propositions(
     context: &ResourceContext,
     definitions: &[CCompositeResourceDefinition],
     state: &CState,
     assumptions: &PureFactContext,
-    include_ordinary: bool,
-) -> Option<Vec<EvaluatedResourcePopulationFact>> {
+) -> Option<Vec<Proposition>> {
     let mut populations = BTreeSet::<(String, ResourceArguments)>::new();
     for fact in context.facts() {
         let (name, arguments) = match fact.resource() {
@@ -25554,7 +25470,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             populations.insert((name.clone(), arguments.clone()));
         }
     }
-    let mut propositions = Vec::<EvaluatedResourcePopulationFact>::new();
+    let mut propositions = Vec::<Proposition>::new();
     for (name, arguments) in populations {
         let Some(definition) = definitions
             .iter()
@@ -25563,11 +25479,6 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             continue;
         };
         if definition.parameters().len() != arguments.len() {
-            return None;
-        }
-        // An ordinary resource has no population count at which to expose
-        // its invariant.
-        if include_ordinary {
             return None;
         }
         // Resource expansion checks ownership relations, but a composite's
@@ -25736,32 +25647,15 @@ pub(super) fn evaluate_resource_population_fact_propositions(
                     fact_assumptions =
                         fact_assumptions.assume_proposition(obligation.proposition().clone());
                 }
-                let source_fact = definition
-                    .fact_source_spelling(fact_index)
-                    .map(|spelling| format!("{name}: fact {spelling};"));
                 for path_fact in &path.facts {
                     let proposition = path_fact.proposition().clone();
-                    if !propositions
-                        .iter()
-                        .any(|fact| fact.proposition == proposition)
-                    {
-                        propositions.push(EvaluatedResourcePopulationFact {
-                            proposition: proposition.clone(),
-                            source_fact: source_fact.clone(),
-                            is_body_fact: true,
-                        });
+                    if !propositions.contains(&proposition) {
+                        propositions.push(proposition.clone());
                     }
                     fact_assumptions = fact_assumptions.assume_proposition(proposition);
                 }
-                if !propositions
-                    .iter()
-                    .any(|fact| fact.proposition == path.proposition)
-                {
-                    propositions.push(EvaluatedResourcePopulationFact {
-                        proposition: path.proposition.clone(),
-                        source_fact,
-                        is_body_fact: true,
-                    });
+                if !propositions.contains(&path.proposition) {
+                    propositions.push(path.proposition.clone());
                 }
                 fact_assumptions = fact_assumptions.assume_proposition(path.proposition.clone());
                 made_progress = true;
@@ -30155,34 +30049,6 @@ fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
     }
 }
 
-/// Advisory hint for a leaked allocation that may belong to a counted
-/// population body retired by clause arithmetic. Names counted families with
-/// population-wide bodies so the author can prove non-emptiness
-/// (`count(family(...)) != 0`) instead of freeing. Advisory only; never
-/// affects checking.
-fn counted_population_leak_hint(function: &CFunction) -> Option<String> {
-    let mut names = Vec::new();
-    for definition in function.composite_resource_definitions() {
-        if definition.is_counted_population()
-            && definition_has_population_wide_body(definition)
-            && !names.contains(&definition.name().to_string())
-        {
-            names.push(definition.name().to_string());
-        }
-    }
-    if names.is_empty() {
-        return None;
-    }
-    let counts = names
-        .iter()
-        .map(|name| format!("count({name}(...)) != 0"))
-        .collect::<Vec<_>>()
-        .join(" or ");
-    Some(format!(
-        "To fix, either free it on this path or, if it belongs to a counted population that is actually non-empty here, prove that {counts}."
-    ))
-}
-
 fn unreturned_allocation_obligation(
     actual_state: &CState,
     returned_resources: &ResourceContext,
@@ -31018,12 +30884,10 @@ fn function_outcome_from_body_with_resource_transfer(
         || unreturned_allocation_obligation(&state, &return_resources, function, assumptions),
     ) {
         Ok(Some((allocation, resource))) => {
-            let hint = counted_population_leak_hint(function);
             return Ok((
                 CFunctionOutcome::RuntimeError(CRuntimeError::LiveAllocationLeak {
                     allocation: Box::new(allocation),
                     resource: resource.map(Box::new),
-                    hint,
                 }),
                 obligations,
                 None,
