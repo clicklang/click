@@ -1363,6 +1363,11 @@ impl<'a> Proof<'a> {
             }
             path_branch_premises.push(recorded.clone());
         }
+        let prepare_timing = crate::instrumentation::OperationTiming::new(
+            "surface",
+            "close invariants",
+            "close invariants: prepare checked bundle",
+        );
         let (state, scope) = self
             .state
             .open_invariant_body(
@@ -1402,7 +1407,10 @@ impl<'a> Proof<'a> {
                     // The whole bundle's spelling names each quantified
                     // member's binder as its invariant wrote it; the surface
                     // is validated by lowering wherever a proof relies on it.
-                    PropositionPresentation {
+                    let presentation_timing = crate::instrumentation::OperationTiming::new(
+                        "surface", "close invariants", "close invariants: source presentation",
+                    );
+                    let presentation = PropositionPresentation {
                         surface: crate::surface::proof::surface_synthesis::with_synthesis_binder_names(
                             &bundle.binder_names,
                             || crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
@@ -1421,10 +1429,13 @@ impl<'a> Proof<'a> {
                         surface_bindings: PersistentMap::default(),
                         both_children,
                     ..PropositionPresentation::default()
-                    }
+                    };
+                    drop(presentation_timing);
+                    presentation
                 },
             )
             .map_err(|message| self.step_error(message))?;
+        drop(prepare_timing);
         let root = Self {
             site: self.site.clone(),
             context: self.context.clone(),
@@ -1503,8 +1514,12 @@ impl<'a> Proof<'a> {
             // names that goal, as the member planner names the member it
             // stopped at.
             let mut unfinished = None;
-            let attempted =
-                root.try_authoritative_linear_script_leaving_open(body, &mut unfinished);
+            let attempted = crate::instrumentation::measure_operation(
+                "surface",
+                "close invariants",
+                "close invariants: explicit body",
+                || root.try_authoritative_linear_script_leaving_open(body, &mut unfinished),
+            );
             if matches!(attempted, Ok(None))
                 && let Some(unfinished) = unfinished
             {
@@ -1542,11 +1557,17 @@ impl<'a> Proof<'a> {
             return Err(error.with_search_failures(search.finish()));
         };
         search.succeed();
+        let retain_timing = crate::instrumentation::OperationTiming::new(
+            "surface",
+            "close invariants",
+            "close invariants: retain checked body",
+        );
         let certificate = completed.certificate_since(&checkpoint)?;
         let state = self
             .state
             .retain_invariant_body(scope, &completed.state)
             .map_err(|message| self.step_error(message))?;
+        drop(retain_timing);
         Ok(Self {
             site: self.site.clone(),
             context: self.context.clone(),

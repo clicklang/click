@@ -1442,7 +1442,16 @@ pub(in crate::kernel) fn merge_obligations(
     right: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> Option<Vec<ProofObligation>> {
+    merge_obligations_with_changes(left, right, assumptions).map(|(obligations, _)| obligations)
+}
+
+fn merge_obligations_with_changes(
+    left: &[ProofObligation],
+    right: &[ProofObligation],
+    assumptions: &PureFactContext,
+) -> Option<(Vec<ProofObligation>, Vec<usize>)> {
     let mut obligations = left.to_vec();
+    let mut changed = Vec::new();
     for obligation in right {
         if obligation.is_assumable() {
             // `right` was produced while executing under the complete left
@@ -1454,10 +1463,11 @@ pub(in crate::kernel) fn merge_obligations(
             if assumptions.proves_exact(obligation.proposition()) {
                 continue;
             }
-            if let Some(existing) = obligations
-                .iter_mut()
-                .find(|existing| existing.proposition() == obligation.proposition())
+            if let Some(index) = obligations
+                .iter()
+                .position(|existing| existing.proposition() == obligation.proposition())
             {
+                let existing = &mut obligations[index];
                 match (
                     existing.call_requirement_site(),
                     obligation.call_requirement_site(),
@@ -1466,6 +1476,7 @@ pub(in crate::kernel) fn merge_obligations(
                         // Replace the complete tuple, preserving the incoming
                         // source's context, introductions, and kind.
                         *existing = obligation.clone();
+                        changed.push(index);
                         continue;
                     }
                     (Some(_), None) | (None, None) => continue,
@@ -1491,15 +1502,17 @@ pub(in crate::kernel) fn merge_obligations(
             {
                 return None;
             }
+            changed.push(obligations.len());
             obligations.push(obligation.clone());
         } else {
             // Preserve mandatory conditions as mandatory across composition.
             // Rebuilding with `ProofObligation::new` would make an unresolved
             // condition available as an assumption to later evaluation.
+            changed.push(obligations.len());
             obligations.push(obligation.clone());
         }
     }
-    Some(obligations)
+    Some((obligations, changed))
 }
 
 pub(in crate::kernel) fn merge_facts(
@@ -1507,6 +1520,15 @@ pub(in crate::kernel) fn merge_facts(
     right: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
 ) -> Option<ExecutionFacts> {
+    merge_facts_with_changes(left, right, assumptions).map(|(facts, _)| facts)
+}
+
+fn merge_facts_with_changes(
+    left: &(impl ExecutionFactSource + ?Sized),
+    right: &(impl ExecutionFactSource + ?Sized),
+    assumptions: &PureFactContext,
+) -> Option<(ExecutionFacts, Vec<usize>)> {
+    let mut changed = Vec::new();
     let prefix = left.persistent_facts();
     let suffix = right.persistent_facts();
     let mut facts = prefix.clone();
@@ -1535,10 +1557,12 @@ pub(in crate::kernel) fn merge_facts(
         {
             share_append &= index >= before;
             *facts.get_mut(index) = fact.clone();
+            changed.push(index);
         }
         if facts.len() == before + 1 {
             share_append &= &facts[before] == fact;
             appended.push(source_index);
+            changed.push(before);
         }
         // A verified call emits its effect before its certified
         // postconditions. Entry-state condition facts cannot reject those
@@ -1560,9 +1584,9 @@ pub(in crate::kernel) fn merge_facts(
         let mut combined = prefix;
         let accepted = suffix.selected(&appended);
         combined.extend_shared(&accepted);
-        Some(combined)
+        Some((combined, changed))
     } else {
-        Some(facts)
+        Some((facts, changed))
     }
 }
 
@@ -1584,6 +1608,68 @@ pub(in crate::kernel) fn merge_execution_pure_facts_and_obligations(
         assumptions_with_path_context(assumptions, left_facts, left_obligations);
     let obligations = merge_obligations(left_obligations, right_obligations, &prefix_assumptions)?;
     Some((facts, obligations))
+}
+
+/// A canonical merge and the context of its assumable members. Changed
+/// positions include replacements of complete source-bearing tuples, not just
+/// appended positions. Mandatory obligations are retained but never assumed.
+pub(in crate::kernel) struct PreparedExecutionPath {
+    pub facts: ExecutionFacts,
+    pub obligations: Vec<ProofObligation>,
+    pub assumptions: PureFactContext,
+    pub changed_obligations: Vec<usize>,
+}
+
+/// Compose a pure lowering fragment under its already prepared left context.
+/// The caller retains that persistent context between declarations, rather
+/// than rebuilding every earlier fact and member at each declaration.
+pub(in crate::kernel) fn merge_prepared_execution_path(
+    left_facts: &ExecutionFacts,
+    left_obligations: &[ProofObligation],
+    right_facts: &ExecutionFacts,
+    right_obligations: &[ProofObligation],
+    base: &PureFactContext,
+    prepared: &PureFactContext,
+    effective: &PureFactContext,
+) -> Option<PreparedExecutionPath> {
+    let (facts, mut changed_facts) = merge_facts_with_changes(left_facts, right_facts, effective)?;
+    let (obligations, mut changed_obligations) =
+        merge_obligations_with_changes(left_obligations, right_obligations, effective)?;
+    changed_facts.sort_unstable();
+    changed_facts.dedup();
+    changed_obligations.sort_unstable();
+    changed_obligations.dedup();
+    // Invariant reading is pure. Keep the general merge's ordering if this
+    // helper is later used with an effect-bearing fragment: post-effect facts
+    // can supersede an entry-state condition, unlike a pure monotone extension.
+    let assumptions = if right_facts.iter().any(|fact| {
+        matches!(
+            fact.proposition(),
+            Proposition::CMemoryMutatesOnly { .. }
+                | Proposition::CMemoryEffectSummary { .. }
+                | Proposition::CHeapAllocationFreed { .. }
+        )
+    }) {
+        assumptions_with_path_context(base, &facts, &obligations)
+    } else {
+        count_context_rebuild_entries(changed_facts.len() + changed_obligations.len());
+        let mut context = prepared.clone();
+        for index in changed_facts {
+            context = context.assume_execution_pure_fact(&facts[index]);
+        }
+        for &index in &changed_obligations {
+            if obligations[index].is_assumable() {
+                context = context.assume_proposition(obligations[index].proposition().clone());
+            }
+        }
+        context
+    };
+    Some(PreparedExecutionPath {
+        facts,
+        obligations,
+        assumptions,
+        changed_obligations,
+    })
 }
 
 pub(in crate::kernel) fn decide_with_facts(
@@ -1884,6 +1970,220 @@ mod mandatory_integer_obligation_tests {
                 .expect("replacement keeps incoming source"),
             &incoming_source
         ));
+    }
+
+    // A cached path must retain canonical source metadata and must not turn
+    // an unresolved verification condition into a fact for the next member.
+    #[test]
+    fn prepared_path_delta_matches_fresh_context_and_complete_source_replacement() {
+        let predicate = |name: &str| Proposition::Predicate {
+            name: name.to_string(),
+            arguments: vec![],
+        };
+        let old_fact = ExecutionPureFact::new(predicate("old fact"));
+        let upgraded = ExecutionPureFact::certified(old_fact.proposition().clone());
+        let new_fact = ExecutionPureFact::new(predicate("new fact"));
+        let left_facts = ExecutionFacts::from(vec![old_fact]);
+        let right_facts = ExecutionFacts::from(vec![upgraded.clone(), new_fact.clone()]);
+        let mandatory = ProofObligation::verification_condition(Proposition::ConditionIs(
+            ConditionTerm::Constant(false),
+            true,
+        ))
+        .with_context("still owed");
+        let replaceable = ProofObligation::verification_condition(predicate("replacement"))
+            .with_context("old source")
+            .with_introductions(vec![LoweringIntroduction::PathFactGuard]);
+        let source = call_source("incoming", 2);
+        let incoming = ProofObligation::new(predicate("replacement"))
+            .with_context("incoming source")
+            .with_introductions(vec![LoweringIntroduction::WrittenNegation])
+            .with_call_requirement_site(source.clone());
+        let left_obligations = vec![replaceable, mandatory.clone()];
+        let right_obligations = vec![incoming.clone(), mandatory.clone()];
+        let base = PureFactContext::new();
+        let prepared = assumptions_with_path_context(&base, &left_facts, &left_obligations);
+        let effective = prepared
+            .clone()
+            .defer_non_exact_condition_reasoning()
+            .defer_non_exact_loadability_obligations();
+        let merged = merge_prepared_execution_path(
+            &left_facts,
+            &left_obligations,
+            &right_facts,
+            &right_obligations,
+            &base,
+            &prepared,
+            &effective,
+        )
+        .unwrap();
+        let (fresh_facts, fresh_obligations) = merge_execution_pure_facts_and_obligations(
+            &left_facts,
+            &left_obligations,
+            &right_facts,
+            &right_obligations,
+            &effective,
+        )
+        .unwrap();
+        assert_eq!(merged.facts, fresh_facts);
+        assert_eq!(merged.facts[0], upgraded);
+        assert_eq!(merged.facts[1], new_fact);
+        assert_eq!(merged.obligations, fresh_obligations);
+        assert_eq!(merged.changed_obligations, vec![0, 2]);
+        assert_eq!(
+            merged.obligations[0].introductions(),
+            incoming.introductions()
+        );
+        assert!(std::sync::Arc::ptr_eq(
+            merged.obligations[0].call_requirement_site().unwrap(),
+            &source
+        ));
+        assert_eq!(
+            merged.assumptions,
+            assumptions_with_path_context(&base, &fresh_facts, &fresh_obligations)
+        );
+        assert!(!merged.assumptions.proves_exact(mandatory.proposition()));
+        assert!(merged.assumptions.proves_exact(incoming.proposition()));
+    }
+
+    #[test]
+    fn prepared_path_extensions_with_new_facts_and_obligations_build_only_the_delta() {
+        let mut samples = Vec::new();
+        for size in [8usize, 16, 32] {
+            let mut ambient_samples = Vec::new();
+            for ambient in [0usize, 128, 512] {
+                let mut base = PureFactContext::new();
+                for index in 0..ambient {
+                    base = base.assume_proposition(Proposition::Predicate {
+                        name: format!("ambient_{index}"),
+                        arguments: vec![],
+                    });
+                }
+                let before = context_rebuild_entries();
+                let ((facts, obligations, context), work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        let mut facts = ExecutionFacts::new();
+                        let mut obligations = Vec::new();
+                        let mut context = base.clone();
+                        for index in 0..size {
+                            let incoming_facts =
+                                ExecutionFacts::from(vec![ExecutionPureFact::new(
+                                    Proposition::Predicate {
+                                        name: format!("fact_{index}"),
+                                        arguments: vec![],
+                                    },
+                                )]);
+                            let incoming_obligations =
+                                vec![ProofObligation::new(Proposition::Predicate {
+                                    name: format!("obligation_{index}"),
+                                    arguments: vec![],
+                                })];
+                            let merged = merge_prepared_execution_path(
+                                &facts,
+                                &obligations,
+                                &incoming_facts,
+                                &incoming_obligations,
+                                &base,
+                                &context,
+                                &context,
+                            )
+                            .unwrap();
+                            assert_eq!(merged.changed_obligations, vec![index]);
+                            facts = merged.facts;
+                            obligations = merged.obligations;
+                            context = merged.assumptions;
+                        }
+                        (facts, obligations, context)
+                    });
+                let entries = context_rebuild_entries() - before;
+                assert_eq!(entries, 2 * size);
+                assert_eq!(
+                    context,
+                    assumptions_with_path_context(&base, &facts, &obligations)
+                );
+                ambient_samples.push((entries, work));
+            }
+            assert!(
+                ambient_samples.windows(2).all(|pair| pair[0] == pair[1]),
+                "{ambient_samples:?}"
+            );
+            samples.push(ambient_samples[0]);
+        }
+        assert!(
+            samples
+                .windows(2)
+                .all(|pair| pair[1].1 <= 2 * pair[0].1 + 32),
+            "{samples:?}"
+        );
+    }
+
+    #[test]
+    fn prepared_path_effect_fragment_keeps_fresh_rebuild_ordering() {
+        let condition = ConditionTerm::equal(
+            Bitvector32Term::Variable(Variable(912_347)),
+            Bitvector32Term::Constant(3),
+        );
+        let base = PureFactContext::new();
+        let left = vec![ProofObligation::condition(condition.clone(), true)];
+        let prepared = assumptions_with_path_context(&base, &[], &left);
+        let memory = CMemory::new();
+        let right = ExecutionFacts::from(vec![
+            ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+                before: memory.clone(),
+                after: memory,
+                writes: vec![],
+            }),
+            ExecutionPureFact::certified(Proposition::ConditionIs(condition, false)),
+        ]);
+        let merged = merge_prepared_execution_path(
+            &ExecutionFacts::new(),
+            &left,
+            &right,
+            &[],
+            &base,
+            &prepared,
+            &prepared,
+        )
+        .unwrap();
+        let (facts, obligations) = merge_execution_pure_facts_and_obligations(
+            &ExecutionFacts::new(),
+            &left,
+            &right,
+            &[],
+            &prepared,
+        )
+        .unwrap();
+        assert_eq!(merged.facts, facts);
+        assert_eq!(merged.obligations, obligations);
+        assert_eq!(
+            merged.assumptions,
+            assumptions_with_path_context(&base, &facts, &obligations)
+        );
+    }
+
+    #[test]
+    fn prepared_path_delta_rejects_a_conflicting_pure_successor() {
+        let condition = ConditionTerm::equal(
+            Bitvector32Term::Variable(Variable(912_345)),
+            Bitvector32Term::Constant(3),
+        );
+        let base = PureFactContext::new();
+        let left = vec![ProofObligation::condition(condition.clone(), true)];
+        let prepared = assumptions_with_path_context(&base, &[], &left);
+        let right = ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::ConditionIs(
+            condition, false,
+        ))]);
+        assert!(
+            merge_prepared_execution_path(
+                &ExecutionFacts::new(),
+                &left,
+                &right,
+                &[],
+                &base,
+                &prepared,
+                &prepared,
+            )
+            .is_none()
+        );
     }
 
     #[test]

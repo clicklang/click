@@ -5815,18 +5815,31 @@ fn collect_invariant_check_obligations_with_mode(
         ExecutionFacts::new(),
         Vec::new(),
         Vec::<ProofObligation>::new(),
+        assumptions.clone(),
     )];
     let mut all_obligations = Vec::new();
     for (declaration_index, check) in invariant_checks.iter().enumerate() {
         let mut next_contexts = Vec::new();
-        for (facts, obligations, guards) in contexts {
+        for (facts, obligations, guards, prepared_assumptions) in contexts {
+            let context_timing = crate::instrumentation::OperationTiming::new(
+                "kernel",
+                "loop invariant bundle",
+                "invariant obligations: extend path context",
+            );
             let effective_assumptions = if without_search {
-                assumptions_with_path_context(assumptions, &facts, &obligations)
+                prepared_assumptions
+                    .clone()
                     .defer_non_exact_condition_reasoning()
                     .defer_non_exact_loadability_obligations()
             } else {
                 assumptions_with_path_context(assumptions, &facts, &obligations)
             };
+            drop(context_timing);
+            let declaration_timing = crate::instrumentation::OperationTiming::new(
+                "kernel",
+                "loop invariant bundle",
+                "invariant obligations: lower declaration",
+            );
             let dropped_extent_before = budget.dropped_range_extent().is_some();
             let paths = lower_spec_proposition_at_state_with_loop_entry(
                 state,
@@ -5835,6 +5848,7 @@ fn collect_invariant_check_obligations_with_mode(
                 &effective_assumptions,
                 budget,
             )?;
+            drop(declaration_timing);
             // A declaration with no reading at this state owes the
             // impossible goal, never nothing. Lowering prunes a path whose
             // obligation it already decides false — a stated range whose
@@ -5858,24 +5872,59 @@ fn collect_invariant_check_obligations_with_mode(
                     declarations[declaration_index].push(goal.clone());
                 }
                 append_required_proof_obligations(&mut all_obligations, assumptions, &[goal]);
-                next_contexts.push((facts, obligations, guards));
+                next_contexts.push((facts, obligations, guards, prepared_assumptions));
                 continue;
             }
             for path in paths {
-                let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
-                    &facts,
-                    &obligations,
-                    &path.facts,
-                    &path.obligations,
-                    if without_search {
-                        &effective_assumptions
-                    } else {
-                        assumptions
-                    },
-                ) else {
+                let merge_timing = crate::instrumentation::OperationTiming::new(
+                    "kernel",
+                    "loop invariant bundle",
+                    "invariant obligations: merge declaration path",
+                );
+                let merged = if without_search {
+                    merge_prepared_execution_path(
+                        &facts,
+                        &obligations,
+                        &path.facts,
+                        &path.obligations,
+                        assumptions,
+                        &prepared_assumptions,
+                        &effective_assumptions,
+                    )
+                } else {
+                    merge_execution_pure_facts_and_obligations(
+                        &facts,
+                        &obligations,
+                        &path.facts,
+                        &path.obligations,
+                        assumptions,
+                    )
+                    .map(|(facts, obligations)| PreparedExecutionPath {
+                        assumptions: assumptions_with_path_context(
+                            assumptions,
+                            &facts,
+                            &obligations,
+                        ),
+                        facts,
+                        changed_obligations: (0..obligations.len()).collect(),
+                        obligations,
+                    })
+                };
+                let Some(PreparedExecutionPath {
+                    facts,
+                    mut obligations,
+                    assumptions: mut obligation_assumptions,
+                    mut changed_obligations,
+                }) = merged
+                else {
                     continue;
                 };
-                let mut obligations = obligations;
+                drop(merge_timing);
+                let retain_timing = crate::instrumentation::OperationTiming::new(
+                    "kernel",
+                    "loop invariant bundle",
+                    "invariant obligations: retain required members",
+                );
                 // `merge` keeps the earlier obligations as a prefix and
                 // appends this path's own; those are their own guards.
                 let mut guards = guards.clone();
@@ -5896,8 +5945,6 @@ fn collect_invariant_check_obligations_with_mode(
                     }
                 }
                 guards.extend(side_conditions);
-                let obligation_assumptions =
-                    assumptions_with_path_context(assumptions, &facts, &obligations);
                 // The guards this wrap inserts, then the head chain the
                 // invariant's own lowering recorded: one record for the
                 // obligation proposition, produced by the same wrap that
@@ -5925,11 +5972,6 @@ fn collect_invariant_check_obligations_with_mode(
                         invariant_context(check, phase),
                         Some(&introductions),
                     );
-                    append_required_proof_obligations_without_search(
-                        &mut all_obligations,
-                        assumptions,
-                        &obligations,
-                    );
                 } else {
                     add_required_proof_obligation_with_context(
                         &mut obligations,
@@ -5946,8 +5988,27 @@ fn collect_invariant_check_obligations_with_mode(
                 }
                 if obligations.len() > before {
                     guards.push(ProofObligation::new(path.proposition));
+                    changed_obligations.push(before);
+                    if without_search && obligations[before].is_assumable() {
+                        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
+                        obligation_assumptions = obligation_assumptions
+                            .assume_proposition(obligations[before].proposition().clone());
+                    }
                 }
-                next_contexts.push((facts, obligations, guards));
+                if without_search {
+                    // Only this fragment's canonical delta is new to the
+                    // collected bundle. A replaced source tuple is included
+                    // even when its position precedes this fragment's tail.
+                    for index in changed_obligations {
+                        append_required_proof_obligations_without_search(
+                            &mut all_obligations,
+                            assumptions,
+                            std::slice::from_ref(&obligations[index]),
+                        );
+                    }
+                }
+                next_contexts.push((facts, obligations, guards, obligation_assumptions));
+                drop(retain_timing);
             }
         }
         contexts = next_contexts;

@@ -1504,6 +1504,11 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         {
             return Err("invariant body requires an unclosed loop back edge".into());
         }
+        let fact_timing = crate::instrumentation::OperationTiming::new(
+            "kernel",
+            "loop invariant bundle",
+            "invariant bundle: publish effect facts",
+        );
         let mut facts = branch.state.facts.clone();
         for fact in execution.core.effect_facts.iter() {
             facts = facts.with_fact(fact.proposition().clone());
@@ -1511,6 +1516,12 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         for fact in crate::kernel::certified_store_equations(&execution.core.effect_facts) {
             facts = facts.with_fact(fact);
         }
+        drop(fact_timing);
+        let rebound_timing = crate::instrumentation::OperationTiming::new(
+            "kernel",
+            "loop invariant bundle",
+            "invariant bundle: rebind resources",
+        );
         // The loop's names are bound again before any invariant reads a
         // binder field: the body may have refolded its instance under another
         // name, and the binder follows the family and arguments, not the name.
@@ -1536,6 +1547,12 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         {
             facts = facts.with_fact(fact);
         }
+        drop(rebound_timing);
+        let lowering_timing = crate::instrumentation::OperationTiming::new(
+            "kernel",
+            "loop invariant bundle",
+            "invariant bundle: lower obligations",
+        );
         let mut obligations = crate::kernel::c_loop_invariant_obligations_at_back_edge(
             &back_edge_state,
             loop_entry,
@@ -1557,6 +1574,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
                 format!("could not read the loop's declared ranking measure: {reason}")
             })?,
         );
+        drop(lowering_timing);
         let mut members: Vec<_> = obligations
             .iter()
             .map(|obligation| obligation.proposition().clone())

@@ -300,6 +300,15 @@ charged to visible semantic output rather than hidden ambient state:
   `call_requirement_checking_is_linear_in_the_requirement_count` pin the
   builds of a call step (`context_rebuild_entries`).
 
+  Simple loop-invariant checking also carries a prepared persistent path
+  context between declarations. Canonical merges report appended members and
+  complete source-metadata replacements; the context and collected bundle
+  receive only that delta. Mandatory verification conditions remain unassumed.
+  `invariant_back_edge_context_extension_scales_with_members_not_ambient_facts`
+  checks declaration growth independently of unrelated ambient facts, and
+  `prepared_path_extensions_with_new_facts_and_obligations_build_only_the_delta`
+  checks a new fact and obligation at every step against a fresh context.
+
   Three builds remain charged nothing (`assume_proposition_uncharged`,
   counted by `count_uncharged_context_entries`), each a known violation. A
   step's direct-transport context covers its statement-local facts, and a
