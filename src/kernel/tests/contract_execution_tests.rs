@@ -4297,6 +4297,7 @@ fn recording_covers_a_loadability_premise_from_the_retained_context() {
         memory: current,
         base: p.offset_by_int32_elements(i.clone()),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let caller = Proposition::CMemoryLoadable {
         memory: CMemory::new(),
@@ -4305,6 +4306,7 @@ fn recording_covers_a_loadability_premise_from_the_retained_context() {
             Box::new(n.clone()),
             Box::new(Bitvector32Term::Constant(4)),
         ),
+        wide: false,
     };
     let context = PureFactContext::new()
         .assume_proposition(caller)
@@ -4340,6 +4342,7 @@ fn recording_covers_a_loadability_premise_from_the_retained_context() {
         memory: CMemory::new().with_block("local:value", 4),
         base: p.offset_by_int32_elements(Bitvector32Term::Variable(Variable(2))),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let (candidates, function, mut trace) =
         early_return_inputs_with_facts(vec![outside], Vec::new());
@@ -6601,6 +6604,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
         memory: memory.clone(),
         base: at.clone(),
         bytes: 8u32.into(),
+        wide: false,
     };
     let entry = CState::new()
         .with_population_creation_tracking()

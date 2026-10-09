@@ -267,6 +267,7 @@ fn collect_proposition_bitvector_variables_one(
             memory,
             base,
             bytes,
+            wide: _,
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(base, variables);
@@ -2019,8 +2020,8 @@ pub(in crate::kernel) fn collect_c_memory_range_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_pointer_bitvector_variables(&range.base, variables);
-    collect_bitvector_variables(&range.start, variables);
-    collect_bitvector_variables(&range.end, variables);
+    collect_bitvector_variables(range.bound_terms().0, variables);
+    collect_bitvector_variables(range.bound_terms().1, variables);
 }
 
 pub(crate) fn resource_context_has_read(

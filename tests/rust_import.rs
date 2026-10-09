@@ -982,7 +982,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
     for length in [1u64, 3, 5, 7] {
         let offset = length - length % 4;
         let claim = format!(
-            "verifying \"chunks.rs\"; uint8 tail_byte(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have ((int32)(uint32)(bytes_len - bytes_len % 4u64)) == {offset} by {{ rewrite(bytes_len == {length}u64); simp(); }} execute(); simp(); }}"
+            "verifying \"chunks.rs\"; uint8 tail_byte(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes_len - bytes_len % 4u64 == {offset}u64 by {{ rewrite(bytes_len == {length}u64); simp(); }} execute(); simp(); }}"
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -992,7 +992,6 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
             "ensures result == bytes.len() % size;",
             "ensures result == bytes.len();",
         ),
-        CHARON_CHUNK_SIDECAR.replace("    requires bytes.len() <= 2147483647u64;\n", ""),
         CHARON_CHUNK_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
         CHARON_CHUNK_SIDECAR.replace(
             "requires bytes.len() == 7u64;",
@@ -1424,8 +1423,8 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
         ("views bytes[0..16];", ""),
         ("views bytes[0..4];", "views bytes[0..17];"),
         (
-            "invariant __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining);",
-            "invariant __rust_mir_6_cursor == bytes + (17 - __rust_mir_6_remaining);",
+            "invariant __rust_mir_6_cursor == bytes + (16u64 - __rust_mir_6_remaining);",
+            "invariant __rust_mir_6_cursor == bytes + (17u64 - __rust_mir_6_remaining);",
         ),
         ("ensures result == 0u32;", "ensures result == 1u32;"),
     ] {
@@ -2738,10 +2737,9 @@ fn rust_byte_slices_variable_length_indexing_verify() {
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
 uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
-    requires bytes_len <= 2147483647u64;
     requires index < bytes_len;
-    views bytes[0..(int32)bytes_len];
-    ensures result == bytes[(int32)index];
+    views bytes[0..bytes_len];
+    ensures result == bytes[index];
 } by { execute(); simp(); }";
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
@@ -2812,7 +2810,7 @@ fn rust_byte_slices_length_preserves_target_width_and_index_borrows_verify() {
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
 uint64 length(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 4294967296u64; ensures result == 4294967296u64; } by { execute(); simp(); }
-void replace(uint8* bytes, uint64 bytes_len, uint64 index) { requires bytes_len == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[(int32)index] == 9; } by { execute(); simp(); }
+void replace(uint8* bytes, uint64 bytes_len, uint64 index) { requires bytes_len == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[index] == 9; } by { execute(); simp(); }
 uint32 shift(uint32 x, uint64 n) { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { execute(); rewrite(n == 31u64); rewrite(x == 1u32); normalize(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     let error = C0VerificationSession::new_program_prepared(
@@ -2845,7 +2843,7 @@ fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
 
     assert_native_boundary_proof(
         "pub fn bad(bytes:&mut [u8], index:usize) { bytes[index] += 1; }",
-        "verifying \"borrow.rs\"; void bad(uint8* bytes, uint64 bytes_len, uint64 index) { requires bytes_len <= 2147483647u64; requires index < bytes_len; requires bytes[(int32)(uint32)index] < 255; owns bytes[0..(int32)(uint32)bytes_len]; ensures bytes[(int32)(uint32)index] == old(bytes[(int32)(uint32)index]) + 1; } by { execute(); simp(); }",
+        "verifying \"borrow.rs\"; void bad(uint8* bytes, uint64 bytes_len, uint64 index) { requires index < bytes_len; requires bytes[index] < 255; owns bytes[0..bytes_len]; ensures bytes[index] == old(bytes[index]) + 1; } by { execute(); simp(); }",
     );
 
     for (source, message) in [
@@ -3509,12 +3507,13 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
         ),
         sidecar.replace("invariant i <= bytes.len();", "invariant i < bytes.len();"),
         sidecar.replace(
-            "invariant to_integer(total) == prefix(bytes, (int32)(uint32)i);",
-            "invariant to_integer(total) + 1 == prefix(bytes, (int32)(uint32)i);",
+            "invariant to_integer(total) == prefix(bytes, i);",
+            "invariant to_integer(total) + 1 == prefix(bytes, i);",
         ),
         sidecar.replace("decreases bytes.len() - i;", "decreases i;"),
         sidecar.replace("requires bytes.len() <= 1000u64;", ""),
     ] {
+        assert_ne!(invalid, sidecar, "negative proof must change the sidecar");
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
@@ -3603,14 +3602,17 @@ fn rust_slice_for_sum_verifies_and_expands() {
             "ensures to_integer(result) == old(prefix",
             "ensures to_integer(result) + 1 == old(prefix",
         ),
-        sidecar.replace("decreases iter_remaining;", "decreases -iter_remaining;"),
         sidecar.replace(
-            "invariant 0 <= iter_remaining and iter_remaining <= (int32)(uint32)bytes.len();",
-            "invariant 0 <= iter_remaining and iter_remaining < (int32)(uint32)bytes.len();",
+            "decreases iter_remaining;",
+            "decreases bytes.len() - iter_remaining;",
         ),
         sidecar.replace(
-            "invariant iter_cursor == bytes + ((int32)(uint32)bytes.len() - iter_remaining);",
-            "invariant iter_cursor == bytes + ((int32)(uint32)bytes.len() - iter_remaining + 1);",
+            "invariant iter_remaining <= bytes.len();",
+            "invariant iter_remaining < bytes.len();",
+        ),
+        sidecar.replace(
+            "invariant iter_cursor == bytes + (bytes.len() - iter_remaining);",
+            "invariant iter_cursor == bytes + ((bytes.len() - iter_remaining) + 1u64);",
         ),
         sidecar.replace("requires bytes.len() <= 1000u64;", ""),
     ] {
@@ -3700,7 +3702,10 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
             ),
             sidecar.replace("requires bytes.len() <= 1000u64;", ""),
             sidecar.replace("views bytes[0..bytes.len()];", ""),
-            sidecar.replace("decreases iter_remaining;", "decreases -iter_remaining;"),
+            sidecar.replace(
+                "decreases iter_remaining;",
+                "decreases bytes.len() - iter_remaining;",
+            ),
         ] {
             assert_ne!(invalid, sidecar, "negative proof must change the sidecar");
             assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
@@ -3728,17 +3733,16 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\";
     uint64 tail_len(const uint8* bytes, uint64 bytes_len, uint64 size) {
-        requires bytes_len <= 2147483647u64; requires size != 0u64;
+        requires size != 0u64;
         ensures result == bytes_len % size;
     } by { execute(); simp(); }
     uint8 tail_byte(const uint8* bytes, uint64 bytes_len) {
         requires bytes_len == 5u64; views bytes[0..5];
         ensures result == bytes[4];
-    } by { have 4 == (int32)(uint32)(bytes_len - bytes_len % 2u64) by { rewrite(bytes_len == 5u64); normalize(); } execute(); simp(); }";
+    } by { have bytes_len - bytes_len % 2u64 == 4u64 by { rewrite(bytes_len == 5u64); normalize(); } execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace("requires size != 0u64;", ""),
-        sidecar.replace("requires bytes_len <= 2147483647u64;", ""),
         sidecar.replace("views bytes[0..5];", ""),
         sidecar.replace("result == bytes[4]", "result == bytes[3]"),
     ] {
@@ -3779,10 +3783,9 @@ fn check_chunks_loop_claims(by_reference: bool) {
             "ensures result == bytes.len() % 4u64 + 1u64;",
         ),
         sidecar.replace("views bytes[0..bytes.len()];", ""),
-        sidecar.replace("requires bytes.len() <= 1000u64;", ""),
         sidecar.replace(
-            &format!("invariant {iterator}_remaining % 4 == 0;"),
-            &format!("invariant {iterator}_remaining % 4 == 1;"),
+            &format!("invariant {iterator}_remaining % 4u64 == 0u64;"),
+            &format!("invariant {iterator}_remaining % 4u64 == 1u64;"),
         ),
         sidecar.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
     ] {

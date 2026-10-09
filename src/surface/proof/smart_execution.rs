@@ -531,6 +531,7 @@ impl<'a> Proof<'a> {
             memory,
             base,
             bytes,
+            wide: false,
         } = requirement
         else {
             return String::new();
@@ -563,6 +564,7 @@ impl<'a> Proof<'a> {
                     memory: held,
                     base: held_base,
                     bytes: held_bytes,
+                    wide: false,
                 } if held_base == base && held_bytes == bytes && held != memory => {
                     Some(name_memory(held))
                 }

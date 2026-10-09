@@ -1914,8 +1914,8 @@ fn describe_struct_place_range(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Option<String> {
-    let start = u64::from(range.start().as_const()?);
-    let end = u64::from(range.end().as_const()?);
+    let start = u64::from(range.constant_start()?);
+    let end = u64::from(range.constant_end()?);
     let width = u64::from(range.element_width());
     for (parameter, argument) in parameters.iter().zip(arguments) {
         let CExpression::Value(CValue::Pointer(base)) = argument else {
@@ -1965,6 +1965,15 @@ pub(super) fn describe_memory_range(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
+    // A wide range is spelled from its base and its own 64-bit bounds.
+    if let Some((start, end)) = range.wide_bounds() {
+        return format!(
+            "{}[{}..{}]",
+            describe_pointer(range.base(), parameters, arguments),
+            describe_bitvector_with_context(start, parameters, arguments),
+            describe_bitvector_with_context(end, parameters, arguments)
+        );
+    }
     if let Some(place) = describe_struct_place_range(range, parameters, arguments) {
         return place;
     }
@@ -2032,8 +2041,7 @@ pub(super) fn describe_memory_range(
                 || cell.contains("->")
                 || cell.contains("].")
                 || cell.ends_with(']');
-            let one_element =
-                range.start().as_const() == Some(0) && range.end().as_const() == Some(1);
+            let one_element = range.constant_start() == Some(0) && range.constant_end() == Some(1);
             if compound && one_element {
                 return cell;
             }
@@ -2166,6 +2174,11 @@ fn parameter_relative_endpoints(
     base_index: &Bitvector32Term,
     range: &CMemoryRange,
 ) -> (Bitvector32Term, Bitvector32Term) {
+    // A wide range is shown by its own bounds: they are 64-bit terms, and
+    // a 32-bit parameter offset is not added to them. Display only.
+    if let Some((start, end)) = range.wide_bounds() {
+        return (start.clone(), end.clone());
+    }
     (
         bitvector32_add(base_index.clone(), range.start().clone()),
         bitvector32_add(base_index.clone(), range.end().clone()),

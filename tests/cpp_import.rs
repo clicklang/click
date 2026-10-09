@@ -15457,61 +15457,18 @@ fn cpp_bounded_native_descriptor_last_reference_verifies_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
+    // The bound is the code's `unsigned long`, uncast, and the last
+    // element is at `size - 1` in that type. Nothing bounds `size` from
+    // above: the held range states its own extent limit.
     let source = r#"verifying "bounds.cpp";
 int32& run(const struct View& view) {
  views view.data;
  views view.size;
- views view.data[0..((int32)view.size)];
+ views view.data[0..view.size];
  requires 1u64 <= view.size;
- requires view.size <= 1073741823u64;
- ensures &result == view.data + ((int32)view.size - 1);
- ensures result == old(view.data[(int32)view.size - 1]);
+ ensures &result == view.data + (view.size - 1u64);
+ ensures result == old(view.data[view.size - 1u64]);
 } by {
- apply(uint64_less_equal_to_integer(1u64, view.size));
- apply(uint64_less_equal_to_integer(view.size, 1073741823u64));
- apply(uint64_subtract_to_integer(view.size, 1u64));
- have 0 <= to_integer((view.size - 1u64)) by {
-     arithmetic() using {
-         1 <= to_integer(view.size);
-         to_integer(view.size) <= 1073741823;
-         to_integer((view.size - 1u64)) == to_integer(view.size) - 1;
-     }
- }
- have to_integer((view.size - 1u64)) <= 1073741822 by {
-     arithmetic() using {
-         1 <= to_integer(view.size);
-         to_integer(view.size) <= 1073741823;
-         to_integer((view.size - 1u64)) == to_integer(view.size) - 1;
-         0 <= to_integer((view.size - 1u64));
-     }
- }
- have view.size - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((view.size - 1u64), 1073741822u64));
- have to_integer((int32)view.size) == to_integer(view.size) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(view.size) => 1 <= to_integer(view.size);
- premise 1: to_integer(view.size) <= 1073741823 => to_integer(view.size) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)view.size) == to_integer(view.size); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)view.size) by {
-     arithmetic() using {
-         1 <= to_integer(view.size);
-         to_integer((int32)view.size) == to_integer(view.size);
-     }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)view.size));
- have 0 <= (int32)view.size - 1 by {
-     arithmetic() using {
-         1 <= (int32)view.size;
-         (int32)view.size <= 1073741823;
-     }
- }
- have (int32)view.size - 1 < (int32)view.size by {
-     arithmetic() using {
-         1 <= (int32)view.size;
-         (int32)view.size <= 1073741823;
-     }
- }
  execute(); simp();
 }
  "#;

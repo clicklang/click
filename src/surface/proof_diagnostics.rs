@@ -425,6 +425,7 @@ mod tests {
                 offset: PointerOffsetTerm::Constant(0),
             },
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         };
         crate::surface::with_proof_trace("f", || {
             let memory = CMemory::new().with_block("shared", 1);

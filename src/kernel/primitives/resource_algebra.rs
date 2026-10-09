@@ -285,10 +285,7 @@ fn related_memory_base_roots(
 /// begin below their base, and those are the ranges a caller reaches with
 /// `q = p + 1` or with a clause instantiated at a negative index.
 fn signed_range_endpoints(range: &CMemoryRange) -> (Option<i64>, Option<i64>) {
-    (
-        signed_bitvector_constant(range.start()),
-        signed_bitvector_constant(range.end()),
-    )
+    (range.signed_constant_start(), range.signed_constant_end())
 }
 
 pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
@@ -814,8 +811,8 @@ pub(in crate::kernel) fn memory_ranges_overlap(left: &CMemoryRange, right: &CMem
 
 pub(crate) fn concrete_memory_range_bounds(range: &CMemoryRange) -> Option<(i64, i64)> {
     let base = range.base().offset.as_const()?;
-    let start_elements = signed_bitvector_constant(range.start())?;
-    let end_elements = signed_bitvector_constant(range.end())?;
+    let start_elements = range.signed_constant_start()?;
+    let end_elements = range.signed_constant_end()?;
     if start_elements >= end_elements {
         return None;
     }
@@ -849,13 +846,13 @@ fn memory_footprint_for_fact(fact: &CResourceFact) -> ResourceMemoryFootprint {
             &mut source_snapshot,
         );
         collect_memory_load_ranges_from_term(
-            range.start(),
+            range.bound_terms().0,
             &mut ranges,
             &mut uncertain,
             &mut source_snapshot,
         );
         collect_memory_load_ranges_from_term(
-            range.end(),
+            range.bound_terms().1,
             &mut ranges,
             &mut uncertain,
             &mut source_snapshot,
@@ -3683,8 +3680,8 @@ impl ResourceContext {
         let concrete = |range: &CMemoryRange| {
             crate::instrumentation::record_deterministic_work(1);
             range.base() == first.base()
-                && range.start().as_const().is_some()
-                && range.end().as_const().is_some()
+                && range.constant_start().is_some()
+                && range.constant_end().is_some()
         };
         !(concrete(first) && owned.all(concrete))
     }
@@ -5096,9 +5093,7 @@ impl ResourceContext {
         };
         let bytes =
             memory_equality_index::read_extent(fact).and_then(|bytes| u32::try_from(bytes).ok());
-        let start = required
-            .base()
-            .offset_by_elements(required.start().clone(), required.element_width());
+        let start = required.start_pointer();
         self.structural_memory_entries(required.base(), &start, bytes)
             .any(|entry| {
                 let available = self.fact(entry);
@@ -6028,6 +6023,9 @@ impl ResourceNormalizationIndex {
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_) => {}
+            // A wide range is not joined to a neighbour yet, so it has no
+            // endpoint to be found by.
+            CResource::Memory(range) if range.wide_bounds().is_some() => {}
             CResource::Memory(range) => {
                 if self.byte_endpoints
                     && let Some(start) =
@@ -6125,6 +6123,7 @@ impl ResourceNormalizationIndex {
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_) => {}
+            CResource::Memory(range) if range.wide_bounds().is_some() => {}
             CResource::Memory(range) => {
                 let mut roots = related_memory_base_roots(range.base(), assumptions);
                 for alias in assumptions.exact_pointer_aliases(range.base()) {
@@ -6460,6 +6459,11 @@ pub(in crate::kernel) fn memory_range_is_proven_empty(
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    if let Some((start, end)) = range.wide_bounds() {
+        return start == end
+            || assumptions.decide(&ConditionTerm::uint64_equal(start.clone(), end.clone()))
+                == Some(true);
+    }
     assumptions.int32_values_known_equal(range.start(), range.end())
 }
 
@@ -6914,10 +6918,10 @@ pub(in crate::kernel) fn resources_structurally_separate(
                 || left.base() == right.base()
                     && matches!(
                         (
-                            signed_bitvector_constant(left.start()),
-                            signed_bitvector_constant(left.end()),
-                            signed_bitvector_constant(right.start()),
-                            signed_bitvector_constant(right.end()),
+                            left.signed_constant_start(),
+                            left.signed_constant_end(),
+                            right.signed_constant_start(),
+                            right.signed_constant_end(),
                         ),
                         (Some(left_start), Some(left_end), Some(right_start), Some(right_end))
                             if left_end <= right_start || right_end <= left_start
@@ -7527,6 +7531,9 @@ fn memory_resource_fact_permits_read(
     assumptions: &PureFactContext,
 ) -> bool {
     resource_fact_read_core_range(resource).is_some_and(|range| {
+        if range.wide_bounds().is_some() {
+            return assumptions.pointer_access_in_wide_range(pointer, byte_width, &range);
+        }
         assumptions.pointer_access_in_range(
             pointer,
             byte_width,
@@ -7545,6 +7552,10 @@ fn memory_resource_fact_permits_write(
     assumptions: &PureFactContext,
 ) -> bool {
     match resource {
+        CResourceFact::Own(CResource::Memory(range), quantity) if range.wide_bounds().is_some() => {
+            resource_quantity_is_positive(quantity, assumptions)
+                && assumptions.pointer_access_in_wide_range(pointer, byte_width, range)
+        }
         CResourceFact::Own(CResource::Memory(range), quantity) => {
             resource_quantity_is_positive(quantity, assumptions)
                 && assumptions.pointer_access_in_range(
@@ -7769,8 +7780,8 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
     }
     let source_width = i64::from(range.element_width());
     let target_width = i64::from(width);
-    let start = signed_bitvector_constant(range.start())?.checked_mul(source_width)?;
-    let end = signed_bitvector_constant(range.end())?.checked_mul(source_width)?;
+    let start = range.signed_constant_start()?.checked_mul(source_width)?;
+    let end = range.signed_constant_end()?.checked_mul(source_width)?;
     if start % target_width != 0 || end % target_width != 0 {
         return None;
     }
@@ -7800,7 +7811,7 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    if available.start().as_const() != Some(0) {
+    if available.constant_start() != Some(0) {
         return false;
     }
     fn split_constant(offset: &PointerOffsetTerm) -> Option<(PointerOffsetTerm, i64)> {
@@ -7943,6 +7954,95 @@ fn memory_range_covers_with_separation(
             ))
 }
 
+/// Coverage where either range is wide, for two equal-width ranges at one
+/// base. Each range's bounds are read as unsigned 64-bit values: a wide
+/// range's are its own, and an `Int32` range's are taken only when both
+/// are nonnegative constants, where the two readings are one number. The
+/// required range is covered when `available.start <= required.start` and
+/// `required.end <= available.end` are decided as 64-bit comparisons. Any
+/// other pairing is not covered.
+pub(in crate::kernel) fn wide_memory_range_covers(
+    available: &CMemoryRange,
+    required: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    if available.element_width() != required.element_width()
+        || !(available.base() == required.base()
+            || pointers_proven_equal_for_memory_resolution(
+                available.base(),
+                required.base(),
+                assumptions,
+            ))
+    {
+        return false;
+    }
+    let bounds = |range: &CMemoryRange| match range.wide_bounds() {
+        Some((start, end)) => Some((start.clone(), end.clone())),
+        None => {
+            let start = u64::try_from(range.signed_constant_start()?).ok()?;
+            let end = u64::try_from(range.signed_constant_end()?).ok()?;
+            Some((
+                Bitvector32Term::UInt64Constant(start),
+                Bitvector32Term::UInt64Constant(end),
+            ))
+        }
+    };
+    let (Some((available_start, available_end)), Some((required_start, required_end))) =
+        (bounds(available), bounds(required))
+    else {
+        return false;
+    };
+    let holds = |lower: Bitvector32Term, upper: Bitvector32Term| {
+        lower == upper
+            || assumptions.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
+    };
+    holds(available_start, required_start) && holds(required_end, available_end)
+}
+
+/// Whether two ranges, at least one of them wide, are proven to share an
+/// element: they have one base and one element width, and `a.start <
+/// b.end`, `b.start < a.end` and each range's `start < end` are decided as
+/// unsigned 64-bit comparisons. An `Int32` range takes part through
+/// nonnegative constant bounds only. Anything undecided is not proven.
+pub(in crate::kernel) fn wide_memory_ranges_proven_overlapping(
+    left: &CMemoryRange,
+    right: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left.element_width() != right.element_width()
+        || !(left.base() == right.base()
+            || pointers_proven_equal_for_memory_resolution(left.base(), right.base(), assumptions))
+    {
+        return false;
+    }
+    let bounds = |range: &CMemoryRange| match range.wide_bounds() {
+        Some((start, end)) => Some((start.clone(), end.clone())),
+        None => {
+            let start = u64::try_from(range.signed_constant_start()?).ok()?;
+            let end = u64::try_from(range.signed_constant_end()?).ok()?;
+            Some((
+                Bitvector32Term::UInt64Constant(start),
+                Bitvector32Term::UInt64Constant(end),
+            ))
+        }
+    };
+    let (Some((left_start, left_end)), Some((right_start, right_end))) =
+        (bounds(left), bounds(right))
+    else {
+        return false;
+    };
+    let below = |lower: &Bitvector32Term, upper: &Bitvector32Term| {
+        assumptions.decide(&ConditionTerm::uint64_less_than(
+            lower.clone(),
+            upper.clone(),
+        )) == Some(true)
+    };
+    below(&left_start, &left_end)
+        && below(&right_start, &right_end)
+        && below(&left_start, &right_end)
+        && below(&right_start, &left_end)
+}
+
 /// The positive coverage routes of [`memory_range_covers`], for two
 /// equal-width ranges that are not syntactically equal and not in provably
 /// distinct blocks. The caller applies the explicit-separation veto.
@@ -7951,6 +8051,9 @@ fn memory_range_covered_by_some_route(
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
+        return wide_memory_range_covers(available, required, assumptions);
+    }
     if memory_range_covers_with_exact_index(available, required, assumptions) {
         return true;
     }
@@ -8044,8 +8147,8 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
 /// one element. Taking the count by the wrapping subtraction and the start by
 /// its signed value makes both exact, in `i64`, with nothing left modular.
 fn constant_range_extent(range: &CMemoryRange) -> Option<(i64, i64)> {
-    let start = range.start().as_const()? as i32;
-    let end = range.end().as_const()? as i32;
+    let start = range.constant_start()? as i32;
+    let end = range.constant_end()? as i32;
     Some((i64::from(start), i64::from(end.wrapping_sub(start))))
 }
 
@@ -8138,7 +8241,11 @@ fn memory_ranges_structurally_disjoint(left: &CMemoryRange, right: &CMemoryRange
     if left.base().blocks_proven_distinct(right.base()) {
         return true;
     }
-    if left.element_width() != right.element_width() {
+    // A wide range has no constant bounds to compare structurally.
+    if left.element_width() != right.element_width()
+        || left.wide_bounds().is_some()
+        || right.wide_bounds().is_some()
+    {
         return false;
     }
     let Some(base_delta) = right
@@ -8148,8 +8255,8 @@ fn memory_ranges_structurally_disjoint(left: &CMemoryRange, right: &CMemoryRange
         return false;
     };
     let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
-        left.start().as_const().map(|value| value as i32),
-        left.end().as_const().map(|value| value as i32),
+        left.constant_start().map(|value| value as i32),
+        left.constant_end().map(|value| value as i32),
         Bitvector32Term::add(base_delta.clone(), right.start().clone())
             .as_const()
             .map(|value| value as i32),
@@ -8278,9 +8385,7 @@ pub(in crate::kernel) fn split_memory_range(
     // equivalent load from a later memory snapshot; retaining it would create
     // a symbolic zero-length residue when the required range exhausts the
     // beginning of `available`.
-    let available_start_pointer = available
-        .base()
-        .offset_by_elements(available.start().clone(), available.element_width());
+    let available_start_pointer = available.start_pointer();
     let base_delta = if pointers_proven_equal_for_memory_resolution(
         required.base(),
         &available_start_pointer,

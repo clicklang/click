@@ -65,10 +65,10 @@ fn pointer_offset_payload(root: &PointerOffsetTerm) -> Option<usize> {
                 pending.push(left);
                 pending.push(right);
             }
-            PointerOffsetTerm::Int32Scaled { value, .. } => {
+            PointerOffsetTerm::Int32Scaled { value, .. }
+            | PointerOffsetTerm::Int64Scaled { value, .. } => {
                 payload = payload.checked_add(bitvector_payload(value)?)?;
             }
-            PointerOffsetTerm::Int64Scaled { .. } => return None,
         }
         if payload > MAX_TERM_PAYLOAD {
             return None;
@@ -1249,9 +1249,64 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<Bitvector32Term, 
     Some(bounds)
 }
 
+/// The two sides of an unsigned 64-bit order premise, lower side first,
+/// and whether the order is strict.
+fn unsigned64_order(
+    proposition: &Proposition,
+) -> Option<(&Bitvector32Term, &Bitvector32Term, bool)> {
+    let Proposition::ConditionIs(condition, true) = proposition else {
+        return None;
+    };
+    Some(match condition {
+        ConditionTerm::Bitvector64UnsignedLessThan(left, right) => (left, right, true),
+        ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => (left, right, false),
+        ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => (right, left, true),
+        ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => (right, left, false),
+        _ => return None,
+    })
+}
+
+/// The interval each cited unsigned 64-bit order premise gives its
+/// non-constant side. A strict order between two symbolic values keeps the
+/// lower one below the type's largest value.
+fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<Bitvector32Term, (u64, u64)>> {
+    let mut bounds = BTreeMap::new();
+    for premise in premises {
+        let (lower, upper, strict) = unsigned64_order(premise)?;
+        if !charge_bitvector(lower) || !charge_bitvector(upper) {
+            return None;
+        }
+        let strict = u64::from(strict);
+        match (lower.uint64_as_const(), upper.uint64_as_const()) {
+            (None, Some(limit)) => {
+                let Some(limit) = limit.checked_sub(strict) else {
+                    continue;
+                };
+                let entry = bounds.entry(lower.clone()).or_insert((0, u64::MAX));
+                entry.1 = entry.1.min(limit);
+            }
+            (Some(limit), None) => {
+                let Some(limit) = limit.checked_add(strict) else {
+                    continue;
+                };
+                let entry = bounds.entry(upper.clone()).or_insert((0, u64::MAX));
+                entry.0 = entry.0.max(limit);
+            }
+            (None, None) if strict == 1 => {
+                let entry = bounds.entry(lower.clone()).or_insert((0, u64::MAX));
+                entry.1 = entry.1.min(u64::MAX - 1);
+            }
+            _ => {}
+        }
+    }
+    Some(bounds)
+}
+
 enum OffsetPart<'a> {
     Offset(&'a PointerOffsetTerm),
     Scaled(&'a Bitvector32Term, i64),
+    /// An unsigned 64-bit index scaled by an element width.
+    Scaled64(&'a Bitvector32Term, i64),
 }
 
 fn pointer_translation(
@@ -1296,8 +1351,29 @@ fn pointer_translation(
         }
         _ => return false,
     };
-    let Some(bounds) = scalar_bounds(bound_propositions) else {
+    // The cited bounds are of two kinds: signed 32-bit ones, which keep a
+    // 32-bit index sum defined, and unsigned 64-bit ones, which keep a
+    // 64-bit index sum from wrapping.
+    let (wide_bounds, signed_bounds): (Vec<&Proposition>, Vec<&Proposition>) = bound_propositions
+        .iter()
+        .copied()
+        .partition(|premise| unsigned64_order(premise).is_some());
+    let Some(bounds) = scalar_bounds(&signed_bounds) else {
         return false;
+    };
+    let Some(wide_bounds) = unsigned64_bounds(&wide_bounds) else {
+        return false;
+    };
+    let wide_range = |value: &Bitvector32Term| match value.uint64_as_const() {
+        Some(value) => (value, value),
+        None => wide_bounds.get(value).copied().unwrap_or((0, u64::MAX)),
+    };
+    // `x + y` over `uint64` is the sum of its operands when it cannot wrap.
+    let wide_sum_is_exact = |x: &Bitvector32Term, y: &Bitvector32Term| {
+        if !charge_bitvector(x) || !charge_bitvector(y) {
+            return false;
+        }
+        u128::from(wide_range(x).1) + u128::from(wide_range(y).1) <= u128::from(u64::MAX)
     };
     let atom_range = |value: &Bitvector32Term| match value {
         Bitvector32Term::Constant(value) => {
@@ -1374,6 +1450,34 @@ fn pointer_translation(
                 OffsetPart::Scaled(value, width) => PointerOffsetTerm::Int32Scaled {
                     value: Box::new(value.clone()),
                     byte_width: width,
+                },
+                OffsetPart::Offset(PointerOffsetTerm::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned: true,
+                }) => {
+                    pending.push(OffsetPart::Scaled64(value, *byte_width));
+                    continue;
+                }
+                OffsetPart::Scaled64(Bitvector32Term::UInt64Constant(value), width) => {
+                    let value = i128::from(*value) * i128::from(width);
+                    let Some(next) = constant.checked_add(sign * value) else {
+                        return false;
+                    };
+                    constant = next;
+                    continue;
+                }
+                OffsetPart::Scaled64(Bitvector32Term::UInt64Add(left, right), width)
+                    if wide_sum_is_exact(left, right) =>
+                {
+                    pending.push(OffsetPart::Scaled64(left, width));
+                    pending.push(OffsetPart::Scaled64(right, width));
+                    continue;
+                }
+                OffsetPart::Scaled64(value, width) => PointerOffsetTerm::Int64Scaled {
+                    value: Box::new(value.clone()),
+                    byte_width: width,
+                    unsigned: true,
                 },
                 OffsetPart::Offset(value) => value.clone(),
             };

@@ -1540,11 +1540,13 @@ fn restore_range_extent_spelling(
                 memory,
                 base,
                 bytes: folded,
+                wide: false,
             },
         ) => Proposition::CMemoryLoadable {
             memory,
             base,
             bytes: substituted_range_extent(bytes, from, to).unwrap_or(folded),
+            wide: false,
         },
         (Proposition::And(left, right), Proposition::And(renamed_left, renamed_right)) => {
             Proposition::And(recurse(left, *renamed_left), recurse(right, *renamed_right))
@@ -1967,8 +1969,8 @@ fn collect_proposition_bitvector_atoms(
             for resource in [left, right] {
                 if let CResource::Memory(range) = &**resource {
                     collect_pointer_offset_bitvector_atoms(&range.base.offset, atoms);
-                    collect_bitvector_atoms(&range.start, atoms);
-                    collect_bitvector_atoms(&range.end, atoms);
+                    collect_bitvector_atoms(range.bound_terms().0, atoms);
+                    collect_bitvector_atoms(range.bound_terms().1, atoms);
                 }
             }
         }
@@ -2563,6 +2565,7 @@ mod integer_equality_fact_index_tests {
                     offset,
                 },
                 bytes: Bitvector32Term::Constant(bytes),
+                wide: false,
             }),
         }
     }
@@ -2599,6 +2602,7 @@ mod integer_equality_fact_index_tests {
                     offset,
                 },
                 bytes: Bitvector32Term::Constant(bytes),
+                wide: false,
             }),
         }
     }

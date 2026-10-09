@@ -2,6 +2,15 @@
 //! chunks advances only the cursor and remaining complete-byte range.
 use super::*;
 
+/// Whether a whole chunk of `size` bytes is left in `remaining`. Both are
+/// `usize` byte counts.
+fn chunk_has_whole(remaining: CExpression, size: CExpression) -> CExpression {
+    c_and(
+        c_less_than(c_uint64_literal(0), remaining.clone()),
+        c_less_equal(size, remaining),
+    )
+}
+
 impl Context<'_> {
     pub(super) fn chunk_declare(
         &mut self,
@@ -40,7 +49,7 @@ impl Context<'_> {
         let mut result = c_seq(pointer_capture, c_seq(length_capture, size_prefix));
         for (name, value_type, constant) in [
             (&cursor, CType::UInt8Pointer, true),
-            (&remaining, CType::Int32, false),
+            (&remaining, CType::UInt64, false),
             (&size_name, CType::UInt64, false),
             (&tail, CType::UInt8Pointer, true),
             (&tail_len, CType::UInt64, false),
@@ -76,13 +85,6 @@ impl Context<'_> {
         );
         result = c_seq(
             result,
-            c_labeled_assert(
-                c_less_equal(c_variable(length_name), c_uint64_literal(i32::MAX as u64)),
-                "Rust chunk iterator memory-model length bound",
-            ),
-        );
-        result = c_seq(
-            result,
             c_assign(
                 &tail_len,
                 c_remainder(c_variable(length_name), c_variable(&size_name)),
@@ -94,13 +96,7 @@ impl Context<'_> {
             result,
             c_assign(
                 &remaining,
-                c_cast(
-                    c_cast(
-                        c_subtract(c_variable(length_name), c_variable(&tail_len)),
-                        CType::UInt32,
-                    ),
-                    CType::Int32,
-                ),
+                c_subtract(c_variable(length_name), c_variable(&tail_len)),
             ),
         );
         result = c_seq(result, c_assign(&cursor, c_variable(pointer_name)));
@@ -150,15 +146,7 @@ impl Context<'_> {
         next = c_seq(next, c_declare(&length, CType::UInt64));
         next = c_seq(next, c_assign(&binding.name, c_variable(&cursor)));
         next = c_seq(next, c_assign(&length, c_variable(&size)));
-        // The successful next guard bounds the size before pointer narrowing.
-        next = c_seq(
-            next,
-            c_labeled_assert(
-                c_less_equal(c_variable(&size), c_uint64_literal(i32::MAX as u64)),
-                "Rust chunk iterator memory-model offset bound",
-            ),
-        );
-        let step = c_cast(c_cast(c_variable(&size), CType::UInt32), CType::Int32);
+        let step = c_variable(&size);
         next = c_seq(
             next,
             c_assign(&cursor, c_add(c_variable(&cursor), step.clone())),
@@ -169,16 +157,7 @@ impl Context<'_> {
         );
         let source_body = self.body(body)?;
         Ok(c_while(
-            c_and(
-                c_less_than(c_int32_literal(0), c_variable(&remaining)),
-                c_and(
-                    c_less_equal(c_variable(&size), c_uint64_literal(i32::MAX as u64)),
-                    c_less_equal(
-                        c_cast(c_cast(c_variable(&size), CType::UInt32), CType::Int32),
-                        c_variable(&remaining),
-                    ),
-                ),
-            ),
+            chunk_has_whole(c_variable(&remaining), c_variable(&size)),
             Vec::new(),
             c_seq(next, source_body),
         ))
@@ -202,7 +181,7 @@ impl Context<'_> {
             self.mir_chunk_iterators.insert(name.into());
             vec![
                 ("cursor", CType::UInt8Pointer, true),
-                ("remaining", CType::Int32, false),
+                ("remaining", CType::UInt64, false),
                 ("size", CType::UInt64, false),
                 ("tail", CType::UInt8Pointer, true),
                 ("tail_len", CType::UInt64, false),
@@ -307,13 +286,7 @@ impl Context<'_> {
         }
         let remaining = c_variable(format!("{iterator}_remaining"));
         let size = c_variable(format!("{iterator}_size"));
-        Ok(c_and(
-            c_less_than(c_int32_literal(0), remaining.clone()),
-            c_and(
-                c_less_equal(size.clone(), c_uint64_literal(i32::MAX as u64)),
-                c_less_equal(c_cast(c_cast(size, CType::UInt32), CType::Int32), remaining),
-            ),
-        ))
+        Ok(chunk_has_whole(remaining, size))
     }
     pub(super) fn chunk_next(&self, iterator: &str, option: &str) -> Result<CStatement, String> {
         if !self.chunk_options.contains(option) {
@@ -322,7 +295,7 @@ impl Context<'_> {
         let cursor = format!("{iterator}_cursor");
         let remaining = format!("{iterator}_remaining");
         let size = c_variable(format!("{iterator}_size"));
-        let step = c_cast(c_cast(size.clone(), CType::UInt32), CType::Int32);
+        let step = size.clone();
         let some = c_seq(
             c_assign(format!("{option}_some"), c_int32_literal(1)),
             c_seq(

@@ -1298,6 +1298,7 @@ mod path_condition_tests {
             memory: memory.clone(),
             base: base.clone(),
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         };
         let guard = Proposition::ConditionIs(
             ConditionTerm::Bitvector32SignedSubtractOverflows(
@@ -1319,6 +1320,7 @@ mod path_condition_tests {
             memory,
             base,
             bytes: Bitvector32Term::Constant(2),
+            wide: false,
         };
         let invalid = Proposition::And(Box::new(guard), Box::new(wider));
         assert!(!certified_fact_transport_reaches(

@@ -289,6 +289,7 @@ pub fn c_state_justifies_loadability_obligation(
                 memory: memory.clone(),
                 base: pointer.clone(),
                 bytes: Bitvector32Term::Constant(value_type.byte_width()),
+                wide: false,
             };
             c_state_justifies_loadability_obligation(state, &loadable, assumptions)
                 && assumptions
@@ -300,6 +301,7 @@ pub fn c_state_justifies_loadability_obligation(
             memory,
             base,
             bytes,
+            wide: false,
         } => {
             assumptions.proves_exact(obligation)
                 || matches!(memory.load(base), CExpressionOutcome::Value(_))
@@ -399,6 +401,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
         memory,
         base,
         bytes,
+        wide: false,
     } = goal
     else {
         return false;
@@ -408,6 +411,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
             memory: fact_memory,
             base: fact_base,
             bytes: fact_bytes,
+            wide: false,
         } = fact
         else {
             return false;
@@ -748,6 +752,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                                 memory: fact_memory,
                                 base: fact_base,
                                 bytes,
+                                wide: false,
                             } => {
                                 bytes.as_const() == Some(4)
                                     && crate::kernel::reasoning::memory_range_still_available(
@@ -1461,6 +1466,15 @@ fn c_function_contract_entry_facts(
         if !well_formed {
             continue;
         }
+        // A wide range states the wide liveness fact.
+        if range.wide_bounds().is_some() {
+            assumptions = entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::ClauseLoadable,
+                range.loadable_fact(entry_state.memory()),
+            );
+            continue;
+        }
         let width = range.element_width();
         assumptions = entry_facts.assume(
             assumptions,
@@ -1474,6 +1488,7 @@ fn c_function_contract_entry_facts(
                     Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
                     Bitvector32Term::Constant(width),
                 ),
+                wide: false,
             },
         );
     }
@@ -2553,11 +2568,13 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
                 memory: left_memory,
                 base: left_base,
                 bytes: left_bytes,
+                wide: false,
             },
             Proposition::CMemoryLoadable {
                 memory: right_memory,
                 base: right_base,
                 bytes: right_bytes,
+                wide: false,
             },
         ) => {
             canonicalize_pointer_loads(left_base) == canonicalize_pointer_loads(right_base)
@@ -2975,6 +2992,7 @@ pub(super) fn resources_certify_loadability(
         memory,
         base,
         bytes,
+        wide: false,
     } = proposition
     else {
         return false;

@@ -4392,6 +4392,7 @@ mod selected_premise_tests {
                 offset: PointerOffsetTerm::Constant(0),
             },
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         };
         let surface = ClickProposition::Loadable {
             segment: ContractSegment {

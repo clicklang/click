@@ -112,10 +112,11 @@ prints a C-shaped place.
 
 Design, kernel survey and order of work: `design/typed-indices.md`.
 
-Stage 1 is built: a 64-bit range bound of any form, and a 64-bit parameter
-written alone as an index, need no cast. The contract still states
-`requires n <= 2147483647`, and one that does not is refused at setup with
-the requirement to state.
+Stages 1 and 3 are built, and stage 2 for the common shape: a range from
+zero to a `uint64` bound has 64-bit bounds, a 64-bit index is never narrowed,
+and such a contract states no limit on its length
+(`mdtests/a_64_bit_range_needs_no_bound_on_its_length.md`). The Rust
+examples and the `std::span` tests are written that way, with no cast.
 
 Remaining:
 
@@ -139,13 +140,21 @@ Remaining:
   underneath combines two. A `long` loop
   is ranked by an `int64` measure
   (`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`).
-- **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
-  2147483647`. It cannot be done piece by piece and needs scaling
-  regressions. Lacker said to go ahead on 2026-10-08. In progress on a
-  local branch behind a switch, to land as one series; the decisions taken
-  along the way are in the design's stage 2 section.
-- A 64-bit index expression that is not a lone parameter still takes the
-  cast in a contract. It follows stage 3.
+- **Stage 2, what is left.** A range with a nonzero start
+  (`bytes[a..b]`) and a range with a signed 64-bit bound still go through
+  the 32-bit conversion and need their bound shown to fit; plan steps 5 and
+  9, and the signed wide kind, in the design. A cast written in a range
+  bound, `bytes[0..(int32)length]`, is still read as the uncast range,
+  while a cast in a place truncates as decided; the two should agree.
+  Two scaling regressions cover wide ranges
+  (`wide_range_membership_ignores_unrelated_index_bounds`,
+  `stores_to_bounded_unordered_size_t_indices_are_near_linear`); the plan
+  names two more, for stores beside many owned ranges and the unsigned
+  order walk. The Adler-32 trial's three long compute proofs
+  (`design/charon-trial/adler2/{four-byte,general,small-batch}-compute.click`)
+  are still written around the chunk iterator's old 32-bit count, and their
+  eight nightly-only tests fail until they are converted. A refusal whose range is reached through a loaded pointer prints a byte
+  spelling, `((char *)s)[...]`, instead of the element place.
 
 Done when: no contract casts an index, and a slice contract states no bound
 on its length.

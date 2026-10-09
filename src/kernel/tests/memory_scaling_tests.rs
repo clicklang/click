@@ -1367,6 +1367,65 @@ fn symbolic_range_membership_ignores_unrelated_index_bounds() {
     );
 }
 
+/// [`symbolic_range_membership_ignores_unrelated_index_bounds`] for a range
+/// with unsigned 64-bit bounds. The access at index `i` is placed in
+/// `base[0..end]` by deciding `i < end` and the extent limit on `end`; the
+/// bounds other indices have against the same `end` are edges below `end`,
+/// which an upward order walk through it does not read.
+#[test]
+fn wide_range_membership_ignores_unrelated_index_bounds() {
+    let mut samples = Vec::new();
+    for size in [64, 128, 256, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(96_100));
+        let index = Bitvector32Term::Variable(Variable(96_101));
+        let end = Bitvector32Term::Variable(Variable(96_102));
+        let range = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            end.clone(),
+            4,
+        );
+        let at = |index: Bitvector32Term| base.offset_by_typed_elements(index, 4, true, true);
+        let mut facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::uint64_less_than(index.clone(), end.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    end.clone(),
+                    Bitvector32Term::UInt64Constant(i64::MAX as u64 / 4),
+                ),
+                true,
+            );
+        for i in 0..size {
+            let unrelated = Bitvector32Term::Variable(Variable(97_000 + i));
+            facts = facts.assume_condition(
+                ConditionTerm::uint64_less_than(unrelated, end.clone()),
+                true,
+            );
+        }
+        let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let contains = |p| {
+                crate::kernel::assumptions::pointer_in_memory_range_shallow_with_facts(
+                    p, &range, &facts,
+                )
+            };
+            (
+                contains(&at(index.clone())),
+                contains(&at(Bitvector32Term::Variable(Variable(99_998)))),
+            )
+        });
+        assert_eq!(verdicts, (true, false));
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "wide membership scanned unrelated bounds: {samples:?}"
+    );
+}
+
 /// A kept range whose base is not one of the access's own spellings is
 /// related to it by a proved base equality, asked once per fact set: every
 /// walk across the call asks the same question about the same kept range,

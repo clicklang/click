@@ -1490,6 +1490,7 @@ mod tests {
             memory: crate::kernel::CMemory::new(),
             base: pointer,
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         };
         let quantified = Proposition::ForAll {
             var: Variable(3_100_000),

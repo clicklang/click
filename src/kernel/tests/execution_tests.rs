@@ -1910,6 +1910,7 @@ fn while_invariant_is_proof_obligation() {
         memory: CMemory::new(),
         base: pointer,
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let state = CState::new().with_local("x", int32(0));
     let statement = c_while(

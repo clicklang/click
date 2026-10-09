@@ -117,6 +117,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 memory: CMemory::new().with_block("sum", 16),
                 base: pointer,
                 bytes: Bitvector32Term::Variable(Variable(30)),
+                wide: false,
             }),
         )),
     };

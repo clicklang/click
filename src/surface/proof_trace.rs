@@ -978,6 +978,7 @@ mod tests {
                 offset: PointerOffsetTerm::Constant(0),
             },
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         }
     }
 

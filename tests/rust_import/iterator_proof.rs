@@ -46,12 +46,17 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     for invalid in [
         proof.replacen("views bytes[0..bytes.len()];", "", 1),
         proof.replacen(
-            "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len()));",
-            "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len())) + 1;",
+            "ensures to_integer(result) == old(prefix(bytes, bytes.len()));",
+            "ensures to_integer(result) == old(prefix(bytes, bytes.len())) + 1;",
             1,
         ),
-        proof.replace("decreases iter_remaining;", "decreases -iter_remaining;"),
+        // The remaining count is a `usize`; a measure that grows is refused.
+        proof.replace(
+            "decreases iter_remaining;",
+            "decreases bytes.len() - iter_remaining;",
+        ),
     ] {
+        assert_ne!(invalid, proof, "negative proof must change the sidecar");
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
 }

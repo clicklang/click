@@ -184,28 +184,27 @@ fn collect_atoms(expression: &ContractExpression, atoms: &mut Vec<ContractExpres
     }
 }
 
-/// Whether `expression` is a sum or difference of plain operands. A side
-/// that multiplies, divides, shifts or masks is not a linear claim, and an
-/// equality over one is left to the families that read those operations.
+/// Whether `expression` is a linear side: a sum or difference, or a plain
+/// operand. A side that is itself a product, a quotient, a shift or a mask
+/// is not a linear claim, and an equality over one is left to the families
+/// that read those operations. Such an operation inside a sum is an operand
+/// like any other: `(n - n % 4u64) - r` is linear in `n`, `n % 4u64` and `r`.
 fn linear(expression: &ContractExpression) -> bool {
-    match expression {
-        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
-            linear(left) && linear(right)
-        }
+    !matches!(
+        expression,
         ContractExpression::Multiply(..)
-        | ContractExpression::Divide(..)
-        | ContractExpression::Remainder(..)
-        | ContractExpression::ShiftLeft(..)
-        | ContractExpression::ShiftRight(..)
-        | ContractExpression::BitwiseAnd(..)
-        | ContractExpression::BitwiseOr(..)
-        | ContractExpression::BitwiseXor(..)
-        | ContractExpression::BitwiseNot(..)
-        | ContractExpression::Negate(..)
-        | ContractExpression::CUnary { .. }
-        | ContractExpression::If { .. } => false,
-        _ => true,
-    }
+            | ContractExpression::Divide(..)
+            | ContractExpression::Remainder(..)
+            | ContractExpression::ShiftLeft(..)
+            | ContractExpression::ShiftRight(..)
+            | ContractExpression::BitwiseAnd(..)
+            | ContractExpression::BitwiseOr(..)
+            | ContractExpression::BitwiseXor(..)
+            | ContractExpression::BitwiseNot(..)
+            | ContractExpression::Negate(..)
+            | ContractExpression::CUnary { .. }
+            | ContractExpression::If { .. }
+    )
 }
 
 /// The 64-bit type a literal written in `expression` has, if one is.
@@ -370,6 +369,19 @@ impl<'a> Proof<'a> {
                 kernel,
                 Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(..), true)
             );
+            // An equality the kernel already holds by identity: a local
+            // whose value is the other side, `next == i + 1u64` after
+            // `next = i + 1`. It needs no bridge, since both observations
+            // are one term, but the sum it names is still to be observed.
+            if kernel == Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                && let Some((left, right, Relation::Equal, _)) = relation_parts(premise)
+            {
+                for side in [&left, &right] {
+                    collect_operations(side, &mut operations);
+                    collect_atoms(side, &mut atoms);
+                }
+                continue;
+            }
             if Carrier::of(&kernel) != Some(carrier) && !equality {
                 // An Integer premise is used as it is written.
                 facts.push(premise.clone());
@@ -399,8 +411,11 @@ impl<'a> Proof<'a> {
         // bounded only by another value, `i + 1` under `i < length`, is
         // shown not to wrap from that, with no bound on `length` listed.
         // One application per value written, and only where a sum or
-        // difference could need it.
-        if carrier == Carrier::UInt64 && !operations.is_empty() {
+        // difference could need it, or an equality: `n <= 0` leaves
+        // `n == 0` because no `uint64` is below zero.
+        if carrier == Carrier::UInt64
+            && (!operations.is_empty() || goal_relation == Relation::Equal)
+        {
             for atom in &atoms {
                 let lower = order(literal("0"), to_integer(atom), false);
                 let upper = order(to_integer(atom), literal(UINT64_MAX), false);
@@ -600,6 +615,31 @@ impl<'a> Proof<'a> {
                         proof = next;
                         facts.push(fact);
                         progressed = true;
+                        // An observed unsigned sum or difference is itself
+                        // a `uint64`, in the type's range. Stating that
+                        // gives the Integer step one fact where it would
+                        // otherwise need the ranges of every operand.
+                        if carrier == Carrier::UInt64
+                            && let Pending::Operation(operation) = &item
+                        {
+                            let lower = order(literal("0"), to_integer(operation), false);
+                            let upper = order(to_integer(operation), literal(UINT64_MAX), false);
+                            let bounds = apply(
+                                "uint64_to_integer_bounds",
+                                vec![operation.clone()],
+                                Vec::new(),
+                            );
+                            if let Ok(next) = proof
+                                .apply_step(have(lower.clone(), vec![bounds.clone()]))
+                                .and_then(|proof| {
+                                    proof.apply_step(have(upper.clone(), vec![bounds]))
+                                })
+                            {
+                                proof = next;
+                                facts.push(lower);
+                                facts.push(upper);
+                            }
+                        }
                     }
                     Err(reason) => {
                         // Operations come before the premises that need
@@ -619,11 +659,16 @@ impl<'a> Proof<'a> {
                 break;
             }
         }
-        if !pending.is_empty() {
-            return Err(Some(stuck.unwrap_or_else(|| {
+        // A sum or premise that could not be carried is left as it is: its
+        // observation is then one opaque value to the Integer claim, which
+        // may not need to look inside it (`x + 1 < 8` from `x <= 6`, for a
+        // compound `x`). If the claim does not follow, the reason reported
+        // is the item that could not be carried.
+        let uncarried = (!pending.is_empty()).then(|| {
+            stuck.unwrap_or_else(|| {
                 "the listed premises could not be carried to Integer order".to_string()
-            })));
-        }
+            })
+        });
 
         let observed_goal = relate(
             to_integer(&goal_lower),
@@ -636,11 +681,14 @@ impl<'a> Proof<'a> {
                 vec![ProofStep::ArithmeticUsing(facts)],
             ))
             .map_err(|error| {
-                Some(format!(
-                    "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer `arithmetic` step, which combines at most two order premises; state an intermediate fact with `have` first: {}",
-                    spell(&observed_goal),
-                    error.raw_summary()
-                ))
+                Some(match &uncarried {
+                    Some(reason) => format!("{reason}: {}", error.raw_summary()),
+                    None => format!(
+                        "the goal's Integer reading `{}` does not follow from the listed premises' Integer readings by one Integer `arithmetic` step, which combines at most two order premises; state an intermediate fact with `have` first: {}",
+                        spell(&observed_goal),
+                        error.raw_summary()
+                    ),
+                })
             })?;
         let applied = proof
             .apply_step(apply(

@@ -1588,21 +1588,25 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
             memory: entry.clone(),
             base: arc_pointer(0),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         })
         .assume_proposition(Proposition::CMemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(8),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         })
         .assume_proposition(Proposition::CMemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(12),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         })
         .assume_proposition(Proposition::CMemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(16),
             bytes: Bitvector32Term::Constant(32),
+            wide: false,
         })
         .assume_condition(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), len_at_entry.clone()),

@@ -89,7 +89,10 @@ pub(in crate::surface) fn plan_special_arithmetic_certificate(
             .iter()
             .enumerate()
             .filter_map(|(i, p)| {
-                (i != relation && charge_proposition(p) && is_signed_scalar_bound(p)).then_some(i)
+                (i != relation
+                    && charge_proposition(p)
+                    && (is_signed_scalar_bound(p) || is_unsigned64_bound(p)))
+                .then_some(i)
             })
             .collect();
         return Some(KernelCertificate {
@@ -452,6 +455,19 @@ fn is_signed_scalar_bound(p: &Proposition) -> bool {
         return false;
     };
     true
+}
+/// An unsigned 64-bit order, which bounds a `uint64` index.
+fn is_unsigned64_bound(p: &Proposition) -> bool {
+    matches!(
+        p,
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector64UnsignedLessThan(_, _)
+                | ConditionTerm::Bitvector64UnsignedLessEqual(_, _)
+                | ConditionTerm::Bitvector64UnsignedGreaterThan(_, _)
+                | ConditionTerm::Bitvector64UnsignedGreaterEqual(_, _),
+            true,
+        )
+    )
 }
 fn is_bitvector64_equality(p: &Proposition) -> bool {
     matches!(

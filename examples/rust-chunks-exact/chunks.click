@@ -1,130 +1,125 @@
 verifying "chunks.rs";
 
 fn cover(bytes: &[u8]) -> usize {
-    requires bytes.len() <= 1000u64;
     views bytes[0..bytes.len()];
     ensures result == bytes.len() % 4u64;
-    ensures forall (k: int32) {
-        0 <= k and k < (int32)(uint32)bytes.len() implies bytes[k] == old(bytes[k])
+    ensures forall (k: uint64) {
+        k < bytes.len() implies bytes[k] == old(bytes[k])
     };
 } by {
     have bytes.len() % 4u64 <= bytes.len() by { normalize(); }
-    have bytes.len() - bytes.len() % 4u64 <= bytes.len() by { normalize() using { bytes.len() % 4u64 <= bytes.len(); } }
-    have bytes.len() - bytes.len() % 4u64 <= 1000u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 1000u64; } }
-    have bytes.len() - bytes.len() % 4u64 <= 2147483647u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 1000u64; } }
-    have 0 <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 2147483647u64; } }
-    have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= 1000 by { simp(); }
-    have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
-    have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= (int32)(uint32)bytes.len() by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; } }
     execute_until(loop(0));
-    have viewable(bytes[0..bytes.len()]) by {
-        transport(at(function.entry, viewable(bytes[0..bytes.len()])), viewable(bytes[0..bytes.len()])) using {
-            at(function.entry, viewable(bytes[0..bytes.len()]));
-            0 <= (int32)(uint32)bytes.len();
+    have iter_remaining == bytes.len() - bytes.len() % 4u64 by { simp(); }
+    have (bytes.len() - bytes.len() % 4u64) % 4u64 == 0u64 by { simp(); }
+    have iter_remaining % 4u64 == 0u64 by {
+        rewrite(iter_remaining == bytes.len() - bytes.len() % 4u64); simp();
+    }
+    have (bytes.len() - bytes.len() % 4u64) - iter_remaining == 0u64 by {
+        arithmetic() using {
+            iter_remaining == bytes.len() - bytes.len() % 4u64;
+            bytes.len() % 4u64 <= bytes.len();
         }
     }
-    have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
-    have (((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) % 4) == 0 by { normalize() using { bytes.len() <= 2147483647u64; } }
-    have iter_remaining == (int32)(uint32)(bytes.len() - bytes.len() % 4u64) by { simp(); }
-    have iter_remaining % 4 == 0 by {
-        rewrite(iter_remaining == (int32)(uint32)(bytes.len() - bytes.len() % 4u64)); simp();
+    have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
+        rewrite((bytes.len() - bytes.len() % 4u64) - iter_remaining == 0u64); simp();
     }
     loop {
         decreases iter_remaining;
         views bytes[0..bytes.len()];
-        invariant viewable(bytes[0..bytes.len()]);
-        invariant bytes.len() <= 1000u64;
-        invariant 0 <= (int32)(uint32)bytes.len() and ((int32)(uint32)bytes.len()) <= 1000;
-        invariant 0 <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64) and ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= (int32)(uint32)bytes.len();
-        invariant ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= 1000;
         invariant iter_size == 4u64;
         invariant iter_tail_len == bytes.len() % 4u64;
         invariant tail_len == iter_tail_len;
-        invariant iter_tail == bytes + (int32)(uint32)(bytes.len() - bytes.len() % 4u64);
+        invariant iter_tail == bytes + (bytes.len() - bytes.len() % 4u64);
         invariant tail == iter_tail;
-        invariant 0 <= iter_remaining and iter_remaining <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64);
-        invariant iter_remaining % 4 == 0;
-        invariant iter_cursor == bytes + ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining);
-        invariant 0 <= ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) and ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) <= 1000;
+        invariant iter_remaining <= bytes.len() - bytes.len() % 4u64;
+        invariant iter_remaining % 4u64 == 0u64;
+        invariant iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining);
         preserve by {
-            have 4 <= iter_remaining by { simp(); }
+            have 4u64 <= iter_remaining by { simp(); }
             mark iteration;
-            have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) + 4 <= (int32)(uint32)bytes.len() by {
+            have (bytes.len() - bytes.len() % 4u64) - iter_remaining < bytes.len() by {
                 arithmetic() using {
-                    4 <= iter_remaining;
-                    iter_remaining <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64);
-                    ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= (int32)(uint32)bytes.len();
-                    0 <= (int32)(uint32)bytes.len(); ((int32)(uint32)bytes.len()) <= 1000;
-                    0 <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64);
+                    4u64 <= iter_remaining;
+                    iter_remaining <= (bytes.len() - bytes.len() % 4u64);
+                    bytes.len() % 4u64 <= bytes.len();
+                }
+            }
+            have ((bytes.len() - bytes.len() % 4u64) - iter_remaining) + 3u64 < bytes.len() by {
+                arithmetic() using {
+                    4u64 <= iter_remaining;
+                    iter_remaining <= (bytes.len() - bytes.len() % 4u64);
+                    bytes.len() % 4u64 <= bytes.len();
                 }
             }
             execute_until(read(1)); step();
-            have iter_remaining == at(iteration, iter_remaining) - 4 by { simp(); }
-            have (at(iteration, iter_remaining) - 4) % 4 == at(iteration, iter_remaining % 4) by {
-                normalize() using { at(iteration, 4 <= iter_remaining); }
+            have iter_remaining == at(iteration, iter_remaining) - 4u64 by { simp(); }
+            have (at(iteration, iter_remaining) - 4u64) % 4u64 == at(iteration, iter_remaining % 4u64) by {
+                normalize() using { 4u64 <= at(iteration, iter_remaining); }
             }
-            have iter_remaining % 4 == 0 by {
-                rewrite(iter_remaining == at(iteration, iter_remaining) - 4);
-                rewrite((at(iteration, iter_remaining) - 4) % 4 == at(iteration, iter_remaining % 4)); simp();
+            have iter_remaining % 4u64 == 0u64 by {
+                rewrite(iter_remaining == at(iteration, iter_remaining) - 4u64);
+                rewrite((at(iteration, iter_remaining) - 4u64) % 4u64 == at(iteration, iter_remaining % 4u64));
+                simp();
             }
-            have 0 <= iter_remaining by {
-                arithmetic() using { iter_remaining == at(iteration, iter_remaining) - 4; at(iteration, 4 <= iter_remaining); }
-            }
-            have iter_remaining <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64) by {
+            have iter_remaining <= (bytes.len() - bytes.len() % 4u64) by {
                 arithmetic() using {
-                    iter_remaining == at(iteration, iter_remaining) - 4;
-                    at(iteration, 4 <= iter_remaining);
-                    at(iteration, iter_remaining <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64));
-                    0 <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64);
-                    ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= 1000;
+                    iter_remaining == at(iteration, iter_remaining) - 4u64;
+                    4u64 <= at(iteration, iter_remaining);
+                    at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
+                    bytes.len() % 4u64 <= bytes.len();
                 }
             }
-            have iter_cursor == at(iteration, iter_cursor) + 4 by { simp(); }
-            have ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) == at(iteration, (int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) + 4 by {
+            have (bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining) <= 18446744073709551611u64 by {
                 arithmetic() using {
-                    iter_remaining == at(iteration, iter_remaining) - 4;
-                    at(iteration, 4 <= iter_remaining);
-                    at(iteration, iter_remaining <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64));
-                    0 <= (int32)(uint32)(bytes.len() - bytes.len() % 4u64);
-                    ((int32)(uint32)(bytes.len() - bytes.len() % 4u64)) <= 1000;
+                    4u64 <= at(iteration, iter_remaining);
+                    at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
+                    bytes.len() % 4u64 <= bytes.len();
                 }
             }
-            have at(iteration, iter_cursor) + 4 == bytes + (at(iteration, (int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) + 4) by {
+            have at(iteration, iter_cursor) + 4 == bytes + (((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64) by {
                 arithmetic() using {
-                    at(iteration, iter_cursor == bytes + ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining));
-                    at(iteration, 0 <= ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining));
-                    at(iteration, ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) <= 1000);
+                    at(iteration, iter_cursor) == bytes + ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining));
+                    (bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining) <= 18446744073709551611u64;
                 }
             }
-            have iter_cursor == bytes + ((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
-                rewrite(((int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) == at(iteration, (int32)(uint32)(bytes.len() - bytes.len() % 4u64) - iter_remaining) + 4); simp();
+            have (bytes.len() - bytes.len() % 4u64) - iter_remaining == ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64 by {
+                arithmetic() using {
+                    iter_remaining == at(iteration, iter_remaining) - 4u64;
+                    4u64 <= at(iteration, iter_remaining);
+                    at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
+                    bytes.len() % 4u64 <= bytes.len();
+                }
+            }
+            have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
+                rewrite((bytes.len() - bytes.len() % 4u64) - iter_remaining == ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64);
+                simp();
+            }
+            have iter_remaining < at(iteration, iter_remaining) by {
+                arithmetic() using {
+                    iter_remaining == at(iteration, iter_remaining) - 4u64;
+                    4u64 <= at(iteration, iter_remaining);
+                }
             }
             execute_until(back_edge());
-            # Transport after the body's automatic-storage cleanup.
-            have viewable(bytes[0..bytes.len()]) by {
-                transport(at(iteration, viewable(bytes[0..bytes.len()])), viewable(bytes[0..bytes.len()])) using {
-                    at(iteration, viewable(bytes[0..bytes.len()]));
-                    0 <= (int32)(uint32)bytes.len();
-                }
-            }
             close_invariants();
         }
     }
-    have iter_remaining < 4 by {
+    have iter_remaining < 4u64 by {
         cases {
-            not (0 < iter_remaining) => {
-                have iter_remaining <= 0 by { simp(); }
-                arithmetic() using { iter_remaining <= 0; }
+            not (0u64 < iter_remaining) => {
+                arithmetic() using { not 0u64 < iter_remaining; }
             }
-            not (4 <= iter_remaining) => { simp(); }
+            not (4u64 <= iter_remaining) => { assumption(); }
         }
     }
-    have iter_remaining % 4 == iter_remaining by { normalize() using { 0 <= iter_remaining; iter_remaining < 4; } }
-    have iter_remaining == 0 by { simp(); }
+    have iter_remaining % 4u64 == iter_remaining by {
+        normalize() using { iter_remaining < 4u64; }
+    }
+    have iter_remaining == 0u64 by { simp(); }
     have iter_cursor == iter_tail by { simp(); }
     execute();
-    have forall (k: int32) {
-        0 <= k and k < (int32)(uint32)bytes.len() implies bytes[k] == old(bytes[k])
+    have forall (k: uint64) {
+        k < bytes.len() implies bytes[k] == old(bytes[k])
     } by { intro(); intro(); simp(); }
     simp();
 }

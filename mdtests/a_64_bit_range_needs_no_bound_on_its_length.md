@@ -1,12 +1,15 @@
-# A 64-bit bound must be shown to fit a 32-bit index
+# A 64-bit range needs no bound on its length
 
 The contracts of `a_64_bit_index_and_bound_need_no_cast.md` without
-`requires length <= 2147483647`. The range `bytes[0..length]` converts its
-bound to the 32-bit index a place takes, and nothing shows the conversion is
-exact, so the contract is refused when it is set up, with the requirement to
-state.
+`requires length <= 2147483647`. A range whose bound is a `size_t` has
+64-bit bounds, and an access at a `size_t` index is placed in it by 64-bit
+comparisons, so nothing has to fit 32 bits. What the range does state is
+the object-size limit, `length <= 9223372036854775807`, which holds of any
+object and is assumed where a contract holds the range on entry.
 
-```c filename=a_64_bit_bound_must_be_shown_to_fit_a_32_bit_index.c
+This contract used to be refused, asking for the 32-bit bound.
+
+```c filename=a_64_bit_range_needs_no_bound_on_its_length.c
 unsigned char read(const unsigned char *bytes, unsigned long length, unsigned long index) {
     return bytes[index];
 }
@@ -16,7 +19,7 @@ void write(unsigned char *bytes, unsigned long length, unsigned long index, unsi
 ```
 
 ```click
-verifying "a_64_bit_bound_must_be_shown_to_fit_a_32_bit_index.c";
+verifying "a_64_bit_range_needs_no_bound_on_its_length.c";
 uint8 read(const uint8* bytes, uint64 length, uint64 index) {
     requires index < length;
     views bytes[0..length];
@@ -30,5 +33,5 @@ void write(uint8* bytes, uint64 length, uint64 index, uint8 value) {
 ```
 
 ```expect
-fail: a place takes a 32-bit index, so the contract has to state that this bound fits one
+pass
 ```

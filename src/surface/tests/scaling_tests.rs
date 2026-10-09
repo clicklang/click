@@ -1379,6 +1379,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
         memory: memory.clone(),
         base,
         bytes: Bitvector32Term::Constant(bytes),
+        wide: false,
     };
     // (sources stated about the goal's object, goal, premises the
     // certificate must cite; none when the goal must stay unproved)
@@ -4827,6 +4828,83 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
     );
 }
 
+/// [`bounded_index_stores`] with `size_t` indices and length: each index is
+/// bounded by `ck < n` alone, and the owned range `a[0..n]` has 64-bit
+/// bounds.
+fn bounded_size_t_index_stores(stores: usize) -> (String, String) {
+    let indices = (0..stores)
+        .map(|index| format!(", uint64 c{index}"))
+        .collect::<String>();
+    let signature = format!("void mark(int32 *a, uint64 n{indices})");
+    let store_lines = (0..stores)
+        .map(|index| format!("    a[c{index}] = {index};\n"))
+        .collect::<String>();
+    let c_source = format!("{signature} {{\n{store_lines}}}\n");
+    let bounds = (0..stores)
+        .map(|index| format!("    requires c{index} < n;\n"))
+        .collect::<String>();
+    let last = stores - 1;
+    let steps = "    step();\n".repeat(stores);
+    let click_source = format!(
+        "verifying \"mark.c\";\n\n{signature} {{\n{bounds}    owns a[0..n];\n    \
+         ensures a[c{last}] == {last};\n}} by {{\n{steps}    execute();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+/// [`stores_to_bounded_unordered_indices_are_near_linear`] over a range with
+/// 64-bit bounds. Each store is placed in `a[0..n]` by the wide membership
+/// rule, which decides `ck < n` and the range's extent limit by keyed
+/// lookups, and drops the earlier cells it may alias, none of which is
+/// ordered against it. Neither may scan the other indices' bounds.
+#[test]
+fn stores_to_bounded_unordered_size_t_indices_are_near_linear() {
+    const STORE_WORK: &str = "operation `verification statement: store`";
+    let samples = [4, 8, 16, 32, 64]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = bounded_size_t_index_stores(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "{size} bounded size_t-index stores should verify: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    let store_work = samples
+        .iter()
+        .map(|sample| {
+            let work = sample.named_work.get(STORE_WORK).copied().unwrap_or(0);
+            assert!(work > 0, "the stores did not run: {sample:?}");
+            work
+        })
+        .collect::<Vec<_>>();
+    // A linear curve doubles per doubling; a quadratic one quadruples.
+    let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
+    assert!(
+        store_work
+            .windows(2)
+            .skip(1)
+            .all(|pair| within(pair[0], pair[1])),
+        "the store rule's work over bounded unordered size_t indices is not near linear: {store_work:?}; named work: {}",
+        named_growth_diagnostic(&samples)
+    );
+    assert!(
+        samples
+            .windows(2)
+            .skip(1)
+            .all(|pair| within(pair[0].work, pair[1].work)),
+        "stores to bounded unordered size_t indices are not near linear: {:?}; named work: {}",
+        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+        named_growth_diagnostic(&samples)
+    );
+}
+
 /// `N` stores `a[k] = k` to constant indices of one owned array, then a claim
 /// about the first, which every later store has to keep.
 fn constant_index_stores(stores: usize) -> (String, String) {
@@ -5641,6 +5719,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         memory: memory.clone(),
         base,
         bytes: Bitvector32Term::Constant(bytes),
+        wide: false,
     };
     let equal = |left: u64, right: u64| {
         Proposition::ConditionIs(
@@ -5709,6 +5788,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                                 offset: PointerOffsetTerm::Constant(0),
                             },
                             bytes: Bitvector32Term::Constant(16),
+                            wide: false,
                         });
                 }
                 for source in &sources {
@@ -5824,6 +5904,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
             memory: memory.clone(),
             base: at(Bitvector32Term::Constant(2)),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         };
         let goal = Proposition::CMemoryLoadable {
             memory: memory.clone(),
@@ -5833,6 +5914,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                 crate::kernel::LoadKind::Bits32,
             )),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         };
         context = context
             .assume_proposition(source.clone())
@@ -5937,6 +6019,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         },
                     },
                     bytes: Bitvector32Term::Constant(16),
+                    wide: false,
                 });
         }
         context = context.assume_proposition(quantified.clone());
@@ -6014,6 +6097,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                             offset: PointerOffsetTerm::Constant(0),
                         },
                         bytes: Bitvector32Term::Constant(16),
+                        wide: false,
                     });
                 let proof = available
                     .derive_atomic_proposition(&goal)

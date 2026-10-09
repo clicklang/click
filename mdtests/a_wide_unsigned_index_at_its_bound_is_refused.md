@@ -1,8 +1,9 @@
 # A wide unsigned index at its bound is refused
 
 `mdtests/an_unsigned_index_at_its_bound_is_refused.md` with a `uint64`
-index. `x <= 4u` files `0 <= x` and `x <= 4` on the index's low word, which
-still admit the one-past element `values[4]`.
+index. `x <= 4u` still admits the one-past element `values[4]`, which the
+owned range `values[0..4]` does not hold, so the write at `values[x]` is
+refused.
 
 ```c filename=a_wide_unsigned_index_at_its_bound_is_refused.c
 void write_at_bound(int32* values, uint64 x) {
@@ -24,5 +25,5 @@ void write_at_bound(int32* values, uint64 x) {
 ```
 
 ```expect
-fail: only when `0 <= truncate32(x)` and `(truncate32(x) + 1) <= 4`
+fail: missing resource fact `owns values[x..(x + 1)]`
 ```

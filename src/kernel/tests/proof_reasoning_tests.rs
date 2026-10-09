@@ -3310,6 +3310,7 @@ fn builtin_obligation_solver_proves_trivial_props() {
         memory: memory.clone(),
         base: pointer.clone(),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     }));
     assert!(assumptions.proves(&Proposition::CMemoryCanStore {
         memory,
@@ -3344,6 +3345,7 @@ mod loadable_range_narrowing {
                 Bitvector32Term::subtract(end.clone(), start.clone()),
                 Bitvector32Term::Constant(4),
             ),
+            wide: false,
         }
     }
 
@@ -3529,6 +3531,7 @@ mod loadable_range_narrowing {
                 Bitvector32Term::subtract(d.clone(), c.clone()),
                 Bitvector32Term::Constant(1),
             ),
+            wide: false,
         };
         let assumptions = assume_orders(segment(&memory, &a, &b), &inside(&a, &b, &c, &d));
 
@@ -3545,6 +3548,7 @@ fn empty_memory_range_is_vacuously_loadable() {
             offset: PointerOffsetTerm::Variable(Variable(1)),
         },
         bytes: Bitvector32Term::Constant(0),
+        wide: false,
     };
 
     assert!(PureFactContext::new().proves(&proposition));
@@ -3561,11 +3565,13 @@ fn deferred_obligations_keep_contextual_memory_proofs_explicit() {
         memory: memory.clone(),
         base: base.clone(),
         bytes: Bitvector32Term::Constant(8),
+        wide: false,
     };
     let element = Proposition::CMemoryLoadable {
         memory,
         base: base.offset_by_int32_elements(Bitvector32Term::Constant(1)),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let assumptions = PureFactContext::new().assume_proposition(range);
 
@@ -3694,16 +3700,19 @@ fn memory_derivation_records_the_selected_range_candidate() {
             offset: PointerOffsetTerm::Constant(0),
         },
         bytes: Bitvector32Term::Constant(64),
+        wide: false,
     };
     let selected = Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
         bytes: Bitvector32Term::Constant(8),
+        wide: false,
     };
     let target = Proposition::CMemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(Bitvector32Term::Constant(1)),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(unrelated)
@@ -3733,11 +3742,13 @@ fn loadable_symbolic_subrange_proves_an_indexed_cell() {
             Bitvector32Term::subtract(len.clone(), split.clone()),
             Bitvector32Term::Constant(4),
         ),
+        wide: false,
     };
     let target = Proposition::CMemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(index.clone()),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     // Reading `[split..len]` as its element count needs that count to be a
     // valid byte extent once scaled by four; a stated range carries this.
@@ -3781,16 +3792,19 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         memory: memory.clone(),
         base: data.clone(),
         bytes: Bitvector32Term::Constant(8),
+        wide: false,
     };
     let next_cell = Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base: data.offset_by_int32_elements(Bitvector32Term::Constant(2)),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let goal = Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
         bytes: Bitvector32Term::Constant(12),
+        wide: false,
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(prefix.clone())
@@ -3812,6 +3826,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         memory: stored_memory,
         base: data.clone(),
         bytes: Bitvector32Term::Constant(12),
+        wide: false,
     };
     let stored_assumptions = PureFactContext::new().assume_proposition(prefix.clone());
     let stored_derivation = stored_assumptions
@@ -3824,6 +3839,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         memory,
         base: data.offset_by_int32_elements(Bitvector32Term::Constant(4)),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(goal.clone())
@@ -3832,6 +3848,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         memory: CMemory::new(),
         base: data,
         bytes: Bitvector32Term::Constant(16),
+        wide: false,
     };
     assert!(!assumptions.proves(&too_wide));
 }
@@ -3899,6 +3916,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
             memory: after_cap,
             base: range_data,
             bytes: Bitvector32Term::multiply(cap.clone(), Bitvector32Term::Constant(4)),
+            wide: false,
         })
         .assume_condition(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
@@ -3927,6 +3945,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
         memory: entry_memory,
         base: entry_data.offset_by_int32_elements(index),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
 
     assert!(
@@ -3993,6 +4012,7 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
         memory,
         base: data.offset_by_int32_elements(Bitvector32Term::Variable(target_index)),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
 
     assert!(
@@ -4045,6 +4065,7 @@ fn quantified_loadability_fact_certifies_an_instantiated_load() {
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(Bitvector32Term::Variable(fact_index)),
                 bytes: Bitvector32Term::Constant(4),
+                wide: false,
             }),
         ),
     );
@@ -4056,6 +4077,7 @@ fn quantified_loadability_fact_certifies_an_instantiated_load() {
         memory,
         base: data.offset_by_int32_elements(Bitvector32Term::Variable(target_index)),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     }));
 }
 
@@ -4418,6 +4440,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
         memory: memory.clone(),
         base: data.clone(),
         bytes: Bitvector32Term::multiply(length.clone(), Bitvector32Term::Constant(4)),
+        wide: false,
     };
 
     assert!(
@@ -4428,6 +4451,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
         memory: memory.with_block("other-state", 4),
         base: data.clone(),
         bytes: Bitvector32Term::multiply(length.clone(), Bitvector32Term::Constant(4)),
+        wide: false,
     }));
     assert!(!assumptions.proves(&Proposition::CMemoryLoadable {
         memory: CMemory::new(),
@@ -4436,6 +4460,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
             offset: PointerOffsetTerm::Constant(0),
         },
         bytes: Bitvector32Term::multiply(length, Bitvector32Term::Constant(4)),
+        wide: false,
     }));
 }
 
@@ -5718,6 +5743,7 @@ fn known_memory_block_bounds_prove_symbolic_element_access() {
         memory: memory.clone(),
         base: pointer.clone(),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     }));
     assert!(assumptions.proves(&Proposition::CMemoryCanStore {
         memory,
@@ -5752,12 +5778,14 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
             memory: memory.clone(),
             base: base.clone(),
             bytes: Bitvector32Term::multiply(length, Bitvector32Term::Constant(4)),
+            wide: false,
         });
 
     assert!(assumptions.proves(&Proposition::CMemoryLoadable {
         memory,
         base: base.offset_by_int32_elements(Bitvector32Term::Constant(1)),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     }));
 }
 
@@ -5785,11 +5813,13 @@ fn assumptions_prove_forall_int32_array_range_body() {
         memory: memory.clone(),
         base: indexed_pointer,
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
         memory,
         base,
         bytes: Bitvector32Term::Constant(12),
+        wide: false,
     });
 
     assert!(assumptions.proves(&forall_int32(
@@ -5813,6 +5843,7 @@ fn loadability_transports_to_snapshot_with_symbolic_index_bounds() {
             memory: range_memory,
             base: base.clone(),
             bytes: Bitvector32Term::Constant(12),
+            wide: false,
         })
         .assume_condition(
             ConditionTerm::signed_greater_equal(index.clone(), Bitvector32Term::Constant(0)),
@@ -5842,6 +5873,7 @@ fn loadability_transports_to_snapshot_with_symbolic_index_bounds() {
         memory: snapshot_memory,
         base: base.offset_by_int32_elements(index),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     }));
 }
 
@@ -5863,11 +5895,13 @@ fn loadability_same_base_extent_uses_graph_for_byte_count() {
         memory: before.clone(),
         base: base.clone(),
         bytes: bytes(a.clone()),
+        wide: false,
     };
     let goal = Proposition::CMemoryLoadable {
         memory: after.clone(),
         base: base.clone(),
         bytes: bytes(b.clone()),
+        wide: false,
     };
     let premise = ConditionTerm::equal(a, b.clone());
     let without_premise = PureFactContext::new().assume_proposition(fact.clone());
@@ -5893,6 +5927,7 @@ fn loadability_same_base_extent_uses_graph_for_byte_count() {
         memory: after,
         base: Pointer::symbolic(Variable(90_304)),
         bytes: bytes(b),
+        wide: false,
     };
     assert!(!with_premise.proves_atomic_without_search(&other_base));
 }
@@ -5908,6 +5943,7 @@ fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes(var(0)),
+            wide: false,
         };
         let mut context = PureFactContext::new().assume_proposition(fact);
         for index in 0..size {
@@ -5922,6 +5958,7 @@ fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
                     memory: memory.clone(),
                     base: base.clone(),
                     bytes: bytes(var(index)),
+                    wide: false,
                 };
                 assert!(context.proves_atomic_without_search(&goal));
             }
@@ -6301,6 +6338,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
         memory: memory.clone(),
         base: pointer,
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let state = CState::new().with_local("x", int32(0)).with_memory(memory);
     let statement = c_while(
@@ -6870,6 +6908,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(Bitvector32Term::Variable(target_index)),
                 bytes: Bitvector32Term::Constant(4),
+                wide: false,
             };
             let (proved, work) =
                 crate::instrumentation::measure_deterministic_work(|| assumptions.proves(&target));

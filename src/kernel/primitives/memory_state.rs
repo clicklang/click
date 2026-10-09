@@ -127,15 +127,22 @@ fn havoc_range_identity(range: &CMemoryRange) -> String {
     // their contents are unconstrained; fixed tags delimit every other node.
     // Registered load variables normally form an acyclic generation history,
     // but encode an exact variable back-edge if a malformed cycle appears.
+    // The bounds are encoded as the terms they are. One untyped term can
+    // bound a range of either index kind, so the kind is in the tag.
+    let (start, end) = range.bound_terms();
     write_havoc_identity(
-        String::from("range("),
+        String::from(if range.wide_bounds().is_some() {
+            "wide-range("
+        } else {
+            "range("
+        }),
         vec![
             HavocIdentityTask::Text(")"),
             HavocIdentityTask::Bitvector(Bitvector32Term::Constant(range.element_width())),
             HavocIdentityTask::Text(","),
-            HavocIdentityTask::Bitvector(range.end().clone()),
+            HavocIdentityTask::Bitvector(end.clone()),
             HavocIdentityTask::Text(","),
-            HavocIdentityTask::Bitvector(range.start().clone()),
+            HavocIdentityTask::Bitvector(start.clone()),
             HavocIdentityTask::Text(","),
             HavocIdentityTask::Pointer(range.base().clone()),
         ],
@@ -1341,8 +1348,8 @@ fn memory_havoc_write_set_fingerprint(mutable_ranges: &[CMemoryRange]) -> u32 {
         .map(|range| {
             (
                 format!("{:?}", range.base().block),
-                range.start().as_const(),
-                range.end().as_const(),
+                range.constant_start(),
+                range.constant_end(),
             )
         })
         .collect::<Vec<_>>();
@@ -6006,6 +6013,7 @@ impl CMemory {
                     offset: PointerOffsetTerm::Constant(0),
                 },
                 bytes: contents.size().clone(),
+                wide: false,
             })
             .collect()
     }
@@ -6928,8 +6936,8 @@ impl CState {
                 .collect::<Vec<_>>();
             let owns_counter = memory_cells.iter().any(|range| {
                 range.base() == &anchor
-                    && range.start().as_const() == Some(0)
-                    && range.end().as_const().is_some_and(|end| {
+                    && range.constant_start() == Some(0)
+                    && range.constant_end().is_some_and(|end| {
                         end.checked_mul(range.element_width())
                             .is_some_and(|bytes| bytes >= 4)
                     })
@@ -7402,8 +7410,7 @@ impl CState {
                     "member body must contain owned memory or owned declared resources".into(),
                 );
             };
-            let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
-            else {
+            let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
                 return Err("member private memory needs concrete bounds".into());
             };
             let (start, end) = (start as i32, end as i32);
@@ -7413,9 +7420,7 @@ impl CState {
                 .and_then(|length| length.checked_mul(range.element_width() as i32))
                 .and_then(|bytes| u32::try_from(bytes).ok())
                 .ok_or("member private memory needs a positive bounded range")?;
-            let base = range
-                .base()
-                .offset_by_elements(range.start().clone(), range.element_width());
+            let base = range.start_pointer();
             if !imported_member_exchange
                 && !self.memory.access_in_bounds(&base, bytes)
                 && !assumptions.proves_memory_loadable_for_memory_resolution(

@@ -930,6 +930,11 @@ fn pointer_offsets_with_common_base_proven_distinct_for_memory_resolution(
     if let (Some(left), Some(right)) = (left_index.as_const(), right_index.as_const()) {
         return left != right;
     }
+    if let Some(distinct) =
+        wide_element_offsets_proven_distinct(left_index, right_index, assumptions)
+    {
+        return distinct;
+    }
     let Some(element_width) = common_pointer_offset_element_width(left_index, right_index) else {
         return false;
     };
@@ -949,6 +954,78 @@ fn pointer_offsets_with_common_base_proven_distinct_for_memory_resolution(
             &ConditionTerm::signed_less_than(right_index, left_index),
             true,
         )
+}
+
+/// Whether two offsets formed from unsigned 64-bit element indices of one
+/// width are proven different, or `None` when either is another form.
+///
+/// An `Int64Scaled` offset denotes the exact product `index * width`: it is
+/// folded to a constant only when that product fits `i64`, and is otherwise
+/// kept as the term. Exact products of different indices differ, whatever
+/// their size, so indices decided unequal, by an order or by a disequality,
+/// are different offsets. This is the rule a signed 32-bit index has, where
+/// distinct words are distinct exact offsets. Whether an offset lies inside
+/// an object is a separate question, which the membership rule answers
+/// with the object-size limit. No 32-bit reading of either index takes part.
+fn wide_element_offsets_proven_distinct(
+    left: &PointerOffsetTerm,
+    right: &PointerOffsetTerm,
+    assumptions: &PureFactContext,
+) -> Option<bool> {
+    // A constant offset of whole elements beside a scaled index is the
+    // constant index: `base[0]` against `base[k]`.
+    let (left, right, width) = match (left, right) {
+        (
+            PointerOffsetTerm::Int64Scaled {
+                value: left,
+                byte_width: left_width,
+                unsigned: true,
+            },
+            PointerOffsetTerm::Int64Scaled {
+                value: right,
+                byte_width: right_width,
+                unsigned: true,
+            },
+        ) => {
+            if left_width != right_width || *left_width < 1 {
+                return Some(false);
+            }
+            (left.as_ref().clone(), right.as_ref().clone(), *left_width)
+        }
+        (
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            },
+            PointerOffsetTerm::Constant(bytes),
+        )
+        | (
+            PointerOffsetTerm::Constant(bytes),
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            },
+        ) if *byte_width >= 1 && *bytes >= 0 && bytes % byte_width == 0 => (
+            value.as_ref().clone(),
+            Bitvector32Term::UInt64Constant((bytes / byte_width) as u64),
+            *byte_width,
+        ),
+        _ => return None,
+    };
+    let (left, right, _) = (&left, &right, width);
+    let decided = |condition: ConditionTerm| assumptions.decide(&condition);
+    let below = |smaller: &Bitvector32Term, larger: &Bitvector32Term| {
+        decided(ConditionTerm::uint64_less_than(
+            smaller.clone(),
+            larger.clone(),
+        )) == Some(true)
+    };
+    let unequal = |first: &Bitvector32Term, second: &Bitvector32Term| {
+        decided(ConditionTerm::uint64_equal(first.clone(), second.clone())) == Some(false)
+    };
+    Some(below(left, right) || below(right, left) || unequal(left, right) || unequal(right, left))
 }
 
 pub(in crate::kernel) fn pointers_proven_equal_for_memory_resolution(
@@ -1027,14 +1104,148 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     if resolution_interrupted() {
         return None;
     }
+    // Two unsigned 64-bit indices at one element width. The offset is the
+    // exact product `index * width`, so equal indices are one offset and
+    // unequal ones are different offsets.
+    if let (
+        PointerOffsetTerm::Int64Scaled {
+            value: left_index,
+            byte_width: left_width,
+            unsigned: true,
+        },
+        PointerOffsetTerm::Int64Scaled {
+            value: right_index,
+            byte_width: right_width,
+            unsigned: true,
+        },
+    ) = (left, right)
+        && left_width == right_width
+        && *left_width > 0
+    {
+        let equal = assumptions.decide(&ConditionTerm::uint64_equal(
+            left_index.as_ref().clone(),
+            right_index.as_ref().clone(),
+        ));
+        match equal {
+            Some(true) => return Some(true),
+            Some(false) => return Some(false),
+            None => {}
+        }
+    }
+    // An unsigned 64-bit index against a constant offset of whole
+    // elements: `base[x]` is `base[2]` exactly when `x == 2`, since the
+    // scaled offset is the exact product.
+    for (scaled, constant) in [(left, right), (right, left)] {
+        if let (
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            },
+            PointerOffsetTerm::Constant(bytes),
+        ) = (scaled, constant)
+            && *byte_width >= 1
+        {
+            if *bytes < 0 || bytes % byte_width != 0 {
+                return Some(false);
+            }
+            // A value the equalities pin to a constant is that constant.
+            if let Some(pinned) = assumptions.wide_constant_from_equalities(value) {
+                return Some(pinned == (bytes / byte_width) as u64);
+            }
+            let index = Bitvector32Term::UInt64Constant((bytes / byte_width) as u64);
+            let stated = [
+                ConditionTerm::uint64_equal(value.as_ref().clone(), index.clone()),
+                ConditionTerm::uint64_equal(index, value.as_ref().clone()),
+            ];
+            if let Some(equal) = stated.iter().find_map(|equality| {
+                assumptions
+                    .exact_condition_value(equality)
+                    .or_else(|| assumptions.decide(equality))
+            }) {
+                return Some(equal);
+            }
+        }
+    }
+    // An unsigned 64-bit index advanced by whole elements: `i * w + k * w`
+    // is `(i + k) * w` when `i + k` does not wrap, which is how a cursor
+    // stepped by one element and the element after index `i` spell one
+    // address. The stepped index is compared as a 64-bit value and the
+    // sum is shown to stay in range; no 32-bit reading takes part.
+    for (stepped, whole) in [(left, right), (right, left)] {
+        let PointerOffsetTerm::Add(first, second) = stepped else {
+            continue;
+        };
+        let (index, bytes) = match (first.as_ref(), second.as_ref()) {
+            (index @ PointerOffsetTerm::Int64Scaled { .. }, PointerOffsetTerm::Constant(bytes))
+            | (PointerOffsetTerm::Constant(bytes), index @ PointerOffsetTerm::Int64Scaled { .. }) => {
+                (index, *bytes)
+            }
+            _ => continue,
+        };
+        let (
+            PointerOffsetTerm::Int64Scaled {
+                value: index,
+                byte_width,
+                unsigned: true,
+            },
+            PointerOffsetTerm::Int64Scaled {
+                value: whole_index,
+                byte_width: whole_width,
+                unsigned: true,
+            },
+        ) = (index, whole)
+        else {
+            continue;
+        };
+        if byte_width != whole_width || *byte_width < 1 || bytes < 1 || bytes % *byte_width != 0 {
+            continue;
+        }
+        let elements = (bytes / *byte_width) as u64;
+        let advanced = Bitvector32Term::uint64_add(
+            index.as_ref().clone(),
+            Bitvector32Term::UInt64Constant(elements),
+        );
+        let same = advanced == **whole_index
+            || assumptions.decide(&ConditionTerm::uint64_equal(
+                advanced,
+                whole_index.as_ref().clone(),
+            )) == Some(true);
+        if same
+            && assumptions.decide(&ConditionTerm::uint64_less_equal(
+                index.as_ref().clone(),
+                Bitvector32Term::UInt64Constant(u64::MAX - elements),
+            )) == Some(true)
+        {
+            return Some(true);
+        }
+    }
     // Addends both offsets share cancel exactly, and constants regroup:
     // `s + 5` is `(s + 4) + 1`, which is how a field's element and a run's
     // base spell one address. Only sums are split, so a pair of leaves pays
     // nothing.
     if matches!(left, PointerOffsetTerm::Add(..)) || matches!(right, PointerOffsetTerm::Add(..)) {
-        let (left, right) = crate::kernel::assumptions::cancel_common_offset_addends(left, right);
-        if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {
+        let (rest_left, rest_right) =
+            crate::kernel::assumptions::cancel_common_offset_addends(left, right);
+        if let (Some(left), Some(right)) = (rest_left.as_const(), rest_right.as_const()) {
             return Some(left == right);
+        }
+        // What is left after cancelling may be an unsigned 64-bit index
+        // against a constant, `base + x` against `base`: the rule above
+        // reads that pair, and the question is strictly smaller.
+        if matches!(
+            (&rest_left, &rest_right),
+            (
+                PointerOffsetTerm::Int64Scaled { unsigned: true, .. },
+                PointerOffsetTerm::Constant(_)
+            ) | (
+                PointerOffsetTerm::Constant(_),
+                PointerOffsetTerm::Int64Scaled { unsigned: true, .. }
+            )
+        ) && let Some(equal) =
+            pointer_offsets_equal_for_memory_resolution(&rest_left, &rest_right, assumptions)
+        {
+            return Some(equal);
         }
     }
     let _query =
@@ -1597,6 +1808,21 @@ fn run_value_at_equal_displaced_pointer(
                 .checked_mul(scale)
                 .and_then(|bytes| bytes.checked_add(shift))
         }
+        // The same for an unsigned 64-bit index, whose product is exact.
+        RunAccess::ScaledWide {
+            index,
+            scale,
+            shift,
+        } => {
+            let pinned = crate::kernel::assumptions::exact_sixty_four_bit_constant(
+                &index,
+                true,
+                assumptions,
+            )?;
+            pinned
+                .checked_mul(scale)
+                .and_then(|bytes| bytes.checked_add(shift))
+        }
         RunAccess::Other => None,
     };
     if let Some(displacement) = displacement {
@@ -2088,13 +2314,17 @@ fn memory_snapshots_match_for_resolution(
         return false;
     }
 
+    // Slots of a run at a constant gap from the load that clears its bytes
+    // are other addresses by arithmetic, as for
+    // `memories_match_for_pointer_load_under_assumptions`; spelling each of
+    // them out would cost the run's whole extent.
+    let load_bytes = crate::kernel::load_access_width_at_address_or_widest(pointer);
     let differing = crate::instrumentation::measure_operation(
         "kernel",
         "resource context equality",
         "snapshot comparison: differing cells",
-        || left.differing_cell_pointers(right),
+        || left.differing_cell_pointers_meeting_load(right, pointer, load_bytes),
     );
-    let load_bytes = crate::kernel::load_access_width_at_address_or_widest(pointer);
     differing
         .into_iter()
         .filter(|cell_pointer| cell_is_observable_by_load(cell_pointer, pointer))
@@ -3282,6 +3512,13 @@ pub(in crate::kernel) enum RunAccess {
         scale: i64,
         shift: i64,
     },
+    /// The same with an unsigned 64-bit index, which is not read as a
+    /// signed word.
+    ScaledWide {
+        index: Bitvector32Term,
+        scale: i64,
+        shift: i64,
+    },
     /// Anything else: another base, a block that may be the run's, or a
     /// shape with more than one extra atom.
     Other,
@@ -3316,6 +3553,17 @@ pub(in crate::kernel) fn run_access(run: &CellRun, pointer: &Pointer) -> RunAcce
                 shift: shift - base_shift,
             }
         }
+        [
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            },
+        ] if *byte_width > 0 => RunAccess::ScaledWide {
+            index: value.as_ref().clone(),
+            scale: *byte_width,
+            shift: shift - base_shift,
+        },
         _ => RunAccess::Other,
     }
 }
@@ -3347,7 +3595,7 @@ pub(in crate::kernel) fn run_slots_resolving_load(
                 .filter(|index| *index < run.count() && !run.holes().contains(*index));
             Some((index, false))
         }
-        RunAccess::Scaled { .. } | RunAccess::Other => None,
+        RunAccess::Scaled { .. } | RunAccess::ScaledWide { .. } | RunAccess::Other => None,
     }
 }
 
@@ -3415,7 +3663,7 @@ fn run_slots_kept_by_load_reduction_set(
         RunAccess::Scaled { .. } => SlotSet::All,
         // Another base in a block the run's may be: no constant gap relates
         // the two, so no slot is shown to miss the load's bytes.
-        RunAccess::Other => SlotSet::All,
+        RunAccess::ScaledWide { .. } | RunAccess::Other => SlotSet::All,
     }
 }
 
@@ -3466,7 +3714,7 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
             });
             (SlotSet::Except(low, high), forgot)
         }
-        RunAccess::Scaled { .. } | RunAccess::Other => {
+        RunAccess::Scaled { .. } | RunAccess::ScaledWide { .. } | RunAccess::Other => {
             if crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
                 &[run.range()],
                 pointer,
@@ -3548,7 +3796,7 @@ pub(in crate::kernel) fn run_slots_equal_to_load(
         // the exact-constant rewrite above already applied; another spelling
         // names one only through a stated alias. One hop of each is what the
         // per-cell ladder's first rungs read, and only those are asked.
-        RunAccess::Scaled { .. } | RunAccess::Other => assumptions
+        RunAccess::Scaled { .. } | RunAccess::ScaledWide { .. } | RunAccess::Other => assumptions
             .exact_pointer_aliases(normalized)
             .cloned()
             .chain(assumptions.exact_pointer_offset_aliases(normalized))
@@ -3630,7 +3878,10 @@ fn run_slots_kept_by_load_projection_set(run: &CellRun, pointer: &Pointer) -> Sl
                 run_elements_meeting(run, shift, crate::kernel::MAX_SCALAR_ACCESS_BYTES);
             SlotSet::Elements(low, high)
         }
-        RunAccess::DistinctBlock | RunAccess::Scaled { .. } | RunAccess::Other => SlotSet::All,
+        RunAccess::DistinctBlock
+        | RunAccess::Scaled { .. }
+        | RunAccess::ScaledWide { .. }
+        | RunAccess::Other => SlotSet::All,
     }
 }
 

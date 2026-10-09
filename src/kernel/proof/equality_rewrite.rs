@@ -944,6 +944,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 memory,
                 base,
                 bytes,
+                wide,
             } => Proposition::CMemoryLoadable {
                 // Same-block pointer equalities use offsets rather than the
                 // PointerEqual carrier. Substitute the selected address while
@@ -954,6 +955,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     offset: rewrite_offset(&base.offset, left, right),
                 },
                 bytes: bytes.clone(),
+                wide: *wide,
             },
             Proposition::ConditionIs(
                 ConditionTerm::PointerOffsetEqual(goal_left, goal_right),
@@ -1245,6 +1247,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 memory,
                 base,
                 bytes,
+                wide,
             } => {
                 Proposition::CMemoryLoadable {
                     // Clone only shared snapshot roots. Equality changes the
@@ -1252,6 +1255,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     memory: memory.clone(),
                     base: rewrite_pointer(base),
                     bytes: bytes.clone(),
+                    wide: *wide,
                 }
             }
             Proposition::ConditionIs(
@@ -2070,6 +2074,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             memory,
             base,
             bytes,
+            wide,
         } => Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: Pointer {
@@ -2077,6 +2082,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 offset: rewrite_offset_term(&base.offset, left, right),
             },
             bytes: rewrite_term(bytes, left, right),
+            wide: *wide,
         },
         Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
             let rewrite_term = |term: &Bitvector32Term| rewrite_term(term, left, right);
@@ -2948,6 +2954,7 @@ mod tests {
                 offset: PointerOffsetTerm::add(source, PointerOffsetTerm::Constant(2)),
             },
             bytes: extent.clone(),
+            wide: false,
         };
         assert!(
             ProofFacts::default()
@@ -2978,6 +2985,7 @@ mod tests {
                 memory: snapshot,
                 base,
                 bytes,
+                ..
             } = rewritten.proposition()
             else {
                 panic!("viewability changed kind")
@@ -3009,6 +3017,7 @@ mod tests {
             memory: memory.clone(),
             base: source,
             bytes: extent.clone(),
+            wide: false,
         };
         assert!(
             ProofFacts::default()
@@ -3031,6 +3040,7 @@ mod tests {
                 memory: snapshot,
                 base,
                 bytes,
+                wide: false,
             } = rewritten.proposition()
             else {
                 panic!("viewability changed kind")
