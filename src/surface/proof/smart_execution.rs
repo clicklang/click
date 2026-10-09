@@ -428,6 +428,7 @@ impl<'a> Proof<'a> {
     /// on this exact root. A selection miss is transactional; once selection
     /// succeeds, rejection by the checker is a loud implementation error
     /// rather than permission to retry through a second semantic path.
+    #[cfg(test)]
     pub(in crate::surface::proof) fn try_theorem_application(
         &self,
         application: &TheoremApplication,

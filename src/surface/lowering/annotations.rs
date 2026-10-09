@@ -581,6 +581,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             result_type: CType::Int32,
             entry_values: BTreeMap::new(),
             aggregate_parameters: BTreeSet::new(),
+            local_type_state: None,
             pointer_element_types: definition
                 .parameters()
                 .iter()
@@ -636,6 +637,7 @@ fn lower_kernel_pure_function_definition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        local_type_state: None,
         pointer_element_types: definition
             .parameters()
             .iter()
@@ -722,6 +724,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        local_type_state: None,
         pointer_element_types: definition
             .parameters()
             .iter()
@@ -803,6 +806,7 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        local_type_state: None,
         pointer_element_types: definition
             .parameters()
             .iter()
@@ -1003,6 +1007,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
+        local_type_state: None,
         pointer_element_types: parsed_function
             .parameters()
             .iter()
@@ -1216,6 +1221,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
     proposition: &ClickProposition,
     parsed_function: &syntax::C0Function,
     entry_state: &CState,
+    current_state: &CState,
     branch_join_target: &ProgramPointRef,
     snapshots: &RecordedSnapshots,
     arguments: &[CExpression],
@@ -1243,6 +1249,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
+        local_type_state: Some(current_state),
         pointer_element_types: parsed_function
             .parameters()
             .iter()
@@ -1299,6 +1306,7 @@ fn fixed_state_elaboration<'a>(
         result_type: result.map(CValue::c_type).unwrap_or(CType::Int32),
         entry_values,
         aggregate_parameters: BTreeSet::new(),
+        local_type_state: None,
         pointer_element_types: array_element_types,
         parameter_pointer_element_widths,
         quantified_values: BTreeMap::new(),
@@ -1636,6 +1644,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        local_type_state: None,
         pointer_element_types: parameters
             .iter()
             .filter_map(|parameter| {
@@ -1699,6 +1708,7 @@ pub(in crate::surface) fn function_contract_summary(
         result_type: parsed_function.return_type().to_kernel_type(),
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
+        local_type_state: None,
         pointer_element_types: parsed_function
             .parameters()
             .iter()
@@ -2126,6 +2136,9 @@ struct AnnotationLowerer<'a> {
     entry_state: &'a CState,
     result_type: CType,
     entry_values: BTreeMap<String, CValue>,
+    /// Live declaration types for state-parametric branch facts; values remain symbolic.
+    /// Each referenced name uses the state's existing index, without a body/history scan.
+    local_type_state: Option<&'a CState>,
     /// Declared pointee types of parameters and encountered automatic locals.
     /// Local names are the frontend's distinct kernel bindings.
     pointer_element_types: BTreeMap<String, CType>,
@@ -2407,6 +2420,13 @@ fn spec_integer_to_term(
 }
 
 impl AnnotationLowerer<'_> {
+    fn declared_pointer_element_type(&self, name: &str) -> Option<CType> {
+        self.local_type_state
+            .and_then(|state| state.local_object_type(name))
+            .and_then(|ty| ty.pointee_type())
+            .or_else(|| self.pointer_element_types.get(name).copied())
+    }
+
     /// Attach the same checked loop clauses to compiler-lowered statements.
     fn lower_kernel_statement(&mut self, statement: &CStatement) -> Result<CStatement, ClickError> {
         Ok(match statement {
@@ -6543,9 +6563,7 @@ impl AnnotationLowerer<'_> {
         } else {
             name
         };
-        self.pointer_element_types
-            .get(name)
-            .copied()
+        self.declared_pointer_element_type(name)
             .or_else(|| {
                 (name == crate::kernel::C_CONTRACT_RESULT_NAME)
                     .then(|| self.result_type.pointee_type())
@@ -6570,9 +6588,7 @@ impl AnnotationLowerer<'_> {
     ) -> CType {
         match expression {
             ContractExpression::CBinding(name) => self
-                .pointer_element_types
-                .get(name)
-                .copied()
+                .declared_pointer_element_type(name)
                 .or_else(|| self.entry_state.global_array_element_type(name))
                 .or_else(|| {
                     environment.values.get(name).and_then(|value| match value {
@@ -6696,7 +6712,7 @@ impl AnnotationLowerer<'_> {
                 .array_refs
                 .get(name)
                 .map(|array_ref| array_ref.element_type)
-                .or_else(|| self.pointer_element_types.get(name).copied())
+                .or_else(|| self.declared_pointer_element_type(name))
                 .or_else(|| {
                     (name == crate::kernel::C_CONTRACT_RESULT_NAME)
                         .then(|| self.result_type.pointee_type())
@@ -6763,8 +6779,7 @@ impl AnnotationLowerer<'_> {
                 .map(|array_ref| array_ref.element_type.byte_width())
                 .or_else(|| self.parameter_pointer_element_widths.get(name).copied())
                 .or_else(|| {
-                    self.pointer_element_types
-                        .get(name)
+                    self.declared_pointer_element_type(name)
                         .map(|ty| ty.byte_width())
                 })
                 .or_else(|| {

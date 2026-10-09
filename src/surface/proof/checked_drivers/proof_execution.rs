@@ -3026,10 +3026,10 @@ fn advance_focused_execution_arm<'a>(
                 // finalization owns that distinct operation.
                 return decline();
             }
-            let Some(next) = proof.try_theorem_application(application)? else {
-                return decline();
-            };
-            next
+            // This is a written arm operation, not a speculative search.
+            // Preserve a missing-premise refusal instead of turning it into
+            // an unsupported proof-shape diagnostic.
+            proof.apply_theorem_application(application)?
         } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
             if proof.is_at_function_exit() {
                 return decline();
