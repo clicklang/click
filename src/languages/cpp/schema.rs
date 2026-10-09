@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 46;
+pub(crate) const EXPORT_SCHEMA: u32 = 47;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1876,7 +1876,9 @@ impl CppFunction {
                     || field.record_declaration_id != *record_declaration_id
                     || field.declaration_id != expected_field.declaration_id
                     || field.name != expected_field.name
-                    || value.references_place(&self_parameter.declaration_id)
+                    || (value.references_place(&self_parameter.declaration_id)
+                        && !matches!(value, CppExpression::AddressOf { place, .. }
+                            if place.declaration_id == self_parameter.declaration_id && !place.projections.is_empty()))
                 {
                     return Err(format!(
                         "C++ constructor `{}` has an invalid initializer for field `{}`",
@@ -3152,6 +3154,25 @@ impl CppExpression {
                 span,
             } => {
                 span.validate(logical_source)?;
+                if !place.projections.is_empty() {
+                    let root = validate_root_reference(place, places, logical_source)?;
+                    for projection in &place.projections {
+                        projection.span().validate(logical_source)?;
+                    }
+                    let (field_type, root_const) = resolve_reference_type(root, place, records)?;
+                    require_int32(field_type, false, "addressed record field")?;
+                    let mut effective_type = field_type.clone();
+                    if let CppType::Integer { is_const, .. } = &mut effective_type {
+                        *is_const |= root_const;
+                    }
+                    let CppType::Pointer { pointee } = value_type else {
+                        return Err("C++ field address result must be a pointer".into());
+                    };
+                    if !same_scalar_type(&effective_type, pointee) {
+                        return Err("C++ field address changed type or const qualification".into());
+                    }
+                    return Ok(());
+                }
                 let CppType::LvalueReference { pointee } =
                     validate_place_reference(place, places, logical_source)?
                 else {

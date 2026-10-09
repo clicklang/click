@@ -254,19 +254,47 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
    nonempty subtraction and pointer formation from the actual backing range.
-4. **Construction destination and copy elision (decision pending).**
-   The shared C aggregate return path copies fields into caller-visible storage.
-   C++ can instead construct a returned value directly in its destination.
-   Constructors that observe or expose their object's address can distinguish
-   these behaviors, even when the class is trivially copyable. `std::span`'s
-   selected constructors are address-independent, but general prvalue admission
-   must not silently assume that property. Recommend adding construction
-   destinations to the shared aggregate model before admitting returned C++
-   constructors. The narrower alternative is a checked profile that rejects
-   constructors observing or exposing their own address and defers general
-   construction identity. Both preserve the approved native reference and
-   descriptor-copy contracts; neither warrants a separate C++ memory model.
-   Existing-object lvalue copies remain available independently of this choice.
+4. **Construction destination and copy elision (accepted direction).**
+   Prioritize the shared construction-destination foundation over an
+   address-independent constructor restriction. The shared C aggregate return
+   path copies fields into caller-visible storage; C++ can construct a returned
+   value directly in its destination. Constructors observing or exposing their
+   object's address distinguish these behaviors, even for trivially copyable
+   classes. Keep explicit copies and assignment as field copies, and use direct
+   construction only where the imported language semantics requires it. Existing
+   C and Rust value semantics must not change implicitly.
+
+   The existing shared constructor calls already construct into an explicit
+   destination using checked layouts and ordinary allocation/resource authority.
+   Extend this path through function returns, forwarding calls and materialized
+   temporaries rather than introducing a C++ allocation model. In particular:
+   - Preserve Clang's expression category and distinguish required prvalue
+     construction from optional named return elision; account for permitted
+     trivial-class parameter/result temporaries under the locked compiler/ABI
+     profile. Do not infer a universal result-address guarantee from a prvalue
+     alone. Keep additional cases refused until all admitted behavior is modeled.
+   - Establish the destination before initialization and preserve its identity
+     across forwarding. A caller-provided destination must not gain invented
+     distinctness from the call's arguments or caller storage.
+   - Prove complete initialized fields with existing construction resources;
+     exposing an address grants no extra read, write or lifetime authority.
+   - Track the result object's storage and temporary lifetime explicitly,
+     including retirement at the end of a full expression. Copying a descriptor
+     must not retire its independently live backing allocation.
+   - Exercise constructors storing pointers to their own fields, explicit copy
+     behavior, missing initialization/authority, aliasing and expired temporary
+     storage under ordinary, expanded and retained verification.
+   Existing-object lvalue copies remain available independently of this work.
+
+   The first identity prerequisite is implemented: native int32 field addresses
+   follow checked nominal projections and preserve effective const qualification.
+   A constructor can store the address of its own field before that field is
+   initialized, without reading it; ordinary field reads in initializers remain
+   refused. Offline source proofs distinguish direct construction from trivial
+   copies retaining the original self-pointer, and check missing write authority,
+   false address/value claims and forged const qualification. Artifact schema 47
+   requires a refresh. Destination propagation through returned-value calls and
+   temporary retirement are still open.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
