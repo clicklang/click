@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 #[cfg(test)]
 mod aggregate_return_tests;
+mod construction_return;
 
 fn execute_c_function_body_paths(
     state: &CState,
@@ -5917,18 +5918,38 @@ fn execute_verified_function_applications_with_suspension(
         };
         let mut worker_effects = transfer.memory_effects.clone();
         worker_effects.extend(mutex_storage_effects);
+        let result = if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
+            let Some(result) = construction_return::summary_result(&entry_state, interface) else {
+                paths.push(CFunctionPath {
+                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                        "construction summary requires its checked destination".into(),
+                    )),
+                    facts,
+                    obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                });
+                continue;
+            };
+            result
+        } else {
+            symbolic_contract_result(interface, result_identity)
+        };
+        let mut post_state = entry_state.clone().with_memory(memory);
+        if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
+            construction_return::initialize_summary(&mut post_state, interface);
+        }
+        // Construction initialization is part of this checked call effect,
+        // so its endpoint must include the initialized value fields.
         if !worker_effects.is_empty() {
             facts.push(
                 ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
                     before: entry_state.memory.clone(),
-                    after: memory.clone(),
+                    after: post_state.memory.clone(),
                     mutable_ranges: worker_effects.clone(),
                 })
                 .into_certified(),
             );
         }
-        let result = symbolic_contract_result(interface, result_identity);
-        let mut post_state = entry_state.clone().with_memory(memory);
         // Protocol effects remain in the caller scope. The ordinary summary
         // partition below is recovered before this checked successor is
         // published, so no call-local hold can escape or be discarded.
@@ -16378,22 +16399,24 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
     if let Some(layout) = interface.return_aggregate_layout()
         && let CValue::Pointer(pointer) = &value
     {
-        state.set_memory(
-            if matches!(
-                pointer.block,
-                PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
-            ) {
-                state
-                    .memory
-                    .clone()
-                    .with_block_without_derivation(pointer.block.clone(), layout.size_bytes())
-            } else {
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), layout.size_bytes())
-            },
-        );
+        if interface.aggregate_return_mode() == CAggregateReturnMode::Copy {
+            state.set_memory(
+                if matches!(
+                    pointer.block,
+                    PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
+                ) {
+                    state
+                        .memory
+                        .clone()
+                        .with_block_without_derivation(pointer.block.clone(), layout.size_bytes())
+                } else {
+                    state
+                        .memory
+                        .clone()
+                        .with_block(pointer.block.clone(), layout.size_bytes())
+                },
+            );
+        }
         state.locals.set_aggregate_object_at(
             C_CONTRACT_RESULT_NAME.to_string(),
             layout.clone(),
@@ -16418,13 +16441,17 @@ enum AggregateReturnRefusal {
     UninitializedRead,
 }
 
-// Keep source initialization and materialization in one checked transition.
+// Keep initialization and result identity in one checked transition: copy mode
+// materializes a value, while construction mode completes the selected object.
 // Every body-completion path must use this boundary before retiring the source.
-fn materialize_aggregate_return(
+fn complete_aggregate_return(
     state: &mut CState,
     function: &CFunction,
     value: CValue,
 ) -> Result<CValue, AggregateReturnRefusal> {
+    if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
+        return construction_return::complete(state, function.contract_interface(), value);
+    }
     let layout = function
         .return_aggregate_layout()
         .ok_or(AggregateReturnRefusal::InvalidValue)?;
@@ -17288,6 +17315,11 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             );
         }
     }
+    construction_return::bind(
+        caller_state,
+        function.contract_interface(),
+        &mut callee_state,
+    )?;
     Some(callee_state)
 }
 
@@ -17393,6 +17425,7 @@ fn bind_c_contract_arguments(
             parameter.pointee_is_constant(),
         );
     }
+    construction_return::bind(caller_state, interface, &mut callee_state)?;
     Some(callee_state)
 }
 
@@ -32526,7 +32559,7 @@ fn function_outcome_from_body_with_resource_transfer(
     // Resource completion over an already completed outcome keeps its result.
     let value = if reestablish_population_invariants && function.return_aggregate_layout().is_some()
     {
-        match materialize_aggregate_return(&mut state, function, value) {
+        match complete_aggregate_return(&mut state, function, value) {
             Ok(value) => value,
             Err(AggregateReturnRefusal::UninitializedRead) => {
                 return Ok((
@@ -33577,7 +33610,7 @@ pub(super) fn function_outcome_from_body(
                 );
             };
             let value = if function.return_aggregate_layout().is_some() {
-                match materialize_aggregate_return(&mut state, function, value) {
+                match complete_aggregate_return(&mut state, function, value) {
                     Ok(value) => value,
                     Err(AggregateReturnRefusal::UninitializedRead) => {
                         return (

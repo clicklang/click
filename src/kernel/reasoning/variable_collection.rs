@@ -1679,6 +1679,9 @@ pub(in crate::kernel) fn collect_c_state_bitvector_variables(
     state: &CState,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if let Some(destination) = &state.aggregate_destination {
+        collect_pointer_bitvector_variables(&destination.pointer, variables);
+    }
     for binding in state.locals.bindings.values() {
         match binding {
             CLocalBinding::Object { value, .. } => {

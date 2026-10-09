@@ -1,5 +1,5 @@
-//! Compatibility oracles for the existing field-copy result mode. These do
-//! not claim that C++ returned construction or destination forwarding is admitted.
+//! Copy-return compatibility and checked construction-destination oracles.
+//! C++ source admission is tested separately from these shared operations.
 use super::*;
 
 fn node_layout() -> CAggregateLayout {
@@ -99,6 +99,347 @@ fn destination_procedure(name: &str, body: CStatement) -> CFunction {
     .with_resource_summary(vec![storage.clone()], vec![storage])
 }
 
+fn construction_function(name: &str, body: CStatement) -> CFunction {
+    let storage = CResourceSpec::owned_memory(CMemorySegment::new(
+        c_variable(C_CONTRACT_RESULT_NAME),
+        c_int32_literal(0),
+        c_int32_literal(4),
+    ));
+    c_function(
+        CType::VoidPointer,
+        name,
+        vec![c_parameter("input", CType::Int32)],
+        body,
+    )
+    .with_construction_return(node_layout())
+    .with_resource_summary(vec![storage.clone()], vec![storage])
+}
+
+fn node_construction_body() -> CStatement {
+    let destination = c_variable(C_CONTRACT_RESULT_NAME);
+    let field = c_cast(
+        c_pointer_offset_bytes(destination.clone(), 8),
+        CType::Int32Pointer,
+    );
+    c_seq(
+        c_typed_store(destination.clone(), field.clone(), CType::Int32Pointer),
+        c_seq(
+            c_typed_store(field, c_variable("input"), CType::Int32),
+            c_return(destination),
+        ),
+    )
+}
+
+#[test]
+fn construction_return_preserves_exact_destination_through_two_factories() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let inner = construction_function("construct_node", node_construction_body());
+    let forward = |name: &str, callee: &str| {
+        construction_function(
+            name,
+            c_seq(
+                c_call_assign(C_CONTRACT_RESULT_NAME, callee, vec![c_variable("input")]),
+                c_return(c_variable(C_CONTRACT_RESULT_NAME)),
+            ),
+        )
+    };
+    let middle = forward("forward_node_result", "construct_node");
+    let outer = forward("outer_node_result", "forward_node_result");
+    let caller = allocate_destination(&CState::new(), "node");
+    let destination = caller.locals.slot("node").unwrap().clone();
+    let caller = caller.with_aggregate_return_destination(destination.clone(), node_layout());
+    let paths = execute_c_function_call_paths(
+        &caller,
+        &outer,
+        &[c_int32_literal(37)],
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new()
+            .with_function(inner)
+            .with_function(middle),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("one constructed result");
+    };
+    let CFunctionOutcome::Return { value, state } = &path.outcome else {
+        panic!("construction failed: {:?}", path.outcome);
+    };
+    assert!(path.obligations.is_empty(), "{:?}", path.obligations);
+    assert_eq!(pointer(value), destination);
+    assert_eq!(
+        state.memory.known_value(&destination),
+        Some(CValue::typed_pointer(
+            destination.offset_by_bytes(8),
+            CType::Int32Pointer
+        ))
+    );
+    assert_eq!(
+        state.memory.known_value(&destination.offset_by_bytes(8)),
+        Some(CValue::Int32(37u32.into()))
+    );
+    assert_eq!(state.next_local_frame, caller.next_local_frame);
+    assert!(state.memory.has_block(&destination.block));
+}
+
+// A result address alone grants no storage, layout match, or ownership, and
+// returning it is not enough to establish that the object was initialized.
+#[test]
+fn construction_return_rejects_missing_binding_authority_and_partial_values() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let raw = allocate_destination(&CState::new(), "node");
+    let destination = raw.locals.slot("node").unwrap().clone();
+    let selected = raw
+        .clone()
+        .with_aggregate_return_destination(destination.clone(), node_layout());
+    let function = construction_function("construct_node", node_construction_body());
+    for caller in [
+        raw,
+        selected
+            .clone()
+            .with_resource_context(ResourceContext::new()),
+        selected.clone().with_aggregate_return_destination(
+            destination.clone(),
+            CAggregateLayout::new(8, 8, vec![]),
+        ),
+        selected.clone().with_memory(CMemory::new()),
+    ] {
+        let paths = execute_c_function_call_paths(
+            &caller,
+            &function,
+            &[c_int32_literal(37)],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        assert!(
+            paths
+                .iter()
+                .all(|path| matches!(path.outcome, CFunctionOutcome::RuntimeError(_)))
+        );
+    }
+    let partial = construction_function(
+        "partial_node",
+        c_seq(
+            c_typed_store(
+                c_variable(C_CONTRACT_RESULT_NAME),
+                c_cast(
+                    c_pointer_offset_bytes(c_variable(C_CONTRACT_RESULT_NAME), 8),
+                    CType::Int32Pointer,
+                ),
+                CType::Int32Pointer,
+            ),
+            c_return(c_variable(C_CONTRACT_RESULT_NAME)),
+        ),
+    );
+    let paths = execute_c_function_call_paths(
+        &selected,
+        &partial,
+        &[c_int32_literal(37)],
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    assert!(paths.iter().all(|path| matches!(
+        path.outcome,
+        CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+    )));
+}
+
+#[test]
+fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let result = c_variable(C_CONTRACT_RESULT_NAME);
+    let field = c_cast(
+        c_pointer_offset_bytes(result.clone(), 8),
+        CType::Int32Pointer,
+    );
+    let storage = CResourceSpec::owned_memory(CMemorySegment::new(
+        result.clone(),
+        c_int32_literal(0),
+        c_int32_literal(4),
+    ));
+    for read_before_write in [false, true] {
+        let write = if read_before_write {
+            c_typed_store(
+                field.clone(),
+                c_typed_load(c_variable("alias"), CType::Int32),
+                CType::Int32,
+            )
+        } else {
+            c_typed_store(c_variable("alias"), c_int32_literal(7), CType::Int32)
+        };
+        let function = c_function(
+            CType::VoidPointer,
+            "alias_node",
+            vec![c_parameter("alias", CType::Int32Pointer)],
+            c_seq(
+                write,
+                c_seq(
+                    c_typed_store(result.clone(), field.clone(), CType::Int32Pointer),
+                    c_return(result.clone()),
+                ),
+            ),
+        )
+        .with_construction_return(node_layout())
+        .with_resource_summary(vec![storage.clone()], vec![storage.clone()]);
+        let raw = allocate_destination(&CState::new(), "node");
+        let at = raw.locals.slot("node").unwrap().clone();
+        let selected = raw.with_aggregate_return_destination(at.clone(), node_layout());
+        let paths = execute_c_function_call_paths(
+            &selected,
+            &function,
+            &[c_pointer_value(at.offset_by_bytes(8))],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one alias case");
+        };
+        if read_before_write {
+            assert!(matches!(
+                path.outcome,
+                CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+            ));
+        } else {
+            let CFunctionOutcome::Return { value, state } = &path.outcome else {
+                panic!("alias store construction failed: {:?}", path.outcome);
+            };
+            assert_eq!(pointer(value), at);
+            assert_eq!(
+                state.memory.known_value(&at.offset_by_bytes(8)),
+                Some(int32(7))
+            );
+        }
+    }
+}
+
+#[test]
+fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
+    let mut work_by_size = Vec::new();
+    for count in [16, 128, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut caller = allocate_destination(&CState::new(), "node");
+        let at = caller.locals.slot("node").unwrap().clone();
+        caller = caller.with_aggregate_return_destination(at, node_layout());
+        for index in 0..count {
+            let unrelated = CMemory::frame_local_pointer(10, &format!("unrelated{index}"));
+            caller.memory = caller.memory.with_block(unrelated.block.clone(), 4);
+            caller.resources = caller
+                .resources
+                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    unrelated,
+                    0u32.into(),
+                    1u32.into(),
+                )));
+        }
+        let function = construction_function("node", node_construction_body());
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            construction_return::bind(&caller, function.contract_interface(), &mut CState::new())
+                .unwrap();
+        });
+        work_by_size.push(work);
+    }
+    assert!(
+        work_by_size
+            .iter()
+            .all(|work| *work <= work_by_size[0].max(1) * 2),
+        "{work_by_size:?}"
+    );
+}
+
+#[test]
+fn construction_completion_work_scales_with_value_fields() {
+    let mut samples = Vec::new();
+    for count in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        // Leave padding between fields so initialization retains separate
+        // runs instead of measuring only one contiguous initialized range.
+        let layout = CAggregateLayout::new(
+            count * 8,
+            8,
+            (0..count)
+                .map(|index| CAggregateField::new(format!("field{index}"), index * 8, CType::Int32))
+                .collect(),
+        );
+        let at = Pointer::symbolic(Variable(873_004));
+        register_block_alignment(&at.block, 8);
+        let caller = CState::new()
+            .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                CResourceFact::own_memory(CMemoryRange::new(
+                    at.clone(),
+                    0u32.into(),
+                    (count * 2).into(),
+                )),
+            ))
+            .with_aggregate_return_destination(at.clone(), layout.clone());
+        let function = c_function(CType::VoidPointer, "wide_result", vec![], c_skip())
+            .with_construction_return(layout);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut state = caller.clone();
+            construction_return::bind(&caller, function.contract_interface(), &mut state).unwrap();
+            construction_return::initialize_summary(&mut state, function.contract_interface());
+            construction_return::complete(
+                &state,
+                function.contract_interface(),
+                CValue::typed_pointer(at.clone(), CType::VoidPointer),
+            )
+            .unwrap();
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn construction_destination_survives_substitution_and_requires_agreement_at_join() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(873_003);
+    let state =
+        CState::new().with_aggregate_return_destination(Pointer::symbolic(variable), node_layout());
+    let mut variables = BTreeSet::new();
+    collect_c_state_bitvector_variables(&state, &mut variables);
+    assert!(variables.contains(&variable));
+    let proposition = Proposition::CStatementVerifies {
+        state: Box::new(state.clone()),
+        statement: Box::new(c_skip()),
+        outcome: CStatementOutcome::Normal(Box::new(state.clone())),
+    };
+    let at = CMemory::frame_local_pointer(15, "caller");
+    let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
+        &proposition,
+        variable,
+        &at,
+    );
+    let Proposition::CStatementVerifies {
+        state: mapped,
+        outcome: CStatementOutcome::Normal(after),
+        ..
+    } = mapped
+    else {
+        panic!("substituted construction transition");
+    };
+    assert_eq!(mapped.aggregate_destination.as_ref().unwrap().pointer, at);
+    assert_eq!(mapped.aggregate_destination, after.aggregate_destination);
+    assert!(!state.shares_non_memory_storage_with(&mapped));
+    assert!(
+        abstract_c_state_for_interface_join_across(&state, &[&state, &mapped], &BTreeMap::new(), 0)
+            .is_err()
+    );
+}
+
 // This tests the existing explicit-destination procedure building block,
 // without the legacy placeholder-seeding declaration. It does not pass a
 // supplied destination off as a by-value aggregate result.
@@ -186,13 +527,13 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
         );
     let mut state = CState::new().with_memory(memory);
     let function = copy_function();
-    let first = materialize_aggregate_return(
+    let first = complete_aggregate_return(
         &mut state,
         &function,
         CValue::typed_pointer(source.clone(), CType::VoidPointer),
     )
     .expect("first copy result");
-    let second = materialize_aggregate_return(&mut state, &function, first.clone())
+    let second = complete_aggregate_return(&mut state, &function, first.clone())
         .expect("second copy result");
     assert_ne!(pointer(&first).block, source.block);
     assert_ne!(pointer(&second).block, pointer(&first).block);
@@ -244,7 +585,7 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
             source.clone(),
         );
         let function = copy_function();
-        let result = materialize_aggregate_return(
+        let result = complete_aggregate_return(
             &mut state,
             &function,
             CValue::typed_pointer(source.clone(), CType::VoidPointer),
@@ -294,7 +635,7 @@ fn aggregate_copy_return_refuses_partial_initialization_without_changing_state()
         ));
     let before = state.clone();
     assert_eq!(
-        materialize_aggregate_return(
+        complete_aggregate_return(
             &mut state,
             &copy_function(),
             CValue::typed_pointer(source, CType::VoidPointer),
@@ -315,7 +656,7 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
         .with_memory(CMemory::new().with_uninitialized_block(source.block.clone(), 16));
     let value = CValue::typed_pointer(source.clone(), CType::VoidPointer);
     assert_eq!(
-        materialize_aggregate_return(&mut state, &copy_function(), value.clone()),
+        complete_aggregate_return(&mut state, &copy_function(), value.clone()),
         Err(AggregateReturnRefusal::UninitializedRead),
     );
     state.set_memory(state.memory.clone().store(
@@ -323,14 +664,14 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
         CValue::typed_pointer(source.offset_by_bytes(8), CType::Int32Pointer),
     ));
     assert_eq!(
-        materialize_aggregate_return(&mut state, &copy_function(), value.clone()),
+        complete_aggregate_return(&mut state, &copy_function(), value.clone()),
         Err(AggregateReturnRefusal::UninitializedRead),
     );
     state.set_memory(state.memory.clone().store(
         source.offset_by_bytes(8),
         CValue::Int32(Bitvector32Term::Constant(37)),
     ));
-    assert!(materialize_aggregate_return(&mut state, &copy_function(), value).is_ok());
+    assert!(complete_aggregate_return(&mut state, &copy_function(), value).is_ok());
 }
 
 #[test]

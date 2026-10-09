@@ -1370,6 +1370,12 @@ fn abstract_c_state_for_join_across_with_policy(
     // history is traversed here.
     if sibling_states
         .iter()
+        .any(|sibling| sibling.aggregate_destination != state.aggregate_destination)
+    {
+        return Err("construction destination differs across branch join".to_string());
+    }
+    if sibling_states
+        .iter()
         .any(|sibling| sibling.loan_ledger != state.loan_ledger)
     {
         return Err("stable-view loan state differs across branch join".to_string());

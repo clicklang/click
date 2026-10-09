@@ -3165,6 +3165,7 @@ pub struct CFunctionContractInterface {
     pub(crate) return_type: CType,
     pub(crate) return_pointee_constant: bool,
     pub(crate) return_aggregate_layout: Option<CAggregateLayout>,
+    pub(crate) aggregate_return_mode: CAggregateReturnMode,
     pub(crate) exceptional_signature: CExceptionalSignature,
     pub(crate) parameters: Vec<CParameter>,
     /// Explicit resource-instance binders introduced by a named contract.
@@ -4931,8 +4932,8 @@ pub(super) struct CPendingReallocation {
     pub(super) initialized_prefix: Vec<(i64, u32)>,
 }
 
-/// Every field is a snapshot collection, so the derived `Hash` is O(1).
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+/// Every field is a snapshot collection, so hashing is O(1).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub(super) struct CHeapMemory {
     /// Live heap blocks are also present in `blocks`; this set distinguishes
     /// them from automatic storage and memory-havoc markers.
@@ -4975,6 +4976,27 @@ pub(super) struct CHeapMemory {
     /// refined. Success then retires it and installs the copied prefix;
     /// failure simply resolves the new result to null.
     pub(super) pending_reallocations: SnapshotMap<Pointer, CPendingReallocation>,
+}
+
+impl std::hash::Hash for CHeapMemory {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Snapshot hashes name symbolic loads and order forgotten snapshots.
+        // Preserve existing names when construction tracking is absent: an
+        // unused extension must not reshuffle ordinary proof-search inputs.
+        self.live_allocations.hash(state);
+        self.deallocated_allocations.hash(state);
+        self.pending_allocations.hash(state);
+        self.uninitialized_allocations.hash(state);
+        self.initialized.hash(state);
+        self.zeroed_allocations.hash(state);
+        self.zeroed_prefix_allocations.hash(state);
+        self.zeroed_pending_allocations.hash(state);
+        self.pending_reallocations.hash(state);
+        if !self.uninitialized_objects.is_empty() {
+            "uninitialized_objects".hash(state);
+            self.uninitialized_objects.hash(state);
+        }
+    }
 }
 
 impl CHeapMemory {
@@ -5902,8 +5924,24 @@ pub(super) struct PopulationEffects {
     pub(super) creation: Option<super::population_authority::c_creation::CreationEvents>,
 }
 
+/// Whether an aggregate return copies a value or completes caller storage.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CAggregateReturnMode {
+    #[default]
+    Copy,
+    Construction,
+}
+
+/// Call metadata only. Selecting it grants neither storage nor ownership.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(super) struct CAggregateDestination {
+    pub(super) pointer: Pointer,
+    pub(super) layout: CAggregateLayout,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CState {
+    pub(super) aggregate_destination: Option<Arc<CAggregateDestination>>,
     /// Lexical field values for scratch resource-body evaluation only.
     /// This is not ownership and is never populated by unfolding a resource.
     pub(super) instance_field_scope: ResourceContext,

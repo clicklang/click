@@ -573,8 +573,42 @@ pub(super) fn execute_c_call_assign_paths(
         }]);
     };
 
+    let original_destination = state.aggregate_destination.clone();
+    let selected_state;
+    let call_state = if function.contract_interface().aggregate_return_mode()
+        == CAggregateReturnMode::Construction
+    {
+        let selection = state
+            .locals
+            .aggregate_layout(target)
+            .zip(state.locals.aggregate_object_pointer(target));
+        let Some((layout, pointer)) = selection.filter(|(layout, _)| {
+            Some(*layout) == function.return_aggregate_layout()
+                && !matches!(
+                    state.locals.binding(target),
+                    Some(CLocalBinding::AggregateObject { constant: true, .. })
+                )
+        }) else {
+            return Ok(vec![CStatementExecutionPath {
+                loop_invariant_correspondence: Default::default(),
+                outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                    "construction call requires a compatible writable destination".into(),
+                )),
+                facts: Vec::new().into(),
+                obligations: Vec::new(),
+                loan_evidence: empty_checked_loan_evidence_sequence(),
+            }]);
+        };
+        selected_state = state
+            .clone()
+            .with_aggregate_return_destination(pointer.clone(), layout.clone());
+        &selected_state
+    } else {
+        state
+    };
+
     let paths = execute_c_function_call_paths(
-        state,
+        call_state,
         function,
         arguments,
         assumptions,
@@ -586,6 +620,22 @@ pub(super) fn execute_c_call_assign_paths(
     .map(|mut path| {
         let outcome = match path.outcome {
             CFunctionOutcome::Return { value, mut state } => {
+                if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
+                    let exact = matches!(&value, CValue::Pointer(pointer)
+                        if state.locals.aggregate_object_pointer(target) == Some(pointer.pointer()));
+                    state.aggregate_destination = original_destination.clone();
+                    return CStatementExecutionPath {
+                        loop_invariant_correspondence: Default::default(),
+                        outcome: if exact { CStatementOutcome::Normal(state) } else {
+                            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                "construction return changed its destination".into(),
+                            ))
+                        },
+                        facts: path.facts, obligations: path.obligations,
+                        loan_evidence: path.loan_evidence.clone(),
+                    };
+                }
+
                 if value == CValue::Void {
                     return CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),

@@ -169,6 +169,7 @@ impl CheckedReturnProposition {
         if outcome.is_exceptional
             || outcome.result.as_ref() != value
             || outcome.state.locals() != state.locals()
+            || outcome.state.aggregate_destination != state.aggregate_destination
             || !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
                 outcome.state.memory(),
                 state.memory(),
@@ -707,6 +708,7 @@ fn checks_population_authority_exchange(
             .population_effects
             .pending_counts
             .shares_storage_with(&after.population_effects.pending_counts)
+        || before.aggregate_destination != after.aggregate_destination
         || before.next_local_frame != after.next_local_frame
         || before.next_local_lifetime != after.next_local_lifetime
         || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
@@ -932,6 +934,7 @@ fn checks_population_member_exchange(
             .population_effects
             .pending_counts
             .shares_storage_with(&after.population_effects.pending_counts)
+        || before.aggregate_destination != after.aggregate_destination
         || before.next_local_frame != after.next_local_frame
         || before.next_local_lifetime != after.next_local_lifetime
         || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
@@ -1772,6 +1775,7 @@ impl CheckedResourceRewrite {
                 .population_effects
                 .pending_counts
                 .shares_storage_with(&after_state.population_effects.pending_counts)
+            || before_state.aggregate_destination != after_state.aggregate_destination
             || before_state.next_local_frame != after_state.next_local_frame
             || before_state.next_local_lifetime != after_state.next_local_lifetime
             || before_state.enclosing_frame_holds_locals != after_state.enclosing_frame_holds_locals
@@ -2170,6 +2174,7 @@ impl CheckedResourceRewrite {
                         .population_effects
                         .pending_counts
                         .shares_storage_with(&after_state.population_effects.pending_counts)
+                    || before_state.aggregate_destination != after_state.aggregate_destination
                     || before_state.next_local_frame != after_state.next_local_frame
                     || before_state.next_local_lifetime != after_state.next_local_lifetime
                     || before_state.enclosing_frame_holds_locals

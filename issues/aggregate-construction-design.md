@@ -9,8 +9,8 @@ identity; copying an existing aggregate preserves its field values, including
 pointer values. Neither operation invents pointee authority or extends another
 allocation's lifetime.
 
-The shared constructor path already accepts an explicit destination. Aggregate
-function returns currently materialize a field copy into caller-visible storage.
+The shared constructor path already accepts an explicit destination. Existing
+source frontends materialize aggregate returns as field copies into caller-visible storage.
 That is not a general implementation of C++ returned construction: a constructor
 can observe its object's address or store a pointer to one of its fields. An
 extra copy can change the relationship between that pointer and the result
@@ -103,9 +103,14 @@ that evidence or their checked transitions are missing.
 The accepted interface direction, Surface Click boundary, initialization and
 lifetime obligations, and staged implementation contract are recorded in
 [the aggregate construction design](../design/aggregate-construction.md).
-Destination-aware returns remain to be implemented. The precise compiler/ABI
-evidence is an admission gate for each new C++ return shape; the design does
-not treat a Clang expression category as sufficient evidence of copy elision.
+The shared kernel now supports complete-object destination returns, including
+body execution and body-certified summaries forwarded through two factories.
+The hidden result binding grants no storage or ownership; actual writes must
+initialize the modeled value fields. Existing C/Rust copy returns are unchanged.
+Source admission and expression lifetime lowering remain to be connected.
+The precise compiler/ABI evidence is an admission gate for each new C++ return
+shape; the design does not treat a Clang expression category as sufficient
+evidence of copy elision.
 
 ## Acceptance criteria
 

@@ -2,28 +2,38 @@
 
 This is the implementation contract for
 [shared aggregate construction](../issues/aggregate-construction-design.md).
-Destination-aware returns are not implemented yet. Existing C aggregate
-returns remain field copies; C++ returned construction remains refused.
+The shared kernel supports a bounded complete-object construction return mode.
+Existing C aggregate returns remain field copies; C++ returned construction
+remains refused until source lowering and compiler evidence are connected.
 
 The copy-return implementation now checks source initialization inside the
 materialization transition, before allocating or copying a result. Kernel tests
 also exercise an explicit destination through two nested procedure calls,
-including its self-pointer and ownership transfer. These are prerequisites:
-they do not yet admit by-value construction returns or certify a modular
-construction summary.
+including its self-pointer and ownership transfer.
 
 The shared memory model can also describe initially unwritten symbolic
 storage without claiming that it is fresh or separate from arguments. Actual
 writes establish initialization; resource naming does not. Initialization
 survives value forgetting, intersects across branches, and follows checked
-pointer equalities. This proof-entry building block is not yet connected to
-construction-return contracts or source admission.
+pointer equalities. Construction-return proofs use this initially unwritten
+storage, with ownership supplied separately by their entry contract.
 
 Caller allocation now has a separate `c_allocate_aggregate_destination`
 operation. It allocates fresh automatic storage and its byte ownership without
 seeding field values. Re-declaration uses the existing retirement and fresh
 generation checks. Ordinary local declarations and the existing C++/Rust
 constructor placeholder protocol retain their behavior.
+
+`CAggregateReturnMode::Construction` now binds the hidden result to exact call
+metadata before body execution. Completion validates the same pointer, layout,
+live storage, and initialized value fields. Direct calls, forwarding calls, and
+body-certified modular summaries share that destination; completing a result
+does not allocate or copy. The initial kernel slice requires complete-object
+storage, an explicit byte owner, and ordered non-overlapping scalar fields.
+Union/array layouts, subobject destinations, exceptional construction, external
+construction assumptions, and constructor callbacks remain refused. Contract
+matching, state substitution, branch joins, and checked snapshot comparisons
+include the destination and result mode. Source admission remains pending.
 
 ## Surface and source boundary
 

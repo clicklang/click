@@ -1230,6 +1230,9 @@ pub(in crate::kernel) fn collect_c_state_bound_variables(
     state: &CState,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if let Some(destination) = &state.aggregate_destination {
+        collect_pointer_bound_variables(&destination.pointer, variables);
+    }
     for binding in state.locals.bindings.values() {
         if let CLocalBinding::Object { value, .. } = binding {
             collect_c_value_bound_variables(value, variables);
@@ -3916,6 +3919,12 @@ fn substitute_bitvector_variable_in_c_state(
             bindings,
             slots: state.locals.slots.clone(),
         },
+        aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
+            std::sync::Arc::new(CAggregateDestination {
+                pointer: substitute_bitvector_variable_in_pointer(&destination.pointer, from, to),
+                layout: destination.layout.clone(),
+            })
+        }),
         memory: substitute_bitvector_variable_in_memory(&state.memory, from, to),
         resource_bindings: state.resource_bindings.clone(),
         instance_field_scope: substitute_bitvector_variable_in_resource_context(
@@ -6742,6 +6751,12 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
     );
     CState {
         locals: CLocalEnvironment { bindings, slots },
+        aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
+            std::sync::Arc::new(CAggregateDestination {
+                pointer: substitute_pointer_variable_in_pointer(&destination.pointer, from, to),
+                layout: destination.layout.clone(),
+            })
+        }),
         memory: substitute_pointer_variable_in_memory(&state.memory, from, to),
         resource_bindings: state.resource_bindings.clone(),
         instance_field_scope: substitute_pointer_variable_in_resource_context(

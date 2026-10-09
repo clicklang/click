@@ -5474,8 +5474,9 @@ impl CMemory {
 
     /// Records the `bytes` bytes of the object at `pointer` as initialized:
     /// a declaration whose initializer writes every byte of its object
-    /// (C11 6.7.9p21 zero-initializes whatever it does not name). The cells
-    /// it leaves are the values; this is what outlives them.
+    /// (C11 6.7.9p21 zero-initializes whatever it does not name), or one value
+    /// field guaranteed initialized by a checked construction summary. The
+    /// cells describe values; this record outlives forgetting those values.
     pub(in crate::kernel) fn with_initialized_object(
         mut self,
         pointer: &Pointer,
@@ -6152,6 +6153,17 @@ impl CMemory {
 }
 
 impl CState {
+    /// Selects a call destination without allocating, initializing, or granting
+    /// authority. Function entry validates it against the construction layout.
+    pub fn with_aggregate_return_destination(
+        mut self,
+        pointer: Pointer,
+        layout: CAggregateLayout,
+    ) -> Self {
+        self.aggregate_destination = Some(Arc::new(CAggregateDestination { pointer, layout }));
+        self
+    }
+
     /// O(1), fail-closed comparison of the non-memory part of a predicate's
     /// state argument. The caller has already checked exact interned memory
     /// identity. Independently built empty environments are equivalent, but
@@ -6206,6 +6218,11 @@ impl CState {
                 .pending_counts
                 .shares_storage_with(&other.population_effects.pending_counts)
             && self.next_local_frame == other.next_local_frame
+            && match (&self.aggregate_destination, &other.aggregate_destination) {
+                (None, None) => true,
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                _ => false,
+            }
             && self.next_local_lifetime == other.next_local_lifetime
             && self.enclosing_frame_holds_locals == other.enclosing_frame_holds_locals
     }

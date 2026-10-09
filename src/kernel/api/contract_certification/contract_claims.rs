@@ -87,6 +87,7 @@ pub(crate) fn c_checked_function_proposition_with_reason(
             && completed.result.as_ref() == value
             && completed.state.memory() == state.memory()
             && completed.state.locals() == state.locals()
+            && completed.state.aggregate_destination == state.aggregate_destination
     };
     // Resource/population representation can change at exit. Aggregate return
     // completion can also retain the body's sparse block layout, while the
@@ -2807,6 +2808,7 @@ pub fn c_verified_function_rule(
 /// kernel, but no body-safety or postcondition proof is claimed for it.
 pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunctionRule> {
     (!function.is_program_entry()
+        && function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Copy
         && function.opaque_contract_supported()
         && !function.contract_claims().is_empty()
         && function_contract_claims_are_complete(&function))

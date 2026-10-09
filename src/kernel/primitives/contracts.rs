@@ -711,6 +711,7 @@ impl CFunctionContractInterface {
             return_type,
             return_pointee_constant: false,
             return_aggregate_layout: None,
+            aggregate_return_mode: CAggregateReturnMode::Copy,
             exceptional_signature: CExceptionalSignature::None,
             parameters,
             proof_parameters: Default::default(),
@@ -744,6 +745,10 @@ impl CFunctionContractInterface {
 
     pub fn return_aggregate_layout(&self) -> Option<&CAggregateLayout> {
         self.return_aggregate_layout.as_ref()
+    }
+
+    pub fn aggregate_return_mode(&self) -> CAggregateReturnMode {
+        self.aggregate_return_mode
     }
 
     pub fn parameters(&self) -> &[CParameter] {
@@ -897,6 +902,7 @@ impl CFunctionContractInterface {
         self.return_type == other.return_type
             && self.return_pointee_constant == other.return_pointee_constant
             && self.return_aggregate_layout == other.return_aggregate_layout
+            && self.aggregate_return_mode == other.aggregate_return_mode
             && self.exceptional_signature == other.exceptional_signature
             && self.parameters == other.parameters
             && self.proof_parameters == other.proof_parameters
@@ -924,9 +930,11 @@ impl CFunctionContractInterface {
     }
 
     pub(crate) fn has_compatible_signature_and_composite_vocabulary(&self, other: &Self) -> bool {
-        self.return_type == other.return_type
+        self.aggregate_return_mode == CAggregateReturnMode::Copy
+            && self.return_type == other.return_type
             && self.return_pointee_constant == other.return_pointee_constant
             && self.return_aggregate_layout == other.return_aggregate_layout
+            && self.aggregate_return_mode == other.aggregate_return_mode
             && self.exceptional_signature == other.exceptional_signature
             && self.parameters.len() == other.parameters.len()
             && self
@@ -1262,6 +1270,15 @@ impl CFunction {
 
     pub fn with_return_aggregate_layout(mut self, layout: CAggregateLayout) -> Self {
         self.contract_interface.return_aggregate_layout = Some(layout);
+        self.contract_interface.aggregate_return_mode = CAggregateReturnMode::Copy;
+        self
+    }
+
+    /// Selects completion into a separately supplied call destination. The
+    /// contract must describe its actual storage authority and write effects.
+    pub fn with_construction_return(mut self, layout: CAggregateLayout) -> Self {
+        self.contract_interface.return_aggregate_layout = Some(layout);
+        self.contract_interface.aggregate_return_mode = CAggregateReturnMode::Construction;
         self
     }
 
@@ -2481,6 +2498,7 @@ impl CFunctionContract {
         interface: CFunctionContractInterface,
     ) -> Option<Self> {
         (interface.opaque_contract_supported()
+            && interface.aggregate_return_mode() == CAggregateReturnMode::Copy
             && interface.resource_constructors().is_empty()
             && !name.is_empty())
         .then_some(Self {
