@@ -80,6 +80,10 @@ through `INT32_MAX`, the current memory-index boundary. They relate full-width
 Rust metadata to signed indices, split a four-byte prefix into full 22,208-byte
 batches and an aligned remainder of at most 22,204 bytes, and establish the
 actual outer iterator's nonempty-step bound, divisibility and strict progress.
+A checked access lemma combines a batch's absolute start with the inner
+cursor displacement to keep the four-byte read inside the original input,
+including at the signed-index boundary. Native additions use checked Integer
+bridges and preserve their overflow prerequisites.
 No generated processed counter is used. These arithmetic lemmas do not yet
 establish the original outer-loop invariant or checksum result.
 

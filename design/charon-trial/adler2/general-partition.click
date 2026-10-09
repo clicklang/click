@@ -757,3 +757,42 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
   apply(int32_equal_of_to_integer((remaining - 22208) % 22208, 0)) using { to_integer((remaining - 22208) % 22208) == 0; }
  }
 }
+
+# Compose a batch start and the actual inner cursor displacement in the
+# original input coordinates. Every native sum has a checked Integer bridge.
+theorem adler_absolute_chunk_access(t: int32, pos: int32, n: int32) {
+ requires 0 <= t;
+ requires t <= 2147461439;
+ requires 0 <= pos;
+ requires pos <= 22204;
+ requires t + 22208 <= n;
+ requires 0 <= n;
+ ensures 0 <= t + pos by { arithmetic() using { 0 <= t; t <= 2147461439; 0 <= pos; pos <= 22204; } }
+ ensures (t + pos) + 4 <= n by {
+  have 0 <= t + pos by { arithmetic() using { 0 <= t; t <= 2147461439; 0 <= pos; pos <= 22204; } }
+  have t + pos <= 2147483643 by { arithmetic() using { 0 <= t; t <= 2147461439; 0 <= pos; pos <= 22204; } }
+  have defined(t + pos) by { simp() using { 0 <= t; t <= 2147461439; 0 <= pos; pos <= 22204; } }
+  apply(int32_less_equal_to_integer(0, t + pos)) using { 0 <= t + pos; }
+  apply(int32_less_equal_to_integer(t + pos, 2147483643)) using { t + pos <= 2147483643; }
+  have to_integer(t + pos) + to_integer(4) >= -2147483648 by { arithmetic() using { to_integer(0) <= to_integer(t + pos); } }
+  have to_integer(t + pos) + to_integer(4) <= 2147483647 by { arithmetic() using { to_integer(t + pos) <= to_integer(2147483643); } }
+  apply(int32_add_defined_by_integer_bounds(t + pos, 4)) using { to_integer(t + pos) + to_integer(4) >= -2147483648; to_integer(t + pos) + to_integer(4) <= 2147483647; }
+  have defined((t + pos) + 4) by { both { assumption(); } and { assumption(); } }
+  have defined(t + 22208) by { simp() using { 0 <= t; t <= 2147461439; } }
+  apply(int32_add_to_integer(t, pos)) using { defined(t + pos); }
+  apply(int32_add_to_integer(t + pos, 4)) using { defined((t + pos) + 4); }
+  apply(int32_add_to_integer(t, 22208)) using { defined(t + 22208); }
+  apply(int32_less_equal_to_integer(t + 22208, n)) using { t + 22208 <= n; }
+  apply(int32_less_equal_to_integer(pos, 22204)) using { pos <= 22204; }
+  have to_integer((t + pos) + 4) <= to_integer(n) by {
+   arithmetic() using {
+    to_integer(t + pos) == to_integer(t) + to_integer(pos);
+    to_integer((t + pos) + 4) == to_integer(t + pos) + to_integer(4);
+    to_integer(t + 22208) == to_integer(t) + to_integer(22208);
+    to_integer(t + 22208) <= to_integer(n);
+    to_integer(pos) <= to_integer(22204);
+   }
+  }
+  apply(int32_less_equal_of_to_integer((t + pos) + 4, n)) using { to_integer((t + pos) + 4) <= to_integer(n); }
+ }
+}

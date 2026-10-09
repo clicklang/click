@@ -1586,6 +1586,8 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         "adler_outer_bulk_signed_multiple.ensures_0",
         "adler_outer_remaining_step.ensures_0",
         "adler_outer_remaining_step_divisible.ensures_0",
+        "adler_absolute_chunk_access.ensures_0",
+        "adler_absolute_chunk_access.ensures_1",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
@@ -1593,6 +1595,11 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         click::surface::verify_c0_sources(&expanded, &[]).unwrap();
     }
     for (before, after) in [
+        ("requires pos <= 22204;", "requires pos <= 22205;"),
+        (
+            "ensures (t + pos) + 4 <= n by",
+            "ensures (t + pos) + 4 < n by",
+        ),
         ("<= 2147483647u64;", "<= 2147483648u64;"),
         ("<= 22204 by", "<= 22200 by"),
         (
