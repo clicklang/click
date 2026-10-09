@@ -1305,8 +1305,8 @@ pub(super) fn describe_runtime_error(
             "Requires owns mutex_use({})",
             describe_mutex_pointer(mutex, parameters, arguments)
         ),
-        crate::kernel::CRuntimeError::MissingMutexInvariant { resource } => {
-            let required = match resource.resource() {
+        crate::kernel::CRuntimeError::MissingMutexInvariant { resource, supplied } => {
+            let spell = |fact: &CResourceFact| match fact.resource() {
                 CResource::Instance(instance) => format!(
                     "owns {}",
                     format_declared_resource(
@@ -1316,9 +1316,16 @@ pub(super) fn describe_runtime_error(
                         arguments
                     )
                 ),
-                _ => describe_resource_fact(resource, parameters, arguments),
+                _ => describe_resource_fact(fact, parameters, arguments),
             };
-            format!("Requires {required}")
+            match supplied {
+                Some(supplied) => format!(
+                    "Requires {}; the selected state is {}",
+                    spell(resource),
+                    spell(supplied)
+                ),
+                None => format!("Requires {}", spell(resource)),
+            }
         }
         crate::kernel::CRuntimeError::MissingResource { resource } => {
             let fact = describe_resource_fact(resource, parameters, arguments);
@@ -5017,7 +5024,12 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
     match expression {
         ContractExpression::IntegerLiteral(value) => value.clone(),
         ContractExpression::ResourceField(access) => {
-            let mut parts = vec![access.owner.as_str()];
+            // A body names its own fields bare; `__body` is the parser's
+            // internal owner for them.
+            let mut parts = Vec::new();
+            if access.owner != "__body" {
+                parts.push(access.owner.as_str());
+            }
             parts.extend(access.children.iter().map(String::as_str));
             parts.push(access.field.as_str());
             parts.join(".")

@@ -53,5 +53,5 @@ void roundtrip(struct node* p) {
 ```
 
 ```expect
-fail: selected child does not satisfy the proposed parent model
+fail: child `right` is not proven to have the arguments the parent body gives it
 ```

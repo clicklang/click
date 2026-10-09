@@ -41,6 +41,11 @@ pub(super) enum MutexTransitionError {
     MissingLive(Pointer),
     MissingUse(Pointer),
     MissingInvariant(CResourceFact),
+    /// The selected state is owned but is not the protected type.
+    MismatchedInvariant {
+        required: CResourceFact,
+        supplied: CResourceFact,
+    },
     Refusal(&'static str),
     OwnedRefusal(String),
 }
@@ -62,7 +67,14 @@ impl MutexTransitionError {
             Self::MissingGuard(mutex) => super::CRuntimeError::MissingMutexGuard { mutex },
             Self::MissingInvariant(resource) => super::CRuntimeError::MissingMutexInvariant {
                 resource: Box::new(resource),
+                supplied: None,
             },
+            Self::MismatchedInvariant { required, supplied } => {
+                super::CRuntimeError::MissingMutexInvariant {
+                    resource: Box::new(required),
+                    supplied: Some(Box::new(supplied)),
+                }
+            }
             Self::Refusal(message) => super::CRuntimeError::FunctionContract(message.into()),
             Self::OwnedRefusal(message) => super::CRuntimeError::FunctionContract(message),
         }
@@ -2912,7 +2924,8 @@ mod tests {
         assert_eq!(
             error.into_runtime_error(&mutex(0)),
             super::super::CRuntimeError::MissingMutexInvariant {
-                resource: Box::new(protected)
+                resource: Box::new(protected),
+                supplied: None,
             }
         );
         assert_eq!(held.state(), &before);

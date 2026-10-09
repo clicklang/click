@@ -187,10 +187,41 @@ of its guard contract are retained.
 
 ### 3. Review the contracts actually used
 
-Compare the helper, counter, shared-refcount, and composition proofs with the
-implemented interfaces. Keep `owns`/`views`/`consumes`/`produces` and precise
-missing-fact/resource diagnostics. Removal of `guarded_by` is already decided
-and belongs to the prerequisite; do not reopen it as an undecided feature.
+Complete. The four proofs use only ordinary clauses and named call maps:
+
+- The [helper transfers](../mdtests/mutex_helper_transfers.md) use
+  `owns access: mutex_use(mu, P)`, `produces`/`consumes guard:
+  mutex_guard(mu)` and `produces`/`consumes state: P`, called as
+  `let { guard: g, state: s } = step(acquire(p), { access: a })`.
+- The [counter](../design/concurrency-probes/mutex_counter.click) and
+  [shared refcount](../examples/shared-refcount/shared_refcount.click)
+  workers preserve a typed `mutex_use` and `consumes`/`produces` population
+  members; their parents own the authorities with `requires count(..) == 0`,
+  because the protected memory is caller storage.
+- The [composition](../design/concurrency-composition/shared_log.click)
+  adds named field-bearing contract resources (`consumes before:`/`produces
+  after:`), a field read in a precondition (`before.cap`), and a control with
+  a named child, opened with `let { cap: c, items: v } = unfold(state)` and
+  closed with `fold(log_state(log), { .. }, { items: v })`.
+- Lock, unlock and initialization use the documented call maps; destruction
+  takes `{ lifetime: l }` and returns the deposited state under its
+  initialization-time name. A named destruction output and a storage binder
+  remain proposals; initialization consumes the storage without one.
+
+No mutex-specific assertion form, `guarded_by`, or resource-type parameter
+was needed. The review fixed the diagnostics these proofs met: a failed fold
+quotes the body fact as declared, an unfold or fold that leaves out a named
+child names it and the binding to write, a child whose field does not match
+the parent's names that field, and an unlock given state of another type
+names both types. Match-arm facts still report only their position, because
+arms record no source spelling. The remaining proof friction is arithmetic,
+not contracts: `int32` bounds are stated through `to_integer`, and
+`arithmetic()` needs `defined(..)` premises with constant operand bounds
+([bug](../bugs/arithmetic-equality-goal-through-two-bounds.md)).
+
+Keep `owns`/`views`/`consumes`/`produces` and precise missing-fact/resource
+diagnostics. Removal of `guarded_by` is already decided and belongs to the
+prerequisite; do not reopen it as an undecided feature.
 
 The abandoned resource-description parameter scaffolding has been removed;
 `<P: Resource>` was never accepted. Keep useful implemented named
