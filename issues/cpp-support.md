@@ -266,13 +266,22 @@ the contract; do not promise a recoverable error or rely on debug assertions.
 
 ### Work independent of returned construction
 
-The accepted bounded span/reference profile can support further unchanged
-observer proofs while the shared design is resolved. The next selected target
-is pinned `std::span<int>::front()` with `1 <= N <= 1,073,741,823`: prove a native
-reference to the first backing element and its old value using descriptor and
-backing views. Include a modular caller, empty/missing-authority and false
-alias/value refusals, plus expanded and retained verification. This needs no
-by-value result, constructor admission or temporary materialization.
+The accepted bounded span/reference profile now verifies unchanged pinned
+`std::span<int>::front()` with `1 <= N <= 1,073,741,823`: its native reference
+aliases the first backing element and preserves its old value using descriptor
+and backing views. Ordinary, expanded and retained verification pass; empty
+callers, missing bounds/views and false alias/value claims are refused.
+
+Pinned `size_bytes()` is also verified with descriptor views alone, without
+backing storage authority: its result is the native modulo-2^64 product of the
+extent and four-byte element size. Empty, bounded and wrapping extents retain
+that meaning. Expanded/retained verification and missing-authority/false-product
+refusals are covered.
+
+The next independent target is unchanged pinned indexed access: `operator[]`
+with a native unsigned index smaller than the bounded extent, returning the
+corresponding backing reference. It needs direct operator-method naming and
+selection, but no by-value result, constructor or temporary materialization.
 
 `first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
 behind the shared construction dependency. Other scalar/import work still needs
