@@ -213,6 +213,14 @@ that owns the generated automation. Profiling renders those site kinds as
 SMART, SIMPLE, and CONTROL, while smart-site discovery and expansion select
 only expandable-automation sites.
 
+Explicit full-width unsigned bounds can also normalize pointer offsets.
+For a native uint64 `index <= 2147483647u64`, `pointer + index` and
+`pointer + (int32)index` denote the same address. `simp() using { ... }` checks
+that the cited native bound is available and preserves the pointer stride.
+A bound on the low word or a signed comparison cannot establish this unsigned
+projection, and address equality grants no permission to access the backing
+storage. Conditional normalization does not enter binder bodies.
+
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
 explicit transports, rewrites, extracts, or named theorem applications. A

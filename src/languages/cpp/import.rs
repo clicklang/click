@@ -664,10 +664,11 @@ fn validate_config(config: &Config) -> Result<(), String> {
     }
     let mut components = config.function.rsplit("::");
     let member = components.next().unwrap_or_default();
-    let valid_selector = (is_identifier(member) || matches!(member, "operator+=" | "operator-="))
+    let valid_selector = (is_identifier(member)
+        || matches!(member, "operator+=" | "operator-=" | "operator[]"))
         && components.all(is_identifier);
     if !valid_selector {
-        return Err("C++ function selector requires a function name or Class::method (including operator+= and operator-=)".into());
+        return Err("C++ function selector requires a function name or Class::method (including operator+=, operator-= and operator[])".into());
     }
     if config.source == config.artifact || config.logical_source == config.artifact {
         return Err("C++ source and semantic artifact paths must differ".into());

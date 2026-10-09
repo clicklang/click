@@ -1491,6 +1491,27 @@ impl ResourceContext {
         index.symbolic.sole_base(class, owned)
     }
 
+    // A captured interior address has no syntactic additive base. Its exact
+    // graph displacement can still identify that base, provided an unrelated
+    // opaque pointer-read token does not remain in the displacement.
+    fn query_has_proven_displacement(
+        graph: &EqualityGraph,
+        pointer: &Pointer,
+        base: &Pointer,
+    ) -> bool {
+        if let Some(aligned) = graph.pointer_at_base(pointer, base)
+            && let PointerOffsetTerm::Add(left, right) = &aligned.offset
+            && left.as_ref() == &base.offset
+            && !Self::pointer_read_coordinate(&Pointer {
+                block: base.block.clone(),
+                offset: right.as_ref().clone(),
+            })
+        {
+            return true;
+        }
+        false
+    }
+
     /// Select a unique supplier in the query's trusted affine block class.
     /// Cardinality is indexed; the caller must still check exact byte coverage.
     fn sole_affine_supplier(
@@ -1512,6 +1533,7 @@ impl ResourceContext {
         let range = index.resources.facts.get(&entry)?.memory_range()?;
         if Self::pointer_read_coordinate(range.base())
             && !Self::query_has_base(&index.graph, pointer, range.base())
+            && !Self::query_has_proven_displacement(&index.graph, pointer, range.base())
         {
             return None;
         }

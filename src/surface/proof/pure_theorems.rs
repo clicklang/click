@@ -4219,6 +4219,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                         "left != 0u64",
                     )
                     .replace("requires left <= right", "requires left >= right")
+                    .replace("requires left < right", "requires left <= right")
                     .replace(
                         "requires to_integer(right) <= to_integer(left)",
                         "requires to_integer(left) <= to_integer(right)",

@@ -9859,10 +9859,14 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
             ConditionTerm::Constant(value) => *value,
             ConditionTerm::IntegerNotEqual(a, b) => integer(a) != integer(b),
             ConditionTerm::IntegerLessEqual(a, b) => integer(a) <= integer(b),
+            ConditionTerm::IntegerLessThan(a, b) => integer(a) < integer(b),
             ConditionTerm::IntegerEqual(a, b) => integer(a) == integer(b),
             ConditionTerm::Bitvector64Equal(a, b) => a.uint64_as_const() == b.uint64_as_const(),
             ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => {
                 a.uint64_as_const() <= b.uint64_as_const()
+            }
+            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => {
+                a.uint64_as_const() < b.uint64_as_const()
             }
             _ => panic!("unexpected guard or equality"),
         };
@@ -9874,6 +9878,7 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         "uint64_multiply_to_integer",
         "uint64_divide_to_integer",
         "uint64_remainder_to_integer",
+        "uint64_less_than_to_integer",
         "uint64_less_equal_to_integer",
         "uint64_less_equal_of_to_integer",
     ] {
@@ -9911,6 +9916,7 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     "uint64_subtract_to_integer" => a.checked_sub(b).is_some(),
                     "uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
                     "uint64_divide_to_integer" | "uint64_remainder_to_integer" => b != 0,
+                    "uint64_less_than_to_integer" => a < b,
                     _ => a <= b,
                 };
                 assert_eq!(truth(guard), allowed, "{name}/{a}/{b}");
