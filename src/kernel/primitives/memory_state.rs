@@ -6106,9 +6106,10 @@ impl CState {
             && self.population_effects.creation == other.population_effects.creation
             && self.pending_thread_create == other.pending_thread_create
             && (self
-                .counted_populations
-                .shares_storage_with(&other.counted_populations)
-                || (self.counted_populations.is_empty() && other.counted_populations.is_empty()))
+                .observed_population_families
+                .shares_storage_with(&other.observed_population_families)
+                || (self.observed_population_families.is_empty()
+                    && other.observed_population_families.is_empty()))
             && self.next_local_frame == other.next_local_frame
             && self.next_local_lifetime == other.next_local_lifetime
             && self.enclosing_frame_holds_locals == other.enclosing_frame_holds_locals
@@ -7245,7 +7246,7 @@ impl CState {
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
-        if self.population_body_is_open(name, arguments, assumptions) {
+        if self.population_body_is_open(name, arguments) {
             return Err("close the member's private body before changing its population".into());
         }
         let events = self
@@ -7575,8 +7576,8 @@ impl CState {
             && self.loan_participant == other.loan_participant
             && self.loan_view_bindings == other.loan_view_bindings
             && self
-                .counted_populations
-                .shares_storage_with(&other.counted_populations)
+                .observed_population_families
+                .shares_storage_with(&other.observed_population_families)
     }
 
     pub fn with_local(mut self, name: impl Into<String>, value: CValue) -> Self {
@@ -7911,89 +7912,13 @@ impl CState {
         &self.resources
     }
 
-    pub fn with_counted_population(
-        mut self,
-        name: impl Into<String>,
-        arguments: ResourceArguments,
-        count: Bitvector32Term,
-    ) -> Self {
-        self.counted_populations.insert(CCountedPopulation {
-            name: name.into(),
-            arguments,
-            count,
-            family_observation_marker: false,
-        });
-        self
-    }
-
-    pub fn counted_population(
-        &self,
-        name: &str,
-        arguments: &[AlgebraicValue],
-    ) -> Option<&Bitvector32Term> {
-        self.counted_populations
-            .get(name, arguments, false)
-            .map(|population| &population.count)
-    }
-
-    pub fn counted_population_proven_equal(
-        &self,
-        name: &str,
-        arguments: &[AlgebraicValue],
-        assumptions: &PureFactContext,
-    ) -> Option<(String, ResourceArguments, Bitvector32Term)> {
-        let indexed = self
-            .counted_populations
-            .indexed_unary_matches(name, arguments, assumptions);
-        let selected = match indexed {
-            Some(matches) => matches.into_iter().next(),
-            None => self.counted_populations.family(name).find(|population| {
-                !population.family_observation_marker
-                    && population.arguments.len() == arguments.len()
-                    && population
-                        .arguments
-                        .iter()
-                        .zip(arguments)
-                        .all(|(left, right)| {
-                            crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
-                        })
-            }),
-        };
-        selected.map(|population| {
-            (
-                population.name.clone(),
-                population.arguments.clone(),
-                population.count.clone(),
-            )
-        })
-    }
-
-    pub fn without_counted_population(mut self, name: &str, arguments: &[AlgebraicValue]) -> Self {
-        self.counted_populations.remove(name, arguments);
-        self
-    }
-
-    pub fn counted_populations(&self) -> impl Iterator<Item = &CCountedPopulation> {
-        self.counted_populations
-            .iter()
-            .filter(|population| !population.family_observation_marker)
-    }
-
     pub fn with_observed_population_family(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
-        if !self.observes_population_family(&name) {
-            self.counted_populations.insert(CCountedPopulation {
-                name,
-                arguments: std::sync::Arc::from([]),
-                count: Bitvector32Term::Constant(0),
-                family_observation_marker: true,
-            });
-        }
+        self.observed_population_families.insert(name.into());
         self
     }
 
     pub fn observes_population_family(&self, name: &str) -> bool {
-        self.counted_populations.get(name, &[], true).is_some()
+        self.observed_population_families.contains(name)
     }
 
     /// The logical resource-state component used to index predicate facts.

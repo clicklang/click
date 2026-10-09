@@ -717,9 +717,8 @@ fn a_session_reset_empties_the_version_memos() {
 }
 
 /// The kinds whose versions are values in two saved states rather than points
-/// on the memory history: a model field and a counted population. They have no
-/// naming walk and no recorded edge, so `same_at_states` is their whole
-/// interface, and every answer here is one keyed lookup per state plus one term
+/// on the memory history: a model field. It has no naming walk and no recorded
+/// edge, so `same_at_states` is its whole interface, and every answer here is one keyed lookup per state plus one term
 /// comparison.
 mod saved_states {
     use super::*;
@@ -860,81 +859,20 @@ mod saved_states {
         );
     }
 
-    fn population_state(count: u32) -> CState {
-        CState::new().with_counted_population(
-            "object_ref",
-            vec![CValue::Int32(Bitvector32Term::Constant(7)).into()].into(),
-            Bitvector32Term::Constant(count),
-        )
-    }
-
-    /// A population's version is the `count` term the state holds, by the same
-    /// keyed lookup every other consumer uses.
-    #[test]
-    fn a_population_count_is_its_version() {
-        let arguments = [CValue::Int32(Bitvector32Term::Constant(7)).into()];
-        let population = Resource::Population {
-            name: "object_ref",
-            arguments: &arguments,
-        };
-        let one = population_state(1);
-        let same_count = population_state(1);
-        let two = population_state(2);
-        assert_eq!(
-            same_at_states(
-                population,
-                StatePoint::at(&same_count),
-                StatePoint::at(&one)
-            ),
-            Sameness::Same
-        );
-        assert_eq!(
-            same_at_states(population, StatePoint::at(&two), StatePoint::at(&one)),
-            Sameness::Unknown {
-                at: None,
-                why: Stop {
-                    change: Change::PopulationMoved,
-                    reason: StopReason::DifferentVersion,
-                },
-            }
-        );
-        let ended = CState::new();
-        assert_eq!(
-            same_at_states(population, StatePoint::at(&ended), StatePoint::at(&one)),
-            not_held(true, false)
-        );
-        assert_eq!(
-            sole_population_of_family(&one, "object_ref"),
-            Some(OwnedResource::Population {
-                name: "object_ref".to_string(),
-                arguments: arguments.to_vec(),
-            })
-        );
-        assert_eq!(sole_population_of_family(&ended, "object_ref"), None);
-    }
-
-    /// Neither kind has a naming path: no term is named by one of these
+    /// A model field has no naming path: no term is named by one of these
     /// points, so there is no oldest point to be, exactly as for a footprint.
     #[test]
-    fn neither_kind_has_a_naming_walk() {
+    fn a_model_field_has_no_naming_walk() {
         let memory = entry_memory();
-        let arguments = [CValue::Int32(Bitvector32Term::Constant(7)).into()];
-        for resource in [
-            rank(),
-            Resource::Population {
-                name: "object_ref",
-                arguments: &arguments,
-            },
-        ] {
-            assert!(last_same_point(resource, &point(&memory)).is_none());
-            assert!(last_same(resource, &point(&memory)).is_none());
-            assert!(resource.lives_in_a_saved_state());
-        }
+        let resource = rank();
+        assert!(last_same_point(resource, &point(&memory)).is_none());
+        assert!(last_same(resource, &point(&memory)).is_none());
+        assert!(resource.lives_in_a_saved_state());
     }
 
     /// A question costs one keyed lookup per point, whatever the two states
-    /// hold. Growing the states by unrelated instances and unrelated
-    /// populations — the two things a question's key is *not* — leaves the work
+    /// hold. Growing the states by unrelated instances — what a question's
+    /// key is *not* — leaves the work
     /// at two units, which is what would fail if this enumerated a resource
     /// context instead of indexing it.
     ///
@@ -946,15 +884,14 @@ mod saved_states {
         let unrelated = |size: u64, rank: u32| {
             let mut state = holding(1, rank, 0);
             for other in 0..size {
-                state = state
-                    .clone()
-                    .with_resource_context(state.resources().clone().unchecked_with_fact(
-                        CResourceFact::own(CResource::Instance(instance(100 + other, 7, 7))),
-                    ))
-                    .with_counted_population(
-                        format!("family{other}"),
-                        vec![CValue::Int32(Bitvector32Term::Constant(other as u32)).into()].into(),
-                        Bitvector32Term::Constant(1),
+                state =
+                    state.clone().with_resource_context(
+                        state
+                            .resources()
+                            .clone()
+                            .unchecked_with_fact(CResourceFact::own(CResource::Instance(
+                                instance(100 + other, 7, 7),
+                            ))),
                     );
             }
             state

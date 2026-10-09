@@ -691,8 +691,8 @@ fn checks_population_authority_exchange(
         || before.pending_thread_create != after.pending_thread_create
         || before.population_access != after.population_access
         || !before
-            .counted_populations
-            .shares_storage_with(&after.counted_populations)
+            .observed_population_families
+            .shares_storage_with(&after.observed_population_families)
         || before.next_local_frame != after.next_local_frame
         || before.next_local_lifetime != after.next_local_lifetime
         || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
@@ -904,8 +904,8 @@ fn checks_population_member_exchange(
         || before.pending_thread_create != after.pending_thread_create
         || before.population_access != after.population_access
         || !before
-            .counted_populations
-            .shares_storage_with(&after.counted_populations)
+            .observed_population_families
+            .shares_storage_with(&after.observed_population_families)
         || before.next_local_frame != after.next_local_frame
         || before.next_local_lifetime != after.next_local_lifetime
         || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
@@ -1137,8 +1137,8 @@ fn describe_changed_state_field(changed: &CState, original: &CState) -> &'static
         "local values"
     } else if changed.instance_field_scope != original.instance_field_scope {
         "the open resource field scope"
-    } else if changed.counted_populations != original.counted_populations {
-        "counted resource populations"
+    } else if changed.observed_population_families != original.observed_population_families {
+        "observed population families"
     } else {
         "state outside memory, locals, and resources"
     }
@@ -1308,8 +1308,8 @@ impl CheckedResourceRewrite {
         let after_folded = after_state
             .resources()
             .satisfies_fact(selected, after_facts.assumptions());
-        let was_open = before_state.population_body_is_open(name, arguments, assumptions);
-        let now_open = after_state.population_body_is_open(name, arguments, assumptions);
+        let was_open = before_state.population_body_is_open(name, arguments);
+        let now_open = after_state.population_body_is_open(name, arguments);
         let (exposing, folded) = match (before_folded, after_folded, was_open, now_open) {
             (false, true, false, false) => (false, after_state),
             (true, false, false, false) => (true, before_state),
@@ -1736,8 +1736,8 @@ impl CheckedResourceRewrite {
             || before_state.pending_thread_create != after_state.pending_thread_create
             || before_state.population_effects.creation != after_state.population_effects.creation
             || !before_state
-                .counted_populations
-                .shares_storage_with(&after_state.counted_populations)
+                .observed_population_families
+                .shares_storage_with(&after_state.observed_population_families)
             || before_state.next_local_frame != after_state.next_local_frame
             || before_state.next_local_lifetime != after_state.next_local_lifetime
             || before_state.enclosing_frame_holds_locals != after_state.enclosing_frame_holds_locals
@@ -1826,12 +1826,8 @@ impl CheckedResourceRewrite {
             if let CResourceFact::Own(CResource::Composite { name, arguments }, _) = selected
                 && let Some(definition) = function.composite_resource_definition(name)
                 && !before_state.tracks_authority_member(selected)
-                && before_state.population_body_is_open(name, arguments, before_facts.assumptions())
-                    == after_state.population_body_is_open(
-                        name,
-                        arguments,
-                        after_facts.assumptions(),
-                    )
+                && before_state.population_body_is_open(name, arguments)
+                    == after_state.population_body_is_open(name, arguments)
                 && !definition.contains().is_empty()
                 && definition.contains().iter().all(|spec| {
                     matches!(
@@ -1924,8 +1920,8 @@ impl CheckedResourceRewrite {
                     .introduced_since(before_facts)
                     .ok_or("authority-mode body access facts do not descend from their input")?;
                 let assumptions = before_facts.assumptions();
-                let was_open = before_state.population_body_is_open(name, arguments, assumptions);
-                let now_open = after_state.population_body_is_open(name, arguments, assumptions);
+                let was_open = before_state.population_body_is_open(name, arguments);
+                let now_open = after_state.population_body_is_open(name, arguments);
                 if was_open == now_open {
                     return Err("authority-mode body access must open or close one member".into());
                 }
@@ -2124,8 +2120,8 @@ impl CheckedResourceRewrite {
                     || before_state.population_effects.creation
                         != after_state.population_effects.creation
                     || !before_state
-                        .counted_populations
-                        .shares_storage_with(&after_state.counted_populations)
+                        .observed_population_families
+                        .shares_storage_with(&after_state.observed_population_families)
                     || before_state.next_local_frame != after_state.next_local_frame
                     || before_state.next_local_lifetime != after_state.next_local_lifetime
                     || before_state.enclosing_frame_holds_locals
@@ -2340,82 +2336,22 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 "the rewritten composite is absent from both resource representations".to_string(),
             );
         }
-        // A destructive population unfold must recover the body only from
-        // the entire owned population. An `open` retains membership and has
-        // its own ordered restoration scope instead.
-        let mut population_cleanup_matches = false;
+        // A destructive population unfold needs a counted total to recover the
+        // body from the entire owned population. Authority populations carry
+        // no such total, so the unfold is refused; an `open` retains
+        // membership and has its own ordered restoration scope instead.
         if definition.is_counted_population()
             && selected.is_own()
-            && let Some(residual) = &population_residual
+            && population_residual.is_some()
             && before_state.population_access == after_state.population_access
             && after_state
                 .resources()
                 .directly_supporting_fact(selected, assumptions)
                 .is_none()
         {
-            let (_, _, total) = before_state
-                .counted_population_proven_equal(name, arguments, assumptions)
-                .ok_or("population cleanup requires an active population")?;
-            let quantity = selected
-                .owned_quantity_term()
-                .ok_or("population cleanup requires ownership")?;
-            if !selected.has_proven_positive_quantity(assumptions)
-                || !crate::kernel::PureFactContext::settles_exactly(
-                    assumptions,
-                    &Proposition::ConditionIs(
-                        crate::kernel::ConditionTerm::Bitvector32Equal(
-                            Box::new(total),
-                            Box::new(quantity.clone()),
-                        ),
-                        true,
-                    ),
-                )
-            {
-                return Err("population cleanup requires ownership of its entire count".into());
-            }
-            if before_state.population_body_is_open(name, arguments, assumptions) {
-                return Err("close the open population body before cleanup".into());
-            }
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(selected.clone());
-            let body = crate::kernel::functions::expand_composite_resource_fact(
-                &singleton,
-                selected,
-                std::slice::from_ref(&definition),
-                before_state.memory(),
-                assumptions,
-            )
-            .ok_or("population cleanup requires its checked body")?;
-            let expected = residual
-                .clone()
-                .try_compose_with_facts_delaying_normalization(
-                    body.facts().iter().cloned(),
-                    assumptions,
-                )
-                .map_err(|_| "population cleanup has overlapping body ownership")?;
-            population_cleanup_matches =
-                expected.same_exchange_from(after_state.resources(), before_state.resources());
-            if !population_cleanup_matches {
-                return Err(
-                    "population cleanup must exchange all owned units for exactly its body".into(),
-                );
-            }
-            if let Some(ledger) = before_state.loan_ledger() {
-                for child in body.facts() {
-                    if let Some(range) = child.memory_own_range() {
-                        ledger
-                            .permits_memory_access_with_assumptions(range, assumptions)
-                            .map_err(
-                                |_| "population cleanup requires its body free of active borrows",
-                            )?;
-                    }
-                }
-            }
+            return Err("population cleanup requires an active population".into());
         }
-        let access_key = before_state
-            .counted_population_proven_equal(name, arguments, assumptions)
-            .map(|(name, arguments, _)| (name, arguments))
-            .unwrap_or_else(|| (name.clone(), arguments.clone()));
+        let access_key = (name.clone(), arguments.clone());
         if !before_state
             .population_access
             .checks_rewrite(&after_state.population_access, &access_key)
@@ -2427,7 +2363,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         let mut concrete_after = after_state.clone();
         concrete_after.set_memory(before_state.memory.clone());
         concrete_after = concrete_after.with_resource_context(before_state.resources.clone());
-        concrete_after.counted_populations = before_state.counted_populations.clone();
+        concrete_after.observed_population_families =
+            before_state.observed_population_families.clone();
         concrete_after.population_access = before_state.population_access.clone();
         if concrete_after != *before_state
             || !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
@@ -2435,12 +2372,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 after_state.memory(),
                 assumptions,
             )
-            || !crate::kernel::api::counted_populations_definitionally_equal(
-                before_state,
-                &population_after,
-                function.composite_resource_definitions(),
-                assumptions,
-            )
+            || !crate::kernel::api::population_observations_equal(before_state, &population_after)
         {
             return Err(
                 "resource rewrite changed more than a definitional representation".to_string(),
@@ -2450,7 +2382,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             if definition.is_counted_population()
                 && selected.is_own()
                 && std::ptr::eq(folded, before_state)
-                && !population_cleanup_matches
             {
                 return false;
             }
@@ -2524,7 +2455,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             resource_contexts_match_modulo_redundant_views(&expected, &actual, assumptions)
         };
         if before_state.resources() != after_state.resources()
-            && !population_cleanup_matches
             && !expansion_matches(before_state, after_state)
             && !expansion_matches(after_state, before_state)
             && !open_borrow_matches(before_state, after_state)
@@ -2562,8 +2492,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         // a checked consuming close. Ordinary composite projection alone has
         // no population ledger with which to interpret that Count.
         if definition.is_counted_population()
-            && before_state.population_body_is_open(name, arguments, assumptions)
-                != after_state.population_body_is_open(name, arguments, assumptions)
+            && before_state.population_body_is_open(name, arguments)
+                != after_state.population_body_is_open(name, arguments)
         {
             let population_facts =
                 crate::kernel::functions::evaluate_resource_population_fact_propositions(
@@ -2575,7 +2505,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 )
                 .ok_or("cannot expose the population invariant at its current count")?;
             for fact in population_facts {
-                if before_state.population_body_is_open(name, arguments, assumptions)
+                if before_state.population_body_is_open(name, arguments)
                     && fact.is_body_fact
                     && !crate::kernel::PureFactContext::settles_exactly(
                         assumptions,
@@ -10672,18 +10602,12 @@ impl ExecutionProofCore {
             }
         });
         if !has_checked_entry {
-            // Population materialization is part of the contract-entry
-            // transition. Without the kernel-issued entry artifact, the
-            // transition theorems alone cannot authorize that ghost state.
-            let entry_state = crate::kernel::c_function_entry_state(
+            crate::kernel::c_function_entry_state(
                 candidates.state(),
                 function,
                 candidates.arguments(),
             )
             .ok_or("the published arguments do not bind at entry")?;
-            if entry_state.counted_populations().next().is_some() {
-                return Err("population materialization at entry needs a checked function entry");
-            }
         }
         let mut paths = Vec::with_capacity(range.len());
         let mut deferred_contract_exits = Vec::with_capacity(range.len());
@@ -12991,7 +12915,7 @@ mod tests {
             .with_memory(
                 CMemory::new().store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(1))),
             )
-            .with_counted_population("item", Vec::new().into(), Bitvector32Term::Constant(1));
+            .with_observed_population_family("item");
         let entry_state = crate::kernel::c_function_entry_state(&caller, &function, &[])
             .expect("the empty argument list should bind");
         let checked = CheckedFunctionEntry::check(
@@ -13019,13 +12943,12 @@ mod tests {
             "a resource rebase must not authorize a changed C memory value"
         );
 
-        let changed_population =
-            caller.with_counted_population("item", Vec::new().into(), Bitvector32Term::Constant(2));
+        let changed_population = caller.with_observed_population_family("other");
         assert!(
             checked
                 .entry_state_for(&changed_population, &function, &[], &assumptions)
                 .is_none(),
-            "a resource rebase must not authorize a changed counted population"
+            "a resource rebase must not authorize a changed population observation"
         );
     }
 
@@ -15330,11 +15253,9 @@ mod population_authority_rewrite_tests {
             )
             .is_err()
         );
-        let forged_legacy_count = established.clone().with_counted_population(
-            "reference",
-            vec![CValue::pointer(before.locals.slot("anchor").unwrap().clone()).into()].into(),
-            Bitvector32Term::Constant(0),
-        );
+        let forged_observation = established
+            .clone()
+            .with_observed_population_family("reference");
         assert!(
             CheckedPopulationAuthorityRewrite::check(
                 &before,
@@ -15342,7 +15263,7 @@ mod population_authority_rewrite_tests {
                 &selected,
                 true,
                 &witness,
-                &forged_legacy_count,
+                &forged_observation,
                 &facts,
             )
             .is_err()

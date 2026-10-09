@@ -2724,12 +2724,7 @@ fn c_loop_state_components_match_at_back_edge_inner(
     ) {
         changed.push("resource ownership");
     }
-    if !crate::kernel::api::counted_populations_definitionally_equal(
-        top_state,
-        next_state,
-        composite_resource_definitions,
-        assumptions,
-    ) {
+    if !crate::kernel::api::population_observations_equal(top_state, next_state) {
         changed.push("counted resource populations");
     }
     if top_state.loan_ledger != next_state.loan_ledger {

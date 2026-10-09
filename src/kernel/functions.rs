@@ -6201,7 +6201,7 @@ fn execute_verified_function_applications_with_suspension(
         };
         let transition_state = post_state.clone().with_resource_context(callee_resources);
         post_state.population_access = transition_state.population_access.clone();
-        post_state.counted_populations = transition_state.counted_populations;
+        post_state.observed_population_families = transition_state.observed_population_families;
         let caller_resources_after_requirements =
             transfer.caller_resources_after_requirements.clone();
         post_state.resources = caller_resources_after_requirements.clone();
@@ -7176,7 +7176,7 @@ fn execute_verified_function_applications_with_suspension(
             }
         }
         return_state.population_access = post_state.population_access.clone();
-        return_state.counted_populations = post_state.counted_populations.clone();
+        return_state.observed_population_families = post_state.observed_population_families.clone();
         {
             let returned = match transfer_population_call_facts(
                 post_state.clone(),
@@ -8152,7 +8152,7 @@ fn prepare_verified_function_call<'a>(
     {
         if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
             input.fact.resource()
-            && caller_state.population_body_is_open(name, arguments, &path_assumptions)
+            && caller_state.population_body_is_open(name, arguments)
         {
             return Ok(Err(CFunctionPath {
                 outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
@@ -11906,22 +11906,7 @@ pub(crate) fn establish_resource_derived_loop_frames(
     if !function.resource_derived_mutable_frame() {
         return Ok(Ok(function));
     }
-    // Quantified resource counts are an entry invariant.  Establish the same
-    // non-negativity facts used by contract certification before evaluating
-    // the transition, so a later body proof can never be the source of loop
-    // authority.  In particular, do not fall back to the retained
-    // source-derived segments when this checked setup fails.
     let mut transition_assumptions = assumptions.clone();
-    for population in entry.counted_populations.iter() {
-        transition_assumptions =
-            transition_assumptions.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(0),
-                    population.count.clone(),
-                ),
-                true,
-            ));
-    }
     let quantity_assumptions = match quantified_resource_requirement_assumptions(
         entry,
         function.resource_requires(),
@@ -16954,7 +16939,7 @@ pub(in crate::kernel) fn bind_c_function_arguments(
     callee_state.preserves_mutex_protocols = caller_state.preserves_mutex_protocols
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
-    callee_state.counted_populations = caller_state.counted_populations.clone();
+    callee_state.observed_population_families = caller_state.observed_population_families.clone();
     Arc::make_mut(&mut callee_state.population_effects).creation = caller_state
         .population_effects
         .creation
@@ -17093,7 +17078,7 @@ fn bind_c_contract_arguments(
     callee_state.preserves_mutex_protocols =
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
-    callee_state.counted_populations = caller_state.counted_populations.clone();
+    callee_state.observed_population_families = caller_state.observed_population_families.clone();
     Arc::make_mut(&mut callee_state.population_effects).creation = caller_state
         .population_effects
         .creation
@@ -20929,49 +20914,6 @@ fn prepare_contract_resource_transfer(
             && local_view_range_within_block(range, callee_state.memory())
         {
             continue;
-        }
-        if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
-            resource.resource()
-            && interface
-                .composite_resource_definitions()
-                .iter()
-                .any(|definition| definition.is_counted_population() && definition.name() == name)
-            && !return_resources.satisfies_fact(resource, assumptions)
-            && callee_state
-                .counted_population(name, arguments)
-                .is_some_and(|count| {
-                    quantity_condition_holds(
-                        assumptions,
-                        ConditionTerm::Bitvector32Equal(
-                            Box::new(count.clone()),
-                            Box::new(Bitvector32Term::Constant(1)),
-                        ),
-                    )
-                })
-        {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(resource.clone());
-            let body = match evaluate_resource_population_body_resources(
-                &singleton,
-                callee_state,
-                interface.composite_resource_definitions(),
-                assumptions,
-                budget,
-                false,
-            )? {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(error)),
-            };
-            let unfolded = body
-                .facts()
-                .iter()
-                .try_fold(return_resources.clone(), |resources, body_resource| {
-                    resources.without_fact(body_resource, assumptions)
-                });
-            if let Some(unfolded) = unfolded {
-                return_resources = unfolded;
-                continue;
-            }
         }
         let Some(resources) = consume_resource_fact_definitionally(
             &return_resources,
@@ -25594,7 +25536,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
     assumptions: &PureFactContext,
     include_ordinary: bool,
 ) -> Option<Vec<EvaluatedResourcePopulationFact>> {
-    let mut populations = BTreeMap::<(String, ResourceArguments), Option<Bitvector32Term>>::new();
+    let mut populations = BTreeSet::<(String, ResourceArguments)>::new();
     for fact in context.facts() {
         let (name, arguments) = match fact.resource() {
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
@@ -25608,29 +25550,12 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             | CResource::MutexUse(_)
             | CResource::Iterated(_) => continue,
         };
-        let Some(quantity) = fact.owned_quantity_term() else {
-            continue;
-        };
-        // The visible total bounds the ledger from below, and a modular total
-        // is a smaller number than the facts hold, so wrapping here weakens
-        // the relation rather than falsifying it. It is still not the
-        // population's number: an unformed total publishes no relation at
-        // all, which is the same weakening said once.
-        match populations.entry((name.clone(), arguments.clone())) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(Some(quantity.clone()));
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let total = entry
-                    .get()
-                    .as_ref()
-                    .and_then(|total| population_quantity_sum(total, quantity, assumptions));
-                entry.insert(total);
-            }
+        if fact.owned_quantity_term().is_some() {
+            populations.insert((name.clone(), arguments.clone()));
         }
     }
-    let mut propositions = Vec::new();
-    for ((name, arguments), visible_quantity) in populations {
+    let mut propositions = Vec::<EvaluatedResourcePopulationFact>::new();
+    for (name, arguments) in populations {
         let Some(definition) = definitions
             .iter()
             .find(|definition| definition.name() == name)
@@ -25640,109 +25565,47 @@ pub(super) fn evaluate_resource_population_fact_propositions(
         if definition.parameters().len() != arguments.len() {
             return None;
         }
-        // Contract arguments can name a population through a checked alias
-        // (for example parent->kid instead of kid). Use the same equality
-        // interpretation as resource transfer, without minting another total.
-        let population_count = state
-            .counted_population_proven_equal(&name, &arguments, assumptions)
-            .map(|(_, _, count)| count);
-        let population_count = population_count.as_ref();
-        if let (Some(population_count), Some(visible_quantity)) =
-            (population_count, visible_quantity)
-        {
-            propositions.push(EvaluatedResourcePopulationFact {
-                proposition: Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedGreaterEqual(
-                        Box::new(population_count.clone()),
-                        Box::new(visible_quantity),
-                    ),
-                    true,
-                ),
-                source_fact: None,
-                is_body_fact: false,
-            });
+        // An ordinary resource has no population count at which to expose
+        // its invariant.
+        if include_ordinary {
+            return None;
         }
         // Resource expansion checks ownership relations, but a composite's
         // declared pure facts must also be checked from the kernel-side body
-        // state. Ordinary resources do not need a population ledger merely
-        // to validate those facts; this is deliberately independent of the
-        // population-wide accounting policy below. A body with no facts has
-        // no additional proposition to validate here.
-        let check_declared_facts = include_ordinary || !definition.facts().is_empty();
-        if !check_declared_facts {
+        // state. A body with no facts has no additional proposition to
+        // validate here.
+        if definition.facts().is_empty() {
             continue;
         }
-        let body_active = match population_count {
-            Some(_) => {
-                let mut population_state = state.clone();
-                for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-                    let argument = argument.as_c_value()?;
-                    if parameter.c_type() != argument.c_type() {
-                        return None;
-                    }
-                    population_state.locals.set_typed(
-                        parameter.name().to_string(),
-                        argument.clone(),
-                        parameter.c_type(),
-                    );
+        let body_active = {
+            let mut population_state = state.clone();
+            for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
+                let argument = argument.as_c_value()?;
+                if parameter.c_type() != argument.c_type() {
+                    return None;
                 }
-                bind_composite_witnesses(
-                    definition,
-                    &arguments,
-                    &mut population_state,
-                    assumptions,
-                )?;
-                let mut budget = ExecutionBudget::beside_live_state();
-                let evaluation_assumptions = assumptions
-                    .clone()
-                    .allow_symbolic_contract_loads()
-                    .prefer_symbolic_external_loads();
-                evaluate_composite_resource_body_condition(
-                    definition,
-                    &population_state,
-                    &evaluation_assumptions,
-                    &mut budget,
-                )?
+                population_state.locals.set_typed(
+                    parameter.name().to_string(),
+                    argument.clone(),
+                    parameter.c_type(),
+                );
             }
-            None if !include_ordinary => {
-                let mut population_state = state.clone();
-                for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-                    let argument = argument.as_c_value()?;
-                    if parameter.c_type() != argument.c_type() {
-                        return None;
-                    }
-                    population_state.locals.set_typed(
-                        parameter.name().to_string(),
-                        argument.clone(),
-                        parameter.c_type(),
-                    );
-                }
-                bind_composite_witnesses(
-                    definition,
-                    &arguments,
-                    &mut population_state,
-                    assumptions,
-                )?;
-                let mut budget = ExecutionBudget::beside_live_state();
-                let evaluation_assumptions = assumptions
-                    .clone()
-                    .allow_symbolic_contract_loads()
-                    .prefer_symbolic_external_loads();
-                match evaluate_composite_resource_body_condition(
-                    definition,
-                    &population_state,
-                    &evaluation_assumptions,
-                    &mut budget,
-                ) {
-                    Some(active) => active,
-                    None => continue,
-                }
+            bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+            let mut budget = ExecutionBudget::beside_live_state();
+            let evaluation_assumptions = assumptions
+                .clone()
+                .allow_symbolic_contract_loads()
+                .prefer_symbolic_external_loads();
+            match evaluate_composite_resource_body_condition(
+                definition,
+                &population_state,
+                &evaluation_assumptions,
+                &mut budget,
+            ) {
+                Some(active) => active,
+                None => continue,
             }
-            None => return None,
         };
-        if population_count.is_none() && include_ordinary {
-            return None;
-        }
         let mut population_state = state.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
             let argument = argument.as_c_value()?;
@@ -26330,7 +26193,7 @@ pub(super) fn function_return_resources_definitionally_established(
     let mut post_state = callee_state.with_memory(exit_memory);
     post_state.resources = post_resources;
     post_state.population_access = return_state.population_access.clone();
-    post_state.counted_populations = return_state.counted_populations.clone();
+    post_state.observed_population_families = return_state.observed_population_families.clone();
     // Preserve checked body consumption evidence when reconstructing the exit.
     post_state.population_effects = return_state.population_effects.clone();
     if function.return_type() != CType::Void {
@@ -30535,57 +30398,6 @@ fn resource_fact_containing_allocation(
         })
 }
 
-/// A counted population body can keep an allocation live after the consumed
-/// representative unit is gone.  The body is only a valid return support when
-/// the post-transition population is nonempty; the transition emits that
-/// condition as a proof obligation.  This helper identifies that support so
-/// the allocation check can defer to the obligation instead of reporting a
-/// premature leak before post-execution `have` facts are available.
-fn active_counted_population_supports_allocation(
-    actual_state: &CState,
-    allocation: &CResourceFact,
-    function: &CFunction,
-    assumptions: &PureFactContext,
-) -> bool {
-    actual_state.counted_populations().any(|population| {
-        let Some(definition) =
-            function
-                .composite_resource_definitions()
-                .iter()
-                .find(|definition| {
-                    definition.name() == population.name && definition.is_counted_population()
-                })
-        else {
-            return false;
-        };
-        let resource = CResourceFact::own(CResource::Composite {
-            name: population.name.clone(),
-            arguments: population.arguments.clone(),
-        });
-        let singleton =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(resource);
-        let mut budget = ExecutionBudget::beside_live_state();
-        let Ok(Ok(body)) = evaluate_resource_population_body_resources(
-            &singleton,
-            actual_state,
-            std::slice::from_ref(definition),
-            assumptions,
-            &mut budget,
-            false,
-        ) else {
-            return false;
-        };
-        body.facts().iter().any(|fact| {
-            fact == allocation
-                || fact.core_with_assumptions(assumptions).is_some_and(|core| {
-                    allocation
-                        .core_with_assumptions(assumptions)
-                        .is_some_and(|allocation_core| core == allocation_core)
-                })
-        })
-    })
-}
-
 /// Ends the automatic lifetimes the returning frame created.
 ///
 /// A body executed at a call site declares its locals into the caller's own
@@ -31205,13 +31017,6 @@ fn function_outcome_from_body_with_resource_transfer(
         "return allocation obligation check",
         || unreturned_allocation_obligation(&state, &return_resources, function, assumptions),
     ) {
-        Ok(Some((allocation, _)))
-            if active_counted_population_supports_allocation(
-                &state,
-                &allocation,
-                function,
-                assumptions,
-            ) => {}
         Ok(Some((allocation, resource))) => {
             let hint = counted_population_leak_hint(function);
             return Ok((
@@ -31240,7 +31045,7 @@ fn function_outcome_from_body_with_resource_transfer(
     return_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
     return_state.named_mutex_authorities = state.named_mutex_authorities.clone();
     return_state.population_access = state.population_access.clone();
-    return_state.counted_populations = state.counted_populations;
+    return_state.observed_population_families = state.observed_population_families;
     return_state.restore_population_creation_after_call(
         caller_state.population_effects.creation.as_ref(),
         state.population_effects.creation.as_ref(),
@@ -32121,7 +31926,7 @@ pub(super) fn function_outcome_from_body(
             caller_state = caller_state
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             caller_state.population_access = state.population_access.clone();
-            caller_state.counted_populations = state.counted_populations;
+            caller_state.observed_population_families = state.observed_population_families;
 
             caller_state.restore_population_creation_after_call(
                 original_creation.as_ref(),
@@ -32185,7 +31990,7 @@ pub(super) fn function_outcome_from_body(
             caller_state = caller_state
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             caller_state.population_access = state.population_access.clone();
-            caller_state.counted_populations = state.counted_populations;
+            caller_state.observed_population_families = state.observed_population_families;
 
             caller_state.restore_population_creation_after_call(
                 original_creation.as_ref(),
@@ -35243,12 +35048,7 @@ mod stable_view_call_tests {
         let base = caller(&pointer);
         let caller = base
             .clone()
-            .with_resource_context(base.resources().clone().unchecked_with_fact(unit.clone()))
-            .with_counted_population(
-                "slot",
-                vec![CValue::pointer(pointer.clone()).into()].into(),
-                Bitvector32Term::Constant(2),
-            );
+            .with_resource_context(base.resources().clone().unchecked_with_fact(unit.clone()));
         let arguments = vec![
             CValue::pointer(pointer.clone()),
             CValue::Int32(Bitvector32Term::Variable(Variable(4242))),

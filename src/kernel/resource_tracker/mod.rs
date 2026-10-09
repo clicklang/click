@@ -3,7 +3,7 @@
 //!
 //! A *resource* is a piece of mutable state, or part of one: a memory cell, a
 //! memory block as a pure function reads it through an array argument, one
-//! model field of a resource instance, or one counted population. A *program
+//! model field of a resource instance. A *program
 //! point* is a point on the current proof path, identified by the memory
 //! snapshot the kernel had reached there. The tracker answers two questions
 //! about them:
@@ -27,11 +27,10 @@
 //! **Two kinds of point, because there are two kinds of version.** A memory
 //! resource's version *is* a point: the snapshot it was last written at, which
 //! is why a load variable's name can embed one. A model field's version is the
-//! **value stored in the instance**, and a population's is the `count` term the
-//! state holds, so their points are whole saved states — [`StatePoint`], a
+//! **value stored in the instance**, so its points are whole saved states — [`StatePoint`], a
 //! handle to the state the kernel already keeps at `entry`, at a `mark` or at
-//! an iteration, never a copy. Those kinds have no naming walk and no recorded
-//! edge to walk; [`same_at_states`] is their whole interface, and it is two
+//! an iteration, never a copy. That kind has no naming walk and no recorded
+//! edge to walk; [`same_at_states`] is its whole interface, and it is two
 //! keyed lookups and one term comparison.
 //!
 //! **What the tracker is not.** It has no ownership rules: it never decides
@@ -192,12 +191,6 @@ pub(crate) enum Resource<'a> {
         children: &'a [String],
         field_index: usize,
     },
-    /// One counted population: a resource family and the arguments that
-    /// instantiate it. Its version is the `count` term the state holds.
-    Population {
-        name: &'a str,
-        arguments: &'a [AlgebraicValue],
-    },
 }
 
 /// The width a cell resource stands in when its caller cannot name one.
@@ -231,10 +224,6 @@ impl Resource<'_> {
                 children: children.to_vec(),
                 field_index,
             },
-            Self::Population { name, arguments } => OwnedResource::Population {
-                name: name.to_string(),
-                arguments: arguments.to_vec(),
-            },
         }
     }
 
@@ -242,7 +231,7 @@ impl Resource<'_> {
     /// than points on the memory history. Those kinds have no naming path and
     /// no recorded edge; [`same_at_states`] is their whole interface.
     pub(crate) fn lives_in_a_saved_state(self) -> bool {
-        matches!(self, Self::ModelField { .. } | Self::Population { .. })
+        matches!(self, Self::ModelField { .. })
     }
 }
 
@@ -260,10 +249,6 @@ pub(crate) enum OwnedResource {
         identity: Variable,
         children: Vec<String>,
         field_index: usize,
-    },
-    Population {
-        name: String,
-        arguments: Vec<AlgebraicValue>,
     },
 }
 
@@ -286,7 +271,6 @@ impl OwnedResource {
                 children,
                 field_index: *field_index,
             },
-            Self::Population { name, arguments } => Resource::Population { name, arguments },
         }
     }
 }
@@ -392,12 +376,8 @@ pub(crate) enum Change {
     ModelReplaced {
         by: Option<crate::kernel::model_fields::ModelMint>,
     },
-    /// A counted population holds a different count at the two states. The
-    /// transition that moved it is a contract's `produces`/`consumes`, which
-    /// relates the two counts arithmetically in the term itself.
-    PopulationMoved,
     /// A saved state does not hold the resource at all: the instance was
-    /// consumed, the population ended, or it was never there.
+    /// consumed, or it was never there.
     ///
     /// Which of the two points it is missing at decides what a repair can say,
     /// so both are reported: a value only the *first* point has lost can still
@@ -474,7 +454,7 @@ pub(crate) enum StopReason {
     /// print a step the reader never took.
     DifferentVersion,
     /// One of the two saved states does not hold the resource at all — the
-    /// instance was consumed, the population ended, or the state never had
+    /// instance was consumed, or the state never had
     /// it. This is the fail-closed answer: a version that cannot be found is
     /// never reported the same.
     NotHeld,
@@ -583,14 +563,11 @@ pub(crate) fn last_same_point(resource: Resource<'_>, at: &ProgramPoint) -> Opti
         // interval it cares about and asks [`step_effect::affects`] at every
         // step in between, which is the same rule this walk would run.
         //
-        // A model field and a population have no naming path either, for a
-        // different reason: their versions are values in saved states rather
-        // than points on the memory history, so there is no oldest point to
-        // be. [`same_at_states`] is their whole interface.
-        Resource::Ranges(_)
-        | Resource::AnyMemory
-        | Resource::ModelField { .. }
-        | Resource::Population { .. } => None,
+        // A model field has no naming path either, for a different reason:
+        // its versions are values in saved states rather than points on the
+        // memory history, so there is no oldest point to be.
+        // [`same_at_states`] is its whole interface.
+        Resource::Ranges(_) | Resource::AnyMemory | Resource::ModelField { .. } => None,
     }
 }
 
@@ -612,10 +589,7 @@ pub(crate) fn last_same(resource: Resource<'_>, at: &ProgramPoint) -> Option<Las
             let stopped_by = Stop::at_point(&point, resource);
             Some(LastSame { point, stopped_by })
         }
-        Resource::Ranges(_)
-        | Resource::AnyMemory
-        | Resource::ModelField { .. }
-        | Resource::Population { .. } => None,
+        Resource::Ranges(_) | Resource::AnyMemory | Resource::ModelField { .. } => None,
     }
 }
 
@@ -666,17 +640,17 @@ pub(crate) fn same(resource: Resource<'_>, left: &ProgramPoint, right: &ProgramP
 /// Whether a resource whose version is a **value in a saved state** holds one
 /// version at two such states.
 ///
-/// This is the whole interface for [`Resource::ModelField`] and
-/// [`Resource::Population`], and it is a two-point value comparison rather
+/// This is the whole interface for [`Resource::ModelField`], and it is a
+/// two-point value comparison rather
 /// than a walk. There is no recorded history to walk: the memory DAG records
 /// one write set per snapshot, and nothing records "field *k* of this instance
-/// was replaced" or "this population moved". A field that survived a call kept
+/// was replaced". A field that survived a call kept
 /// its identity and got fresh field variables, so the two stored values are
 /// already the two versions — which is why this needs no generation counter
 /// and no new per-instance state.
 ///
-/// **Cost.** One keyed lookup in each state — `instances` by identity for a
-/// field, the state's own population list for a population — and one term
+/// **Cost.** One keyed lookup in each state — `instances` by identity — and
+/// one term
 /// comparison at the single key asked about. Nothing enumerates a resource
 /// context, nothing compares two states, and nothing is memoized: the answer
 /// reads path state, which may not be cached by content across verifications.
@@ -740,9 +714,7 @@ pub(crate) fn same_at_states(
 /// minted as an arbitrary model — a folded constant, a value an `ensures`
 /// relates — nothing is claimed.
 fn replacing_change(left: &Version, right: &Version) -> Change {
-    let (Version::Field(left), Version::Field(right)) = (left, right) else {
-        return Change::PopulationMoved;
-    };
+    let (Version::Field(left), Version::Field(right)) = (left, right);
     let mint = |value: &AlgebraicValue| {
         crate::kernel::model_fields::algebraic_value_variable(value)
             .and_then(crate::kernel::model_fields::registered_model_field_origin)
@@ -753,30 +725,6 @@ fn replacing_change(left: &Version, right: &Version) -> Change {
         .flatten()
         .find(|mint| *mint != crate::kernel::model_fields::ModelMint::ContractEntry);
     Change::ModelReplaced { by: replaced }
-}
-
-/// The population a resource family names in a state, when the state holds
-/// exactly one of that family.
-///
-/// A refusal has the family the reader wrote, `count(object_ref(obj))`, and not
-/// the evaluated arguments the state indexes it by. Where one family has two
-/// live instantiations there is nothing to say: answering about the wrong one
-/// would name a population the reader was not asking about.
-pub(crate) fn sole_population_of_family(state: &CState, family: &str) -> Option<OwnedResource> {
-    let mut found = None;
-    for population in state.counted_populations() {
-        if population.name != family {
-            continue;
-        }
-        if found.is_some() {
-            return None;
-        }
-        found = Some(OwnedResource::Population {
-            name: population.name.clone(),
-            arguments: population.arguments.to_vec(),
-        });
-    }
-    found
 }
 
 /// [`same_at_states`], with the bounded context a refusal prints.
@@ -801,8 +749,6 @@ pub(crate) fn explain_at_states(
 enum Version {
     /// One model field's stored value.
     Field(AlgebraicValue),
-    /// One population's count term.
-    Count(Bitvector32Term),
 }
 
 /// The version by one keyed lookup. The comparison is syntactic: two spellings
@@ -825,16 +771,6 @@ fn version_at_state(resource: Resource<'_>, point: StatePoint<'_>) -> Option<Ver
             .and_then(|instance| instance.fields().get(field_index))
             .cloned()
             .map(Version::Field),
-        // `CState::counted_population` is the one keyed lookup for this, and
-        // it is the lookup every other consumer already uses. A state's
-        // population list holds one entry per resource family the contract's
-        // clauses brought into scope, so it is sized by the selected source
-        // rather than by the project.
-        Resource::Population { name, arguments } => point
-            .state()
-            .counted_population(name, arguments)
-            .cloned()
-            .map(Version::Count),
         // A memory resource's version is a program point, not a value.
         Resource::Cell { .. } | Resource::Block(_) | Resource::Ranges(_) | Resource::AnyMemory => {
             None

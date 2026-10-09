@@ -1600,29 +1600,6 @@ fn close_claim_directly_from_outcome<'a>(
                                             })
                                             .map(|mismatch| format!("; {mismatch}"))
                                     })
-                                    // A `count(..)` side is a population, whose
-                                    // version is the count the state holds.
-                                    .or_else(|| {
-                                        describe_population_mismatch(
-                                            left,
-                                            state,
-                                            pre_state,
-                                            "function entry",
-                                            parameters,
-                                            arguments,
-                                        )
-                                        .or_else(|| {
-                                            describe_population_mismatch(
-                                                right,
-                                                state,
-                                                pre_state,
-                                                "function entry",
-                                                parameters,
-                                                arguments,
-                                            )
-                                        })
-                                        .map(|mismatch| format!("; {mismatch}"))
-                                    })
                                     .unwrap_or_default();
                             format!(
                                 "; left side evaluated to {rendered_left}, right side evaluated to {rendered_right}{unseparated}"

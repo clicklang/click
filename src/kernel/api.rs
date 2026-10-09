@@ -1403,8 +1403,7 @@ fn abstract_c_state_for_join_across_with_policy(
                     + sibling.memory.cells.len()
                     + sibling.memory.union_cells.len()
                     + sibling.memory.forgotten.ended_local_blocks.len()
-                    + sibling.resources().facts().len()
-                    + sibling.counted_populations.len(),
+                    + sibling.resources().facts().len(),
             );
             // The state scan reserves the `havoc:N` and `call-havoc:N` marker
             // blocks' identities itself; the join no longer harvests block names.
@@ -3750,7 +3749,7 @@ pub(crate) fn function_body_with_return_counts(
             },
         ) => {
             let mut state = state.clone();
-            state.counted_populations = exit_state.counted_populations.clone();
+            state.observed_population_families = exit_state.observed_population_families.clone();
             CFunctionOutcome::Return {
                 value: value.clone(),
                 state,
@@ -5132,7 +5131,8 @@ pub(crate) fn execution_evidence_states_match(
     }
     let mut left_without_ghost_difference = left.clone();
     left_without_ghost_difference.resources = right.resources.clone();
-    left_without_ghost_difference.counted_populations = right.counted_populations.clone();
+    left_without_ghost_difference.observed_population_families =
+        right.observed_population_families.clone();
     left_without_ghost_difference == *right
         && contract_certification::resource_contexts_definitionally_equal_with_definitions(
             function.composite_resource_definitions(),
@@ -5142,12 +5142,7 @@ pub(crate) fn execution_evidence_states_match(
             right.resources(),
             assumptions,
         )
-        && counted_populations_definitionally_equal(
-            left,
-            right,
-            function.composite_resource_definitions(),
-            assumptions,
-        )
+        && population_observations_equal(left, right)
 }
 
 /// Checks the representation-only state change permitted before the first C
@@ -5173,12 +5168,7 @@ pub(crate) fn function_entry_representation_states_match(
             right.resources(),
             assumptions,
         )
-        && counted_populations_definitionally_equal(
-            left,
-            right,
-            function.composite_resource_definitions(),
-            assumptions,
-        )
+        && population_observations_equal(left, right)
 }
 
 /// Compare the stable-view authority that cannot be reconstructed from a
@@ -5980,7 +5970,8 @@ fn checked_execution_at_definitionally_equal_entry_state(
         }
         let mut checked_without_ghost_difference = checked.state.clone();
         checked_without_ghost_difference.resources = state.resources.clone();
-        checked_without_ghost_difference.counted_populations = state.counted_populations.clone();
+        checked_without_ghost_difference.observed_population_families =
+            state.observed_population_families.clone();
         if !checked_without_ghost_difference.equal_up_to_unused_creation_ledgers(state) {
             return None;
         }
@@ -5992,12 +5983,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
             state.resources(),
             assumptions,
         );
-        let populations_match = counted_populations_definitionally_equal(
-            &checked.state,
-            state,
-            function.composite_resource_definitions(),
-            assumptions,
-        );
+        let populations_match = population_observations_equal(&checked.state, state);
         if !resources_match || !populations_match {
             return None;
         }
@@ -6251,74 +6237,11 @@ fn path_function_outcome(path: &SymbolicCExecutionPath) -> Option<&CFunctionOutc
     }
 }
 
-pub(crate) fn counted_populations_definitionally_equal(
-    left: &CState,
-    right: &CState,
-    definitions: &[CCompositeResourceDefinition],
-    assumptions: &PureFactContext,
-) -> bool {
-    if left.population_access != right.population_access {
-        return false;
-    }
-    if left
-        .counted_populations
-        .shares_storage_with(&right.counted_populations)
-    {
-        return true;
-    }
-    let is_observable = |population: &CCountedPopulation| {
-        population.family_observation_marker
-            || definitions.iter().any(|definition| {
-                definition.name() == population.name && definition.is_counted_population()
-            })
-    };
-    let left_populations = left
-        .counted_populations
-        .iter()
-        .filter(|population| is_observable(population))
-        .collect::<Vec<_>>();
-    let right_populations = right
-        .counted_populations
-        .iter()
-        .filter(|population| is_observable(population))
-        .collect::<Vec<_>>();
-    if left_populations.len() != right_populations.len() {
-        return false;
-    }
-    let right_by_identity = right_populations
-        .into_iter()
-        .map(|population| {
-            (
-                (
-                    population.name.as_str(),
-                    population.arguments.as_ref(),
-                    population.family_observation_marker,
-                ),
-                &population.count,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    left_populations.into_iter().all(|population| {
-        let identity = (
-            population.name.as_str(),
-            population.arguments.as_ref(),
-            population.family_observation_marker,
-        );
-        right_by_identity.get(&identity).is_some_and(|right_count| {
-            let exact = population.count == **right_count;
-            let proved = crate::kernel::PureFactContext::settles_exactly(
-                assumptions,
-                &Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(
-                        Box::new(population.count.clone()),
-                        Box::new((*right_count).clone()),
-                    ),
-                    true,
-                ),
-            );
-            exact || proved
-        })
-    })
+/// Whether two states agree on population body access and on the families
+/// they have observed.
+pub(crate) fn population_observations_equal(left: &CState, right: &CState) -> bool {
+    left.population_access == right.population_access
+        && left.observed_population_families == right.observed_population_families
 }
 
 /// Certifies an opaque contract from kernel-checked whole-function

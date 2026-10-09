@@ -678,8 +678,8 @@ fn direct_and_callback_resource_transition(
     assert_eq!(callback_value, &CValue::Void);
     assert_eq!(direct_state.memory(), callback_state.memory());
     assert_eq!(
-        direct_state.counted_populations().collect::<Vec<_>>(),
-        callback_state.counted_populations().collect::<Vec<_>>()
+        direct_state.observed_population_families,
+        callback_state.observed_population_families
     );
     (*direct_state, *callback_state.clone())
 }

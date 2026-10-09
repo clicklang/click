@@ -494,16 +494,6 @@ impl ResourceContextIndex {
                 (fact.family(), name.clone(), arguments.len()),
                 entry,
             );
-            if matches!(fact.resource(), CResource::Composite { .. })
-                && !self.by_resource.contains_key(fact.resource())
-            {
-                result.population_heads.insert(CCountedPopulation {
-                    name: name.clone(),
-                    arguments: arguments.clone(),
-                    count: Bitvector32Term::Constant(1),
-                    family_observation_marker: false,
-                });
-            }
         }
         result
     }
@@ -684,11 +674,6 @@ impl ResourceContextIndex {
                 &(fact.family(), name.clone(), arguments.len()),
                 entry,
             );
-            if matches!(fact.resource(), CResource::Composite { .. })
-                && !result.by_resource.contains_key(fact.resource())
-            {
-                result.population_heads.remove(name, arguments);
-            }
         }
         result
     }

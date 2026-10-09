@@ -1112,17 +1112,6 @@ impl EqualityGraph {
             .are_int32_equal(left, right)
     }
 
-    /// A conservative indexed alias-presence query. This does not establish
-    /// any equality; callers may use a positive answer to decline a narrow
-    /// freshness rule without rebuilding or walking the context's fact index.
-    pub(in crate::kernel) fn int32_may_have_aliases(&self, term: &Bitvector32Term) -> bool {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .int32_may_have_aliases(term)
-    }
-
     /// Admit an already established int32 equality in this proof context.
     pub(in crate::kernel) fn add_int32_equality(
         &mut self,

@@ -1,6 +1,6 @@
 //! Exclusive sequential population openings. Membership remains in the
 //! resource context, but cannot independently reopen a suspended body.
-use super::{CState, PureFactContext, ResourceArguments};
+use super::{CState, ResourceArguments};
 use crate::persistent::PersistentSet;
 use std::sync::{
     Arc,
@@ -98,15 +98,11 @@ impl CState {
         &self,
         name: &str,
         arguments: &ResourceArguments,
-        assumptions: &PureFactContext,
     ) -> bool {
         if self.population_access.0.is_none() {
             return false;
         }
-        let key = self
-            .counted_population_proven_equal(name, arguments, assumptions)
-            .map(|(name, arguments, _)| (name, arguments))
-            .unwrap_or_else(|| (name.to_owned(), arguments.clone()));
+        let key = (name.to_owned(), arguments.clone());
         self.population_access.contains(&key)
     }
     pub(crate) fn open_population_body(
