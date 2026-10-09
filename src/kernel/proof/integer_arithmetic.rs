@@ -864,6 +864,7 @@ mod tests {
             },
             || {
                 let tactic = TacticEvent {
+                    source_tactic_path: None,
                     claim: "integer budget".into(),
                     tactic_index: 0,
                     tactic_name: "arithmetic_certificate".into(),

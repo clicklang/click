@@ -21,11 +21,11 @@ fn wide_arithmetic_unavailable_premise_returns_one_diagnostic() {
     assert!(error.message().contains("goal: x <= 1000u64"), "{error:?}");
 }
 
-/// A bridge can also fail while lowering its synthesized Integer `have`,
-/// before it checks the explicit premise. That failure uses the same bounded
-/// diagnostic wrapping under an intentionally tiny numeric work allowance.
+/// A tiny budget stops the wide arithmetic tactic before its bridge can
+/// finish lowering. Report one bounded diagnostic rather than panicking while
+/// wrapping the nested refusal.
 #[test]
-fn wide_arithmetic_bridge_lowering_refusal_does_not_panic() {
+fn wide_arithmetic_budget_refusal_does_not_panic() {
     let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures x + 1u64 + 1u64 <= 1000u64 by { arithmetic() using { x <= 100u64; } } }";
     let error = crate::instrumentation::with_tactic_work_limits(
         crate::instrumentation::TacticWorkLimits {
@@ -36,12 +36,7 @@ fn wide_arithmetic_bridge_lowering_refusal_does_not_panic() {
         || verify_click_theorems(source),
     )
     .expect_err("the constrained bridge must refuse locally");
-    assert!(
-        error
-            .raw_summary()
-            .contains("could not lower `have` proposition"),
-        "{error:?}"
-    );
+    assert!(error.raw_summary().contains("budget"), "{error:?}");
     assert!(!error.raw_summary().contains("\n  stage:"));
     assert_eq!(
         error.message().matches("\n  stage:").count(),
@@ -452,6 +447,7 @@ fn condition_certificate_search_reports_its_budget_without_dumping_snapshots() {
         control: 1_000_000,
     };
     let tactic = crate::instrumentation::TacticEvent {
+        source_tactic_path: None,
         claim: "wide-condition.contract".to_string(),
         tactic_index: 0,
         tactic_name: "execute_until".to_string(),
@@ -620,6 +616,7 @@ fn exhausted_work_budget_outweighs_missing_path_goal_diagnostic() {
         control: 1,
     };
     let tactic = crate::instrumentation::TacticEvent {
+        source_tactic_path: None,
         claim: "copy3.contract".to_string(),
         tactic_index: 0,
         tactic_name: "close_invariants".to_string(),
@@ -1799,4 +1796,224 @@ fn struct_field_frame_failure_names_the_read_and_written_members() {
     );
     assert!(!message.contains("anchor["), "{message}");
     assert!(!message.contains("may point into"), "{message}");
+}
+
+#[test]
+fn pure_theorem_tactics_emit_claims_and_nested_written_source_paths() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    let source = r#"theorem nested(x: int32) {
+        requires x <= 100;
+        ensures x <= 1000 by {
+            have x <= 1000 by { arithmetic() using { x <= 100; } }
+            assumption();
+        }
+        ensures x == x by { normalize(); }
+    }"#;
+    let (result, events) = collect(|| verify_click_theorems(source));
+    assert_eq!(result.unwrap().len(), 2);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, VerificationEvent::ProofClaimFinished { .. }))
+            .count(),
+        2
+    );
+    let starts: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            VerificationEvent::TacticStarted(tactic) => Some(tactic),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        starts
+            .iter()
+            .any(|tactic| tactic.claim == "nested.ensures_0"
+                && tactic.source_tactic_path.as_deref() == Some(&[0, 0])
+                && tactic.class == "smart")
+    );
+    assert!(
+        starts
+            .iter()
+            .any(|tactic| tactic.claim == "nested.ensures_1"
+                && tactic.source_tactic_path.as_deref() == Some(&[0])
+                && tactic.class == "simple")
+    );
+    assert!(events.iter().any(|event| matches!(event, VerificationEvent::FunctionFinished { name, .. } if name == "nested")));
+}
+
+#[test]
+fn pure_theorem_arithmetic_obeys_its_tactic_budget() {
+    use crate::instrumentation::{
+        TacticWorkLimits, VerificationEvent, collect, with_tactic_work_limits,
+    };
+    let source = "theorem bound(x: int32) { requires x <= 100; ensures x <= 1000 by { arithmetic() using { x <= 100; } } }";
+    let (result, events) = collect(|| {
+        with_tactic_work_limits(
+            TacticWorkLimits {
+                simple: 1,
+                smart: 1,
+                control: 1,
+            },
+            || verify_click_theorems(source),
+        )
+    });
+    let error = result.expect_err("a pure theorem bypassed its tactic work budget");
+    assert!(error.message().contains("budget"), "{}", error.message());
+    assert!(
+        events.iter().any(|event| matches!(event,
+            VerificationEvent::TacticWorkBudgetExceeded { tactic, .. }
+            if tactic.claim == "bound.ensures_0" && tactic.class == "smart"
+                && tactic.source_tactic_path.as_deref() == Some(&[0])
+        )),
+        "{events:?}"
+    );
+}
+
+#[test]
+fn wide_conjunction_expansion_stays_parseable_and_checked() {
+    let conjuncts: Vec<_> = (1..=40).map(|i| format!("x <= {i}")).collect();
+    let source = format!(
+        "theorem wide(x: int32) {{ requires x <= 0; ensures {} by {{ simp(); }} }}",
+        conjuncts.join(" and ")
+    );
+    verify_click_theorems(&source).unwrap();
+    let expanded =
+        crate::surface::expand_c0_claim_source_by_label(&source, &[], "wide.ensures_0").unwrap();
+    verify_click_theorems(&expanded).unwrap();
+    assert!(expanded.contains("have "), "{expanded}");
+    let invalid = expanded.replacen("requires x <= 0;", "requires x <= 2;", 1);
+    assert!(verify_click_theorems(&invalid).is_err());
+}
+
+#[test]
+fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    let source = r#"
+    spec enum TestList<T> { Nil, Cons(T, TestList<T>), }
+    theorem reflexive<T>(x: T) { ensures x == x by { normalize(); } }
+    theorem induction_shape(xs: TestList<int32>) {
+        ensures xs == xs by {
+            induct(xs) as ih {
+                TestList::Nil => { normalize(); }
+                TestList::Cons(head, tail) => { apply(ih(tail)); normalize(); }
+            }
+        }
+    }"#;
+    let (result, events) = collect(|| verify_click_theorems(source));
+    assert_eq!(result.unwrap().len(), 2);
+    assert!(events.iter().any(|event| matches!(event,
+        VerificationEvent::TacticStarted(tactic) if tactic.claim == "reflexive.ensures_0"
+            && tactic.class == "simple" && tactic.source_tactic_path.as_deref() == Some(&[0])
+    )));
+    assert!(events.iter().any(|event| matches!(event,
+        VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
+            && tactic.class == "control" && tactic.source_tactic_path.as_deref() == Some(&[0])
+    )));
+    assert!(events.iter().any(|event| matches!(event,
+        VerificationEvent::TacticStarted(tactic) if tactic.claim == "induction_shape.ensures_0"
+            && tactic.source_tactic_path.as_deref() == Some(&[2])
+    )));
+}
+
+#[test]
+#[ignore = "nightly: wide uint64 theorem tactic attribution and bounded work"]
+fn pure_theorem_wide_arithmetic_has_attributed_work_at_growing_sizes() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    for size in [8, 16, 32] {
+        let expression = format!("x{}", " + 1u64".repeat(size));
+        let source = format!(
+            "theorem wide(x: uint64) {{ requires x <= 100u64; ensures {expression} <= 1000u64 by {{ arithmetic() using {{ x <= 100u64; }} }} }}"
+        );
+        let (result, events) = collect(|| verify_click_theorems(&source));
+        if let Err(error) = result {
+            assert!(
+                error.message().contains("budget exhausted"),
+                "size {size}: {}",
+                error.message()
+            );
+        }
+        assert!(
+            events.iter().any(|event| matches!(event,
+                VerificationEvent::TacticStarted(tactic) if tactic.claim == "wide.ensures_0"
+                    && tactic.class == "smart" && tactic.source_tactic_path.as_deref() == Some(&[0])
+            )),
+            "size {size}: {events:?}"
+        );
+        assert!(events.iter().any(|event| matches!(event,
+            VerificationEvent::TacticFinished { tactic, work, .. } if tactic.claim == "wide.ensures_0" && *work > 0
+        ) || matches!(event,
+            VerificationEvent::TacticWorkBudgetExceeded { tactic, used, .. } if tactic.claim == "wide.ensures_0" && *used > 0
+        )), "size {size}: {events:?}");
+    }
+}
+
+fn wide_loop_invariant_fixture(size: usize) -> (String, String) {
+    let source =
+        "void run(int total) { int remaining = total; while (0 < remaining) { remaining--; } }";
+    // Most members are exact transported premises, so this checks generated
+    // bundle structure without spending its budget searching for many bounds.
+    // The distinct last member lets the negative check detect a lost leaf.
+    let invariants: String = (0..size)
+        .map(|i| {
+            format!(
+                "invariant total <= {};\n",
+                if i + 1 == size { 1000 + i } else { 1000 }
+            )
+        })
+        .collect();
+    let proof = format!(
+        r#"verifying "bundle.c";
+void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 <= total; }} by {{
+ step(); step();
+ loop {{
+  decreases remaining;
+  invariant 0 <= remaining;
+  invariant remaining <= total;
+  {invariants}
+  preserve by {{ step(); close_invariants by {{ simp(); }} }}
+ }}
+ execute(); simp();
+}}
+"#
+    );
+    (source.to_owned(), proof)
+}
+
+#[test]
+#[ignore = "nightly: 14s whole wide loop expansion and negative recheck"]
+fn wide_loop_invariant_bundle_expands_without_dropping_members() {
+    let (source, proof) = wide_loop_invariant_fixture(40);
+    let sources = [("bundle.c", source.as_str())];
+    verify_c0_sources(&proof, &sources).unwrap();
+    let expanded =
+        crate::surface::expand_c0_claim_source_by_label(&proof, &sources, "run.contract").unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let invalid = expanded.replacen("invariant total <= 1039;", "invariant total <= -1;", 1);
+    assert_ne!(invalid, expanded);
+    assert!(verify_c0_sources(&invalid, &sources).is_err());
+}
+
+#[test]
+#[ignore = "nightly: growing generated loop-bundle expansion and checked work"]
+fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
+    let mut samples = Vec::new();
+    for size in [32, 64, 128] {
+        eprintln!("wide loop bundle size {size}: verify");
+        let (source, proof) = wide_loop_invariant_fixture(size);
+        let sources = [("bundle.c", source.as_str())];
+        verify_c0_sources(&proof, &sources).unwrap();
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            eprintln!("wide loop bundle size {size}: expand");
+            crate::surface::expand_c0_claim_source_by_label(&proof, &sources, "run.contract")
+        });
+        let expanded = expanded.unwrap();
+        eprintln!("wide loop bundle size {size}: recheck ({work} units)");
+        verify_c0_sources(&expanded, &sources).unwrap();
+        assert!(work > 0);
+        samples.push((size, work));
+    }
+    // Quadrupling input allows the logarithmic bundle-indexing factor and
+    // fixed setup, but rejects quadratic expansion/checking growth.
+    assert!(samples[2].1 <= samples[0].1 * 6, "{samples:?}");
 }

@@ -37,6 +37,7 @@ pub fn measure<R>(operation: impl FnOnce() -> R) -> (R, Vec<TacticWorkSample>) {
         });
         samples.push(TacticWorkSample {
             tactic: instrumentation::TacticEvent {
+                source_tactic_path: None,
                 claim: "-".to_string(),
                 tactic_index: 0,
                 tactic_name: "whole verification".to_string(),

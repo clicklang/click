@@ -1068,20 +1068,33 @@ pub(super) fn render_expansion_command(
     position: SourcePosition,
     thresholds: Thresholds,
 ) {
-    let artifact = expanded_artifact_path(&key.source_path);
+    let artifact = if key.prepared_import {
+        key.source_path.clone()
+    } else {
+        expanded_artifact_path(&key.source_path)
+    };
     let location = format!(
         "{}:{}:{}",
         key.source_path.display(),
         position.line,
         position.column
     );
-    writeln!(
-        output,
-        "              expand: click expand --output {} {}",
-        shell_quote(&artifact.display().to_string()),
-        shell_quote(&location),
-    )
-    .expect("writing a String cannot fail");
+    if key.prepared_import {
+        writeln!(
+            output,
+            "              expand: click expand --in-place {}",
+            shell_quote(&location)
+        )
+        .expect("writing a String cannot fail");
+    } else {
+        writeln!(
+            output,
+            "              expand: click expand --output {} {}",
+            shell_quote(&artifact.display().to_string()),
+            shell_quote(&location),
+        )
+        .expect("writing a String cannot fail");
+    }
     if !looks_like_mdtest(&artifact) {
         writeln!(
             output,

@@ -141,9 +141,11 @@ impl TacticCategory {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct StepKey {
     source_path: PathBuf,
+    prepared_import: bool,
     claim: String,
     tactic_index: usize,
     source_index: usize,
+    source_tactic_path: Option<Vec<usize>>,
     tactic_name: String,
     category: TacticCategory,
     statement_index: usize,
@@ -840,6 +842,11 @@ enum TimingEvent {
         key: String,
         elapsed: Duration,
     },
+    ProofClaimCompleted {
+        function: String,
+        claim: String,
+        elapsed: Duration,
+    },
     Operation(ProfileOperation),
     /// Structured snapshot captured at the cooperative deadline checkpoint,
     /// before scope guards close the active tactic or phase.
@@ -854,9 +861,11 @@ enum TimingEvent {
 fn structured_step(tactic: &TacticEvent, source_path: &Path) -> Result<StepKey, String> {
     Ok(StepKey {
         source_path: source_path.to_path_buf(),
+        prepared_import: false,
         claim: tactic.claim.clone(),
         tactic_index: tactic.tactic_index,
         source_index: tactic.source_index,
+        source_tactic_path: tactic.source_tactic_path.clone(),
         tactic_name: (!is_retired_internal_tactic_name(&tactic.tactic_name))
             .then(|| tactic.tactic_name.clone())
             .ok_or_else(|| format!("retired internal tactic name `{}`", tactic.tactic_name))?,
@@ -919,13 +928,19 @@ fn finish_attribution(
             .buckets
             .certification
             .saturating_sub(claim_certification);
-        if !shared_certification.is_zero() || !row.buckets.verifier_core.is_zero() {
+        let claim_core = row
+            .claims
+            .values()
+            .map(|claim| claim.buckets.verifier_core)
+            .sum::<Duration>();
+        let shared_core = row.buckets.verifier_core.saturating_sub(claim_core);
+        if !shared_certification.is_zero() || !shared_core.is_zero() {
             let shared = row
                 .claims
                 .entry(format!("{function}::<shared verifier work>"))
                 .or_default();
             shared.buckets.certification += shared_certification;
-            shared.buckets.verifier_core += row.buckets.verifier_core;
+            shared.buckets.verifier_core += shared_core;
         }
     }
 }
@@ -982,6 +997,15 @@ fn profile_from_events(
             } => TimingEvent::ClaimCompleted {
                 function: function.clone(),
                 key: key.clone(),
+                elapsed: *elapsed,
+            },
+            VerificationEvent::ProofClaimFinished {
+                function,
+                claim,
+                elapsed,
+            } => TimingEvent::ProofClaimCompleted {
+                function: function.clone(),
+                claim: claim.clone(),
                 elapsed: *elapsed,
             },
             VerificationEvent::OperationFinished {
@@ -1100,6 +1124,21 @@ fn build_profile(
                     .or_default()
                     .buckets
                     .certification += elapsed;
+            }
+            TimingEvent::ProofClaimCompleted {
+                function,
+                claim,
+                elapsed,
+            } => {
+                work.claims += 1;
+                let row = attribution
+                    .entry(function)
+                    .or_default()
+                    .claims
+                    .entry(claim)
+                    .or_default();
+                row.buckets.verifier_core += elapsed
+                    .saturating_sub(row.buckets.simple + row.buckets.smart + row.buckets.control);
             }
             TimingEvent::Operation(operation) => operations.push(operation),
             TimingEvent::Interrupted(work) => interrupted = Some(work),
@@ -1233,6 +1272,21 @@ fn parse_profile(
                     .buckets
                     .certification += elapsed;
             }
+            TimingEvent::ProofClaimCompleted {
+                function,
+                claim,
+                elapsed,
+            } => {
+                work.claims += 1;
+                let row = attribution
+                    .entry(function)
+                    .or_default()
+                    .claims
+                    .entry(claim)
+                    .or_default();
+                row.buckets.verifier_core += elapsed
+                    .saturating_sub(row.buckets.simple + row.buckets.smart + row.buckets.control);
+            }
             TimingEvent::Operation(operation) => operations.push(operation),
             TimingEvent::Interrupted(work) => interrupted = Some(work),
             TimingEvent::Ignored => {}
@@ -1347,6 +1401,17 @@ fn classify_timing_line(line: &str, source_path: &Path) -> Result<TimingEvent, S
             count,
         });
     }
+    if let Some(rest) = strip_kind(body, "proof claim") {
+        let (head, elapsed) = split_trailing_seconds(rest).ok_or_else(|| drift_message(line))?;
+        let (function, claim) = head
+            .split_once(char::is_whitespace)
+            .ok_or_else(|| drift_message(line))?;
+        return Ok(TimingEvent::ProofClaimCompleted {
+            function: function.to_string(),
+            claim: claim.trim().to_string(),
+            elapsed,
+        });
+    }
     if let Some(rest) = strip_kind(body, "claim") {
         let (head, elapsed) = split_trailing_seconds(rest).ok_or_else(|| drift_message(line))?;
         let (function, key) = head
@@ -1428,6 +1493,7 @@ fn parse_step_key(rest: &str, source_path: &Path) -> Option<StepKey> {
     }
     Some(StepKey {
         source_path: source_path.to_path_buf(),
+        prepared_import: false,
         claim: fields[0].to_string(),
         tactic_index: fields[1].parse().ok()?,
         tactic_name: (!is_retired_internal_tactic_name(fields[2]))
@@ -1435,6 +1501,7 @@ fn parse_step_key(rest: &str, source_path: &Path) -> Option<StepKey> {
         category: TacticCategory::parse(fields[4])?,
         statement_index: fields[6].parse().ok()?,
         source_index: fields[8].parse().ok()?,
+        source_tactic_path: None,
         position: None,
     })
 }
@@ -1531,6 +1598,7 @@ fn resolve_source_positions(
             return Err("timing event had no Click source path".to_string());
         }
         let source = sources.get(&key.source_path)?;
+        key.prepared_import = source.inputs.is_prepared() && !looks_like_mdtest(&key.source_path);
         let position = match &source.inputs {
             CInput::Bundle(c_sources) => match &source.project {
                 Some(project) => c0_project_tactic_source_position(
@@ -1575,6 +1643,14 @@ fn resolve_source_positions(
                 ),
             },
         };
+        let position = position.and_then(|outer| match key.source_tactic_path.as_deref() {
+            Some(path) if path.len() > 1 => click::surface::nested_tactic_source_position(
+                &source.click_source,
+                &outer,
+                &path[1..],
+            ),
+            _ => Ok(outer),
+        });
         match position {
             Ok(position) => {
                 key.position = Some(SourcePosition {

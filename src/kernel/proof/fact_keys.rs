@@ -4447,6 +4447,7 @@ mod snapshot_alpha_tests {
             )),
         );
         let tactic = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
             claim: "integer.snapshot_alpha_budget".into(),
             tactic_index: 0,
             tactic_name: "snapshot_alpha_budget".into(),

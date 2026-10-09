@@ -108,6 +108,21 @@ pub(super) fn written_universal_body(goal: &ClickProposition) -> Option<ClickPro
     }
 }
 
+/// Select just the antecedent without copying the unselected consequent.
+pub(super) fn surface_implication_antecedent(goal: &ClickProposition) -> Option<ClickProposition> {
+    match goal {
+        ClickProposition::Implies(antecedent, _) => Some(antecedent.as_ref().clone()),
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => Some(ClickProposition::At {
+            selector: selector.clone(),
+            proposition: Box::new(surface_implication_antecedent(proposition)?),
+        }),
+        _ => None,
+    }
+}
+
 pub(super) fn surface_implication_parts(
     goal: &ClickProposition,
 ) -> Option<(ClickProposition, ClickProposition)> {
@@ -4400,6 +4415,7 @@ mod selected_premise_tests {
         assert!(derivation.is_some());
         assert!(work > 0);
         let tactic = TacticEvent {
+            source_tactic_path: None,
             claim: "viewability".into(),
             tactic_index: 0,
             tactic_name: "simp".into(),

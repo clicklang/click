@@ -3630,6 +3630,7 @@ mod spec_carrier_substitution_binder_tests {
         let refused = crate::instrumentation::with_tactic_work_limits(limits, || {
             crate::instrumentation::collect(|| {
                 let tactic = crate::instrumentation::TacticEvent {
+                    source_tactic_path: None,
                     claim: "integer substitution regression".into(),
                     tactic_index: 0,
                     tactic_name: "integer_substitution_regression".into(),
@@ -9559,6 +9560,7 @@ mod integer_range_fold_substitution_tests {
             || {
                 instrumentation::collect(|| {
                     let tactic = TacticEvent {
+                        source_tactic_path: None,
                         claim: "integer fold checked substitution".into(),
                         tactic_index: 0,
                         tactic_name: "integer_fold_checked_substitution".into(),
@@ -9771,6 +9773,7 @@ mod checked_singleton_substitution_tests {
                 || {
                     instrumentation::collect(|| {
                         let tactic = TacticEvent {
+                            source_tactic_path: None,
                             claim: "checked singleton substitution".into(),
                             tactic_index: 0,
                             tactic_name: "checked_singleton_substitution".into(),
@@ -9876,6 +9879,7 @@ mod checked_singleton_substitution_tests {
                         || {
                             instrumentation::collect(|| {
                                 let tactic = TacticEvent {
+                                    source_tactic_path: None,
                                     claim: "deep singleton setup".into(),
                                     tactic_index: 0,
                                     tactic_name: "deep_singleton_setup".into(),

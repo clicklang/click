@@ -432,6 +432,12 @@ Completed tactic events report both real CPU time and deterministic work, so
 `click profile` keeps measuring actual latency without making that
 measurement a correctness oracle.
 
+Written pure-theorem tactics use these same scopes, including generic proofs,
+structural induction, and nested `have` bodies. Their events retain the written
+source path. A completed theorem ensure is a proof claim; its checking outside
+tactics counts as verifier core rather than environment setup or C contract
+certification. Nested tactic time remains exclusive.
+
 The budgets are:
 
 - the per-class tactic budgets, `TacticWorkLimits::default` (below);
@@ -867,6 +873,8 @@ that class to prescribe the next action:
 - Successful `SMART` hotspots in fully verified targets are expansion
   candidates. The report prints pasteable commands that write a sibling
   artifact, verify it, and reprofile that exact artifact with the same limits.
+  Locked imports instead use `--in-place` and recheck the same sidecar, keeping
+  its manifest and artifacts at their anchored name and location.
   A successful step observed before a later correctness failure or timeout is
   diagnostic only and produces no expansion command. Failed smart search has
   no successful proof; normally decompose the proof. An interrupted search is a

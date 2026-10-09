@@ -8005,6 +8005,7 @@ mod stated_requirement_tests {
         let context = PureFactContext::new().assume_proposition(fact.clone());
         assert!(context.states_required_goal(&renamed));
         let tactic = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
             claim: "stated_requirement_index_budget".into(),
             tactic_index: 0,
             tactic_name: "stated_requirement_index_budget".into(),

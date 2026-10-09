@@ -176,7 +176,7 @@ impl ProofStepSite {
     /// The source path used to select a written occurrence for expansion.
     /// Generated checking steps retain trace attribution to their enclosing
     /// source body, but must not claim an independent written occurrence.
-    pub(super) fn written_source_tactic_path(&self) -> Option<Vec<usize>> {
+    pub(in crate::surface::proof) fn written_source_tactic_path(&self) -> Option<Vec<usize>> {
         if self.generated {
             None
         } else {

@@ -5104,6 +5104,7 @@ mod tests {
             control: 16,
         };
         let tactic = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
             claim: "integer.typed_condition_budget".into(),
             tactic_index: 0,
             tactic_name: "typed_condition_budget".into(),
@@ -5428,6 +5429,7 @@ mod tests {
             control: 8,
         };
         let tactic = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
             claim: "integer.typed_iota_budget".into(),
             tactic_index: 0,
             tactic_name: "typed_iota_budget".into(),
@@ -5879,6 +5881,7 @@ mod tests {
         let (result, _events) = crate::instrumentation::with_tactic_work_limits(limits, || {
             crate::instrumentation::collect(|| {
                 let tactic = crate::instrumentation::TacticEvent {
+                    source_tactic_path: None,
                     claim: "checked fold collector regression".into(),
                     tactic_index: 0,
                     tactic_name: "checked_fold_collector_regression".into(),
@@ -5922,6 +5925,7 @@ mod tests {
             || {
                 crate::instrumentation::collect(|| {
                     let tactic = crate::instrumentation::TacticEvent {
+                        source_tactic_path: None,
                         claim: "checked machine rewrite".into(),
                         tactic_index: 0,
                         tactic_name: "checked_machine_rewrite".into(),

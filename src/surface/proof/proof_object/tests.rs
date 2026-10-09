@@ -14850,6 +14850,7 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
             || {
                 crate::instrumentation::collect(|| {
                     let tactic = TacticEvent {
+                        source_tactic_path: None,
                         claim: "snapshot budget".into(),
                         tactic_index: 0,
                         tactic_name: "simp".into(),

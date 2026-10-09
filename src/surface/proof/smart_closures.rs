@@ -1600,6 +1600,60 @@ impl<'a> Proof<'a> {
         Ok(result)
     }
 
+    /// Name the leaves of a wide logical conjunction before closing it.
+    /// Sequential checked `have` steps and `assumption` keep the certificate
+    /// shallow without changing the kernel goal or its grouping. Reification
+    /// is presentation only: every leaf must lower back to the exact goal.
+    pub(in crate::surface::proof) fn wide_conjunction_surfaces(
+        &self,
+    ) -> Option<Vec<ClickProposition>> {
+        let mut pending = vec![self.goal()?];
+        let mut leaves = Vec::new();
+        while let Some(goal) = pending.pop() {
+            if let Proposition::And(left, right) = goal {
+                pending.push(right);
+                pending.push(left);
+            } else {
+                leaves.push(goal);
+            }
+        }
+        // Binary certificates below this width fit comfortably inside the
+        // parser's existing structural limit, including enclosing scopes.
+        if leaves.len() <= 8 {
+            return None;
+        }
+        let surfaces = if let Some(surface) = self.surface_goal() {
+            let mut pending = vec![surface];
+            let mut leaves = Vec::new();
+            while let Some(surface) = pending.pop() {
+                if let ClickProposition::And(left, right) = surface {
+                    pending.push(right);
+                    pending.push(left);
+                } else {
+                    leaves.push(surface.clone());
+                }
+            }
+            leaves
+        } else {
+            leaves
+                .iter()
+                .map(|goal| self.synthesized_bundle_member_surface(goal))
+                .collect::<Option<Vec<_>>>()?
+        };
+        if surfaces.len() != leaves.len() {
+            return None;
+        }
+        for (surface, goal) in surfaces.iter().zip(leaves) {
+            let lowered = self
+                .lower_surface_goal(surface, "conjunction certificate leaf")
+                .ok()?;
+            if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal) {
+                return None;
+            }
+        }
+        Some(surfaces)
+    }
+
     fn try_direct_structural_closure_inner(
         &self,
         quantified: &mut dyn FnMut(&Self) -> Result<Option<Self>, ClickError>,
@@ -1613,6 +1667,17 @@ impl<'a> Proof<'a> {
         }
         if let Some(closed) = self.try_discharged_consequent_closure()? {
             return Ok(Some(closed));
+        }
+        if let Some(surfaces) = self.wide_conjunction_surfaces() {
+            let mut proof = self.clone();
+            for surface in surfaces {
+                let scope = proof.begin_have(surface)?;
+                let Some(closed) = scope.try_simp_closure()? else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+            }
+            return attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption));
         }
         if matches!(self.goal(), Some(Proposition::And(_, _))) {
             let Some((split_proof, split, ids)) =
@@ -1640,6 +1705,18 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(closed));
         }
+        if matches!(self.goal(), Some(Proposition::Implies(_, _))) {
+            let mut introduced = self.clone();
+            while matches!(introduced.goal(), Some(Proposition::Implies(_, _))) {
+                let Some(next) =
+                    attempt::candidate_outcome(introduced.apply_step(ProofStep::Intro))?
+                else {
+                    return Ok(None);
+                };
+                introduced = next;
+            }
+            return introduced.try_direct_structural_closure_inner(quantified);
+        }
         match attempt::candidate_outcome(self.apply_step(ProofStep::Intro))? {
             Some(introduced) => introduced.try_direct_structural_closure_inner(quantified),
             None => Ok(None),
@@ -1661,8 +1738,30 @@ impl<'a> Proof<'a> {
         crate::kernel::with_closure_failure_memo(|| self.try_simp_closure_strategies())
     }
 
+    fn try_flat_simp_conjunction(
+        &self,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(surfaces) = self.wide_conjunction_surfaces() else {
+            return Ok(None);
+        };
+        let mut proof = self.clone();
+        for surface in surfaces {
+            let scope = proof.begin_have(surface)?;
+            let Some(closed) = scope.try_simp_closure_with_surfaces(introduced_surfaces)? else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+        }
+        attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
+    }
+
     fn try_simp_closure_strategies(&self) -> Result<Option<Self>, ClickError> {
         let mut scope = attempt::search_scope("simp closure");
+        if let Some(proof) = self.try_flat_simp_conjunction(&[])? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) = self.try_direct_logical_closure()? {
             scope.succeed();
             return Ok(Some(proof));
@@ -1868,6 +1967,9 @@ impl<'a> Proof<'a> {
         // leaves, which is quadratic in the chain. Each conjunct still gets
         // the complete closure, including these strategies, and the
         // whole-goal strategies still run, unchanged, when the split misses.
+        if let Some(flat) = self.try_flat_simp_conjunction(introduced_surfaces)? {
+            return Ok(Some(flat));
+        }
         let structural_conjunction_tried = if let Some(surface_goal) = self.surface_goal()
             && matches!(surface_goal, ClickProposition::And(_, _))
             && matches!(self.goal(), Some(Proposition::And(_, _)))
@@ -3095,104 +3197,120 @@ impl<'a> Proof<'a> {
         Ok(None)
     }
 
-    // Keep implication-local proof and syntax temporaries out of every
-    // recursive structural dispatcher frame. Search order is unchanged.
+    // Walk consecutive implication guards without retaining a dispatcher
+    // frame for each. Each guard keeps its checked introduction, contradiction
+    // probes, and named-premise extraction before the body is simplified.
     #[inline(never)]
     fn try_implication_simp_closure(
         &self,
         surface_antecedent: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        let Some(mut introduced) = attempt::candidate_outcome(self.apply_step(ProofStep::Intro))?
-        else {
-            return Ok(None);
-        };
-        // The introduced antecedent itself is the uniquely selected
-        // contradiction candidate. This is a constant-size probe:
-        // `Contradiction` checks that exact fact and its indexed
-        // opposite, without scanning ambient path facts.
-        if let Some(closed) =
-            introduced.try_introduced_antecedent_contradiction(surface_antecedent)?
-        {
-            return Ok(Some(closed));
-        }
-        // A selected execution path can make the antecedent false through a
-        // short derivation rather than an already-indexed exact opposite.
-        // Prove and retain that opposite first; after `intro`, ordinary
-        // contradiction checks the two explicit facts.
-        let negated_antecedent = negate_click_proposition(surface_antecedent);
-        if let Some(scope) =
-            attempt::candidate_outcome(self.begin_have(negated_antecedent.clone()))?
-            && let Some(proved) = scope.try_simp_closure()?
-            && let Some(with_opposite) = attempt::candidate_outcome(proved.join())?
-            && let Some(with_antecedent) =
-                attempt::candidate_outcome(with_opposite.apply_step(ProofStep::Intro))?
-            && let Some(closed) = attempt::candidate_outcome(
-                with_antecedent.apply_step(ProofStep::Contradiction(negated_antecedent)),
-            )?
-        {
-            return Ok(Some(closed));
-        }
-        let mut conjuncts = Vec::new();
-        if matches!(surface_antecedent, ClickProposition::And(_, _)) {
-            collect_surface_conjunct_leaves(surface_antecedent, &mut conjuncts);
-        }
-        for conjunct in &conjuncts {
-            let Some(extracted) = attempt::candidate_outcome(
-                introduced.apply_step(ProofStep::Extract(conjunct.clone())),
-            )?
+        let mut base = self.clone();
+        let mut antecedent = surface_antecedent.clone();
+        let mut available_surfaces = introduced_surfaces.to_vec();
+        loop {
+            let Some(mut introduced) =
+                attempt::candidate_outcome(base.apply_step(ProofStep::Intro))?
             else {
                 return Ok(None);
             };
-            introduced = extracted;
-            if introduced.is_complete() {
-                return Ok(Some(introduced));
+            // The introduced antecedent itself is the uniquely selected
+            // contradiction candidate. This is a constant-size probe:
+            // `Contradiction` checks that exact fact and its indexed
+            // opposite, without scanning ambient path facts.
+            if let Some(closed) = introduced.try_introduced_antecedent_contradiction(&antecedent)? {
+                return Ok(Some(closed));
             }
-        }
-        let mut available_surfaces = introduced_surfaces.to_vec();
-        available_surfaces.push(surface_antecedent.clone());
-        available_surfaces.extend(conjuncts.iter().cloned());
-        // Introducing this guard can make a previously introduced
-        // conditional premise usable. Select its written consequent
-        // and let the ordinary checked `extract` rule discharge the
-        // guard; do not branch over possible guard values.
-        for premise in available_surfaces.clone() {
-            let mut current = &premise;
-            while let ClickProposition::Implies(_, consequent) = current {
+            // A selected execution path can make the antecedent false through a
+            // short derivation rather than an already-indexed exact opposite.
+            // Prove and retain that opposite first; after `intro`, ordinary
+            // contradiction checks the two explicit facts.
+            let negated_antecedent = negate_click_proposition(&antecedent);
+            if let Some(scope) =
+                attempt::candidate_outcome(base.begin_have(negated_antecedent.clone()))?
+                && let Some(proved) = scope.try_simp_closure()?
+                && let Some(with_opposite) = attempt::candidate_outcome(proved.join())?
+                && let Some(with_antecedent) =
+                    attempt::candidate_outcome(with_opposite.apply_step(ProofStep::Intro))?
+                && let Some(closed) = attempt::candidate_outcome(
+                    with_antecedent.apply_step(ProofStep::Contradiction(negated_antecedent)),
+                )?
+            {
+                return Ok(Some(closed));
+            }
+            let mut conjuncts = Vec::new();
+            if matches!(&antecedent, ClickProposition::And(_, _)) {
+                collect_surface_conjunct_leaves(&antecedent, &mut conjuncts);
+            }
+            for conjunct in &conjuncts {
                 let Some(extracted) = attempt::candidate_outcome(
-                    introduced.apply_step(ProofStep::Extract(consequent.as_ref().clone())),
+                    introduced.apply_step(ProofStep::Extract(conjunct.clone())),
                 )?
                 else {
-                    break;
+                    return Ok(None);
                 };
                 introduced = extracted;
-                available_surfaces.push(consequent.as_ref().clone());
                 if introduced.is_complete() {
                     return Ok(Some(introduced));
                 }
-                current = consequent;
             }
-        }
-        if !conjuncts.is_empty()
-            && let Some(surface_goal) = introduced.surface_goal()
-            && let Some(source) = old_reflexive_transport_source(surface_goal)
-        {
-            match introduced.search_fixed_state_fact_transport(
-                &source,
-                surface_goal,
-                conjuncts.iter().cloned(),
-            ) {
-                Ok(transported) if transported.is_complete() => {
-                    return Ok(Some(transported));
+            available_surfaces.push(antecedent.clone());
+            available_surfaces.extend(conjuncts.iter().cloned());
+            // Introducing this guard can make a previously introduced
+            // conditional premise usable. Select its written consequent
+            // and let the ordinary checked `extract` rule discharge the
+            // guard; do not branch over possible guard values.
+            for premise in available_surfaces.clone() {
+                let mut current = &premise;
+                while let ClickProposition::Implies(_, consequent) = current {
+                    let Some(extracted) = attempt::candidate_outcome(
+                        introduced.apply_step(ProofStep::Extract(consequent.as_ref().clone())),
+                    )?
+                    else {
+                        break;
+                    };
+                    introduced = extracted;
+                    available_surfaces.push(consequent.as_ref().clone());
+                    if introduced.is_complete() {
+                        return Ok(Some(introduced));
+                    }
+                    current = consequent;
                 }
-                Ok(_) => {}
-                Err(_) => check_verification_deadline()?,
             }
+            if !conjuncts.is_empty()
+                && let Some(surface_goal) = introduced.surface_goal()
+                && let Some(source) = old_reflexive_transport_source(surface_goal)
+            {
+                match introduced.search_fixed_state_fact_transport(
+                    &source,
+                    surface_goal,
+                    conjuncts.iter().cloned(),
+                ) {
+                    Ok(transported) if transported.is_complete() => {
+                        return Ok(Some(transported));
+                    }
+                    Ok(_) => {}
+                    Err(_) => check_verification_deadline()?,
+                }
+            }
+            if let Some(split) = introduced.try_upper_bound_split_closure(&available_surfaces)? {
+                return Ok(Some(split));
+            }
+            if let Some(closed) = introduced.try_direct_logical_closure()? {
+                return Ok(Some(closed));
+            }
+            if matches!(introduced.goal(), Some(Proposition::Implies(_, _)))
+                && let Some(next) = introduced
+                    .surface_goal()
+                    .and_then(surface_implication_antecedent)
+            {
+                base = introduced;
+                antecedent = next;
+                continue;
+            }
+            return introduced.try_simp_closure_with_surfaces(&available_surfaces);
         }
-        if let Some(split) = introduced.try_upper_bound_split_closure(&available_surfaces)? {
-            return Ok(Some(split));
-        }
-        introduced.try_simp_closure_with_surfaces(&available_surfaces)
     }
 
     /// Refines the Proof-owned Surface goal through audited scopes and steps.
@@ -3242,7 +3360,7 @@ impl<'a> Proof<'a> {
             );
         }
         if matches!(goal, Proposition::Implies(_, _))
-            && let Some((surface_antecedent, _)) = surface_implication_parts(surface_goal)
+            && let Some(surface_antecedent) = surface_implication_antecedent(surface_goal)
         {
             return self.try_implication_simp_closure(&surface_antecedent, introduced_surfaces);
         }
@@ -7003,6 +7121,14 @@ impl<'a> Proof<'a> {
         let mut proof = self.clone();
         for (index, tactic) in tactics.iter().enumerate() {
             proof = proof.at_site(&sites[index]);
+            let _timing = if pure_source {
+                proof
+                    .site()
+                    .written_source_tactic_path()
+                    .and_then(|path| TacticTiming::pure_source(proof.claim_label(), path, tactic))
+            } else {
+                None
+            };
             let nested_capture = proof.begin_nested_tactic_capture();
             if proof.focused_discharged() {
                 // A closer after a step that already discharged the goal (a

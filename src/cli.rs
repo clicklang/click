@@ -2126,6 +2126,7 @@ mod tests {
 
     fn tactic(index: usize, name: &str, class: &str) -> TacticEvent {
         TacticEvent {
+            source_tactic_path: None,
             claim: "f.contract".to_string(),
             tactic_index: index,
             tactic_name: name.to_string(),

@@ -2410,6 +2410,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 crate::instrumentation::emit(
                                     crate::instrumentation::VerificationEvent::TacticStarted(
                                         crate::instrumentation::TacticEvent {
+                                            source_tactic_path: None,
                                             claim: proof_label.clone(),
                                             tactic_index: *tactic_index,
                                             tactic_name: tactic_name.to_string(),
@@ -2421,6 +2422,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 );
                             }
                             let timing_context = TimingTacticContext {
+                                source_tactic_path: None,
                                 claim_label: proof_label.clone(),
                                 tactic_index: *tactic_index,
                                 source_index: *source_index,
@@ -2430,6 +2432,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             };
                             push_timing_tactic(timing_context.clone());
                             TacticTiming {
+                                source_tactic_path: None,
                                 claim_label: proof_label.clone(),
                                 tactic_index: *tactic_index,
                                 source_index: *source_index,
