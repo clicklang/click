@@ -503,12 +503,10 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
         integer_values,
         result,
         recorded_snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions.clone(),
-        pointer_element_widths,
-    )?;
+        pointer_element_widths,)?;
     let spec = IterativeSpecPropositionDrop::new(spec);
     let (lowered, facts, obligations, introductions) =
         crate::kernel::c_lower_spec_proposition_with_checked_obligations(
@@ -708,7 +706,6 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
         algebraic_values,
         result,
         recorded_snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         opaque_click_functions.clone(),
@@ -795,7 +792,6 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
             integer_values,
             result,
             recorded_snapshots,
-            assumptions,
             predicate_environment,
             click_function_environment,
             BTreeSet::new(),
@@ -824,7 +820,6 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
     expression: &ContractExpression,
-    assumptions: &PureFactContext,
     values: &BTreeMap<String, CValue>,
     array_refs: &ClickArrayRefs,
     pre_state: &CState,
@@ -836,7 +831,6 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
 ) -> Result<SpecAlgebraicExpression, String> {
     capture_fixed_state_algebraic_expression_with_values(
         expression,
-        assumptions,
         values,
         array_refs,
         BTreeMap::new(),
@@ -852,7 +846,6 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
     expression: &ContractExpression,
-    assumptions: &PureFactContext,
     values: &BTreeMap<String, CValue>,
     array_refs: &ClickArrayRefs,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
@@ -873,7 +866,6 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
         algebraic_values,
         result,
         recorded_snapshots,
-        assumptions,
         predicate_environment,
         click_function_environment,
         BTreeSet::new(),
@@ -904,7 +896,6 @@ pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
         algebraic_values,
         None,
         snapshots,
-        assumptions,
         predicates,
         functions,
         BTreeSet::new(),
@@ -944,7 +935,6 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 states.current_values,
                 None,
                 snapshots,
-                assumptions,
                 predicates,
                 functions,
                 BTreeSet::new(),
@@ -977,7 +967,6 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 states.current_values,
                 None,
                 snapshots,
-                assumptions,
                 predicates,
                 functions,
                 BTreeSet::new(),
@@ -1003,7 +992,6 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 BTreeMap::new(),
                 None,
                 snapshots,
-                assumptions,
                 predicates,
                 functions,
                 BTreeSet::new(),
@@ -1129,7 +1117,6 @@ fn evaluate_c_fragment_with_binding_policy(
         states.current_values,
         result,
         &RecordedSnapshots::new(),
-        assumptions,
         &PredicateEnvironment::new(&[]),
         &ClickFunctionEnvironment::new(&[]),
         std::collections::BTreeSet::new(),

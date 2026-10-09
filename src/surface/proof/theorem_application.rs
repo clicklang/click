@@ -775,7 +775,6 @@ fn theorem_application_argument_type(
 
     if let Ok(value) = capture_fixed_state_algebraic_expression(
         argument,
-        assumptions,
         context.values,
         context.array_refs,
         context.pre_state,
@@ -879,7 +878,6 @@ pub(super) fn theorem_application_bindings(
                 .collect();
             let value = capture_fixed_state_algebraic_expression_with_values(
                 argument,
-                assumptions,
                 context.values,
                 context.array_refs,
                 algebraic_bindings,

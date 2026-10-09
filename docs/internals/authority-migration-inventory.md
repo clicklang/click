@@ -1695,3 +1695,24 @@ that consulted them, and the `GuardedPopulation` resource with its family
 algebra are deleted. The authority mutex fixtures (`mutex_*.md`,
 `authority_mutex_*.md`) are the coverage that remains; none exercised
 custody.
+
+#### Chunk 2b: one execution path
+
+The kernel chose its legacy branch when a state had no population creation
+ledger. Production units already started with one, but contract summaries,
+definition lowering and named-contract refinement lowered their clauses
+against ledger-free states, so a `count` there took the legacy rule. Those
+entry states now start with a ledger, and the switch is deleted: about 115
+sites keep only their authority branch. The legacy alternatives that became
+unreachable go with it, among them the legacy total of `count` in
+specification evaluation and at a recorded state, the legacy entry count
+fact in certification, the legacy resource snapshot, opening a held head
+during return consumption, and the fact context that only the
+recorded-state count used.
+
+Kernel tests that built their states with a bare `CState::new()` now give
+them a ledger. Tests of behaviour only the legacy path had are deleted:
+count evaluation over the legacy store, legacy count lower bounds, consuming
+close and local population initialization, legacy return endpoints, worker
+counts, and a token consume refused for an unknown legacy count. The test of
+generic member construction now expects the authority refusal.
