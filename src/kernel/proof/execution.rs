@@ -2419,16 +2419,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 .directly_supporting_fact(selected, assumptions)
                 .is_none()
         {
-            if crate::kernel::mutexes::population_custodian(
-                before_state,
-                name,
-                arguments,
-                assumptions,
-            )
-            .is_some()
-            {
-                return Err("destroy the population's mutex before full-population cleanup".into());
-            }
             let (_, _, total) = before_state
                 .counted_population_proven_equal(name, arguments, assumptions)
                 .ok_or("population cleanup requires an active population")?;

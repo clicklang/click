@@ -6858,3 +6858,81 @@ fn callback_parsing_and_explicit_steps_scale_with_written_calls() {
         );
     }
 }
+
+fn byte_view_narrowing_sources() -> (&'static str, &'static str) {
+    let c_source = r#"void narrow(const unsigned char *bytes, int index) {
+    int unrelated;
+    unrelated = index;
+    return;
+}
+"#;
+    let contract = r#"verifying "range-narrowing.c";
+void narrow(const uint8* bytes, int32 index) {
+ requires 0 <= index;
+ requires index <= 22204;
+ views bytes[0..22208];
+ ensures 0 == 0;
+} by {
+ execute_until(assignment(unrelated, 0)); step();
+ have 0 <= index by { assumption(); }
+ have index + 4 <= 22208 by { arithmetic() using { 0 <= index; index <= 22204; } }
+ have index <= index + 4 by { arithmetic() using { 0 <= index; index <= 22204; index + 4 <= 22208; } }
+ have viewable(bytes[0..22208]) by { transport(at(function.entry, viewable(bytes[0..22208])), viewable(bytes[0..22208])) using { at(function.entry, viewable(bytes[0..22208])); 0 <= 22208; } }
+ have viewable(bytes[index..index + 4]) by {
+  transport(viewable(bytes[0..22208]), viewable(bytes[index..index + 4])) using {
+   viewable(bytes[0..22208]); 0 <= index; index <= index + 4; index + 4 <= 22208; 0 <= 22208;
+  }
+ }
+ execute(); simp();
+}
+"#;
+    (c_source, contract)
+}
+
+// A store must not expand an unrelated shared byte view to narrow four bytes.
+#[test]
+fn explicit_byte_view_narrowing_keeps_large_seeded_ranges_compact() {
+    let (c_source, contract) = byte_view_narrowing_sources();
+    let samples = [16u32, 64, 4096, 22208, 1048576].map(|size| {
+        let source = contract
+            .replace("22208", &size.to_string())
+            .replace("22204", &(size - 4).to_string());
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&source, &[("range-narrowing.c", c_source)])
+        });
+        result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        (size, work)
+    });
+    assert!(
+        samples.iter().all(|(size, work)| {
+            // Surface arithmetic sees the encoded bound's bits. Permit
+            // logarithmic numeric work, never a visit per seeded cell.
+            *work <= samples[0].1 + 512 * (size.ilog2() - samples[0].0.ilog2()) as usize
+        }),
+        "range length must not materialize cells: {samples:?}"
+    );
+}
+
+#[test]
+#[ignore = "nightly: byte-view authority sidecar mutations"]
+fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
+    let (c_source, contract) = byte_view_narrowing_sources();
+    for (before, after) in [
+        ("views bytes[0..22208];", ""),
+        ("index + 4 <= 22208; 0 <= 22208;", "0 <= 22208;"),
+        (
+            "viewable(bytes[index..index + 4])",
+            "viewable(bytes[index..index + 5])",
+        ),
+    ] {
+        let invalid = contract.replace(before, after);
+        assert_ne!(invalid, contract);
+        let error = verify_c0_sources(&invalid, &[("range-narrowing.c", c_source)])
+            .expect_err("invalid range authority was accepted");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}

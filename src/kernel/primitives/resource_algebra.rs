@@ -487,10 +487,7 @@ impl ResourceContextIndex {
                     result.concrete_memory_by_base.with_inserted(base, count);
             }
         } else if let CResource::Composite { name, arguments }
-        | CResource::Token { name, arguments }
-        | CResource::GuardedPopulation {
-            name, arguments, ..
-        } = fact.resource()
+        | CResource::Token { name, arguments } = fact.resource()
         {
             result.exact_shapes = insert_resource_index_entry(
                 &result.exact_shapes,
@@ -680,10 +677,7 @@ impl ResourceContextIndex {
                 };
             }
         } else if let CResource::Composite { name, arguments }
-        | CResource::Token { name, arguments }
-        | CResource::GuardedPopulation {
-            name, arguments, ..
-        } = fact.resource()
+        | CResource::Token { name, arguments } = fact.resource()
         {
             result.exact_shapes = remove_resource_index_entry(
                 &result.exact_shapes,
@@ -4084,16 +4078,11 @@ impl ResourceContext {
                 .iterated_by_block
                 .get(&iterated.element_base.block),
             CResource::Memory(range) => self.storage.index.memory_by_block.get(&range.base().block),
-            CResource::Composite { name, arguments }
-            | CResource::Token { name, arguments }
-            | CResource::GuardedPopulation {
-                name, arguments, ..
-            } => {
-                self.storage
-                    .index
-                    .exact_shapes
-                    .get(&(fact.family(), name.clone(), arguments.len()))
-            }
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => self
+                .storage
+                .index
+                .exact_shapes
+                .get(&(fact.family(), name.clone(), arguments.len())),
         }
     }
 
@@ -6145,11 +6134,7 @@ impl ResourceNormalizationIndex {
                     memory_normalization_position(range, range.end()),
                 ));
             }
-            CResource::Composite { name, arguments }
-            | CResource::Token { name, arguments }
-            | CResource::GuardedPopulation {
-                name, arguments, ..
-            } => {
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 let shape = (fact.family(), name.clone(), arguments.len());
                 match normalization_anchor(arguments) {
                     Some(block) => {
@@ -6266,11 +6251,7 @@ impl ResourceNormalizationIndex {
                     }
                 }
             }
-            CResource::Composite { name, arguments }
-            | CResource::Token { name, arguments }
-            | CResource::GuardedPopulation {
-                name, arguments, ..
-            } => {
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 // Two facts of one shape merge only when their arguments are
                 // proven equal, and a pointer is never proven equal to one in
                 // a block proven distinct from its own. So an anchored fact
@@ -6343,7 +6324,6 @@ fn resource_family_algebra(family: ResourceFamily) -> &'static dyn ResourceFamil
         ResourceFamily::PopulationAuthority => &POPULATION_AUTHORITY_RESOURCE_ALGEBRA,
         ResourceFamily::Composite => &COMPOSITE_RESOURCE_ALGEBRA,
         ResourceFamily::Token => &TOKEN_RESOURCE_ALGEBRA,
-        ResourceFamily::GuardedPopulation => &GUARDED_POPULATION_RESOURCE_ALGEBRA,
         ResourceFamily::Instance => &INSTANCE_RESOURCE_ALGEBRA,
         ResourceFamily::MutexGuard => &MUTEX_GUARD_RESOURCE_ALGEBRA,
         ResourceFamily::MutexLive => &MUTEX_LIVE_RESOURCE_ALGEBRA,
@@ -6463,26 +6443,6 @@ fn exact_resources_proven_equal(
         return true;
     }
     match (left, right) {
-        (
-            CResource::GuardedPopulation {
-                name: a,
-                arguments: aa,
-                mutex: am,
-            },
-            CResource::GuardedPopulation {
-                name: b,
-                arguments: ba,
-                mutex: bm,
-            },
-        ) => {
-            am == bm
-                && a == b
-                && aa.len() == ba.len()
-                && aa
-                    .iter()
-                    .zip(ba.iter())
-                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
-        }
         (CResource::Iterated(left), CResource::Iterated(right)) => {
             iterated_memories_proven_equal(left, right, assumptions)
         }
@@ -7256,10 +7216,6 @@ macro_rules! impl_exact_resource_algebra {
 }
 
 impl_exact_resource_algebra!(TokenResourceAlgebra, ResourceFamily::Token);
-impl_exact_resource_algebra!(
-    GuardedPopulationResourceAlgebra,
-    ResourceFamily::GuardedPopulation
-);
 impl_exact_resource_algebra!(CompositeResourceAlgebra, ResourceFamily::Composite);
 
 impl ResourceFamilyAlgebra for InstanceResourceAlgebra {
@@ -7627,7 +7583,6 @@ pub(super) fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<
         CResourceFact::View(
             CResource::Composite { .. }
             | CResource::Token { .. }
-            | CResource::GuardedPopulation { .. }
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
@@ -7678,7 +7633,6 @@ fn memory_resource_fact_permits_write(
         CResourceFact::Own(
             CResource::Composite { .. }
             | CResource::Token { .. }
-            | CResource::GuardedPopulation { .. }
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
@@ -8132,7 +8086,6 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
         CResourceFact::Own(
             CResource::Composite { .. }
             | CResource::Token { .. }
-            | CResource::GuardedPopulation { .. }
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
@@ -8144,7 +8097,6 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
         | CResourceFact::View(
             CResource::Composite { .. }
             | CResource::Token { .. }
-            | CResource::GuardedPopulation { .. }
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
@@ -8603,7 +8555,6 @@ impl CResource {
             Self::PopulationAuthority(_) => ResourceFamily::PopulationAuthority,
             Self::Composite { .. } => ResourceFamily::Composite,
             Self::Token { .. } => ResourceFamily::Token,
-            Self::GuardedPopulation { .. } => ResourceFamily::GuardedPopulation,
             Self::Instance(_) => ResourceFamily::Instance,
 
             Self::MutexGuard(_) => ResourceFamily::MutexGuard,
@@ -8705,7 +8656,7 @@ impl CResourceFact {
                 |argument| matches!(argument, AlgebraicValue::C(CValue::Pointer(pointer)) if &pointer.block == block),
             ),
             CResource::Iterated(iterated) => iterated.blocks().contains(&block),
-            CResource::Token { .. } | CResource::GuardedPopulation { .. } | CResource::PopulationAuthority(_)
+            CResource::Token { .. } | CResource::PopulationAuthority(_)
             | CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) => false,
         }
     }
@@ -8811,7 +8762,6 @@ impl CResourceFact {
             Self::Own(
                 CResource::Composite { .. }
                 | CResource::Token { .. }
-                | CResource::GuardedPopulation { .. }
                 | CResource::PopulationAuthority(_)
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
@@ -8830,7 +8780,6 @@ impl CResourceFact {
             Self::View(
                 CResource::Composite { .. }
                 | CResource::Token { .. }
-                | CResource::GuardedPopulation { .. }
                 | CResource::PopulationAuthority(_)
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
@@ -8850,7 +8799,6 @@ impl CResourceFact {
             Self::Own(
                 CResource::Composite { .. }
                 | CResource::Token { .. }
-                | CResource::GuardedPopulation { .. }
                 | CResource::PopulationAuthority(_)
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
@@ -8862,7 +8810,6 @@ impl CResourceFact {
             | Self::View(
                 CResource::Composite { .. }
                 | CResource::Token { .. }
-                | CResource::GuardedPopulation { .. }
                 | CResource::PopulationAuthority(_)
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)

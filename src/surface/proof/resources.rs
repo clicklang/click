@@ -457,7 +457,6 @@ fn materialize_folded_composite_resource_memory(
             CResource::Memory(_)
             | CResource::Token { .. }
             | CResource::Instance(_)
-            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -873,7 +872,7 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     state: CState,
     instance: &ResourceInstance,
     assumptions: &PureFactContext,
-    entry_assumptions: &PureFactContext,
+    naming_assumptions: &PureFactContext,
 ) -> CState {
     // An unfold consumes the instance and exposes its body, so an unmatched
     // body is the one it exposes. Its cells are named here exactly as a
@@ -896,15 +895,15 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
         return state;
     };
     // Select the arm from the facts the rewrite published, but choose its
-    // pointer spellings from the same entry context as the kernel rewrite.
-    // A new body equality must not rename an already published scalar load.
+    // pointer spellings from the exact opening context used by the kernel.
+    // Facts introduced later must not rename an already published scalar load.
     project_selected_instance_arm_cells(
         &selected,
         instance,
         parameters,
         arguments,
         state,
-        entry_assumptions,
+        naming_assumptions,
         false,
         None,
     )
@@ -2211,7 +2210,6 @@ fn project_held_resource_observable_facts(
         CResource::Memory(_)
         | CResource::Token { .. }
         | CResource::Instance(_)
-        | CResource::GuardedPopulation { .. }
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)
@@ -3147,8 +3145,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 (name.clone(), arguments.clone())
             }
             CResource::Memory(_) => unreachable!("a declared resource lowered to memory"),
-            CResource::GuardedPopulation { .. }
-            | CResource::Instance(_)
+            CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -3361,7 +3358,6 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 }
                 CResource::Memory(_)
                 | CResource::Instance(_)
-                | CResource::GuardedPopulation { .. }
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -3859,7 +3855,6 @@ fn fold_composite_resources_on_outcome_with_facts(
                 }
                 CResource::Memory(_)
                 | CResource::Instance(_)
-                | CResource::GuardedPopulation { .. }
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -3976,8 +3971,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     (name, arguments)
                 }
                 CResource::Memory(_) => unreachable!("declared resource lowered to memory"),
-                CResource::GuardedPopulation { .. }
-                | CResource::Instance(_)
+                CResource::Instance(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)

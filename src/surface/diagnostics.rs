@@ -1648,11 +1648,6 @@ pub(super) fn describe_resource_fact(
             | CResource::Token {
                 name,
                 arguments: resource_arguments,
-            }
-            | CResource::GuardedPopulation {
-                name,
-                arguments: resource_arguments,
-                ..
             },
             quantity,
         ) => {
@@ -1675,11 +1670,6 @@ pub(super) fn describe_resource_fact(
             | CResource::Token {
                 name,
                 arguments: resource_arguments,
-            }
-            | CResource::GuardedPopulation {
-                name,
-                arguments: resource_arguments,
-                ..
             },
         ) => format!(
             "views {}",
@@ -1766,11 +1756,6 @@ fn describe_c_resource(
         | CResource::Token {
             name,
             arguments: resource_arguments,
-        }
-        | CResource::GuardedPopulation {
-            name,
-            arguments: resource_arguments,
-            ..
         } => format_declared_resource(name, resource_arguments, parameters, arguments),
         CResource::MutexGuard(identity) => format!(
             "mutex_guard({})",

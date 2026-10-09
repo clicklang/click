@@ -11649,7 +11649,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
             CResource::PopulationAuthority(_) => {}
-            CResource::Token { .. } | CResource::GuardedPopulation { .. } => {}
+            CResource::Token { .. } => {}
             CResource::MutexUse(identity) if !self.mutex_guard_only => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(CMemoryRange::new_with_element_width(
@@ -16412,19 +16412,32 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
     );
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AggregateReturnRefusal {
+    InvalidValue,
+    UninitializedRead,
+}
+
+// Keep source initialization and materialization in one checked transition.
+// Every body-completion path must use this boundary before retiring the source.
 fn materialize_aggregate_return(
     state: &mut CState,
     function: &CFunction,
     value: CValue,
-) -> Option<CValue> {
-    let layout = function.return_aggregate_layout()?;
+) -> Result<CValue, AggregateReturnRefusal> {
+    let layout = function
+        .return_aggregate_layout()
+        .ok_or(AggregateReturnRefusal::InvalidValue)?;
     let CValue::Pointer(pointer) = value else {
-        return None;
+        return Err(AggregateReturnRefusal::InvalidValue);
     };
     if pointer.is_null() {
-        return None;
+        return Err(AggregateReturnRefusal::InvalidValue);
     }
     let source = pointer.pointer().clone();
+    if aggregate_copy_reads_uninitialized(&state.memory, &source, layout) {
+        return Err(AggregateReturnRefusal::UninitializedRead);
+    }
     let frame = state.next_local_frame;
     let destination = CMemory::frame_local_pointer(frame, "__return");
     state.set_memory(
@@ -16440,7 +16453,7 @@ fn materialize_aggregate_return(
         layout,
     ));
     state.next_local_frame = frame.saturating_add(1);
-    Some(CValue::typed_pointer(destination, function.return_type()))
+    Ok(CValue::typed_pointer(destination, function.return_type()))
 }
 
 /// The undefined behavior of the implicit conversion a `return` performs when
@@ -19532,7 +19545,6 @@ fn evaluate_resource_population_body_resources(
             CResource::Memory(_)
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
-            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -20400,13 +20412,6 @@ fn prepare_contract_resource_transfer(
             }));
         };
         checked.selected_mutex_source = Some(std::sync::Arc::new((actual, source.clone())));
-    }
-    for required in &checked_required_resources {
-        if let Some(mutex) =
-            super::mutexes::missing_population_guard(caller_state, &required.fact, assumptions)
-        {
-            return Ok(Err(CRuntimeError::MissingMutexGuard { mutex }));
-        }
     }
     let helper_contract = match super::mutexes::helper_contracts::classify(interface) {
         Ok(contract) => contract,
@@ -22422,7 +22427,6 @@ fn counted_population_quantities(
             CResource::Memory(_)
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
-            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -23772,6 +23776,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
     pub(crate) state: CState,
     pub(crate) semantic_facts: Vec<Proposition>,
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
+    /// The checked opening delta used to choose the body's pointer spellings.
+    pub(crate) naming_facts: Vec<Proposition>,
 }
 
 /// Whether an undischarged proposition only says that an arithmetic
@@ -24420,8 +24426,8 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     // memory bounds. A proposed fold has no such authority: its quantities
     // must be proved nonnegative and actually consumed below.
     let entry_assumptions = assumptions;
-    let mut quantity_assumptions = assumptions.clone();
-    let mut quantity_facts = Vec::new();
+    let mut opening_assumptions = assumptions.clone();
+    let mut opening_facts = Vec::new();
     if unfold {
         for resource in body_specs {
             let CResourceQuantity::Count(quantity) = resource.quantity() else {
@@ -24434,7 +24440,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 &evaluation,
                 &evaluation,
                 resource,
-                &quantity_assumptions,
+                &opening_assumptions,
                 &mut budget,
             )
             .map_err(|_| "instance quantity guard evaluation exceeded its budget")?
@@ -24445,7 +24451,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             let value = evaluate_loop_effect_segment_value(
                 &evaluation,
                 quantity,
-                &quantity_assumptions,
+                &opening_assumptions,
                 "instance body quantity",
                 &mut budget,
             )
@@ -24461,11 +24467,64 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 ),
                 true,
             );
-            quantity_assumptions = quantity_assumptions.assume_proposition(fact.clone());
-            quantity_facts.push(fact);
+            opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
+            opening_facts.push(fact);
         }
     }
-    let assumptions = &quantity_assumptions;
+    // The exclusively owned parent already establishes these direct pointer
+    // aliases. Retain them before choosing the spelling of its memory body
+    // and child arguments, so opening and later closing the same arm agree.
+    // Restrict this early phase to bare pointer locals: it neither reads a
+    // child nor acquires any extra memory authority. A fold must prove its
+    // proposed body facts and must never assume them here.
+    if unfold && active && !body_children.is_empty() {
+        let early = selected
+            .map_or(&definition.facts, |arm| &arm.facts)
+            .iter()
+            .filter(|fact| match fact {
+                SpecProposition::Comparison {
+                    left: SpecExpression::CExpression(CExpression::Variable(left)),
+                    operator: CComparisonOperator::Equal,
+                    right: SpecExpression::CExpression(CExpression::Variable(right)),
+                } => {
+                    matches!(evaluation.locals.get(left), Some(CValue::Pointer(_)))
+                        && matches!(evaluation.locals.get(right), Some(CValue::Pointer(_)))
+                }
+                _ => false,
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let (clauses, conditions) = lower_selected_resource_body_clauses(
+            &evaluation,
+            &early,
+            selected.map(|arm| arm.variant.as_str()),
+            &integer_bindings,
+            &algebraic_bindings,
+            &opening_assumptions,
+            None,
+            &mut budget,
+        )?;
+        for fact in clauses
+            .into_iter()
+            .map(|clause| clause.proposition)
+            .chain(conditions)
+        {
+            opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
+            opening_facts.push(fact);
+        }
+        if let Some(arm) = selected {
+            for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
+                if let AlgebraicValue::C(value) = value
+                    && let Some(spelling) =
+                        arm_binding_program_spelling(value, &opening_assumptions)
+                {
+                    let ty = spelling.c_type();
+                    evaluation.locals.set_typed(name.clone(), spelling, ty);
+                }
+            }
+        }
+    }
+    let assumptions = &opening_assumptions;
     // A contained authority is exclusive custody, not a readable footprint.
     // Name it from its declared type; the fold below consumes the caller's
     // actual authority, and an unfold returns the one this instance holds.
@@ -24713,6 +24772,23 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             .try_compose_into_valid_context_delaying_normalization([folded.clone()], assumptions)
             .map_err(|_| "fold would duplicate instance ownership")?;
     }
+    // Body propositions retain their source bindings, including exact facts
+    // about model pointers. Only memory/child placement uses the early alias
+    // spelling; lowering reads still has that checked equality available.
+    if unfold
+        && active
+        && !body_children.is_empty()
+        && let Some(arm) = selected
+    {
+        for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
+            if let AlgebraicValue::C(value) = value {
+                let spelling = arm_binding_program_spelling(value, entry_assumptions)
+                    .unwrap_or_else(|| value.clone());
+                let ty = spelling.c_type();
+                evaluation.locals.set_typed(name.clone(), spelling, ty);
+            }
+        }
+    }
     evaluation.resources = if unfold {
         next.resources.clone()
     } else {
@@ -24720,7 +24796,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     };
     evaluation.resource_bindings = Some(std::sync::Arc::new(resource_bindings));
     let mut facts = body.observable_facts_assuming_valid(assumptions);
-    facts.extend(quantity_facts);
+    facts.extend(opening_facts.iter().cloned());
     for fact in body.facts() {
         let Some(range) = fact.memory_range() else {
             continue;
@@ -24874,6 +24950,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         state: next,
         semantic_facts,
         body_clauses,
+        naming_facts: opening_facts,
     })
 }
 
@@ -25483,7 +25560,7 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 ResourceFamily::Composite
                 | ResourceFamily::Token
                 | ResourceFamily::PopulationAuthority => true,
-                ResourceFamily::Instance | ResourceFamily::GuardedPopulation => false,
+                ResourceFamily::Instance => false,
             }
     })
 }
@@ -26863,7 +26940,6 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             CResource::Memory(_)
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
-            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -30335,7 +30411,6 @@ fn resource_clause_supply_with_fact(
                 CResource::Token { .. }
                 | CResource::PopulationAuthority(_)
                 | CResource::Instance(_)
-                | CResource::GuardedPopulation { .. }
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -31639,8 +31714,7 @@ fn evaluate_function_declared_resource_spec(
             name: name.to_string(),
             arguments: values.into_iter().map(AlgebraicValue::C).collect(),
         },
-        ResourceFamily::GuardedPopulation
-        | ResourceFamily::PopulationAuthority
+        ResourceFamily::PopulationAuthority
         | ResourceFamily::Memory
         | ResourceFamily::Instance
         | ResourceFamily::MutexGuard
@@ -31667,7 +31741,6 @@ fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
             | CResource::Token { .. }
             | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
-            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -32446,24 +32519,23 @@ fn function_outcome_from_body_with_resource_transfer(
     // Resource completion over an already completed outcome keeps its result.
     let value = if reestablish_population_invariants && function.return_aggregate_layout().is_some()
     {
-        let layout = function.return_aggregate_layout().expect("checked above");
-        if let CValue::Pointer(pointer) = &value
-            && aggregate_copy_reads_uninitialized(&state.memory, pointer.pointer(), layout)
-        {
-            return Ok((
-                CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
-                obligations,
-                None,
-            ));
+        match materialize_aggregate_return(&mut state, function, value) {
+            Ok(value) => value,
+            Err(AggregateReturnRefusal::UninitializedRead) => {
+                return Ok((
+                    CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+                    obligations,
+                    None,
+                ));
+            }
+            Err(AggregateReturnRefusal::InvalidValue) => {
+                return Ok((
+                    CFunctionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    obligations,
+                    None,
+                ));
+            }
         }
-        let Some(value) = materialize_aggregate_return(&mut state, function, value) else {
-            return Ok((
-                CFunctionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                obligations,
-                None,
-            ));
-        };
-        value
     } else {
         value
     };
@@ -33497,30 +33569,26 @@ pub(super) fn function_outcome_from_body(
                     obligations,
                 );
             };
-            let value = if let Some(layout) = function.return_aggregate_layout() {
-                // The return materializer copies the callee's aggregate into
-                // a caller-visible slot. Reading an unwritten field there is
-                // an uninitialized read, not a contract violation, so check
-                // the source before materializing.
-                if let CValue::Pointer(pointer) = &value
-                    && !pointer.is_null()
-                    && aggregate_copy_reads_uninitialized(&state.memory, pointer.pointer(), layout)
-                {
-                    return (
-                        CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
-                        obligations,
-                    );
+            let value = if function.return_aggregate_layout().is_some() {
+                match materialize_aggregate_return(&mut state, function, value) {
+                    Ok(value) => value,
+                    Err(AggregateReturnRefusal::UninitializedRead) => {
+                        return (
+                            CFunctionOutcome::UndefinedBehavior(
+                                CUndefinedBehavior::UninitializedRead,
+                            ),
+                            obligations,
+                        );
+                    }
+                    Err(AggregateReturnRefusal::InvalidValue) => {
+                        return (
+                            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                format!("{} returned an invalid struct value", function.name()),
+                            )),
+                            obligations,
+                        );
+                    }
                 }
-                let Some(value) = materialize_aggregate_return(&mut state, function, value) else {
-                    return (
-                        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
-                            "{} returned an invalid struct value",
-                            function.name()
-                        ))),
-                        obligations,
-                    );
-                };
-                value
             } else {
                 value
             };

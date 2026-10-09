@@ -462,7 +462,7 @@ pub(crate) fn canonical_c_memory_deep(memory: &CMemory) -> CMemory {
 
 fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
     let mut canonical = memory.clone();
-    let cells = canonical.cells.map_cells(
+    let cells = canonical.cells.map_cells_preserving_runs(
         |pointer, value| {
             let key = canonicalize_pointer_loads(pointer);
             let value = match value {
@@ -488,6 +488,34 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
             (key, value)
         },
         |_| None,
+        |run| {
+            // Numeric Load/Copy slots are minted by canonical_form_of_load,
+            // which returns a load variable for every typed memory load.
+            // Atomic-load canonicalization leaves those variables unchanged.
+            // A canonical base plus a constant slot shift is canonical too:
+            // slot_pointer and canonicalize_pointer_loads both use the same
+            // folding PointerOffsetTerm::add constructor. Source cells and
+            // derivation edges can vary across the run; neither is sampled.
+            matches!(
+                run.value_mode(),
+                crate::kernel::primitives::RunValueMode::Load
+                    | crate::kernel::primitives::RunValueMode::Copy { .. }
+            ) && matches!(
+                run.element_type(),
+                CType::Int8
+                    | CType::Int16
+                    | CType::Int32
+                    | CType::Int64
+                    | CType::Int128
+                    | CType::UInt8
+                    | CType::UInt16
+                    | CType::UInt32
+                    | CType::UInt64
+                    | CType::UInt128
+                    | CType::Float32
+                    | CType::Float64
+            ) && canonicalize_pointer_loads(run.base()) == *run.base()
+        },
     );
     canonical.cells = std::sync::Arc::new(cells);
     let union_cells = std::mem::take(&mut canonical.union_cells);
@@ -6991,5 +7019,132 @@ mod opaque_pointer_frame_tests {
             .clone()
             .store(field, CValue::pointer(argument));
         assert!(prove_c_condition_fact_transport(&source, &changed, &assumptions).is_none());
+    }
+}
+
+#[cfg(test)]
+mod canonical_numeric_run_tests {
+    use super::*;
+    use crate::kernel::primitives::{CellRun, IndexIntervals, RunValueMode};
+
+    #[test]
+    fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(crate::kernel::Variable(7_629_000));
+        for element_type in [
+            CType::Int8,
+            CType::UInt8,
+            CType::Int16,
+            CType::UInt16,
+            CType::Int32,
+            CType::UInt32,
+            CType::Int64,
+            CType::UInt64,
+            CType::Int128,
+            CType::UInt128,
+            CType::Float32,
+            CType::Float64,
+        ] {
+            let width = element_type.byte_width();
+            // A retained observable cell deliberately defeats the generic
+            // uniform-source representative argument, even though every
+            // minted numeric run value remains an atomic load variable.
+            let source = intern_c_memory(
+                CMemory::new().store(base.clone(), CValue::UInt8(Bitvector32Term::Constant(7))),
+            );
+            for mode in [
+                RunValueMode::Load,
+                RunValueMode::Copy {
+                    source_base: base.offset_by_bytes(width),
+                },
+            ] {
+                let mut costs = Vec::new();
+                for size in [16, 64, 4096, 22208, 1048576] {
+                    let mut holes = IndexIntervals::default();
+                    holes.insert(3);
+                    let run = CellRun::new_with_mode(
+                        base.clone(),
+                        width,
+                        element_type,
+                        size,
+                        source.clone(),
+                        mode.clone(),
+                        holes,
+                    );
+                    let mut memory = CMemory::new();
+                    std::sync::Arc::make_mut(&mut memory.cells).add_run(run.clone());
+                    let (canonical, work) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            canonical_c_memory_deep(&memory)
+                        });
+                    assert_eq!(canonical, memory);
+                    for index in [0, 1, size - 1] {
+                        let value = run.value(index);
+                        let bits = match &value {
+                            CValue::Int8(bits)
+                            | CValue::UInt8(bits)
+                            | CValue::Int16(bits)
+                            | CValue::UInt16(bits)
+                            | CValue::Int32(bits)
+                            | CValue::UInt32(bits)
+                            | CValue::Int64(bits)
+                            | CValue::UInt64(bits)
+                            | CValue::Int128(bits)
+                            | CValue::UInt128(bits)
+                            | CValue::Float32(bits)
+                            | CValue::Float64(bits) => bits,
+                            _ => unreachable!("numeric cell"),
+                        };
+                        assert_eq!(canonicalize_atomic_loads(bits), *bits);
+                        assert_eq!(canonical.cells.get(&run.slot_pointer(index)), Some(value));
+                    }
+                    assert!(canonical.cells.get(&run.slot_pointer(3)).is_none());
+                    costs.push((size, work));
+                }
+                assert!(
+                    costs.iter().all(|(_, work)| *work <= costs[0].1 + 128),
+                    "{costs:?}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn deep_canonicalization_rewrites_noncanonical_numeric_run_addresses() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index_cell = Pointer {
+            block: "canonical-index".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = intern_c_memory(CMemory::new().with_block("canonical-index", 4).store(
+            index_cell.clone(),
+            CValue::Int32(Bitvector32Term::Constant(8)),
+        ));
+        let base = Pointer {
+            block: "canonical-run".into(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::MemoryLoad(
+                    source.clone(),
+                    Box::new(index_cell),
+                    LoadKind::Bits32,
+                )),
+                byte_width: 1,
+            },
+        };
+        let canonical_base = canonicalize_pointer_loads(&base);
+        assert_ne!(canonical_base, base);
+        let mut holes = IndexIntervals::default();
+        holes.insert(3);
+        let run = CellRun::new(base, 1, CType::UInt8, 8, source, holes);
+        let mut memory = CMemory::new();
+        std::sync::Arc::make_mut(&mut memory.cells).add_run(run.clone());
+        let canonical = canonical_c_memory_deep(&memory);
+        for index in 0..8 {
+            let pointer = canonical_base.offset_by_bytes(index);
+            if index == 3 {
+                assert!(canonical.cells.get(&pointer).is_none());
+            } else {
+                assert_eq!(canonical.cells.get(&pointer), Some(run.value(index)));
+            }
+        }
     }
 }

@@ -198,9 +198,16 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   cells of the arm a section selects for a held instance; an unfold exposes
   the same cells one layer deeper and must adopt the same names, so the cell
   layout and element types are the ones already chosen there rather than a
-  second convention. Arm selection uses the facts published by the rewrite,
-  but pointer spellings use its entry context: a newly exposed pointer alias
-  must not rename a scalar cell after the kernel has recorded its body facts.
+  second convention. Arm selection uses the facts published by the rewrite.
+  Pointer spelling uses the entry context plus the kernel's checked opening
+  delta. For a parent with named children, that delta includes its direct
+  pointer equalities between bare local names, established before naming the
+  memory body and child arguments. Pure body facts retain their model bindings.
+  The surface materializer uses the same delta; facts introduced later must
+  not rename a scalar cell after its body equation was recorded. A fold still
+  has to prove its proposed body facts
+  (`mdtests/unfold_parent_alias_before_child_read.md` and
+  `mdtests/unfold_parent_alias_does_not_assume_fold_facts.md`).
   Later reads use the indexed footprint coordinates of an existing cell,
   including reads through a C parameter newly equated with a model pointer.
   Exact cells retain precedence, and this coordinate choice grants neither
@@ -246,6 +253,13 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   `variable_substitution_visits_each_snapshot_once_per_rewrite`, and
   `click profile` charges the work to the named operation
   `substitution: snapshot rewrite`.
+
+Deep memory canonicalization preserves numeric seeded and snapshot-copy runs
+whose bases already have canonical form. Each numeric slot is minted as an
+atomic load variable, which this normalization leaves unchanged; the source
+need not be uniform. View adjacency likewise reads live run intervals as
+contiguous byte regions, keeping holes excluded. Both operations depend on
+stored representations rather than the numeric length of the range.
 
 ## Canonical at creation
 
