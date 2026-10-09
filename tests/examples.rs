@@ -512,7 +512,10 @@ fn erase_source_refuses_replacement(
                 .message()
                 .contains("(close_erase_spine_link precondition)")
             || (error.message().contains("have body tactic")
-                && error.message().contains("could not establish"))
+                && (error.message().contains("could not establish")
+                    || error.message().contains(
+                        "`normalize using` goal did not normalize to true using the listed conditions",
+                    )))
             || error
                 .message()
                 .contains("unclosed goal: new->__rb_parent_color == old(old->__rb_parent_color)",)
@@ -1880,5 +1883,85 @@ fn rbtree_rotate_set_parents_requires_root_replacement() {
         "WRITE_ONCE(root->rb_node, new);",
         "WRITE_ONCE(root->rb_node, old);",
         1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_left_requires_parent_child_link() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_left.click",
+        "WRITE_ONCE(parent->rb_right, tmp2);",
+        "WRITE_ONCE(parent->rb_right, parent);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_left_requires_sibling_child_link() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_left.click",
+        "WRITE_ONCE(sibling->rb_left, parent);",
+        "WRITE_ONCE(sibling->rb_left, 0);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_left_requires_far_child_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_left.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, sibling, RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_left_requires_parent_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_left.click",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_BLACK);",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_right_requires_parent_child_link() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_right.click",
+        "WRITE_ONCE(parent->rb_left, tmp2);",
+        "WRITE_ONCE(parent->rb_left, parent);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_right_requires_sibling_child_link() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_right.click",
+        "WRITE_ONCE(sibling->rb_right, parent);",
+        "WRITE_ONCE(sibling->rb_right, 0);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_right_requires_far_child_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_right.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, sibling, RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: outer-red rotation verifies a whole sidecar"]
+fn rbtree_erase_color_outer_right_requires_parent_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_outer_right.click",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_BLACK);",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_RED);",
     );
 }

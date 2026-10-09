@@ -1213,14 +1213,23 @@ parent-consistent whole-root model with unchanged in-order contents. Structural
 context descent checks every continuing back edge. All 39 audit sites and
 four mutation checks pass. `rbtree_rotate_set_parents.click` verifies the
 shared incoming-link and packed-word updates for rotations at any tree
-position, with 35 passing audit sites. The pinned C keeps every case.
-Left-focus rotation cases remain.
+position, with 35 passing audit sites. `rbtree_erase_color_outer_left.click`
+now verifies the case-4 left rotation for an empty deficit, empty near child,
+and red far leaf under arbitrary outer contexts and either parent color. It
+returns the exact balanced, parent-consistent root with unchanged in-order
+contents. All 97 expansion-audit sites and four link/color mutation checks
+pass. The pinned C keeps every case. Other left-focus rotation shapes and
+rotations after deficit propagation remain.
 Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 color-flip propagation proof already covers both orientations, including
-alternating sides. Mirrored rotations and the complete `rb_erase` wrapper
-remain; the exit model is red-black, with mutation checks. Depends on 12.
+alternating sides. `rbtree_erase_color_outer_right.click` now verifies the
+mirrored case-4 rotation for an empty deficit, empty near child, and red far
+leaf, with the same exact balanced-root, parent, and in-order guarantees.
+All 97 audit sites and four mirrored link/color mutation checks pass.
+Other mirrored rotation shapes, rotations after propagation, and the complete
+`rb_erase` wrapper remain. Depends on 12.
 
 ### Augmented
 
