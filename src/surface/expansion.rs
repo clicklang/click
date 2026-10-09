@@ -2014,11 +2014,32 @@ fn rust_impl_method<'a>(
         };
         let close = matching_delimiter(tokens, open, "{", "}")?;
         let impl_type = tokens[open - 1].text.as_str();
-        if let Some(method) = name
+        // A trait with a type argument, `impl MulAssign<u32> for Type`,
+        // names its method `Type_mul_assign_u32`: the method's own name is
+        // then a prefix of what follows the type. Several blocks may
+        // implement for one type, so the block has to hold the method.
+        let has_argument = tokens[index..open].iter().any(|token| token.text == "<");
+        if let Some(rest) = name
             .strip_prefix(impl_type)
             .and_then(|rest| rest.strip_prefix('_'))
         {
-            return Ok(Some((open + 1..close, method)));
+            for at in open + 1..close {
+                if tokens[at].text != "fn" {
+                    continue;
+                }
+                let Some(method) = tokens.get(at + 1).map(|token| token.text.as_str()) else {
+                    continue;
+                };
+                let named = if has_argument {
+                    rest.strip_prefix(method)
+                        .is_some_and(|suffix| suffix.starts_with('_'))
+                } else {
+                    rest == method
+                };
+                if named {
+                    return Ok(Some((open + 1..close, &rest[..method.len()])));
+                }
+            }
         }
         index = close + 1;
     }
@@ -3509,6 +3530,33 @@ fn locate_source_tactic_file(
     }
 }
 
+/// The suffix a trait's type argument gives its methods' names, read from
+/// the tokens of an `impl Trait<Arg> for Type` header as the parser reads it
+/// (`parse_rust_trait_argument`): `<u32>` is `u32`, `<&Lanes>` is
+/// `ref_Lanes`, and a record by value is `value_<length><name>`.
+fn rust_trait_argument_suffix(header: &[SourceToken], impl_type: &str) -> Option<String> {
+    let open = header.iter().position(|token| token.text == "<")?;
+    let close = header.iter().position(|token| token.text == ">")?;
+    let argument: Vec<&str> = header
+        .get(open + 1..close)?
+        .iter()
+        .map(|token| token.text.as_str())
+        .collect();
+    let (reference, mutable, name) = match argument.as_slice() {
+        [name] => (false, false, *name),
+        ["&", name] => (true, false, *name),
+        ["&", "mut", name] => (true, true, *name),
+        _ => return None,
+    };
+    let name = if name == "Self" { impl_type } else { name };
+    let scalar = matches!(name, "i32" | "u8" | "u16" | "u32" | "usize" | "bool");
+    Some(match (reference, scalar) {
+        (false, true) => name.to_string(),
+        (false, false) => format!("value_{}{name}", name.len()),
+        (true, _) => format!("ref_{}{name}", if mutable { "mut_" } else { "" }),
+    })
+}
+
 /// Index top-level declaration bodies once. Proof bodies are skipped as a
 /// whole, so a use of a name inside a proof never shadows its declaration.
 fn declaration_source_index(
@@ -3517,13 +3565,13 @@ fn declaration_source_index(
     let mut result = std::collections::HashMap::new();
     let mut candidate = None;
     // Inside a Rust `impl` block a method `name` is the function `Type_name`.
-    let mut impl_block: Option<(String, usize)> = None;
+    let mut impl_block: Option<(String, Option<String>, usize)> = None;
     let mut index = 0;
     while index < tokens.len() {
         crate::instrumentation::record_deterministic_work(1);
         if impl_block
             .as_ref()
-            .is_some_and(|(_, close)| index >= *close)
+            .is_some_and(|(_, _, close)| index >= *close)
         {
             impl_block = None;
         }
@@ -3531,7 +3579,9 @@ fn declaration_source_index(
             "impl" if impl_block.is_none() && candidate.is_none() => {
                 if let Some(open) = (index..tokens.len()).find(|at| tokens[*at].text == "{") {
                     let close = matching_delimiter(tokens, open, "{", "}")?;
-                    impl_block = Some((tokens[open - 1].text.clone(), close));
+                    let impl_type = tokens[open - 1].text.clone();
+                    let suffix = rust_trait_argument_suffix(&tokens[index..open], &impl_type);
+                    impl_block = Some((impl_type, suffix, close));
                     index = open + 1;
                     continue;
                 }
@@ -3551,7 +3601,10 @@ fn declaration_source_index(
                 let body_close = matching_delimiter(tokens, index, "{", "}")?;
                 if let Some(name) = candidate.take() {
                     let name = match &impl_block {
-                        Some((impl_type, _)) => format!("{impl_type}_{name}"),
+                        Some((impl_type, Some(suffix), _)) => {
+                            format!("{impl_type}_{name}_{suffix}")
+                        }
+                        Some((impl_type, None, _)) => format!("{impl_type}_{name}"),
                         None => name,
                     };
                     result.insert(

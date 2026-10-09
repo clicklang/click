@@ -270,7 +270,10 @@ fn empty(bytes: &[u8]) -> bool {
 A method's contract is written in an `impl` block, `impl Type { ... }` or
 `impl Trait for Type { ... }`, and its receiver is `self`, `&self` or
 `&mut self`. It is the contract of the function the C-shaped spelling calls
-`Type_name`:
+`Type_name`. A trait with a type argument names its methods by that argument
+too, as the importer does: the method of `impl MulAssign<u32> for Lanes` is
+`Lanes_mul_assign_u32`, and of `impl AddAssign<&Lanes> for Lanes`,
+`Lanes_add_assign_ref_Lanes`.
 
 <!-- verified-example: tests/fixtures/rust-verification/impl_blocks.click -->
 ```click

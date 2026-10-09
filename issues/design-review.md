@@ -80,9 +80,9 @@ Remaining:
   Lacker's agreement.
 - Refuse `->` and the C-shaped signature for a Rust source, with the
   spelling to write. Not ready. The plain functions of the sidecars under
-  `design/charon-trial` take Rust signatures as of 2026-10-08. Still
-  C-shaped: methods written as free functions there (`Guard_drop`,
-  `U32X4_mul_assign_u32`), which need `impl` blocks; functions named by a
+  `design/charon-trial` take Rust signatures as of 2026-10-08, and their
+  methods are `impl` blocks, operator traits included
+  (`impl MulAssign<u32> for U32X4`). Still C-shaped: functions named by a
   mangled path (`__rust_q_I6_adler2_..._mul_assign_u32`,
   `__rust_q_I4_quad_I4_load`), for which the Rust grammar has no spelling;
   the five frozen originals, which are hash-pinned and stay; and about 90

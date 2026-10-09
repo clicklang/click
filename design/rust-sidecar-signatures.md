@@ -154,7 +154,9 @@ impl Drop for Guard {
 
 A method is declared inside `impl Type` or `impl Trait for Type` and its
 receiver is `self`, `&self` or `&mut self`. `Guard_drop` stops being a name
-an author writes. Tuple fields are `.0`, `.1`.
+an author writes. Tuple fields are `.0`, `.1`. An operator trait carries its
+type argument, `impl MulAssign<u32> for U32X4`, which is how the importer
+tells the implementations for one type apart.
 
 ### 6. Types and literals inside contracts
 

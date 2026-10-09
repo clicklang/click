@@ -4634,11 +4634,54 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
          views *bytes; ensures result == bytes[index]; } by { execute(); simp(); }",
     )
     .expect("the Rust spelling parses");
+    // A trait's type argument names the method as the importer does:
+    // a scalar by its name, a reference as `ref_`, a record as `value_`.
+    for (header, method, name, parameter, c_parameter) in [
+        (
+            "MulAssign<u32>",
+            "mul_assign",
+            "Lanes_mul_assign_u32",
+            "rhs: u32",
+            "uint32 rhs",
+        ),
+        (
+            "AddAssign<&Lanes>",
+            "add_assign",
+            "Lanes_add_assign_ref_Lanes",
+            "other: &Lanes",
+            "const struct Lanes* other",
+        ),
+        (
+            "AddAssign<&mut Lanes>",
+            "add_assign",
+            "Lanes_add_assign_ref_mut_Lanes",
+            "other: &mut Lanes",
+            "struct Lanes* other",
+        ),
+    ] {
+        assert_eq!(
+            parser::parse(&format!(
+                "verifying \"l.rs\"; impl {header} for Lanes {{ fn {method}(&mut self, {parameter}) {{ \
+                 ensures 0 == 0; }} by {{ execute(); simp(); }} }}"
+            ))
+            .unwrap_or_else(|error| panic!("{header}: {error:?}")),
+            parser::parse(&format!(
+                "verifying \"l.rs\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
+                 ensures 0 == 0; }} by {{ execute(); simp(); }}"
+            ))
+            .expect("the C-shaped spelling parses"),
+            "{header}"
+        );
+    }
     // An `impl` block holds `fn` contracts and nothing else, and is Rust.
     for (source, expected) in [
         (
             "verifying \"g.rs\"; impl Guard { resource r() { } }",
             "an `impl` block holds `fn` contracts",
+        ),
+        (
+            "verifying \"g.rs\"; impl MulAssign<u32> { fn mul_assign(&mut self, rhs: u32) { ensures 0 == 0; } by { execute(); simp(); } }",
+            "a trait with a type argument is implemented `for` a type",
         ),
         (
             "verifying \"g.c\"; impl Guard { fn drop(&mut self) { ensures 0 == 0; } by { execute(); simp(); } }",

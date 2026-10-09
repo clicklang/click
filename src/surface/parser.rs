@@ -487,6 +487,9 @@ struct Parser {
     /// The type of the `impl` block being parsed: its methods are the
     /// functions `Type_name`, and `self` is their receiver.
     rust_impl_type: Option<String>,
+    /// The suffix a trait's type argument gives its methods' names, inside
+    /// `impl Trait<Arg> for Type`: `MulAssign<u32>` names `Type_mul_assign_u32`.
+    rust_impl_method_suffix: Option<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -804,6 +807,7 @@ impl Parser {
             rust_slice_params: BTreeSet::new(),
             wide_index_params: BTreeSet::new(),
             rust_impl_type: None,
+            rust_impl_method_suffix: None,
             tokens,
             positions,
             matching_parentheses,
@@ -3476,7 +3480,10 @@ impl Parser {
                         self.position += 1;
                     }
                 }
-                format!("{impl_type}_{name}")
+                match &self.rust_impl_method_suffix {
+                    Some(suffix) => format!("{impl_type}_{name}_{suffix}"),
+                    None => format!("{impl_type}_{name}"),
+                }
             }
             None => name,
         };
@@ -3577,12 +3584,32 @@ impl Parser {
     ) -> Result<(), ClickError> {
         self.expect_ident_spelling("impl")?;
         let mut impl_type = self.expect_ident("type name")?;
+        let suffix = self.parse_rust_trait_argument()?;
         if self.peek_ident() == Some("for") {
             self.position += 1;
             impl_type = self.expect_ident("type name")?;
+        } else if suffix.is_some() {
+            return Err(self.error("a trait with a type argument is implemented `for` a type"));
         }
         self.expect(Token::LBrace)?;
+        let suffix = suffix.map(|(reference, mutable, name)| {
+            let name = if name == "Self" {
+                impl_type.clone()
+            } else {
+                name
+            };
+            let scalar = matches!(
+                name.as_str(),
+                "i32" | "u8" | "u16" | "u32" | "usize" | "bool"
+            );
+            match (reference, scalar) {
+                (false, true) => name,
+                (false, false) => format!("value_{}{name}", name.len()),
+                (true, _) => format!("ref_{}{name}", if mutable { "mut_" } else { "" }),
+            }
+        });
         let previous = self.rust_impl_type.replace(impl_type);
+        let previous_suffix = std::mem::replace(&mut self.rust_impl_method_suffix, suffix);
         let mut result = Ok(());
         while self.peek() != Some(&Token::RBrace) {
             if self.peek_ident() != Some("fn") {
@@ -3598,9 +3625,37 @@ impl Parser {
             }
         }
         self.rust_impl_type = previous;
+        self.rust_impl_method_suffix = previous_suffix;
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
+    }
+
+    /// The type argument of an operator trait, `<u32>`, `<&Lanes>` or
+    /// `<Self>`: whether it is a reference, whether that is mutable, and
+    /// the type's name. The caller turns it into the suffix the Rust
+    /// importer gives the implementation's methods (`rhs_name` in
+    /// `src/languages/rust/charon/assignment_operators.rs`): a scalar by its
+    /// name, a record by value as `value_<length><name>`, and a reference as
+    /// `ref_` or `ref_mut_` and what it refers to. `None`, with nothing
+    /// consumed, for a trait without one.
+    #[inline(never)]
+    fn parse_rust_trait_argument(&mut self) -> Result<Option<(bool, bool, String)>, ClickError> {
+        if self.peek() != Some(&Token::LessThan) {
+            return Ok(None);
+        }
+        self.position += 1;
+        let reference = self.peek() == Some(&Token::Amp);
+        if reference {
+            self.position += 1;
+        }
+        let mutable = reference && self.peek_ident() == Some("mut");
+        if mutable {
+            self.position += 1;
+        }
+        let name = self.expect_ident("type name")?;
+        self.expect(Token::GreaterThan)?;
+        Ok(Some((reference, mutable, name)))
     }
 
     /// A method's receiver: `&self`, `&mut self` or `self`, as the type of
