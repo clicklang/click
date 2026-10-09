@@ -131,13 +131,10 @@ Remaining:
   (Lacker said to build it on 2026-10-08): it bridges the listed premises
   and the goal to Integer order, shows each sum and difference stays in
   range, and expands to those `apply` steps. Left: equality goals and
-  premises at either width; a goal that needs three order premises at
-  once, since the Integer step underneath combines two; and a `long` loop
-  cannot be ranked, because a `decreases` measure must hold an `int32` or
-  an unsigned value ("termination measure variable `length` does not hold
-  an int32 or unsigned integer value"). Regression for the last: the loop
-  of `mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md`
-  with a `long` index and `decreases length - i`.
+  premises at either width; and a goal that needs three order premises
+  at once, since the Integer step underneath combines two. A `long` loop
+  is ranked by an `int64` measure
+  (`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`).
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
   regressions. Lacker said to go ahead on 2026-10-08.
