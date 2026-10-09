@@ -3,8 +3,7 @@
 Status: named lifecycle operations, typed protected-state transport, and
 same-thread acquiring/releasing helpers are implemented for the subset below.
 Named storage transfer and destruction's named state output remain proposals.
-The `issues/concurrency-demo.md` roadmap records the current
-milestones and remaining work.
+`issues/concurrency-and-atomics.md` records the remaining concurrency work.
 
 Mutexes should behave like resources described by ordinary Click contracts.
 Their runtime implementation needs trusted rules, but their proof inputs and
