@@ -1370,6 +1370,12 @@ fn abstract_c_state_for_join_across_with_policy(
     // history is traversed here.
     if sibling_states
         .iter()
+        .any(|sibling| sibling.aggregate_destination != state.aggregate_destination)
+    {
+        return Err("construction destination differs across branch join".to_string());
+    }
+    if sibling_states
+        .iter()
         .any(|sibling| sibling.loan_ledger != state.loan_ledger)
     {
         return Err("stable-view loan state differs across branch join".to_string());
@@ -2280,7 +2286,7 @@ pub fn c_declare_aggregate(name: impl Into<String>, layout: CAggregateLayout) ->
     CStatement::DeclareAggregate {
         name: name.into(),
         layout,
-        construction: false,
+        kind: CAggregateDeclarationKind::Local,
     }
 }
 
@@ -2291,7 +2297,20 @@ pub fn c_begin_aggregate_construction(
     CStatement::DeclareAggregate {
         name: name.into(),
         layout,
-        construction: true,
+        kind: CAggregateDeclarationKind::Constructor,
+    }
+}
+
+/// Allocates fresh owned aggregate storage without initializing its fields.
+/// This grants authority over the allocation, not over any future pointees.
+pub fn c_allocate_aggregate_destination(
+    name: impl Into<String>,
+    layout: CAggregateLayout,
+) -> CStatement {
+    CStatement::DeclareAggregate {
+        name: name.into(),
+        layout,
+        kind: CAggregateDeclarationKind::ConstructionDestination,
     }
 }
 
@@ -2305,6 +2324,12 @@ pub fn c_copy_aggregate(
         source,
         layout,
     }
+}
+
+/// Retire automatic storage at a source-language lifetime boundary. Frontends
+/// supply the objects whose lifetimes end; this grants no cleanup authority.
+pub fn c_end_automatic_lifetimes(names: Vec<String>) -> CStatement {
+    CStatement::EndAutomaticLifetimes { names }
 }
 
 pub fn c_initialize_scalar_array(
@@ -6255,6 +6280,12 @@ pub(crate) fn population_observations_equal(left: &CState, right: &CState) -> bo
 /// executions: an artifact is reused when its retained authority is implied
 /// by the exact contract entry. Certification never executes the body
 /// itself; with no reusable artifact it produces no paths and the reason.
+///
+/// `state` and `arguments` specify the entry being checked. This operation
+/// does not generate generic inputs from the source signature. Callers that
+/// intend to package reusable function rules must supply an entry representing
+/// the declared input domain, as Surface's `initial_call_state` does. See
+/// `docs/internals/kernel.md`, "Source obligations and checked evidence".
 #[allow(clippy::too_many_arguments)]
 pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
     state: CState,
@@ -6278,6 +6309,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
 }
 
 /// Certifies an opaque contract with kernel-issued pure theorem authorities.
+/// The entry-construction responsibility is the same as for
+/// [`prove_c_function_contract_execution_paths_with_checked_artifacts`].
 #[allow(clippy::too_many_arguments)]
 pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
     state: CState,

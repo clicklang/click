@@ -3844,6 +3844,7 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
         CStatement::Break => "break".to_string(),
         CStatement::Continue => "continue".to_string(),
         CStatement::Goto { target } => format!("goto target({})", target.0),
+        CStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
         CStatement::ForStep {
             continue_after: true,
             ..

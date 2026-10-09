@@ -2643,6 +2643,11 @@ fn observable_heap_metadata_matches_for_load(
         observable,
     ) && observable_entries_match(
         candidates,
+        &left.heap.uninitialized_objects,
+        &right.heap.uninitialized_objects,
+        |candidate| candidate.block.observable_by_load(&pointer.block),
+    ) && observable_entries_match(
+        candidates,
         left.heap.initialized.as_map(),
         right.heap.initialized.as_map(),
         observable,

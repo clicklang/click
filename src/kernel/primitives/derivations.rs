@@ -1768,6 +1768,7 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
         }
         match statement {
             CStatement::Skip
+            | CStatement::EndAutomaticLifetimes { .. }
             | CStatement::Break
             | CStatement::Continue
             | CStatement::Goto { .. }

@@ -456,9 +456,28 @@ construction with trivial destruction and no base subobjects. Sidecars retain
 leaves, through the shared aggregate return model and checked nominal layouts.
 Each copied leaf needs initialized read authority. Copying a pointer field does
 not transfer ownership of its pointees or grant permission to read them. Copies
-complete before automatic cleanup. User-defined copies, moves, returns of whole
-automatic records, prvalue record construction and aggregate-return calls remain outside this slice. Artifact
-schema 46 requires an explicit refresh of earlier locks.
+complete before automatic cleanup. User-defined copies, moves and named returns
+of automatic records remain outside the copy-return slice.
+
+Bounded prvalue construction returns, aggregate-call forwarding and initialization
+from such a call use the shared construction mode. The importer recomputes an
+eligibility restriction over constructor and helper bodies: their stored values
+depend on evaluated by-value arguments and constants, without aliasable memory
+reads, storage-address escape or runtime effects. Embedded constructors and pure
+helpers satisfy the same restriction. Ordinary checked helper contracts remain
+required. This establishes field-value equivalence across C++20's permitted
+trivial result copies; a prvalue category alone is not a no-copy guarantee.
+Native result types and contracts are unchanged, and incomplete construction is
+refused. Address-sensitive returned constructors, nontrivial destruction, NRVO
+and mixed copy/construction return branches remain outside this profile.
+
+Assignment from an admitted construction-return call requires Clang-resolved
+trivial copy assignment and an exact nominal RHS temporary lasting for the full
+expression. Click constructs into distinct raw RHS storage, copies into the live
+LHS and retires the RHS. References into separate backing remain usable only
+under the caller's existing authority. Move assignment, user-defined assignment
+and other materialization shapes remain refused. Artifact schema 52 requires an
+explicit refresh of earlier locks.
 
 Taking the address of a supported int32 record field uses its checked Clang
 projection and the shared storage-lifetime checks. It preserves const
@@ -466,8 +485,8 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 49 requires refreshing earlier
-locks. Returned construction destinations remain the next shared-model work.
+rebasing them to a new object. Artifact schema 52 requires refreshing earlier
+locks. Returned constructors use the narrower eligibility restriction above.
 
 Native int32 reference results and locals can also bind supported record fields
 through that same checked field-address path. Const qualification is preserved;
@@ -475,8 +494,9 @@ a returned alias grants no backing authority. An external backing reference
 can remain readable and writable after a descriptor's destructor clears its
 pointer field, when the caller retains the corresponding backing authority.
 A reference into a destroyed automatic object's own field cannot be read.
-These lifetime regressions use synthetic descriptors, rather than claiming
-support for construction of pinned `std::span` descriptors.
+The pinned `std::span<int>` pointer/count constructor also has ordinary,
+expanded and retained coverage through native contracts; the returned `first`
+and `SpanPopBack` path remains pending.
 
 Literal `nullptr` and integer zero converted to mutable `int*`, implicitly or
 through an explicit cast, lower to the shared C null pointer value. Returning
@@ -484,7 +504,7 @@ or storing that value needs no pointee authority and grants none. Dereferencing
 it remains subject to the shared live-storage and access checks. Same-type
 explicit pointer casts preserve identity. Other pointee types, nonliteral
 `nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
-These nodes use artifact schema 49; refresh earlier locks.
+These nodes use artifact schema 52; refresh earlier locks.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
@@ -920,8 +940,9 @@ in its configured logical source. Each reachable function owns one source:
 parameters, statements, expressions, call sites and projected uses must stay
 within it, while type-alias declarations may come from any locked declaration
 source. Every reachable body is exported, validated and verified through its
-ordinary sidecar contract. Dependency-header constructors/destructors and constant
-definitions and executable spans crossing source files remain unsupported.
+ordinary sidecar contract. The bounded nonthrowing constructor profile also
+admits locked headers. Dependency-header destructors, constant definitions and
+executable spans crossing source files remain unsupported.
 
 For `if constexpr`, pinned Clang chooses the instantiated arm in constant
 evaluation context. The artifact retains an ordinary constant Boolean `if`,
@@ -931,6 +952,10 @@ Boolean conversion. Discarded code contributes no runtime calls, accesses,
 or cleanup. A selected unsupported arm fails import. Ordinary `if` statements
 continue to import both arms. Return validation checks the reachable arm of a
 closed constant Boolean condition and both arms of an unknown condition.
+Empty statements and successful nondependent `static_assert` declarations
+contribute no runtime operations. Pinned Clang checks the assertions, and their
+source remains in the locked import closure; dependent or failed assertions
+are never discarded by this rule.
 
 The `template-instances` fixture checks modular callers, receiver authority,
 framing, false contracts, same-width type identities, Boolean substitution,
@@ -977,8 +1002,8 @@ address. The root's constness controls binding to mutable references, including
 implicit method receivers; it cannot be discarded by projecting a mutable field.
 Callee contracts require authority at the selected subobject or scalar leaf and
 preserve sibling frames. Plain scalar locals, temporary objects, arbitrary record
-pointers, inherited subobjects and automatic objects with embedded records remain
-outside this reference-call slice.
+pointers and inherited subobjects remain outside this reference-call slice.
+Automatic embedded construction uses the constructor profile below.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one
@@ -989,10 +1014,36 @@ Clang layout as kernel stack memory before applying typed field stores. Later
 by reference; trivial scope exit needs no destructor action.
 
 The `constructor-local` fixture permits that one automatic object to use one
-public, explicit, non-default `noexcept` constructor. Its member-initializer
+public, non-default `noexcept` constructor. The selected constructor may be
+explicit, non-explicit, or conditionally explicit: Clang has already resolved
+the direct invocation. Its member-initializer
 list must initialize every field in declaration order; the constructor body
 and its implicit call at the declaration are both lowered and verified through
-the ordinary modular call rules.
+the ordinary modular call rules. Embedded record fields with trivial destruction
+can use their own resolved constructors in that same ordered initializer prefix.
+Each child call uses its exact field address and native contract; it neither
+resizes the parent allocation nor initializes siblings. Repeated initialization
+outside the prefix, mismatched nominal constructor targets, base construction,
+and nontrivial embedded destruction remain refused. Constructor proof entries
+describe unwritten object footprints without fixing their containing allocation's
+extent. Ordinary, expanded and retained checks cover an automatic descriptor
+with a pointer field and a nested uint64 extent while preserving backing memory.
+A nested self-pointer regression also constructs a child at a nonzero parent
+offset and reads through the pointer to that child's own field.
+
+Constructor bodies may come from declared, locked header dependencies. Scalar
+member initializers can call nonthrowing observers through their checked
+read-only contracts; lowering captures the call result before storing the
+field. Exception-enabled normal-only imports permit these local objects when
+destruction is trivial. Throwing construction, header destructor bodies, and
+nested calls in constructor arguments remain outside this slice.
+
+The unchanged pinned libstdc++ `std::span<int>` pointer/count constructor now
+verifies through these ordinary contracts, including `std::to_address`, its
+compile-time assertion, and the embedded dynamic extent constructor. Offline
+ordinary, expanded and retained checks keep the native uint64 count and the
+accepted `1 <= count <= 1,073,741,823` backing-range profile. Returned
+construction and full-expression temporary lowering remain separate work.
 
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact

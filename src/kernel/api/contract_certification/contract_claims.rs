@@ -87,6 +87,7 @@ pub(crate) fn c_checked_function_proposition_with_reason(
             && completed.result.as_ref() == value
             && completed.state.memory() == state.memory()
             && completed.state.locals() == state.locals()
+            && completed.state.aggregate_destination == state.aggregate_destination
     };
     // Resource/population representation can change at exit. Aggregate return
     // completion can also retain the body's sparse block layout, while the
@@ -2725,6 +2726,11 @@ pub fn c_verified_function_contract_claim(
 
 /// Packages an opaque rule only after every recorded contract claim has a
 /// certificate for this exact function.
+/// This checks claim coverage and function identity; it does not reconstruct
+/// the symbolic entry chosen by the caller of contract certification. Reusable
+/// rules require certification at an entry representing the declared input
+/// domain. See `docs/internals/kernel.md`, "Source obligations and checked
+/// evidence".
 pub fn c_verified_function_rule(
     function: CFunction,
     proofs: &[CVerifiedFunctionContractClaim],
@@ -2766,6 +2772,11 @@ pub fn c_verified_function_rule(
 /// kernel, but no body-safety or postcondition proof is claimed for it.
 pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunctionRule> {
     (!function.is_program_entry()
+        && function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Copy
+        && function
+            .contract_interface()
+            .construction_parameter()
+            .is_none()
         && function.opaque_contract_supported()
         && !function.contract_claims().is_empty()
         && function_contract_claims_are_complete(&function))

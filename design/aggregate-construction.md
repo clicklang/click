@@ -2,15 +2,66 @@
 
 This is the implementation contract for
 [shared aggregate construction](../issues/aggregate-construction-design.md).
-Destination-aware returns are not implemented yet. Existing C aggregate
-returns remain field copies; C++ returned construction remains refused.
+The shared kernel supports a bounded complete-object construction return mode.
+Existing C aggregate returns remain field copies. C++ now admits bounded
+returned construction and forwarding under a body-validated copy-equivalence
+restriction. Assignment uses a distinct RHS temporary and full-expression
+retirement; the pinned end-to-end target remains pending.
 
 The copy-return implementation now checks source initialization inside the
 materialization transition, before allocating or copying a result. Kernel tests
 also exercise an explicit destination through two nested procedure calls,
-including its self-pointer and ownership transfer. These are prerequisites:
-they do not yet admit by-value construction returns or certify a modular
-construction summary.
+including its self-pointer and ownership transfer.
+
+The shared memory model can also describe initially unwritten symbolic
+storage without claiming that it is fresh or separate from arguments. Actual
+writes establish initialization; resource naming does not. Initialization
+survives value forgetting, intersects across branches, and follows checked
+pointer equalities. Construction-return proofs use this initially unwritten
+storage, with ownership supplied separately by their entry contract.
+
+Caller allocation now has a separate `c_allocate_aggregate_destination`
+operation. It allocates fresh automatic storage and its byte ownership without
+seeding field values. Re-declaration uses the existing retirement and fresh
+generation checks. Ordinary local declarations and the existing Rust constructor placeholder
+protocol retain their behavior. C++ direct local constructors now use raw
+destination allocation.
+
+`CAggregateReturnMode::Construction` now binds the hidden result to exact call
+metadata before body execution. Completion validates the same pointer, layout,
+live storage, and initialized value fields. Direct calls, forwarding calls, and
+body-certified modular summaries share that destination; completing a result
+does not allocate or copy. The initial kernel slice requires complete-object
+storage, an explicit byte owner, and ordered non-overlapping scalar fields.
+Construction returns still require complete-object destinations. Union/array
+layouts, exceptional construction, external construction assumptions, and
+constructor callbacks remain refused. Contract
+matching, state substitution, branch joins, and checked snapshot comparisons
+include the destination and result mode. Source admission remains pending.
+
+Ordinary void constructors can designate a pointer parameter as their
+construction destination. The call binds its entry value once; reassignment of
+the parameter cannot replace the object checked at completion. The body must
+initialize every modeled value field, and only a body-certified summary can
+establish that initialization at a modular call. Native constructor contracts
+need write authority for the fields, not padding. C++ constructor lowering and
+Surface entry setup preserve this metadata and start with an unwritten symbolic
+object footprint. This footprint does not fix the containing allocation's size;
+field liveness comes from the entry contract. At a call, constructors can select
+an aligned subobject within a known parent allocation. Completion and summaries
+initialize only the child's fields, preserving the parent's extent and sibling
+storage. C++ member-initializer lists now lower embedded construction to these
+checked child calls, within a public non-default `noexcept` constructor profile.
+Definitions may come from the selected file or locked header dependencies;
+Clang-resolved non-explicit constructors and checked read-only scalar initializer
+calls are supported. Children require trivial destruction. Neither
+the native signature nor sidecar syntax changes.
+
+`c_end_automatic_lifetimes` makes a frontend-recorded expression boundary an
+explicit shared statement. It uses the existing automatic-storage retirement
+checks, removes only the named objects and their ownership, and preserves copied
+pointer values and independently live backing storage. C++ lowering must still
+select and emit those boundaries when returned construction is admitted.
 
 ## Surface and source boundary
 
@@ -18,6 +69,18 @@ Keep native result signatures, `result` field projections, and existing
 `owns`/`views` clauses. A hidden destination is execution metadata, not another
 source parameter or a user-managed resource. Users must not name compiler
 temporaries, allocate return slots, or add tactics to retire those slots.
+
+The shared construction-return mode now lowers to an implicit owned byte range
+for the complete result object at entry and exit. Trusted frontend entry setup
+supplies an arbitrary symbolic destination and its input ownership; the actual
+call still has to supply that ownership. Binding the destination adds no
+freshness, separation or write authority. The returned owner has a generated
+resource claim checked from execution, independently of the written value
+postconditions. Returning ownership does not initialize fields.
+
+Field-address expressions retain the field's pointer type rather than the
+aggregate storage's byte-pointer carrier. This lets the native self-pointer
+contract use `&result.value` without a cast or new syntax.
 
 Before C++ admission, exercise `result.self == &result.value` through ordinary,
 expanded and retained verification. Reuse existing address-expression syntax;
@@ -95,7 +158,7 @@ before the field's value is written. Observing the field value still requires
 initialization and read authority. Copying a pointer never grants authority
 over its pointee.
 
-The existing `DeclareAggregate { construction: true }` path seeds scalar
+The legacy `DeclareAggregate` constructor kind seeds scalar
 placeholders so current constructor contracts can use the existing cell
 machinery. Its frontend overwrite obligation is not a completion certificate
 for the new result mode. The implementation must distinguish actual completed
@@ -152,6 +215,47 @@ multiple executions are admitted, prove the claim for each, or prove that their
 observable behavior agrees for the selected claim. Keep the shape refused when
 that evidence is missing. Do not infer address independence from trivial copying.
 
+The first admitted returned-construction profile validates the resolved constructor
+and its reachable value helpers from their typed bodies. Initializers may depend
+on evaluated scalar/pointer arguments and constants, with embedded construction
+checked recursively. They cannot read aliasable memory, expose their receiver or
+local storage, or perform other runtime effects. Helpers remain ordinary
+body-checked modular calls; read-only contracts alone do not establish this
+restriction. Direct local constructors retain their broader existing profile.
+
+C++20 `[stmt.return]` and `[dcl.init]` select the prvalue result object;
+`[class.temporary]` permits additional qualifying trivial class result objects,
+and `[class.copy.elision]` governs optional named returns. This frontend uses
+field-value equivalence across permitted trivial copies for the bounded profile,
+not an ABI-specific no-copy claim. Given the same evaluated argument values,
+the admitted constructor writes the same modeled field values into either
+object, and trivial copies preserve those values. No pointer derived from the
+intermediate object's storage is exposed, so its retirement preserves the
+contract. Padding and object representation are outside the admitted observation
+profile. A shared checked regression constructs directly or through one/several
+explicit copies and retirement, preserving the descriptor and external backing.
+
+Artifact schema 52 distinguishes resolved returned construction, aggregate-call
+forwarding, new-object initialization and assignment from a construction call. The
+importer recomputes eligibility; no serialized eligibility flag grants access.
+Source and signature validation still checks declaration identities, exact
+nominal types, arguments, field order and cleanup. Named return candidates,
+moves, user-defined copies, nontrivial destruction, mixed copy/construction
+return branches and storage-sensitive returned constructors remain refused.
+Construction-return functions require `noexcept` and no exit cleanup in this
+slice. Existing `ReturnRecord` copy-only functions retain the copy result mode.
+For assignment, the exporter requires a resolved trivial copy assignment with
+an exact nominal prvalue call result materialized for the full expression.
+C++20 `[expr.ass]` sequences RHS evaluation before assignment; `[class.temporary]`
+ends the temporary's lifetime after the full expression. Lowering evaluates
+arguments, allocates distinct raw RHS storage, calls the factory into it, copies
+into the live LHS and retires the RHS. The lifetime event is derived separately
+from the destructor inventory, because trivial destruction does not erase the
+object's lifetime. Direct construction over the initialized LHS is never used.
+References into independently live backing survive this retirement under their
+existing authority. Move assignment, user-defined assignment and other temporary
+shapes remain outside this slice.
+
 The identity-sensitive `Node` is the shared-kernel test oracle. It is not a
 universal source claim about trivially copyable C++ returns. The first real
 target is the pinned span descriptor: its pointer refers to independently live
@@ -178,6 +282,12 @@ contract. Establish that from checked constructors/copies, not a span intrinsic.
    plus modular callers that read and write the returned reference with their
    existing backing authority. Retain native uint64 extent and the accepted
    `1 <= N <= 1,073,741,823` single-range bound.
+
+Pinned runtime `first(K)` now has ordinary, expanded and retained returned
+construction coverage for `0 <= K <= N` within the accepted bound. Equal
+endpoints require no stable-view loan, so a zero-count caller passes with only
+descriptor views. `SpanPopBack` and its read/write callers are the remaining
+acceptance work.
 
 Primary code owners are [shared interfaces](../src/kernel/primitives/contracts.rs),
 [interface carriers](../src/kernel/primitives.rs),

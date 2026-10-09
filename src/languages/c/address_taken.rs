@@ -10,8 +10,8 @@
 //! The pass is default-deny in both directions. A name is reported only if
 //! every declaration of it, in every function, is scalar or pointer typed, and
 //! it never occurs anywhere under an address-forming node. Anything the walk
-//! cannot account for — a function whose body it did not see, a name it never
-//! saw declared, a synthetic name the verifier mints — is simply absent from
+//! cannot account for — a name it never saw declared, or an opaque runtime
+//! pointer literal in an imported body — is simply absent from
 //! the result, which is the same as being addressable.
 //!
 //! The two structural walks below (`child_expressions`, `child_statements`)
@@ -22,6 +22,8 @@
 use std::collections::BTreeSet;
 
 use super::syntax::{C0Expression, C0Function, C0Statement, C0SwitchCase, C0Type};
+
+mod lowered;
 
 /// What one pass learned about one bundle of parsed function bodies.
 pub struct AddressTakenSummary {
@@ -56,9 +58,9 @@ impl AddressTakenSummary {
 /// declarations, which is the safe direction for an external declaration: it
 /// has no automatic objects of this program at all. A function carrying a
 /// pre-lowered kernel body from another frontend is different — it has
-/// executable semantics this walk cannot read, and those semantics may address
-/// a name any other function declares — so one of those empties the result
-/// instead.
+/// executable semantics analyzed by the typed-body walk, including generated
+/// scalar captures. If that walk encounters an opaque pointer literal, the
+/// whole bundle remains conservative and reports no inaccessible locals.
 pub fn summarize_address_taken<'a>(
     functions: impl IntoIterator<Item = &'a C0Function>,
 ) -> AddressTakenSummary {
@@ -68,8 +70,8 @@ pub fn summarize_address_taken<'a>(
     };
     let mut unreadable_body = false;
     for function in functions {
-        if function.prelowered_kernel_function().is_some() {
-            unreadable_body = true;
+        if let Some(lowered) = function.prelowered_kernel_function() {
+            unreadable_body |= !lowered::summarize(lowered, &mut summary);
             continue;
         }
         for parameter in function.parameters() {

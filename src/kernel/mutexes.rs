@@ -4200,12 +4200,17 @@ mod tests {
             CStatement::DeclareAggregate {
                 name: "holder".into(),
                 layout: layout.clone(),
-                construction: false,
+                kind: CAggregateDeclarationKind::Local,
+            },
+            CStatement::DeclareAggregate {
+                name: "holder".into(),
+                layout: layout.clone(),
+                kind: CAggregateDeclarationKind::Constructor,
             },
             CStatement::DeclareAggregate {
                 name: "holder".into(),
                 layout,
-                construction: true,
+                kind: CAggregateDeclarationKind::ConstructionDestination,
             },
         ];
         for declaration in declarations {

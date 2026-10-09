@@ -22,13 +22,13 @@ use super::{
 };
 use crate::kernel::{
     CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId, LoadSourceOwnerId,
-    c_add, c_and, c_assign, c_begin_aggregate_construction, c_call, c_call_assign, c_cast,
+    c_add, c_allocate_aggregate_destination, c_and, c_assign, c_call, c_call_assign, c_cast,
     c_checked_object_address, c_copy_aggregate, c_declare, c_declare_aggregate,
-    c_declare_with_all_qualifiers, c_divide, c_equal, c_function, c_greater_equal, c_greater_than,
-    c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply, c_not_equal, c_parameter,
-    c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract, c_try_catch_int32,
-    c_try_catch_int32_with_cleanup, c_typed_load, c_typed_load_with_source, c_typed_store,
-    c_variable, int32,
+    c_declare_with_all_qualifiers, c_divide, c_end_automatic_lifetimes, c_equal, c_function,
+    c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply,
+    c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip,
+    c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load,
+    c_typed_load_with_source, c_typed_store, c_variable, int32,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -232,8 +232,15 @@ fn lower_function(
         body,
     )
     .with_return_pointee_constant(return_constant);
+    if let CppFunctionKind::Constructor { record_name, .. } = &source.function_kind {
+        function = function.with_construction_parameter(0, context.record_layout(record_name)?);
+    }
     if let CppType::Record { name, .. } = &source.return_type {
-        function = function.with_return_aggregate_layout(context.record_layout(name)?);
+        function = if super::construction::is_construction_return(source) {
+            function.with_construction_return(context.record_layout(name)?)
+        } else {
+            function.with_return_aggregate_layout(context.record_layout(name)?)
+        };
     }
     Ok(function)
 }
@@ -435,6 +442,26 @@ impl LoweringContext<'_> {
                     ))
                 }
                 (
+                    CppType::Record { name, .. },
+                    CppInitializer::ConstructionCall {
+                        callee, arguments, ..
+                    },
+                ) => {
+                    let layout = self.record_layout(name)?;
+                    let (prefix, actual) = self.normalize_arguments(arguments)?;
+                    Ok(evaluate_then(
+                        prefix,
+                        c_seq(
+                            c_allocate_aggregate_destination(local.name.clone(), layout),
+                            c_call_assign(
+                                local.name.clone(),
+                                self.names.require(&callee.declaration_id)?.to_owned(),
+                                actual,
+                            ),
+                        ),
+                    ))
+                }
+                (
                     CppType::Record {
                         declaration_id,
                         name,
@@ -501,7 +528,7 @@ impl LoweringContext<'_> {
                         vec![c_cast(c_variable(local.name.clone()), CType::Int32Pointer)];
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
                     Ok(c_seq(
-                        c_begin_aggregate_construction(local.name.clone(), layout),
+                        c_allocate_aggregate_destination(local.name.clone(), layout),
                         c_call(
                             self.names.require(&callee.declaration_id)?.to_owned(),
                             lowered_arguments,
@@ -532,6 +559,33 @@ impl LoweringContext<'_> {
                 self.lower_expression(value)?,
                 CType::Int32,
             )),
+            CppStatement::MemberConstruct {
+                object,
+                field,
+                callee,
+                arguments,
+                ..
+            } => {
+                let place = self.place(object)?;
+                let (_, offset) = self.records.resolve_path(
+                    &place.value_type,
+                    object
+                        .projections
+                        .iter()
+                        .map(super::schema::CppProjection::as_ref)
+                        .chain(std::iter::once(super::schema::ProjectionRef::Field(field))),
+                )?;
+                let destination = c_cast(
+                    c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
+                    CType::Int32Pointer,
+                );
+                let mut lowered = vec![destination];
+                lowered.extend(self.lower_call_arguments(arguments)?);
+                Ok(c_call(
+                    self.names.require(&callee.declaration_id)?.to_owned(),
+                    lowered,
+                ))
+            }
             CppStatement::MemberStore {
                 object,
                 field,
@@ -539,10 +593,10 @@ impl LoweringContext<'_> {
                 ..
             } => {
                 let (pointer, value_type) = self.lower_member_pointer(object, field)?;
-                Ok(c_typed_store(
-                    pointer,
-                    self.lower_expression(value)?,
-                    value_type,
+                let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                Ok(evaluate_then(
+                    evaluation.prefix,
+                    c_typed_store(pointer, evaluation.value, value_type),
                 ))
             }
             CppStatement::Unreachable { span } => Ok(crate::kernel::c_labeled_assert(
@@ -584,7 +638,10 @@ impl LoweringContext<'_> {
                     span.start_column
                 ),
             )),
-            CppStatement::ReturnRecord { .. }
+            CppStatement::AssignConstructionCall { .. }
+            | CppStatement::ReturnConstruct { .. }
+            | CppStatement::ReturnAggregateCall { .. }
+            | CppStatement::ReturnRecord { .. }
             | CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
@@ -665,6 +722,82 @@ impl LoweringContext<'_> {
         unwind_base: usize,
     ) -> Result<CStatement, String> {
         match statement {
+            CppStatement::AssignConstructionCall {
+                target,
+                callee,
+                arguments,
+                ..
+            } => {
+                let Some(CppType::Record { name, .. }) =
+                    plan.full_expression_temporary_type(statement)
+                else {
+                    return Err(
+                        "C++ construction assignment is missing its RHS lifetime event".into(),
+                    );
+                };
+                let layout = self.record_layout(name)?;
+                let (prefix, actual) = self.normalize_arguments(arguments)?;
+                let temporary = self.fresh_aggregate_capture()?;
+                // The RHS is a separate object: the live LHS may be read by
+                // the factory and cannot serve as unwritten construction storage.
+                Ok(evaluate_then(
+                    prefix,
+                    c_seq(
+                        c_allocate_aggregate_destination(temporary.clone(), layout.clone()),
+                        c_seq(
+                            c_call_assign(
+                                temporary.clone(),
+                                self.names.require(&callee.declaration_id)?.to_owned(),
+                                actual,
+                            ),
+                            c_seq(
+                                c_copy_aggregate(
+                                    self.lower_place(target)?,
+                                    c_variable(temporary.clone()),
+                                    layout,
+                                ),
+                                c_end_automatic_lifetimes(vec![temporary]),
+                            ),
+                        ),
+                    ),
+                ))
+            }
+            CppStatement::ReturnConstruct {
+                callee, arguments, ..
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let mut actual = vec![c_cast(
+                    c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
+                    CType::Int32Pointer,
+                )];
+                actual.extend(arguments);
+                Ok(evaluate_then(
+                    prefix,
+                    c_seq(
+                        c_call(
+                            self.names.require(&callee.declaration_id)?.to_owned(),
+                            actual,
+                        ),
+                        c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
+                    ),
+                ))
+            }
+            CppStatement::ReturnAggregateCall {
+                callee, arguments, ..
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                Ok(evaluate_then(
+                    prefix,
+                    c_seq(
+                        c_call_assign(
+                            crate::kernel::C_CONTRACT_RESULT_NAME,
+                            self.names.require(&callee.declaration_id)?.to_owned(),
+                            arguments,
+                        ),
+                        c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
+                    ),
+                ))
+            }
             CppStatement::ReturnRecord {
                 source, value_type, ..
             } => {
@@ -1068,7 +1201,19 @@ impl LoweringContext<'_> {
     }
 
     fn fresh_call_capture(&mut self) -> Result<String, String> {
-        let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
+        self.fresh_capture(self.nested_capture_name.clone())
+    }
+
+    fn fresh_aggregate_capture(&mut self) -> Result<String, String> {
+        // Materialized objects have addressable storage. Keep their names
+        // separate from scalar call captures: addressability is summarized
+        // across functions by name, so an aggregate temporary in one function
+        // must not obscure a scalar capture's nonescaping storage in another.
+        self.fresh_capture(format!("{}_aggregate", self.nested_capture_name))
+    }
+
+    fn fresh_capture(&mut self, prefix: String) -> Result<String, String> {
+        let mut capture = format!("{prefix}_{}", self.next_call_capture);
         self.next_call_capture = self
             .next_call_capture
             .checked_add(1)

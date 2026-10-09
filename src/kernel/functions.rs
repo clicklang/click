@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 #[cfg(test)]
 mod aggregate_return_tests;
+mod construction_return;
 
 fn execute_c_function_body_paths(
     state: &CState,
@@ -5892,18 +5893,40 @@ fn execute_verified_function_applications_with_suspension(
         };
         let mut worker_effects = transfer.memory_effects.clone();
         worker_effects.extend(mutex_storage_effects);
+        let result = if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
+            let Some(result) = construction_return::summary_result(&entry_state, interface) else {
+                paths.push(CFunctionPath {
+                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                        "construction summary requires its checked destination".into(),
+                    )),
+                    facts,
+                    obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                });
+                continue;
+            };
+            result
+        } else {
+            symbolic_contract_result(interface, result_identity)
+        };
+        let mut post_state = entry_state.clone().with_memory(memory);
+        if interface.aggregate_return_mode() == CAggregateReturnMode::Construction
+            || interface.construction_parameter().is_some()
+        {
+            construction_return::initialize_summary(&mut post_state, &entry_contract_state);
+        }
+        // Construction initialization is part of this checked call effect,
+        // so its endpoint must include the initialized value fields.
         if !worker_effects.is_empty() {
             facts.push(
                 ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
                     before: entry_state.memory.clone(),
-                    after: memory.clone(),
+                    after: post_state.memory.clone(),
                     mutable_ranges: worker_effects.clone(),
                 })
                 .into_certified(),
             );
         }
-        let result = symbolic_contract_result(interface, result_identity);
-        let mut post_state = entry_state.clone().with_memory(memory);
         // Protocol effects remain in the caller scope. The ordinary summary
         // partition below is recovered before this checked successor is
         // published, so no call-local hold can escape or be discarded.
@@ -14441,6 +14464,7 @@ fn statement_writes_aggregate_parameter(
             }
         }
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -16047,22 +16071,24 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
     if let Some(layout) = interface.return_aggregate_layout()
         && let CValue::Pointer(pointer) = &value
     {
-        state.set_memory(
-            if matches!(
-                pointer.block,
-                PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
-            ) {
-                state
-                    .memory
-                    .clone()
-                    .with_block_without_derivation(pointer.block.clone(), layout.size_bytes())
-            } else {
-                state
-                    .memory
-                    .clone()
-                    .with_block(pointer.block.clone(), layout.size_bytes())
-            },
-        );
+        if interface.aggregate_return_mode() == CAggregateReturnMode::Copy {
+            state.set_memory(
+                if matches!(
+                    pointer.block,
+                    PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
+                ) {
+                    state
+                        .memory
+                        .clone()
+                        .with_block_without_derivation(pointer.block.clone(), layout.size_bytes())
+                } else {
+                    state
+                        .memory
+                        .clone()
+                        .with_block(pointer.block.clone(), layout.size_bytes())
+                },
+            );
+        }
         state.locals.set_aggregate_object_at(
             C_CONTRACT_RESULT_NAME.to_string(),
             layout.clone(),
@@ -16087,13 +16113,17 @@ enum AggregateReturnRefusal {
     UninitializedRead,
 }
 
-// Keep source initialization and materialization in one checked transition.
+// Keep initialization and result identity in one checked transition: copy mode
+// materializes a value, while construction mode completes the selected object.
 // Every body-completion path must use this boundary before retiring the source.
-fn materialize_aggregate_return(
+fn complete_aggregate_return(
     state: &mut CState,
     function: &CFunction,
     value: CValue,
 ) -> Result<CValue, AggregateReturnRefusal> {
+    if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
+        return construction_return::complete(state, function.contract_interface(), value);
+    }
     let layout = function
         .return_aggregate_layout()
         .ok_or(AggregateReturnRefusal::InvalidValue)?;
@@ -16609,6 +16639,7 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
 
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -16955,6 +16986,11 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             );
         }
     }
+    construction_return::bind(
+        caller_state,
+        function.contract_interface(),
+        &mut callee_state,
+    )?;
     Some(callee_state)
 }
 
@@ -17058,6 +17094,7 @@ fn bind_c_contract_arguments(
             parameter.pointee_is_constant(),
         );
     }
+    construction_return::bind(caller_state, interface, &mut callee_state)?;
     Some(callee_state)
 }
 
@@ -18533,7 +18570,12 @@ fn aggregate_copy_reads_uninitialized(
             {
                 continue;
             }
-            if memory.is_uninitialized_heap_address(&source_field, bytes, &PureFactContext::new())
+            if memory.may_read_uninitialized_object(&source_field, bytes)
+                || memory.is_uninitialized_heap_address(
+                    &source_field,
+                    bytes,
+                    &PureFactContext::new(),
+                )
                 || (source_field.block.starts_with("local:")
                     && memory.access_in_bounds(&source_field, bytes))
             {
@@ -18642,12 +18684,14 @@ fn uninitialized_aggregate_copy_source_cell(
     ) {
         return false;
     }
-    memory.is_uninitialized_heap_address(
-        source_field,
-        element_type.byte_width(),
-        &PureFactContext::new(),
-    ) || (source_field.block.starts_with("local:")
-        && memory.access_in_bounds(source_field, element_type.byte_width()))
+    memory.may_read_uninitialized_object(source_field, element_type.byte_width())
+        || memory.is_uninitialized_heap_address(
+            source_field,
+            element_type.byte_width(),
+            &PureFactContext::new(),
+        )
+        || (source_field.block.starts_with("local:")
+            && memory.access_in_bounds(source_field, element_type.byte_width()))
 }
 
 /// Whether a copy's source field is storage of this memory that holds no
@@ -18837,22 +18881,16 @@ fn copy_aggregate_fields(
                     | CType::UInt8Pointer
                     | CType::Int32PointerPointer
                     | CType::UInt8PointerPointer => {
-                        let pointee_type = element_type.pointee_type()?;
-                        let load = crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_c_memory(memory.clone()),
-                            source_field.clone(),
-                            LoadKind::of_type(element_type)?,
-                        );
-                        Some(CValue::typed_pointer(
-                            Pointer {
-                                block: source_field.block.clone(),
-                                offset: PointerOffsetTerm::scale_int32(
-                                    load,
-                                    i64::from(pointee_type.byte_width()),
-                                ),
-                            },
+                        // An unknown pointer is the value read from this cell,
+                        // not an offset in the object holding it. Use the same
+                        // canonical typed read as ordinary pointer loads so a
+                        // trivial copy preserves provenance and checked aliases.
+                        crate::kernel::eval::symbolic_storage_cell_value(
+                            &memory,
+                            &source_field,
                             element_type,
-                        ))
+                            true,
+                        )
                     }
                     CType::UInt16 => Some(CValue::UInt16(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
@@ -30690,12 +30728,19 @@ fn function_outcome_from_body_with_resource_transfer(
         ));
     };
 
+    if reestablish_population_invariants
+        && let Some(error) =
+            construction_return::complete_parameter(&state, function.contract_interface())
+    {
+        return Ok((CFunctionOutcome::RuntimeError(error), obligations, None));
+    }
+
     // A body return still names its aggregate source; copy it to the
     // caller-visible result object before retiring the source's activation.
     // Resource completion over an already completed outcome keeps its result.
     let value = if reestablish_population_invariants && function.return_aggregate_layout().is_some()
     {
-        match materialize_aggregate_return(&mut state, function, value) {
+        match complete_aggregate_return(&mut state, function, value) {
             Ok(value) => value,
             Err(AggregateReturnRefusal::UninitializedRead) => {
                 return Ok((
@@ -31665,6 +31710,11 @@ pub(super) fn function_outcome_from_body(
 ) -> (CFunctionOutcome, Vec<ProofObligation>) {
     match outcome {
         CStatementOutcome::Return { value, mut state } => {
+            if let Some(error) =
+                construction_return::complete_parameter(&state, function.contract_interface())
+            {
+                return (CFunctionOutcome::RuntimeError(error), obligations);
+            }
             if let Some(undefined_behavior) =
                 freed_pointer_return_conversion(&state, function, &value, assumptions)
             {
@@ -31685,7 +31735,7 @@ pub(super) fn function_outcome_from_body(
                 );
             };
             let value = if function.return_aggregate_layout().is_some() {
-                match materialize_aggregate_return(&mut state, function, value) {
+                match complete_aggregate_return(&mut state, function, value) {
                     Ok(value) => value,
                     Err(AggregateReturnRefusal::UninitializedRead) => {
                         return (

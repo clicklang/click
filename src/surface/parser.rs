@@ -10353,9 +10353,23 @@ impl Parser {
             self.position += 1;
             let expression = self.parse_contract_unary_at_depth(depth + 1)?;
             if let ContractExpression::Field {
-                base, offset_bytes, ..
+                base,
+                offset_bytes,
+                lowered,
+                ..
             } = &expression
             {
+                // Address the typed field lvalue without evaluating its load.
+                // This preserves the field's pointee type and qualifiers even
+                // when the aggregate itself uses byte-addressed storage.
+                if let CExpression::TypedLoad { value_type, .. } = lowered
+                    && value_type.pointer_to().is_some()
+                {
+                    return Ok(crate::surface::lowering::contract_c_unary(
+                        expression.clone(),
+                        CExpression::AddressOf(Box::new(lowered.clone())),
+                    ));
+                }
                 let source_base = (**base).clone();
                 let Some(base) = contract_expression_as_c_fragment(base) else {
                     return Err(self.error("address-of field requires a current C pointer base"));

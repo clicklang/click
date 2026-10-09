@@ -492,6 +492,14 @@ fn evaluate_c_memory_load_case(
     // Borrowing the transported context here also freezes it, which is what
     // keeps the scope's registered address describing this exact fact set.
     let assumptions = load_assumptions.as_ref().unwrap_or(assumptions);
+    // Construction storage remains unwritten under other possible pointer
+    // spellings. Authority alone cannot enable the external-memory shortcut;
+    // let ordinary alias resolution find actual writes first.
+    let allow_symbolic_external_load = has_external_read_resource
+        && (!memory.may_read_uninitialized_object(&pointer, value_type.byte_width())
+            || purpose == LoadPurpose::Logical
+            || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
+            || assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type));
     // A typed union overlay is the authoritative view for an exact typed
     // load, including in provenance-sensitive symbolic-load mode. Selecting
     // the raw load first would reinterpret a copied pointer member as an
@@ -519,7 +527,7 @@ fn evaluate_c_memory_load_case(
     // snapshot has already materialized the cell's concrete value. Checking
     // `known_value` first would collapse `at(mark, field == 11)` to `true` and
     // erase the address needed for later frame transport.
-    if has_external_read_resource && assumptions.should_force_symbolic_external_loads() {
+    if allow_symbolic_external_load && assumptions.should_force_symbolic_external_loads() {
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
             memory,
             &pointer,
@@ -724,7 +732,7 @@ fn evaluate_c_memory_load_case(
         }];
     }
 
-    if has_external_read_resource && assumptions.should_prefer_symbolic_external_loads() {
+    if allow_symbolic_external_load && assumptions.should_prefer_symbolic_external_loads() {
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
             memory,
             &pointer,
@@ -837,7 +845,7 @@ fn evaluate_c_memory_load_case(
         record_c_memory_derivation(&mut memory, CMemoryDerivation::CellsForgotten { base });
     }
 
-    if pointer.has_symbolic_block() && has_external_read_resource {
+    if pointer.has_symbolic_block() && allow_symbolic_external_load {
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
             &memory,
             &pointer,
@@ -1182,8 +1190,8 @@ fn evaluate_c_memory_load_case(
     // keeps as a premise: a read that may leave the object is refused for
     // its bound first, and only a read inside it for unwritten bytes.
     if purpose != LoadPurpose::Logical
-        && pointer.block.starts_with("local:")
-        && memory.has_block(&pointer.block)
+        && ((pointer.block.starts_with("local:") && memory.has_block(&pointer.block))
+            || memory.may_read_uninitialized_object(&pointer, value_type.byte_width()))
         && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
         && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
     {

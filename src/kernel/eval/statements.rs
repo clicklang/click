@@ -2568,6 +2568,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::Continue
         | CStatement::Goto { .. }
         | CStatement::ForStep { .. }
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::CopyAggregate { .. }
         | CStatement::InitializeScalarArray { .. }
         | CStatement::Assign { .. }
@@ -2948,6 +2949,16 @@ fn execute_c_statement_leaf_paths(
 
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }],
+        CStatement::EndAutomaticLifetimes { names } => vec![CStatementExecutionPath {
+            loop_invariant_correspondence: Default::default(),
+            outcome: match end_scope_automatic_lifetimes(state, names) {
+                Ok(state) => CStatementOutcome::Normal(Box::new(state)),
+                Err(refusal) => CStatementOutcome::RuntimeError(refusal),
+            },
+            facts: Vec::new().into(),
+            obligations: Vec::new(),
+            loan_evidence: empty_checked_loan_evidence_sequence(),
+        }],
         CStatement::ForStep {
             step,
             exited_locals,
@@ -3031,16 +3042,17 @@ fn execute_c_statement_leaf_paths(
                 loan_evidence: empty_checked_loan_evidence_sequence(),
             }]
         }
-        CStatement::DeclareAggregate {
-            name,
-            layout,
-            construction,
-        } => {
-            let outcome = match if *construction {
-                begin_aggregate_construction(state, name, layout, budget)?
-            } else {
-                declare_aggregate_local(state, name, layout)
-            } {
+        CStatement::DeclareAggregate { name, layout, kind } => {
+            let declared = match kind {
+                CAggregateDeclarationKind::Local => declare_aggregate_local(state, name, layout),
+                CAggregateDeclarationKind::Constructor => {
+                    begin_aggregate_construction(state, name, layout, budget)?
+                }
+                CAggregateDeclarationKind::ConstructionDestination => {
+                    allocate_aggregate_destination(state, name, layout)
+                }
+            };
+            let outcome = match declared {
                 Ok(state) => CStatementOutcome::Normal(Box::new(note_declared_population_storage(
                     state, name,
                 ))),
@@ -4491,13 +4503,38 @@ pub(in crate::kernel) fn declare_aggregate_local(
     Ok(state)
 }
 
+fn allocate_aggregate_destination(
+    state: &CState,
+    name: &str,
+    layout: &CAggregateLayout,
+) -> Result<CState, CRuntimeError> {
+    let mut state = declare_aggregate_local(state, name, layout)?;
+    let pointer = state
+        .locals
+        .slot(name)
+        .expect("aggregate destination has a declared stack slot")
+        .clone();
+    state.resources = state
+        .resources
+        .clone()
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(
+                pointer,
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(layout.size_bytes()),
+                1,
+            ),
+        ));
+    Ok(state)
+}
+
 fn begin_aggregate_construction(
     state: &CState,
     name: &str,
     layout: &CAggregateLayout,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
-    let mut state = match declare_aggregate_local(state, name, layout) {
+    let mut state = match allocate_aggregate_destination(state, name, layout) {
         Ok(state) => state,
         Err(refusal) => return Ok(Err(refusal)),
     };
@@ -4524,17 +4561,6 @@ fn begin_aggregate_construction(
                 .store(pointer.offset_by_bytes(field.offset_bytes()), value),
         );
     }
-    state.resources = state
-        .resources
-        .clone()
-        .unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
-                pointer,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(layout.size_bytes()),
-                1,
-            ),
-        ));
     Ok(Ok(state))
 }
 

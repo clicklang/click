@@ -1117,6 +1117,7 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
 ) {
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -1230,6 +1231,9 @@ pub(in crate::kernel) fn collect_c_state_bound_variables(
     state: &CState,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if let Some(destination) = &state.aggregate_destination {
+        collect_pointer_bound_variables(&destination.pointer, variables);
+    }
     for binding in state.locals.bindings.values() {
         if let CLocalBinding::Object { value, .. } = binding {
             collect_c_value_bound_variables(value, variables);
@@ -1472,6 +1476,14 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
 }
 
 fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Variable>) {
+    for pointer in memory
+        .heap
+        .uninitialized_objects
+        .keys()
+        .chain(memory.heap.initialized.as_map().keys())
+    {
+        collect_pointer_bound_variables(pointer, variables);
+    }
     for contents in memory.blocks.values() {
         collect_bitvector_bound_variables(contents.size(), variables);
     }
@@ -3161,6 +3173,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
         CStatement::Break => CStatement::Break,
         CStatement::Continue => CStatement::Continue,
         CStatement::Goto { target } => CStatement::Goto { target: *target },
+        CStatement::EndAutomaticLifetimes { names } => CStatement::EndAutomaticLifetimes {
+            names: names.clone(),
+        },
         CStatement::ForStep {
             step,
             exited_locals,
@@ -3187,14 +3202,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_constant: *pointee_constant,
             zero_fill: zero_fill.clone(),
         },
-        CStatement::DeclareAggregate {
-            name,
-            layout,
-            construction,
-        } => CStatement::DeclareAggregate {
+        CStatement::DeclareAggregate { name, layout, kind } => CStatement::DeclareAggregate {
             name: name.clone(),
             layout: layout.clone(),
-            construction: *construction,
+            kind: *kind,
         },
         CStatement::Assign { name, expression } => CStatement::Assign {
             name: name.clone(),
@@ -3887,6 +3898,12 @@ fn substitute_bitvector_variable_in_c_state(
             bindings,
             slots: state.locals.slots.clone(),
         },
+        aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
+            std::sync::Arc::new(CAggregateDestination {
+                pointer: substitute_bitvector_variable_in_pointer(&destination.pointer, from, to),
+                layout: destination.layout.clone(),
+            })
+        }),
         memory: substitute_bitvector_variable_in_memory(&state.memory, from, to),
         resource_bindings: state.resource_bindings.clone(),
         instance_field_scope: substitute_bitvector_variable_in_resource_context(
@@ -5464,6 +5481,17 @@ fn substitute_bitvector_variable_in_memory_contents(
                     )
                 })
                 .collect(),
+            uninitialized_objects: memory
+                .heap
+                .uninitialized_objects
+                .iter()
+                .map(|(base, bytes)| {
+                    (
+                        substitute_bitvector_variable_in_pointer(base, from, to),
+                        *bytes,
+                    )
+                })
+                .collect(),
             uninitialized_allocations: memory
                 .heap
                 .uninitialized_allocations
@@ -6246,6 +6274,7 @@ fn substitute_pointer_variable_in_c_statement(
 ) -> CStatement {
     match statement {
         CStatement::Skip
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
@@ -6666,6 +6695,12 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
     );
     CState {
         locals: CLocalEnvironment { bindings, slots },
+        aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
+            std::sync::Arc::new(CAggregateDestination {
+                pointer: substitute_pointer_variable_in_pointer(&destination.pointer, from, to),
+                layout: destination.layout.clone(),
+            })
+        }),
         memory: substitute_pointer_variable_in_memory(&state.memory, from, to),
         resource_bindings: state.resource_bindings.clone(),
         instance_field_scope: substitute_pointer_variable_in_resource_context(
@@ -6947,6 +6982,17 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                     (
                         substitute_pointer_variable_in_pointer(base, from, to),
                         bytes.clone(),
+                    )
+                })
+                .collect(),
+            uninitialized_objects: memory
+                .heap
+                .uninitialized_objects
+                .iter()
+                .map(|(base, bytes)| {
+                    (
+                        substitute_pointer_variable_in_pointer(base, from, to),
+                        *bytes,
                     )
                 })
                 .collect(),

@@ -6051,3 +6051,644 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
         &goal
     ));
 }
+// Construction summaries reuse caller storage, including the result's own
+// address. This exercises checked artifacts and rule application together.
+#[test]
+fn construction_return_contract_certifies_and_applies_to_caller_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let layout = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("self", 0, CType::Int32Pointer),
+            CAggregateField::new("value", 8, CType::Int32),
+        ],
+    );
+    let result = c_variable(C_CONTRACT_RESULT_NAME);
+    let field = c_cast(
+        c_pointer_offset_bytes(result.clone(), 8),
+        CType::Int32Pointer,
+    );
+    let storage = CMemorySegment::new(result.clone(), c_int32_literal(0), c_int32_literal(4));
+    let owner = CResourceSpec::owned_memory(storage.clone());
+    let equality = |left, right| SpecProposition::Comparison {
+        left: SpecExpression::CExpression(left),
+        operator: CComparisonOperator::Equal,
+        right: SpecExpression::CExpression(right),
+    };
+    let function = c_function(
+        CType::VoidPointer,
+        "constructed_node",
+        vec![c_parameter("input", CType::Int32)],
+        c_seq(
+            c_typed_store(result.clone(), field.clone(), CType::Int32Pointer),
+            c_seq(
+                c_typed_store(field.clone(), c_variable("input"), CType::Int32),
+                c_return(result.clone()),
+            ),
+        ),
+    )
+    .with_construction_return(layout.clone())
+    .with_resource_summary(vec![owner.clone()], vec![owner])
+    .with_contract(
+        vec![],
+        vec![
+            equality(c_typed_load(result, CType::Int32Pointer), field.clone()),
+            equality(c_typed_load(field, CType::Int32), c_variable("input")),
+        ],
+        vec![storage],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::effect(0),
+            CFunctionContractClaim::ensure_proposition(0, 0),
+            CFunctionContractClaim::ensure_proposition(1, 1),
+            CFunctionContractClaim::ensure_resource(2, 0),
+        ],
+        true,
+    );
+    let proof_destination = Pointer::symbolic(Variable(873_001));
+    register_block_alignment(&proof_destination.block, 8);
+    let proof_state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(CMemory::new().with_uninitialized_block(proof_destination.block.clone(), 16))
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(
+                proof_destination.clone(),
+                0u32.into(),
+                4u32.into(),
+            )),
+        ))
+        .with_aggregate_return_destination(proof_destination, layout.clone());
+    let execution = certify_contract_with_kernel_artifacts(
+        proof_state.clone(),
+        function.clone(),
+        vec![CExpression::Value(int32(Bitvector32Term::Variable(
+            Variable(873_002),
+        )))],
+        vec![],
+        CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        CFunctionContractExecutionMode::VerifyLoops,
+    );
+    let claims = c_verified_function_contract_claims(&function, &execution)
+        .expect("construction claims should certify from generic unwritten storage");
+    let rule = c_verified_function_rule(function.clone(), &claims).expect("construction rule");
+    assert!(
+        c_verified_function_rule(
+            function
+                .clone()
+                .with_return_aggregate_layout(layout.clone()),
+            &claims
+        )
+        .is_none()
+    );
+    assert!(c_external_function_rule(function.clone()).is_none());
+    assert!(CFunctionContract::new("ConstructionCallback", function.clone()).is_none());
+    let mut environment = CExecutionEnvironment::new()
+        .with_function(function.clone())
+        .with_verified_function_rule(rule);
+    let mut callee = "constructed_node";
+    for name in ["forward_constructed_node", "outer_constructed_node"] {
+        let forward = c_function(
+            CType::VoidPointer,
+            name,
+            function.parameters().to_vec(),
+            c_seq(
+                c_call_assign(C_CONTRACT_RESULT_NAME, callee, vec![c_variable("input")]),
+                c_return(c_variable(C_CONTRACT_RESULT_NAME)),
+            ),
+        )
+        .with_construction_return(layout.clone())
+        .with_resource_summary(
+            function.resource_requires().to_vec(),
+            function.resource_ensures().to_vec(),
+        )
+        .with_contract(
+            function.contract_requires().to_vec(),
+            function.contract_ensures().to_vec(),
+            function.contract_mutable().to_vec(),
+            function.contract_claims().to_vec(),
+            true,
+        );
+        let arguments = vec![CExpression::Value(int32(Bitvector32Term::Variable(
+            Variable(873_002),
+        )))];
+        let artifact = prove_checked_c_function_execution_with_environment(
+            proof_state.clone(),
+            forward.clone(),
+            arguments.clone(),
+            PureFactContext::new(),
+            environment.clone(),
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CFunctionContractExecutionMode::VerifyLoops,
+        );
+        // Summary ensures are symbolic facts, so forwarding needs the same
+        // checked proposition completions that a Surface proof supplies.
+        let mut completions = Vec::new();
+        for path in artifact.paths() {
+            use crate::kernel::proof::*;
+            let Proposition::CFunctionVerifies { outcome, .. } =
+                crate::kernel::api::proof_evidence_conclusion(path.theorem())
+            else {
+                panic!("forwarding must have a checked function outcome");
+            };
+            let CFunctionOutcome::Return { value, state } = outcome else {
+                panic!("forwarding must return");
+            };
+            let specification = c_function_specification(
+                proof_state.clone(),
+                arguments.clone(),
+                path.assumptions().pure_facts(),
+                outcome.clone(),
+            );
+            let theorem = prove_c_function_satisfies_specification_from_symbolic_path(
+                forward.clone(),
+                specification.clone(),
+                path,
+            )
+            .expect("checked forwarding specification");
+            let mut facts = path.assumptions().pure_facts();
+            facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
+            let assumptions = facts.iter().fold(PureFactContext::new(), |context, fact| {
+                context.assume_proposition(fact.clone())
+            });
+            for index in 0..2 {
+                let goals = c_function_ensure_goals(
+                    &forward,
+                    index,
+                    &proof_state,
+                    &arguments,
+                    outcome,
+                    &assumptions,
+                    &[],
+                )
+                .expect("forwarded ensure goals");
+                assert_eq!(goals.len(), 1);
+                let goal = &goals[0];
+                let mut goal_facts = facts.clone();
+                goal_facts.extend_from_slice(goal.facts());
+                let outcome = Arc::new(OutcomeProofState::new(
+                    OutcomeProofCore {
+                        identity: OutcomeIdentity::fresh(),
+                        result: Arc::new(value.clone()),
+                        store_consequences_available: true,
+                        state: state.as_ref().clone().into(),
+                        is_exceptional: false,
+                        effect_facts: Arc::new(path.facts().clone()),
+                    },
+                    (),
+                ));
+                let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
+                    ProofObject::root(
+                        (),
+                        ProofBranch::new(
+                            ProofObligation::Proposition(PropositionObligation::for_claim_goal(
+                                goal,
+                                (),
+                                Some(outcome),
+                            )),
+                            ProofBranchState {
+                                facts: ProofFacts::from_ordered(&goal_facts),
+                                unfolded_predicates: PersistentOrderedSet::default(),
+                                execution: None,
+                            },
+                        ),
+                    );
+                let closed = proof
+                    .apply_assumption(PropositionAssumptionContext::Exact)
+                    .unwrap_or_else(|_| {
+                        panic!("forwarded ensure {index} must follow from the call")
+                    });
+                completions.push(crate::kernel::api::contract_certification::c_checked_function_proposition_with_reason(
+                    &forward, &specification, &theorem,
+                    &closed.completed_proposition().expect("closed ensure"), path,
+                ).expect("checked forwarded ensure"));
+            }
+        }
+        let execution = prove_c_function_contract_execution_paths_with_checked_artifacts(
+            proof_state.clone(),
+            forward.clone(),
+            arguments,
+            environment.clone(),
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CFunctionContractExecutionMode::VerifyLoops,
+            &[artifact],
+        );
+        let claims = c_verified_function_contract_claims_with_checked_propositions(
+            &forward,
+            &execution,
+            &completions,
+        )
+        .unwrap_or_else(|| panic!("forwarded construction claims for {name}"));
+        let rule = c_verified_function_rule(forward.clone(), &claims)
+            .expect("forwarded construction rule");
+        environment = environment
+            .with_function(forward)
+            .with_verified_function_rule(rule);
+        callee = name;
+    }
+    let paths = prove_symbolic_c_execution_paths_with_environment(
+        CState::new().with_population_creation_tracking(),
+        c_seq(
+            c_allocate_aggregate_destination("node", layout),
+            c_seq(
+                c_call_assign("node", "outer_constructed_node", vec![c_int32_literal(37)]),
+                c_return(c_typed_load(
+                    c_pointer_offset_bytes(c_variable("node"), 8),
+                    CType::Int32,
+                )),
+            ),
+        ),
+        PureFactContext::new(),
+        environment,
+        CExecutionSemantics::APPLY_VERIFIED_RULES,
+    );
+    assert_eq!(paths.paths().len(), 1);
+    let path = &paths.paths()[0];
+    let Proposition::CStatementVerifies {
+        outcome: CStatementOutcome::Return { value, state },
+        ..
+    } = crate::kernel::api::proof_evidence_conclusion(path.theorem())
+    else {
+        panic!(
+            "constructed result must be readable: {:?}",
+            crate::kernel::api::proof_evidence_conclusion(path.theorem())
+        );
+    };
+    let at = state.locals().aggregate_object_pointer("node").unwrap();
+    assert!(state.memory().has_initialized_bytes_at(at, 8));
+    assert!(
+        !state.memory().has_initialized_bytes_at(at, 16),
+        "padding is not a constructed value field"
+    );
+    assert!(
+        state
+            .memory()
+            .has_initialized_bytes_at(&at.offset_by_bytes(8), 4)
+    );
+    let assumptions = path
+        .facts()
+        .iter()
+        .fold(PureFactContext::new(), |context, fact| {
+            context.assume_proposition(fact.proposition().clone())
+        });
+    let CValue::Int32(value) = value else {
+        panic!("constructed int32 field");
+    };
+    assert!(assumptions.proves(&Proposition::ConditionIs(
+        ConditionTerm::equal(value.clone(), 37u32.into()),
+        true,
+    )));
+    let loads = evaluate_c_expression_paths(
+        state,
+        &c_typed_load(c_variable("node"), CType::Int32Pointer),
+        &assumptions,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [load] = loads.as_slice() else {
+        panic!("one self-pointer load");
+    };
+    let CExpressionOutcome::Value(CValue::Pointer(self_pointer)) = &load.outcome else {
+        panic!("constructed self-pointer should be readable");
+    };
+    let assumptions = load.facts.iter().fold(assumptions, |context, fact| {
+        context.assume_proposition(fact.proposition().clone())
+    });
+    assert!(assumptions.proves(&Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(self_pointer.pointer().clone(), at.offset_by_bytes(8)),
+        true,
+    )));
+}
+
+// A modular ordinary-parameter constructor must establish initialization from
+// its checked body, without manufacturing values for unwritten padding.
+#[test]
+fn construction_parameter_summary_initializes_only_checked_fields() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let layout = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("self", 0, CType::Int32Pointer),
+            CAggregateField::new("value", 8, CType::Int32),
+        ],
+    );
+    let destination = c_variable("destination");
+    let field = c_cast(
+        c_pointer_offset_bytes(destination.clone(), 8),
+        CType::Int32Pointer,
+    );
+    let storage = CMemorySegment::new(destination.clone(), c_int32_literal(0), c_int32_literal(4));
+    let owner = CResourceSpec::owned_memory(storage.clone());
+    let function = c_function(
+        CType::Void,
+        "construct_parameter",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("input", CType::Int32),
+        ],
+        c_seq(
+            c_typed_store(destination, field.clone(), CType::Int32Pointer),
+            c_seq(
+                c_typed_store(field, c_variable("input"), CType::Int32),
+                c_return(c_void_value()),
+            ),
+        ),
+    )
+    .with_construction_parameter(0, layout.clone())
+    .with_resource_summary(vec![owner.clone()], vec![owner])
+    .with_contract(
+        vec![],
+        vec![],
+        vec![storage],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::effect(0),
+            CFunctionContractClaim::ensure_resource(0, 0),
+        ],
+        true,
+    );
+    let at = Pointer::symbolic(Variable(873_011));
+    register_block_alignment(&at.block, 8);
+    let entry = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), 16))
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(at.clone(), 0u32.into(), 4u32.into())),
+        ));
+    let execution = certify_contract_with_kernel_artifacts(
+        entry.clone(),
+        function.clone(),
+        vec![
+            c_pointer_value(at.clone()),
+            CExpression::Value(int32(Bitvector32Term::Variable(Variable(873_012)))),
+        ],
+        vec![],
+        CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        CFunctionContractExecutionMode::VerifyLoops,
+    );
+    let claims =
+        c_verified_function_contract_claims(&function, &execution).expect("constructor claims");
+    let rule = c_verified_function_rule(function.clone(), &claims).expect("constructor rule");
+    assert!(c_external_function_rule(function.clone()).is_none());
+    assert!(CFunctionContract::new("ConstructorCallback", function.clone()).is_none());
+    assert!(
+        c_verified_function_rule(
+            function
+                .clone()
+                .with_construction_parameter(1, layout.clone()),
+            &claims
+        )
+        .is_none()
+    );
+    let environment = CExecutionEnvironment::new()
+        .with_function(function)
+        .with_verified_function_rule(rule);
+    // A returned-construction factory uses the same ordinary constructor
+    // summary while retaining its own hidden destination across the void call.
+    let result = c_variable(C_CONTRACT_RESULT_NAME);
+    let storage = CMemorySegment::new(result.clone(), c_int32_literal(0), c_int32_literal(4));
+    let owner = CResourceSpec::owned_memory(storage.clone());
+    let factory = c_function(
+        CType::VoidPointer,
+        "parameter_factory",
+        vec![c_parameter("input", CType::Int32)],
+        c_seq(
+            c_call(
+                "construct_parameter",
+                vec![
+                    c_cast(result.clone(), CType::Int32Pointer),
+                    c_variable("input"),
+                ],
+            ),
+            c_return(result),
+        ),
+    )
+    .with_construction_return(layout.clone())
+    .with_resource_summary(vec![owner.clone()], vec![owner])
+    .with_contract(
+        vec![],
+        vec![],
+        vec![storage],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::effect(0),
+            CFunctionContractClaim::ensure_resource(0, 0),
+        ],
+        true,
+    );
+    let execution = certify_contract_with_kernel_artifacts(
+        entry.with_aggregate_return_destination(at, layout.clone()),
+        factory.clone(),
+        vec![CExpression::Value(int32(Bitvector32Term::Variable(
+            Variable(873_012),
+        )))],
+        vec![],
+        environment.clone(),
+        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        CFunctionContractExecutionMode::VerifyLoops,
+    );
+    let claims = c_verified_function_contract_claims(&factory, &execution)
+        .expect("factory calling ordinary constructor");
+    let rule = c_verified_function_rule(factory.clone(), &claims).expect("factory rule");
+    let environment = environment
+        .with_function(factory)
+        .with_verified_function_rule(rule);
+    let paths = prove_symbolic_c_execution_paths_with_environment(
+        CState::new().with_population_creation_tracking(),
+        c_seq(
+            c_allocate_aggregate_destination("node", layout),
+            c_seq(
+                c_call_assign("node", "parameter_factory", vec![c_int32_literal(37)]),
+                c_return(c_typed_load(
+                    c_pointer_offset_bytes(c_variable("node"), 8),
+                    CType::Int32,
+                )),
+            ),
+        ),
+        PureFactContext::new(),
+        environment,
+        CExecutionSemantics::APPLY_VERIFIED_RULES,
+    );
+    let [path] = paths.paths() else {
+        panic!("one constructor summary path");
+    };
+    let Proposition::CStatementVerifies {
+        outcome: CStatementOutcome::Return { state, .. },
+        ..
+    } = crate::kernel::api::proof_evidence_conclusion(path.theorem())
+    else {
+        let conclusion = crate::kernel::api::proof_evidence_conclusion(path.theorem());
+        match conclusion {
+            Proposition::CStatementVerifies { outcome, .. }
+            | Proposition::CStatementExecutes { outcome, .. } => match outcome {
+                CStatementOutcome::RuntimeError(error) => panic!("constructor summary: {error:?}"),
+                CStatementOutcome::UndefinedBehavior(error) => {
+                    panic!("constructor summary: {error:?}")
+                }
+                _ => panic!("unexpected constructor summary outcome"),
+            },
+            _ => panic!("unexpected constructor summary theorem"),
+        }
+    };
+    let at = state.locals().aggregate_object_pointer("node").unwrap();
+    assert!(state.memory().has_initialized_bytes_at(at, 8));
+    assert!(
+        state
+            .memory()
+            .has_initialized_bytes_at(&at.offset_by_bytes(8), 4)
+    );
+    assert!(!state.memory().has_initialized_bytes_at(at, 16));
+}
+
+// An embedded constructor initializes its own footprint without shrinking its
+// parent's allocation or initializing a sibling. Its proof entry describes
+// only that footprint, so it does not assume a complete allocation of that size.
+#[test]
+fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let child = CAggregateLayout::new(8, 8, vec![CAggregateField::new("size", 0, CType::UInt64)]);
+    let parent = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("data", 0, CType::Int32Pointer),
+            CAggregateField::new("extent.size", 8, CType::UInt64),
+        ],
+    );
+    let storage = CMemorySegment::new(
+        c_variable("destination"),
+        c_int32_literal(0),
+        c_int32_literal(2),
+    );
+    let owner = CResourceSpec::owned_memory(storage.clone());
+    let function = c_function(
+        CType::Void,
+        "construct_extent",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("input", CType::UInt64),
+        ],
+        c_seq(
+            c_typed_store(
+                c_variable("destination"),
+                c_variable("input"),
+                CType::UInt64,
+            ),
+            c_return(c_void_value()),
+        ),
+    )
+    .with_construction_parameter(0, child)
+    .with_resource_summary(vec![owner.clone()], vec![owner])
+    .with_contract(
+        vec![],
+        vec![],
+        vec![storage],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::effect(0),
+            CFunctionContractClaim::ensure_resource(0, 0),
+        ],
+        true,
+    );
+    let at = Pointer::symbolic(Variable(873_021));
+    register_block_alignment(&at.block, 8);
+    let memory = CMemory::new().with_uninitialized_object(at.clone(), 8);
+    assert!(memory.block_size(&at.block).is_none());
+    let live = Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: at.clone(),
+        bytes: 8u32.into(),
+    };
+    let entry = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(memory)
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(at.clone(), 0u32.into(), 2u32.into())),
+        ));
+    let execution = certify_contract_with_kernel_artifacts(
+        entry,
+        function.clone(),
+        vec![
+            c_pointer_value(at),
+            CExpression::Value(uint64(Bitvector32Term::Variable(Variable(873_022)))),
+        ],
+        vec![live],
+        CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        CFunctionContractExecutionMode::VerifyLoops,
+    );
+    let claims = c_verified_function_contract_claims(&function, &execution)
+        .expect("object-footprint constructor proof");
+    let rule =
+        c_verified_function_rule(function.clone(), &claims).expect("subobject constructor rule");
+    let environment = CExecutionEnvironment::new()
+        .with_function(function)
+        .with_verified_function_rule(rule);
+    for offset in [8, 4, 16] {
+        let paths = prove_symbolic_c_execution_paths_with_environment(
+            CState::new().with_population_creation_tracking(),
+            c_seq(
+                c_allocate_aggregate_destination("parent", parent.clone()),
+                c_seq(
+                    c_call(
+                        "construct_extent",
+                        vec![
+                            c_cast(
+                                c_pointer_offset_bytes(c_variable("parent"), offset),
+                                CType::Int32Pointer,
+                            ),
+                            c_uint64_literal(37),
+                        ],
+                    ),
+                    c_return(c_typed_load(
+                        c_pointer_offset_bytes(c_variable("parent"), 8),
+                        CType::UInt64,
+                    )),
+                ),
+            ),
+            PureFactContext::new(),
+            environment.clone(),
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
+        );
+        let [path] = paths.paths() else {
+            panic!("one subobject call outcome");
+        };
+        let Proposition::CStatementVerifies { outcome, .. } =
+            crate::kernel::api::proof_evidence_conclusion(path.theorem())
+        else {
+            panic!("checked subobject execution");
+        };
+        if offset != 8 {
+            assert!(
+                matches!(outcome, CStatementOutcome::RuntimeError(_)),
+                "misaligned or out-of-bounds child must be refused"
+            );
+            continue;
+        }
+        let CStatementOutcome::Return { state, .. } = outcome else {
+            match outcome {
+                CStatementOutcome::RuntimeError(error) => {
+                    panic!("subobject constructor: {error:?}")
+                }
+                CStatementOutcome::UndefinedBehavior(error) => {
+                    panic!("subobject constructor: {error:?}")
+                }
+                _ => panic!("subobject constructor must return"),
+            }
+        };
+        let base = state.locals().aggregate_object_pointer("parent").unwrap();
+        assert_eq!(state.memory().block_size(&base.block), Some(&16u32.into()));
+        assert!(
+            state
+                .memory()
+                .has_initialized_bytes_at(&base.offset_by_bytes(8), 8)
+        );
+        assert!(
+            !state.memory().has_initialized_bytes_at(base, 8),
+            "sibling remains unwritten"
+        );
+    }
+}

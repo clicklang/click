@@ -10,7 +10,7 @@ pub(crate) mod mutex_calls;
 use super::functions::CCheckedResourceFact;
 use super::primitives::{
     PointerBlock, ResourceMemoryIntervalNode, memory_interval_ancestors, memory_interval_nodes,
-    memory_ranges_proven_overlapping,
+    memory_range_is_proven_empty, memory_ranges_proven_overlapping,
 };
 use super::reasoning::signed_bitvector_constant;
 use super::{
@@ -2885,6 +2885,16 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     let mut symbolic_covering_owner = BTreeMap::<ResourceOccurrenceId, CResourceFact>::new();
     for (index, requirement) in requirements.iter().enumerate() {
         if !requirement.fact.is_view() {
+            continue;
+        }
+        // Equal endpoints describe no cells. The resource algebra already
+        // entails this view from an empty context; there is no backing to
+        // escrow, binding to reborrow, or memory to protect.
+        if requirement
+            .fact
+            .memory_range()
+            .is_some_and(|range| memory_range_is_proven_empty(range, assumptions))
+        {
             continue;
         }
         let view_occurrences =
@@ -10830,6 +10840,48 @@ mod tests {
             recovery
                 .recheck_transitions(&planned_ledger, caller)
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn joint_planner_empty_views_need_no_backing_or_loan() {
+        let assumptions = PureFactContext::new();
+        let resources = ResourceContext::new();
+        let (ledger, caller, callee) = participants();
+        let endpoint = Bitvector32Term::Variable(Variable(71_003));
+        for view in [
+            memory(0, 0, false),
+            symbolic_memory(endpoint.clone(), endpoint, false),
+        ] {
+            let plan = plan_stable_view_transfer(
+                &resources,
+                &[checked(view.clone())],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            )
+            .unwrap();
+            assert!(plan.stable_views.is_empty());
+            assert!(plan.entry_transitions.is_empty());
+            assert!(plan.callee_resources.satisfies_fact(&view, &assumptions));
+            assert_eq!(plan.recheck_entry(&ledger).unwrap(), ledger);
+            let recovery = plan
+                .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+                .unwrap();
+            assert_eq!(recovery.ledger, ledger);
+        }
+        let nonempty = memory(0, 1, false);
+        assert_eq!(
+            plan_stable_view_transfer(
+                &resources,
+                &[checked(nonempty.clone())],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            ),
+            Err(StableViewPlanError::MissingResource(nonempty))
         );
     }
 

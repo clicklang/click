@@ -2415,6 +2415,18 @@ pub(crate) struct CControlTarget {
     pub(crate) remaining: std::sync::Arc<CStatement>,
 }
 
+/// Allocation and initialization policy for an automatic aggregate object.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CAggregateDeclarationKind {
+    /// Ordinary local storage, with no explicit constructor ownership grant.
+    Local,
+    /// Existing frontend protocol: seed placeholders and require the frontend
+    /// to prove that constructors overwrite them before observation.
+    Constructor,
+    /// Fresh owned storage. Only actual writes initialize its fields.
+    ConstructionDestination,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CStatement {
     Skip,
@@ -2452,10 +2464,7 @@ pub enum CStatement {
     DeclareAggregate {
         name: String,
         layout: CAggregateLayout,
-        /// The storage is entering a checked constructor call. The frontend
-        /// must prove that every fresh field value is overwritten before
-        /// source code can observe it.
-        construction: bool,
+        kind: CAggregateDeclarationKind,
     },
     /// Copy an address-backed aggregate, preserving typed views for any
     /// overlapping union members in its layout.
@@ -2584,6 +2593,12 @@ pub enum CStatement {
     Switch {
         expression: CExpression,
         cases: Vec<CSwitchCase>,
+    },
+    /// End selected automatic objects at a frontend-recorded lifetime boundary,
+    /// including a full expression's materialized temporaries. This retires
+    /// their storage and ownership, never the allocations their fields name.
+    EndAutomaticLifetimes {
+        names: Vec<String>,
     },
 }
 
@@ -3162,6 +3177,8 @@ pub struct CFunctionContractInterface {
     pub(crate) return_type: CType,
     pub(crate) return_pointee_constant: bool,
     pub(crate) return_aggregate_layout: Option<CAggregateLayout>,
+    pub(crate) aggregate_return_mode: CAggregateReturnMode,
+    pub(crate) construction_parameter: Option<(usize, CAggregateLayout)>,
     pub(crate) exceptional_signature: CExceptionalSignature,
     pub(crate) parameters: Vec<CParameter>,
     /// Explicit resource-instance binders introduced by a named contract.
@@ -4917,8 +4934,8 @@ pub(super) struct CPendingReallocation {
     pub(super) initialized_prefix: Vec<(i64, u32)>,
 }
 
-/// Every field is a snapshot collection, so the derived `Hash` is O(1).
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+/// Every field is a snapshot collection, so hashing is O(1).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub(super) struct CHeapMemory {
     /// Live heap blocks are also present in `blocks`; this set distinguishes
     /// them from automatic storage and memory-havoc markers.
@@ -4934,6 +4951,9 @@ pub(super) struct CHeapMemory {
     /// Successful malloc storage remains uninitialized until individual
     /// cells are written. Contract-imported allocations are not placed here.
     pub(super) uninitialized_allocations: SnapshotSet<Pointer>,
+    /// Explicit proof-entry objects whose bytes start unwritten. Unlike heap
+    /// allocations these carry neither freshness nor deallocation authority.
+    pub(super) uninitialized_objects: SnapshotMap<Pointer, u32>,
     /// Bytes of storage with an initialization history — fresh heap
     /// allocations and automatic (`local:`) objects — that a C store has
     /// initialized, whether or not their cached value survives. A store the
@@ -4960,6 +4980,27 @@ pub(super) struct CHeapMemory {
     pub(super) pending_reallocations: SnapshotMap<Pointer, CPendingReallocation>,
 }
 
+impl std::hash::Hash for CHeapMemory {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Snapshot hashes name symbolic loads and order forgotten snapshots.
+        // Preserve existing names when construction tracking is absent: an
+        // unused extension must not reshuffle ordinary proof-search inputs.
+        self.live_allocations.hash(state);
+        self.deallocated_allocations.hash(state);
+        self.pending_allocations.hash(state);
+        self.uninitialized_allocations.hash(state);
+        self.initialized.hash(state);
+        self.zeroed_allocations.hash(state);
+        self.zeroed_prefix_allocations.hash(state);
+        self.zeroed_pending_allocations.hash(state);
+        self.pending_reallocations.hash(state);
+        if !self.uninitialized_objects.is_empty() {
+            "uninitialized_objects".hash(state);
+            self.uninitialized_objects.hash(state);
+        }
+    }
+}
+
 impl CHeapMemory {
     /// Equality of two heap states derived from `base`; see
     /// [`SnapshotMap::eq_relative_to`].
@@ -4977,6 +5018,9 @@ impl CHeapMemory {
                 &other.uninitialized_allocations,
                 &base.uninitialized_allocations,
             )
+            && self
+                .uninitialized_objects
+                .eq_relative_to(&other.uninitialized_objects, &base.uninitialized_objects)
             && self
                 .initialized
                 .eq_relative_to(&other.initialized, &base.initialized)
@@ -5008,6 +5052,7 @@ impl CHeapMemory {
             && self.deallocated_allocations == other.deallocated_allocations
             && self.pending_allocations == other.pending_allocations
             && self.uninitialized_allocations == other.uninitialized_allocations
+            && self.uninitialized_objects == other.uninitialized_objects
             && self.zeroed_allocations == other.zeroed_allocations
             && self.zeroed_prefix_allocations == other.zeroed_prefix_allocations
             && self.zeroed_pending_allocations == other.zeroed_pending_allocations
@@ -5876,8 +5921,24 @@ pub(super) struct PopulationEffects {
     pub(super) creation: Option<super::population_authority::c_creation::CreationEvents>,
 }
 
+/// Whether an aggregate return copies a value or completes caller storage.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CAggregateReturnMode {
+    #[default]
+    Copy,
+    Construction,
+}
+
+/// Call metadata only. Selecting it grants neither storage nor ownership.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(super) struct CAggregateDestination {
+    pub(super) pointer: Pointer,
+    pub(super) layout: CAggregateLayout,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CState {
+    pub(super) aggregate_destination: Option<Arc<CAggregateDestination>>,
     /// Lexical field values for scratch resource-body evaluation only.
     /// This is not ownership and is never populated by unfolding a resource.
     pub(super) instance_field_scope: ResourceContext,

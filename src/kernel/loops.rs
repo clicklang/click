@@ -577,8 +577,42 @@ pub(super) fn execute_c_call_assign_paths(
         }]);
     };
 
+    let original_destination = state.aggregate_destination.clone();
+    let selected_state;
+    let call_state = if function.contract_interface().aggregate_return_mode()
+        == CAggregateReturnMode::Construction
+    {
+        let selection = state
+            .locals
+            .aggregate_layout(target)
+            .zip(state.locals.aggregate_object_pointer(target));
+        let Some((layout, pointer)) = selection.filter(|(layout, _)| {
+            Some(*layout) == function.return_aggregate_layout()
+                && !matches!(
+                    state.locals.binding(target),
+                    Some(CLocalBinding::AggregateObject { constant: true, .. })
+                )
+        }) else {
+            return Ok(vec![CStatementExecutionPath {
+                loop_invariant_correspondence: Default::default(),
+                outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                    "construction call requires a compatible writable destination".into(),
+                )),
+                facts: Vec::new().into(),
+                obligations: Vec::new(),
+                loan_evidence: empty_checked_loan_evidence_sequence(),
+            }]);
+        };
+        selected_state = state
+            .clone()
+            .with_aggregate_return_destination(pointer.clone(), layout.clone());
+        &selected_state
+    } else {
+        state
+    };
+
     let paths = execute_c_function_call_paths(
-        state,
+        call_state,
         function,
         arguments,
         assumptions,
@@ -590,6 +624,22 @@ pub(super) fn execute_c_call_assign_paths(
     .map(|mut path| {
         let outcome = match path.outcome {
             CFunctionOutcome::Return { value, mut state } => {
+                if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
+                    let exact = matches!(&value, CValue::Pointer(pointer)
+                        if state.locals.aggregate_object_pointer(target) == Some(pointer.pointer()));
+                    state.aggregate_destination = original_destination.clone();
+                    return CStatementExecutionPath {
+                        loop_invariant_correspondence: Default::default(),
+                        outcome: if exact { CStatementOutcome::Normal(state) } else {
+                            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                "construction return changed its destination".into(),
+                            ))
+                        },
+                        facts: path.facts, obligations: path.obligations,
+                        loan_evidence: path.loan_evidence.clone(),
+                    };
+                }
+
                 if value == CValue::Void {
                     return CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
@@ -2348,6 +2398,9 @@ pub(super) fn execute_c_statement_verification_paths(
                 CStatement::Continue => "verification statement: continue",
                 CStatement::Goto { .. } => "verification statement: goto",
                 CStatement::ForStep { .. } => "verification statement: continue with for step",
+                CStatement::EndAutomaticLifetimes { .. } => {
+                    "verification statement: automatic lifetime end"
+                }
                 CStatement::Declare { .. } => "verification statement: declare",
                 CStatement::DeclareAggregate { .. } => "verification statement: declare aggregate",
                 CStatement::CopyAggregate { .. } => "verification statement: aggregate copy",
@@ -9388,6 +9441,7 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         | CStatement::Call { .. }
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
+        | CStatement::EndAutomaticLifetimes { .. }
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
@@ -9573,6 +9627,9 @@ mod v10_tests {
 
 pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
     match statement {
+        CStatement::EndAutomaticLifetimes { names: retired } => {
+            names.extend(retired.iter().cloned())
+        }
         CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
@@ -9734,6 +9791,7 @@ pub(super) fn address_escaped_scalar_locals(state: &CState, body: &CStatement) -
 
 pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
     match statement {
+        CStatement::EndAutomaticLifetimes { .. } => {}
         CStatement::Skip
         | CStatement::Break
         | CStatement::Continue

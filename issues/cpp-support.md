@@ -33,8 +33,8 @@ profile decision before implementation:
   constructors, free operator selection, or aggregate results.
 - **Expression and lifetime profiles.** Converted call arguments, call-based
   brace initialization, arithmetic/composed expressions around calls, broader
-  memory-reading siblings, embedded automatic records and nontrivial destruction,
-  and header constructor/destructor bodies need explicit sequencing, aliasing,
+  memory-reading siblings and nontrivial embedded destruction,
+  and header destructor bodies need explicit sequencing, aliasing,
   lifetime, or admission choices. Broader cleanup/unwind remains owned by
   [control-flow.md](control-flow.md).
 - **Remaining scalar and import coverage.** Original wide call conversions are
@@ -265,9 +265,15 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    [aggregate-construction-design.md](aggregate-construction-design.md).
    C++ returned construction, destination forwarding and temporary retirement
    depend on that work. The int32 field-address and constructor/copy identity
-   prerequisites are implemented; artifact schema 49 requires refreshing earlier
+   prerequisites are implemented; artifact schema 52 requires refreshing earlier
    locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
    above as the concrete C++ acceptance target.
+   A bounded returned-construction slice now validates argument-value-only
+   constructor/helper bodies, forwards result destinations and initializes new
+   objects through native contracts. It accounts for permitted trivial copies
+   by field-value equivalence; address-sensitive returned constructors remain
+   refused. Returned-aggregate assignment, expression retirement and the pinned
+   `first`/`SpanPopBack` proof are still pending.
 
 ### Work independent of returned construction
 
@@ -315,19 +321,33 @@ path, retaining const qualification and requiring caller-held authority for
 loads and writes. Literal `nullptr` and zero conversions to mutable `int*` reuse
 the shared C null pointer value, without grants of storage authority. Nonliteral
 `nullptr_t` conversions, other pointee types and nonzero integer casts remain
-outside this profile. Artifact schema 49 requires refreshing earlier locks.
+outside this profile. Artifact schema 52 requires refreshing earlier locks.
 
-`first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
-behind the shared construction dependency. Other scalar/import work still needs
+The unchanged pinned runtime `first(K)` now verifies through checked returned
+construction for `0 <= K <= N <= 1073741823`, preserving the data pointer and
+receiver fields. Ordinary, expanded and retained proofs pass; a zero-count caller
+needs no backing authority. `last`, `subspan` and the complete `SpanPopBack`
+target remain pending. Other scalar/import work still needs
 an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields and the pointer-offset forms above. Prvalue aggregate returns, copy initialization and
-automatic embedded descriptor construction still need frontend admission. Some of
-those are implementation work once the profiles above are chosen; they do not
-justify a separate C++ memory model.
+fields and the pointer-offset forms above. Selected-file and locked-header embedded member
+construction now uses checked child-constructor calls in declaration order,
+with unwritten destination footprints, native contracts and sibling/backing
+frames. Scalar member initializers can invoke checked nonthrowing read-only
+observers. Trivial destruction permits these local objects in the normal-only
+exception-enabled profile. The bounded value-only returned-construction profile now supports factory
+returns, forwarding, initialization of new objects and materialized trivial-copy
+assignment with full-expression retirement. Broader prvalue and copy forms
+remain refused; they do not justify a separate C++ memory model. The unchanged pinned libstdc++ pointer/count constructor is now
+verified offline through ordinary contracts for both `to_address` helpers,
+`__extent_storage`, and `span`. Successful concrete compile-time assertions
+produce no runtime operation. The caller retains its backing-range view under
+the accepted native uint64 count bound; ordinary, expanded and retained checks
+pass, and omitting the backing view is rejected. This is local construction,
+not returned construction or the completed `SpanPopBack` target.
 
 Acceptance should include the unchanged helper, a modular caller that reads
 the returned last element, and a caller that mutates it under existing write
@@ -1392,8 +1412,8 @@ The unchanged `GetFeePerK` wrapper now composes the unified Down contract at
 Offline ordinary/expanded/retained checks and positive, negative, zero-fee and
 wide modular callers are delivered. Missing size/authority/fit premises and
 false rounding claims fail promptly.
-Automatic objects with embedded records, nontrivial embedded destruction,
-header constructor/destructor bodies, header constant definitions and mixed-source
+Broader automatic object arrangements, nontrivial embedded destruction,
+header destructor bodies, header constant definitions and mixed-source
 executable macro spans remain separate work.
 Keep object construction and the other `CFeeRate` methods separate until their
 own contracts are selected. Continue bounded ordinary/expanded/retained and

@@ -71,6 +71,18 @@ impl LifetimePlan {
         Ok(Self { destructors })
     }
 
+    /// Trivial temporaries still have a lifetime. This event is derived from the
+    /// resolved full expression, independently of the destructor inventory.
+    pub(super) fn full_expression_temporary_type<'s>(
+        &self,
+        statement: &'s CppStatement,
+    ) -> Option<&'s CppType> {
+        match statement {
+            CppStatement::AssignConstructionCall { value_type, .. } => Some(value_type),
+            _ => None,
+        }
+    }
+
     /// This event occurs only on the initializer's successful continuation.
     pub(super) fn constructed<'a>(
         &'a self,
@@ -100,7 +112,9 @@ impl LifetimePlan {
         for statement in body {
             crate::instrumentation::record_deterministic_work(1);
             match statement {
-                CppStatement::ReturnRecord { cleanups, .. }
+                CppStatement::ReturnConstruct { cleanups, .. }
+                | CppStatement::ReturnAggregateCall { cleanups, .. }
+                | CppStatement::ReturnRecord { cleanups, .. }
                 | CppStatement::Return { cleanups, .. }
                 | CppStatement::ReturnCall { cleanups, .. } => {
                     if !state.matches_exit(cleanups, 0) {

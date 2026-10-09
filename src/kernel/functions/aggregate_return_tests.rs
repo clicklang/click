@@ -1,5 +1,5 @@
-//! Compatibility oracles for the existing field-copy result mode. These do
-//! not claim that C++ returned construction or destination forwarding is admitted.
+//! Copy-return compatibility and checked construction-destination oracles.
+//! C++ source admission is tested separately from these shared operations.
 use super::*;
 
 fn node_layout() -> CAggregateLayout {
@@ -30,6 +30,57 @@ fn pointer(value: &CValue) -> Pointer {
     value.pointer().clone()
 }
 
+fn allocate_destination(state: &CState, name: &str) -> CState {
+    let paths = crate::kernel::eval::execute_c_statement_paths(
+        state,
+        &c_allocate_aggregate_destination(name, node_layout()),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .expect("checked destination allocation");
+    let [path] = paths.as_slice() else {
+        panic!("one allocation outcome expected");
+    };
+    assert!(path.obligations.is_empty());
+    let CStatementOutcome::Normal(state) = &path.outcome else {
+        panic!("destination allocation failed: {:?}", path.outcome);
+    };
+    state.as_ref().clone()
+}
+
+// Unlike legacy constructor declarations, allocation grants write authority
+// without manufacturing readable placeholders. The second allocation must
+// not reuse the first object's identity when the source name is repeated.
+#[test]
+fn raw_construction_allocation_owns_storage_without_initializing_values() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+    let destination = state.locals.slot("node").unwrap().clone();
+    assert!(state.memory.has_block(&destination.block));
+    assert!(!state.memory.has_initialized_bytes_at(&destination, 16));
+    assert!(state.memory.known_value(&destination).is_none());
+    assert!(
+        crate::kernel::eval::memory_write_permission_outcome(
+            &state,
+            &destination,
+            16,
+            &PureFactContext::new(),
+        )
+        .is_none()
+    );
+    assert!(aggregate_copy_reads_uninitialized(
+        &state.memory,
+        &destination,
+        &node_layout()
+    ));
+    let again = allocate_destination(&state, "node");
+    assert_ne!(again.locals.slot("node").unwrap(), &destination);
+    assert!(!again.memory.has_block(&destination.block));
+    assert!(again.memory.is_ended_local_block(&destination.block));
+}
+
 fn destination_procedure(name: &str, body: CStatement) -> CFunction {
     let storage = CResourceSpec::owned_memory(CMemorySegment::new(
         c_variable("destination"),
@@ -46,6 +97,540 @@ fn destination_procedure(name: &str, body: CStatement) -> CFunction {
         c_seq(body, c_return(c_void_value())),
     )
     .with_resource_summary(vec![storage.clone()], vec![storage])
+}
+
+fn construction_function(name: &str, body: CStatement) -> CFunction {
+    let storage = CResourceSpec::owned_memory(CMemorySegment::new(
+        c_variable(C_CONTRACT_RESULT_NAME),
+        c_int32_literal(0),
+        c_int32_literal(4),
+    ));
+    c_function(
+        CType::VoidPointer,
+        name,
+        vec![c_parameter("input", CType::Int32)],
+        body,
+    )
+    .with_construction_return(node_layout())
+    .with_resource_summary(vec![storage.clone()], vec![storage])
+}
+
+fn node_construction_body() -> CStatement {
+    let destination = c_variable(C_CONTRACT_RESULT_NAME);
+    let field = c_cast(
+        c_pointer_offset_bytes(destination.clone(), 8),
+        CType::Int32Pointer,
+    );
+    c_seq(
+        c_typed_store(destination.clone(), field.clone(), CType::Int32Pointer),
+        c_seq(
+            c_typed_store(field, c_variable("input"), CType::Int32),
+            c_return(destination),
+        ),
+    )
+}
+
+#[test]
+fn construction_return_preserves_exact_destination_through_two_factories() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let inner = construction_function("construct_node", node_construction_body());
+    let forward = |name: &str, callee: &str| {
+        construction_function(
+            name,
+            c_seq(
+                c_call_assign(C_CONTRACT_RESULT_NAME, callee, vec![c_variable("input")]),
+                c_return(c_variable(C_CONTRACT_RESULT_NAME)),
+            ),
+        )
+    };
+    let middle = forward("forward_node_result", "construct_node");
+    let outer = forward("outer_node_result", "forward_node_result");
+    let caller = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+    let destination = caller.locals.slot("node").unwrap().clone();
+    let caller = caller.with_aggregate_return_destination(destination.clone(), node_layout());
+    let paths = execute_c_function_call_paths(
+        &caller,
+        &outer,
+        &[c_int32_literal(37)],
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new()
+            .with_function(inner)
+            .with_function(middle),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    let [path] = paths.as_slice() else {
+        panic!("one constructed result");
+    };
+    let CFunctionOutcome::Return { value, state } = &path.outcome else {
+        panic!("construction failed: {:?}", path.outcome);
+    };
+    assert!(path.obligations.is_empty(), "{:?}", path.obligations);
+    assert_eq!(pointer(value), destination);
+    assert_eq!(
+        state.memory.known_value(&destination),
+        Some(CValue::typed_pointer(
+            destination.offset_by_bytes(8),
+            CType::Int32Pointer
+        ))
+    );
+    assert_eq!(
+        state.memory.known_value(&destination.offset_by_bytes(8)),
+        Some(CValue::Int32(37u32.into()))
+    );
+    assert_eq!(state.next_local_frame, caller.next_local_frame);
+    assert!(state.memory.has_block(&destination.block));
+}
+
+// A result address alone grants no storage, layout match, or ownership, and
+// returning it is not enough to establish that the object was initialized.
+#[test]
+fn construction_return_rejects_missing_binding_authority_and_partial_values() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let raw = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+    let destination = raw.locals.slot("node").unwrap().clone();
+    let selected = raw
+        .clone()
+        .with_aggregate_return_destination(destination.clone(), node_layout());
+    let function = construction_function("construct_node", node_construction_body());
+    for caller in [
+        raw,
+        selected
+            .clone()
+            .with_resource_context(ResourceContext::new()),
+        selected.clone().with_aggregate_return_destination(
+            destination.clone(),
+            CAggregateLayout::new(8, 8, vec![]),
+        ),
+        selected.clone().with_memory(CMemory::new()),
+    ] {
+        let paths = execute_c_function_call_paths(
+            &caller,
+            &function,
+            &[c_int32_literal(37)],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        assert!(
+            paths
+                .iter()
+                .all(|path| matches!(path.outcome, CFunctionOutcome::RuntimeError(_)))
+        );
+    }
+    let partial = construction_function(
+        "partial_node",
+        c_seq(
+            c_typed_store(
+                c_variable(C_CONTRACT_RESULT_NAME),
+                c_cast(
+                    c_pointer_offset_bytes(c_variable(C_CONTRACT_RESULT_NAME), 8),
+                    CType::Int32Pointer,
+                ),
+                CType::Int32Pointer,
+            ),
+            c_return(c_variable(C_CONTRACT_RESULT_NAME)),
+        ),
+    );
+    let paths = execute_c_function_call_paths(
+        &selected,
+        &partial,
+        &[c_int32_literal(37)],
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    assert!(paths.iter().all(|path| matches!(
+        path.outcome,
+        CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+    )));
+}
+
+#[test]
+fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let result = c_variable(C_CONTRACT_RESULT_NAME);
+    let field = c_cast(
+        c_pointer_offset_bytes(result.clone(), 8),
+        CType::Int32Pointer,
+    );
+    let storage = CResourceSpec::owned_memory(CMemorySegment::new(
+        result.clone(),
+        c_int32_literal(0),
+        c_int32_literal(4),
+    ));
+    for read_before_write in [false, true] {
+        let write = if read_before_write {
+            c_typed_store(
+                field.clone(),
+                c_typed_load(c_variable("alias"), CType::Int32),
+                CType::Int32,
+            )
+        } else {
+            c_typed_store(c_variable("alias"), c_int32_literal(7), CType::Int32)
+        };
+        let function = c_function(
+            CType::VoidPointer,
+            "alias_node",
+            vec![c_parameter("alias", CType::Int32Pointer)],
+            c_seq(
+                write,
+                c_seq(
+                    c_typed_store(result.clone(), field.clone(), CType::Int32Pointer),
+                    c_return(result.clone()),
+                ),
+            ),
+        )
+        .with_construction_return(node_layout())
+        .with_resource_summary(vec![storage.clone()], vec![storage.clone()]);
+        let raw = allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+        let at = raw.locals.slot("node").unwrap().clone();
+        let selected = raw.with_aggregate_return_destination(at.clone(), node_layout());
+        let paths = execute_c_function_call_paths(
+            &selected,
+            &function,
+            &[c_pointer_value(at.offset_by_bytes(8))],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one alias case");
+        };
+        if read_before_write {
+            assert!(matches!(
+                path.outcome,
+                CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+            ));
+        } else {
+            let CFunctionOutcome::Return { value, state } = &path.outcome else {
+                panic!("alias store construction failed: {:?}", path.outcome);
+            };
+            assert_eq!(pointer(value), at);
+            assert_eq!(
+                state.memory.known_value(&at.offset_by_bytes(8)),
+                Some(int32(7))
+            );
+        }
+    }
+}
+
+#[test]
+fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
+    let mut work_by_size = Vec::new();
+    for count in [16, 128, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut caller =
+            allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+        let at = caller.locals.slot("node").unwrap().clone();
+        caller = caller.with_aggregate_return_destination(at, node_layout());
+        for index in 0..count {
+            let unrelated = CMemory::frame_local_pointer(10, &format!("unrelated{index}"));
+            caller.memory = caller.memory.with_block(unrelated.block.clone(), 4);
+            caller.resources = caller
+                .resources
+                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    unrelated,
+                    0u32.into(),
+                    1u32.into(),
+                )));
+        }
+        let function = construction_function("node", node_construction_body());
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            construction_return::bind(
+                &caller,
+                function.contract_interface(),
+                &mut CState::new().with_population_creation_tracking(),
+            )
+            .unwrap();
+        });
+        work_by_size.push(work);
+    }
+    assert!(
+        work_by_size
+            .iter()
+            .all(|work| *work <= work_by_size[0].max(1) * 2),
+        "{work_by_size:?}"
+    );
+}
+
+// Full-expression materialization copies pointer values before the temporary
+// expires. Only a pointer into separate caller storage remains dereferenceable.
+#[test]
+fn construction_temporary_retirement_preserves_copies_and_external_backing() {
+    for points_to_self in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let result = c_variable(C_CONTRACT_RESULT_NAME);
+        let field = c_cast(
+            c_pointer_offset_bytes(result.clone(), 8),
+            CType::Int32Pointer,
+        );
+        let owner = CResourceSpec::owned_memory(CMemorySegment::new(
+            result.clone(),
+            c_int32_literal(0),
+            c_int32_literal(4),
+        ));
+        let factory = c_function(
+            CType::VoidPointer,
+            "materialize_descriptor",
+            vec![c_parameter("backing", CType::Int32Pointer)],
+            c_seq(
+                c_typed_store(
+                    result.clone(),
+                    if points_to_self {
+                        field.clone()
+                    } else {
+                        c_variable("backing")
+                    },
+                    CType::Int32Pointer,
+                ),
+                c_seq(
+                    c_typed_store(field, c_int32_literal(37), CType::Int32),
+                    c_return(result),
+                ),
+            ),
+        )
+        .with_construction_return(node_layout())
+        .with_resource_summary(vec![owner.clone()], vec![owner]);
+        let environment = CExecutionEnvironment::new().with_function(factory);
+        let sequence = |statements: Vec<CStatement>| statements.into_iter().reduce(c_seq).unwrap();
+        let prefix = sequence(vec![
+            c_declare("backing", CType::Int32),
+            c_assign("backing", c_int32_literal(23)),
+            c_allocate_aggregate_destination("node", node_layout()),
+            c_allocate_aggregate_destination("temporary", node_layout()),
+            c_call_assign(
+                "temporary",
+                "materialize_descriptor",
+                vec![c_addr_of("backing")],
+            ),
+            c_copy_aggregate(c_variable("node"), c_variable("temporary"), node_layout()),
+        ]);
+        let paths = execute_c_statement_paths(
+            &CState::new().with_population_creation_tracking(),
+            &prefix,
+            &PureFactContext::new(),
+            &environment,
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one materialization path");
+        };
+        let CStatementOutcome::Normal(state) = &path.outcome else {
+            panic!("materialization must finish");
+        };
+        let temporary = state
+            .locals
+            .aggregate_object_pointer("temporary")
+            .unwrap()
+            .clone();
+        let node = state
+            .locals
+            .aggregate_object_pointer("node")
+            .unwrap()
+            .clone();
+        let backing = state.locals.slot("backing").unwrap().clone();
+        let copied = state.memory.known_value(&node).unwrap();
+        let referent = if points_to_self {
+            temporary.offset_by_bytes(8)
+        } else {
+            backing.clone()
+        };
+        assert_eq!(pointer(&copied), referent);
+        let retirement = c_end_automatic_lifetimes(vec!["temporary".into()]);
+        let checked = prove_symbolic_c_execution_paths_with_environment(
+            state.as_ref().clone(),
+            retirement,
+            PureFactContext::new(),
+            environment.clone(),
+            CExecutionSemantics::EXECUTE_BODIES,
+        );
+        let [path] = checked.paths() else {
+            panic!("one retirement path");
+        };
+        let after = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
+            Proposition::CStatementExecutes {
+                outcome: CStatementOutcome::Normal(after),
+                ..
+            }
+            | Proposition::CStatementVerifies {
+                outcome: CStatementOutcome::Normal(after),
+                ..
+            } => after,
+            _ => panic!("checked temporary retirement"),
+        };
+        assert!(after.locals.aggregate_object_pointer("temporary").is_none());
+        assert!(after.memory.is_ended_local_block(&temporary.block));
+        assert!(!after.memory.has_block(&temporary.block));
+        assert!(after.memory.has_block(&node.block));
+        assert!(after.memory.has_block(&backing.block));
+        assert_eq!(after.memory.known_value(&node), Some(copied));
+        assert_eq!(after.memory.known_value(&backing), Some(int32(23)));
+        assert!(
+            after
+                .resources
+                .memory_write_range(&node, 16, &PureFactContext::new())
+                .is_some()
+        );
+        assert!(
+            after
+                .resources
+                .memory_write_range(&temporary, 16, &PureFactContext::new())
+                .is_none()
+        );
+        let read = execute_c_statement_paths(
+            after,
+            &c_return(c_typed_load(c_pointer_value(referent), CType::Int32)),
+            &PureFactContext::new(),
+            &environment,
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(read.len(), 1);
+        if points_to_self {
+            assert!(matches!(
+                read[0].outcome,
+                CStatementOutcome::UndefinedBehavior(_)
+            ));
+        } else {
+            assert!(
+                matches!(&read[0].outcome, CStatementOutcome::Return { value, .. } if *value == int32(23))
+            );
+        }
+    }
+}
+
+#[test]
+fn construction_completion_work_scales_with_value_fields() {
+    for parameter in [false, true] {
+        let mut samples = Vec::new();
+        for count in [8, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            // Leave padding between fields so initialization retains separate
+            // runs instead of measuring only one contiguous initialized range.
+            let layout = CAggregateLayout::new(
+                count * 8,
+                8,
+                (0..count)
+                    .map(|index| {
+                        CAggregateField::new(format!("field{index}"), index * 8, CType::Int32)
+                    })
+                    .collect(),
+            );
+            let at = Pointer::symbolic(Variable(873_004));
+            register_block_alignment(&at.block, 8);
+            // Native constructor contracts hold separate field owners; include
+            // their growing index, rather than only one whole-object owner.
+            let resources = if parameter {
+                (0..count).fold(ResourceContext::new(), |resources, index| {
+                    resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                        at.offset_by_bytes(index * 8),
+                        0u32.into(),
+                        1u32.into(),
+                    )))
+                })
+            } else {
+                ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+                    CMemoryRange::new(at.clone(), 0u32.into(), (count * 2).into()),
+                ))
+            };
+            let caller = CState::new()
+                .with_population_creation_tracking()
+                .with_memory(CMemory::new().with_uninitialized_block(at.block.clone(), count * 8))
+                .with_resource_context(resources)
+                .with_aggregate_return_destination(at.clone(), layout.clone());
+            let function = if parameter {
+                c_function(
+                    CType::Void,
+                    "wide_constructor",
+                    vec![c_parameter("destination", CType::Int32Pointer)],
+                    c_skip(),
+                )
+                .with_construction_parameter(0, layout)
+            } else {
+                c_function(CType::VoidPointer, "wide_result", vec![], c_skip())
+                    .with_construction_return(layout)
+            };
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut state = caller.clone().with_local(
+                    "destination",
+                    CValue::typed_pointer(at.clone(), CType::Int32Pointer),
+                );
+                construction_return::bind(&caller, function.contract_interface(), &mut state)
+                    .unwrap();
+                construction_return::initialize_summary(&mut state, &caller);
+                if parameter {
+                    assert!(
+                        construction_return::complete_parameter(
+                            &state,
+                            function.contract_interface()
+                        )
+                        .is_none()
+                    );
+                } else {
+                    construction_return::complete(
+                        &state,
+                        function.contract_interface(),
+                        CValue::typed_pointer(at.clone(), CType::VoidPointer),
+                    )
+                    .unwrap();
+                }
+            });
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 6),
+            "{samples:?}"
+        );
+    }
+}
+
+#[test]
+fn construction_destination_survives_substitution_and_requires_agreement_at_join() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(873_003);
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_aggregate_return_destination(Pointer::symbolic(variable), node_layout());
+    let mut variables = BTreeSet::new();
+    collect_c_state_bitvector_variables(&state, &mut variables);
+    assert!(variables.contains(&variable));
+    let proposition = Proposition::CStatementVerifies {
+        state: Box::new(state.clone()),
+        statement: Box::new(c_skip()),
+        outcome: CStatementOutcome::Normal(Box::new(state.clone())),
+    };
+    let at = CMemory::frame_local_pointer(15, "caller");
+    let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
+        &proposition,
+        variable,
+        &at,
+    );
+    let Proposition::CStatementVerifies {
+        state: mapped,
+        outcome: CStatementOutcome::Normal(after),
+        ..
+    } = mapped
+    else {
+        panic!("substituted construction transition");
+    };
+    assert_eq!(mapped.aggregate_destination.as_ref().unwrap().pointer, at);
+    assert_eq!(mapped.aggregate_destination, after.aggregate_destination);
+    assert!(!state.shares_non_memory_storage_with(&mapped));
+    assert!(
+        abstract_c_state_for_interface_join_across(&state, &[&state, &mapped], &BTreeMap::new(), 0)
+            .is_err()
+    );
 }
 
 // This tests the existing explicit-destination procedure building block,
@@ -80,15 +665,12 @@ fn supplied_constructor_destination_survives_two_procedure_boundaries() {
             vec![c_variable("destination"), c_variable("input")],
         ),
     );
-    let destination = CMemory::frame_local_pointer(100, "caller_node");
-    let memory = CMemory::new().with_block(destination.block.clone(), 16);
-    assert!(!memory.has_initialized_bytes_at(&destination, 16));
-    let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-        CMemoryRange::new(destination.clone(), 0u32.into(), 4u32.into()),
-    ));
-    let caller = CState::new()
-        .with_memory(memory)
-        .with_resource_context(resources);
+    let caller = allocate_destination(
+        &CState::new().with_population_creation_tracking(),
+        "caller_node",
+    );
+    let destination = caller.locals.slot("caller_node").unwrap().clone();
+    assert!(!caller.memory.has_initialized_bytes_at(&destination, 16));
     let paths = execute_c_function_call_paths(
         &caller,
         &outer,
@@ -139,15 +721,17 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
             source.offset_by_bytes(8),
             CValue::Int32(Bitvector32Term::Constant(37)),
         );
-    let mut state = CState::new().with_memory(memory);
+    let mut state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(memory);
     let function = copy_function();
-    let first = materialize_aggregate_return(
+    let first = complete_aggregate_return(
         &mut state,
         &function,
         CValue::typed_pointer(source.clone(), CType::VoidPointer),
     )
     .expect("first copy result");
-    let second = materialize_aggregate_return(&mut state, &function, first.clone())
+    let second = complete_aggregate_return(&mut state, &function, first.clone())
         .expect("second copy result");
     assert_ne!(pointer(&first).block, source.block);
     assert_ne!(pointer(&second).block, pointer(&first).block);
@@ -192,14 +776,16 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
                 source.offset_by_bytes(8),
                 CValue::Int32(Bitvector32Term::Constant(23)),
             );
-        let mut state = CState::new().with_memory(memory);
+        let mut state = CState::new()
+            .with_population_creation_tracking()
+            .with_memory(memory);
         state.locals.set_aggregate_object_at(
             "descriptor".to_string(),
             node_layout(),
             source.clone(),
         );
         let function = copy_function();
-        let result = materialize_aggregate_return(
+        let result = complete_aggregate_return(
             &mut state,
             &function,
             CValue::typed_pointer(source.clone(), CType::VoidPointer),
@@ -242,14 +828,15 @@ fn aggregate_copy_symbolic_result_has_a_fresh_identity_per_call() {
 fn aggregate_copy_return_refuses_partial_initialization_without_changing_state() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = CMemory::frame_local_pointer(100, "partial");
-    let mut state =
-        CState::new().with_memory(CMemory::new().with_block(source.block.clone(), 16).store(
+    let mut state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(CMemory::new().with_block(source.block.clone(), 16).store(
             source.clone(),
             CValue::typed_pointer(source.offset_by_bytes(8), CType::Int32Pointer),
         ));
     let before = state.clone();
     assert_eq!(
-        materialize_aggregate_return(
+        complete_aggregate_return(
             &mut state,
             &copy_function(),
             CValue::typed_pointer(source, CType::VoidPointer),
@@ -257,4 +844,664 @@ fn aggregate_copy_return_refuses_partial_initialization_without_changing_state()
         Err(AggregateReturnRefusal::UninitializedRead),
     );
     assert_eq!(state, before);
+}
+
+// Symbolic proof-entry destinations must not inherit the existing convention
+// that unspecified external argument memory is initialized. This is the
+// completion check's negative oracle before adding the new result mode.
+#[test]
+fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Pointer::symbolic(Variable(870_003));
+    let mut state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(CMemory::new().with_uninitialized_block(source.block.clone(), 16));
+    let value = CValue::typed_pointer(source.clone(), CType::VoidPointer);
+    assert_eq!(
+        complete_aggregate_return(&mut state, &copy_function(), value.clone()),
+        Err(AggregateReturnRefusal::UninitializedRead),
+    );
+    state.set_memory(state.memory.clone().store(
+        source.clone(),
+        CValue::typed_pointer(source.offset_by_bytes(8), CType::Int32Pointer),
+    ));
+    assert_eq!(
+        complete_aggregate_return(&mut state, &copy_function(), value.clone()),
+        Err(AggregateReturnRefusal::UninitializedRead),
+    );
+    state.set_memory(state.memory.clone().store(
+        source.offset_by_bytes(8),
+        CValue::Int32(Bitvector32Term::Constant(37)),
+    ));
+    assert!(complete_aggregate_return(&mut state, &copy_function(), value).is_ok());
+}
+
+#[test]
+fn symbolic_construction_storage_is_unreadable_until_written() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Pointer::symbolic(Variable(870_004));
+    let raw = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
+    for (mode, assumptions) in [
+        ("ordinary", PureFactContext::new()),
+        (
+            "preferred",
+            PureFactContext::new().prefer_symbolic_external_loads(),
+        ),
+        (
+            "forced",
+            PureFactContext::new().force_symbolic_external_loads(),
+        ),
+    ] {
+        for written in [false, true] {
+            let memory = if written {
+                raw.clone()
+                    .store(source.clone(), CValue::Int32(Bitvector32Term::Constant(37)))
+            } else {
+                raw.clone()
+            };
+            let state = CState::new()
+                .with_population_creation_tracking()
+                .with_memory(memory)
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own_memory(CMemoryRange::new(
+                        source.clone(),
+                        0u32.into(),
+                        1u32.into(),
+                    )),
+                ));
+            let paths = execute_c_statement_paths(
+                &state,
+                &c_return(c_typed_load(c_pointer_value(source.clone()), CType::Int32)),
+                &assumptions,
+                &CExecutionEnvironment::new(),
+                CExecutionSemantics::EXECUTE_BODIES,
+                &mut ExecutionBudget::default(),
+            )
+            .expect("raw destination read");
+            let [path] = paths.as_slice() else {
+                panic!("expected one read path");
+            };
+            if written {
+                assert!(matches!(path.outcome, CStatementOutcome::Return { .. }));
+            } else {
+                assert!(
+                    matches!(
+                        path.outcome,
+                        CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+                    ),
+                    "{mode}: {:?}",
+                    path.outcome
+                );
+            }
+        }
+    }
+}
+
+// A supplied destination may alias an ordinary input. That equality must
+// neither make unwritten storage readable nor hide a write through the alias.
+#[test]
+fn symbolic_construction_storage_respects_known_aliases() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Pointer::symbolic(Variable(870_005));
+    let alias = Pointer::symbolic(Variable(870_006));
+    let assumptions = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(source.clone(), alias.clone()),
+        true,
+    );
+    for forgotten in [false, true] {
+        for written in [false, true] {
+            for read in [&source, &alias] {
+                let mut memory = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
+                if written {
+                    memory = memory.store(alias.clone(), CValue::Int32(37u32.into()));
+                }
+                if forgotten {
+                    memory = memory.with_loop_memory_havoc_preserving_loans(
+                        Variable(870_020),
+                        &BTreeSet::new(),
+                        None,
+                        None,
+                    );
+                }
+                let state = CState::new()
+                    .with_population_creation_tracking()
+                    .with_memory(memory)
+                    .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                        CResourceFact::own_memory(CMemoryRange::new(
+                            source.clone(),
+                            0u32.into(),
+                            1u32.into(),
+                        )),
+                    ));
+                let paths = execute_c_statement_paths(
+                    &state,
+                    &c_return(c_typed_load(c_pointer_value(read.clone()), CType::Int32)),
+                    &assumptions,
+                    &CExecutionEnvironment::new(),
+                    CExecutionSemantics::EXECUTE_BODIES,
+                    &mut ExecutionBudget::default(),
+                )
+                .expect("aliased destination read");
+                assert!(!paths.is_empty());
+                for path in paths {
+                    if written {
+                        assert!(
+                            matches!(path.outcome, CStatementOutcome::Return { .. }),
+                            "{:?}",
+                            path.outcome
+                        );
+                    } else {
+                        assert!(
+                            matches!(
+                                path.outcome,
+                                CStatementOutcome::UndefinedBehavior(
+                                    CUndefinedBehavior::UninitializedRead
+                                )
+                            ),
+                            "{:?}",
+                            path.outcome
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Resource projection is a logical name, not a constructor store, including
+// when the resource uses another spelling that could alias the destination.
+#[test]
+fn naming_symbolic_construction_storage_does_not_initialize_it() {
+    let source = Pointer::symbolic(Variable(870_007));
+    let raw = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
+    for address in [source.clone(), Pointer::symbolic(Variable(870_008))] {
+        let named = raw
+            .clone()
+            .materialize_named_cell(address.clone(), CValue::Int32(37u32.into()));
+        assert_eq!(named, raw);
+        assert!(!named.has_initialized_bytes_at(&address, 4));
+    }
+}
+
+// Forgetting values preserves writes; a branch that skipped the write still
+// prevents the joined destination from counting as completely initialized.
+#[test]
+fn symbolic_construction_initialization_survives_havoc_and_intersects_at_join() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Pointer::symbolic(Variable(870_009));
+    let raw = CMemory::new().with_uninitialized_block(source.block.clone(), 8);
+    let partial = raw
+        .clone()
+        .store(source.clone(), CValue::Int32(37u32.into()));
+    let full = partial
+        .clone()
+        .store(source.offset_by_bytes(4), CValue::Int32(42u32.into()));
+    let forgotten = full.with_loop_memory_havoc_preserving_loans(
+        Variable(870_010),
+        &BTreeSet::new(),
+        None,
+        None,
+    );
+    assert!(forgotten.has_initialized_bytes_at(&source, 8));
+    assert!(forgotten.may_read_uninitialized_object(&source, 8));
+    assert!(forgotten.known_value(&source).is_none());
+    let joined = forgotten
+        .clone()
+        .with_interface_memory_havoc(Variable(870_011), &BTreeSet::new(), &[&forgotten, &partial])
+        .expect("construction initialization join");
+    assert!(joined.has_initialized_bytes_at(&source, 4));
+    assert!(!joined.has_initialized_bytes_at(&source, 8));
+    assert!(joined.may_read_uninitialized_object(&source, 8));
+}
+
+// Substitution retains the byte footprint even at a nonzero offset. This
+// metadata does not authorize resizing the caller object or subobject construction.
+#[test]
+fn symbolic_construction_initialization_substitution_preserves_extent() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(870_012);
+    let source = Pointer::symbolic(variable);
+    let raw = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
+    let destination = CMemory::frame_local_pointer(20, "container").offset_by_bytes(8);
+    let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
+        &raw,
+        variable,
+        &destination,
+    );
+    assert!(mapped.may_read_uninitialized_object(&destination, 4));
+    assert!(!mapped.may_read_uninitialized_object(&destination.offset_by_bytes(4), 4));
+    assert!(!mapped.may_read_uninitialized_object(
+        &CMemory::frame_local_pointer(20, "container").offset_by_bytes(4),
+        4
+    ));
+    assert!(!mapped.has_initialized_bytes_at(&destination, 4));
+}
+
+// Query work is bounded by potentially aliasing tracked objects, not other
+// caller allocations. Concrete unrelated raw objects are excluded by the index.
+#[test]
+fn construction_initialization_lookup_ignores_unrelated_caller_storage() {
+    let mut work_by_size = Vec::new();
+    for count in [16, 128, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = CMemory::frame_local_pointer(21, "construction");
+        let mut memory = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
+        for index in 0..count {
+            memory = memory.with_uninitialized_block(format!("local:unrelated:{index}"), 4);
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory.may_read_uninitialized_object(&source, 4)
+        });
+        assert!(result);
+        work_by_size.push(work);
+    }
+    assert!(
+        work_by_size
+            .iter()
+            .all(|work| *work <= work_by_size[0].max(1) * 2),
+        "{work_by_size:?}"
+    );
+}
+
+// Instantiating an object can put a variable only in its byte offset. Both
+// whole and incremental collectors must reserve it against fresh witnesses.
+#[test]
+fn construction_object_offsets_participate_in_fresh_variable_collection() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source_variable = Variable(870_013);
+    let offset_variable = Variable(870_014);
+    let source = Pointer::symbolic(source_variable);
+    let raw = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
+    let destination = Pointer {
+        block: "local:variable-container".into(),
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(offset_variable), 4),
+    };
+    let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
+        &raw,
+        source_variable,
+        &destination,
+    );
+    let mut whole = BTreeSet::new();
+    crate::kernel::reasoning::collect_memory_bitvector_variables_whole(&mapped, &mut whole);
+    assert!(whole.contains(&offset_variable));
+    assert!(!whole.contains(&source_variable));
+    let before = crate::kernel::intern_c_memory(mapped.clone());
+    let mut cached = BTreeSet::new();
+    crate::kernel::reasoning::collect_shared_memory_bitvector_variables(&before, &mut cached);
+    assert_eq!(cached, whole);
+    let after = crate::kernel::intern_c_memory(mapped.store(
+        CMemory::frame_local_pointer(22, "unrelated"),
+        CValue::Int32(37u32.into()),
+    ));
+    let mut updated = BTreeSet::new();
+    crate::kernel::reasoning::collect_shared_memory_bitvector_variables(&after, &mut updated);
+    assert_eq!(updated, whole);
+}
+
+// Neither compact resource naming nor a claimed havoc edge may manufacture
+// initialization or discard the marker that requires it.
+#[test]
+fn construction_initialization_cannot_be_erased_or_seeded_by_a_proof_shortcut() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Pointer::symbolic(Variable(870_015));
+    let raw = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
+    assert!(
+        raw.clone()
+            .with_symbolic_storage_run(
+                source.clone(),
+                CType::Int32,
+                1,
+                crate::kernel::intern_c_memory(raw.clone())
+            )
+            .is_err()
+    );
+    let assumptions = PureFactContext::new();
+    let mut havoc = raw
+        .clone()
+        .with_call_memory_havoc(Variable(870_016), &[], &assumptions, None);
+    assert!(havoc.matches_call_memory_havoc_result(&raw, &[], &assumptions, None));
+    Arc::make_mut(&mut havoc.heap).uninitialized_objects.clear();
+    assert!(!havoc.matches_call_memory_havoc_result(&raw, &[], &assumptions, None));
+}
+
+// An actual write can use an alias whose variable survives only in the byte
+// initialization record after havoc. Fresh witnesses must not reuse it.
+#[test]
+fn forgotten_construction_writes_keep_their_address_variables_reserved() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Pointer::symbolic(Variable(870_017));
+    let alias_variable = Variable(870_018);
+    let alias = Pointer::symbolic(alias_variable);
+    let written = CMemory::new()
+        .with_uninitialized_block(source.block.clone(), 4)
+        .store(alias.clone(), CValue::Int32(37u32.into()));
+    let before = crate::kernel::intern_c_memory(written.clone());
+    let mut variables = BTreeSet::new();
+    crate::kernel::reasoning::collect_shared_memory_bitvector_variables(&before, &mut variables);
+    assert!(variables.contains(&alias_variable));
+    let forgotten = written.with_loop_memory_havoc_preserving_loans(
+        Variable(870_019),
+        &BTreeSet::new(),
+        None,
+        None,
+    );
+    assert!(forgotten.known_value(&alias).is_none());
+    let mut whole = BTreeSet::new();
+    crate::kernel::reasoning::collect_memory_bitvector_variables_whole(&forgotten, &mut whole);
+    let mut cached = BTreeSet::new();
+    crate::kernel::reasoning::collect_shared_memory_bitvector_variables(
+        &crate::kernel::intern_c_memory(forgotten),
+        &mut cached,
+    );
+    assert!(cached.contains(&alias_variable));
+    assert_eq!(whole, cached);
+}
+
+// A constructor keeps its native void signature. Completion checks the entry
+// destination even when the ordinary pointer parameter has been reassigned.
+#[test]
+fn construction_parameter_completion_checks_original_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for complete in [false, true] {
+        let field = c_cast(
+            c_pointer_offset_bytes(c_variable("destination"), 8),
+            CType::Int32Pointer,
+        );
+        let body = c_seq(
+            c_typed_store(
+                c_variable("destination"),
+                field.clone(),
+                CType::Int32Pointer,
+            ),
+            if complete {
+                c_typed_store(field, c_variable("input"), CType::Int32)
+            } else {
+                c_skip()
+            },
+        );
+        let function = destination_procedure("initialize_node", body)
+            .with_construction_parameter(0, node_layout());
+        let caller =
+            allocate_destination(&CState::new().with_population_creation_tracking(), "node");
+        let at = caller.locals.slot("node").unwrap().clone();
+        let paths = execute_c_function_call_paths(
+            &caller,
+            &function,
+            &[c_pointer_value(at.clone()), c_int32_literal(37)],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one constructor path");
+        };
+        if complete {
+            let CFunctionOutcome::Return { state, .. } = &path.outcome else {
+                panic!("constructor completion failed");
+            };
+            assert!(
+                state.aggregate_destination.is_none(),
+                "callee destination cannot replace caller metadata"
+            );
+            assert!(!aggregate_copy_reads_uninitialized(
+                &state.memory,
+                &at,
+                &node_layout()
+            ));
+            assert!(
+                !state.memory.has_initialized_bytes_at(&at, 16),
+                "padding stays unwritten"
+            );
+        } else {
+            assert!(matches!(
+                path.outcome,
+                CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(_))
+            ));
+        }
+    }
+    // Reassigning the parameter to an unrelated initialized object does not
+    // complete the original destination.
+    let function = c_function(
+        CType::Void,
+        "redirect_constructor",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("other", CType::Int32Pointer),
+        ],
+        c_seq(
+            c_assign("destination", c_variable("other")),
+            c_return(c_void_value()),
+        ),
+    )
+    .with_construction_parameter(0, node_layout());
+    let caller = allocate_destination(
+        &allocate_destination(&CState::new().with_population_creation_tracking(), "node"),
+        "other",
+    );
+    let at = caller.locals.slot("node").unwrap().clone();
+    let other = caller.locals.slot("other").unwrap().clone();
+    let memory = caller.memory.clone().with_initialized_object(&other, 16);
+    let caller = caller.with_memory(memory);
+    let paths = execute_c_function_call_paths(
+        &caller,
+        &function,
+        &[c_pointer_value(at), c_pointer_value(other)],
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap();
+    assert!(paths.iter().all(|path| matches!(
+        path.outcome,
+        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(_))
+    )));
+}
+
+#[test]
+fn raw_object_footprint_does_not_resize_or_initialize_parent_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let at = Pointer::symbolic(Variable(873_031));
+    let memory = CMemory::new()
+        .with_block(at.block.clone(), 32)
+        .with_uninitialized_object(at.offset_by_bytes(8), 8);
+    assert_eq!(memory.block_size(&at.block), Some(&32u32.into()));
+    assert!(memory.may_read_uninitialized_object(&at.offset_by_bytes(8), 8));
+    assert!(!memory.may_read_uninitialized_object(&at, 8));
+    assert!(!memory.may_read_uninitialized_object(&at.offset_by_bytes(16), 8));
+    assert!(!memory.has_initialized_bytes_at(&at.offset_by_bytes(8), 8));
+}
+
+// The admitted value-only constructor profile must yield the same observable
+// descriptor after zero, one or several explicit trivial result copies.
+#[test]
+fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
+    let layout = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("data", 0, CType::Int32Pointer),
+            CAggregateField::new("extent", 8, CType::UInt64),
+        ],
+    );
+    let destination = c_variable("destination");
+    let owner = CResourceSpec::owned_memory(
+        CMemorySegment::new(destination.clone(), c_int32_literal(0), c_int32_literal(16))
+            .with_element_width(1),
+    );
+    let constructor = c_function(
+        CType::Void,
+        "construct_descriptor",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("backing", CType::Int32Pointer),
+            c_parameter("extent", CType::UInt64),
+        ],
+        c_seq(
+            c_typed_store(
+                destination.clone(),
+                c_variable("backing"),
+                CType::Int32Pointer,
+            ),
+            c_seq(
+                c_typed_store(
+                    c_pointer_offset_bytes(destination, 8),
+                    c_variable("extent"),
+                    CType::UInt64,
+                ),
+                c_return(c_void_value()),
+            ),
+        ),
+    )
+    .with_construction_parameter(0, layout.clone())
+    .with_resource_summary(vec![owner.clone()], vec![owner]);
+    let environment = CExecutionEnvironment::new().with_function(constructor);
+    for copies in [0, 1, 3] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut statements = vec![
+            c_declare("backing", CType::Int32),
+            c_assign("backing", c_int32_literal(23)),
+            c_allocate_aggregate_destination("result", layout.clone()),
+        ];
+        let names = (0..copies)
+            .map(|index| format!("temporary_{index}"))
+            .collect::<Vec<_>>();
+        for name in &names {
+            statements.push(c_allocate_aggregate_destination(name, layout.clone()));
+        }
+        let first = names.first().map_or("result", String::as_str);
+        statements.push(c_call(
+            "construct_descriptor",
+            vec![
+                c_cast(c_variable(first), CType::Int32Pointer),
+                c_addr_of("backing"),
+                c_uint64_literal(37),
+            ],
+        ));
+        for (index, name) in names.iter().enumerate() {
+            let target = names.get(index + 1).map_or("result", String::as_str);
+            statements.push(c_copy_aggregate(
+                c_variable(target),
+                c_variable(name),
+                layout.clone(),
+            ));
+        }
+        if !names.is_empty() {
+            statements.push(c_end_automatic_lifetimes(
+                names.iter().rev().cloned().collect(),
+            ));
+        }
+        // Ordinary local storage has implicit authority rather than a range fact.
+        // Writing through the saved backing pointer checks that retirement kept it.
+        statements.push(c_typed_store(
+            c_addr_of("backing"),
+            c_int32_literal(24),
+            CType::Int32,
+        ));
+        let statement = statements.into_iter().reduce(c_seq).unwrap();
+        let checked = prove_symbolic_c_execution_paths_with_environment(
+            CState::new().with_population_creation_tracking(),
+            statement,
+            PureFactContext::new(),
+            environment.clone(),
+            CExecutionSemantics::EXECUTE_BODIES,
+        );
+        let [path] = checked.paths() else {
+            panic!("one descriptor construction path");
+        };
+        let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
+            Proposition::CStatementExecutes {
+                outcome: CStatementOutcome::Normal(state),
+                ..
+            }
+            | Proposition::CStatementVerifies {
+                outcome: CStatementOutcome::Normal(state),
+                ..
+            } => state,
+            _ => panic!("descriptor construction and copies must complete"),
+        };
+        let result = state.locals.aggregate_object_pointer("result").unwrap();
+        let backing = state.locals.slot("backing").unwrap();
+        assert_eq!(
+            pointer(&state.memory.known_value(result).unwrap()),
+            *backing
+        );
+        assert_eq!(
+            state.memory.known_value(&result.offset_by_bytes(8)),
+            Some(CValue::UInt64(Bitvector32Term::UInt64Constant(37)))
+        );
+        assert_eq!(state.memory.known_value(backing), Some(int32(24)));
+        assert!(
+            state
+                .resources
+                .memory_write_range(result, 16, &PureFactContext::new())
+                .is_some()
+        );
+        for name in &names {
+            assert!(state.locals.aggregate_object_pointer(name).is_none());
+        }
+    }
+}
+
+// A summary can establish initialized storage without naming its pointer field's
+// value. Copying that value must use the same typed read as an ordinary load,
+// including when the storage holding it ends immediately afterwards.
+#[test]
+fn copying_unknown_pointer_field_preserves_its_value_after_source_retirement() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut state =
+        allocate_destination(&CState::new().with_population_creation_tracking(), "source");
+    state = allocate_destination(&state, "target");
+    let source = state
+        .locals
+        .aggregate_object_pointer("source")
+        .unwrap()
+        .clone();
+    let target = state
+        .locals
+        .aggregate_object_pointer("target")
+        .unwrap()
+        .clone();
+    state.set_memory(state.memory.clone().with_initialized_object(&source, 16));
+    let expected = crate::kernel::eval::symbolic_storage_cell_value(
+        &state.memory,
+        &source,
+        CType::Int32Pointer,
+        true,
+    )
+    .unwrap();
+    let checked = prove_symbolic_c_execution_paths_with_environment(
+        state,
+        c_seq(
+            c_copy_aggregate(c_variable("target"), c_variable("source"), node_layout()),
+            c_end_automatic_lifetimes(vec!["source".into()]),
+        ),
+        PureFactContext::new(),
+        CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+    );
+    let [path] = checked.paths() else {
+        panic!("one checked copy path");
+    };
+    let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
+        Proposition::CStatementExecutes {
+            outcome: CStatementOutcome::Normal(state),
+            ..
+        }
+        | Proposition::CStatementVerifies {
+            outcome: CStatementOutcome::Normal(state),
+            ..
+        } => state,
+        _ => panic!("initialized unknown pointer copy must complete"),
+    };
+    assert_eq!(state.memory.known_value(&target), Some(expected));
+    assert!(state.locals.aggregate_object_pointer("source").is_none());
+    assert!(
+        state
+            .resources
+            .memory_write_range(&target, 16, &PureFactContext::new())
+            .is_some()
+    );
 }

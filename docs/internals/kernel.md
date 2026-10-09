@@ -106,6 +106,54 @@ construct arbitrary theorems directly. Public functions that return `Theorem`
 are trusted theorem-producing operations. In Click terminology these are
 axioms, even when Rust names them `prove_*`.
 
+### Source obligations and checked evidence
+
+The Rust module boundary is not the whole trusted computing base. As described
+in [Architecture](architecture.md#trust-and-boundaries), translating an accepted
+source claim into the right kernel obligation is trusted too. This includes
+choosing the entry state and symbolic inputs for a function contract. Smart
+planning chooses steps for that obligation; it cannot change the obligation or
+manufacture evidence for it.
+
+For ordinary function contracts, the responsibilities are:
+
+| Stage | Responsibility | Implementation |
+| --- | --- | --- |
+| Entry lowering | Represent the declared parameter domain and entry resources, without specializing to a convenient call | `initial_call_state` in `src/surface/lowering/resource_lowering.rs`, called by `initial_claim_context_with_caller_owner` in `src/surface/proof.rs` |
+| Checked proof transitions | Validate execution, logical steps, branches, and completion against the supplied obligation | `src/kernel/proof/` and kernel execution APIs |
+| Contract certification | Reconstruct the contract assumptions for the supplied state and arguments; check artifact reuse, path coverage, obligations, resources, effects, and claims | `src/kernel/api.rs` and `src/kernel/api/contract_certification/` |
+| Rule packaging | Require the complete set of certified claims for the exact function | `c_verified_function_rule` in `src/kernel/api/contract_certification/contract_claims.rs` |
+
+Entry lowering gives separate scalar parameters separate symbolic variables.
+Pointer inputs have separately named symbolic addresses; different names do
+**not** establish unequal addresses or disjoint storage. Any alias restriction
+must come from the applicable contract and resource semantics. Certification
+uses the entry retained by the proof, including checked storage authorities;
+it does not replace the supplied arguments with a newly generated generic
+tuple. Rule packaging checks claim coverage and function identity, not the
+source-to-entry translation again.
+
+A proof about one call and a proof of a function contract have different
+scopes. Checking a body at `x = 0` can establish a property of that call. To
+justify a reusable contract with no restriction on `x`, the entry must represent
+arbitrary permitted `x`. Callers of the low-level certification APIs that
+intend to install reusable rules must preserve that generality. The current
+Surface path constructs it during entry lowering; the API names alone do not
+assert that arbitrary supplied states and arguments have been generalized.
+
+When investigating a suspected boundary violation, identify the exact judgment
+and its premises, the operation that issued the evidence, and which inputs the
+caller was responsible for constructing. Kernel tests can access private
+constructors and helpers, unlike Surface proofs. In particular,
+`certify_contract_with_kernel_artifacts` accepts a test's state and arguments;
+it does not run Surface entry lowering. Acceptance of a rule in such a test is
+not, by itself, a demonstration that Click verified a false source claim.
+Conversely, a kernel API that violates its stated judgment is a defect even
+without a Surface reproducer. Neither the `verified` prefix nor membership in
+the trusted implementation settles that question.
+
+### Built-in arithmetic theorems
+
 `prove_int32_increment_upper_bound`,
 `prove_int32_increment_strictly_increases`,
 `prove_int32_increment_lower_bound`,
@@ -143,6 +191,8 @@ checks each parsed declaration against its exact proposition. The prelude and
 the kernel ship in one executable, so ordinary verifications apply these
 declarations as dependencies without re-checking them; expanded user proofs
 use the ordinary simple `apply(...) using { ... }` tactic.
+
+### Execution and contract evidence
 
 Execution theorems retain every verification condition as an implication
 premise, including conditions that are not assumable during execution.

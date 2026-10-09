@@ -277,7 +277,12 @@ impl Metadata<'_> {
                 self.conversions(conversions)?;
                 Ok(())
             }
-            CppInitializer::Constructor {
+            CppInitializer::ConstructionCall {
+                callee,
+                arguments,
+                span,
+            }
+            | CppInitializer::Constructor {
                 callee,
                 arguments,
                 span,
@@ -321,6 +326,19 @@ impl Metadata<'_> {
         for statement in body {
             crate::instrumentation::record_deterministic_work(1);
             let span = match statement {
+                CppStatement::AssignConstructionCall {
+                    target,
+                    callee,
+                    arguments,
+                    value_type,
+                    span,
+                } => {
+                    self.reference(target)?;
+                    self.callee(callee)?;
+                    self.arguments(arguments)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
+                    span
+                }
                 CppStatement::TrivialCopy {
                     target,
                     source,
@@ -357,6 +375,19 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::MemberConstruct {
+                    object,
+                    field,
+                    callee,
+                    arguments,
+                    span,
+                } => {
+                    self.reference(object)?;
+                    self.field(field)?;
+                    self.callee(callee)?;
+                    self.arguments(arguments)?;
+                    span
+                }
                 CppStatement::MemberStore {
                     object,
                     field,
@@ -366,6 +397,26 @@ impl Metadata<'_> {
                     self.reference(object)?;
                     self.field(field)?;
                     self.expression(value)?;
+                    span
+                }
+                CppStatement::ReturnConstruct {
+                    callee,
+                    arguments,
+                    value_type,
+                    cleanups,
+                    span,
+                }
+                | CppStatement::ReturnAggregateCall {
+                    callee,
+                    arguments,
+                    value_type,
+                    cleanups,
+                    span,
+                } => {
+                    self.callee(callee)?;
+                    self.arguments(arguments)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.cleanups(cleanups)?;
                     span
                 }
                 CppStatement::ReturnRecord {

@@ -187,7 +187,7 @@ pub(in crate::surface::proof) fn kernel_loop_by_index<'a>(
         | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. }
         | CStatement::Assert { .. } => None,
-        CStatement::ForStep { .. } => None,
+        CStatement::ForStep { .. } | CStatement::EndAutomaticLifetimes { .. } => None,
     }
 }
 

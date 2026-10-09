@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 49;
+    artifact["schema"] = 52;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -314,6 +314,20 @@ private:
     Json object;
     Json field;
   };
+
+  // These statements have no runtime operation. A concrete successful
+  // static_assert was checked by pinned Clang; never erase a dependent or
+  // failed assertion. Its source remains covered by the import closure.
+  static bool is_checked_runtime_noop(const clang::Stmt *statement) {
+    if (llvm::isa_and_nonnull<clang::NullStmt>(statement)) return true;
+    const auto *declaration = llvm::dyn_cast_or_null<clang::DeclStmt>(statement);
+    const auto *assertion = declaration != nullptr && declaration->isSingleDecl()
+        ? llvm::dyn_cast<clang::StaticAssertDecl>(declaration->getSingleDecl())
+        : nullptr;
+    return assertion != nullptr && !assertion->isFailed() &&
+           !assertion->getAssertExpr()->isValueDependent() &&
+           !assertion->getAssertExpr()->isTypeDependent();
+  }
 
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
     auto source = executable_source(declaration->getLocation());
@@ -467,10 +481,6 @@ private:
                "supported constructor is missing a validated member initializer");
           return std::nullopt;
         }
-        auto value = lower_expression(initializer->getInit(), constructor);
-        if (!value) {
-          return std::nullopt;
-        }
         llvm::json::Object object;
         object["declaration_id"] = object_self_id(constructor);
         object["name"] = "self";
@@ -481,15 +491,45 @@ private:
         field_reference["name"] = field->getNameAsString();
         field_reference["span"] = span(field->getSourceRange());
         llvm::json::Object statement;
-        statement["kind"] = "member_store";
         statement["object"] = std::move(object);
         statement["field"] = std::move(field_reference);
-        statement["value"] = std::move(*value);
+        if (field->getType()->isRecordType()) {
+          const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(initializer->getInit()->IgnoreParenImpCasts());
+          const auto *selected = construction == nullptr ? nullptr : construction->getConstructor();
+          const auto *definition = selected == nullptr ? nullptr : llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(selected->getDefinition());
+          if (construction == nullptr || definition == nullptr ||
+              construction->getConstructionKind() != clang::CXXConstructionKind::Complete ||
+              definition->getParent()->getCanonicalDecl() != field->getType()->getAsCXXRecordDecl()->getCanonicalDecl() ||
+              construction->getNumArgs() != definition->getNumParams()) {
+            fail(initializer->getSourceLocation(), "embedded C++ field initialization requires a resolved direct constructor call");
+            return std::nullopt;
+          }
+          llvm::json::Array arguments;
+          for (unsigned index = 0; index < construction->getNumArgs(); ++index) {
+            auto argument = lower_call_argument(construction->getArg(index), definition->getParamDecl(index), constructor);
+            if (!argument) return std::nullopt;
+            arguments.push_back(std::move(*argument));
+          }
+          if (!remember_function(definition)) return std::nullopt;
+          llvm::json::Object reference;
+          reference["declaration_id"] = declaration_id(definition);
+          reference["name"] = constructor_name(definition);
+          reference["span"] = span(initializer->getSourceRange());
+          statement["kind"] = "member_construct";
+          statement["callee"] = std::move(reference);
+          statement["arguments"] = std::move(arguments);
+        } else {
+          auto value = lower_expression(initializer->getInit(), constructor);
+          if (!value) return std::nullopt;
+          statement["kind"] = "member_store";
+          statement["value"] = std::move(*value);
+        }
         statement["span"] = span(initializer->getSourceRange());
         statements.push_back(std::move(statement));
       }
     }
     for (const clang::Stmt *statement : body->body()) {
+      if (is_checked_runtime_noop(statement)) continue;
       auto lowered = lower_statement(statement, declaration, true, true);
       if (!lowered) {
         return std::nullopt;
@@ -941,6 +981,13 @@ private:
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
+      // A trivial record assignment still materializes the RHS temporary. Its
+      // lifetime is represented by the explicit assignment operation below.
+      if (const auto *operation = llvm::dyn_cast_or_null<clang::CXXOperatorCallExpr>(call);
+          operation != nullptr && operation->getOperator() == clang::OO_Equal &&
+          !cleanups->cleanupsHaveSideEffects()) {
+        return lower_statement(operation, function, allow_local_declaration, allow_nested_scope);
+      }
       if (callee) {
         auto contract = library_assertions_.find(callee->getQualifiedNameAsString());
         if (contract != library_assertions_.end() &&
@@ -1016,10 +1063,17 @@ private:
           operation != nullptr && operation->getOperator() == clang::OO_Equal) {
         const auto *method =
             llvm::dyn_cast_or_null<clang::CXXMethodDecl>(operation->getDirectCallee());
+        const clang::Expr *assignment_rhs = operation->getNumArgs() == 2
+            ? operation->getArg(1)->IgnoreParens() : nullptr;
+        // IgnoreParenImpCasts also erases materialization wrappers. Retain that
+        // lifetime evidence while stripping only implicit qualification casts.
+        while (const auto *cast = llvm::dyn_cast_or_null<clang::ImplicitCastExpr>(assignment_rhs))
+          assignment_rhs = cast->getSubExpr()->IgnoreParens();
         if (method != nullptr && method->isCopyAssignmentOperator() &&
             method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
             method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
-            operation->getArg(0)->isLValue() && operation->getArg(1)->isLValue()) {
+            operation->getArg(0)->isLValue() && operation->getArg(1)->isLValue() &&
+            !llvm::isa_and_nonnull<clang::MaterializeTemporaryExpr>(assignment_rhs)) {
           auto target = lower_place_reference(operation->getArg(0)->IgnoreParenImpCasts(), function);
           auto source = lower_place_reference(operation->getArg(1)->IgnoreParenImpCasts(), function);
           if (!target || !source) return std::nullopt;
@@ -1030,8 +1084,33 @@ private:
           result["span"] = span(operation->getSourceRange());
           return Json(std::move(result));
         }
+        if (method != nullptr && method->isCopyAssignmentOperator() &&
+            method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
+            method->getParent()->isTriviallyCopyable() &&
+            method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
+            operation->getArg(0)->isLValue()) {
+          const auto *temporary = llvm::dyn_cast_or_null<clang::MaterializeTemporaryExpr>(assignment_rhs);
+          const auto *rhs = temporary == nullptr ? nullptr : llvm::dyn_cast<clang::CallExpr>(
+              temporary->getSubExpr()->IgnoreParenImpCasts());
+          if (rhs != nullptr && rhs->isPRValue() &&
+              temporary->getStorageDuration() == clang::SD_FullExpression &&
+              context_.hasSameUnqualifiedType(rhs->getType(), operation->getArg(0)->getType())) {
+            auto target = lower_place_reference(operation->getArg(0)->IgnoreParenImpCasts(), function);
+            auto value_type = lower_type(rhs->getType(), rhs->getExprLoc());
+            auto call = lower_call_operation(rhs, function, true);
+            if (!target || !value_type || !call) return std::nullopt;
+            llvm::json::Object result;
+            result["kind"] = "assign_construction_call";
+            result["target"] = std::move(*target);
+            result["value_type"] = std::move(*value_type);
+            result["callee"] = std::move(call->callee);
+            result["arguments"] = std::move(call->arguments);
+            result["span"] = span(operation->getSourceRange());
+            return Json(std::move(result));
+          }
+        }
         fail(operation->getExprLoc(),
-             "C++ record assignment requires a trivial copy assignment with live record lvalues and trivial destruction");
+             "C++ record assignment requires a trivial copy assignment between live lvalues or from a full-expression construction-call temporary with trivial destruction");
         return std::nullopt;
       }
       const auto *callee = call->getDirectCallee();
@@ -1158,23 +1237,87 @@ private:
       llvm::json::Object result;
       const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
       if (function->getReturnType()->isRecordType()) {
-        const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(
-            returned->getRetValue()->IgnoreParenImpCasts());
+        const auto *operand = returned->getRetValue()->IgnoreParenImpCasts();
+        if (const auto *cast = llvm::dyn_cast<clang::CXXFunctionalCastExpr>(operand);
+            cast != nullptr && cast->getCastKind() == clang::CK_ConstructorConversion &&
+            context_.hasSameUnqualifiedType(cast->getType(), function->getReturnType()))
+          operand = cast->getSubExpr()->IgnoreParenImpCasts();
+        const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(operand);
         const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
-        if (returned->getNRVOCandidate() != nullptr ||
-            constructor == nullptr || !constructor->isCopyConstructor() ||
-            !constructor->isTrivial() || constructor->isDeleted() ||
-            !constructor->getParent()->hasTrivialDestructor() ||
-            construction->getNumArgs() != 1 || !construction->getArg(0)->isLValue() ||
-            !context_.hasSameUnqualifiedType(construction->getType(), function->getReturnType())) {
-          fail(returned->getReturnLoc(), "C++ record return requires a resolved trivial copy constructor from a live record lvalue with trivial destruction");
+        const auto *record = function->getReturnType()->getAsCXXRecordDecl();
+        auto value_type = lower_type(function->getReturnType(), returned->getReturnLoc());
+        if (!value_type) return std::nullopt;
+        if (returned->getNRVOCandidate() != nullptr || record == nullptr ||
+            !record->isTriviallyCopyable() || !record->hasTrivialDestructor()) {
+          fail(returned->getReturnLoc(), "C++ record return requires trivial copying/destruction without NRVO");
           return std::nullopt;
         }
-        auto source = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), function);
-        auto value_type = lower_type(function->getReturnType(), returned->getReturnLoc());
-        if (!source || !value_type) return std::nullopt;
-        result["kind"] = "return_record";
-        result["source"] = std::move(*source);
+        if (constructor != nullptr && constructor->isCopyConstructor() &&
+            constructor->isTrivial() && !constructor->isDeleted() &&
+            construction->getNumArgs() == 1 && construction->getArg(0)->isLValue() &&
+            context_.hasSameUnqualifiedType(construction->getType(), function->getReturnType())) {
+          auto source = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), function);
+          if (!source) return std::nullopt;
+          result["kind"] = "return_record";
+          result["source"] = std::move(*source);
+        } else if (constructor != nullptr && !constructor->isCopyOrMoveConstructor() &&
+                   !constructor->isDeleted() &&
+                   construction->getConstructionKind() == clang::CXXConstructionKind::Complete &&
+                   context_.hasSameUnqualifiedType(construction->getType(), function->getReturnType())) {
+          const auto *definition = llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(constructor->getDefinition());
+          if (definition == nullptr || !construction->isPRValue() ||
+              !record->hasTrivialCopyConstructor() ||
+              construction->getNumArgs() != definition->getNumParams()) {
+            fail(returned->getReturnLoc(), "C++ returned construction requires a resolved prvalue constructor and trivial copy constructor");
+            return std::nullopt;
+          }
+          llvm::json::Array arguments;
+          for (unsigned index = 0; index < construction->getNumArgs(); ++index) {
+            const auto *source_argument = construction->getArg(index);
+            const auto *nested = llvm::dyn_cast<clang::CallExpr>(source_argument->IgnoreParenImpCasts());
+            std::optional<Json> argument;
+            if (nested != nullptr && !is_numeric_limits_max_call(nested)) {
+              if (definition->getParamDecl(index)->getType()->isReferenceType() ||
+                  !context_.hasSameType(source_argument->getType(), definition->getParamDecl(index)->getType())) {
+                fail(source_argument->getExprLoc(), "C++ returned constructor call arguments require matching by-value types");
+                return std::nullopt;
+              }
+              auto operation = lower_call_operation(nested, function, true);
+              auto type = lower_type(nested->getType(), nested->getExprLoc());
+              if (!operation || !type) return std::nullopt;
+              llvm::json::Object call_argument;
+              call_argument["kind"] = "call";
+              call_argument["callee"] = std::move(operation->callee);
+              call_argument["arguments"] = std::move(operation->arguments);
+              call_argument["value_type"] = std::move(*type);
+              call_argument["span"] = std::move(operation->span);
+              argument = Json(std::move(call_argument));
+            } else {
+              argument = lower_call_argument(source_argument, definition->getParamDecl(index), function);
+            }
+            if (!argument) return std::nullopt;
+            arguments.push_back(std::move(*argument));
+          }
+          if (!remember_function(definition)) return std::nullopt;
+          llvm::json::Object reference;
+          reference["declaration_id"] = declaration_id(definition);
+          reference["name"] = constructor_name(definition);
+          reference["span"] = span(operand->getSourceRange());
+          result["kind"] = "return_construct";
+          result["callee"] = std::move(reference);
+          result["arguments"] = std::move(arguments);
+        } else if (const auto *call = llvm::dyn_cast<clang::CallExpr>(operand);
+                   call != nullptr && call->isPRValue() &&
+                   context_.hasSameUnqualifiedType(call->getType(), function->getReturnType())) {
+          auto operation = lower_call_operation(call, function, true);
+          if (!operation) return std::nullopt;
+          result["kind"] = "return_aggregate_call";
+          result["callee"] = std::move(operation->callee);
+          result["arguments"] = std::move(operation->arguments);
+        } else {
+          fail(returned->getReturnLoc(), "C++ record return requires a resolved trivial lvalue copy, prvalue constructor or aggregate forwarding call");
+          return std::nullopt;
+        }
         result["value_type"] = std::move(*value_type);
       } else {
         auto scalar_call = lower_scalar_call_source(returned->getRetValue());
@@ -1555,10 +1698,9 @@ private:
     const bool record_object =
         record != nullptr && !local->getType().hasQualifiers();
     if (record_object && context_.getLangOpts().CXXExceptions &&
-        exception_behavior_ == "normal_only") {
+        exception_behavior_ == "normal_only" && !record->hasTrivialDestructor()) {
       fail(local->getLocation(),
-           "exception-enabled normal-only C++ supports borrowed records only, "
-           "not local object construction");
+           "exception-enabled normal-only C++ local objects require trivial destruction");
       return std::nullopt;
     }
     if (!mutable_int && !record_object && !int_reference) {
@@ -1635,7 +1777,19 @@ private:
     auto scalar_call = lower_scalar_call_source(source_initializer);
     if (!scalar_call) return std::nullopt;
     const auto *initializer_call = scalar_call->call;
-    if (record_object && record->isAggregate()) {
+    if (record_object && initializer_call != nullptr && initializer_call->isPRValue() &&
+        context_.hasSameUnqualifiedType(initializer_call->getType(), local->getType())) {
+      if (!record->isTriviallyCopyable() || !record->hasTrivialDestructor() || !scalar_call->conversions.empty()) {
+        fail(source_initializer->getExprLoc(), "C++ construction-call locals require trivial records and no conversion");
+        return std::nullopt;
+      }
+      auto operation = lower_call_operation(initializer_call, function, true);
+      if (!operation) return std::nullopt;
+      initializer["kind"] = "construction_call";
+      initializer["callee"] = std::move(operation->callee);
+      initializer["arguments"] = std::move(operation->arguments);
+      initializer["span"] = span(source_initializer->getSourceRange());
+    } else if (record_object && record->isAggregate()) {
       const auto *semantic_list =
           llvm::dyn_cast<clang::InitListExpr>(source_initializer);
       const clang::InitListExpr *syntactic_list = semantic_list;
@@ -1816,6 +1970,7 @@ private:
     unsigned local_count = 0;
     llvm::json::Array body;
     for (const clang::Stmt *statement : scope->body()) {
+      if (is_checked_runtime_noop(statement)) continue;
       if (llvm::isa<clang::DeclStmt>(statement)) {
         ++local_count;
       }
@@ -2311,7 +2466,7 @@ private:
                const clang::FunctionDecl *function,
                CleanupScopeKind cleanup_scope) {
     llvm::json::Array result;
-    if (statement == nullptr) {
+    if (statement == nullptr || is_checked_runtime_noop(statement)) {
       return result;
     }
     statement = without_branch_weights(statement);
@@ -2348,6 +2503,7 @@ private:
         return result;
       }
       for (const clang::Stmt *member : compound->body()) {
+        if (is_checked_runtime_noop(member)) continue;
         auto lowered = lower_statement(member, function, false, false);
         if (!lowered) {
           return std::nullopt;
@@ -3108,20 +3264,20 @@ private:
     }
     const auto *prototype =
         constructor->getType()->getAs<clang::FunctionProtoType>();
-    if (!constructor->isExplicit() || constructor->getAccess() != clang::AS_public ||
+    if (constructor->getAccess() != clang::AS_public ||
         constructor->isDefaultConstructor() ||
         constructor->isCopyOrMoveConstructor() ||
         constructor->isDelegatingConstructor() || constructor->isVariadic() ||
         prototype == nullptr || !prototype->isNothrow()) {
       fail(constructor->getLocation(),
-           "the supported constructor must be one public explicit non-default noexcept constructor without copying, moving, delegation, or variadic arguments");
+           "the supported constructor must be one public non-default noexcept constructor without copying, moving, delegation, or variadic arguments");
       return false;
     }
     if (!constructor->doesThisDeclarationHaveABody() ||
         constructor->getDefinition() != constructor ||
-        !is_in_logical_source(constructor->getLocation())) {
+        !executable_source(constructor->getLocation())) {
       fail(constructor->getLocation(),
-           "the supported constructor must have an inline definition in the selected file");
+           "the supported constructor must have a definition in the selected file or a declared dependency");
       return false;
     }
     for (const clang::ParmVarDecl *parameter : constructor->parameters()) {
