@@ -89,6 +89,11 @@ its pointer equalities grant no memory authority.
 The bounded-slice access lemma uses the actual final-batch length rather than
 requiring room for a complete batch. It preserves the nested signed additions'
 definedness even when the last four-byte read ends at `INT32_MAX`.
+A signed partition identity proves that the full-batch prefix and aligned
+remainder reconstruct the original prefix without overflowing. The exhaustion
+lemma reasons from the stored size comparison in the actual iterator exit
+disjunction. A native C guard regression checks that control-flow shape and its
+decreasing remaining count; it is independent of the Rust computation proof.
 No generated processed counter is used. These arithmetic lemmas do not yet
 establish the original outer-loop invariant or checksum result.
 
