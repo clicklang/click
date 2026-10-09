@@ -2363,10 +2363,50 @@ fn pointer_read_stored_value(
         }
         None => memory_dag_cell_source(&memory, &address, bytes, assumptions, true),
     }?;
-    let CValue::Pointer(stored) = cell.resolved_value(&address, kind)? else {
+    if let Some(value) = cell.resolved_value(&address, kind) {
+        return match value {
+            CValue::Pointer(stored) => Some(stored.pointer().clone()),
+            _ => None,
+        };
+    }
+    // Only the bounded explicit query asks the full pointer matcher about
+    // this one endpoint. The ambient decision walk keeps its cheap rule.
+    max_hops?;
+    pointer_value_at_stopping_store(&cell, &address, kind, bytes, assumptions)
+}
+
+/// Recover only the complete typed value at the selected stopping store.
+/// A recorded pointer-load identity can require the full address matcher,
+/// beyond the cheap history classifier's graph equality. Never search older
+/// stores here, and never infer a pointer from scalar or partial bytes.
+fn pointer_value_at_stopping_store(
+    cell: &MemoryDagCell,
+    address: &Pointer,
+    kind: LoadKind,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> Option<Pointer> {
+    let step = cell.node().derivation()?;
+    let CMemoryDerivation::Store {
+        pointer: write,
+        value,
+        ..
+    } = step.as_ref()
+    else {
         return None;
     };
-    Some(stored.pointer().clone())
+    let CValue::Pointer(stored) = value else {
+        return None;
+    };
+    (bytes == crate::kernel::C_POINTER_BYTE_WIDTH
+        && value.byte_width() == bytes
+        && kind.reads_value(value)
+        && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+            write,
+            address,
+            assumptions,
+        ))
+    .then(|| stored.pointer().clone())
 }
 
 /// Whether a pointer-valued load resolves through the recorded memory DAG to
@@ -7164,5 +7204,145 @@ mod canonical_numeric_run_tests {
                 assert_eq!(canonical.cells.get(&pointer), Some(run.value(index)));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pointer_store_endpoint_tests {
+    use super::*;
+
+    /// The endpoint rule checks a full typed pointer and its exact address;
+    /// it cannot answer from an older store, missing alias, or partial bytes.
+    #[test]
+    fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = |id| {
+            Pointer::loaded(
+                PointerBlock::ExternalArgument,
+                Bitvector32Term::Variable(Variable(id)),
+                4,
+            )
+        };
+        let written = base(160_001).offset_by_bytes(8);
+        let address = base(160_002).offset_by_bytes(8);
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(base(160_001), base(160_002)),
+            true,
+        );
+        let endpoint = |memory: CMemory| MemoryDagCell::Unwritten {
+            node: intern_c_memory(memory),
+            path: Vec::new(),
+        };
+        let mut samples = Vec::new();
+        for count in [16u64, 64, 256, 1024] {
+            let mut context = PureFactContext::new().assume_proposition(alias.clone());
+            let mut memory = CMemory::new();
+            for index in 0..count {
+                context = context.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(170_000 + index * 2)),
+                        Pointer::symbolic(Variable(170_001 + index * 2)),
+                    ),
+                    true,
+                );
+                memory = memory.store(
+                    written.offset_by_bytes(32 + index as u32 * 8),
+                    CValue::UInt64(Bitvector32Term::UInt64Constant(index)),
+                );
+            }
+            let stored = Pointer::symbolic(Variable(180_000 + count));
+            memory = memory.store(
+                written.clone(),
+                CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+            );
+            let cell = endpoint(memory.clone());
+            let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+                pointer_value_at_stopping_store(&cell, &address, LoadKind::Bits32, 8, &context)
+            });
+            assert_eq!(value, Some(stored.clone()));
+            samples.push(work);
+            for (kind, bytes) in [
+                (LoadKind::Bits32, 4),
+                (LoadKind::Bits32, 16),
+                (LoadKind::Bits64, 8),
+            ] {
+                assert!(
+                    pointer_value_at_stopping_store(&cell, &address, kind, bytes, &context)
+                        .is_none()
+                );
+            }
+            assert!(
+                pointer_value_at_stopping_store(
+                    &cell,
+                    &address,
+                    LoadKind::Bits32,
+                    8,
+                    &context.without_exact_fact(&alias)
+                )
+                .is_none()
+            );
+            assert!(
+                pointer_value_at_stopping_store(
+                    &cell,
+                    &address.offset_by_bytes(4),
+                    LoadKind::Bits32,
+                    8,
+                    &context
+                )
+                .is_none()
+            );
+            // Same offset in another object is not the stored address.
+            assert!(
+                pointer_value_at_stopping_store(
+                    &cell,
+                    &Pointer::symbolic(Variable(190_000 + count)).offset_by_bytes(8),
+                    LoadKind::Bits32,
+                    8,
+                    &context
+                )
+                .is_none()
+            );
+            let overwritten = endpoint(memory.clone().store(
+                written.clone(),
+                CValue::typed_pointer(Pointer::null(), CType::Int32Pointer),
+            ));
+            assert_eq!(
+                pointer_value_at_stopping_store(
+                    &overwritten,
+                    &address,
+                    LoadKind::Bits32,
+                    8,
+                    &context
+                ),
+                Some(Pointer::null())
+            );
+            assert_ne!(
+                pointer_value_at_stopping_store(
+                    &overwritten,
+                    &address,
+                    LoadKind::Bits32,
+                    8,
+                    &context
+                ),
+                Some(stored)
+            );
+            for offset in [0, 4, 32] {
+                let changed = endpoint(memory.clone().store(
+                    written.offset_by_bytes(offset),
+                    CValue::Int32(Bitvector32Term::Constant(1)),
+                ));
+                assert!(
+                    pointer_value_at_stopping_store(
+                        &changed,
+                        &address,
+                        LoadKind::Bits32,
+                        8,
+                        &context
+                    )
+                    .is_none()
+                );
+            }
+        }
+        assert!(samples[3] <= samples[0] * 4 + 64, "{samples:?}");
     }
 }
