@@ -398,6 +398,8 @@ loaded value. Resolving the new address against the original snapshot keeps
 cached child identities across a joined loop; a projection for the old address
 alone is insufficient. Naming uses exact recorded reads and cached pointer
 cells; a cold read keeps its snapshot application without searching history.
+A complete pointer value cached at the rewritten address is returned directly
+from that snapshot, including after a pointer store.
 The joined-pointer-field fixtures cover the explicit
 rewrite and rejection of an equality about a different field.
 

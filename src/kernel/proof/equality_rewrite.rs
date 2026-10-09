@@ -436,6 +436,11 @@ fn rewrite_through_registered_pointer_read(
     if rewritten_address == address {
         return Some(pointer.clone());
     }
+    // A complete typed pointer stored in this exact cell is already the
+    // rewritten read's value. No earlier store or alias spelling is searched.
+    if let Some(CValue::Pointer(value)) = source.known_value(&rewritten_address) {
+        return Some(value.pointer().clone());
+    }
     let read = Bitvector32Term::MemoryLoad(
         source.clone(),
         Box::new(rewritten_address.clone()),
@@ -2263,6 +2268,20 @@ mod tests {
             );
             assert_eq!(read(&later, &alias_address), replacement);
             assert!(!context.pointers_known_equal(actual, &replacement));
+            // A read created after the store must rewrite to the new pointer,
+            // while the previously rewritten read above retains its snapshot.
+            let stored_goal = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(read(&later, &address), replacement.clone()),
+                true,
+            );
+            let stored_rewrite = facts.check_equality_rewrite(&stored_goal, &cited).unwrap();
+            assert_eq!(
+                stored_rewrite.proposition(),
+                &Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(replacement.clone(), replacement),
+                    true,
+                )
+            );
             // An unregistered scaled integer is still pointer arithmetic.
             let index = Bitvector32Term::Variable(Variable(211_005));
             let indexed = Pointer::loaded(owner.block.clone(), index.clone(), 4);
