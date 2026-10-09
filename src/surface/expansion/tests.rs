@@ -1731,6 +1731,35 @@ fn expanded_branch_condition_names_a_local_struct_pointer_field() {
         .expect("the expansion naming the field should verify");
 }
 
+/// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
+/// and the expansion verifies with no `arithmetic()` left to plan.
+#[test]
+fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
+    let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires i + 1u64 < length;\n    requires length <= 2147483647u64;\n    ensures i + 2u64 <= length by {\n        arithmetic() using { i <= length; i + 1u64 < length; length <= 2147483647u64; }\n    }\n}\n";
+    verify_c0_sources(source, &[]).expect("the uint64 goal verifies");
+    let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
+        .expect("the uint64 arithmetic step expands");
+    for step in [
+        "apply(uint64_less_than_to_integer((i + 1u64), length))",
+        "apply(uint64_add_to_integer(i, 2u64))",
+        "apply(uint64_less_equal_of_to_integer((i + 2u64), length))",
+        "arithmetic_certificate {",
+    ] {
+        assert!(expanded.contains(step), "{step}\n{expanded}");
+    }
+    assert!(!expanded.contains("arithmetic()"), "{expanded}");
+    verify_c0_sources(&expanded, &[]).expect("the expansion verifies");
+    // Without the bound on `i`, `i + 1` may wrap, and the step says so.
+    let unbounded = source.replace("i <= length; i + 1u64", "i + 1u64");
+    assert_ne!(unbounded, source);
+    let error = verify_c0_sources(&unbounded, &[]).expect_err("the sum may wrap");
+    assert!(
+        error.message().contains("stays within uint64"),
+        "{}",
+        error.message()
+    );
+}
+
 #[test]
 fn expanded_contract_let_facts_remain_source_indexable() {
     let c_source = "int32 increment(int32 x) { return x + 1; }";

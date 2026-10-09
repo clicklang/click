@@ -124,16 +124,19 @@ Remaining:
   `uint64` and `int64` are in the standard library. Two things are left.
   `simp` does not search for a 64-bit chain as it does for `int32`; that
   is smart-tactic reach, and the explicit theorems cover the need.
-  `arithmetic` accepts only `int32` and `Integer` goals, so a linear
-  64-bit fact such as `i + 2u64 <= length` from `i + 1u64 < length` has
-  no direct step. It is a lemma through `to_integer` and the
-  `uint64_*_to_integer` bridges, about twenty lines each;
-  `mdtests/a_size_t_loop_stepping_by_two_closes_with_explicit_steps.md`
-  proves a `size_t` loop that way. A 64-bit reading for `arithmetic`
-  would make each lemma one step. Describe it to Lacker before building.
+  `arithmetic() using` proves a linear `uint64` order goal (Lacker said to
+  build it on 2026-10-08): it bridges the listed premises and the goal to
+  Integer order, shows each sum and difference stays in range, and
+  expands to those `apply` steps. Left: `int64` goals, which lack two
+  bridges (`int64_less_than_of_to_integer`, definedness of a sum from
+  Integer bounds); equality goals and premises at either width; and a goal
+  that needs three order premises at once, since the Integer step
+  underneath combines two. Regression for the first: the `uint64` loop of
+  `mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md` with
+  a `long` index.
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
-  regressions. Check with Lacker before starting it.
+  regressions. Lacker said to go ahead on 2026-10-08.
 - A 64-bit index expression that is not a lone parameter still takes the
   cast in a contract. It follows stage 3.
 
