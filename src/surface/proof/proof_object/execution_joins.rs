@@ -1651,58 +1651,120 @@ impl<'a> Proof<'a> {
         // one arm need to be copied into that arm's returned execution paths;
         // doing so avoids duplicating the complete ambient proof context per
         // outcome.
-        let mut paths = Vec::new();
-        let mut retained_path_keys: BTreeMap<
-            _,
-            Vec<(crate::kernel::CheckedLoanCallEvidenceSequence, usize)>,
-        > = BTreeMap::new();
-        let mut execution_evidence = Vec::new();
-        let mut outcome_provenance: Vec<OutcomeProvenance> = Vec::new();
-        for (arm_index, arm) in arms.iter().enumerate() {
-            let completed = arm
-                .execution
+        let completed_arms = [&arms[0], &arms[1]].map(|arm| {
+            arm.execution
                 .core
                 .frontier
                 .execution()
-                .expect("validated terminal arm is at function exit");
-            if completed.paths().len() != arm.execution.core.execution_evidence.len() {
-                return Err(self.step_error(format!(
-                    "{} terminal branch arm lost its checked execution evidence",
-                    if arm_index == 0 { "then" } else { "else" }
-                )));
-            }
-            // A call the arm stepped together with its `return` labels the
-            // arm's own paths; it is the innermost edge on each of them.
-            let arm_call_edges = arm
-                .execution
-                .presentation
-                .call_outcome_edges
-                .as_ref()
-                .filter(|edges| edges.len() == completed.paths().len());
-            let route_decision = terminal_route.map(|_| {
-                Arc::new(ExecutionBranchDecision {
-                    fingerprint: std::sync::OnceLock::new(),
-                    condition: surface_condition.clone(),
-                    value: arm_index == 0,
-                })
+                .expect("validated terminal arm")
+        });
+        let can_share_publication = !call_outcomes
+            && terminal_route.is_none()
+            && arms.iter().zip(completed_arms).all(|(arm, completed)| {
+                arm.execution.core.frontier_loop_rules.is_empty()
+                    && arm.execution.presentation.loop_return_proofs.is_empty()
+                    && completed.path_count() == arm.execution.core.execution_evidence.len()
+                    && arm.introduced_facts.iter().all(|fact| {
+                        completed.common_facts_contain(&ExecutionPureFact::new(fact.clone()))
+                    })
+                    && (!arm.execution.presentation.outcome_provenance.is_empty()
+                        || completed.path_count() == 1)
             });
-            for (arm_path_index, path) in completed.paths().iter().enumerate() {
-                let mut provenance = arm.execution.provenance_for_outcome(arm_path_index);
-                if provenance.call_routes.is_empty()
-                    && let Some(edges) = arm_call_edges
-                {
-                    provenance.call_routes.push(edges[arm_path_index]);
+        #[cfg(test)]
+        TERMINAL_PUBLICATION_VISITS.with(|counts| {
+            let (shared, read) = counts.get();
+            counts.set((
+                shared + usize::from(can_share_publication),
+                read + if can_share_publication {
+                    0
+                } else {
+                    completed_arms
+                        .iter()
+                        .map(|paths| paths.path_count())
+                        .sum::<usize>()
+                },
+            ));
+        });
+        let (outcomes, execution_evidence, outcome_provenance) = if can_share_publication {
+            let outcomes = crate::kernel::concat_retained_function_candidates(
+                execution_start_state.clone(),
+                completed_arms,
+                parent_execution.core.publication_case_prefix(),
+            );
+            let mut evidence = arms[0].execution.core.execution_evidence.clone();
+            evidence.append_shared(&arms[1].execution.core.execution_evidence);
+            let arm_provenance = |arm: &CheckedExecutionJoinArm<'_>| {
+                if arm.execution.presentation.outcome_provenance.is_empty() {
+                    vec![arm.execution.provenance_for_outcome(0)].into()
+                } else {
+                    arm.execution.presentation.outcome_provenance.clone()
                 }
-                if call_outcomes {
-                    // An `outcomes` nested in this arm was joined first, so
-                    // its edge follows this one.
-                    provenance.call_routes.insert(0, arm_index == 0);
+            };
+            let mut provenance: crate::kernel::proof::PersistentVector<OutcomeProvenance> =
+                arm_provenance(&arms[0]);
+            provenance.append_shared(&arm_provenance(&arms[1]));
+            (outcomes, evidence, provenance)
+        } else {
+            let mut paths = Vec::new();
+            let mut retained_path_keys: BTreeMap<
+                _,
+                Vec<(crate::kernel::CheckedLoanCallEvidenceSequence, usize)>,
+            > = BTreeMap::new();
+            let mut execution_evidence = Vec::new();
+            let mut outcome_provenance: Vec<OutcomeProvenance> = Vec::new();
+            for (arm_index, arm) in arms.iter().enumerate() {
+                let completed = arm
+                    .execution
+                    .core
+                    .frontier
+                    .execution()
+                    .expect("validated terminal arm is at function exit");
+                if completed.paths().len() != arm.execution.core.execution_evidence.len() {
+                    return Err(self.step_error(format!(
+                        "{} terminal branch arm lost its checked execution evidence",
+                        if arm_index == 0 { "then" } else { "else" }
+                    )));
                 }
-                let mut path_facts = path.execution_facts();
-                // A returned path of a summarized loop carries what the arm
-                // had established when its loop was summarized, not what the
-                // arm went on to establish on the continuing path.
-                let introduced = match arm
+                // A call the arm stepped together with its `return` labels the
+                // arm's own paths; it is the innermost edge on each of them.
+                let arm_call_edges = arm
+                    .execution
+                    .presentation
+                    .call_outcome_edges
+                    .as_ref()
+                    .filter(|edges| edges.len() == completed.paths().len());
+                let route_decision = terminal_route.map(|_| {
+                    Arc::new(ExecutionBranchDecision {
+                        fingerprint: std::sync::OnceLock::new(),
+                        condition: surface_condition.clone(),
+                        value: arm_index == 0,
+                    })
+                });
+                for (arm_path_index, path) in completed.paths().iter().enumerate() {
+                    let mut provenance = arm.execution.provenance_for_outcome(arm_path_index);
+                    if provenance
+                        .checked_leaf_facts
+                        .as_deref()
+                        .is_some_and(|(candidate, _)| !candidate.shares_record_with(path))
+                    {
+                        provenance.checked_leaf_facts = None;
+                    }
+
+                    if provenance.call_routes.is_empty()
+                        && let Some(edges) = arm_call_edges
+                    {
+                        provenance.call_routes.push(edges[arm_path_index]);
+                    }
+                    if call_outcomes {
+                        // An `outcomes` nested in this arm was joined first, so
+                        // its edge follows this one.
+                        provenance.call_routes.insert(0, arm_index == 0);
+                    }
+                    let mut path_facts = path.execution_facts();
+                    // A returned path of a summarized loop carries what the arm
+                    // had established when its loop was summarized, not what the
+                    // arm went on to establish on the continuing path.
+                    let introduced = match arm
                     .execution
                     .core
                     .pending_loop_return_pure_facts(arm_path_index)
@@ -1716,83 +1778,108 @@ impl<'a> Proof<'a> {
                     }
                     None => arm.introduced_facts.clone(),
                 };
-                let mut additional_facts = crate::kernel::ExecutionFacts::new();
-                for proposition in &introduced {
-                    let fact = ExecutionPureFact::new(proposition.clone());
-                    if !path_facts.contains(&fact) {
-                        additional_facts.push(fact.clone());
-                        path_facts.push(fact);
+                    // The arm's checked introduction delta is true on every
+                    // descendant leaf. Preserve its checked context through
+                    // publication; summarized loop returns keep their own base.
+                    if provenance.loop_return.is_some() {
+                        provenance.checked_leaf_facts = None;
+                    } else if let Some(cache) = &mut provenance.checked_leaf_facts {
+                        let (_, facts) = Arc::make_mut(cache);
+                        for proposition in &introduced {
+                            *facts = facts.with_kernel_checked_fact(proposition.clone());
+                        }
                     }
-                }
-                let path_key = (
-                    path.outcome(),
-                    path_facts.clone(),
-                    path.obligations(),
-                    provenance.call_routes.clone(),
-                );
-                let path_loan_evidence = path.loan_evidence().clone();
-                let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
-                    entries
-                        .iter()
-                        .find(|(evidence, index)| {
-                            evidence == &path_loan_evidence
-                                && match (
-                                    &provenance.loop_return,
-                                    &outcome_provenance[*index].loop_return,
-                                ) {
-                                    (None, None) => true,
-                                    (Some(left), Some(right)) => Arc::ptr_eq(left, right),
-                                    _ => false,
-                                }
-                        })
-                        .map(|(_, index)| *index)
-                });
-                if let Some(retained_index) = retained_index {
-                    if !outcome_provenance[retained_index].merge_generated_load_source_events_since(
-                        &provenance,
-                        &parent_execution.presentation.generated_load_source_events,
-                    ) {
-                        return Err(self.step_error(
+                    let mut additional_facts = crate::kernel::ExecutionFacts::new();
+                    for proposition in &introduced {
+                        let fact = ExecutionPureFact::new(proposition.clone());
+                        if !path_facts.contains(&fact) {
+                            additional_facts.push(fact.clone());
+                            path_facts.push(fact);
+                        }
+                    }
+                    let path_key = (
+                        path.outcome(),
+                        path_facts.clone(),
+                        path.obligations(),
+                        provenance.call_routes.clone(),
+                    );
+                    let path_loan_evidence = path.loan_evidence().clone();
+                    let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
+                        entries
+                            .iter()
+                            .find(|(evidence, index)| {
+                                evidence == &path_loan_evidence
+                                    && match (
+                                        &provenance.loop_return,
+                                        &outcome_provenance[*index].loop_return,
+                                    ) {
+                                        (None, None) => true,
+                                        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                                        _ => false,
+                                    }
+                            })
+                            .map(|(_, index)| *index)
+                    });
+                    if let Some(retained_index) = retained_index {
+                        if !outcome_provenance[retained_index]
+                            .merge_generated_load_source_events_since(
+                                &provenance,
+                                &parent_execution.presentation.generated_load_source_events,
+                            )
+                        {
+                            return Err(self.step_error(
                             "terminal outcome load source events do not descend from the branch root",
                         ));
+                        }
+                    } else {
+                        retained_path_keys
+                            .entry(path_key)
+                            .or_default()
+                            .push((path_loan_evidence.clone(), paths.len()));
+                        let published =
+                            crate::kernel::c_function_execution_candidate_with_additional_facts(
+                                path,
+                                &additional_facts,
+                            );
+                        if let Some(cache) = &mut provenance.checked_leaf_facts {
+                            let (candidate, _) = Arc::make_mut(cache);
+                            // Reclassification preserves the checked facts;
+                            // this join admitted the new arm suffix above.
+                            *candidate = published.clone();
+                        }
+                        paths.push(published);
+                        execution_evidence
+                            .push(arm.execution.core.execution_evidence[arm_path_index].clone());
+                        // Proof cases retain their decision when the checked arm
+                        // opens, so this path already shares the complete ordered
+                        // case history. A join must not rebuild its nested suffix.
+                        if let Some(route) = terminal_route {
+                            provenance.branch_decisions.record_route(
+                                route,
+                                Arc::clone(
+                                    route_decision
+                                        .as_ref()
+                                        .expect("terminal route owns its decision"),
+                                ),
+                            );
+                        }
+                        outcome_provenance.push(provenance);
                     }
-                } else {
-                    retained_path_keys
-                        .entry(path_key)
-                        .or_default()
-                        .push((path_loan_evidence.clone(), paths.len()));
-                    paths.push(
-                        crate::kernel::c_function_execution_candidate_with_additional_facts(
-                            path,
-                            &additional_facts,
-                        ),
-                    );
-                    execution_evidence
-                        .push(arm.execution.core.execution_evidence[arm_path_index].clone());
-                    // Proof cases retain their decision when the checked arm
-                    // opens, so this path already shares the complete ordered
-                    // case history. A join must not rebuild its nested suffix.
-                    if let Some(route) = terminal_route {
-                        provenance.branch_decisions.record_route(
-                            route,
-                            Arc::clone(
-                                route_decision
-                                    .as_ref()
-                                    .expect("terminal route owns its decision"),
-                            ),
-                        );
-                    }
-                    outcome_provenance.push(provenance);
                 }
             }
-        }
 
-        let outcomes = crate::kernel::c_function_execution_candidates_from_retained_paths(
-            execution_start_state.clone(),
-            context.function.clone(),
-            context.arguments.to_vec(),
-            paths,
-        );
+            let outcomes = crate::kernel::c_function_execution_candidates_from_retained_paths(
+                execution_start_state.clone(),
+                context.function.clone(),
+                context.arguments.to_vec(),
+                paths,
+            );
+            (
+                outcomes,
+                execution_evidence.into(),
+                outcome_provenance.into(),
+            )
+        };
         let mut execution = parent_execution.clone();
         execution.core.has_empty_execution_branch_leaf |= arms
             .iter()
@@ -1813,7 +1900,7 @@ impl<'a> Proof<'a> {
         execution.core.frontier.position = FrontierPosition::FunctionExit {
             execution: outcomes,
         };
-        execution.core.execution_evidence = execution_evidence.into();
+        execution.core.execution_evidence = execution_evidence;
         // Each arm's completed paths, the returned loop paths it retained
         // among them, are in the joined set above.
         execution.core.clear_pending_loop_returns();
@@ -1823,7 +1910,7 @@ impl<'a> Proof<'a> {
         execution.core.evidence_source = None;
         execution.presentation.branch_decisions =
             parent_execution.presentation.branch_decisions.clone();
-        execution.presentation.outcome_provenance = Arc::new(outcome_provenance);
+        execution.presentation.outcome_provenance = outcome_provenance;
         if call_outcomes {
             execution.presentation.call_outcome_edges = execution
                 .presentation

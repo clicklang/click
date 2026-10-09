@@ -6204,7 +6204,8 @@ pub(crate) struct ExecutionProofCore {
     /// this frontier. Ordinary in-flight execution has one trace; a single C
     /// operation with several return outcomes can complete several traces at
     /// once. Forked proofs share every unchanged trace prefix.
-    pub(crate) execution_evidence: SharedVec<PersistentSequence<CheckedExecutionEvent>>,
+    pub(crate) execution_evidence:
+        super::PersistentVector<PersistentSequence<CheckedExecutionEvent>>,
     /// Returned paths of summarized loops, already proved while each loop's
     /// continuing successor keeps advancing. They are appended to the
     /// completed trace set only at the function boundary, so ordinary
@@ -8061,7 +8062,7 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let memory_effects = self.append_statement_effects(execution_facts);
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
             trace.push(CheckedExecutionEvent::Context(context.clone()));
             for call in &call_events {
@@ -8544,6 +8545,10 @@ impl ExecutionProofCore {
         self.publication_case_facts
             .push(ExecutionPureFact::new(fact.clone()));
         self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
+    }
+
+    pub(crate) fn publication_case_prefix(&self) -> ExecutionFacts {
+        self.publication_case_facts.clone()
     }
 
     /// Candidate publication retains the admitted case prefix and appends
@@ -9215,12 +9220,12 @@ impl ExecutionProofCore {
         if !states_match {
             return Err("evidence does not start from the running state".into());
         }
+        // Premise availability is a set question. Retain both ordered streams
+        // by their persistent roots; the premise checker deduplicates only if
+        // a theorem actually needs its fallback set. Do not rebuild the whole
+        // effect history before every statement's ordinary context check.
         let mut retained_execution_facts = execution_facts.persistent_facts();
-        for fact in self.effect_facts.iter() {
-            if !retained_execution_facts.contains(fact) {
-                retained_execution_facts.push(fact.clone());
-            }
-        }
+        retained_execution_facts.extend_shared(&self.effect_facts);
         let entry_relation_facts = self
             .function_entry
             .as_ref()
@@ -9278,7 +9283,7 @@ impl ExecutionProofCore {
             path_facts,
             obligations,
         )?;
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Condition(theorem.clone()));
             trace.push(CheckedExecutionEvent::Context(context.clone()));
         }
@@ -9318,7 +9323,7 @@ impl ExecutionProofCore {
         if !arm.is_valid() {
             return false;
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ProofCase(arm.clone()));
         }
         true
@@ -9863,7 +9868,7 @@ impl ExecutionProofCore {
             names: names.to_vec(),
         };
         self.evidence_state = Some(after_state.clone());
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::AutomaticLifetimeEnd(end.clone()));
         }
         Ok(after_state)
@@ -9894,7 +9899,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::IteratedStep(checked.clone()));
         }
         Ok(after_state)
@@ -9939,7 +9944,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(observation.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ResourceObservation(
                 observation.clone(),
             ));
@@ -10010,7 +10015,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
         }
         Ok(())
@@ -10072,7 +10077,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(application.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::TacticApplication(
                 application.clone(),
             ));
@@ -10128,7 +10133,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(
                 rewrite.clone(),
             ));
@@ -10200,7 +10205,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() || entry_successor.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::PopulationMemberRewrite(
                 rewrite.clone(),
             ));
@@ -10245,7 +10250,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
         }
         Ok(())

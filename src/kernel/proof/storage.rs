@@ -68,6 +68,314 @@ impl<T: Clone> SharedVec<T> {
     }
 }
 
+/// Immutable vector roots. Balanced concatenation shares child nodes; edits
+/// copy only the selected tree path and a bounded underlying vector chunk.
+#[derive(Clone)]
+pub(crate) struct PersistentVector<T: Clone>(Arc<PersistentVectorData<T>>);
+struct PersistentVectorData<T: Clone> {
+    entries: Arc<PersistentVectorNode<T>>,
+    flat: std::sync::OnceLock<Vec<T>>,
+}
+#[derive(Clone)]
+enum PersistentVectorNode<T: Clone> {
+    Leaf(imbl::Vector<T>),
+    Branch {
+        left: Arc<Self>,
+        right: Arc<Self>,
+        len: usize,
+        height: usize,
+    },
+}
+impl<T: Clone> PersistentVectorNode<T> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Leaf(entries) => entries.len(),
+            Self::Branch { len, .. } => *len,
+        }
+    }
+    fn height(&self) -> usize {
+        match self {
+            Self::Leaf(entries) => usize::from(!entries.is_empty()),
+            Self::Branch { height, .. } => *height,
+        }
+    }
+    fn get(&self, index: usize) -> Option<&T> {
+        match self {
+            Self::Leaf(entries) => entries.get(index),
+            Self::Branch { left, right, .. } => {
+                if index < left.len() {
+                    left.get(index)
+                } else {
+                    right.get(index - left.len())
+                }
+            }
+        }
+    }
+    fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        match self {
+            Self::Leaf(entries) => entries.get_mut(index),
+            Self::Branch { left, right, .. } => {
+                if index < left.len() {
+                    Arc::make_mut(left).get_mut(index)
+                } else {
+                    Arc::make_mut(right).get_mut(index - left.len())
+                }
+            }
+        }
+    }
+    fn branch(left: Arc<Self>, right: Arc<Self>) -> Arc<Self> {
+        crate::instrumentation::record_deterministic_work(1);
+        Arc::new(Self::Branch {
+            len: left
+                .len()
+                .checked_add(right.len())
+                .expect("vector length overflow"),
+            height: 1 + left.height().max(right.height()),
+            left,
+            right,
+        })
+    }
+    fn balance(left: Arc<Self>, right: Arc<Self>) -> Arc<Self> {
+        if left.height() > right.height() + 1 {
+            let Self::Branch {
+                left: a, right: b, ..
+            } = left.as_ref()
+            else {
+                unreachable!()
+            };
+            if a.height() >= b.height() {
+                Self::branch(a.clone(), Self::branch(b.clone(), right))
+            } else {
+                let Self::Branch {
+                    left: c, right: d, ..
+                } = b.as_ref()
+                else {
+                    unreachable!()
+                };
+                Self::branch(
+                    Self::branch(a.clone(), c.clone()),
+                    Self::branch(d.clone(), right),
+                )
+            }
+        } else if right.height() > left.height() + 1 {
+            let Self::Branch {
+                left: a, right: b, ..
+            } = right.as_ref()
+            else {
+                unreachable!()
+            };
+            if b.height() >= a.height() {
+                Self::branch(Self::branch(left, a.clone()), b.clone())
+            } else {
+                let Self::Branch {
+                    left: c, right: d, ..
+                } = a.as_ref()
+                else {
+                    unreachable!()
+                };
+                Self::branch(
+                    Self::branch(left, c.clone()),
+                    Self::branch(d.clone(), b.clone()),
+                )
+            }
+        } else {
+            Self::branch(left, right)
+        }
+    }
+    fn join(left: Arc<Self>, right: Arc<Self>) -> Arc<Self> {
+        if left.len() == 0 {
+            return right;
+        }
+        if right.len() == 0 {
+            return left;
+        }
+        if left.height() > right.height() + 1 {
+            let Self::Branch {
+                left: a, right: b, ..
+            } = left.as_ref()
+            else {
+                unreachable!()
+            };
+            Self::balance(a.clone(), Self::join(b.clone(), right))
+        } else if right.height() > left.height() + 1 {
+            let Self::Branch {
+                left: a, right: b, ..
+            } = right.as_ref()
+            else {
+                unreachable!()
+            };
+            Self::balance(Self::join(left, a.clone()), b.clone())
+        } else {
+            Self::branch(left, right)
+        }
+    }
+}
+impl<T: Clone> Clone for PersistentVectorData<T> {
+    fn clone(&self) -> Self {
+        Self {
+            entries: self.entries.clone(),
+            flat: Default::default(),
+        }
+    }
+}
+impl<T: Clone> Default for PersistentVector<T> {
+    fn default() -> Self {
+        Self::from(Vec::new())
+    }
+}
+impl<T: Clone> PersistentVector<T> {
+    pub(crate) fn len(&self) -> usize {
+        self.0.entries.len()
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    pub(crate) fn get(&self, index: usize) -> Option<&T> {
+        self.0.entries.get(index)
+    }
+    pub(crate) fn iter(&self) -> PersistentVectorIter<'_, T> {
+        PersistentVectorIter {
+            entries: &self.0.entries,
+            front: 0,
+            back: self.len(),
+        }
+    }
+    pub(crate) fn as_slice(&self) -> &[T] {
+        self.as_slice_with(|_| {})
+    }
+    pub(crate) fn as_slice_with(&self, before: impl FnOnce(&Self)) -> &[T] {
+        self.0.flat.get_or_init(|| {
+            before(self);
+            self.iter().cloned().collect()
+        })
+    }
+    fn edit(&mut self) -> &mut PersistentVectorNode<T> {
+        let data = Arc::make_mut(&mut self.0);
+        data.flat.take();
+        Arc::make_mut(&mut data.entries)
+    }
+    pub(crate) fn push(&mut self, value: T) {
+        let sibling: Self = vec![value].into();
+        self.append_shared(&sibling);
+    }
+    pub(crate) fn iter_mut(
+        &mut self,
+    ) -> imbl::vector::IterMut<'_, T, imbl::shared_ptr::DefaultSharedPtr> {
+        // This operation explicitly edits every trace/provenance record.
+        // Materialize that output-sized set once; indexed edits stay local.
+        if matches!(self.0.entries.as_ref(), PersistentVectorNode::Branch { .. }) {
+            let entries = self.iter().cloned().collect();
+            *self.edit() = PersistentVectorNode::Leaf(entries);
+        }
+        let PersistentVectorNode::Leaf(entries) = self.edit() else {
+            unreachable!()
+        };
+        entries.iter_mut()
+    }
+    pub(crate) fn append_shared(&mut self, other: &Self) {
+        let entries = PersistentVectorNode::join(self.0.entries.clone(), other.0.entries.clone());
+        *self = Self(Arc::new(PersistentVectorData {
+            entries,
+            flat: Default::default(),
+        }));
+    }
+    #[cfg(test)]
+    pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+pub(crate) struct PersistentVectorIter<'a, T: Clone> {
+    entries: &'a PersistentVectorNode<T>,
+    front: usize,
+    back: usize,
+}
+impl<'a, T: Clone> Iterator for PersistentVectorIter<'a, T> {
+    type Item = &'a T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.front == self.back {
+            return None;
+        }
+        let index = self.front;
+        self.front += 1;
+        self.entries.get(index)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.back - self.front;
+        (len, Some(len))
+    }
+}
+impl<T: Clone> DoubleEndedIterator for PersistentVectorIter<'_, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.front == self.back {
+            return None;
+        }
+        self.back -= 1;
+        self.entries.get(self.back)
+    }
+}
+impl<T: Clone> ExactSizeIterator for PersistentVectorIter<'_, T> {}
+impl<T: Clone> From<Vec<T>> for PersistentVector<T> {
+    fn from(entries: Vec<T>) -> Self {
+        Self(Arc::new(PersistentVectorData {
+            entries: Arc::new(PersistentVectorNode::Leaf(entries.into())),
+            flat: Default::default(),
+        }))
+    }
+}
+impl<T: Clone> FromIterator<T> for PersistentVector<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(entries: I) -> Self {
+        Self::from(entries.into_iter().collect::<Vec<_>>())
+    }
+}
+impl<T: Clone> Extend<T> for PersistentVector<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, entries: I) {
+        self.append_shared(&entries.into_iter().collect());
+    }
+}
+impl<T: Clone> std::ops::Index<usize> for PersistentVector<T> {
+    type Output = T;
+    fn index(&self, index: usize) -> &T {
+        self.get(index).expect("vector index out of bounds")
+    }
+}
+impl<T: Clone> std::ops::IndexMut<usize> for PersistentVector<T> {
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        self.edit()
+            .get_mut(index)
+            .expect("vector index out of bounds")
+    }
+}
+impl<T: Clone> std::ops::Index<std::ops::Range<usize>> for PersistentVector<T> {
+    type Output = [T];
+    fn index(&self, range: std::ops::Range<usize>) -> &[T] {
+        &self.as_slice()[range]
+    }
+}
+impl<T: Clone> std::ops::Deref for PersistentVector<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+impl<'a, T: Clone> IntoIterator for &'a PersistentVector<T> {
+    type Item = &'a T;
+    type IntoIter = PersistentVectorIter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+impl<T: Clone + PartialEq> PartialEq for PersistentVector<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.iter().eq(other.iter())
+    }
+}
+impl<T: Clone + Eq> Eq for PersistentVector<T> {}
+impl<T: Clone + std::fmt::Debug> std::fmt::Debug for PersistentVector<T> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt.debug_list().entries(self.iter()).finish()
+    }
+}
+
 /// Clone-on-write storage for one proof-state value.
 #[derive(Clone)]
 pub(crate) struct SharedValue<T>(Arc<T>);
@@ -411,6 +719,150 @@ mod tests {
             assert_eq!(output.len(), size);
             assert_eq!(output.last().map(|value| value.0), Some(size - 1));
             assert_eq!(clones.load(Ordering::Relaxed), size);
+        }
+    }
+}
+
+#[cfg(test)]
+mod persistent_vector_publication_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Counted {
+        value: usize,
+        copies: Arc<AtomicUsize>,
+    }
+    impl Clone for Counted {
+        fn clone(&self) -> Self {
+            self.copies.fetch_add(1, Ordering::Relaxed);
+            Self {
+                value: self.value,
+                copies: self.copies.clone(),
+            }
+        }
+    }
+
+    #[test]
+    fn terminal_vector_concatenation_shares_its_unchanged_descendants() {
+        for prepend in [false, true] {
+            let samples = [128, 256, 512, 1024].map(|size| {
+                let copies = Arc::new(AtomicUsize::new(0));
+                let mut published = PersistentVector::default();
+                for value in 0..size {
+                    let mut sibling: PersistentVector<_> = vec![Counted {
+                        value,
+                        copies: copies.clone(),
+                    }]
+                    .into();
+                    let old = published.clone();
+                    assert!(published.shares_storage_with(&old));
+                    if prepend {
+                        sibling.append_shared(&published);
+                        published = sibling;
+                    } else {
+                        published.append_shared(&sibling);
+                    }
+                    assert_eq!(old.len(), value);
+                }
+                assert!(published.iter().enumerate().all(|(index, item)| {
+                    item.value == if prepend { size - index - 1 } else { index }
+                }));
+                copies.load(Ordering::Relaxed)
+            });
+            for pair in samples.windows(2) {
+                assert!(
+                    pair[1] * 4 <= pair[0] * 9,
+                    "publication copied descendants quadratically, prepend={prepend}: {samples:?}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn terminal_vector_blocks_share_payloads_and_bound_node_work() {
+        for prepend in [false, true] {
+            for groups in [4_usize, 8, 16, 32] {
+                let copies = Arc::new(AtomicUsize::new(0));
+                let (published, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let mut published = PersistentVector::default();
+                    for group in 0..groups {
+                        let mut sibling: PersistentVector<_> = (0..128)
+                            .map(|offset| Counted {
+                                value: group * 128 + offset,
+                                copies: copies.clone(),
+                            })
+                            .collect();
+                        let old = published.clone();
+                        if prepend {
+                            sibling.append_shared(&published);
+                            published = sibling;
+                        } else {
+                            published.append_shared(&sibling);
+                        }
+                        assert_eq!(old.len(), group * 128);
+                    }
+                    published
+                });
+                let height = (usize::BITS - groups.leading_zeros()) as usize;
+                assert!(
+                    work >= groups - 1 && work <= 8 * groups * height,
+                    "concatenation work must follow tree height: groups={groups}, work={work}"
+                );
+                assert_eq!(
+                    copies.load(Ordering::Relaxed),
+                    0,
+                    "concatenation retains immutable payloads: groups={groups}, prepend={prepend}"
+                );
+                assert!(published.0.entries.height() <= 2 * height);
+                for (index, item) in published.iter().enumerate() {
+                    let group = if prepend {
+                        groups - 1 - index / 128
+                    } else {
+                        index / 128
+                    };
+                    assert_eq!(item.value, group * 128 + index % 128);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn terminal_vector_edits_and_slice_views_preserve_forks() {
+        for size in [128, 256, 512, 1024] {
+            let copies = Arc::new(AtomicUsize::new(0));
+            let root: PersistentVector<_> = (0..size)
+                .map(|value| Counted {
+                    value,
+                    copies: copies.clone(),
+                })
+                .collect();
+            let mut fork = root.clone();
+            let before = copies.load(Ordering::Relaxed);
+            fork[size / 2].value = size;
+            assert!(
+                copies.load(Ordering::Relaxed) - before <= 128,
+                "an indexed edit cannot clone unrelated payloads"
+            );
+            assert_eq!(root[size / 2].value, size / 2);
+            assert_eq!(fork[size / 2].value, size);
+            let snapshot = fork.clone();
+            assert_eq!(snapshot.as_slice()[size / 2].value, size);
+            fork.push(Counted {
+                value: size + 1,
+                copies: copies.clone(),
+            });
+            assert_eq!(snapshot.len(), size);
+            assert_eq!(fork.len(), size + 1);
+            for item in fork.iter_mut() {
+                item.value += 1;
+            }
+            assert_eq!(fork[size / 2].value, size + 1);
+            assert_eq!(snapshot[size / 2].value, size);
+            drop(root);
+            assert_eq!(snapshot[size / 2].value, size);
+            let mut iter = snapshot.iter();
+            assert_eq!(iter.next().unwrap().value, 0);
+            assert_eq!(iter.next_back().unwrap().value, size - 1);
+            assert_eq!(iter.len(), size - 2);
         }
     }
 }

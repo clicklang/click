@@ -13995,6 +13995,119 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             expected_outcome_fact_sizes = Some(outcome_fact_sizes);
         }
         assert_eq!(execution.presentation.branch_path.len(), 0);
+        assert!(
+            execution
+                .presentation
+                .outcome_provenance
+                .iter()
+                .all(|provenance| provenance.checked_leaf_facts.is_some())
+        );
+        let (outcomes, ids) = joined.split_function_outcomes().unwrap();
+        assert_eq!(ids.len(), 2);
+        // An unknown post-execution condition forks each outcome. Its
+        // checked case delta extends that leaf, retaining its own guards
+        // and cache authority rather than rebuilding unrelated records.
+        let unknown = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                Bitvector32Term::Variable(Variable(80_001)),
+            ))),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                Bitvector32Term::Constant(0),
+            ))),
+        };
+        let forked = joined
+            .split_outcome_paths_by_case(&unknown, &[], &[])
+            .unwrap();
+        let forked_execution = forked.execution().unwrap();
+        let forked_paths = forked_execution.core.frontier.execution().unwrap().paths();
+        assert_eq!(forked_paths.len(), 4);
+        for (index, path) in forked_paths.iter().enumerate() {
+            let provenance = forked_execution.provenance_for_outcome(index);
+            let (candidate, facts) = provenance.checked_leaf_facts.as_deref().unwrap();
+            assert!(candidate.shares_record_with(path));
+            for fact in path.facts() {
+                assert!(facts.contains(fact.proposition()));
+                assert!(!facts.directly_conflicts_with(fact.proposition()));
+            }
+        }
+        take_outcome_fact_reads();
+        let (forked_goals, forked_ids) = forked.split_function_outcomes().unwrap();
+        assert_eq!(take_outcome_fact_reads().0, 4);
+        assert_eq!(forked_ids.len(), 4);
+        for (path, id) in forked_paths.iter().zip(forked_ids) {
+            let goal = forked_goals.focus_branch(id).unwrap();
+            for fact in path.facts() {
+                assert!(goal.facts().contains(fact.proposition()));
+                assert!(!goal.facts().directly_conflicts_with(fact.proposition()));
+            }
+        }
+        // A cache belongs to one exact immutable candidate. Swapping only
+        // its marker forces the ordinary import, never sibling authority.
+        let (mismatched_state, ()) = joined
+            .state
+            .clone()
+            .edit_frontier_presentation(|presentation| {
+                for (index, provenance) in presentation.outcome_provenance.iter_mut().enumerate() {
+                    Arc::make_mut(provenance.checked_leaf_facts.as_mut().unwrap()).0 =
+                        outcome_paths[1 - index].clone();
+                }
+            })
+            .unwrap_or_else(|_| panic!("the terminal frontier owns editable presentation"));
+        let mut mismatched = joined.clone();
+        mismatched.state = mismatched_state;
+        take_outcome_fact_reads();
+        let (_, mismatched_ids) = mismatched.split_function_outcomes().unwrap();
+        let (reused, imported) = take_outcome_fact_reads();
+        assert_eq!(mismatched_ids.len(), 2);
+        assert_eq!(
+            reused, 0,
+            "a different record invalidates the context cache"
+        );
+        assert!(
+            imported > 0,
+            "incompatible caches retain ordinary path import"
+        );
+
+        for (path, id) in outcome_paths.iter().zip(&ids) {
+            let goal = outcomes.focus_branch(*id).unwrap();
+            for fact in path.facts() {
+                assert!(
+                    goal.facts().contains(fact.proposition()),
+                    "a leaf keeps its checked guards"
+                );
+                assert!(
+                    !goal.facts().directly_conflicts_with(fact.proposition()),
+                    "opposite-arm facts must stay isolated"
+                );
+            }
+        }
+        // A new frontier premise selects compatible leaves without reading
+        // their complete shared prefixes or admitting the opposite guard.
+        let selected = outcome_paths[0]
+            .facts()
+            .iter()
+            .find(|fact| matches!(fact.proposition(), Proposition::ConditionIs(_, _)))
+            .expect("the symbolic branch retained its guard")
+            .proposition()
+            .clone();
+        let mut narrowed = joined.clone();
+        let mut narrowed_state = narrowed.state.clone().into_state();
+        let narrowed_branches = narrowed_state.open_branches().with_facts_at(
+            narrowed.focused_branch_id(),
+            narrowed.facts().with_kernel_checked_fact(selected),
+        );
+        *narrowed_state.open_branches_mut() = narrowed_branches;
+        narrowed.state = narrowed.state.with_state(narrowed_state);
+        let (selected_outcomes, selected_ids) = narrowed.split_function_outcomes().unwrap();
+        assert_eq!(selected_ids.len(), 1);
+        assert_eq!(
+            selected_outcomes
+                .focus_branch(selected_ids[0])
+                .unwrap()
+                .outcome_result(),
+            outcomes.focus_branch(ids[0]).unwrap().outcome_result()
+        );
 
         // The in-`Proof` terminal join: both siblings return on their
         // own lineage and rejoin as a logical `If` whose outcome paths

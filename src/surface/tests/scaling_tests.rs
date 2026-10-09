@@ -3070,12 +3070,29 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 #[test]
 fn expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations() {
     const SIZES: [usize; 4] = [1, 2, 4, EXPANDED_ROUNDTRIP_MAX_UNRELATED];
-    let marginal = expanded_roundtrip_samples(&SIZES)
+    let samples = expanded_roundtrip_samples(&SIZES);
+    let marginal = samples
         .iter()
         .map(|[(_, without), (_, with)]| with.work as i64 - without.work as i64)
         .collect::<Vec<_>>();
     eprintln!("expanded extra-copy marginal work beside {SIZES:?} allocations: {marginal:?}");
     assert!(marginal[0] > 0, "{marginal:?}");
+    let mut phase_marginals = BTreeMap::new();
+    for key in samples
+        .iter()
+        .flat_map(|pair| pair.iter().flat_map(|(_, sample)| sample.named_work.keys()))
+    {
+        let values = samples
+            .iter()
+            .map(|[(_, without), (_, with)]| {
+                with.named_work.get(key).copied().unwrap_or(0) as i64
+                    - without.named_work.get(key).copied().unwrap_or(0) as i64
+            })
+            .collect::<Vec<_>>();
+        if values.last() > values.first() {
+            phase_marginals.insert(key.clone(), values);
+        }
+    }
     for (size, work) in SIZES.iter().zip(&marginal) {
         // Four units per doubling of the unrelated allocations; the measured
         // curve rises eight units by seven allocations, and a single unit
@@ -3083,7 +3100,7 @@ fn expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations() {
         let allowed = marginal[0] as f64 + 4.0 * (*size as f64 / SIZES[0] as f64).log2();
         assert!(
             *work as f64 <= allowed,
-            "one extra memcpy under the expanded proof grew beyond {allowed} beside {size} allocations: {marginal:?}"
+            "one extra memcpy under the expanded proof grew beyond {allowed} beside {size} allocations: {marginal:?}; growing phases: {phase_marginals:?}"
         );
     }
 }
@@ -6190,8 +6207,7 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
 /// Indexed constant equalities avoid selecting every earlier guard about `a`.
 /// Pin the selector's work and the complete transaction, so a shortcut cannot
 /// move its quadratic selection work to another phase. The context-reuse
-/// regression below separately bounds construction; flat storage remains a
-/// known violation.
+/// regression below separately bounds context construction and shared storage.
 #[test]
 fn indexed_simp_premises_reduce_whole_early_return_work() {
     std::thread::Builder::new()
@@ -6235,6 +6251,9 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
 /// near linear, at candidate publication and at checked completion.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
+    let mut outcome_reads = Vec::new();
+    let mut terminal_reads = Vec::new();
+    let mut statement_entries = Vec::new();
     let mut stored = Vec::new();
     let mut entries = Vec::new();
     let mut contract_entries = Vec::new();
@@ -6254,6 +6273,9 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         };
         let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
         let contract_before = crate::kernel::reasoning::path_facts::contract_path_context_entries();
+        crate::surface::proof::take_outcome_fact_reads();
+        crate::surface::proof::take_terminal_publication_visits();
+        crate::kernel::proof::take_statement_priority_entries();
         let ((verified, sample), storage) =
             crate::kernel::ExecutionFacts::measure_published_storage(|| {
                 scaling_sample(returns, || {
@@ -6295,6 +6317,9 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
                 .copied()
                 .unwrap_or(0),
         );
+        outcome_reads.push(crate::surface::proof::take_outcome_fact_reads());
+        terminal_reads.push(crate::surface::proof::take_terminal_publication_visits());
+        statement_entries.push(crate::kernel::proof::take_statement_priority_entries());
         samples.push(sample);
     }
     eprintln!("stored execution facts, explicit={explicit}: {stored:?}");
@@ -6374,6 +6399,51 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         "whole verification must retain shared history and context savings: explicit={explicit}, {samples:?}; {}",
         named_growth_diagnostic(&samples)
     );
+    eprintln!(
+        "outcome fact reads explicit={explicit}: {outcome_reads:?}; terminal visits: {terminal_reads:?}"
+    );
+    for ((returns, (reused, imported)), (shared, visited)) in [4, 8, 16, 32, 64]
+        .into_iter()
+        .zip(&outcome_reads)
+        .zip(&terminal_reads)
+    {
+        assert_eq!(
+            *reused,
+            returns + 2,
+            "every checked leaf retains its context, explicit={explicit}"
+        );
+        assert!(
+            *imported <= 4 * returns + 8,
+            "outcome imports must read only local effects, explicit={explicit}: {outcome_reads:?}"
+        );
+        assert!(
+            *shared >= returns && *visited <= 4 * returns + 16,
+            "terminal publication must retain subtrees, explicit={explicit}: {terminal_reads:?}"
+        );
+    }
+    for pair in outcome_reads.windows(2) {
+        assert!(
+            pair[1].1 * 100 <= pair[0].1 * 225,
+            "logical imports grew quadratically, explicit={explicit}: {outcome_reads:?}"
+        );
+    }
+    eprintln!("stored statement priority entries, explicit={explicit}: {statement_entries:?}");
+    // A statement may select a subset of its checked cases, so its ordered
+    // batch cannot always borrow the entire prefix. Bound total storage and
+    // the number of materialized multi-fact batches, so an input-sized list
+    // may occur at a fixed number of transitions, never once per return.
+    for (returns, (entries, largest, nonlocal)) in
+        [4, 8, 16, 32, 64].into_iter().zip(statement_entries)
+    {
+        assert!(
+            largest <= returns + 8 && nonlocal <= 16,
+            "statement batches must not multiply guard chains: explicit={explicit}, returns={returns}, largest={largest}, nonlocal={nonlocal}"
+        );
+        assert!(
+            entries <= 16 * returns + 32,
+            "checked leaf contexts must share case prefixes: explicit={explicit}, returns={returns}, entries={entries}"
+        );
+    }
 }
 
 #[test]
@@ -6394,8 +6464,8 @@ fn completed_early_return_contexts_are_reused_for_certification() {
 
 /// Completed early-return cases are processed iteratively, so an explicit
 /// proof reaches 64 returns despite the written nesting. Keep the broad work
-/// guard, which rejects 4x growth per doubling. Its 3x tolerance does not reject
-/// the separate context-build violation measured in the early-return report.
+/// guard, which rejects 4x growth per doubling. The context-reuse regression
+/// separately bounds shared storage and logical imports more tightly.
 #[test]
 fn explicit_early_return_proof_completes_through_sixty_four_returns() {
     std::thread::Builder::new()

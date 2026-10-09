@@ -65,4 +65,9 @@ pub(crate) use obligations::{
     FunctionOutcomeObligation, LiveAllocationObligation, OutcomeIdentity, OutcomeProofCore,
     OutcomeProofState, ProofObligation, PropositionObligation,
 };
-pub(crate) use storage::{PersistentOrderedSet, PersistentSequence, SharedValue, SharedVec};
+pub(crate) use storage::{
+    PersistentOrderedSet, PersistentSequence, PersistentVector, SharedValue, SharedVec,
+};
+
+#[cfg(test)]
+pub(crate) use facts::take_statement_priority_entries;
