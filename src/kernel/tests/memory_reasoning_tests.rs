@@ -6807,6 +6807,125 @@ fn memory_resolution_requires_the_loaded_cell_width() {
     );
 }
 
+/// Symbolic run lookup selects an exact slot through index/alias facts, keeps
+/// an unknown alias unresolved, and respects holes and the stored width.
+#[test]
+fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
+    for count in [16, 256, 65_536] {
+        let base = Pointer {
+            block: "symbolic-run-resolution".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let index = Bitvector32Term::Variable(Variable(601_101));
+        let read = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        };
+        let memory = CMemory::new()
+            .with_block("symbolic-run-resolution", count * 4)
+            .with_constant_run(base.clone(), CType::Int32, count, int32(9))
+            .expect("a named scalar run is compact");
+        let unknown = PureFactContext::new();
+        assert_eq!(
+            unknown.resolve_memory_load_value(&memory, &read, LoadKind::Bits32),
+            None
+        );
+        let exact = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(index, Bitvector32Term::Constant(3)),
+            true,
+        );
+        assert_eq!(
+            exact.resolve_memory_load_value(&memory, &read, LoadKind::Bits32),
+            Some(int32(9))
+        );
+        assert_eq!(
+            exact.resolve_memory_load_value(&memory, &read, LoadKind::UInt16),
+            None
+        );
+        let alias = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(read.clone(), base.offset_by_bytes(12)),
+            true,
+        );
+        assert_eq!(
+            alias.resolve_memory_load_value(&memory, &read, LoadKind::Bits32),
+            Some(int32(9))
+        );
+        let other_base = Pointer {
+            block: PointerBlock::Symbolic(Variable(601_102)),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let base_alias = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(other_base.clone(), base.clone()),
+            true,
+        );
+        assert_eq!(
+            base_alias.resolve_memory_load_value(
+                &memory,
+                &other_base.offset_by_bytes(12),
+                LoadKind::Bits32,
+            ),
+            Some(int32(9))
+        );
+        let wide_index = Bitvector32Term::Variable(Variable(601_103));
+        let wide_read = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::scale_int64(wide_index.clone(), 4, true),
+        };
+        let wide_exact = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_equal(wide_index.clone(), Bitvector32Term::UInt64Constant(3)),
+            true,
+        );
+        assert_eq!(
+            wide_exact.resolve_memory_load_value(&memory, &wide_read, LoadKind::Bits32),
+            Some(int32(9))
+        );
+        let signed_read = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::scale_int64(wide_index.clone(), 4, false),
+        };
+        let signed_exact = PureFactContext::new().assume_condition(
+            ConditionTerm::int64_equal(wide_index.clone(), Bitvector32Term::Int64Constant(3)),
+            true,
+        );
+        assert_eq!(
+            signed_exact.resolve_memory_load_value(&memory, &signed_read, LoadKind::Bits32),
+            Some(int32(9))
+        );
+        let high_word = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_equal(
+                wide_index.clone(),
+                Bitvector32Term::UInt64Constant((1 << 32) + 3),
+            ),
+            true,
+        );
+        assert_eq!(
+            high_word.resolve_memory_load_value(&memory, &wide_read, LoadKind::Bits32),
+            None
+        );
+        let low_word_only = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(wide_index, Bitvector32Term::Constant(3)),
+            true,
+        );
+        assert_eq!(
+            low_word_only.resolve_memory_load_value(&memory, &wide_read, LoadKind::Bits32),
+            None
+        );
+        let changed = memory.store(base.offset_by_bytes(12), int32(7));
+        assert_eq!(
+            exact.resolve_memory_load_value(&changed, &read, LoadKind::Bits32),
+            Some(int32(7))
+        );
+        assert_eq!(
+            alias.resolve_memory_load_value(&changed, &read, LoadKind::Bits32),
+            Some(int32(7))
+        );
+        assert_eq!(
+            unknown.resolve_memory_load_value(&changed, &read, LoadKind::Bits32),
+            None
+        );
+    }
+}
+
 /// A store forgets every cached cell it might alias, and ownership keeps
 /// only the cells a composition owns through a *different* member than the
 /// written bytes. Two pointer parameters share the `ExternalArgument` block

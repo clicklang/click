@@ -4676,6 +4676,73 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     );
 }
 
+/// A symbolic read must not make refolding a compact owned range enumerate
+/// its slots. Check both a valid current-value claim and the invalid old-value
+/// claim: the latter also used to repeat the enumeration during failed search.
+#[test]
+fn symbolic_read_refold_and_refusal_do_not_enumerate_range_elements() {
+    let c_source = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
+    // Initialize the shared frontend/stdlib caches outside the work samples,
+    // as in the constant-index run regression above.
+    verify_c0_sources(
+        "verifying \"read.c\"; int32 read_after_store(int32 *a, int32 k) {
+            owns a[0..16]; requires 0 <= k; requires k < 16;
+            ensures result == a[k]; } by { execute(); simp(); }",
+        &[("read.c", c_source)],
+    )
+    .expect("warm-up verifies");
+    for old_value in [false, true] {
+        let samples = [64, 4096, 1_048_576].map(|length| {
+            let value = if old_value { "old(a[k])" } else { "a[k]" };
+            let source = format!(
+                "verifying \"read.c\";\n\
+                 resource block(p: int32*) {{ owns p[0..{length}]; }}\n\
+                 int32 read_after_store(int32 *a, int32 k) {{\n\
+                   consumes block(a); requires 0 <= k; requires k < {length};\n\
+                   produces block(a); ensures result == {value};\n\
+                 }} by {{ unfold(block(a)); execute(); fold(block(a)); simp(); }}"
+            );
+            let (result, sample) = scaling_sample(length, || {
+                verify_c0_sources(&source, &[("read.c", c_source)])
+            });
+            if old_value {
+                let error = result.expect_err("the symbolic index may be the changed element");
+                assert!(
+                    error
+                        .message()
+                        .contains("the store to `a[3]` may have written"),
+                    "{}",
+                    error.message()
+                );
+            } else {
+                result.expect("refolding preserves the just-read value");
+            }
+            let fold_work = sample
+                .named_work
+                .iter()
+                .filter(|(name, _)| name.ends_with("tactic `fold`"))
+                .map(|(_, work)| *work)
+                .sum::<usize>();
+            (length, sample.work, fold_work)
+        });
+        let least = samples.iter().map(|(_, work, _)| *work).min().unwrap();
+        let most = samples.iter().map(|(_, work, _)| *work).max().unwrap();
+        assert!(least > 0);
+        assert!(most < 30_000, "old={old_value}: {samples:?}");
+        assert!(samples[0].2 > 0, "fold must be measured: {samples:?}");
+        for pair in samples.windows(2) {
+            assert_eq!(pair[0].2, pair[1].2, "fold enumerated slots: {samples:?}");
+            // The failed arithmetic search grows with the bound's bit length
+            // (46 units per additional bit), not with the number of elements.
+            let bits = (pair[1].0.ilog2() - pair[0].0.ilog2()) as usize;
+            assert!(
+                pair[1].1 <= pair[0].1 + 64 * bits,
+                "old={old_value}: {samples:?}"
+            );
+        }
+    }
+}
+
 /// `N` stores `a[ck] = k`, each index bounded by `0 <= ck < n` and none
 /// ordered against another, then a claim about the last one.
 fn bounded_index_stores(stores: usize) -> (String, String) {

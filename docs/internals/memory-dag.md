@@ -172,6 +172,16 @@ copies from another address, and loads from an older changed snapshot cannot
 use this witness. Thus opening a returned resource preserves unrelated caller
 cells without hiding the call's preceding havoc.
 
+Assumption-aware lookup also selects a run's slot compactly. Exact index
+constants, stated pointer aliases, and indexed base aliases can identify one
+live slot; a hole cannot supply its old value, and the selected cell must
+match the load's width. Aliases known through recorded loads can propose one
+slot from the constant offset difference; the full pointer matcher must
+validate that candidate. If no slot is identified, the run remains a possible
+alias unless its whole range is proved separate. An unknown symbolic index
+never causes lookup to enumerate every element, including during refolding
+and failed old-value searches.
+
 Seeded runs keep their source snapshots, but do not retain named slot values.
 Reading a slot goes through the load-naming cache scoped to the current
 load-origin epoch. A reusable verification session retains the arena and its

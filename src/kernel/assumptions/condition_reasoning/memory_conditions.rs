@@ -264,10 +264,11 @@ impl PureFactContext {
 
         // The first cell, in pointer order, proven at `pointer` answers; short
         // of one, a cell neither proven there nor proven elsewhere leaves the
-        // load unresolved. A run answers for its slots as a whole where
-        // `run_slots_resolving_load` can, and slot by slot otherwise.
+        // load unresolved. Runs use compact slot selection even for symbolic
+        // indexes: an unresolved alias is not a reason to enumerate the array.
         let mut unresolved_alias = false;
         let mut first_equal: Option<(Pointer, CValue)> = None;
+        let normalized = std::cell::OnceCell::new();
         let consider = |cell_pointer: &Pointer,
                         value: &CValue,
                         first_equal: &mut Option<(Pointer, CValue)>| {
@@ -289,7 +290,7 @@ impl PureFactContext {
         // proven distinct from it, which `consider` and
         // `run_slots_resolving_load` answer as elsewhere, so only the
         // candidates are asked. Each candidate asked, cell or run, is one
-        // unit; a run asked slot by slot is one per slot.
+        // unit, independent of the run's logical element count.
         let candidates = crate::kernel::primitives::AliasCandidates::of_block(&pointer.block);
         for run in memory.cells.candidate_runs(&candidates) {
             crate::instrumentation::record_deterministic_work(1);
@@ -340,15 +341,59 @@ impl PureFactContext {
                     }
                 }
                 None => {
-                    for index in run.live_indexes() {
-                        crate::instrumentation::record_deterministic_work(1);
+                    let (slots, _) =
+                        crate::kernel::reasoning::memory_resolution::run_slots_equal_to_load(
+                            run,
+                            pointer,
+                            &normalized,
+                            self,
+                        );
+                    let selected = match slots {
+                        crate::kernel::primitives::SlotSet::Elements(index, end)
+                            if end == index + 1 =>
+                        {
+                            Some(index)
+                        }
+                        _ => None,
+                    };
+                    // A field/base alias may be known through recorded load
+                    // identities rather than the exact alias index. Propose
+                    // one slot from the constant offset difference, then ask
+                    // the full pointer matcher about that candidate only.
+                    let selected = selected.or_else(|| {
+                        use crate::kernel::reasoning::memory_resolution::offset_atoms_and_constant;
+                        let (_, read_shift) = offset_atoms_and_constant(&pointer.offset);
+                        let (_, base_shift) = offset_atoms_and_constant(&run.base().offset);
+                        let shift = read_shift.checked_sub(base_shift)?;
+                        let stride = i64::from(run.element_width());
+                        if stride <= 0 || shift < 0 || shift % stride != 0 {
+                            return None;
+                        }
+                        let index = u32::try_from(shift / stride).ok()?;
+                        (index < run.count()
+                            && !run.holes().contains(index)
+                            && pointers_proven_equal_for_memory_resolution(
+                                &run.slot_pointer(index),
+                                pointer,
+                                self,
+                            ))
+                        .then_some(index)
+                    });
+                    if let Some(index) = selected.filter(|index| !run.holes().contains(*index)) {
                         let cell_pointer = run.slot_pointer(index);
-                        let value = run.value(index);
-                        let met = consider(&cell_pointer, &value, &mut first_equal);
-                        unresolved_alias |= met
-                            && !first_equal
-                                .as_ref()
-                                .is_some_and(|(equal, _)| *equal == cell_pointer);
+                        if first_equal
+                            .as_ref()
+                            .is_none_or(|(earlier, _)| cell_pointer < *earlier)
+                        {
+                            first_equal = Some((cell_pointer, run.value(index)));
+                        }
+                    } else if !run.holes().covers_range(0, run.count()) {
+                        // Keeping a possibly aliasing run unresolved is
+                        // conservative. Only a whole-range separation proof
+                        // permits falling through to an unrecorded load.
+                        unresolved_alias |= crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
+                            &[run.range()], pointer, byte_width, self,
+                        ).is_none();
                     }
                 }
             }

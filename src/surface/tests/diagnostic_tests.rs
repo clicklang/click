@@ -1633,7 +1633,18 @@ int32 last(int32* data, uint64 length) {
     ensures result == old(data[0]);
 } by { execute(); simp(); }
 "#;
-    let error = verify_c0_sources(sidecar, &[("last.c", source)]).unwrap_err();
+    // Exact wide-index constants now resolve without a manual rewrite.
+    verify_c0_sources(sidecar, &[("last.c", source)]).unwrap();
+    let ambiguous = sidecar
+        .replace(
+            "owns data[0..1];",
+            "owns data[0]; views data[length - 1u64];",
+        )
+        .replace("requires length == 1u64;", "");
+    let error = match verify_c0_sources(&ambiguous, &[("last.c", source)]) {
+        Err(error) => error,
+        Ok(_) => panic!("distinct readable addresses do not establish equal values"),
+    };
     let message = error.message();
     assert!(message.contains("index/address"), "{message}");
     assert!(message.contains("same recorded memory"), "{message}");
