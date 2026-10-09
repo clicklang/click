@@ -633,11 +633,13 @@ impl<'a> Proof<'a> {
         // the body's facts and the C's own reads of those cells share one
         // load identity. See `materialize_unfolded_instance_arm_cells`.
         //
-        // Select the arm under the premises the rewrite published, including
-        // any refutation that decided it. Spell its pointer bindings under
-        // the entry premises used by the kernel rewrite: a newly published
-        // alias must not rename a cell after its body facts were recorded.
+        // Use the kernel's exact opening delta for pointer spelling. Later
+        // body facts must not rename a cell after its equation was recorded.
         let after = if unfold {
+            let naming_assumptions = rewrite.naming_facts.into_iter().fold(
+                self.facts().assumptions().clone(),
+                PureFactContext::assume_proposition,
+            );
             crate::surface::proof::resources::materialize_unfolded_instance_arm_cells(
                 context.resource_environment,
                 context.click_function_environment,
@@ -646,7 +648,7 @@ impl<'a> Proof<'a> {
                 after,
                 instance,
                 facts.assumptions(),
-                self.facts().assumptions(),
+                &naming_assumptions,
             )
         } else {
             after
