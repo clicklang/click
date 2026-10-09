@@ -36,7 +36,7 @@ parameters, and selected resolved operators execute verified imported bodies.
 The unchanged pinned adler2 2.0.1 selection imports successfully. Constructors,
 constants, lane helper bodies, numeric ceilings, and lane preservation verify.
 The original computation has a terminating whole-body bounds proof for every
-length from zero through 22,207 bytes from any canonical initial state.
+length from zero through 2,147,483,647 bytes from any canonical initial state.
 It carries all eight lane ceilings, scalar-tail ceilings, the shared input view,
 and actual vector and scalar iterator state through reductions, recombination,
 scalar sums, short tails, and final 16-bit stores.
@@ -44,7 +44,9 @@ Both output fields remain below 65,521. Checked partition lemmas relate full-wid
 lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
 General signed-range partition lemmas establish aligned full-batch remainders
 and decreasing actual outer-iterator remaining counts, without truncating usize
-metadata. Full outer-batch induction and checksum correctness remain incomplete.
+metadata. Full outer-batch induction, lane reduction/reset, and the final vector and scalar
+remainders are checked in the whole-body proof. Checksum correctness remains
+incomplete.
 The shared mathematical specification has checked one- and four-byte append
 recurrences, including the ordered weights 4, 3, 2, 1 for a vector step,
 weight shifts, nonnegative sums, residue addition, output and packing bounds,
@@ -64,24 +66,7 @@ current roadmap: replace status when work lands rather than append checkpoints.
 
 ## Remaining work, in delivery order
 
-### 1. Prove arbitrary-length Adler loop invariants
-
-Compose the existing initialization, helper-call prerequisites, and
-lane-preservation lemmas into induction over the original stored inner iterators
-and outer batches. Preserve memory views, lane ceilings, byte order and byte
-accounting through reduction/reset and all remainder paths. Establish general
-initial-state preconditions and termination using actual iterator state.
-
-Acceptance:
-
-- Arbitrary admissible lengths, empty inputs, exact boundaries, multiple outer
-  batches, and short tails satisfy the original loop invariants.
-- Original checked accesses and arithmetic are justified at every iteration;
-  whole-loop panic freedom follows from the proof.
-- False bounds, stale cursor/remaining claims, missing authority, wrong byte
-  order, and incorrect reduction/reset steps are rejected.
-
-### 2. Verify Rust against the common checksum specification
+### 1. Verify Rust against the common checksum specification
 
 Use the [shared Adler-32 specification](../design/adler32-spec.click), following
 [the checksum assessment](../design/rust-checksum-assessment.md). Relate the
@@ -98,7 +83,7 @@ Acceptance:
 - A false checksum postcondition fails. No assumed library summary supplies
   the checksum computation's postcondition.
 
-### 3. Verify C and publish the shared demonstration
+### 2. Verify C and publish the shared demonstration
 
 Pin the selected configuration and revision of
 [zlib's Adler-32](https://github.com/madler/zlib/blob/develop/adler32.c), verify
@@ -115,7 +100,7 @@ Acceptance:
 - Publish reproducible locked fixtures and a scoped demonstration. Keep slow
   whole-proof checks nightly and bounded regressions in the normal gate.
 
-### 4. Close experimental-support architecture requirements
+### 3. Close experimental-support architecture requirements
 
 Resolve these requirements alongside the library proof; do not postpone them
 behind new language coverage:
