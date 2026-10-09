@@ -1731,6 +1731,27 @@ fn expanded_branch_condition_names_a_local_struct_pointer_field() {
         .expect("the expansion naming the field should verify");
 }
 
+/// A field of a struct nested in another, and a pointer field to a struct,
+/// are written as places too.
+#[test]
+fn expanded_branch_condition_names_nested_and_pointer_fields() {
+    let c_source = "struct inner { int x; int y; };\nstruct outer { int tag; struct inner in; struct outer *next; };\nint pick(struct outer *p) { if (p->in.y > 0) { return 1; } if (p->next == 0) { return 2; } return 0; }";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct outer* p) { views p->in.y; views p->next; ensures result >= 0; } by { execute(); simp(); }\n";
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &[("pick.c", c_source)],
+        "pick",
+        CProofClaim::Grouped,
+        0,
+    )
+    .expect("branches over nested fields should expand");
+    assert!(expanded.contains("p->in.y) > "), "{expanded}");
+    assert!(expanded.contains("p->next"), "{expanded}");
+    assert!(!expanded.contains("load_"), "{expanded}");
+    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+        .expect("the expansion naming the fields should verify");
+}
+
 /// `arithmetic` on a `uint64` goal expands to the bridge steps it took,
 /// and the expansion verifies with no `arithmetic()` left to plan.
 #[test]

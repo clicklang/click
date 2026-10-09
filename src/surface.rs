@@ -1264,25 +1264,63 @@ pub(in crate::surface) struct FieldPlace {
     pointee_constant: bool,
 }
 
-/// The fields of `layout` a typed read can name: those that are not
-/// themselves a struct, a union or an array.
-pub(in crate::surface) fn scalar_field_places(layout: &syntax::C0StructLayout) -> Vec<FieldPlace> {
-    layout
-        .fields()
-        .iter()
-        .filter(|(_, field)| {
-            field.struct_name().is_none()
-                && field.union_name().is_none()
-                && field.array_element_width().is_none()
-                && !field.is_long_double()
-        })
-        .map(|(name, field)| FieldPlace {
-            name: name.clone(),
-            offset_bytes: field.offset_bytes(),
-            value_type: field.c_type().to_kernel_type(),
-            pointee_constant: field.pointee_is_constant(),
-        })
-        .collect()
+/// The fields of `layout` a typed read can name: its scalar fields, and
+/// those of a struct nested in it, `inner.x`, at their offset from the
+/// start of `layout`. A union or an array is not one place and is left out.
+pub(in crate::surface) fn scalar_field_places(
+    layout: &syntax::C0StructLayout,
+    layouts: &BTreeMap<String, syntax::C0StructLayout>,
+) -> Vec<FieldPlace> {
+    // Each nested struct is entered once per field that holds it, so the
+    // places are as many as the scalar members the layout has. A struct
+    // cannot contain itself by value; the depth bound is for a malformed
+    // layout map and never for a real one.
+    fn collect(
+        layout: &syntax::C0StructLayout,
+        layouts: &BTreeMap<String, syntax::C0StructLayout>,
+        prefix: &str,
+        base: u32,
+        depth: usize,
+        places: &mut Vec<FieldPlace>,
+    ) {
+        for (name, field) in layout.fields() {
+            if field.union_name().is_some()
+                || field.array_element_width().is_some()
+                || field.is_long_double()
+            {
+                continue;
+            }
+            let name = format!("{prefix}{name}");
+            let offset_bytes = base + field.offset_bytes();
+            // A struct held by value is entered; a pointer to one is a
+            // scalar place like any other pointer field.
+            match field.struct_name() {
+                Some(nested) if !field.c_type().is_pointer() => {
+                    if let Some(nested) = layouts.get(nested)
+                        && depth < 8
+                    {
+                        collect(
+                            nested,
+                            layouts,
+                            &format!("{name}."),
+                            offset_bytes,
+                            depth + 1,
+                            places,
+                        );
+                    }
+                }
+                _ => places.push(FieldPlace {
+                    name,
+                    offset_bytes,
+                    value_type: field.c_type().to_kernel_type(),
+                    pointee_constant: field.pointee_is_constant(),
+                }),
+            }
+        }
+    }
+    let mut places = Vec::new();
+    collect(layout, layouts, "", 0, 0, &mut places);
+    places
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

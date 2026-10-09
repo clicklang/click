@@ -3269,7 +3269,7 @@ impl Parser {
                 let layout = self.struct_layouts.get(parameter.struct_name()?)?;
                 Some((
                     parameter.name().to_string(),
-                    super::scalar_field_places(layout),
+                    super::scalar_field_places(layout, &self.struct_layouts),
                 ))
             })
             .collect();
@@ -3287,7 +3287,10 @@ impl Parser {
                 .all(|parameter| parameter.name() != name)
                 && let Some(layout) = self.struct_layouts.get(struct_name)
             {
-                parameter_field_places.insert(name.clone(), super::scalar_field_places(layout));
+                parameter_field_places.insert(
+                    name.clone(),
+                    super::scalar_field_places(layout, &self.struct_layouts),
+                );
             }
         }
         Ok(FunctionBlock {
