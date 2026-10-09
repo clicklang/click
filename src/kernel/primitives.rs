@@ -3289,7 +3289,9 @@ pub struct CCompositeResourceDefinition {
     /// fold/unfold rewrites; [`CCompositeResourceDefinition::is_recursive`]
     /// answers for the definition as a whole.
     pub(super) matched_recursive: bool,
-    pub(super) counted_population: bool,
+    /// Whether a body fact reads a population count. Such a fact can change
+    /// while the head is lent, so a stable loan cannot carry it.
+    pub(super) facts_read_counts: bool,
     /// A definition-level restriction on direct transfer to another thread.
     /// Computed when definitions are installed, including contained families.
     pub(super) thread_confined: bool,

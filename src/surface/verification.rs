@@ -7516,7 +7516,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                 crate::kernel::CParameter::new(witness.name(), witness.c_type().to_kernel_type())
             })
             .collect();
-        let observes_its_population = body.facts().iter().any(proposition_contains_resource_count);
+        let facts_read_counts = body.facts().iter().any(proposition_contains_resource_count);
         let owned_bases = body
             .contains()
             .iter()
@@ -7643,24 +7643,15 @@ pub(in crate::surface) fn composite_resource_definitions(
             })
         });
         definitions.push(
-            if observes_its_population {
-                CCompositeResourceDefinition::counted_population(
-                    definition.name(),
-                    parameters,
-                    condition,
-                    contains,
-                    facts,
-                )
-            } else {
-                CCompositeResourceDefinition::new(
-                    definition.name(),
-                    parameters,
-                    condition,
-                    recursive,
-                    contains,
-                    facts,
-                )
-            }
+            CCompositeResourceDefinition::new(
+                definition.name(),
+                parameters,
+                condition,
+                recursive,
+                contains,
+                facts,
+            )
+            .with_facts_read_counts(facts_read_counts)
             .with_authorized(definition.is_authorized())
             .with_resource_parameters(
                 definition

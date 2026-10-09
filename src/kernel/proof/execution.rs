@@ -12821,7 +12821,7 @@ mod tests {
             CStatement::Return(CExpression::Value(CValue::Void)),
         )
         .with_composite_resource_definitions(vec![
-            CCompositeResourceDefinition::counted_population(
+            CCompositeResourceDefinition::authority_control(
                 "item",
                 Vec::new(),
                 None,

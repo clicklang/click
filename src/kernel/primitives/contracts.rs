@@ -1467,14 +1467,13 @@ impl CCompositeResourceDefinition {
 
     pub(crate) fn with_resource_match_body(mut self, body: Option<CResourceMatchBody>) -> Self {
         self.matched = body;
-        self.thread_confined |= self.counted_population && self.matched.is_some();
+        self.thread_confined |= self.owns_population_authority();
         self
     }
 
     /// Named child instances of the unmatched body.
     pub(crate) fn with_children(mut self, children: Vec<CResourceChildSpec>) -> Self {
         self.children = children;
-        self.thread_confined |= self.counted_population && !self.children.is_empty();
         self
     }
     pub fn new(
@@ -1486,7 +1485,7 @@ impl CCompositeResourceDefinition {
         facts: Vec<SpecProposition>,
     ) -> Self {
         let fact_source_indices = (0..facts.len()).collect();
-        Self {
+        let mut definition = Self {
             resource_parameters: Vec::new(),
             instance_schema: None,
             guarded_by: None,
@@ -1497,7 +1496,7 @@ impl CCompositeResourceDefinition {
             condition,
             recursive,
             matched_recursive: false,
-            counted_population: false,
+            facts_read_counts: false,
             thread_confined: false,
             contains_mutex_authority: false,
             authorized: false,
@@ -1509,7 +1508,12 @@ impl CCompositeResourceDefinition {
             facts,
             fact_source_indices,
             fact_source_spellings: Vec::new(),
-        }
+        };
+        // An authority control is confined to its creating thread
+        // (`thread_confinement`); computing it here keeps every copy of the
+        // definition, surface and kernel, in agreement.
+        definition.thread_confined = definition.owns_population_authority();
+        definition
     }
 
     pub fn with_witnesses(mut self, witnesses: Vec<CParameter>) -> Self {
@@ -1537,6 +1541,11 @@ impl CCompositeResourceDefinition {
         self.fact_source_indices.get(compiled_index).copied()
     }
 
+    pub fn with_facts_read_counts(mut self, facts_read_counts: bool) -> Self {
+        self.facts_read_counts = facts_read_counts;
+        self
+    }
+
     pub fn with_liveness_facts(mut self, facts_claim_liveness: bool) -> Self {
         self.facts_claim_liveness = facts_claim_liveness;
         self
@@ -1546,10 +1555,10 @@ impl CCompositeResourceDefinition {
     /// recovery restores the exact escrowed head, so a fact is re-asserted
     /// precisely as folded, which is sound when everything the fact depends
     /// on is stable for the loan. The body's memory and tokens are; a
-    /// resource population the caller may consume elsewhere and the
-    /// liveness of storage the fact names are not (D12).
+    /// population count the caller may change elsewhere and the liveness of
+    /// storage the fact names are not (D12).
     pub fn facts_are_loan_stable(&self) -> bool {
-        !self.counted_population && !self.facts_claim_liveness
+        !self.facts_read_counts && !self.facts_claim_liveness
     }
 
     /// Equal arguments make every instance own the same positive cell range.
@@ -1583,41 +1592,6 @@ impl CCompositeResourceDefinition {
         &self.witnesses
     }
 
-    pub fn counted_population(
-        name: impl Into<String>,
-        parameters: Vec<CParameter>,
-        condition: Option<SpecProposition>,
-        contains: Vec<CResourceSpec>,
-        facts: Vec<SpecProposition>,
-    ) -> Self {
-        let fact_source_indices = (0..facts.len()).collect();
-        let thread_confined = condition.is_some() || !contains.is_empty() || !facts.is_empty();
-        Self {
-            resource_parameters: Vec::new(),
-            instance_schema: None,
-            guarded_by: None,
-            matched: None,
-            name: name.into(),
-            parameters,
-            witnesses: Vec::new(),
-            condition,
-            recursive: false,
-            matched_recursive: false,
-            counted_population: true,
-            thread_confined,
-            contains_mutex_authority: false,
-            authorized: false,
-            reaches_population: false,
-            owned_footprint_unnamed: false,
-            facts_claim_liveness: false,
-            contains,
-            children: Vec::new(),
-            facts,
-            fact_source_indices,
-            fact_source_spellings: Vec::new(),
-        }
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -1648,8 +1622,18 @@ impl CCompositeResourceDefinition {
         self
     }
 
-    pub fn is_counted_population(&self) -> bool {
-        self.counted_population
+    /// Whether the body, unmatched or in an arm, owns a population
+    /// authority: the definition is an authority control.
+    pub fn owns_population_authority(&self) -> bool {
+        self.contains
+            .iter()
+            .chain(
+                self.matched
+                    .iter()
+                    .flat_map(|body| body.arms.iter())
+                    .flat_map(|arm| arm.contains.iter()),
+            )
+            .any(|spec| matches!(spec.term(), CResourceTerm::PopulationAuthority { .. }))
     }
 
     pub fn with_authorized(mut self, authorized: bool) -> Self {
@@ -1705,7 +1689,7 @@ impl CCompositeResourceDefinition {
     }
 
     pub fn needs_outcome_resource_transfer(&self) -> bool {
-        self.recursive || self.counted_population
+        self.recursive || self.owns_population_authority()
     }
 
     pub fn contains(&self) -> &[CResourceSpec] {
@@ -1714,6 +1698,43 @@ impl CCompositeResourceDefinition {
 
     pub fn facts(&self) -> &[SpecProposition] {
         &self.facts
+    }
+}
+
+#[cfg(test)]
+impl CCompositeResourceDefinition {
+    /// An authority control for kernel tests: the given body plus the owned
+    /// authority over a bodyless `member` family, with facts that read counts.
+    pub(crate) fn authority_control(
+        name: impl Into<String>,
+        parameters: Vec<CParameter>,
+        condition: Option<SpecProposition>,
+        mut contains: Vec<CResourceSpec>,
+        facts: Vec<SpecProposition>,
+    ) -> Self {
+        contains.push(
+            CResourceSpec::new(
+                CResourceTerm::PopulationAuthority {
+                    population_arity: None,
+                    protected: Box::new(CResourceTypeSpec {
+                        resource: Box::new(CResourceSpec::composite(
+                            CResourceAccessMode::Own,
+                            "member".into(),
+                            vec![],
+                            vec![],
+                        )),
+                        schema: ResourceFieldSchema::new(vec![]).expect("empty schema"),
+                    }),
+                    snapshot: CResourceSnapshot::Current,
+                },
+                CResourceAccessMode::Own,
+                CResourceQuantity::One,
+                CResourceTransferRole::Consume,
+                CResourceSnapshot::Current,
+            )
+            .expect("an owned authority is a valid resource clause"),
+        );
+        Self::new(name, parameters, condition, false, contains, facts).with_facts_read_counts(true)
     }
 }
 

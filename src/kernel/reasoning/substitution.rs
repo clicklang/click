@@ -4182,7 +4182,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
             }),
             recursive: definition.recursive,
             matched_recursive: definition.matched_recursive,
-            counted_population: definition.counted_population,
+            facts_read_counts: definition.facts_read_counts,
             facts_claim_liveness: definition.facts_claim_liveness,
             contains: definition
                 .contains
@@ -7905,7 +7905,7 @@ fn substitute_pointer_variable_in_c_function(
             }),
             recursive: definition.recursive,
             matched_recursive: definition.matched_recursive,
-            counted_population: definition.counted_population,
+            facts_read_counts: definition.facts_read_counts,
             facts_claim_liveness: definition.facts_claim_liveness,
             contains: definition
                 .contains

@@ -1,9 +1,10 @@
 //! Definition-level restrictions on direct worker transfer.
 //!
-//! A counted population with a body can expose one shared invariant through
-//! several units. Until a synchronization protocol owns that body, its units
-//! stay in their creating thread. A resource containing such a unit inherits
-//! the restriction. This property is computed once when definitions are
+//! An authority control owns a population authority, and moving the control
+//! alone does not transfer the authority's loans or mutex custody. Until a
+//! synchronization protocol owns it, the control stays in its creating
+//! thread, as a mutex authority does. A resource containing such a control
+//! inherits the restriction. This property is computed once when definitions are
 //! installed; a worker handoff only reads it.
 
 use std::collections::{BTreeMap, VecDeque};
@@ -176,16 +177,12 @@ mod tests {
     use crate::kernel::{CResourceAccessMode, CResourceSpec, SpecProposition};
 
     #[test]
-    fn bodyless_counted_resource_can_move_but_stateful_population_is_confined() {
-        let bodyless = CCompositeResourceDefinition::counted_population(
-            "ticket",
-            vec![],
-            None,
-            vec![],
-            vec![],
-        );
-        let stateful = CCompositeResourceDefinition::counted_population(
-            "reference",
+    fn a_bodyless_member_can_move_but_an_authority_control_is_confined() {
+        let member =
+            CCompositeResourceDefinition::new("member", vec![], None, false, vec![], vec![])
+                .with_authorized(true);
+        let control = CCompositeResourceDefinition::authority_control(
+            "control",
             vec![],
             None,
             vec![],
@@ -195,8 +192,10 @@ mod tests {
                 arguments: vec![],
             }],
         );
-        assert!(!bodyless.is_thread_confined());
-        assert!(stateful.is_thread_confined());
+        let mut definitions = vec![member, control];
+        propagate_thread_confinement(&mut definitions);
+        assert!(!definitions[0].is_thread_confined());
+        assert!(definitions[1].is_thread_confined());
     }
 
     #[test]
@@ -259,7 +258,7 @@ mod tests {
             vec![contained],
             vec![],
         );
-        let inner = CCompositeResourceDefinition::counted_population(
+        let inner = CCompositeResourceDefinition::authority_control(
             "reference",
             vec![],
             None,
