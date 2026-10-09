@@ -6381,6 +6381,12 @@ pub(crate) fn counted_populations_definitionally_equal(
 /// executions: an artifact is reused when its retained authority is implied
 /// by the exact contract entry. Certification never executes the body
 /// itself; with no reusable artifact it produces no paths and the reason.
+///
+/// `state` and `arguments` specify the entry being checked. This operation
+/// does not generate generic inputs from the source signature. Callers that
+/// intend to package reusable function rules must supply an entry representing
+/// the declared input domain, as Surface's `initial_call_state` does. See
+/// `docs/internals/kernel.md`, "Source obligations and checked evidence".
 #[allow(clippy::too_many_arguments)]
 pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
     state: CState,
@@ -6404,6 +6410,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
 }
 
 /// Certifies an opaque contract with kernel-issued pure theorem authorities.
+/// The entry-construction responsibility is the same as for
+/// [`prove_c_function_contract_execution_paths_with_checked_artifacts`].
 #[allow(clippy::too_many_arguments)]
 pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
     state: CState,

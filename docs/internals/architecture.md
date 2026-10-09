@@ -155,6 +155,14 @@ it can advance proof state only through checked operations. CLI rendering and
 profiling don't decide validity. Expansion is accepted only after the complete
 rendered source verifies through the ordinary entry point.
 
+In particular, function-entry lowering represents the declared inputs with
+symbolic values and constructs the entry resources. Kernel certification checks
+the execution evidence against that supplied entry; it does not redo the source
+translation. Thus "Surface" contains both trusted obligation construction and
+untrusted smart planning. See [Source obligations and checked
+evidence](kernel.md#source-obligations-and-checked-evidence) for the contract
+pipeline and its caller responsibilities.
+
 The ordinary `Proof` transition boundary and rewritten-source verification
 are the durable invariants; no separate certificate validation sits in front of
 that check.

@@ -2761,6 +2761,11 @@ pub fn c_verified_function_contract_claim(
 
 /// Packages an opaque rule only after every recorded contract claim has a
 /// certificate for this exact function.
+/// This checks claim coverage and function identity; it does not reconstruct
+/// the symbolic entry chosen by the caller of contract certification. Reusable
+/// rules require certification at an entry representing the declared input
+/// domain. See `docs/internals/kernel.md`, "Source obligations and checked
+/// evidence".
 pub fn c_verified_function_rule(
     function: CFunction,
     proofs: &[CVerifiedFunctionContractClaim],
