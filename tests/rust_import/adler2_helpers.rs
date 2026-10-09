@@ -13,6 +13,7 @@ const FOUR_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/four-byte-compute.click");
 const SMALL_PARTITION: &str = include_str!("../../design/charon-trial/adler2/partition.click");
 const TAIL_BOUNDS: &str = include_str!("../../design/charon-trial/adler2/tail-bounds.click");
+const BOUNDED_COUNT: &str = include_str!("../../design/charon-trial/adler2/bounded-count.click");
 const COUNT_BRIDGE: &str = include_str!("../../design/charon-trial/adler2/count-bridge.click");
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
@@ -56,13 +57,18 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let bounded_count = if contract.contains("adler_bounded_count") {
+        BOUNDED_COUNT
+    } else {
+        ""
+    };
     let common_spec = if contract.contains("adler_spec_one(") {
         COMMON_ADLER_SPEC
     } else {
         ""
     };
     format!(
-        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{count_bridge}\n{bounded_count}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1245,13 +1251,13 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have __rust_mir_62_remaining == 4 by",
-        "have __rust_mir_62_remaining == 8 by",
+        "have __rust_mir_62_remaining == 4u64 by",
+        "have __rust_mir_62_remaining == 8u64 by",
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have adler_lane_vectors_consumed(4, __rust_mir_62_remaining) == 0 by",
-        "have adler_lane_vectors_consumed(4, __rust_mir_62_remaining) == 1 by",
+        "have adler_lane_vectors_consumed(4, ((int32)(uint32)__rust_mir_62_remaining)) == 0 by",
+        "have adler_lane_vectors_consumed(4, ((int32)(uint32)__rust_mir_62_remaining)) == 1 by",
     );
 }
 
@@ -1317,7 +1323,7 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     for field in ["a", "b"] {
         for lane in [0, 3] {
             let bound = format!(
-                "have to_integer({field}_vec._0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, __rust_mir_62_remaining)) by"
+                "have to_integer({field}_vec._0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, ((int32)(uint32)__rust_mir_62_remaining))) by"
             );
             let changed = post_step.replacen(
                 &bound,
@@ -1335,8 +1341,8 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4 by",
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have ((int32)(uint32)__rust_mir_62_remaining) == at(lane_head, ((int32)(uint32)__rust_mir_62_remaining)) - 4 by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have ((int32)(uint32)__rust_mir_62_remaining) == at(lane_head, ((int32)(uint32)__rust_mir_62_remaining)) by",
     );
 }
 
@@ -1345,16 +1351,16 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
 fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
     for (before, after) in [
         (
-            "decreases __rust_mir_62_remaining;",
-            "decreases 4 - __rust_mir_62_remaining;",
+            "decreases ((int32)(uint32)__rust_mir_62_remaining);",
+            "decreases 4 - ((int32)(uint32)__rust_mir_62_remaining);",
         ),
         (
-            "invariant __rust_mir_62_remaining % 4 == 0;",
-            "invariant __rust_mir_62_remaining % 4 == 1;",
+            "invariant ((int32)(uint32)__rust_mir_62_remaining) % 4 == 0;",
+            "invariant ((int32)(uint32)__rust_mir_62_remaining) % 4 == 1;",
         ),
         (
-            "invariant __rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[3]);",
-            "invariant __rust_mir_62_remaining == 0 implies a_vec._0[3] == old((uint32)bytes[2]);",
+            "invariant ((int32)(uint32)__rust_mir_62_remaining) == 0 implies a_vec._0[3] == old((uint32)bytes[3]);",
+            "invariant ((int32)(uint32)__rust_mir_62_remaining) == 0 implies a_vec._0[3] == old((uint32)bytes[2]);",
         ),
         (
             "invariant b_vec._0[3] <= 255u32;",
@@ -1875,5 +1881,21 @@ fn charon_adler2_helpers_from_rejects_wrong_mathematical_bytes() {
                 "old(to_integer((int32)bytes[0])) + 1",
             ),
         ],
+    );
+}
+
+// The bridge cannot equate a truncating signed observation with an unbounded
+// native count. The selected count and pointer lemmas require the signed limit.
+#[test]
+fn adler_bounded_native_count_observations_verify() {
+    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
+    let changed = BOUNDED_COUNT.replacen(" requires count <= 2147483647u64;", "", 1);
+    assert_ne!(changed, BOUNDED_COUNT);
+    let error = click::surface::verify_c0_sources(&changed, &[])
+        .expect_err("unbounded truncating observation accepted");
+    assert!(
+        !error.message().contains("budget exhausted"),
+        "{}",
+        error.message()
     );
 }
