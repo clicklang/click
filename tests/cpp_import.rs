@@ -3142,14 +3142,17 @@ fn exception_enabled_profile_rejects_exception_and_object_semantics() {
     let object = Project::new();
     fs::write(
         object.source(),
-        "struct Box { int stored; };\nint increment(int& value) {\n    Box box{value};\n    return box.stored;\n}\n",
+        "struct Box { int stored; ~Box() noexcept { stored = 0; } };\nint increment(int& value) {\n    Box box{value};\n    return box.stored;\n}\n",
     )
     .unwrap();
     object.write_exception_enabled_compilation_database();
     object.write_config_with_profile("increment", "increment.cpp", true);
     let error = refresh_import(&object.config()).unwrap_err();
     assert!(error.contains("increment.cpp:3"), "{error}");
-    assert!(error.contains("borrowed records only"), "{error}");
+    assert!(
+        error.contains("local objects require trivial destruction"),
+        "{error}"
+    );
     assert!(!object.artifact().exists());
 }
 
@@ -5299,16 +5302,12 @@ fn nested_scope_rejects_conditional_construction_and_deeper_blocks() {
 }
 
 #[test]
-fn constructor_local_rejects_implicit_throwing_partial_and_reordered_forms() {
+fn constructor_local_rejects_throwing_partial_and_reordered_forms() {
     let project = Project::constructor_local();
     for (source, expected) in [
         (
-            "struct RestoreState {\n    int* pointer;\n    int saved;\n    RestoreState(int* slot) noexcept : pointer(slot), saved(*slot) {}\n};\nint capture(int& value) noexcept { RestoreState state(&value); return state.saved; }\n",
-            "public explicit non-default noexcept constructor",
-        ),
-        (
             "struct RestoreState {\n    int* pointer;\n    int saved;\n    explicit RestoreState(int* slot) : pointer(slot), saved(*slot) {}\n};\nint capture(int& value) noexcept { RestoreState state(&value); return state.saved; }\n",
-            "public explicit non-default noexcept constructor",
+            "public non-default noexcept constructor",
         ),
         (
             "struct RestoreState {\n    int* pointer;\n    int saved;\n    explicit RestoreState(int* slot) noexcept : pointer(slot) {}\n};\nint capture(int& value) noexcept { RestoreState state(&value); return state.saved; }\n",
@@ -8266,7 +8265,7 @@ fn nested_return_calls_reject_unspecified_order_conversions_and_cycles() {
         ),
         (
             "int echo(int x) noexcept { return x; } long wide(long x) noexcept { return x; } long relay(int x) noexcept { return wide(echo(x)); }",
-            "expression observers are supported only in return values and conditions",
+            "expression observers require a normalized return, condition, or member store",
         ),
         (
             "int echo(int x) noexcept { return x; } int relay(int x) noexcept { return echo(relay(x)); }",
@@ -16027,4 +16026,78 @@ int32 probe(int32 input) {
         expand_program_prepared_project_claim_source_by_label(&parsed, &import, "probe.contract")
             .unwrap();
     verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+}
+
+// Locked, instantiated header constructors retain ordinary checked calls,
+// including an observer initializer before nested member construction.
+#[test]
+fn locked_header_constructors_verify_observer_initializers_offline() {
+    let mut project = Project::with_fixture(
+        "header-construction.cpp",
+        "probe",
+        "#include \"descriptor.h\"\nunsigned long probe(int* backing, unsigned long count) { Descriptor descriptor(backing, count); return descriptor.extent.size; }\n",
+    );
+    let header = r#"
+inline int* address(int* value) noexcept { return value; }
+struct Extent {
+    unsigned long size;
+    Extent(unsigned long input) noexcept : size(input) {}
+};
+struct Descriptor {
+    int* data;
+    Extent extent;
+    explicit(false) Descriptor(int* backing, unsigned long count) noexcept
+        : data(address(backing)), extent(count) {}
+};
+"#;
+    fs::write(project.directory.join("descriptor.h"), header).unwrap();
+    project.dependencies.push("descriptor.h".into());
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_profile("probe", "header-construction.cpp", true);
+    refresh_import(&project.config()).expect("export locked header constructor definitions");
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(
+        import
+            .export()
+            .reachable_functions
+            .iter()
+            .all(|function| function.span.file == "descriptor.h")
+    );
+    let proof = r#"verifying "header-construction.cpp";
+int32* address(int32* value) { ensures result == value; } by { execute(); simp(); }
+void Extent_constructor(struct Extent* this, uint64 input) {
+ owns this->size;
+ ensures this->size == input;
+} by { execute(); simp(); }
+void Descriptor_constructor(struct Descriptor* this, int32* backing, uint64 count) {
+ owns this->data;
+ owns this->extent.size;
+ ensures this->data == backing;
+ ensures this->extent.size == count;
+} by { execute(); simp(); }
+uint64 probe(int32* backing, uint64 count) {
+ views backing[0];
+ ensures result == count;
+ ensures backing[0] == old(backing[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    let parsed = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
+    let expanded = expand_program_prepared_project_claim_source_by_label(
+        &parsed,
+        &import,
+        "Descriptor_constructor.contract",
+    )
+    .unwrap();
+    verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+    fs::write(
+        project.directory.join("descriptor.h"),
+        format!("{header}\n// changed\n"),
+    )
+    .unwrap();
+    assert!(
+        load_import(&project.config()).is_err(),
+        "changed constructor dependency must invalidate the lock"
+    );
 }

@@ -920,8 +920,9 @@ in its configured logical source. Each reachable function owns one source:
 parameters, statements, expressions, call sites and projected uses must stay
 within it, while type-alias declarations may come from any locked declaration
 source. Every reachable body is exported, validated and verified through its
-ordinary sidecar contract. Dependency-header constructors/destructors and constant
-definitions and executable spans crossing source files remain unsupported.
+ordinary sidecar contract. The bounded nonthrowing constructor profile also
+admits locked headers. Dependency-header destructors, constant definitions and
+executable spans crossing source files remain unsupported.
 
 For `if constexpr`, pinned Clang chooses the instantiated arm in constant
 evaluation context. The artifact retains an ordinary constant Boolean `if`,
@@ -989,7 +990,9 @@ Clang layout as kernel stack memory before applying typed field stores. Later
 by reference; trivial scope exit needs no destructor action.
 
 The `constructor-local` fixture permits that one automatic object to use one
-public, explicit, non-default `noexcept` constructor. Its member-initializer
+public, non-default `noexcept` constructor. The selected constructor may be
+explicit, non-explicit, or conditionally explicit: Clang has already resolved
+the direct invocation. Its member-initializer
 list must initialize every field in declaration order; the constructor body
 and its implicit call at the declaration are both lowered and verified through
 the ordinary modular call rules. Embedded record fields with trivial destruction
@@ -1003,6 +1006,13 @@ extent. Ordinary, expanded and retained checks cover an automatic descriptor
 with a pointer field and a nested uint64 extent while preserving backing memory.
 A nested self-pointer regression also constructs a child at a nonzero parent
 offset and reads through the pointer to that child's own field.
+
+Constructor bodies may come from declared, locked header dependencies. Scalar
+member initializers can call nonthrowing observers through their checked
+read-only contracts; lowering captures the call result before storing the
+field. Exception-enabled normal-only imports permit these local objects when
+destruction is trivial. Throwing construction, header destructor bodies, and
+nested calls in constructor arguments remain outside this slice.
 
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact

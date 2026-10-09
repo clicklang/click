@@ -569,10 +569,10 @@ impl LoweringContext<'_> {
                 ..
             } => {
                 let (pointer, value_type) = self.lower_member_pointer(object, field)?;
-                Ok(c_typed_store(
-                    pointer,
-                    self.lower_expression(value)?,
-                    value_type,
+                let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                Ok(evaluate_then(
+                    evaluation.prefix,
+                    c_typed_store(pointer, evaluation.value, value_type),
                 ))
             }
             CppStatement::Unreachable { span } => Ok(crate::kernel::c_labeled_assert(

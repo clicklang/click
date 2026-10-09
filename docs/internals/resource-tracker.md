@@ -842,6 +842,14 @@ itself is the last disjunct of
 `pointers_proven_distinct_for_memory_resolution`, after every cheaper check,
 and costs one lookup on a bounded name.
 
+Imported functions use the same pass over their lowered typed bodies, including
+generated scalar call-result locals. The walk checks every declaration and
+address-forming expression; aggregate and array names remain addressable. A
+non-null pointer literal in a lowered body makes the whole bundle conservative,
+because it can name storage without a source address expression. This is source
+analysis performed once before verification, not a new separation assumption
+attached to an arbitrary symbolic destination.
+
 Two things follow from where the answer is kept.
 
 - It is a set of **names**, program-wide. A `local:` block says nothing about

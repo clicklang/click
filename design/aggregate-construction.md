@@ -49,8 +49,10 @@ field liveness comes from the entry contract. At a call, constructors can select
 an aligned subobject within a known parent allocation. Completion and summaries
 initialize only the child's fields, preserving the parent's extent and sibling
 storage. C++ member-initializer lists now lower embedded construction to these
-checked child calls, within the existing selected-file, explicit non-default
-`noexcept` constructor profile. Children require trivial destruction. Neither
+checked child calls, within a public non-default `noexcept` constructor profile.
+Definitions may come from the selected file or locked header dependencies;
+Clang-resolved non-explicit constructors and checked read-only scalar initializer
+calls are supported. Children require trivial destruction. Neither
 the native signature nor sidecar syntax changes.
 
 `c_end_automatic_lifetimes` makes a frontend-recorded expression boundary an

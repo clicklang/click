@@ -1580,10 +1580,9 @@ private:
     const bool record_object =
         record != nullptr && !local->getType().hasQualifiers();
     if (record_object && context_.getLangOpts().CXXExceptions &&
-        exception_behavior_ == "normal_only") {
+        exception_behavior_ == "normal_only" && !record->hasTrivialDestructor()) {
       fail(local->getLocation(),
-           "exception-enabled normal-only C++ supports borrowed records only, "
-           "not local object construction");
+           "exception-enabled normal-only C++ local objects require trivial destruction");
       return std::nullopt;
     }
     if (!mutable_int && !record_object && !int_reference) {
@@ -3133,20 +3132,20 @@ private:
     }
     const auto *prototype =
         constructor->getType()->getAs<clang::FunctionProtoType>();
-    if (!constructor->isExplicit() || constructor->getAccess() != clang::AS_public ||
+    if (constructor->getAccess() != clang::AS_public ||
         constructor->isDefaultConstructor() ||
         constructor->isCopyOrMoveConstructor() ||
         constructor->isDelegatingConstructor() || constructor->isVariadic() ||
         prototype == nullptr || !prototype->isNothrow()) {
       fail(constructor->getLocation(),
-           "the supported constructor must be one public explicit non-default noexcept constructor without copying, moving, delegation, or variadic arguments");
+           "the supported constructor must be one public non-default noexcept constructor without copying, moving, delegation, or variadic arguments");
       return false;
     }
     if (!constructor->doesThisDeclarationHaveABody() ||
         constructor->getDefinition() != constructor ||
-        !is_in_logical_source(constructor->getLocation())) {
+        !executable_source(constructor->getLocation())) {
       fail(constructor->getLocation(),
-           "the supported constructor must have an inline definition in the selected file");
+           "the supported constructor must have a definition in the selected file or a declared dependency");
       return false;
     }
     for (const clang::ParmVarDecl *parameter : constructor->parameters()) {

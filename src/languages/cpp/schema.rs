@@ -1114,12 +1114,11 @@ impl CppExport {
         for source in std::iter::once(&self.function).chain(&self.reachable_functions) {
             source.span.validate_in(&declaration_sources)?;
             if source.span.file != logical_source
-                && matches!(
-                    source.function_kind,
-                    CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. }
-                )
+                && matches!(source.function_kind, CppFunctionKind::Destructor { .. })
             {
-                return Err("C++ header constructors and destructors remain outside the executable graph profile".into());
+                return Err(
+                    "C++ header destructors remain outside the executable graph profile".into(),
+                );
             }
             source.validate(
                 &source.span.file,
@@ -1909,6 +1908,15 @@ impl CppFunction {
                         arguments,
                         span,
                     } => {
+                        if arguments
+                            .iter()
+                            .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
+                        {
+                            return Err(
+                                "nested C++ calls in constructor arguments remain unsupported"
+                                    .into(),
+                            );
+                        }
                         let field_type = validate_member_reference(
                             object,
                             field,
@@ -1955,12 +1963,6 @@ impl CppFunction {
             return Err("supported C++ function has no executable statements".into());
         }
         validate_return_types(&self.body, &self.return_type)?;
-        if exceptions_enabled
-            && matches!(exception_behavior, CppExceptionBehavior::NormalOnly)
-            && sequence_constructs_record(&self.body)
-        {
-            return Err("exception-enabled normal-only C++ supports borrowed records only".into());
-        }
         if matches!(exception_behavior, CppExceptionBehavior::NormalOnly)
             && sequence_contains_throw(&self.body)
         {
@@ -2430,7 +2432,6 @@ impl CppStatement {
     ) -> Result<(), String> {
         match self {
             Self::Assign { value, .. }
-            | Self::MemberStore { value, .. }
             | Self::Throw { value, .. }
             | Self::Assume {
                 condition: value, ..
@@ -3047,7 +3048,7 @@ impl CppExpression {
     fn require_pure_context(&self) -> Result<(), String> {
         if self.contains_observer() {
             Err(
-                "C++ expression observers are supported only in return values and conditions"
+                "C++ expression observers require a normalized return, condition, or member store"
                     .into(),
             )
         } else {
@@ -3446,22 +3447,6 @@ impl CppExpression {
             }
         }
     }
-}
-
-fn sequence_constructs_record(statements: &[CppStatement]) -> bool {
-    statements.iter().any(|statement| match statement {
-        CppStatement::Declare { local, .. } => matches!(local.value_type, CppType::Record { .. }),
-        CppStatement::Scope { body, .. } => sequence_constructs_record(body),
-        CppStatement::If {
-            then_branch,
-            else_branch,
-            ..
-        } => sequence_constructs_record(then_branch) || sequence_constructs_record(else_branch),
-        CppStatement::TryCatchInt32 {
-            try_body, handler, ..
-        } => sequence_constructs_record(try_body) || sequence_constructs_record(handler),
-        _ => false,
-    })
 }
 
 // Graph validation needs declaration identities throughout the function, not

@@ -34,7 +34,7 @@ profile decision before implementation:
 - **Expression and lifetime profiles.** Converted call arguments, call-based
   brace initialization, arithmetic/composed expressions around calls, broader
   memory-reading siblings and nontrivial embedded destruction,
-  and header constructor/destructor bodies need explicit sequencing, aliasing,
+  and header destructor bodies need explicit sequencing, aliasing,
   lifetime, or admission choices. Broader cleanup/unwind remains owned by
   [control-flow.md](control-flow.md).
 - **Remaining scalar and import coverage.** Original wide call conversions are
@@ -324,11 +324,13 @@ an exact source and contract selection under the profile boundaries above.
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
 and embedded record layouts already have C++ support, as do unsigned size
-fields and the pointer-offset forms above. Selected-file embedded member
+fields and the pointer-offset forms above. Selected-file and locked-header embedded member
 construction now uses checked child-constructor calls in declaration order,
 with unwritten destination footprints, native contracts and sibling/backing
-frames. Prvalue aggregate returns, copy initialization and pinned library
-constructor bodies still need frontend admission; they do not justify a separate
+frames. Scalar member initializers can invoke checked nonthrowing read-only
+observers. Trivial destruction permits these local objects in the normal-only
+exception-enabled profile. Prvalue aggregate returns, copy initialization and
+the remaining pinned library body forms still need frontend admission; they do not justify a separate
 C++ memory model.
 
 Acceptance should include the unchanged helper, a modular caller that reads
@@ -1394,8 +1396,8 @@ The unchanged `GetFeePerK` wrapper now composes the unified Down contract at
 Offline ordinary/expanded/retained checks and positive, negative, zero-fee and
 wide modular callers are delivered. Missing size/authority/fit premises and
 false rounding claims fail promptly.
-Automatic objects with embedded records, nontrivial embedded destruction,
-header constructor/destructor bodies, header constant definitions and mixed-source
+Broader automatic object arrangements, nontrivial embedded destruction,
+header destructor bodies, header constant definitions and mixed-source
 executable macro spans remain separate work.
 Keep object construction and the other `CFeeRate` methods separate until their
 own contracts are selected. Continue bounded ordinary/expanded/retained and
