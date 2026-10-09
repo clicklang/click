@@ -2351,6 +2351,11 @@ pub(super) fn finish_ordered_proof<'a>(
                     });
                     let mut surface_post_choices = Vec::new();
                     let mut batch_previous_capture = None;
+                    // Consecutive assumption closers only discharge claims;
+                    // they do not change the outcome or its ambient facts.
+                    // A failed whole-contract transition must not be retried
+                    // once per returned member in an expanded simp proof.
+                    let mut assumption_transition_attempted = false;
                     for (post_execution_index, deferred) in
                         selected_post_execution_tactics.into_iter().enumerate()
                     {
@@ -2380,6 +2385,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             let mut choice = selected_post_choices.next().unwrap();
                             choice.tactic_offset = path_surface_post_tactics.len();
                             surface_post_choices.push(choice);
+                        }
+                        if !matches!(deferred.tactic, PostExecutionTactic::Assumption) {
+                            assumption_transition_attempted = false;
                         }
                         let tactic_index = &deferred.tactic_index;
                         let source_index = &deferred.source_index;
@@ -3092,25 +3100,30 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // it an expanded `simp` cannot reproduce the
                                 // claim its own certificate reports closed.
                                 if !resource_transition_applied
+                                    && !assumption_transition_attempted
                                     && matches!(outcome, CFunctionOutcome::Return { .. })
                                     && claims.iter().enumerate().any(|(index, claim)| {
                                         let clause = claim.clause();
                                         !closures[index].is_closed()
                                             && matches!(clause.ensure(), Ensure::Resource(_))
                                     })
-                                    && crate::kernel::c_function_return_resources_definitionally_established(
+                                {
+                                    assumption_transition_attempted = true;
+                                    let established = crate::kernel::c_function_return_resources_definitionally_established(
                                         pre_state,
                                         function,
                                         arguments,
                                         &outcome,
                                         &assumptions_from_propositions(&path_requirements),
-                                    )
-                                    && let Ok(transitioned) = required_outcome(&outcome_proof)?
-                                        .apply_outcome_contract_resources(pre_state, function)
-                                {
-                                    outcome = transitioned.focused_outcome_snapshot()?;
-                                    resource_transition_applied = true;
-                                    outcome_proof = Some(transitioned);
+                                    );
+                                    if established
+                                        && let Ok(transitioned) = required_outcome(&outcome_proof)?
+                                            .apply_outcome_contract_resources(pre_state, function)
+                                    {
+                                        outcome = transitioned.focused_outcome_snapshot()?;
+                                        resource_transition_applied = true;
+                                        outcome_proof = Some(transitioned);
+                                    }
                                 }
 
                                 // Each claim is focused from the evolving

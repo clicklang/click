@@ -4089,3 +4089,67 @@ fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
     };
     assert!(!witness.checks(&write, &other, 4, &assumptions));
 }
+
+/// Named struct unfolds cache pointer storage as narrower scalar slots. A
+/// full-width read must cross those no-write edges without reading the last
+/// partial slot as a write. The witness stays constant-size as the run grows.
+#[test]
+fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
+    let pointer = Pointer::symbolic(Variable(98_490));
+    let assumptions = PureFactContext::new();
+    let mut previous_work = None;
+    for count in [2, 16, 256, 4096] {
+        let original = intern_c_memory(CMemory::new());
+        let current = intern_c_memory(original.memory().clone().with_seeded_cells(
+            pointer.clone(),
+            4,
+            CType::Int32,
+            0,
+            count,
+            original.clone(),
+        ));
+        let (cell, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory_dag_cell_source(&current, &pointer, 8, &assumptions, false).unwrap()
+        });
+        let MemoryDagCell::Unwritten { node, path } = cell else {
+            panic!("partial scalar cache slots cannot supply a whole pointer");
+        };
+        assert_eq!(node, original);
+        assert_eq!(path.len(), 1);
+        let hop = &path[0];
+        assert_eq!(
+            hop.justification,
+            MemoryDagHopJustification::SeededLoadsOfBase
+        );
+        assert!(
+            hop.justification
+                .checks(&hop.derivation, &pointer, 8, &assumptions)
+        );
+        assert!(work < 100, "count={count}, work={work}");
+        if let Some(previous) = previous_work {
+            assert_eq!(work, previous);
+        }
+        previous_work = Some(work);
+
+        // A real four-byte overwrite of the pointer's upper half must still
+        // stop the wide read, even after the resulting bytes are cached.
+        let changed = intern_c_memory(
+            original
+                .memory()
+                .clone()
+                .store(pointer.offset_by_bytes(4), int32(7)),
+        );
+        let cached = intern_c_memory(changed.memory().clone().with_seeded_cells(
+            pointer.clone(),
+            4,
+            CType::Int32,
+            0,
+            count,
+            changed.clone(),
+        ));
+        let (cell, stop) =
+            memory_dag_cell_source_with_stop(&cached, &pointer, 8, &assumptions, false).unwrap();
+        assert_eq!(cell.node(), &changed);
+        assert_eq!(stop, CellWalkStop::Affected);
+    }
+}

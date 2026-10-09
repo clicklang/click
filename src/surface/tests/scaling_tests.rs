@@ -6995,3 +6995,60 @@ fn explicit_frame_refusal_scales_with_unrelated_facts() {
         );
     }
 }
+
+/// Expanding a closer into one assumption per returned field used to retry
+/// an unchanged failed whole-contract transition for every field. Count that
+/// operation across increasing output frontiers, independently of its cost.
+#[test]
+#[ignore = "nightly: 9s across four complete named-resource callers"]
+fn consecutive_resource_closers_attempt_one_transition() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/call_frames_pointer_after_named_unfolds.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let original = fixture.click_source.unwrap();
+    let (c_name, original_c) = &fixture.c_sources[0];
+    let mut previous = None;
+    for size in [1, 2, 4, 8] {
+        let c_source = original_c.replace(
+            "struct node *left;",
+            &format!("struct node *left; int32 extra[{size}];"),
+        );
+        let mut source = original.replace(
+            "    fact p->left == 0;",
+            &format!("    owns p->extra[0..{size}];\n    fact p->left == 0;"),
+        );
+        let outputs = (0..size)
+            .map(|index| format!("    produces p->extra[{index}]; produces q->extra[{index}];\n"))
+            .collect::<String>();
+        source = source.replace(
+            "    produces *anchor;",
+            &(outputs + "    produces *anchor;"),
+        );
+        let tail = source.rfind("    execute(); simp();").unwrap();
+        source.replace_range(
+            tail..tail + "    execute(); simp();".len(),
+            &format!("    step(); {}", "assumption(); ".repeat(8 + 2 * size)),
+        );
+        let (verified, events) = crate::instrumentation::collect(|| {
+            verify_c0_sources(&source, &[(c_name.as_str(), c_source.as_str())])
+        });
+        verified.unwrap_or_else(|error| panic!("size={size}: {}", error.message()));
+        let checks = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                        if name == "return resources: definitional check"
+                )
+            })
+            .count();
+        assert!(checks > 0);
+        if let Some(previous) = previous {
+            assert_eq!(
+                checks, previous,
+                "size={size}: retries grew with resource closers"
+            );
+        }
+        previous = Some(checks);
+    }
+}
