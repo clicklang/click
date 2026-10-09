@@ -101,3 +101,14 @@ theorem adler_count_tail_step(r: uint64) {
   normalize() using { (int32)(uint32)(r - 1u64) == (int32)(uint32)r - (int32)(uint32)1u64; }
  }
 }
+theorem adler_count_zero(r: uint64) {
+ requires r <= 22208u64;
+ requires (int32)(uint32)r == 0;
+ ensures r == 0u64 by {
+  apply(adler_count_observation(r)) using { r <= 22208u64; }
+  have to_integer((int32)(uint32)r) == 0 by { rewrite((int32)(uint32)r == 0); normalize(); }
+  have to_integer(r) == 0 by { arithmetic() using { to_integer((int32)(uint32)r) == to_integer(r); to_integer((int32)(uint32)r) == 0; } }
+  have to_integer(r) == to_integer(0u64) by { normalize() using { to_integer(r) == 0; } }
+  apply(uint64_equal_of_to_integer(r, 0u64)) using { to_integer(r) == to_integer(0u64); }
+ }
+}
