@@ -2607,7 +2607,8 @@ impl CppStatement {
             }
             Self::ReturnConstruct { callee, arguments, value_type, cleanups, span }
             | Self::ReturnAggregateCall { callee, arguments, value_type, cleanups, span } => {
-                validate_call(callee, arguments, span, places, records, logical_source)?;
+                validate_call_in_context(callee, arguments, span, places, records, logical_source,
+                    matches!(self, Self::ReturnConstruct { .. }))?;
                 if !matches!(value_type, CppType::Record { is_const: false, .. }) || !cleanups.is_empty() {
                     return Err("C++ construction returns require a mutable record result and no exit cleanup".into());
                 }
@@ -2931,6 +2932,40 @@ fn validate_call(
     records: &RecordIndex<'_>,
     logical_source: &str,
 ) -> Result<(), String> {
+    validate_call_in_context(
+        callee,
+        arguments,
+        span,
+        places,
+        records,
+        logical_source,
+        false,
+    )
+}
+
+// Returned construction can evaluate composed read-only observers before the
+// constructor runs. All siblings must be value expressions: mixing an ordinary
+// nested call or reference argument would need additional ordering evidence.
+fn validate_call_in_context(
+    callee: &CppFunctionReference,
+    arguments: &[CppCallArgument],
+    span: &CppSpan,
+    places: &ValidationPlaces<'_>,
+    records: &RecordIndex<'_>,
+    logical_source: &str,
+    returned_construction: bool,
+) -> Result<(), String> {
+    let observer_values = returned_construction && arguments.iter().any(|argument|
+        matches!(argument, CppCallArgument::Value { value } if value.contains_observer()));
+    if observer_values
+        && arguments
+            .iter()
+            .any(|argument| !matches!(argument, CppCallArgument::Value { .. }))
+    {
+        return Err(
+            "C++ returned-constructor expression observers require value-only arguments".into(),
+        );
+    }
     let nested_calls = arguments
         .iter()
         .filter(|argument| matches!(argument, CppCallArgument::Call { .. }))
@@ -2961,7 +2996,11 @@ fn validate_call(
         return Err("C++ call is missing resolved declaration identity".into());
     }
     for argument in arguments {
-        argument.validate(places, records, logical_source)?;
+        if observer_values && let CppCallArgument::Value { value } = argument {
+            value.validate(places, records, logical_source)?;
+        } else {
+            argument.validate(places, records, logical_source)?;
+        }
     }
     Ok(())
 }

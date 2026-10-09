@@ -3892,6 +3892,38 @@ impl PureFactContext {
             .flat_map(|neighbors| neighbors.iter())
     }
 
+    /// A full-width observer result can name the same unchanged cell at a
+    /// later snapshot. Inspect only equality neighbors of the queried values;
+    /// never search unrelated conditions for a matching load.
+    pub(in crate::kernel) fn uint64_values_equal_for_range_resolution(
+        &self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> bool {
+        let same_load = |a: &Bitvector32Term, b: &Bitvector32Term| {
+            let (Some((am, ap, ak)), Some((bm, bp, bk))) =
+                (load_snapshot_and_pointer(a), load_snapshot_and_pointer(b))
+            else {
+                return false;
+            };
+            ak == LoadKind::Bits64
+                && bk == ak
+                && ap == bp
+                && memories_match_for_pointer_load(&am, &bm, &ap)
+        };
+        left == right
+            || self.decide(&ConditionTerm::uint64_equal(left.clone(), right.clone())) == Some(true)
+            || same_load(left, right)
+            || self.exact_uint64_equalities(left).any(|(other, _)| {
+                crate::instrumentation::record_deterministic_work(1);
+                other == right || same_load(other, right)
+            })
+            || self.exact_uint64_equalities(right).any(|(other, _)| {
+                crate::instrumentation::record_deterministic_work(1);
+                other == left || same_load(other, left)
+            })
+    }
+
     /// The terms recorded as 64-bit equal to `term` by one exact fact, each
     /// with the stored fact so a certificate can cite it exactly. Loads may
     /// also match the same pointer in a snapshot whose differing cells are

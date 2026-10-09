@@ -4611,3 +4611,164 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+// The unchanged runtime suffix operation constructs into the caller's result
+// destination, preserving the receiver and all of its backing view.
+#[test]
+#[ignore = "nightly: 3.7s parallel pinned runtime last returns bounded suffix"]
+fn pinned_std_span_last_returns_bounded_suffix_offline() {
+    check_pinned_std_span_last("symbolic");
+}
+
+#[test]
+#[ignore = "nightly: 6.5s parallel pinned runtime last empty suffix"]
+fn pinned_std_span_last_empty_suffix_offline() {
+    check_pinned_std_span_last("empty");
+}
+#[test]
+#[ignore = "nightly: 6.1s parallel pinned runtime last full suffix"]
+fn pinned_std_span_last_full_suffix_offline() {
+    check_pinned_std_span_last("full");
+}
+#[test]
+#[ignore = "nightly: 4.3s parallel pinned runtime last empty input"]
+fn pinned_std_span_last_empty_input_offline() {
+    check_pinned_std_span_last("empty-input");
+}
+#[test]
+#[ignore = "nightly: 8.8s parallel pinned runtime last method expands"]
+fn pinned_std_span_last_method_expands_offline() {
+    check_pinned_std_span_last("expand-method");
+}
+#[test]
+#[ignore = "nightly: 10.8s parallel pinned runtime last caller expands"]
+fn pinned_std_span_last_caller_expands_offline() {
+    check_pinned_std_span_last("expand-caller");
+}
+#[test]
+#[ignore = "nightly: 8.8s parallel pinned runtime last retains"]
+fn pinned_std_span_last_retains_offline() {
+    check_pinned_std_span_last("retain");
+}
+#[test]
+#[ignore = "nightly: 5.7s parallel pinned runtime last refuses missing views"]
+fn pinned_std_span_last_refuses_missing_views_offline() {
+    check_pinned_std_span_last("refuse-views");
+}
+#[test]
+#[ignore = "nightly: 7.3s parallel pinned runtime last refuses missing bounds"]
+fn pinned_std_span_last_refuses_missing_bounds_offline() {
+    check_pinned_std_span_last("refuse-bounds");
+}
+#[test]
+#[ignore = "nightly: 7.8s parallel pinned runtime last refuses false results"]
+fn pinned_std_span_last_refuses_false_results_offline() {
+    check_pinned_std_span_last("refuse-results");
+}
+
+fn check_pinned_std_span_last(case: &str) {
+    let harness = "#include <span.h>\nstd::span<int> probe(const std::span<int>& span, unsigned long count) noexcept { return span.last(count); }\n";
+    let (root, import) = pinned_span_fixture_with_dependencies(
+        &format!("returned-last-{case}"),
+        harness,
+        &["sysroot/usr/include/c++/12/bits/ptr_traits.h"],
+    );
+    let common = pinned_span_construction_contracts(&import);
+    let start = common.find("struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_first(").unwrap();
+    let common = common[..start].replace("(int32)__count", "__count");
+    let source = format!(
+        "{}{}",
+        common,
+        r#"struct span__int__value_unsigned_long_18446744073709551615 span__int__value_unsigned_long_18446744073709551615_last(const struct span__int__value_unsigned_long_18446744073709551615* this, uint64 __count) {
+ views this->_M_ptr;
+ views this->_M_extent._M_extent_value;
+ views this->_M_ptr[0..this->_M_extent._M_extent_value];
+ requires __count <= this->_M_extent._M_extent_value;
+ requires this->_M_extent._M_extent_value <= 1073741823u64;
+ ensures result._M_ptr == old(this->_M_ptr) + (old(this->_M_extent._M_extent_value) - __count);
+ ensures result._M_extent._M_extent_value == __count;
+ ensures this->_M_ptr == old(this->_M_ptr);
+ ensures this->_M_extent._M_extent_value == old(this->_M_extent._M_extent_value);
+} by { execute(); simp(); }
+struct span__int__value_unsigned_long_18446744073709551615 probe(const struct span__int__value_unsigned_long_18446744073709551615& span, uint64 count) {
+ views span._M_ptr;
+ views span._M_extent._M_extent_value;
+ views span._M_ptr[0..span._M_extent._M_extent_value];
+ requires count <= span._M_extent._M_extent_value;
+ requires span._M_extent._M_extent_value <= 1073741823u64;
+ ensures result._M_ptr == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - count);
+ ensures result._M_extent._M_extent_value == count;
+ ensures span._M_ptr == old(span._M_ptr);
+ ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
+ ensures forall (index: uint64) { index < old(span._M_extent._M_extent_value) implies span._M_ptr[index] == old(span._M_ptr[index]) };
+} by { execute(); simp(); }
+"#
+    );
+    let source = match case {
+        "empty" => source.replace(
+            " requires count <= span._M_extent._M_extent_value;",
+            " requires count == 0u64;",
+        ),
+        "full" => source.replace(
+            " requires count <= span._M_extent._M_extent_value;",
+            " requires count == span._M_extent._M_extent_value;",
+        ),
+        "empty-input" => source.replace(
+            " requires count <= span._M_extent._M_extent_value;",
+            " requires count == 0u64; requires span._M_extent._M_extent_value == 0u64;",
+        ),
+        _ => source,
+    };
+    let path = root.join("span.click");
+    fs::write(&path, &source).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
+    verify_program_prepared_project(&project, &import).unwrap();
+    if case.starts_with("expand-") {
+        let label = if case == "expand-method" {
+            "span__int__value_unsigned_long_18446744073709551615_last.contract"
+        } else {
+            "probe.contract"
+        };
+        let expanded =
+            expand_program_prepared_project_claim_source_by_label(&project, &import, label)
+                .unwrap();
+        verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+    }
+    if case == "retain" {
+        let (session, _) =
+            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+        let position = program_prepared_project_tactic_source_position(
+            &project,
+            &import,
+            "probe.ensures_0",
+            0,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&source, position.line, position.column)
+            .unwrap();
+    }
+    if case.starts_with("refuse-") {
+        let hostile_sources = [
+            source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
+            source.replace(" requires count <= span._M_extent._M_extent_value;", ""),
+            source.replace(" requires span._M_extent._M_extent_value <= 1073741823u64;", ""),
+            source.replace(" ensures result._M_extent._M_extent_value == count;", " ensures result._M_extent._M_extent_value != count;"),
+            source.replace(" ensures result._M_ptr == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - count);", " ensures result._M_ptr == old(span._M_ptr) + (old(span._M_extent._M_extent_value) - count + 1u64);"),
+        ];
+        let cases = match case {
+            "refuse-views" => 0..1,
+            "refuse-bounds" => 1..3,
+            _ => 3..5,
+        };
+        for hostile in &hostile_sources[cases] {
+            let error = verify_program_prepared_project(
+                &read_click_project(&path, hostile).unwrap(),
+                &import,
+            )
+            .unwrap_err();
+            assert!(error.message().contains("probe"), "{}", error.message());
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}
