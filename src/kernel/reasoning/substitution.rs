@@ -8507,24 +8507,6 @@ mod integer_function_traversal_tests {
                 Term::Integer(IntegerTerm::constant_i64(0)),
             )
         };
-        let small_memory = make_memory(0);
-        let large_memory = make_memory(256);
-        let (small, small_work) = crate::instrumentation::measure_deterministic_work(|| {
-            substitute_integer_variable_in_pure_proposition(
-                &make(small_memory.clone()),
-                source,
-                &IntegerTerm::constant_i64(7),
-            )
-            .expect("small snapshot substitution should be supported")
-        });
-        let (large, large_work) = crate::instrumentation::measure_deterministic_work(|| {
-            substitute_integer_variable_in_pure_proposition(
-                &make(large_memory.clone()),
-                source,
-                &IntegerTerm::constant_i64(7),
-            )
-            .expect("large snapshot substitution should be supported")
-        });
         let snapshot = |proposition: Proposition| {
             let Proposition::Equal(Term::Integer(value), _) = proposition else {
                 panic!("expected Integer equality")
@@ -8542,15 +8524,24 @@ mod integer_function_traversal_tests {
             assert!(matches!(integer.as_ref(), IntegerTerm::Constant(_)));
             memory.clone()
         };
-        assert!(std::sync::Arc::ptr_eq(
-            &snapshot(small).blocks,
-            &small_memory.blocks
-        ));
-        assert!(std::sync::Arc::ptr_eq(
-            &snapshot(large).blocks,
-            &large_memory.blocks
-        ));
-        assert_eq!(small_work, large_work);
+        // Construct the selected term before measuring its substitution. Pin
+        // a constant ceiling across snapshot sizes rather than exact equality
+        // between two totals: fixed interning/bookkeeping costs can differ,
+        // but traversing even the 256-block snapshot would exceed this bound.
+        for count in [0, 16, 256, 4096] {
+            let memory = make_memory(count);
+            let input = make(memory.clone());
+            let replacement = IntegerTerm::constant_i64(7);
+            let (changed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                substitute_integer_variable_in_pure_proposition(&input, source, &replacement)
+                    .expect("snapshot substitution should be supported")
+            });
+            assert!(std::sync::Arc::ptr_eq(
+                &snapshot(changed).blocks,
+                &memory.blocks
+            ));
+            assert!(work > 0 && work <= 128, "{count} unrelated blocks: {work}");
+        }
     }
 }
 

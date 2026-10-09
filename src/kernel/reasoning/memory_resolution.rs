@@ -523,8 +523,9 @@ impl Drop for ClosureFailureMemoScope {
     }
 }
 
-/// Runs one smart closure with its failed pointer-distinctness queries and
-/// fact-transport checks remembered for the closure's duration.
+/// Runs one smart closure or explicit transport check with its failed
+/// pointer-distinctness queries and fact-transport checks remembered for the
+/// enclosing attempt's duration.
 ///
 /// A closure that tries one goal against many candidates -- the snapshot
 /// transport closure lowers the goal at every recorded snapshot -- asks the

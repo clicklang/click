@@ -6866,3 +6866,73 @@ fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
         );
     }
 }
+
+/// Explicit framing must refuse locally even as unrelated scalar premises grow.
+/// The mdtest pins one refusal; this checks that its context-dependent memo does
+/// not turn extra facts into repeated frame searches. Keep the multi-run recheck
+/// out of the gate, whose single fixture covers the behavior.
+#[test]
+#[ignore = "nightly: 6s for four explicit frame refusals"]
+fn explicit_frame_refusal_scales_with_unrelated_facts() {
+    let mdtest = crate::cli::parse_mdtest(
+        std::path::Path::new("explicit_transport_failure_is_prompt.md"),
+        include_str!("../../../mdtests/explicit_transport_failure_is_prompt.md"),
+    )
+    .unwrap();
+    let mut samples = Vec::new();
+    for size in [16, 32, 64, 128] {
+        let parameters = (0..size)
+            .map(|index| format!(", int32 extra{index}"))
+            .collect::<String>();
+        let premises = (0..size)
+            .map(|index| format!("    requires extra{index} == 0;\n"))
+            .collect::<String>();
+        let signature = "struct region* region, int32 value, int32 k";
+        let extended = format!("{signature}{parameters}");
+        let source = mdtest
+            .click_source
+            .as_deref()
+            .unwrap()
+            .replace(signature, &extended)
+            .replace(
+                "    requires r.end <= st.capacity;",
+                &format!("{premises}    requires r.end <= st.capacity;"),
+            );
+        let c_sources = mdtest
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.replace(signature, &extended)))
+            .collect::<Vec<_>>();
+        let c_refs = c_sources
+            .iter()
+            .map(|(name, source)| (*name, source.as_str()))
+            .collect::<Vec<_>>();
+        let (result, sample) = scaling_sample(size, || {
+            crate::instrumentation::with_tactic_work_limits(
+                crate::instrumentation::TacticWorkLimits {
+                    simple: 250_000,
+                    control: 250_000,
+                    ..crate::instrumentation::TacticWorkLimits::default()
+                },
+                || verify_c0_sources(&source, &c_refs),
+            )
+        });
+        let error = result.expect_err("a missing frame is still refused");
+        assert!(
+            error.message().contains("found no frame evidence"),
+            "{size}: {error:?}"
+        );
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("explicit frame refusal with unrelated facts", &samples);
+    // The selected transport pays only a fixed amount per added premise.
+    // Whole-run totals also include shared frontend initialization.
+    for pair in samples.windows(2) {
+        let before = pair[0].named_work["control tactic `have`"];
+        let after = pair[1].named_work["control tactic `have`"];
+        assert!(
+            after <= before + 12 * (pair[1].size - pair[0].size),
+            "{samples:?}"
+        );
+    }
+}

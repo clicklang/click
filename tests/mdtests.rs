@@ -23,6 +23,9 @@ const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
 /// near 575,000 units; repeating its failed questions per candidate used to
 /// run it into the 2,000,000-unit default.
 const PROMPT_SIMP_FRAME_FAILURE_WORK_LIMIT: usize = 1_000_000;
+/// The explicit frame refusal takes about 175,000 units with scoped failure
+/// reuse, versus 513,000 when its proof routes repeat the same questions.
+const PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT: usize = 250_000;
 
 /// Known-broken mdtests, skipped by default so the suite is a meaningful
 /// green gate. Run one with `MDTEST_FILTER=<name>`, or all of them with
@@ -210,6 +213,20 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
             ..instrumentation::TacticWorkLimits::default()
         };
         return instrumentation::with_tactic_work_limits(limits, || run_mdtest(path));
+    }
+    if !budgets_disabled
+        && path
+            .file_name()
+            .is_some_and(|name| name == "explicit_transport_failure_is_prompt.md")
+    {
+        return instrumentation::with_tactic_work_limits(
+            instrumentation::TacticWorkLimits {
+                simple: PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT,
+                control: PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT,
+                ..instrumentation::TacticWorkLimits::default()
+            },
+            || run_mdtest(path),
+        );
     }
     if !budgets_disabled
         && path
