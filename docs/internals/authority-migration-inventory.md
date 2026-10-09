@@ -1816,3 +1816,16 @@ names that said otherwise are renamed:
 regression. With and without fields, a count is admitted exactly when the
 family is authorized. The language reference no longer calls resources with
 fields uncountable.
+
+#### Chunk 2: complete
+
+With chunks 2a–2g, the four kinds of legacy machinery are gone:
+- counted-population mutex custody (2a);
+- implicit population-body access: the legacy execution path, the counted
+  transition and the count store (2b–2d). What remains is the explicit
+  `open(..)` scope of an authority control, which the surface opens and closes
+  by name;
+- count-in-body classification (2e–2f);
+- field-based countability (2g).
+
+Chunk 3 removes `guarded_by`.
