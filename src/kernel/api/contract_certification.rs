@@ -2797,10 +2797,12 @@ pub(crate) fn condition_holds_by_memory_resolution(
         (ConditionTerm::PointerEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions.pointers_known_equal(left, right)
+                || pointer_read_has_recorded_value(left, right, assumptions)
         }
         (ConditionTerm::PointerOffsetEqual(left, right), true) => {
             pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
                 || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
+                || pointer_offset_read_has_recorded_value(left, right, assumptions)
         }
         _ => {
             assumptions.proves_order_condition_for_memory_resolution(condition, value)

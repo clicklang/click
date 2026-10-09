@@ -78,6 +78,8 @@ void probe(struct node *p, struct root *root) {
   have separate(memory(rid->left), memory(near->right)) by { transport(separate(memory(rid->left), memory(rid->right)), separate(memory(rid->left), memory(near->right))) using { separate(memory(rid->left), memory(rid->right)); near == rid; }; }
   mark before_attach;
   step();
+  have near->right == cursor by { simp(); }
+  have rid->right == cursor by { transport(near->right == cursor, rid->right == cursor) using { near->right == cursor; near == rid; }; }
   have rid->left == 0 by { transport(at(before_attach, rid->left) == 0, rid->left == 0) using { at(before_attach, rid->left) == 0; separate(memory(rid->left), memory(near->right)); near == rid; }; }
   execute(); simp();
  } }

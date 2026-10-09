@@ -270,8 +270,12 @@ Explicit `normalize() using { ... }` can recover the value of a recorded
 full-width pointer read. The query follows its exact retained canonical
 projection source, when present, then at most 64 derivation edges in either
 equality orientation. It uses the cited conditions to justify crossings and
-compare the recovered value. Whole-pointer equality checks the complete stored
-pointer, including its block. Same-block pointer comparisons lower to offset
+compare the recovered value. If the cheap walk stops at a store whose address
+needs recorded load identities, the bounded query checks that one endpoint with
+the full pointer matcher and the exact typed width; it never searches older
+writes at that point. Explicit `transport` uses the same read-value rule for
+pointer and pointer-offset equalities. Whole-pointer equality checks the
+complete stored pointer, including its block. Same-block pointer comparisons lower to offset
 equality; that form uses an exact typed-read offset definition, including its
 stride, and proves only the offset equality. Conflicting offset definitions
 remain ambiguous. Equal offsets alone do not establish equality of blocks.
