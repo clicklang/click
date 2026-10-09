@@ -194,15 +194,71 @@ if [[ -z "$ci_artifacts" ]]; then
     run_quality_checks
 fi
 
-# The first C++ frontend is a small repository-owned LibTooling executable.
-# Build it before Rust tests so the gate fails clearly when the exact pinned
-# LLVM development package is unavailable. Ordinary artifact loading does not
-# execute this binary; only explicit import refresh and its focused tests do.
-export CLICK_CPP_EXPORTER
-CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
+# The C++ and Rust frontends need pinned toolchains that a C contributor may
+# not have: LLVM/Clang 19.1.7 for the repository-owned C++ exporter, and
+# Charon's pinned rustc for Rust import. When one is not installed, the gate
+# skips the suites that need it, says so at the start and the end, and runs
+# everything else. CI builds both and runs every suite; set
+# CLICK_REQUIRE_FRONTENDS=1 to make a missing toolchain an error here too.
+# An installed toolchain whose build fails is always an error.
+if [[ -n "$ci_artifacts" ]]; then
+    CLICK_REQUIRE_FRONTENDS=1
+fi
+skipped_frontends=()
+frontend_missing() {
+    local name="$1" reason="$2" suites="$3"
+    if [[ -n "${CLICK_REQUIRE_FRONTENDS:-}" ]]; then
+        echo "error: the $name toolchain is required (CLICK_REQUIRE_FRONTENDS is set):" >&2
+        echo "$reason" >&2
+        exit 1
+    fi
+    skipped_frontends+=("$name ($suites): $reason")
+    echo "warning: skipping $suites; the $name toolchain is not installed:" >&2
+    echo "$reason" >&2
+}
+# Removes each named `--test NAME` pair from `unit_targets`.
+drop_test_targets() {
+    local kept=() index=0 name dropped
+    while [[ "$index" -lt "${#unit_targets[@]}" ]]; do
+        if [[ "${unit_targets[$index]}" == --test ]]; then
+            dropped=""
+            for name in "$@"; do
+                if [[ "${unit_targets[$((index + 1))]}" == "$name" ]]; then
+                    dropped=1
+                fi
+            done
+            if [[ -z "$dropped" ]]; then
+                kept+=(--test "${unit_targets[$((index + 1))]}")
+            fi
+            index=$((index + 2))
+        else
+            kept+=("${unit_targets[$index]}")
+            index=$((index + 1))
+        fi
+    done
+    unit_targets=("${kept[@]}")
+}
 
-export CLICK_CHARON
-CLICK_CHARON="$(scripts/build-charon.sh)"
+# The C++ exporter is built before the Rust tests so a broken pinned LLVM
+# fails clearly. Ordinary artifact loading does not execute it; only explicit
+# import refresh and its focused tests do.
+if reason="$(scripts/build-cpp-exporter.sh --check 2>&1)"; then
+    export CLICK_CPP_EXPORTER
+    CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
+else
+    frontend_missing "C++" "$reason" \
+        "tests/cpp_import.rs, tests/bitcoin_core_money_range.rs, C++ mdtests and examples"
+    drop_test_targets cpp_import bitcoin_core_money_range
+    export CLICK_SKIP_CPP_FRONTEND=1
+fi
+
+if reason="$(scripts/build-charon.sh --check 2>&1)"; then
+    export CLICK_CHARON
+    CLICK_CHARON="$(scripts/build-charon.sh)"
+else
+    frontend_missing "Rust (Charon)" "$reason" "tests/rust_import.rs"
+    drop_test_targets rust_import
+fi
 
 # The gate needs nextest: `.config/nextest.toml` holds the per-test time
 # budgets, and prover regressions usually manifest as hangs, which must be
@@ -246,6 +302,12 @@ cargo nextest run "${fixture_targets[@]}" --test-threads 1 --no-capture "${nexte
 # day it does and not a week later.
 elapsed=$((SECONDS - gate_started))
 printf 'gate finished in %dm%02ds\n' $((elapsed / 60)) $((elapsed % 60))
+if [[ "${#skipped_frontends[@]}" -gt 0 ]]; then
+    echo "warning: this gate run was partial; CI runs the skipped suites:" >&2
+    for skipped in "${skipped_frontends[@]}"; do
+        echo "  skipped $skipped" >&2
+    done
+fi
 if [[ -z "$nightly" && "$elapsed" -gt 600 ]]; then
     echo "warning: the gate took longer than its ten-minute budget; move slow tests to the nightly gate (docs/internals/testing.md)" >&2
 fi

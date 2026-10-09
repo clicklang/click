@@ -18,6 +18,8 @@ mod limits;
 mod tactic_work;
 
 const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
+/// Set by the gate when the pinned C++ exporter is not installed.
+const SKIP_CPP_FRONTEND: &str = "CLICK_SKIP_CPP_FRONTEND";
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
 /// `simp_frame_failure_through_region_arena_is_prompt.md` fails its `simp`
 /// near 575,000 units; repeating its failed questions per candidate used to
@@ -83,6 +85,24 @@ fn mdtests() {
             }
         });
     }
+    // A gate run on a machine without the pinned C++ toolchain
+    // (`scripts/check.sh`) leaves out the mdtests that need its exporter.
+    let skipped_cpp = std::env::var_os(SKIP_CPP_FRONTEND).is_some() && {
+        let before = paths.len();
+        paths.retain(|path| {
+            let cpp = path.extension().is_some_and(|extension| extension == "md")
+                && read_mdtest(path).is_ok_and(|mdtest| mdtest.cpp_source.is_some());
+            if cpp {
+                println!(
+                    "SKIPPING C++ mdtest `{}`: {SKIP_CPP_FRONTEND} is set",
+                    path.display()
+                );
+            }
+            !cpp
+        });
+        paths.len() != before
+    };
+    let filtered = filtered || skipped_cpp;
     paths.sort();
     // CI splits the corpus across jobs to stay inside the gate's time
     // budget: `MDTEST_PARTITION=k/n` keeps every n-th file from the k-th,

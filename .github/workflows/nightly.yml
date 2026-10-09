@@ -48,6 +48,8 @@ jobs:
         run: scripts/setup-environment.sh
       - uses: Swatinem/rust-cache@v2
       - name: Run the nightly gate
+        env:
+          CLICK_REQUIRE_FRONTENDS: 1
         run: scripts/check.sh --nightly --no-fail-fast
 
   audit:
