@@ -36,18 +36,24 @@ A fact or a failed goal about a referent prints it as the sidecar writes
 it: `value`, `owns value`, and `box.first` for a read at the start of a
 struct referent.
 
-One printing gap remains. The "C operation" line of a failure, and a
-condition `click expand` writes from a lowered C expression, print
-`load_int32(&value)`. That parses back correctly, but it is not what a
-sidecar writes. The printer there has no parameter list, and the same shape
-through a struct reference, `load_int64(&box)`, is the struct's first field,
-not the struct. Lowering a scalar referent's read as an index of its carrier
-would let the printer tell the two apart; it changes the lowered program and
-the tests that pin its shape.
+The "C operation" line of a failure prints a read through a scalar
+reference as `value`: a step records the stepped function's reference
+parameters, and the printer of a kernel term consults them
+(`describe_read_through_reference` in `src/surface/diagnostics.rs`).
 
-Regression: `click expand` on a branch over a scalar reference writes the
-condition with the bare name, and on a branch over a struct reference's
-first field writes `box.field`.
+Two gaps remain, where the same read still prints `load_int32(&name)`. That
+parses back correctly, but it is not what a sidecar writes.
+
+- A struct reference. `load_int32(&c)` is the field at the start of the
+  struct, `c.first`, and the printer needs the struct's layout to name it.
+  The parameter of an imported C++ function does not carry one the step
+  scope can reach.
+- A condition `click expand` writes from a lowered C expression, which is
+  printed outside any step.
+
+Regression: a failing read of `c.first` through `struct cell& c` prints
+`c.first` in its C operation; `click expand` on a branch over a scalar
+reference writes the condition with the bare name.
 
 Done when: no diagnostic or expansion prints `load_...(&name)` for a
 reference parameter.

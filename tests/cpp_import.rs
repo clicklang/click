@@ -14905,6 +14905,36 @@ int32 run(int32& value) { owns value; ensures result == 1; ensures value == 1; }
     }
 }
 
+/// A failure's "C operation" line prints a read through a scalar reference
+/// parameter as the sidecar writes it, `value`, not as the kernel term
+/// `load_int32(&value)`.
+#[test]
+fn cpp_scalar_reference_reads_print_as_referents_in_a_c_operation_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "read",
+        "int read(int& value) noexcept { return value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 read(int32& value) { ensures result == result; } by { execute(); simp(); }\n";
+    let path = project.directory.join("bad.click");
+    fs::write(&path, text).unwrap();
+    let error = verify_program_prepared_project(&read_click_project(&path, text).unwrap(), &import)
+        .expect_err("the contract lacks the authority the function uses");
+    assert!(
+        error.message().contains("C operation: return value"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        !error.message().contains("load_int32(&"),
+        "{}",
+        error.message()
+    );
+}
+
 #[test]
 fn cpp_const_reference_locals_bind_pointer_storage_without_loading_offline() {
     let project = Project::with_fixture(

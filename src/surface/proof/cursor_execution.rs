@@ -491,6 +491,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
         &proof_context.constants.source_layout,
         statement_index,
+        proof_context.parsed_function,
     );
     let source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
@@ -2070,6 +2071,7 @@ fn execute_step_from_frontier_position_selecting_path(
     let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
         &proof_context.constants.source_layout,
         statement_index,
+        proof_context.parsed_function,
     );
     let mut source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
