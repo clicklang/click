@@ -31,9 +31,12 @@ impl CStatementSiteScope {
     pub(in crate::surface) fn enter(
         layout: &crate::surface::lowering::SourceExecutionLayout,
         statement_index: usize,
+        function: &syntax::C0Function,
     ) -> Self {
         let site = layout.site(statement_index).cloned();
         C_STATEMENT_SITES.with(|sites| sites.borrow_mut().push(site));
+        REFERENCE_CARRIERS
+            .with(|carriers| carriers.borrow_mut().push(reference_carriers(function)));
         Self(())
     }
 }
@@ -43,7 +46,68 @@ impl Drop for CStatementSiteScope {
         C_STATEMENT_SITES.with(|sites| {
             sites.borrow_mut().pop();
         });
+        REFERENCE_CARRIERS.with(|carriers| {
+            carriers.borrow_mut().pop();
+        });
     }
+}
+
+/// What a reference parameter's carrying pointer points at, for printing a
+/// read through it as the sidecar writes it.
+#[derive(Clone, Debug)]
+enum ReferentShape {
+    /// `int32& value`: a read of the carrier is `value`.
+    Scalar,
+    /// `struct cell& c`: a read at the carrier's own address is the field
+    /// at offset zero, `c.field`.
+    Struct { first_field: Option<String> },
+}
+
+thread_local! {
+    /// The reference parameters of the function whose C statement is being
+    /// stepped, by the name of the pointer that carries each. The printer of
+    /// a kernel term has no parameter list; a step scope supplies this one.
+    static REFERENCE_CARRIERS: std::cell::RefCell<Vec<BTreeMap<String, ReferentShape>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, ReferentShape> {
+    function
+        .parameters()
+        .iter()
+        .filter(|parameter| syntax::referent_of_carrier(parameter.name()).is_some())
+        .map(|parameter| {
+            let shape = match parameter.struct_name() {
+                None => ReferentShape::Scalar,
+                Some(struct_name) => ReferentShape::Struct {
+                    first_field: function.structs().get(struct_name).and_then(|layout| {
+                        layout
+                            .fields()
+                            .iter()
+                            .find(|(_, field)| field.offset_bytes() == 0)
+                            .map(|(name, _)| name.clone())
+                    }),
+                },
+            };
+            (parameter.name().to_string(), shape)
+        })
+        .collect()
+}
+
+/// A typed read through `pointer`, as a sidecar writes it, when `pointer` is
+/// the carrier of a reference parameter of the function being stepped.
+fn describe_read_through_reference(pointer: &CExpression) -> Option<String> {
+    let CExpression::Variable(carrier) = pointer else {
+        return None;
+    };
+    let referent = syntax::referent_of_carrier(carrier)?;
+    REFERENCE_CARRIERS.with(|carriers| match carriers.borrow().last()?.get(carrier)? {
+        ReferentShape::Scalar => Some(referent.to_string()),
+        ReferentShape::Struct {
+            first_field: Some(field),
+        } => Some(format!("{referent}.{field}")),
+        ReferentShape::Struct { first_field: None } => None,
+    })
 }
 
 /// The line naming where the C statement being stepped was written, as
@@ -4535,6 +4599,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             value_type,
             ..
         } => {
+            if let Some(referent) = describe_read_through_reference(pointer) {
+                return referent;
+            }
             let name = match value_type {
                 CType::Int128 => "load_int128",
                 CType::UInt128 => "load_uint128",

@@ -39,6 +39,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
+                environment.parsed_function,
             );
             let source_region = environment
                 .source_layout
@@ -118,6 +119,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
+                environment.parsed_function,
             );
             let loop_index = *next_loop_index;
             *next_loop_index += 1;
@@ -519,6 +521,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
                 environment.source_layout,
                 statement_index,
+                environment.parsed_function,
             );
             *next_statement_index = environment
                 .source_layout
