@@ -20,6 +20,12 @@ declared element type:
 Rust annotation paths retain those types; the invariant does not acquire
 read authority merely from the pointer declaration.
 
+A nested loop can select a subview through an outer cursor whose address is
+proved equal to that subrange of the enclosing view. Resource selection uses
+the checked pointer-alias graph and range bounds at entry, retaining the
+enclosing owner's authority and any stable-view binding. A pure `viewable`
+fact alone supplies no resource.
+
 A loop may declare conditional resources using the same `if` form as a
 resource body:
 
