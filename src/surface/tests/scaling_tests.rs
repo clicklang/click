@@ -7203,3 +7203,51 @@ fn consecutive_resource_closers_attempt_one_transition() {
         previous = Some(checks);
     }
 }
+
+/// The shared-heap probe's reference resources and retain helper, verbatim.
+fn shared_parent_retain_declarations() -> (&'static str, &'static str) {
+    let source = include_str!("../../../design/shared-heap-probes/shared_parent.click");
+    let declarations = &source
+        [source.find("authorized resource child_ref").unwrap()..source.find("verifying").unwrap()];
+    let retain = &source
+        [source.find("void child_retain").unwrap()..source.find("void child_release").unwrap()];
+    (declarations, retain)
+}
+
+/// One child retained `count` times by explicit call steps: each step adds
+/// one reference to the same population.
+fn repeated_retain_project(count: usize) -> (String, String) {
+    let (declarations, retain) = shared_parent_retain_declarations();
+    let c_source = format!(
+        "struct child {{\n    int32 refs;\n    int32 payload;\n}};\n\nvoid child_retain(struct child* obj) {{\n    obj->refs = obj->refs + 1;\n}}\n\nvoid retain_many(struct child* obj) {{\n{}}}\n",
+        "    child_retain(obj);\n".repeat(count)
+    );
+    let click_source = format!(
+        "{declarations}verifying \"retain.c\";\n\n{retain}void retain_many(struct child* obj) {{\n    requires count(child_ref(obj)) < {};\n    owns child_control(obj);\n    owns child_ref(obj);\n{}}} by {{\n{}    step();\n    simp();\n}}\n",
+        2147483647 - count,
+        "    produces child_ref(obj);\n".repeat(count),
+        "    step(child_retain(obj), {});\n".repeat(count),
+    );
+    (c_source, click_source)
+}
+
+/// Explicit retains of one shared child cost in proportion to their number:
+/// a step does not pay again for the references the earlier ones produced.
+#[test]
+#[ignore = "nightly: 10s debug verify of 60 retains"]
+fn repeated_retains_of_one_child_scale_with_their_number() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = repeated_retain_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("retain.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!("{size}-retain fixture failed: {}", error.message())
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("repeated retains of one child", &samples);
+}

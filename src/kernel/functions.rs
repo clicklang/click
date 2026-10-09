@@ -21529,7 +21529,12 @@ fn evaluate_contract_return_resource_context(
                 Err(error) => return Ok(Err(error)),
             }
         };
-        context = match context.try_compose_with_fact(resource, assumptions) {
+        // Each returned fact is checked against the context as it grows, and
+        // the whole return is normalized once at the end, not after every
+        // clause.
+        context = match context
+            .try_compose_into_valid_context_delaying_normalization([resource], assumptions)
+        {
             Ok(context) => context,
             Err(error) => return Ok(Err(resource_context_runtime_error(error))),
         };
@@ -21542,7 +21547,10 @@ fn evaluate_contract_return_resource_context(
         for (resource, error) in std::mem::take(&mut deferred) {
             match evaluate_returned(resource, &context, &mut canonical_by_checked, budget)? {
                 Ok(returned) => {
-                    context = match context.try_compose_with_fact(returned, assumptions) {
+                    context = match context.try_compose_into_valid_context_delaying_normalization(
+                        [returned],
+                        assumptions,
+                    ) {
                         Ok(context) => context,
                         Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                     };
@@ -21560,7 +21568,7 @@ fn evaluate_contract_return_resource_context(
         }
         deferred = waiting;
     }
-    Ok(Ok(context))
+    Ok(Ok(context.normalized(assumptions)))
 }
 
 /// The memory a context's owned composites hold, opened through their
@@ -26774,24 +26782,23 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
         Ok(evaluated) => evaluated,
         Err(error) => return Ok(Err(error)),
     };
-    let mut context = ResourceContext::new_with_equalities(assumptions);
+    let context = ResourceContext::new_with_equalities(assumptions);
     let checked = evaluated;
-    for resource in &checked {
-        // Instance rewrites retain the declared memory pieces so folding does
-        // not need to normalize an ambient block just to consume those pieces.
-        let composed = if normalize {
-            context.try_compose_with_fact(resource.fact.clone(), assumptions)
-        } else {
-            context.try_compose_into_valid_context_delaying_normalization(
-                [resource.fact.clone()],
-                assumptions,
-            )
-        };
-        context = match composed {
-            Ok(context) => context,
-            Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-        };
-    }
+    // The section's facts are composed together: one validity check and one
+    // normalization for the whole section, not one per fact over the growing
+    // context. Instance rewrites retain the declared memory pieces so folding
+    // does not need to normalize an ambient block just to consume those
+    // pieces.
+    let facts = checked.iter().map(|resource| resource.fact.clone());
+    let composed = if normalize {
+        context.try_compose_with_facts(facts, assumptions)
+    } else {
+        context.try_compose_into_valid_context_delaying_normalization(facts, assumptions)
+    };
+    let context = match composed {
+        Ok(context) => context,
+        Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+    };
     Ok(Ok((context, checked)))
 }
 
