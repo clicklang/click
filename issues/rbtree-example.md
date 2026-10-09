@@ -1244,8 +1244,12 @@ the red sibling's black near child has a red inner leaf and an empty far child.
 Its three rotations preserve the opaque far subtree and return the exact
 balanced root, parent consistency, and unchanged in-order contents under any
 outer context. All 127 audit sites and three inner-link/parent mutations pass.
-Other red-sibling continuations and rotations after deficit propagation remain.
-Depends on 11.
+`rbtree_erase_color_red_sibling_outer_nonempty_left.click` covers cases 1 and 4
+with a nonempty near subtree after the first rotation. A verified parent update
+preserves its color and children; the proof retains the opaque outer far subtree
+and returns the exact balanced, parent-consistent root with unchanged contents.
+All 136 audit sites and two near-child parent/link mutations pass. Rotations
+after deficit propagation remain. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 color-flip propagation proof already covers both orientations, including
@@ -1264,9 +1268,11 @@ an opaque far subtree, 104 passing audit sites, and three rotation mutations.
 with the same exact-root guarantees, 121 audit sites, and three link/parent
 mutations. `rbtree_erase_color_red_sibling_inner_right.click` covers mirrored
 cases 1, 3, and 4 with the same exact-root, parent, and in-order guarantees,
-127 passing audit sites, and three inner-link/parent mutations. Other red-sibling
-continuations, rotations after propagation, and the complete `rb_erase` wrapper
-remain. Depends on 12.
+127 passing audit sites, and three inner-link/parent mutations.
+`rbtree_erase_color_red_sibling_outer_nonempty_right.click` covers mirrored
+cases 1 and 4 with a nonempty near subtree, the same exact-root guarantees,
+136 passing audit sites, and two near-child parent/link mutations. Rotations
+after propagation and the complete `rb_erase` wrapper remain. Depends on 12.
 
 ### Augmented
 
