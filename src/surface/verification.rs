@@ -948,13 +948,14 @@ fn with_tactic_procedures(
 
 /// Appends `suffix` where every path of `script` ends. A proof `match` must
 /// complete the proof in each arm, so a script ending in one gets the suffix
-/// at the end of each arm instead.
+/// at the end of each arm instead. Refuted paths have no continuation; keep
+/// their terminal contradiction last so the match checker can certify them.
 fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
     if let Some(ProofTactic::Match(proof_match)) = script.last_mut() {
         for arm in &mut std::sync::Arc::make_mut(proof_match).arms {
             append_on_every_path(&mut arm.tactics, suffix);
         }
-    } else {
+    } else if !matches!(script.last(), Some(ProofTactic::Contradiction(_))) {
         script.extend(suffix.iter().cloned());
     }
 }

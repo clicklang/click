@@ -2169,6 +2169,22 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+/// Refuted helper arms have no generated return/postcondition suffix. Both
+/// certification and whole-claim expansion must preserve their contradiction.
+#[test]
+fn whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms() {
+    let (click, sources) = mdtest_sources("mdtests/user_tactic_match_refutes_impossible_arm.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "keep.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("contradiction("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 /// Whole-claim expansion rebuilds a proof `match` from the paths through its
 /// arms. Each claim here verifies, and its expansion must too.
 #[test]

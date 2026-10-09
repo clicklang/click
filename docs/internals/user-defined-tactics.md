@@ -139,7 +139,10 @@ application.
   packaging (`c_verified_function_rule`), and the audit's targeted runs. The
   surface proves it with the tactic's script followed by the one `return`
   step and one `assumption` per claim, so the script itself must leave each
-  produced instance held and each `ensures` available. The IR is the one all
+  produced instance held and each `ensures` available on every live path.
+  A terminal `contradiction` in a proof `match` arm instead refutes that
+  path with a checked fact and its negation; no return or postcondition
+  suffix is added there, and expansion preserves the refutation. The IR is the one all
   three frontends lower to, so nothing about this is specific to C.
 - **Termination.** Each `TacticApplication` event names the tactic it
   applied. The kernel collects those names from the checked traces into the
