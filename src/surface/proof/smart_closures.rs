@@ -1142,6 +1142,7 @@ impl<'a> Proof<'a> {
                         // it to encode the exact child sum.
                         Some(surface_goal.clone())
                     } else if result.terms.is_empty()
+                        && result.constant == BigInt::from(0)
                         && result.relation == SignedArithmeticRelation::LessEqual
                     {
                         integer_surface_zero_claim(left_surface, right_surface)
