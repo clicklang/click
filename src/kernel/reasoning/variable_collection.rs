@@ -1761,9 +1761,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 collect_bitvector_variables(term, variables);
             }
         }
-        CResource::Composite { arguments, .. }
-        | CResource::Token { arguments, .. }
-        | CResource::GuardedPopulation { arguments, .. } => {
+        CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
             for argument in arguments.iter() {
                 collect_algebraic_value_bitvector_variables(argument, variables);
             }
