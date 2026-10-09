@@ -2720,6 +2720,12 @@ Supported expression features include parameters, literals, `+`, `-`, `*`,
 `let name [: type] = value; body`, `if proposition { then } else { else }`,
 range `.fold`, and calls to other Click functions.
 
+A range's endpoints are both `int32`, both `uint64`, or both `Integer`, and
+its item has that type. A `uint64` range is what a function over a `size_t`
+or `usize` index uses, `(0..end).fold(...)` with `end: uint64`; a nonnegative
+literal at the other end is that number
+(`mdtests/a_range_fold_over_uint64.md`).
+
 Recursive pure functions must declare a well-founded measure. One supported
 form is a natural-number measure:
 

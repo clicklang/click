@@ -4468,17 +4468,52 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 body_environment.integer_values.remove(item);
-                body_environment.values.insert(
-                    item.clone(),
-                    SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(item_variable))),
-                );
-                let body = self.lower_contract_integer_to_spec(body, &body_environment)?;
                 let start = self.lower_contract_expression_to_spec(start, environment)?;
                 let end = self.lower_contract_expression_to_spec(end, environment)?;
+                // A range with a `uint64` endpoint ranges over `uint64`
+                // values, and its item has that type: the index type of the
+                // code a model function describes. A nonnegative literal at
+                // the other endpoint is that number.
+                // An argument bound to a `uint64` parameter arrives as a
+                // cast to the parameter's type.
+                let is_uint64 = |expression: &SpecExpression| {
+                    matches!(expression, SpecExpression::Cast(_, CType::UInt64))
+                        || spec_expression_click_type(expression)
+                            == Some(ClickType::C(syntax::C0Type::UInt64))
+                };
+                let as_uint64 = |expression: SpecExpression| match &expression {
+                    SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(value)))
+                        if *value <= i32::MAX as u32 =>
+                    {
+                        SpecExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(
+                            u64::from(*value),
+                        )))
+                    }
+                    _ => expression,
+                };
+                let (start, end, unsigned64) = if is_uint64(&start) || is_uint64(&end) {
+                    let (start, end) = (as_uint64(start), as_uint64(end));
+                    let unsigned64 = is_uint64(&start) && is_uint64(&end);
+                    (start, end, unsigned64)
+                } else {
+                    (start, end, false)
+                };
+                let item_term = Bitvector32Term::Variable(item_variable);
+                body_environment.values.insert(
+                    item.clone(),
+                    SpecExpression::Value(if unsigned64 {
+                        CValue::UInt64(item_term)
+                    } else {
+                        CValue::Int32(item_term)
+                    }),
+                );
+                let body = self.lower_contract_integer_to_spec(body, &body_environment)?;
+                let (start, end) = (Box::new(start), Box::new(end));
                 Ok(SpecIntegerExpression::RangeFold {
-                    index: crate::kernel::SpecIntegerRangeFoldIndex::Int32 {
-                        start: Box::new(start),
-                        end: Box::new(end),
+                    index: if unsigned64 {
+                        crate::kernel::SpecIntegerRangeFoldIndex::UInt64 { start, end }
+                    } else {
+                        crate::kernel::SpecIntegerRangeFoldIndex::Int32 { start, end }
                     },
                     initial: Box::new(initial),
                     accumulator: accumulator_variable,

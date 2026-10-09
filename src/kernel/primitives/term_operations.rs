@@ -1631,6 +1631,13 @@ impl Bitvector32Term {
         match (&left, &right) {
             (Self::UInt64Constant(0), _) => return right,
             (_, Self::UInt64Constant(0)) => return left,
+            // `(x - c) + c` is `x`: both operations wrap modulo 2^64, so
+            // the identity holds for every `x`. A fold's end restated one
+            // lower and stepped back is the end itself.
+            (Self::UInt64Subtract(inner, taken), Self::UInt64Constant(added)) if matches!(taken.as_ref(), Self::UInt64Constant(taken) if taken == added) =>
+            {
+                return inner.as_ref().clone();
+            }
             _ => {}
         }
         Self::uint64_binary(
@@ -1652,6 +1659,13 @@ impl Bitvector32Term {
             && a == b
         {
             return Self::UInt64Constant(0);
+        }
+        // `(x + c) - c` is `x`, by the same wrapping identity as in
+        // `uint64_add`.
+        if let (Self::UInt64Add(inner, added), Self::UInt64Constant(taken)) = (&left, &right)
+            && matches!(added.as_ref(), Self::UInt64Constant(added) if added == taken)
+        {
+            return inner.as_ref().clone();
         }
         Self::uint64_binary(
             left,

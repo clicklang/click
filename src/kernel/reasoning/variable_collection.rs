@@ -881,7 +881,8 @@ pub(crate) fn collect_spec_integer_variables(
                 ..
             } => {
                 match index {
-                    SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                    SpecIntegerRangeFoldIndex::Int32 { start, end }
+                    | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
                         collect_spec_expression_bitvector_variables(start, variables);
                         collect_spec_expression_bitvector_variables(end, variables);
                     }
@@ -968,7 +969,8 @@ fn collect_spec_integer_bound_variables_inner(
             variables.insert(*accumulator);
             variables.insert(*item);
             match index {
-                SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                SpecIntegerRangeFoldIndex::Int32 { start, end }
+                | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_spec_integer_bound_expression(start, variables, integer_seen);
                     collect_spec_integer_bound_expression(end, variables, integer_seen);
                 }
@@ -1031,7 +1033,8 @@ fn collect_integer_bound_identities(
             variables.insert(*accumulator);
             variables.insert(*item);
             match index {
-                IntegerRangeFoldIndex::Int32 { start, end } => {
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_bitvector_integer_variables(start.value(), variables);
                     collect_bitvector_integer_variables(end.value(), variables);
                 }
@@ -2911,7 +2914,8 @@ fn collect_integer_variables_seen(
             body,
         } => {
             match index {
-                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end } => {
+                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end }
+                | crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_bitvector_variables(start.value(), variables);
                     collect_bitvector_variables(end.value(), variables);
                 }
@@ -3687,7 +3691,8 @@ fn collect_integer_bitvector_capture_variables(
             ..
         } => {
             match index {
-                IntegerRangeFoldIndex::Int32 { start, end } => {
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_bitvector_capture_variables_seen(
                         start.value(),
                         variables,
@@ -3721,7 +3726,7 @@ fn collect_integer_bitvector_capture_variables(
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
-            if matches!(index, IntegerRangeFoldIndex::Int32 { .. }) {
+            if index.machine_item_type().is_some() {
                 let mut body_variables = BTreeSet::new();
                 collect_shared_integer_bitvector_capture_variables(
                     body,
@@ -3869,7 +3874,8 @@ fn collect_integer_scope_summary(
             body,
         } => {
             let mut summary = match index {
-                IntegerRangeFoldIndex::Int32 { start, end } => {
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     let mut summary = collect_bitvector_scope_summary(start.value(), summaries);
                     if crate::instrumentation::checked_collection_exhausted() {
                         return IntegerScopeSummary::default();
@@ -4442,7 +4448,8 @@ fn collect_integer_binder_variables_seen(
         } => {
             integer_variables.insert(*accumulator);
             match index {
-                IntegerRangeFoldIndex::Int32 { start, end } => {
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     bitvector_variables.insert(*item);
                     collect_bitvector_binder_variables_seen(
                         start.value(),

@@ -13885,7 +13885,8 @@ fn spec_integer_expression_reads_current_parameter(
             ..
         } => {
             let index_reads = match index {
-                SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                SpecIntegerRangeFoldIndex::Int32 { start, end }
+                | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
                     spec_expression_reads_current_parameter(start, parameter_name)
                         || spec_expression_reads_current_parameter(end, parameter_name)
                 }

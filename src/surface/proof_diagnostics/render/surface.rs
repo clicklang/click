@@ -86,6 +86,12 @@ impl Printer<'_> {
             | ConditionTerm::Bitvector64SignedGreaterThan(a, b) => (a, b, ">", "<="),
             ConditionTerm::Bitvector32SignedGreaterEqual(a, b)
             | ConditionTerm::Bitvector64SignedGreaterEqual(a, b) => (a, b, ">=", "<"),
+            // A `uint64` comparison is written with the same operators; its
+            // operands' type is what makes it unsigned.
+            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => (a, b, "<", ">="),
+            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => (a, b, "<=", ">"),
+            ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => (a, b, ">", "<="),
+            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => (a, b, ">=", "<"),
             ConditionTerm::Bitvector32SignedAddOverflows(a, b)
             | ConditionTerm::Bitvector32SignedSubtractOverflows(a, b) => {
                 let Bitvector32Term::Constant(bits) = b.as_ref() else {
@@ -247,10 +253,12 @@ impl Printer<'_> {
             }
             Bitvector32Term::Add(a, b)
             | Bitvector32Term::Subtract(a, b)
-            | Bitvector32Term::Multiply(a, b) => {
+            | Bitvector32Term::Multiply(a, b)
+            | Bitvector32Term::UInt64Add(a, b)
+            | Bitvector32Term::UInt64Subtract(a, b) => {
                 let op = match value {
-                    Bitvector32Term::Add(..) => "+",
-                    Bitvector32Term::Subtract(..) => "-",
+                    Bitvector32Term::Add(..) | Bitvector32Term::UInt64Add(..) => "+",
+                    Bitvector32Term::Subtract(..) | Bitvector32Term::UInt64Subtract(..) => "-",
                     _ => "*",
                 };
                 Some(format!(

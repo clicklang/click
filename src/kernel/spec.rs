@@ -2258,6 +2258,20 @@ fn integer_range_fold_item_domain(
             );
             (Sort::CInt32, guard)
         }
+        IntegerRangeFoldIndex::UInt64 { start, end } => {
+            let item_term = Bitvector32Term::Variable(item);
+            let guard = Proposition::And(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_equal(start.value().clone(), item_term.clone()),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_than(item_term, end.value().clone()),
+                    true,
+                )),
+            );
+            (Sort::CMachineInteger(MachineIntegerType::UInt64), guard)
+        }
         IntegerRangeFoldIndex::Integer { start, end } => {
             let item_term = IntegerTerm::Variable(item);
             let guard = Proposition::And(
@@ -2287,6 +2301,15 @@ fn integer_range_fold_index_is_empty(index: &IntegerRangeFoldIndex) -> bool {
                 return false;
             };
             start >= end
+        }
+        IntegerRangeFoldIndex::UInt64 { start, end } => {
+            match (
+                start.value().uint64_as_const(),
+                end.value().uint64_as_const(),
+            ) {
+                (Some(start), Some(end)) => start >= end,
+                _ => false,
+            }
         }
         IntegerRangeFoldIndex::Integer { start, end } => match (start.as_const(), end.as_const()) {
             (Some(start), Some(end)) => start >= end,
@@ -2638,7 +2661,9 @@ fn evaluate_spec_integer_range_fold_indices_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<(IntegerRangeFoldIndex, ExecutionFacts, Vec<ProofObligation>)>> {
     match index {
-        SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+        SpecIntegerRangeFoldIndex::Int32 { start, end }
+        | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
+            let unsigned64 = matches!(index, SpecIntegerRangeFoldIndex::UInt64 { .. });
             let mut result = Vec::new();
             for start_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 state,
@@ -2670,19 +2695,23 @@ fn evaluate_spec_integer_range_fold_indices_in(
                     ) else {
                         continue;
                     };
-                    let (CValue::Int32(start), CValue::Int32(end)) =
-                        (start_path.value.clone(), end_path.value)
-                    else {
-                        continue;
+                    // Each kind takes endpoints of its own type only.
+                    let index = match (start_path.value.clone(), end_path.value, unsigned64) {
+                        (CValue::Int32(start), CValue::Int32(end), false) => {
+                            IntegerRangeFoldIndex::Int32 {
+                                start: SharedIntegerRangeEndpoint::intern(start),
+                                end: SharedIntegerRangeEndpoint::intern(end),
+                            }
+                        }
+                        (CValue::UInt64(start), CValue::UInt64(end), true) => {
+                            IntegerRangeFoldIndex::UInt64 {
+                                start: SharedIntegerRangeEndpoint::intern(start),
+                                end: SharedIntegerRangeEndpoint::intern(end),
+                            }
+                        }
+                        _ => continue,
                     };
-                    result.push((
-                        IntegerRangeFoldIndex::Int32 {
-                            start: SharedIntegerRangeEndpoint::intern(start),
-                            end: SharedIntegerRangeEndpoint::intern(end),
-                        },
-                        facts,
-                        obligations,
-                    ));
+                    result.push((index, facts, obligations));
                 }
             }
             Ok(result)

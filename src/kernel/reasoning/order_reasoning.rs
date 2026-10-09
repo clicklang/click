@@ -1071,6 +1071,32 @@ fn integer_range_fold_indices_proven_equal(
                     assumptions,
                 )
         }
+        // Unsigned 64-bit endpoints are equal by identity or by an exact
+        // 64-bit equality fact; the 32-bit affine forms do not read them.
+        (
+            IntegerRangeFoldIndex::UInt64 {
+                start: left_start,
+                end: left_end,
+            },
+            IntegerRangeFoldIndex::UInt64 {
+                start: right_start,
+                end: right_end,
+            },
+        ) => {
+            let equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
+                left == right
+                    || assumptions.exact_condition_value(&ConditionTerm::uint64_equal(
+                        left.clone(),
+                        right.clone(),
+                    )) == Some(true)
+                    || assumptions.exact_condition_value(&ConditionTerm::uint64_equal(
+                        right.clone(),
+                        left.clone(),
+                    )) == Some(true)
+            };
+            equal(left_start.value(), right_start.value())
+                && equal(left_end.value(), right_end.value())
+        }
         (
             IntegerRangeFoldIndex::Integer {
                 start: left_start,

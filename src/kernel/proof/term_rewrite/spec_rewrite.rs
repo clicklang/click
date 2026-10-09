@@ -217,7 +217,8 @@ fn collect_spec_integer_carriers(
             body,
         } => {
             match index {
-                SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                SpecIntegerRangeFoldIndex::Int32 { start, end }
+                | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_spec_expression_carriers(start, variables, integer_seen);
                     if variables.exhausted() {
                         return;
@@ -245,7 +246,8 @@ fn collect_spec_integer_carriers(
             }
             variables.integer.insert(*accumulator);
             match index {
-                SpecIntegerRangeFoldIndex::Int32 { .. } => {
+                SpecIntegerRangeFoldIndex::Int32 { .. }
+                | SpecIntegerRangeFoldIndex::UInt64 { .. } => {
                     variables.c.insert(*item);
                 }
                 SpecIntegerRangeFoldIndex::Integer { .. } => {
@@ -1277,6 +1279,12 @@ impl<'a> TermRewrite<'a> {
                             end: Box::new(self.rewrite_spec_expression(end)?),
                         }
                     }
+                    SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
+                        SpecIntegerRangeFoldIndex::UInt64 {
+                            start: Box::new(self.rewrite_spec_expression(start)?),
+                            end: Box::new(self.rewrite_spec_expression(end)?),
+                        }
+                    }
                     SpecIntegerRangeFoldIndex::Integer { start, end } => {
                         SpecIntegerRangeFoldIndex::Integer {
                             start: Box::new(self.rewrite_spec_integer(start)?),
@@ -1286,7 +1294,8 @@ impl<'a> TermRewrite<'a> {
                 };
                 let initial = self.rewrite_spec_integer(initial)?;
                 let item_carrier = match index {
-                    SpecIntegerRangeFoldIndex::Int32 { .. } => BindingCarrier::C,
+                    SpecIntegerRangeFoldIndex::Int32 { .. }
+                    | SpecIntegerRangeFoldIndex::UInt64 { .. } => BindingCarrier::C,
                     SpecIntegerRangeFoldIndex::Integer { .. } => BindingCarrier::Integer,
                 };
                 let (accumulator, (item, body)) =
