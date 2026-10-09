@@ -106,12 +106,19 @@ the requirement to state.
 
 Remaining:
 
-- **Stage 3, order reasoning over 64-bit terms.** It is the next thing to
-  do, ahead of stage 2: a C function that reads `bytes[index + 1]` with a
-  `size_t` index cannot be verified today whatever its contract says. The
-  body's read is refused with "missing resource fact
-  `views bytes[(truncate32(index) + 1)]`" under `requires index + 1 <
-  length`. Regression: that function verifying.
+- **Stage 3, order reasoning over 64-bit terms.** Lacker said to build it
+  on 2026-10-08. The kernel half is built: a C read or write is found in
+  range through a chain of 64-bit order facts (`i < n`, `n <= length`), at
+  an index plus a constant (`bytes[index + 1]`), and at a signed `long`
+  index proved to lie in `0..=INT_MAX`
+  (`mdtests/a_64_bit_index_*.md`). The proof half is not: `simp` and
+  `arithmetic` do not prove a 64-bit order goal that `int32` gets, such as
+  `a < c` from `a < b` and `b < c`, because each needs a kernel theorem and
+  there are none for the 64-bit comparisons. A proof goes through
+  `to_integer` and the `uint64_*_to_integer` bridges today. Regression: the
+  `int32` chain, constant-bound and `a <= b`, `a != b` goals verifying by
+  `simp` at `uint64` and `int64`, and `arithmetic` proving
+  `i + 2u64 <= length` from `i + 1u64 < length` and a bound on `length`.
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
   regressions. Check with Lacker before starting it.
