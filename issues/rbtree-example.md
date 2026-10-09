@@ -61,6 +61,10 @@ after a store followed by a named-resource call. Signed and unsigned wide reads
 now reuse their exact cached value, preserving read kind and recorded history;
 explicit `normalize` establishes the framed equality. Regressions reject changed
 and partially overwritten values and check scaling with unrelated cached cells.
+Pointer-valued fields copied between independently returned nodes now also
+retain their full value across a framed call. The checked memory walk recovers
+the stored pointer, including its block, instead of comparing only read offsets.
+The reduced caller and an overwrite negative exercise this non-root splice path.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node

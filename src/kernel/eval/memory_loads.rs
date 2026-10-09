@@ -5870,4 +5870,65 @@ mod tests {
             });
         assert!(!scalar_only.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
     }
+    #[test]
+    fn stored_pointer_read_preserves_blocks_and_ignores_unrelated_cells() {
+        let mut samples = Vec::new();
+        for count in [16, 64, 256] {
+            let context = PureFactContext::new();
+            let address = Pointer::symbolic(Variable(97_001));
+            let stored = Pointer::symbolic(Variable(97_002));
+            let wrong = Pointer::symbolic(Variable(97_003));
+            let mut memory = CMemory::new();
+            for index in 1..=count {
+                memory = memory.store(
+                    address.offset_by_bytes(index * 8),
+                    CValue::Int64(Bitvector32Term::Int64Constant(i64::from(index))),
+                );
+            }
+            memory = memory.store(
+                address.clone(),
+                CValue::typed_pointer(stored.clone(), CType::Int64Pointer),
+            );
+            let projected = memory;
+            let read = Pointer::symbolic(Variable(98_000 + u64::from(count)));
+            record_load_access_width(&projected, &address, 8);
+            context.register_pointer_read(&read, &intern_c_memory(projected.clone()), &address);
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                    &read, &stored, &context,
+                )
+            });
+            assert!(equal);
+            assert!(
+                !crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                    &read, &wrong, &context
+                )
+            );
+            assert!(
+                !crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                    &read.offset_by_bytes(8),
+                    &stored,
+                    &context
+                )
+            );
+            let changed = projected
+                .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &context)
+                .store(
+                    address.offset_by_bytes(4),
+                    CValue::Int32(Bitvector32Term::Constant(0)),
+                );
+            let changed_read = Pointer::symbolic(Variable(99_000 + u64::from(count)));
+            record_load_access_width(&changed, &address, 8);
+            context.register_pointer_read(&changed_read, &intern_c_memory(changed), &address);
+            assert!(
+                !crate::kernel::memory_provenance::pointer_read_has_stored_value(
+                    &changed_read,
+                    &stored,
+                    &context
+                )
+            );
+            samples.push(work);
+        }
+        assert!(samples[2] <= samples[0] * 4 + 32, "{samples:?}");
+    }
 }
