@@ -31,8 +31,9 @@ live storage, and initialized value fields. Direct calls, forwarding calls, and
 body-certified modular summaries share that destination; completing a result
 does not allocate or copy. The initial kernel slice requires complete-object
 storage, an explicit byte owner, and ordered non-overlapping scalar fields.
-Union/array layouts, subobject destinations, exceptional construction, external
-construction assumptions, and constructor callbacks remain refused. Contract
+Construction returns still require complete-object destinations. Union/array
+layouts, exceptional construction, external construction assumptions, and
+constructor callbacks remain refused. Contract
 matching, state substitution, branch joins, and checked snapshot comparisons
 include the destination and result mode. Source admission remains pending.
 
@@ -42,8 +43,13 @@ the parameter cannot replace the object checked at completion. The body must
 initialize every modeled value field, and only a body-certified summary can
 establish that initialization at a modular call. Native constructor contracts
 need write authority for the fields, not padding. C++ constructor lowering and
-Surface entry setup preserve this metadata and start with unwritten symbolic
-storage. Neither the native signature nor sidecar syntax changes.
+Surface entry setup preserve this metadata and start with an unwritten symbolic
+object footprint. This footprint does not fix the containing allocation's size;
+field liveness comes from the entry contract. At a call, constructors can select
+an aligned subobject within a known parent allocation. Completion and summaries
+initialize only the child's fields, preserving the parent's extent and sibling
+storage. C++ embedded-constructor source lowering remains to be connected.
+Neither the native signature nor sidecar syntax changes.
 
 `c_end_automatic_lifetimes` makes a frontend-recorded expression boundary an
 explicit shared statement. It uses the existing automatic-storage retirement

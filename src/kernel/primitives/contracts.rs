@@ -752,7 +752,7 @@ impl CFunctionContractInterface {
         self.aggregate_return_mode
     }
 
-    /// An ordinary pointer parameter whose complete object is initialized on return.
+    /// An ordinary pointer parameter whose selected object is initialized on return.
     pub fn construction_parameter(&self) -> Option<(usize, &CAggregateLayout)> {
         self.construction_parameter
             .as_ref()
@@ -1293,7 +1293,7 @@ impl CFunction {
         self
     }
 
-    /// Requires a nonthrowing void body to initialize the complete object named
+    /// Requires a nonthrowing void body to initialize the object named
     /// by this ordinary pointer parameter. Binding grants no storage or authority.
     /// Checked summaries retain the initialization established by the body.
     pub fn with_construction_parameter(mut self, index: usize, layout: CAggregateLayout) -> Self {

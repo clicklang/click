@@ -2487,15 +2487,22 @@ impl CMemory {
     pub fn with_uninitialized_block(mut self, block: impl Into<PointerBlock>, size: u32) -> Self {
         let block = block.into();
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        self.with_uninitialized_object(
+            Pointer {
+                block,
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            size,
+        )
+    }
+
+    /// Record an unwritten object footprint without declaring or resizing its
+    /// containing allocation. Proof-entry ownership supplies its storage
+    /// authority and liveness separately; this marker supplies neither.
+    pub fn with_uninitialized_object(mut self, pointer: Pointer, size: u32) -> Self {
         std::sync::Arc::make_mut(&mut self.heap)
             .uninitialized_objects
-            .insert(
-                Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                size,
-            );
+            .insert(pointer, size);
         self
     }
 

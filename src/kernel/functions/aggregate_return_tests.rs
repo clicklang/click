@@ -1299,3 +1299,17 @@ fn construction_parameter_completion_checks_original_storage() {
         CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(_))
     )));
 }
+
+#[test]
+fn raw_object_footprint_does_not_resize_or_initialize_parent_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let at = Pointer::symbolic(Variable(873_031));
+    let memory = CMemory::new()
+        .with_block(at.block.clone(), 32)
+        .with_uninitialized_object(at.offset_by_bytes(8), 8);
+    assert_eq!(memory.block_size(&at.block), Some(&32u32.into()));
+    assert!(memory.may_read_uninitialized_object(&at.offset_by_bytes(8), 8));
+    assert!(!memory.may_read_uninitialized_object(&at, 8));
+    assert!(!memory.may_read_uninitialized_object(&at.offset_by_bytes(16), 8));
+    assert!(!memory.has_initialized_bytes_at(&at.offset_by_bytes(8), 8));
+}

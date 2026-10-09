@@ -1,4 +1,4 @@
-//! Exact destination binding for the initial complete-object construction slice.
+//! Exact object binding for construction returns and ordinary constructors.
 use super::*;
 
 fn valid_layout(layout: &CAggregateLayout) -> bool {
@@ -68,21 +68,53 @@ fn destination<'a>(
         }
         interface.return_aggregate_layout()?
     };
+    let offset = u32::try_from(selected.pointer.offset.as_const()?).ok()?;
+    let end = offset.checked_add(layout.size_bytes())?;
+    let constructor = interface.construction_parameter().is_some();
+    let exact_raw_object = state
+        .memory
+        .heap
+        .uninitialized_objects
+        .get(&selected.pointer)
+        == Some(&layout.size_bytes());
+    let storage_matches = match state.memory.block_size(&selected.pointer.block) {
+        Some(size) => {
+            let size = size.as_const()?;
+            if !constructor && (offset != 0 || size != layout.size_bytes()) {
+                return None;
+            }
+            let base = Pointer {
+                block: selected.pointer.block.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            end <= size
+                && (selected.pointer.block.starts_with("local:")
+                    || exact_raw_object
+                    || state
+                        .memory
+                        .heap
+                        .uninitialized_objects
+                        .get(&base)
+                        .is_some_and(|extent| end <= *extent))
+        }
+        // A constructor entry describes only its object's footprint. Its
+        // containing allocation can be larger, so source proof setup supplies
+        // field liveness through the contract instead of fixing a block extent.
+        None => constructor && exact_raw_object,
+    };
     if !interface.exceptional_signature().is_empty()
         || selected.layout != *layout
         || !valid_layout(layout)
-        || selected.pointer.offset != PointerOffsetTerm::Constant(0)
-        || state.memory.block_size(&selected.pointer.block) != Some(&layout.size_bytes().into())
+        || !offset.is_multiple_of(layout.alignment_bytes())
+        || !storage_matches
+        || selected.pointer.is_in_null_block()
+        || state
+            .memory
+            .is_deallocated_heap_address(&selected.pointer, &PureFactContext::new())
+        || state.memory.is_ended_local_address(&selected.pointer)
         || state.memory.is_read_only_block(&selected.pointer.block)
         || registered_block_alignment(&selected.pointer.block).unwrap_or(1)
             < u64::from(layout.alignment_bytes())
-        || !(selected.pointer.block.starts_with("local:")
-            || state
-                .memory
-                .heap
-                .uninitialized_objects
-                .get(&selected.pointer)
-                == Some(&layout.size_bytes()))
     {
         return None;
     }

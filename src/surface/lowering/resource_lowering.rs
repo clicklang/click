@@ -315,7 +315,9 @@ pub(in crate::surface) fn initial_call_state(
             .get(index)
             .ok_or_else(|| ClickError::new("constructor destination parameter is missing"))?;
         // A symbolic block is an arbitrary input identity, not a fresh local.
-        // Install its raw storage before resource naming can seed typed cells.
+        // Record the raw footprint before resource naming can seed typed cells.
+        // The constructor can target a subobject, so do not fix its containing
+        // allocation's extent. Field liveness comes from the entry contract.
         let destination = Pointer::symbolic(input_pointer_variable(scope, index)?);
         crate::kernel::register_block_alignment(&destination.block, layout.alignment_bytes());
         arguments[index] = c_typed_pointer_value(
@@ -325,7 +327,7 @@ pub(in crate::surface) fn initial_call_state(
         let memory = state
             .memory()
             .clone()
-            .with_uninitialized_block(destination.block, layout.size_bytes());
+            .with_uninitialized_object(destination, layout.size_bytes());
         state = state.with_memory(memory);
     }
     if parameters

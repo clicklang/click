@@ -6542,3 +6542,153 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     );
     assert!(!state.memory().has_initialized_bytes_at(at, 16));
 }
+
+// An embedded constructor initializes its own footprint without shrinking its
+// parent's allocation or initializing a sibling. Its proof entry describes
+// only that footprint, so it does not assume a complete allocation of that size.
+#[test]
+fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let child = CAggregateLayout::new(8, 8, vec![CAggregateField::new("size", 0, CType::UInt64)]);
+    let parent = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("data", 0, CType::Int32Pointer),
+            CAggregateField::new("extent.size", 8, CType::UInt64),
+        ],
+    );
+    let storage = CMemorySegment::new(
+        c_variable("destination"),
+        c_int32_literal(0),
+        c_int32_literal(2),
+    );
+    let owner = CResourceSpec::owned_memory(storage.clone());
+    let function = c_function(
+        CType::Void,
+        "construct_extent",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("input", CType::UInt64),
+        ],
+        c_seq(
+            c_typed_store(
+                c_variable("destination"),
+                c_variable("input"),
+                CType::UInt64,
+            ),
+            c_return(c_void_value()),
+        ),
+    )
+    .with_construction_parameter(0, child)
+    .with_resource_summary(vec![owner.clone()], vec![owner])
+    .with_contract(
+        vec![],
+        vec![],
+        vec![storage],
+        vec![
+            CFunctionContractClaim::body_safety(),
+            CFunctionContractClaim::effect(0),
+            CFunctionContractClaim::ensure_resource(0, 0),
+        ],
+        true,
+    );
+    let at = Pointer::symbolic(Variable(873_021));
+    register_block_alignment(&at.block, 8);
+    let memory = CMemory::new().with_uninitialized_object(at.clone(), 8);
+    assert!(memory.block_size(&at.block).is_none());
+    let live = Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base: at.clone(),
+        bytes: 8u32.into(),
+    };
+    let entry = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(memory)
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(at.clone(), 0u32.into(), 2u32.into())),
+        ));
+    let execution = certify_contract_with_kernel_artifacts(
+        entry,
+        function.clone(),
+        vec![
+            c_pointer_value(at),
+            CExpression::Value(uint64(Bitvector32Term::Variable(Variable(873_022)))),
+        ],
+        vec![live],
+        CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        CFunctionContractExecutionMode::VerifyLoops,
+    );
+    let claims = c_verified_function_contract_claims(&function, &execution)
+        .expect("object-footprint constructor proof");
+    let rule =
+        c_verified_function_rule(function.clone(), &claims).expect("subobject constructor rule");
+    let environment = CExecutionEnvironment::new()
+        .with_function(function)
+        .with_verified_function_rule(rule);
+    for offset in [8, 4, 16] {
+        let paths = prove_symbolic_c_execution_paths_with_environment(
+            CState::new().with_population_creation_tracking(),
+            c_seq(
+                c_allocate_aggregate_destination("parent", parent.clone()),
+                c_seq(
+                    c_call(
+                        "construct_extent",
+                        vec![
+                            c_cast(
+                                c_pointer_offset_bytes(c_variable("parent"), offset),
+                                CType::Int32Pointer,
+                            ),
+                            c_uint64_literal(37),
+                        ],
+                    ),
+                    c_return(c_typed_load(
+                        c_pointer_offset_bytes(c_variable("parent"), 8),
+                        CType::UInt64,
+                    )),
+                ),
+            ),
+            PureFactContext::new(),
+            environment.clone(),
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
+        );
+        let [path] = paths.paths() else {
+            panic!("one subobject call outcome");
+        };
+        let Proposition::CStatementVerifies { outcome, .. } =
+            crate::kernel::api::proof_evidence_conclusion(path.theorem())
+        else {
+            panic!("checked subobject execution");
+        };
+        if offset != 8 {
+            assert!(
+                matches!(outcome, CStatementOutcome::RuntimeError(_)),
+                "misaligned or out-of-bounds child must be refused"
+            );
+            continue;
+        }
+        let CStatementOutcome::Return { state, .. } = outcome else {
+            match outcome {
+                CStatementOutcome::RuntimeError(error) => {
+                    panic!("subobject constructor: {error:?}")
+                }
+                CStatementOutcome::UndefinedBehavior(error) => {
+                    panic!("subobject constructor: {error:?}")
+                }
+                _ => panic!("subobject constructor must return"),
+            }
+        };
+        let base = state.locals().aggregate_object_pointer("parent").unwrap();
+        assert_eq!(state.memory().block_size(&base.block), Some(&16u32.into()));
+        assert!(
+            state
+                .memory()
+                .has_initialized_bytes_at(&base.offset_by_bytes(8), 8)
+        );
+        assert!(
+            !state.memory().has_initialized_bytes_at(base, 8),
+            "sibling remains unwritten"
+        );
+    }
+}
