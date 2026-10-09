@@ -368,9 +368,13 @@ member (`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`), and a
 measure the body moves up fails it too
 (`mdtests/an_unsigned_measure_that_grows_is_refused.md`). Division,
 remainder, right shift, and comparisons inside a component use the
-signedness of their operands' common type. Click refuses an `int64`
-component, a shift of a `uint64` value, and a `?:` that chooses between
-`uint64` values, and names the refusal. A pure component and a self-recursive
+signedness of their operands' common type. An `int64` component, as a
+`long` loop's `length - i` is, ranks by signed 64-bit order and owes
+`0 <= m` as an `int32` one does
+(`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`,
+`mdtests/an_int64_measure_that_may_be_negative_is_refused.md`). Click
+refuses a shift of a 64-bit value and a `?:` that chooses between 64-bit
+values, and names the refusal. A pure component and a self-recursive
 function's expression measure take the same carriers.
 
 An unsigned comparison is a signed order between sign-bit-flipped values, so

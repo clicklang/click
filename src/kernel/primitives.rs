@@ -3824,6 +3824,9 @@ pub enum CRankingMeasureValue {
     /// A machine uint64 quantity, ranked by unsigned 64-bit comparison of the
     /// value C computes, wraparound included; nonnegative by construction.
     Unsigned64(Bitvector32Term),
+    /// A machine int64 quantity, ranked by signed 64-bit comparison. Like an
+    /// int32 it owes `0 <= m`.
+    Signed64(Bitvector32Term),
     /// A mathematical Integer quantity, ranked by Integer comparison.
     Integer(IntegerTerm),
 }

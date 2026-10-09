@@ -195,6 +195,17 @@ named.
 8. Rust slices, and the bound out of the Rust examples.
 9. Every clause shape, and the stage 1 cast for unsigned bounds deleted.
 
+**Decided 2026-10-09 (Lacker).** Wide ranges land as one series: the work
+is done behind a switch until every test passes with it on, then wide is
+the rule. Making a range wide only where its bound is not proved to fit 32
+bits would let it land in steps, but then a range's kind would depend on
+what a contract happens to prove. And a 64-bit index is never narrowed:
+the kernel stops rewriting a `size_t` index to a 32-bit one where it is
+proved to fit, and the Rust lowering stops converting a fixed array's
+`usize` index, so a body's access and a contract's place name one address
+in one form. This changes how existing `size_t` addresses are spelled,
+diagnostics included.
+
 **To keep.** The `Int32` body of `pointer_access_in_range`; ranges indexed
 by the root of their base, with a wide range at the same root and out of
 the int32-coordinate interval index; the order of `S + c`; and the

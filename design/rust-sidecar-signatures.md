@@ -178,7 +178,10 @@ module its `impl` block is in, and a block may be in another module than
 its type (`impl Adler32` in `adler2::algo`, for `adler2::Adler32`). Rust
 does not write that module anywhere, so a sidecar cannot either without
 resolving it from the import. An inherent block is taken to be in its
-type's module, and the other case keeps the importer's name.
+type's module, and the other case keeps the importer's name for now.
+Decided 2026-10-09: resolve it. `impl adler2::Adler32 { fn compute }`
+names the one imported method of that type with that name, which Rust
+guarantees is unique; the parser needs the import's function names for it.
 
 ## Order of work
 
