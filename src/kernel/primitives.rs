@@ -5876,11 +5876,6 @@ pub(super) struct PopulationEffects {
     /// cannot supply resources to an execution or resource rewrite.
     pub(super) predicate_count_permissions: Option<PredicateCountPermissions>,
 
-    /// Function-local consumption committed at closure; callee binding resets it.
-    pub(super) committed_consumptions: CountedPopulations,
-    /// Reserved final totals; current Count is unavailable until every worker
-    /// for the population joins. Calls inherit restrictions, not join rights.
-    pub(super) pending_counts: CountedPopulations,
     /// Creation provenance is shared out-of-line to keep CState's recursive
     /// checker stack footprint unchanged. Legacy states use None.
     pub(super) creation: Option<super::population_authority::c_creation::CreationEvents>,

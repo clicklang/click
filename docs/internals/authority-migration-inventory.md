@@ -1716,3 +1716,22 @@ count evaluation over the legacy store, legacy count lower bounds, consuming
 close and local population initialization, legacy return endpoints, worker
 counts, and a token consume refused for an unknown legacy count. The test of
 generic member construction now expects the authority refusal.
+
+#### Chunk 2c: the legacy counted transition
+
+The legacy counted transition still ran after every return from a verified
+body and every verified call. Measured across every mdtest and gate example
+with the transition instrumented, it never wrote a count, an obligation, a
+fact or a worker count under authority semantics. Its only effect was to
+refuse return paths whose named instances the ordinary return check refuses
+too. With the transition removed from the return path, every unit test,
+mdtest and gate example still passed with the same refusals.
+
+The transition is deleted, with what only it fed: worker population counts,
+pending and committed counts, the ledger index of population workers, the
+consuming close and its surface fallback, local population initialization,
+the legacy owned count lower bound, and their tests. The pending-create
+authority no longer saves counts. `docs/concepts/resources.md` still
+describes consuming close; chunk 4 updates it with the public resource
+documentation. `mdtests/population_consumption_at_close.md` already uses
+authority and still passes.

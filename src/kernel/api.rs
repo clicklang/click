@@ -5810,40 +5810,6 @@ pub(in crate::kernel) fn checked_int32_reassociated_add_domain(
     })
 }
 
-/// Certifies the exact count lower bound witnessed by owned declared-resource
-/// authority in a concrete ghost state. The returned theorem is bound to the
-/// proposition reconstructed here and retains its contextual proof premises;
-/// callers cannot use resource possession to bless an unrelated arithmetic
-/// fact.
-pub fn prove_owned_resource_count_lower_bound(
-    state: &CState,
-    owned: &CResourceFact,
-    claimed: &Proposition,
-    assumptions: &PureFactContext,
-) -> Option<Theorem> {
-    let conclusion = checked_owned_resource_count_lower_bound(state, owned, assumptions)?;
-    if claimed != &conclusion {
-        return None;
-    }
-    if let Some(theorem) = theorem_from_exact_context_fact(assumptions, conclusion.clone()) {
-        return Some(theorem);
-    }
-    // The checked authority ledger states its minimum as count >= quantity.
-    // Name the same bound as quantity <= count with one explicit order rule.
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(lower, count), true) =
-        conclusion
-    else {
-        return None;
-    };
-    let reversed = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal((*count).clone(), (*lower).clone()),
-        true,
-    );
-    assumptions
-        .proves_exact(&reversed)
-        .then(|| prove_int32_ge_implies_reversed_le(*count, *lower))
-}
-
 /// Reconstruct a count bound checked against this state's immutable ledger and
 /// exact custody. Retained observations must bind the result to this state;
 /// this does not return an unconditional arithmetic theorem.

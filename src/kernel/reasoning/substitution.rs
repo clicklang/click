@@ -3937,7 +3937,6 @@ fn substitute_bitvector_variable_in_c_state(
                 |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
                 |value| substitute_bitvector_variable_in_c_value(value, from, to),
                 |memory| substitute_bitvector_variable_in_memory(memory, from, to),
-                |counts| substitute_bitvector_variable_in_population_counts(counts, from, to),
             )
         }),
         next_local_frame: state.next_local_frame,
@@ -3954,16 +3953,6 @@ fn substitute_bitvector_variable_in_c_state(
                 .population_effects
                 .predicate_count_permissions
                 .clone(),
-            committed_consumptions: substitute_bitvector_variable_in_population_counts(
-                &state.population_effects.committed_consumptions,
-                from,
-                to,
-            ),
-            pending_counts: substitute_bitvector_variable_in_population_counts(
-                &state.population_effects.pending_counts,
-                from,
-                to,
-            ),
         }),
     }
 }
@@ -6752,7 +6741,6 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
                 |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
                 |value| substitute_pointer_variable_in_c_value(value, from, to),
                 |memory| substitute_pointer_variable_in_memory(memory, from, to),
-                |counts| substitute_pointer_variable_in_population_counts(counts, from, to),
             )
         }),
         next_local_frame: state.next_local_frame,
@@ -6769,16 +6757,6 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
                 .population_effects
                 .predicate_count_permissions
                 .clone(),
-            committed_consumptions: substitute_pointer_variable_in_population_counts(
-                &state.population_effects.committed_consumptions,
-                from,
-                to,
-            ),
-            pending_counts: substitute_pointer_variable_in_population_counts(
-                &state.population_effects.pending_counts,
-                from,
-                to,
-            ),
         }),
     }
 }
