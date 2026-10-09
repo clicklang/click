@@ -57,9 +57,14 @@ in Integer arithmetic. A checked four-byte step gives the ordered B weights
 `4,3,2,1`; reducing the lanes preserves both residues. The B reduction requires
 a nonnegative representative and permits a negative congruence witness.
 Checked one- and four-byte prefix lemmas connect the A residue recurrence to
-the common specification. These are mathematical lemmas, not a verified
+the common specification. A four-byte B prefix lemma proves the ordered weighted
+update against the same specification, with explicit index and nonnegative
+representative bounds. These are mathematical lemmas, not a verified
 summary of the general computation: its nested-loop checksum induction remains
-incomplete. The helper’s exact entry-byte observations supply the correspondence
+incomplete. Native `viewable(bytes[0u64..bytes_len])` observations now name the
+same full-width range as the shared resource clauses and retain its byte-extent
+guards. Checked transport carries an exact liveness range across stores without
+widening it or claiming preservation of its contents. The helper’s exact entry-byte observations supply the correspondence
 needed at each original vector-construction call.
 
 The remainder helper exports the strict native and Integer divisor bounds

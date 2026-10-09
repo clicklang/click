@@ -10464,3 +10464,129 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
         prior = Some(work);
     }
 }
+
+#[test]
+fn native_loadability_transport_pins_extent_domain_and_lifetime() {
+    let base = Pointer {
+        block: "native-region".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let live = CMemory::new().with_block("native-region", 8);
+    let fact = |memory: CMemory, bytes, wide| Proposition::CMemoryLoadable {
+        memory,
+        base: base.clone(),
+        bytes,
+        wide,
+    };
+    let source = fact(live.clone(), Bitvector32Term::UInt64Constant(8), true);
+    let context = PureFactContext::new().assume_proposition(source.clone());
+    let written = live
+        .clone()
+        .store(base.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+    let goal = fact(written, Bitvector32Term::UInt64Constant(8), true);
+    let proof = context
+        .derive_atomic_proposition(&goal)
+        .expect("writes preserve native liveness");
+    assert!(proof.check(&context));
+    assert_eq!(proof.context_premises(), vec![source]);
+    for wrong in [
+        fact(live.clone(), Bitvector32Term::UInt64Constant(9), true),
+        fact(
+            live.clone().with_block("native-region", 2),
+            Bitvector32Term::UInt64Constant(8),
+            true,
+        ),
+        fact(
+            live.without_local_block(&base.block),
+            Bitvector32Term::UInt64Constant(8),
+            true,
+        ),
+    ] {
+        assert!(context.derive_atomic_proposition(&wrong).is_none());
+    }
+    let native_count = Bitvector32Term::Variable(Variable(973_001));
+    let narrow = PureFactContext::new().assume_proposition(fact(
+        CMemory::new(),
+        Bitvector32Term::UInt32From64(Box::new(native_count.clone())),
+        false,
+    ));
+    assert!(
+        narrow
+            .derive_atomic_proposition(&fact(CMemory::new(), native_count, true,))
+            .is_none(),
+        "a low-word extent cannot establish the full native extent"
+    );
+    let external = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let live = CMemory::new()
+        .with_heap_allocation_claim(external.clone(), Bitvector32Term::Constant(16))
+        .unwrap();
+    let dead = live
+        .clone()
+        .free_heap_block(&external, &PureFactContext::new())
+        .unwrap();
+    let external_fact = |memory| Proposition::CMemoryLoadable {
+        memory,
+        base: external.clone(),
+        bytes: Bitvector32Term::UInt64Constant(8),
+        wide: true,
+    };
+    let context = PureFactContext::new().assume_proposition(external_fact(live));
+    assert!(
+        context
+            .derive_atomic_proposition(&external_fact(dead))
+            .is_none()
+    );
+}
+
+#[test]
+fn native_loadability_queries_do_not_visit_unrelated_addresses() {
+    let memory = CMemory::new();
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut expected = None;
+    for count in [16, 64, 256] {
+        let mut context = PureFactContext::new();
+        for index in 0..count {
+            context = context.assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: Pointer {
+                    block: base.block.clone(),
+                    offset: PointerOffsetTerm::Constant(4 * (index + 1)),
+                },
+                bytes: Bitvector32Term::UInt64Constant(8),
+                wide: true,
+            });
+        }
+        context = context.assume_proposition(Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: Bitvector32Term::UInt64Constant(8),
+            wide: true,
+        });
+        // Index construction is setup work. Repeated exact-range queries must
+        // stay independent of the other addresses, even on a refusal.
+        assert!(context.proves_native_memory_loadable(
+            &memory,
+            &base,
+            &Bitvector32Term::UInt64Constant(8)
+        ));
+        let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.proves_native_memory_loadable(
+                &memory,
+                &base,
+                &Bitvector32Term::UInt64Constant(9),
+            )
+        });
+        assert!(!proved);
+        if let Some(expected) = expected {
+            assert_eq!(work, expected);
+        } else {
+            expected = Some(work);
+        }
+    }
+}

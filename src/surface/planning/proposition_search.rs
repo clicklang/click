@@ -295,6 +295,12 @@ impl PropositionSearch for PureFactContext {
                 memory,
                 base,
                 bytes,
+                wide: true,
+            } => self.proves_native_memory_loadable(memory, base, bytes),
+            Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
                 wide: false,
             } => self.proves_memory_loadable(memory, base, bytes),
             Proposition::CMemoryCanStore {

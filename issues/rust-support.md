@@ -58,8 +58,10 @@ Checked Integer lane-state lemmas establish the optimized four-byte recurrence,
 including the original recombination offset and weights, and preservation of
 both residues through lane reductions. The constructor exports each lane’s
 exact mathematical entry-byte value. One- and four-byte prefix lemmas preserve
-the A residue against the common specification. Connecting those relations to
-the arbitrary-length computation’s nested loops remains incomplete.
+the A residue against the common specification; a four-byte B prefix lemma
+checks the ordered weighted update under explicit index and nonnegative
+representative bounds. Connecting those relations to the arbitrary-length
+computation’s nested loops remains incomplete.
 The unchanged Rust one-byte computation proves both fields equal the shared
 specification on the entry byte snapshot. The specification is not yet connected
 to either implementation’s general computation.

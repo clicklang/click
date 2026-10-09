@@ -352,6 +352,37 @@ impl PureFactContext {
         self.proves_memory_loadable(memory, pointer, &Bitvector32Term::Constant(byte_width))
     }
 
+    /// Carry one exact native liveness range through memory snapshots. This
+    /// neither changes its extent nor transports the bytes' values. Retirement
+    /// is checked at the evidence's address, just as for ordinary read ranges.
+    pub(crate) fn proves_native_memory_loadable(
+        &self,
+        memory: &CMemory,
+        base: &Pointer,
+        bytes: &Bitvector32Term,
+    ) -> bool {
+        if bytes.uint64_as_const() == Some(0) {
+            return true;
+        }
+        self.memory_loadable_exact_candidates_for_base(base)
+            .any(|fact| {
+                let Proposition::CMemoryLoadable {
+                    memory: before,
+                    base: source_base,
+                    bytes: source_bytes,
+                    wide: true,
+                } = fact
+                else {
+                    return false;
+                };
+                crate::instrumentation::record_deterministic_work(1);
+                source_base == base
+                    && source_bytes == bytes
+                    && before.read_region_identity(source_base) == memory.read_region_identity(base)
+                    && memory_range_still_available(before, memory, source_base, self)
+            })
+    }
+
     pub(crate) fn proves_memory_loadable(
         &self,
         memory: &CMemory,
