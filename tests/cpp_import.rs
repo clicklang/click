@@ -16264,7 +16264,7 @@ fn construction_assignment_materializes_rhs_and_preserves_backing_offline() {
 }
 
 #[test]
-#[ignore = "nightly: construction assignment expansion and retained verification"]
+#[ignore = "nightly: 2.5s construction assignment expansion and retained verification"]
 fn construction_assignment_expands_and_retains_offline() {
     check_construction_assignment(true);
 }
