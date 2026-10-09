@@ -100,9 +100,12 @@ that evidence or their checked transitions are missing.
    the `SpanPopBack` target in [cpp-support.md](cpp-support.md). Keep the existing
    native reference contracts, uint64 extent and accepted single-range bound.
 
-The shared API and the precise compiler/ABI evidence remain to be designed.
-The direction above is settled; additional decisions should be stated with a
-concrete source case, alternatives and their verification consequences.
+The accepted interface direction, Surface Click boundary, initialization and
+lifetime obligations, and staged implementation contract are recorded in
+[the aggregate construction design](../design/aggregate-construction.md).
+Destination-aware returns remain to be implemented. The precise compiler/ABI
+evidence is an admission gate for each new C++ return shape; the design does
+not treat a Clang expression category as sufficient evidence of copy elision.
 
 ## Acceptance criteria
 
