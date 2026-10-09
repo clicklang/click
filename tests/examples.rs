@@ -2097,3 +2097,75 @@ fn rbtree_erase_color_inner_right_requires_old_sibling_parent() {
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
     );
 }
+
+#[test]
+#[ignore = "nightly: red-sibling rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_left_requires_parent_link() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_left.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_right, tmp1);",
+        "WRITE_ONCE(parent->rb_right, NULL);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_left_requires_sibling_link() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_left.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_left, parent);",
+        "WRITE_ONCE(sibling->rb_left, NULL);",
+        2,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_left_requires_red_parent() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_left.click",
+        "rb_erase_color.c",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_RED);",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_BLACK);",
+        2,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_right_requires_parent_link() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_right.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(parent->rb_left, tmp1);",
+        "WRITE_ONCE(parent->rb_left, NULL);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_right_requires_sibling_link() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_right.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_right, parent);",
+        "WRITE_ONCE(sibling->rb_right, NULL);",
+        2,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_right_requires_red_parent() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_right.click",
+        "rb_erase_color.c",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_RED);",
+        "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_BLACK);",
+        2,
+    );
+}
