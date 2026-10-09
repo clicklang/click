@@ -1514,7 +1514,7 @@ fn charon_adler2_small_partition_verifies() {
 const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32-spec.click");
 
 // Checks the common mathematical target independently of an imported body:
-// weighted byte order, canonical residues, empty seeds and packed bounds.
+// one/four-byte weighted order, canonical residues, empty seeds and packed bounds.
 #[test]
 fn adler_common_spec_recurrences_and_bounds_verify() {
     click::surface::verify_c0_sources(COMMON_ADLER_SPEC, &[]).unwrap();
@@ -1524,6 +1524,9 @@ fn adler_common_spec_recurrences_and_bounds_verify() {
 #[ignore = "nightly: common checksum specification expansion and mutation checks"]
 fn adler_common_spec_expands_and_rejects_false_results() {
     for claim in [
+        "adler_byte_observation_same_index.ensures_0",
+        "adler_sum_append_four.ensures_0",
+        "adler_weighted_append_four.ensures_0",
         "adler_weight_shift.ensures_0",
         "adler_weighted_prefix_step.ensures_0",
         "adler_sum_nonnegative.ensures_0",
@@ -1546,6 +1549,11 @@ fn adler_common_spec_expands_and_rejects_false_results() {
             "adler_weighted_sum(bytes, n - 1, n - 1) + adler_byte_sum(bytes, n) by",
             "adler_weighted_sum(bytes, n - 1, n - 1) + 2 * adler_byte_sum(bytes, n) by",
         ),
+        (
+            "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
+            "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
+        ),
+        ("requires n <= 2147483643;", "requires n <= 2147483644;"),
         ("<= 4293984240 by", "<= 4293984239 by"),
         (
             "adler_spec_a(bytes, 0, a0) == a0 by",
