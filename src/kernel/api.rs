@@ -2281,7 +2281,7 @@ pub fn c_declare_aggregate(name: impl Into<String>, layout: CAggregateLayout) ->
     CStatement::DeclareAggregate {
         name: name.into(),
         layout,
-        construction: false,
+        kind: CAggregateDeclarationKind::Local,
     }
 }
 
@@ -2292,7 +2292,20 @@ pub fn c_begin_aggregate_construction(
     CStatement::DeclareAggregate {
         name: name.into(),
         layout,
-        construction: true,
+        kind: CAggregateDeclarationKind::Constructor,
+    }
+}
+
+/// Allocates fresh owned aggregate storage without initializing its fields.
+/// This grants authority over the allocation, not over any future pointees.
+pub fn c_allocate_aggregate_destination(
+    name: impl Into<String>,
+    layout: CAggregateLayout,
+) -> CStatement {
+    CStatement::DeclareAggregate {
+        name: name.into(),
+        layout,
+        kind: CAggregateDeclarationKind::ConstructionDestination,
     }
 }
 

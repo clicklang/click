@@ -30,6 +30,57 @@ fn pointer(value: &CValue) -> Pointer {
     value.pointer().clone()
 }
 
+fn allocate_destination(state: &CState, name: &str) -> CState {
+    let paths = crate::kernel::eval::execute_c_statement_paths(
+        state,
+        &c_allocate_aggregate_destination(name, node_layout()),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .expect("checked destination allocation");
+    let [path] = paths.as_slice() else {
+        panic!("one allocation outcome expected");
+    };
+    assert!(path.obligations.is_empty());
+    let CStatementOutcome::Normal(state) = &path.outcome else {
+        panic!("destination allocation failed: {:?}", path.outcome);
+    };
+    state.as_ref().clone()
+}
+
+// Unlike legacy constructor declarations, allocation grants write authority
+// without manufacturing readable placeholders. The second allocation must
+// not reuse the first object's identity when the source name is repeated.
+#[test]
+fn raw_construction_allocation_owns_storage_without_initializing_values() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = allocate_destination(&CState::new(), "node");
+    let destination = state.locals.slot("node").unwrap().clone();
+    assert!(state.memory.has_block(&destination.block));
+    assert!(!state.memory.has_initialized_bytes_at(&destination, 16));
+    assert!(state.memory.known_value(&destination).is_none());
+    assert!(
+        crate::kernel::eval::memory_write_permission_outcome(
+            &state,
+            &destination,
+            16,
+            &PureFactContext::new(),
+        )
+        .is_none()
+    );
+    assert!(aggregate_copy_reads_uninitialized(
+        &state.memory,
+        &destination,
+        &node_layout()
+    ));
+    let again = allocate_destination(&state, "node");
+    assert_ne!(again.locals.slot("node").unwrap(), &destination);
+    assert!(!again.memory.has_block(&destination.block));
+    assert!(again.memory.is_ended_local_block(&destination.block));
+}
+
 fn destination_procedure(name: &str, body: CStatement) -> CFunction {
     let storage = CResourceSpec::owned_memory(CMemorySegment::new(
         c_variable("destination"),
@@ -80,15 +131,9 @@ fn supplied_constructor_destination_survives_two_procedure_boundaries() {
             vec![c_variable("destination"), c_variable("input")],
         ),
     );
-    let destination = CMemory::frame_local_pointer(100, "caller_node");
-    let memory = CMemory::new().with_block(destination.block.clone(), 16);
-    assert!(!memory.has_initialized_bytes_at(&destination, 16));
-    let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-        CMemoryRange::new(destination.clone(), 0u32.into(), 4u32.into()),
-    ));
-    let caller = CState::new()
-        .with_memory(memory)
-        .with_resource_context(resources);
+    let caller = allocate_destination(&CState::new(), "caller_node");
+    let destination = caller.locals.slot("caller_node").unwrap().clone();
+    assert!(!caller.memory.has_initialized_bytes_at(&destination, 16));
     let paths = execute_c_function_call_paths(
         &caller,
         &outer,

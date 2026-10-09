@@ -3192,14 +3192,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_constant: *pointee_constant,
             zero_fill: zero_fill.clone(),
         },
-        CStatement::DeclareAggregate {
-            name,
-            layout,
-            construction,
-        } => CStatement::DeclareAggregate {
+        CStatement::DeclareAggregate { name, layout, kind } => CStatement::DeclareAggregate {
             name: name.clone(),
             layout: layout.clone(),
-            construction: *construction,
+            kind: *kind,
         },
         CStatement::Assign { name, expression } => CStatement::Assign {
             name: name.clone(),

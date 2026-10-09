@@ -2409,6 +2409,18 @@ pub(crate) struct CControlTarget {
     pub(crate) remaining: std::sync::Arc<CStatement>,
 }
 
+/// Allocation and initialization policy for an automatic aggregate object.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CAggregateDeclarationKind {
+    /// Ordinary local storage, with no explicit constructor ownership grant.
+    Local,
+    /// Existing frontend protocol: seed placeholders and require the frontend
+    /// to prove that constructors overwrite them before observation.
+    Constructor,
+    /// Fresh owned storage. Only actual writes initialize its fields.
+    ConstructionDestination,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CStatement {
     Skip,
@@ -2446,10 +2458,7 @@ pub enum CStatement {
     DeclareAggregate {
         name: String,
         layout: CAggregateLayout,
-        /// The storage is entering a checked constructor call. The frontend
-        /// must prove that every fresh field value is overwritten before
-        /// source code can observe it.
-        construction: bool,
+        kind: CAggregateDeclarationKind,
     },
     /// Copy an address-backed aggregate, preserving typed views for any
     /// overlapping union members in its layout.

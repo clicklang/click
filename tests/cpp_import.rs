@@ -3483,7 +3483,7 @@ fn contains_aggregate_construction_begin(statement: &CStatement, expected: &str)
     match statement {
         CStatement::DeclareAggregate {
             name,
-            construction: true,
+            kind: click::kernel::CAggregateDeclarationKind::Constructor,
             ..
         } => name == expected,
         CStatement::Seq(first, second) => {

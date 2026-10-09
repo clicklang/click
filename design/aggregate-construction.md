@@ -19,6 +19,12 @@ survives value forgetting, intersects across branches, and follows checked
 pointer equalities. This proof-entry building block is not yet connected to
 construction-return contracts or source admission.
 
+Caller allocation now has a separate `c_allocate_aggregate_destination`
+operation. It allocates fresh automatic storage and its byte ownership without
+seeding field values. Re-declaration uses the existing retirement and fresh
+generation checks. Ordinary local declarations and the existing C++/Rust
+constructor placeholder protocol retain their behavior.
+
 ## Surface and source boundary
 
 Keep native result signatures, `result` field projections, and existing
@@ -102,7 +108,7 @@ before the field's value is written. Observing the field value still requires
 initialization and read authority. Copying a pointer never grants authority
 over its pointee.
 
-The existing `DeclareAggregate { construction: true }` path seeds scalar
+The existing `DeclareAggregate` constructor kind seeds scalar
 placeholders so current constructor contracts can use the existing cell
 machinery. Its frontend overwrite obligation is not a completion certificate
 for the new result mode. The implementation must distinguish actual completed
