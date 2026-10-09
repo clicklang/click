@@ -62,6 +62,10 @@ theorem use_uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by apply(uint32_to_integer_bounds(value));
     ensures to_integer(value) <= 4294967295 by apply(uint32_to_integer_bounds(value));
 }
+theorem use_uint64_to_integer_bounds(value: uint64) {
+    ensures 0 <= to_integer(value) by apply(uint64_to_integer_bounds(value));
+    ensures to_integer(value) <= 18446744073709551615 by apply(uint64_to_integer_bounds(value));
+}
 theorem use_unsigned_reduction(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
     ensures value % divisor < divisor by apply(uint32_remainder_less_than_divisor(value, divisor));
@@ -728,6 +732,15 @@ theorem docs_use_uint32_le_transitive(first: uint32, middle: uint32, last: uint3
 
     ensures first <= last by {
         apply(uint32_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_le_and_not_lt_implies_eq(left: uint64, right: uint64) {
+    requires left <= right;
+    requires not left < right;
+
+    ensures left == right by {
+        apply(uint64_le_and_not_lt_implies_eq(left, right));
     }
 }
 

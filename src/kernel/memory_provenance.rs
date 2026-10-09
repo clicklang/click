@@ -3452,7 +3452,7 @@ pub fn prove_forall_int32_application(
     let Proposition::ForAll { var, sort, body } = quantified else {
         return None;
     };
-    if *sort != Sort::CInt32 {
+    if !crate::kernel::proof::fact_reasoning::instantiable_machine_sort(sort) {
         return None;
     }
     let mut instantiated = substitute_bitvector_variable_in_proposition(body, *var, &value);
