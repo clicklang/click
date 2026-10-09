@@ -73,6 +73,16 @@ profiling, auditing, and expanded certificates must agree. These tool rechecks
 run in the nightly suite; direct verification and rejection tests stay in the
 ordinary gate.
 
+## General batch metadata
+
+[General partition lemmas](general-partition.click) cover nonnegative lengths
+through `INT32_MAX`, the current memory-index boundary. They relate full-width
+Rust metadata to signed indices, split a four-byte prefix into full 22,208-byte
+batches and an aligned remainder of at most 22,204 bytes, and establish the
+actual outer iterator's nonempty-step bound, divisibility and strict progress.
+No generated processed counter is used. These arithmetic lemmas do not yet
+establish the original outer-loop invariant or checksum result.
+
 ## Lane batch arithmetic
 
 The [bounds library](bounds.click) checks the mathematical ceilings proposed

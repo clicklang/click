@@ -97,8 +97,9 @@ than pretend the implementation is the textbook serial loop.
 
 Native Charon imports this unchanged crate with its modules, derives, resolved
 methods, and concrete operators. The helper bodies, arithmetic lemmas, and
-small-batch computation bounds have checked sidecars. Full outer batches, short
-tails, and the checksum identity remain proof work; successful extraction alone
+small-batch computation and scalar-tail bounds have checked sidecars. General
+full-width partition and outer-iterator progress lemmas also verify. Full outer
+batch induction and the checksum identity remain proof work; successful extraction alone
 establishes none of those claims.
 
 Support the reachable concrete instantiations rather than promising arbitrary
