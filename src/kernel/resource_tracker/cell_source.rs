@@ -1141,7 +1141,22 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
         bytes,
         assumptions,
         cross_loop_havoc,
+        None,
     ))
+}
+
+/// A locally bounded read-value query. Reaching the limit preserves only the
+/// stopping snapshot's own cell; it never assumes that an unchecked hop frames
+/// the read. This prevents a simple normalization from scanning a whole path.
+pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+    max_hops: usize,
+) -> Option<MemoryDagCell> {
+    let _lookup = CellLookupGuard::enter(memory, pointer)?;
+    Some(memory_dag_cell_source_walk(memory, pointer, bytes, assumptions, true, Some(max_hops)).0)
 }
 
 fn memory_dag_cell_source_walk(
@@ -1150,6 +1165,7 @@ fn memory_dag_cell_source_walk(
     bytes: u32,
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
+    max_hops: Option<usize>,
 ) -> (MemoryDagCell, CellWalkStop) {
     let evidence = super::step_effect::Evidence {
         assumptions,
@@ -1160,6 +1176,15 @@ fn memory_dag_cell_source_walk(
     // The walk ends at a snapshot with no derivation: ids strictly
     // decrease along `base`, so every chain is finite.
     loop {
+        if max_hops.is_some_and(|limit| path.len() >= limit) {
+            return (
+                MemoryDagCell::Unwritten {
+                    node: current,
+                    path,
+                },
+                CellWalkStop::NotShownSeparate,
+            );
+        }
         // Each hop is one unit of deterministic work, so a scaling
         // regression sees a walk that grows with the proof.
         crate::instrumentation::record_deterministic_work(1);

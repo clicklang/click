@@ -4093,6 +4093,54 @@ pub(crate) fn wide_loads_have_same_canonical_value(
         && !crate::kernel::reasoning::load_equality_refuted_by_history(&left, &right, assumptions)
 }
 
+/// Check a wide read against its recorded value under explicitly selected
+/// premises. The typed memory walk must preserve the complete eight-byte
+/// access across every effect; it cannot infer a value from a partial store.
+pub(crate) fn wide_read_has_recorded_value(
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> bool {
+    let origin = |term: &Bitvector32Term| match term {
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::eval::registered_load_origin_term_for_variable(variable)
+        }
+        Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+        _ => None,
+    };
+    let left_origin = origin(left);
+    let right_origin = origin(right);
+    if left_origin.is_none() && right_origin.is_none() {
+        return false;
+    }
+    if left_origin
+        .iter()
+        .chain(right_origin.iter())
+        .any(|term| !matches!(term, Bitvector32Term::MemoryLoad(_, _, LoadKind::Bits64)))
+    {
+        return false;
+    }
+    let stored_value_matches = |read: Option<&Bitvector32Term>, other: &Bitvector32Term| {
+        let Some(Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits64)) = read else {
+            return false;
+        };
+        // A simple read-value normalization must not scan the whole path.
+        // Longer frames need an explicit intervening proof step.
+        let Some(cell) = memory_dag_cell_source_with_hop_limit(memory, pointer, 8, assumptions, 64)
+        else {
+            return false;
+        };
+        let Some(CValue::Int64(value) | CValue::UInt64(value)) =
+            cell.resolved_value(pointer, LoadKind::Bits64)
+        else {
+            return false;
+        };
+        &value == other
+    };
+    stored_value_matches(left_origin.as_ref(), right)
+        || stored_value_matches(right_origin.as_ref(), left)
+}
+
 /// Deep, assumption-free canonical form for a term: every load resolves its
 /// cached cell or canonicalizes its snapshot and pointer, at every depth,
 /// including inside conditionals, folds, and pointer offsets. Two forms
