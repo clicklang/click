@@ -1493,8 +1493,8 @@ impl PureFactContext {
     /// that holds every byte of an access of `bytes` at `pointer`.
     ///
     /// Candidates are found without placing anything: the ranges based at one
-    /// of the access's additive base spellings, through the base index, and
-    /// the ranges of the access's block whose base this context proves equal
+    /// of the access's additive base spellings or an exact alias of one, through
+    /// the base index, and the ranges of the access's block whose base this context proves equal
     /// to one of those spellings (a pointer field reloaded after a call and
     /// proven equal to its value before). Only when there is a candidate is
     /// the placement context built, by `placement`, which may add premises
@@ -1510,17 +1510,19 @@ impl PureFactContext {
     ) -> Option<&'a CMemoryRange> {
         let spellings = additive_base_spellings(pointer);
         let mut spelled = Vec::new();
+        let mut seen = BTreeSet::new();
         for base in &spellings {
-            spelled.extend(
-                ranges
-                    .owned_memory_members_with_base(base)
-                    .map(|(_, range)| range),
-            );
+            for alias in std::iter::once(base).chain(self.exact_pointer_aliases(base)) {
+                for (entry, range) in ranges.owned_memory_members_with_base(alias) {
+                    if seen.insert(entry) {
+                        spelled.push(range);
+                    }
+                }
+            }
         }
-        // The ranges stated over one of the access's own spellings are
-        // placed first: they need no base equality, and a kept cell is
-        // almost always spelled through its own range's base. Only when none
-        // of them holds the access are the block's other kept ranges asked
+        // Try the access's own spellings and exact aliases first. Alias
+        // candidates still require checked coverage of every accessed byte.
+        // Only when none holds the access are the block's other kept ranges asked
         // for a proved base equality, each question once per fact set
         // (`kept_range_bases_proven_equal`).
         let mut placement = Some(placement);
@@ -1575,7 +1577,12 @@ impl PureFactContext {
         if width == 0 {
             return false;
         }
-        if self.access_within_memory_range(pointer, bytes, range) {
+        if self.access_within_memory_range(pointer, bytes, range)
+            || crate::kernel::resource_tracker::cell_source::AccessInRangeEvidence::for_access(
+                pointer, bytes, range, self,
+            )
+            .is_some()
+        {
             return true;
         }
         let contains = |pointer: &Pointer| {

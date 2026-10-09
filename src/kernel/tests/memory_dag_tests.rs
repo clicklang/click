@@ -3801,6 +3801,64 @@ fn two_edge_pointer_alias_witness_rechecks_each_named_premise() {
 }
 
 #[test]
+fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() {
+    let input = |name| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(name)), 4),
+    };
+    let base = input(979_000);
+    let model_base = Pointer {
+        block: PointerBlock::Symbolic(Variable(979_001)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let alias = ConditionTerm::pointer_equal(base.clone(), model_base.clone());
+    let assumptions = PureFactContext::new().assume_condition(alias.clone(), true);
+    let field = memory_range(model_base, 2, 4);
+    let pointer = base.offset_by_bytes(8);
+    let mut previous = None;
+    for count in [16, 64, 256, 1024] {
+        let mut ranges =
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(field.clone()));
+        for index in 0..count {
+            ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(memory_range(
+                input(980_000 + index),
+                0,
+                2,
+            )));
+        }
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assumptions.kept_range_holding_access(&ranges, || None, &pointer, 8)
+        });
+        assert_eq!(found, Some(&field));
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous + 32,
+                "{count} unrelated members: {work} after {previous}"
+            );
+        }
+        previous = Some(work);
+    }
+    let ranges = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(field));
+    for (pointer, bytes) in [
+        (pointer.clone(), 12),
+        (base.offset_by_bytes(12), 8),
+        (base.offset_by_bytes(4), 8),
+    ] {
+        assert!(
+            assumptions
+                .kept_range_holding_access(&ranges, || None, &pointer, bytes)
+                .is_none()
+        );
+    }
+    let withdrawn = assumptions.without_exact_fact(&Proposition::ConditionIs(alias, true));
+    assert!(
+        withdrawn
+            .kept_range_holding_access(&ranges, || None, &pointer, 8)
+            .is_none()
+    );
+}
+
+#[test]
 fn unrelated_symbolic_kept_bases_do_not_trigger_range_placement() {
     let input = |name| Pointer {
         block: PointerBlock::ExternalArgument,
