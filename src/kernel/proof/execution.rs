@@ -4231,12 +4231,13 @@ fn check_interface_abstraction(
         };
         let then_lowering = concrete(0)?;
         let else_lowering = concrete(1)?;
-        let successor = CheckedInterfaceLowering::check(
+        let successor = CheckedInterfaceLowering::check_in(
             spec,
             joined_state,
             reference_state,
             successor_facts,
             &successor_access,
+            &PureFactContext::new(),
         )
         .ok_or("an interface fact is not retained at the abstract successor")?;
         interface_lowerings.push([then_lowering, else_lowering, successor]);
@@ -5185,12 +5186,13 @@ fn interface_spec_paths(
     spec: &SpecProposition,
     state: &CState,
     reference_state: &CState,
+    assumptions: &PureFactContext,
 ) -> Option<Vec<crate::kernel::spec::SpecPropositionPath>> {
     crate::kernel::spec::lower_spec_proposition_at_state_with_loop_entry(
         state,
         spec,
         Some(reference_state),
-        &PureFactContext::new(),
+        assumptions,
         &mut ExecutionBudget::beside_live_state(),
     )
     .ok()
@@ -5292,7 +5294,27 @@ impl CheckedInterfaceLowering {
         facts: &ProofFacts,
         access: &InterfaceReadPremises,
     ) -> Option<Self> {
-        let paths = interface_spec_paths(spec, state, reference_state)?;
+        let assumptions = facts
+            .assumptions()
+            .clone()
+            .defer_non_exact_condition_reasoning()
+            .defer_non_exact_loadability_obligations();
+        Self::check_in(spec, state, reference_state, facts, access, &assumptions)
+    }
+
+    fn check_in(
+        spec: &SpecProposition,
+        state: &CState,
+        reference_state: &CState,
+        facts: &ProofFacts,
+        access: &InterfaceReadPremises,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        // Concrete reads use this arm's checked aliases. The abstract
+        // successor instead retains the state-only exported spelling.
+        // Lowering grants no authority: check each resulting fact and
+        // safety obligation against the exact retained context below.
+        let paths = interface_spec_paths(spec, state, reference_state, assumptions)?;
         paths.into_iter().find_map(|path| {
             crate::instrumentation::record_deterministic_work(1);
             let prove =
@@ -14216,6 +14238,93 @@ mod tests {
         );
     }
 
+    // Interface re-lowering must use the checked arm's address aliases without
+    // acquiring read authority, leaking an arm fact, or scanning its history.
+    #[test]
+    fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
+        use crate::kernel::{CPointerValue, ConditionTerm, SpecMemory};
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer::symbolic(Variable(951_000));
+        let alias = Pointer::symbolic(Variable(951_001));
+        let value = Bitvector32Term::UInt64Constant(0x1234_5678_9abc_def0);
+        let load = SpecExpression::MemoryLoad {
+            memory: SpecMemory::Current,
+            pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
+                alias.clone(),
+                CType::UInt64Pointer,
+            )))),
+            value_type: CType::UInt64,
+        };
+        let spec = SpecProposition::Comparison {
+            left: load.clone(),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::Value(CValue::UInt64(value.clone())),
+        };
+        let mut previous = None;
+        for count in [16_u32, 64, 256, 1024] {
+            let mut memory = CMemory::new();
+            let mut parent = ProofFacts::default();
+            for index in 0..count {
+                memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
+                parent = parent.with_fact(Proposition::ConditionIs(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(952_000 + u64::from(index))),
+                        Bitvector32Term::Constant(index),
+                    ),
+                    true,
+                ));
+            }
+            memory = memory.store(owner.clone(), CValue::UInt64(value.clone()));
+            let state = CState::new().with_memory(memory.clone());
+            let arm = parent.with_fact(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(alias.clone(), owner.clone()),
+                true,
+            ));
+            let check = |state: &CState, facts: &ProofFacts, spec: &SpecProposition| {
+                CheckedInterfaceLowering::check(
+                    spec,
+                    state,
+                    state,
+                    facts,
+                    &InterfaceReadPremises::default(),
+                )
+            };
+            let (checked, work) =
+                crate::instrumentation::measure_deterministic_work(|| check(&state, &arm, &spec));
+            assert!(checked.is_some(), "{count} unrelated cells and premises");
+            assert!(checked.unwrap().has_complete_proof());
+            if let Some(previous) = previous {
+                assert!(work <= previous + 128, "{count}: {work} after {previous}");
+            }
+            previous = Some(work);
+            assert!(
+                check(&state, &parent, &spec).is_none(),
+                "alias stays in its arm"
+            );
+            assert!(
+                check(&state, &arm, &SpecProposition::Defined(load.clone())).is_none(),
+                "logical value evidence does not authorize a C read"
+            );
+            for (offset, overwrite) in [
+                (0, CValue::UInt64(Bitvector32Term::UInt64Constant(7))),
+                (4, int32(7)),
+            ] {
+                let address = owner.offset_by_bytes(offset);
+                let changed = memory
+                    .without_possible_aliasing_cells(
+                        &address,
+                        overwrite.byte_width(),
+                        arm.assumptions(),
+                    )
+                    .store(address, overwrite);
+                assert!(
+                    check(&state.clone().with_memory(changed), &arm, &spec).is_none(),
+                    "a full or partial overwrite invalidates the old value"
+                );
+            }
+        }
+    }
+
     #[test]
     fn interface_logical_read_does_not_establish_validity() {
         use crate::kernel::{CPointerValue, SpecMemory};
@@ -14237,7 +14346,7 @@ mod tests {
             operator: CComparisonOperator::Equal,
             right: load.clone(),
         };
-        let path = interface_spec_paths(&spec, &state, &state)
+        let path = interface_spec_paths(&spec, &state, &state, &PureFactContext::new())
             .unwrap()
             .remove(0);
         assert!(path.facts.is_empty());
@@ -14564,7 +14673,7 @@ mod tests {
             operator: CComparisonOperator::Equal,
             right: SpecExpression::CExpression(CExpression::Variable("x".to_string())),
         };
-        let checked_fact = interface_spec_paths(&spec, &state, &state)
+        let checked_fact = interface_spec_paths(&spec, &state, &state, &PureFactContext::new())
             .expect("the simple interface should lower")
             .remove(0)
             .proposition;
