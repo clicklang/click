@@ -353,6 +353,8 @@ struct LogicalPointerReads {
     // Producer-retained read atoms used inside selected address expressions.
     // A matching shape without this metadata is never a load definition.
     offset_definitions: crate::persistent::PersistentMap<(PointerBlock, Variable, i64), Pointer>,
+    // Offset-only goals have no block key. Conflicting definitions stay ambiguous.
+    offset_read_values: crate::persistent::PersistentMap<(Variable, i64), Option<Pointer>>,
     generation: u64,
 }
 
@@ -416,6 +418,29 @@ pub(in crate::kernel) fn logical_pointer_read_term(value: &Pointer) -> Option<Bi
         Box::new(load.defining_address),
         LoadKind::Bits32,
     ))
+}
+
+/// Recover only the exact offset of a producer-registered typed read.
+/// An arithmetically similar term or a different pointee stride is not a definition.
+pub(in crate::kernel) fn logical_pointer_read_for_offset(
+    offset: &PointerOffsetTerm,
+) -> Option<Pointer> {
+    let PointerOffsetTerm::Int32Scaled { value, byte_width } = offset else {
+        return None;
+    };
+    let Bitvector32Term::Variable(variable) = value.as_ref() else {
+        return None;
+    };
+    LOGICAL_POINTER_READS.with(|reads| {
+        reads
+            .borrow()
+            .lock()
+            .expect("logical pointer reads")
+            .offset_read_values
+            .get(&(*variable, *byte_width))
+            .cloned()
+            .flatten()
+    })
 }
 
 impl Default for EqualityGraph {
@@ -552,6 +577,20 @@ impl EqualityGraph {
             reads
                 .offset_definitions
                 .insert((value.block.clone(), *variable, *byte_width), value.clone());
+            let offset_key = (*variable, *byte_width);
+            let offset_value = match reads.offset_read_values.get(&offset_key) {
+                None => Some(value.clone()),
+                Some(Some(existing))
+                    if reads
+                        .definitions
+                        .get(existing)
+                        .is_some_and(|(definition, _)| definition == &application) =>
+                {
+                    Some(existing.clone())
+                }
+                _ => None,
+            };
+            reads.offset_read_values.insert(offset_key, offset_value);
         }
         reads.definitions = reads
             .definitions

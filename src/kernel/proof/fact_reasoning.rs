@@ -266,6 +266,34 @@ pub(crate) fn normalize_using_conditions(
             return Ok(());
         }
     }
+    if let Some((ConditionTerm::PointerEqual(left, right), true)) =
+        crate::kernel::spec::proposition_as_single_condition(goal)
+    {
+        let mut selected = PureFactContext::new();
+        for (condition, value) in &conditions {
+            crate::instrumentation::record_deterministic_work(1);
+            selected = selected.assume_condition(condition.clone(), *value);
+        }
+        if crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+            &left, &right, &selected,
+        ) {
+            return Ok(());
+        }
+    }
+    if let Some((ConditionTerm::PointerOffsetEqual(left, right), true)) =
+        crate::kernel::spec::proposition_as_single_condition(goal)
+    {
+        let mut selected = PureFactContext::new();
+        for (condition, value) in &conditions {
+            crate::instrumentation::record_deterministic_work(1);
+            selected = selected.assume_condition(condition.clone(), *value);
+        }
+        if crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
+            &left, &right, &selected,
+        ) {
+            return Ok(());
+        }
+    }
     let reduced = super::term_rewrite::TermRewrite::for_conditions_with_graph(
         &conditions,
         &facts.assumptions().equality_graph,

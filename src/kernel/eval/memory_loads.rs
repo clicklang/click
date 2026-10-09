@@ -5931,4 +5931,351 @@ mod tests {
         }
         assert!(samples[2] <= samples[0] * 4 + 32, "{samples:?}");
     }
+
+    /// Explicit normalization checks a typed full-width pointer read and its
+    /// cited value relation; offsets alone and stale/partial stores do not suffice.
+    #[test]
+    fn normalize_recorded_pointer_values_checks_selected_facts_and_width() {
+        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(99_100));
+        let stored = Pointer::symbolic(Variable(99_101));
+        let wrong = Pointer::symbolic(Variable(99_102));
+        let empty = PureFactContext::new();
+        let equality = |left: &Pointer, right: &Pointer| {
+            Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                true,
+            )
+        };
+        let memory = CMemory::new().store(
+            address.clone(),
+            CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+        );
+        let read = |memory: CMemory, address: &Pointer, variable, width| {
+            record_load_access_width(&memory, address, width);
+            let value = Pointer::symbolic(Variable(variable));
+            empty.register_pointer_read(&value, &intern_c_memory(memory), address);
+            value
+        };
+        let value = read(memory.clone(), &address, 99_103, 8);
+        let premise = equality(&stored, &Pointer::null());
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&premise));
+        for goal in [
+            equality(&value, &Pointer::null()),
+            equality(&Pointer::null(), &value),
+        ] {
+            assert!(
+                normalize_using_conditions(&goal, std::slice::from_ref(&premise), &facts).is_ok()
+            );
+            assert!(
+                normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err()
+            );
+        }
+        assert!(
+            normalize_using_conditions(
+                &equality(&value, &wrong),
+                std::slice::from_ref(&premise),
+                &facts
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_using_conditions(
+                &equality(&value.offset_by_bytes(4), &Pointer::null()),
+                std::slice::from_ref(&premise),
+                &facts
+            )
+            .is_err()
+        );
+        let changed = memory
+            .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &empty)
+            .store(
+                address.offset_by_bytes(4),
+                CValue::Int32(Bitvector32Term::Constant(0)),
+            );
+        let changed = read(changed, &address, 99_104, 8);
+        assert!(
+            normalize_using_conditions(
+                &equality(&changed, &Pointer::null()),
+                std::slice::from_ref(&premise),
+                &facts
+            )
+            .is_err()
+        );
+        let narrow_address = Pointer::symbolic(Variable(99_105));
+        let narrow = read(
+            CMemory::new().store(
+                narrow_address.clone(),
+                CValue::typed_pointer(stored, CType::Int32Pointer),
+            ),
+            &narrow_address,
+            99_106,
+            4,
+        );
+        assert!(
+            normalize_using_conditions(
+                &equality(&narrow, &Pointer::null()),
+                std::slice::from_ref(&premise),
+                &facts
+            )
+            .is_err()
+        );
+        let scalar_address = Pointer::symbolic(Variable(99_107));
+        let scalar = read(
+            CMemory::new().store(
+                scalar_address.clone(),
+                CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+            ),
+            &scalar_address,
+            99_108,
+            8,
+        );
+        assert!(
+            normalize_using_conditions(
+                &equality(&scalar, &Pointer::null()),
+                &[],
+                &ProofFacts::from_ordered(&[])
+            )
+            .is_err()
+        );
+    }
+
+    /// The selected read does not scan unrelated cached cells, and a failed
+    /// history search stops at a fixed number of edges as history grows.
+    #[test]
+    fn recorded_pointer_normalization_has_bounded_history_work() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer {
+            block: "bounded-pointer-normalization".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let stored = Pointer::symbolic(Variable(99_120));
+        let assumptions = PureFactContext::new();
+        let mut known_work = None;
+        let mut missing_work = None;
+        let mut offset_work = None;
+        for count in [64, 256, 1024] {
+            let mut memory = CMemory::new().with_block("bounded-pointer-normalization", 16384);
+            for index in 1..=count {
+                memory = memory.store(
+                    address.offset_by_bytes(index * 8),
+                    CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(index))),
+                );
+            }
+            let read = Pointer::symbolic(Variable(99_200 + u64::from(count)));
+            record_load_access_width(&memory, &address, 8);
+            assumptions.register_pointer_read(&read, &intern_c_memory(memory.clone()), &address);
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+                    &read,
+                    &stored,
+                    &assumptions,
+                )
+            });
+            assert!(!equal);
+            if let Some(previous) = missing_work {
+                assert_eq!(work, previous, "count={count}");
+            }
+            missing_work = Some(work);
+            let memory = memory.store(
+                address.clone(),
+                CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+            );
+            let read = Pointer::loaded(
+                PointerBlock::ExternalArgument,
+                Bitvector32Term::Variable(Variable(101_000 + u64::from(count))),
+                4,
+            );
+            record_load_access_width(&memory, &address, 8);
+            let memory = intern_c_memory(memory);
+            assumptions.register_pointer_read(&read, &memory, &address);
+            for index in 0..count {
+                let unrelated = Pointer::loaded(
+                    PointerBlock::ExternalArgument,
+                    Bitvector32Term::Variable(Variable(
+                        120_000 + u64::from(count) * 2048 + u64::from(index),
+                    )),
+                    4,
+                );
+                assumptions.register_pointer_read(&unrelated, &memory, &address);
+            }
+            let (offset_equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::memory_provenance::pointer_offset_read_has_recorded_value(
+                    &read.offset,
+                    &stored.offset,
+                    &assumptions,
+                )
+            });
+            assert!(offset_equal);
+            if let Some(previous) = offset_work {
+                assert_eq!(work, previous, "count={count}");
+            }
+            offset_work = Some(work);
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::memory_provenance::pointer_read_has_recorded_value(
+                    &read,
+                    &stored,
+                    &assumptions,
+                )
+            });
+            assert!(equal);
+            if let Some(previous) = known_work {
+                assert_eq!(work, previous, "count={count}");
+            }
+            known_work = Some(work);
+        }
+    }
+    /// Same-block pointer equality is lowered to offset equality. It still
+    /// needs an exact typed read, including its stride and unambiguous origin.
+    #[test]
+    fn normalize_recorded_pointer_offsets_checks_definition_and_stride() {
+        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
+        let _session = crate::kernel::VerificationSession::enter();
+        let context = PureFactContext::new();
+        let facts = ProofFacts::from_ordered(&[]);
+        let address = Pointer::symbolic(Variable(103_001));
+        let stored = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(103_002)),
+            4,
+        );
+        let read = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(103_003)),
+            4,
+        );
+        let memory = CMemory::new().store(
+            address.clone(),
+            CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+        );
+        record_load_access_width(&memory, &address, 8);
+        context.register_pointer_read(&read, &intern_c_memory(memory.clone()), &address);
+        let equality = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
+            Proposition::ConditionIs(
+                ConditionTerm::pointer_offset_equal(left.clone(), right.clone()),
+                true,
+            )
+        };
+        for goal in [
+            equality(&read.offset, &stored.offset),
+            equality(&stored.offset, &read.offset),
+        ] {
+            assert!(normalize_using_conditions(&goal, &[], &facts).is_ok());
+        }
+        let wrong_stride = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(103_003)),
+            8,
+        );
+        assert!(
+            normalize_using_conditions(
+                &equality(&wrong_stride.offset, &stored.offset),
+                &[],
+                &facts
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_using_conditions(
+                &equality(&read.offset_by_bytes(4).offset, &stored.offset),
+                &[],
+                &facts
+            )
+            .is_err()
+        );
+        let wrong_value = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(103_004)),
+            4,
+        );
+        assert!(
+            normalize_using_conditions(&equality(&read.offset, &wrong_value.offset), &[], &facts)
+                .is_err()
+        );
+        let partial = memory
+            .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &context)
+            .store(
+                address.offset_by_bytes(4),
+                CValue::Int32(Bitvector32Term::Constant(0)),
+            );
+        let changed = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(103_005)),
+            4,
+        );
+        record_load_access_width(&partial, &address, 8);
+        context.register_pointer_read(&changed, &intern_c_memory(partial), &address);
+        assert!(
+            normalize_using_conditions(&equality(&changed.offset, &stored.offset), &[], &facts)
+                .is_err()
+        );
+        // The same offset shape registered in a different block must not let
+        // the last registration choose between two incompatible definitions.
+        let conflict = Pointer {
+            block: "conflicting-offset-origin".into(),
+            offset: read.offset.clone(),
+        };
+        let conflicting_memory = CMemory::new().store(
+            address.clone(),
+            CValue::typed_pointer(wrong_value, CType::Int32Pointer),
+        );
+        record_load_access_width(&conflicting_memory, &address, 8);
+        context.register_pointer_read(&conflict, &intern_c_memory(conflicting_memory), &address);
+        assert!(
+            crate::kernel::equality_graph::logical_pointer_read_for_offset(&read.offset).is_none()
+        );
+        assert!(
+            normalize_using_conditions(&equality(&read.offset, &stored.offset), &[], &facts)
+                .is_err()
+        );
+    }
+    /// Canonical read snapshots retain an exact projection edge back to the
+    /// execution source. The selected alias is still required to find its store.
+    #[test]
+    fn normalize_recorded_pointer_value_follows_exact_projection_source() {
+        use crate::kernel::proof::ProofFacts;
+        use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
+        let _session = crate::kernel::VerificationSession::enter();
+        let context = PureFactContext::new();
+        let address = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(104_001)),
+            4,
+        );
+        let written = Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(104_002)),
+            4,
+        );
+        let stored = Pointer::symbolic(Variable(104_003));
+        let source = CMemory::new()
+            .with_block_without_derivation("local:projection", 4)
+            .store(
+                written.clone(),
+                CValue::typed_pointer(stored.clone(), CType::Int32Pointer),
+            );
+        record_load_access_width(&source, &address, 8);
+        let source = intern_c_memory(source);
+        let original = Bitvector32Term::MemoryLoad(
+            source.clone(),
+            Box::new(address.clone()),
+            LoadKind::Bits32,
+        );
+        let projected = crate::kernel::memory_provenance::canonicalize_atomic_loads_deep(&original);
+        let Bitvector32Term::MemoryLoad(projected, _, _) = projected else {
+            panic!("an unresolved aliased read must remain a load");
+        };
+        assert_ne!(source, projected);
+        record_load_access_width(&projected, &address, 8);
+        let read = Pointer::symbolic(Variable(104_004));
+        context.register_pointer_read(&read, &projected, &address);
+        let alias = Proposition::ConditionIs(ConditionTerm::pointer_equal(address, written), true);
+        let goal = Proposition::ConditionIs(ConditionTerm::pointer_equal(read, stored), true);
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&alias));
+        assert!(normalize_using_conditions(&goal, std::slice::from_ref(&alias), &facts).is_ok());
+        assert!(normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err());
+    }
 }
