@@ -3455,6 +3455,17 @@ impl PureFactContext {
             })
     }
 
+    /// Re-express one selected address using checked graph equality to a
+    /// supplied base. This proposes a spelling, not separation authority;
+    /// consumers recheck the full pointer equality and complete byte ranges.
+    pub(in crate::kernel) fn pointer_at_known_base(
+        &self,
+        pointer: &Pointer,
+        base: &Pointer,
+    ) -> Option<Pointer> {
+        self.equality_graph.pointer_at_base(pointer, base)
+    }
+
     /// The pointers an exact fact proves equal to this one, in the index's
     /// own order. One hop: an alias of an alias is not reported, so the
     /// answer is bounded by the equalities stated about this pointer and no

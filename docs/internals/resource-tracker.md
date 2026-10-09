@@ -204,7 +204,7 @@ established.
 
 | Recorded step | A cell | A block, as an array argument | A stated footprint |
 | --- | --- | --- | --- |
-| `Store` | separate on proven-distinct blocks, a common-base offset inequality, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition | separate **only** on `PointerBlock::proven_distinct` | separate when the written bytes miss every range |
+| `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition | separate **only** on `PointerBlock::proven_distinct` | separate when the written bytes miss every range |
 | `BlockDeclared` | separate under the extended-bridging gate: it writes nothing | separate when the declared object is proven distinct: it has its own `blocks` key, so this block's extent is the entry it was | separate: it writes nothing |
 | `HeapAllocationPending` | separate under the extended-bridging gate | separate: a request with no address yet records nothing a read of a block consults | separate: it writes nothing |
 | `ContractAllocationClaimsChanged` | separate under the extended-bridging gate | **stops** | separate: it writes nothing |

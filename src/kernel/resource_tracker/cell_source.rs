@@ -88,6 +88,11 @@ pub(crate) struct MemoryDagHop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum MemoryDagHopJustification {
     StoreDistinctBlocks,
+    /// The store's full address equals `write` in this checking context;
+    /// exact byte geometry at that spelling misses the complete read.
+    StoreAliasedByteSeparation {
+        write: Pointer,
+    },
     StoreCommonBaseUnequalConstants {
         condition: ConditionTerm,
     },
@@ -321,6 +326,24 @@ impl MemoryDagHopJustification {
                 CMemoryDerivation::Store { pointer: write, .. }
                     if write.blocks_proven_distinct(pointer)
             ),
+            Self::StoreAliasedByteSeparation { write: aligned } => {
+                let CMemoryDerivation::Store {
+                    pointer: write,
+                    value,
+                    ..
+                } = derivation
+                else {
+                    return false;
+                };
+                !write.blocks_proven_distinct(aligned)
+                    && assumptions.pointers_known_equal(write, aligned)
+                    && crate::kernel::reasoning::exact_access_byte_overlap(
+                        aligned,
+                        value.byte_width(),
+                        pointer,
+                        bytes,
+                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+            }
             Self::StoreCommonBaseUnequalConstants { condition } => {
                 let CMemoryDerivation::Store { pointer: write, .. } = derivation else {
                     return false;

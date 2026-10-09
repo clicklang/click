@@ -133,7 +133,7 @@ pub(in crate::kernel) struct Evidence<'a> {
 ///
 /// | Recorded step | A cell | A block, as an array argument |
 /// | --- | --- | --- |
-/// | `Store` | separate on proven-distinct blocks, a common-base offset inequality, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition; affected when the written address is provably the loaded one | separate **only** on `PointerBlock::proven_distinct` |
+/// | `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition; affected when the written address is provably the loaded one | separate **only** on `PointerBlock::proven_distinct` |
 /// | `BlockDeclared` | separate: it writes nothing | separate when the declared object is proven distinct; affected for this block's own declaration |
 /// | `HeapAllocated` | separate when the block differs | separate when the fresh object is proven distinct; affected for this one |
 /// | `HeapAllocationPending` / `HeapAllocationFailed` | separate: it writes nothing | separate: no read of any block consults a pending request |
@@ -588,6 +588,16 @@ fn store_cell_effect(
                 MemoryDagAssumptionKind::StoreCommonBaseDistinctness,
             ))
         }
+    } else if let Some(aligned) = assumptions.pointer_at_known_base(write, &pointer.object_base())
+        && !write.blocks_proven_distinct(&aligned)
+        && assumptions.pointers_known_equal(write, &aligned)
+        && exact_access_byte_overlap(&aligned, value.byte_width(), pointer, bytes)
+            == Some(AccessByteOverlap::Separate)
+    {
+        // A transitive base alias can name two fields of the same node.
+        // Retain the selected spelling, then recheck equality and all bytes
+        // when consuming the hop; no alias/history search enters the proof.
+        hop(MemoryDagHopJustification::StoreAliasedByteSeparation { write: aligned })
     } else if explicit_dag_check_active()
         && let Some(justification) = typed_store_separated_ranges_evidence(
             write,
