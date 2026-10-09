@@ -828,7 +828,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             "{report}"
         );
         // The call's implication ensure and the resource composition of its
-        // frame, which authority semantics record at the call.
+        // frame, which the call records.
         assert!(
             report.contains("2 checked fact(s) with no exact Click spelling"),
             "{report}"

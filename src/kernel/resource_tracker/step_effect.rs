@@ -310,6 +310,7 @@ fn cell_effect(
                         && matches!(
                             hops[0],
                             MemoryDagHopJustification::SeededStoresDistinctBlock
+                                | MemoryDagHopJustification::SeededLoadsOfBase
                                 | MemoryDagHopJustification::SeededStoresMissedByShift
                         ) =>
                 {
@@ -708,9 +709,33 @@ pub(in crate::kernel) fn seeded_cell_effect(
         }
         crate::kernel::reasoning::memory_resolution::RunAccess::Scaled { .. }
         | crate::kernel::reasoning::memory_resolution::RunAccess::Other => {
-            seeded_cell_effect_store_by_store(step, run, pointer, bytes, evidence)
+            // Prove a cache-only edge unchanged before asking any separation
+            // search. Each of its loads already denotes the predecessor's
+            // bytes, even when this address cannot be placed in the run.
+            if seeded_loads_preserve_base(step) {
+                SeededCellEffect::Separate(vec![MemoryDagHopJustification::SeededLoadsOfBase])
+            } else {
+                seeded_cell_effect_store_by_store(step, run, pointer, bytes, evidence)
+            }
         }
     }
+}
+
+/// Loading each scalar from a byte-identical predecessor and caching that same
+/// value does not modify memory. Restrict this rule to byte-preserving scalar
+/// carriers: bool normalization and pointer representation have separate rules.
+/// The producer-maintained read identity also covers successive materializations
+/// from one source. Its comparison and run metadata do not depend on run size.
+pub(in crate::kernel) fn seeded_loads_preserve_base(step: &CMemoryDerivation) -> bool {
+    let CMemoryDerivation::CellsSeeded { base, run } = step else {
+        return false;
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    matches!(run.value_mode(), RunValueMode::Load)
+        && run.source().read_identity() == base.read_identity()
+        && run.element_type() != CType::Bool
+        && !run.element_type().is_pointer()
+        && run.element_width() == run.value_width()
 }
 
 /// The stores of a `CellsSeeded` edge asked one by one, newest first.

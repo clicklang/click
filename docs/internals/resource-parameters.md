@@ -295,8 +295,8 @@ not introduce implicit existential model packaging.
 The first implementation retains several explicit limits: declarations with
 resource parameters must have fields, reference parameters follow value
 parameters, matched resource bodies are not supported, and reference
-parameter types cannot themselves take resource arguments yet. The existing equivalence between a fieldless schema and a
-countable resource is preserved. Named-contract call transport still requires
+parameter types cannot themselves take resource arguments yet. Fields select a
+member's form, not whether its family can be counted. Named-contract call transport still requires
 owned input instances; transporting a reference to escrowed state requires a
 separate change to contract entry and refinement checking. Mutex permissions
 have not yet been connected to this mechanism.

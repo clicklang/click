@@ -4136,7 +4136,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
                 .map(|spec| substitute_bitvector_variable_in_resource_spec(spec, from, to))
                 .collect(),
             instance_schema: definition.instance_schema.clone(),
-            guarded_by: definition.guarded_by.clone(),
             thread_confined: definition.thread_confined,
             contains_mutex_authority: definition.contains_mutex_authority,
             authorized: definition.authorized,
@@ -4199,7 +4198,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
             }),
             recursive: definition.recursive,
             matched_recursive: definition.matched_recursive,
-            counted_population: definition.counted_population,
+            facts_read_counts: definition.facts_read_counts,
             facts_claim_liveness: definition.facts_claim_liveness,
             contains: definition
                 .contains
@@ -7888,7 +7887,6 @@ fn substitute_pointer_variable_in_c_function(
                 .map(|spec| substitute_pointer_variable_in_resource_spec(spec, from, to))
                 .collect(),
             instance_schema: definition.instance_schema.clone(),
-            guarded_by: definition.guarded_by.clone(),
             thread_confined: definition.thread_confined,
             contains_mutex_authority: definition.contains_mutex_authority,
             authorized: definition.authorized,
@@ -7951,7 +7949,7 @@ fn substitute_pointer_variable_in_c_function(
             }),
             recursive: definition.recursive,
             matched_recursive: definition.matched_recursive,
-            counted_population: definition.counted_population,
+            facts_read_counts: definition.facts_read_counts,
             facts_claim_liveness: definition.facts_claim_liveness,
             contains: definition
                 .contains

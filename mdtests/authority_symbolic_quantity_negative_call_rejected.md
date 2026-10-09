@@ -1,7 +1,7 @@
 # An implicit quantity guard remains an obligation at the caller
 
-This legacy call regression exercises the shared quantity guard directly;
-authority-mode calls with symbolic batches remain a separate unsupported
+This call regression exercises the shared quantity guard directly;
+calls with symbolic batches remain a separate unsupported
 transfer capability.
 
 ```c filename=negative_quantity.c

@@ -34,17 +34,6 @@ pub(in crate::surface) struct ClaimProofResult {
     pub(in crate::surface) theorems: Vec<VerifiedCTheorem>,
 }
 
-/// Counted-population nonemptiness is a post-transition fact.  Keep its
-/// obligation alive until result-aware post-execution tactics have had a
-/// chance to prove it; all other path obligations still use the earlier
-/// boundary check.
-fn post_execution_population_obligation(obligation: &ProofObligation) -> bool {
-    matches!(
-        obligation.context(),
-        Some("resource population remains nonempty" | "resource population body is active")
-    )
-}
-
 /// `call_depth` counts the `outcomes` arms already entered on this route; a
 /// nested `outcomes` reads the call edge at that depth.
 fn select_checked_post_execution_tactics<'a>(
@@ -1584,23 +1573,25 @@ fn close_claim_directly_from_outcome<'a>(
                                     arguments,
                                 )
                             };
-                            let unseparated =
+                            let unseparated = describe_read_address_mismatch(
+                                &kernel_left,
+                                &kernel_right,
+                                parameters,
+                                arguments,
+                            )
+                            .map(|mismatch| format!("; {mismatch}"))
+                            .or_else(|| {
                                 describe_unseparated_write(&kernel_left, parameters, arguments)
-                                    .or_else(|| {
-                                        describe_unseparated_write(
-                                            &kernel_right,
-                                            parameters,
-                                            arguments,
-                                        )
-                                    })
-                                    .or_else(|| {
-                                        model_field(&kernel_left, snapshot_role(left))
-                                            .or_else(|| {
-                                                model_field(&kernel_right, snapshot_role(right))
-                                            })
-                                            .map(|mismatch| format!("; {mismatch}"))
-                                    })
-                                    .unwrap_or_default();
+                            })
+                            .or_else(|| {
+                                describe_unseparated_write(&kernel_right, parameters, arguments)
+                            })
+                            .or_else(|| {
+                                model_field(&kernel_left, snapshot_role(left))
+                                    .or_else(|| model_field(&kernel_right, snapshot_role(right)))
+                                    .map(|mismatch| format!("; {mismatch}"))
+                            })
+                            .unwrap_or_default();
                             format!(
                                 "; left side evaluated to {rendered_left}, right side evaluated to {rendered_right}{unseparated}"
                             )
@@ -2104,9 +2095,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let mut missing = Vec::new();
                                 let mut refuted = Vec::new();
                                 for obligation in path.obligations() {
-                                    if post_execution_population_obligation(obligation) {
-                                        continue;
-                                    }
                                     let proposition = obligation.proposition();
                                     if exact_fact_is_available(proposition, &path_base_facts) {
                                         continue;
@@ -4620,29 +4608,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         "path closure and theorem assembly",
                     );
 
-                    let deferred_population_obligations = path
-                        .obligations()
-                        .iter()
-                        .filter(|obligation| post_execution_population_obligation(obligation))
-                        .filter(|obligation| {
-                            !exact_fact_is_available(obligation.proposition(), &path_requirements)
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    if !deferred_population_obligations.is_empty() {
-                        return Err(ClickError::new(format!(
-                            "execution proof failed for `{proof_label}` path {path_index}: {}",
-                            describe_missing_proof_obligations(
-                                &deferred_population_obligations,
-                                &path_requirements.to_vec(),
-                                pre_state.resources().facts(),
-                                parsed_function.parameters(),
-                                arguments,
-                                path.facts(),
-                            )
-                        )));
-                    }
-
                     // Closing pure claims with simple tactics does not itself
                     // perform the return-resource exchange. In particular a
                     // consuming contract may have no resource ensure whose
@@ -4734,7 +4699,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     .holder()
                                                     .cloned()
                                                     .map(Box::new),
-                                                hint: None,
                                             },
                                             parsed_function.parameters(),
                                             arguments,
@@ -4943,7 +4907,6 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                         }
                     }
-                    let authority_mode = matches!(outcome, CFunctionOutcome::Return { .. });
                     // Resource closers carry the same checked claim
                     // evidence, whether written as assumption or selected by
                     // simp. Validate their jointly returned units rather than
@@ -4964,12 +4927,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
                     let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if {
-                        let assumptions = &receipt_assumptions;
-                        if authority_mode {
-                            resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, assumptions)
-                        } else {
-                            state.resources().clone().without_facts(checked_returned_resources.facts(), assumptions).is_some()
-                        }
+                        resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, &receipt_assumptions)
                     });
                     checked_resource_transitions_by_path[path_index] = !deferred_resource_transition
                         && (resource_transition_applied

@@ -15,25 +15,19 @@ execution prefixes that never complete. Exact results are conditional on the
 relevant operations completing; they do not establish fairness, deadlock
 freedom, or termination of polling.
 
-## Dependency: authority migration first
+## Population semantics
 
-Complete [P1: Authority migration](authority-migration.md) before extending
-counted populations to shared workers or completing the exact counter result.
-That issue owns explicit `authority(...)`, consistent resource-instance and
-population semantics, migration of count-based examples, removal of
-`guarded_by`, and a mutex-protected shared-refcount acceptance example.
-
-This issue retains the concurrent-program milestones, runtime trust boundary,
-and synchronization obligations. Do not continue the superseded plan to infer
-shared-body access from a membership unit or extend local whole-population
-mutex custody as the long-term interface. Existing local proofs remain useful
-migration regressions, not evidence of a completed concurrent counting rule.
+The authority migration is complete. Populations use explicit `authority(...)`: a control
+owns the authority, a mutex protects the control, and workers follow the
+[worker authority protocol](../docs/internals/worker-authority-protocol.md).
+`examples/shared-refcount/` is the mutex-protected shared-refcount acceptance
+example, and `guarded_by` is retired. This issue states the remaining
+concurrency scope.
 
 The [contract and diagnostics record](../docs/internals/concurrency-contracts-and-diagnostics.md),
 [mutex contract design](../docs/internals/mutex-resource-contracts.md), and
 [resource-argument record](../docs/internals/resource-parameters.md) contain
-historical checkpoints. The authority issue takes precedence for population
-semantics and `guarded_by`; this issue states the remaining concurrency scope.
+historical checkpoints.
 
 ## Current state
 
@@ -70,14 +64,11 @@ GCC/glibc import verifies through the ordinary import path, including on
 macOS; that is an artifact and declaration-identity regression, not a native
 runtime guarantee.
 
-Local mutexes can now protect a memory-backed counted population through an
-ordinary quantity-bearing wrapper. The [held-helper test](../mdtests/population_mutex_helper_held.md)
+Local mutexes protect a population's control, which owns the counter and the
+authority. The [held-helper test](../mdtests/population_mutex_helper_held.md)
 verifies; the [unheld-helper test](../mdtests/population_mutex_helper_unheld.md)
-requires `owns mutex_guard(&p->mutex)`. Publication and release account for the
-complete population, and retained units do not grant body access while unlocked.
-These payloads cannot yet lend use authority or transfer units to workers.
-The authority migration replaces their special access rules before further
-shared-population observation or join work.
+requires `owns mutex_guard(&p->mutex)`. Members held outside the mutex grant no
+access to the counter while it is unlocked.
 
 ### Mutex model boundary
 
@@ -116,7 +107,7 @@ atomic access are semantic disciplines, not three new declaration keywords.
 | `mutex_use(mu)` | Permission to participate while lifetime is guaranteed | Keep; unary use does not expose a guessed payload |
 | `mutex_use(mu, counter_state(p))` | Use authority with an authenticated protected resource type | Keep the accepted shape; generalize only when a concrete ordinary-resource example needs it |
 | `mutex_guard(mu)` | Exclusive ownership of an acquisition | Keep |
-| `guarded_by p->mutex;` | Legacy mutex-address restriction, still implemented | Remove in the authority migration; preserve authenticated associations through initialization and ordinary transfer |
+| `guarded_by p->mutex;` | Retired; refused with a diagnostic | Associations come from initialization and ordinary transfer |
 | `held(mu)` | Checked fact about the current path's acquisition | Convenience predicate; never a substitute for owned guard authority |
 | `runtime "modeled-pthread";` | Explicit selection of the trusted runtime specification | Keep the assumption visible |
 
@@ -129,12 +120,11 @@ recovers protected state.
 Do not introduce angle-bracket resource parameters, a `protecting` modifier,
 a `uses` clause, or public acquisition/continuity identifiers. Existing
 algebraic type applications such as `List<int32>` are unrelated to this
-restriction. `authority(...)` is the selected proposed population interface in
-[the authority migration](authority-migration.md); it is not implemented yet.
-The old `count_authority`/`create_count` and sum-specific interfaces remain
-superseded proposals. The migration removes `guarded_by` rather than expanding
-its parser to more mutex-address forms. Preserve initialization association,
-owned-state checks, and stale-initialization rejection during removal.
+restriction. `authority(...)` is the population interface. The old
+`count_authority`/`create_count` and sum-specific interfaces remain superseded
+proposals, and `guarded_by` is retired rather than extended to more
+mutex-address forms. Initialization association, owned-state checks, and
+stale-initialization rejection remain required.
 
 ## Relationship to Iris
 

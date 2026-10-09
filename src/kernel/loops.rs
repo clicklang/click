@@ -438,11 +438,11 @@ fn is_modeled_pthread_call(function_name: &str, environment: &CExecutionEnvironm
         })
 }
 
-fn authority_mode_call_refusal_path() -> CStatementExecutionPath {
+fn authority_call_refusal_path() -> CStatementExecutionPath {
     CStatementExecutionPath {
         loop_invariant_correspondence: Default::default(),
         outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
-            super::functions::AUTHORITY_MODE_ASSUMED_CALL_REFUSAL.to_string(),
+            super::functions::AUTHORITY_ASSUMED_CALL_REFUSAL.to_string(),
         )),
         facts: Vec::new().into(),
         obligations: Vec::new(),
@@ -477,12 +477,12 @@ pub(super) fn execute_c_call_assign_paths(
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
-                    || super::functions::authority_mode_preserves_assumed_resource_contract(
+                    || super::functions::authority_preserves_assumed_resource_contract(
                         rule.function.contract_interface(),
                     )
             })
     {
-        return Ok(vec![authority_mode_call_refusal_path()]);
+        return Ok(vec![authority_call_refusal_path()]);
     }
     if environment
         .modeled_pthread_binding
@@ -830,12 +830,12 @@ pub(super) fn execute_c_call_paths(
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
                 rule.is_scoped_unselected()
-                    || super::functions::authority_mode_preserves_assumed_resource_contract(
+                    || super::functions::authority_preserves_assumed_resource_contract(
                         rule.function.contract_interface(),
                     )
             })
     {
-        return Ok(vec![authority_mode_call_refusal_path()]);
+        return Ok(vec![authority_call_refusal_path()]);
     }
     if environment
         .modeled_pthread_binding
@@ -3711,9 +3711,18 @@ fn abstract_loop_exit_states(
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<(CState, Vec<LoopExitRestatement>), String> {
+    // This join already restates and exports each exit's facts. Index that
+    // explicit input once per exit, shared by all binder equality checks;
+    // never rebuild the path context for each binder or argument.
+    let contexts = loop_exit_argument_contexts(exit_facts, assumptions, !binders.is_empty());
     let mut rebound = Vec::with_capacity(states.len());
     for (index, state) in states.iter().enumerate() {
-        match c_loop_state_with_loop_binders_rebound(&head.top, state, binders, assumptions) {
+        match c_loop_state_with_loop_binders_rebound(
+            &head.top,
+            state,
+            binders,
+            contexts.get(index).unwrap_or(assumptions),
+        ) {
             Ok(state) => rebound.push(state),
             Err(failure) => {
                 return Err(format!("at loop exit {}, {failure}", index + 1));
@@ -3724,17 +3733,18 @@ fn abstract_loop_exit_states(
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
     let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
-    abstract_loop_exit_binders(
+    let locals = abstract_loop_exit_locals(
         &mut successor,
         &rebound,
-        binders,
         &mut restatements,
         variables,
         budget,
     )?;
-    let locals = abstract_loop_exit_locals(
+    abstract_loop_exit_binders(
         &mut successor,
         &rebound,
+        binders,
+        &contexts,
         &mut restatements,
         variables,
         budget,
@@ -3780,6 +3790,23 @@ fn abstract_loop_exit_states(
         return Err(mismatch);
     }
     Ok((successor, restatements))
+}
+
+fn loop_exit_argument_contexts(
+    facts: &[&ExecutionFacts],
+    assumptions: &PureFactContext,
+    has_binders: bool,
+) -> Vec<PureFactContext> {
+    if !has_binders {
+        return Vec::new();
+    }
+    facts
+        .iter()
+        .map(|facts| {
+            crate::instrumentation::record_deterministic_work(facts.len());
+            assumptions_with_path_context(assumptions, *facts, &[])
+        })
+        .collect()
 }
 
 /// Fill only changed concrete cache entries whose exact typed value every
@@ -4301,6 +4328,7 @@ fn abstract_loop_exit_binders(
     successor: &mut CState,
     exits: &[CState],
     binders: &[CLoopBinder],
+    contexts: &[PureFactContext],
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -4328,9 +4356,12 @@ fn abstract_loop_exit_binders(
                 binder.name
             ));
         }
+        let local_arguments =
+            loop_exit_local_arguments(successor, exits, binder, &instances, contexts);
         let arguments = joined_resource_values(
             &base.arguments,
             instances.iter().map(|instance| &instance.arguments),
+            &local_arguments,
             restatements,
             variables,
             budget,
@@ -4338,6 +4369,7 @@ fn abstract_loop_exit_binders(
         let fields = joined_resource_values(
             &base.fields,
             instances.iter().map(|instance| &instance.fields),
+            &[],
             restatements,
             variables,
             budget,
@@ -4374,12 +4406,229 @@ fn abstract_loop_exit_binders(
     Ok(())
 }
 
+/// A declared current-local argument must name that same local after the
+/// join. Select it by its declaration, then check the correspondence on every
+/// exit; equal-looking values in unrelated components are never paired.
+/// Locals have already been joined, so a changed cursor supplies its one
+/// fresh value to every binder that explicitly tracks it.
+fn loop_exit_local_arguments(
+    successor: &CState,
+    exits: &[CState],
+    binder: &CLoopBinder,
+    instances: &[ResourceInstance],
+    contexts: &[PureFactContext],
+) -> Vec<Option<AlgebraicValue>> {
+    let Some(spec) = binder
+        .spec
+        .as_ref()
+        .and_then(CResourceSpec::instance_resource_spec)
+    else {
+        return Vec::new();
+    };
+    let CResourceTerm::Composite {
+        arguments,
+        argument_snapshots,
+        ..
+    } = spec.term()
+    else {
+        return Vec::new();
+    };
+    arguments
+        .iter()
+        .enumerate()
+        .map(|(position, expression)| {
+            crate::instrumentation::record_deterministic_work(1);
+            if argument_snapshots.get(position) != Some(&CResourceSnapshot::Current) {
+                return None;
+            }
+            let CExpression::Variable(name) = expression else {
+                return None;
+            };
+            let fresh = successor.locals().get(name)?;
+            for ((exit, instance), context) in exits.iter().zip(instances).zip(contexts) {
+                crate::instrumentation::record_deterministic_work(1);
+                let held = exit.locals().get(name)?;
+                let argument = instance.arguments().get(position)?;
+                if !crate::kernel::resource_arguments_proven_equal(
+                    argument,
+                    &AlgebraicValue::C(held.clone()),
+                    context,
+                ) {
+                    return None;
+                }
+            }
+            Some(AlgebraicValue::C(fresh.clone()))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod exit_local_argument_tests {
+    use super::*;
+
+    fn fixture(snapshot: CResourceSnapshot) -> (CLoopBinder, Vec<ResourceInstance>) {
+        let schema =
+            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let spec = CResourceSpec::new(
+            CResourceTerm::Instance {
+                identity: Variable(99),
+                binder: "c".into(),
+                schema: schema.clone(),
+                resource: Box::new(CResourceTerm::Composite {
+                    name: "cursor".into(),
+                    arguments: vec![c_variable("cur")],
+                    argument_snapshots: vec![snapshot],
+                    parameter_types: vec![CType::Int32],
+                }),
+            },
+            CResourceAccessMode::Own,
+            CResourceQuantity::One,
+            CResourceTransferRole::Consume,
+            CResourceSnapshot::Current,
+        )
+        .unwrap();
+        let binder = CLoopBinder {
+            identity: Variable(99),
+            name: "c".into(),
+            spec: Some(spec),
+        };
+        let instances = [1, 2]
+            .into_iter()
+            .map(|value| {
+                ResourceInstance::new(
+                    Variable(99),
+                    "cursor".into(),
+                    vec![AlgebraicValue::C(int32(value))].into(),
+                    schema.clone(),
+                    vec![AlgebraicValue::C(int32(value))].into(),
+                )
+                .unwrap()
+            })
+            .collect();
+        (binder, instances)
+    }
+
+    // A declared argument selects one local; growing the unrelated environment
+    // must not introduce a scan or a search for equal-looking value vectors.
+    #[test]
+    fn exit_local_argument_lookup_skips_unrelated_locals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (binder, instances) = fixture(CResourceSnapshot::Current);
+        let mut costs = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut ambient = CState::new();
+            for index in 0..size {
+                ambient = ambient.with_local(format!("other{index}"), int32(index));
+            }
+            let exits = [
+                ambient.clone().with_local("cur", int32(1)),
+                ambient.clone().with_local("cur", int32(2)),
+            ];
+            let successor = ambient.with_local("cur", int32(3));
+            let (arguments, work) = crate::instrumentation::measure_deterministic_work(|| {
+                loop_exit_local_arguments(
+                    &successor,
+                    &exits,
+                    &binder,
+                    &instances,
+                    &[PureFactContext::new(), PureFactContext::new()],
+                )
+            });
+            assert_eq!(arguments, vec![Some(AlgebraicValue::C(int32(3)))]);
+            costs.push(work);
+        }
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] * 2),
+            "{costs:?}"
+        );
+    }
+
+    #[test]
+    fn exit_local_argument_context_indexing_is_linear_and_shared() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (binder, instances) = fixture(CResourceSnapshot::Current);
+        let exits = [
+            CState::new().with_local("cur", int32(1)),
+            CState::new().with_local("cur", int32(2)),
+        ];
+        let successor = CState::new().with_local("cur", int32(3));
+        for size in [16, 64, 256, 1024] {
+            let facts = (0..size)
+                .map(|index| {
+                    ExecutionPureFact::new(Proposition::ConditionIs(
+                        ConditionTerm::pointer_equal(
+                            Pointer::symbolic(Variable(10000 + index)),
+                            Pointer::symbolic(Variable(20000 + index)),
+                        ),
+                        true,
+                    ))
+                })
+                .collect::<ExecutionFacts>();
+            let (contexts, work) = crate::instrumentation::measure_deterministic_work(|| {
+                loop_exit_argument_contexts(&[&facts, &facts], &PureFactContext::new(), true)
+            });
+            assert!(work > 0 && work <= size as usize * 200, "{size}: {work}");
+            let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+            for _ in 0..size {
+                assert_eq!(
+                    loop_exit_local_arguments(&successor, &exits, &binder, &instances, &contexts),
+                    vec![Some(AlgebraicValue::C(int32(3)))]
+                );
+            }
+            assert_eq!(
+                crate::kernel::reasoning::path_facts::context_rebuild_entries(),
+                before
+            );
+        }
+    }
+
+    #[test]
+    fn exit_local_argument_requires_current_snapshot_and_every_exit() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let exits = [
+            CState::new().with_local("cur", int32(1)),
+            CState::new().with_local("cur", int32(2)),
+        ];
+        let successor = CState::new().with_local("cur", int32(3));
+        for snapshot in [CResourceSnapshot::Entry, CResourceSnapshot::Post] {
+            let (binder, instances) = fixture(snapshot);
+            assert_eq!(
+                loop_exit_local_arguments(
+                    &successor,
+                    &exits,
+                    &binder,
+                    &instances,
+                    &[PureFactContext::new(), PureFactContext::new()]
+                ),
+                vec![None]
+            );
+        }
+        let (binder, instances) = fixture(CResourceSnapshot::Current);
+        let mismatched = [
+            exits[0].clone(),
+            exits[1].clone().with_local("cur", int32(4)),
+        ];
+        assert_eq!(
+            loop_exit_local_arguments(
+                &successor,
+                &mismatched,
+                &binder,
+                &instances,
+                &[PureFactContext::new(), PureFactContext::new()]
+            ),
+            vec![None]
+        );
+    }
+}
+
 /// One resource argument or field vector, position by position: the common
 /// value where every exit agrees, a fresh name plus one equation per exit
 /// where they do not.
 fn joined_resource_values<'a>(
     base: &ResourceArguments,
     exits: impl Iterator<Item = &'a ResourceArguments> + Clone,
+    local_arguments: &[Option<AlgebraicValue>],
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -4393,10 +4642,14 @@ fn joined_resource_values<'a>(
             };
             held.push(value.clone());
         }
-        if held.iter().all(|other| other == value) {
+        let local = local_arguments.get(position).and_then(Option::as_ref);
+        if held.iter().all(|other| other == value) && local.is_none_or(|local| local == value) {
             continue;
         }
-        let fresh = fresh_resource_value_like(value, variables, budget)?;
+        let fresh = match local {
+            Some(local) => local.clone(),
+            None => fresh_resource_value_like(value, variables, budget)?,
+        };
         for (restatement, held) in restatements.iter_mut().zip(held) {
             restatement.pin_resource_value(&fresh, &held);
         }
@@ -7227,7 +7480,10 @@ fn loop_declared_and_withheld_resources(
     };
     let mut withheld = entry_state.resources().clone();
     for fact in declared.facts() {
-        let Some(remaining) = withheld.clone().without_fact(fact, assumptions) else {
+        let Some(remaining) = withheld
+            .clone()
+            .without_fact_incrementally(fact, assumptions)
+        else {
             return Ok(Err(CLoopResourceFailure::Unheld {
                 fact: fact.clone(),
                 state: entry_state.clone(),
@@ -9158,6 +9414,90 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
 #[cfg(test)]
 mod v10_tests {
     use super::*;
+
+    #[test]
+    fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Pointer::symbolic(Variable(916_100));
+        let alias = Pointer::symbolic(Variable(916_101));
+        let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            source.clone(),
+            0u32.into(),
+            8u32.into(),
+            1,
+        ));
+        let target = Pointer {
+            block: source.block.clone(),
+            offset: PointerOffsetTerm::Constant(2),
+        };
+        let assumptions = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(alias.clone(), target), true);
+        let spec = CResourceSpec::new(
+            CResourceTerm::Memory(
+                CMemorySegment::new(c_variable("cursor"), c_int32_literal(0), c_int32_literal(4))
+                    .with_element_width(1),
+            ),
+            CResourceAccessMode::View,
+            CResourceQuantity::One,
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Entry,
+        )
+        .unwrap();
+        let mut costs = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut resources = ResourceContext::new_with_equalities(&assumptions)
+                .unchecked_with_fact(owner.clone());
+            for index in 0..size {
+                resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                    CMemoryRange::new_with_element_width(
+                        source.clone(),
+                        ((index + 1) * 16).into(),
+                        ((index + 1) * 16 + 8).into(),
+                        1,
+                    ),
+                ));
+            }
+            resources.synchronize_memory_equalities(&assumptions);
+            let state = CState::new()
+                .with_local(
+                    "cursor",
+                    CValue::typed_pointer(alias.clone(), CType::UInt8Pointer),
+                )
+                .with_resource_context(resources);
+            let (partition, work) = crate::instrumentation::measure_deterministic_work(|| {
+                loop_declared_and_withheld_resources(
+                    &state,
+                    std::slice::from_ref(&spec),
+                    &assumptions,
+                    &mut ExecutionBudget::default(),
+                )
+                .unwrap()
+                .unwrap()
+            });
+            assert!(partition.1.contains_exact_representation(&owner));
+            assert!(partition.0.satisfies_fact(
+                &CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                    alias.clone(),
+                    0u32.into(),
+                    4u32.into(),
+                    1
+                ),),
+                &assumptions
+            ));
+            assert!(
+                loop_declared_and_withheld_resources(
+                    &state,
+                    std::slice::from_ref(&spec),
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::default()
+                )
+                .unwrap()
+                .is_err()
+            );
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|work| *work <= costs[0] * 2), "{costs:?}");
+    }
 
     fn memory_range(base: u32, end: u32) -> CMemoryRange {
         CMemoryRange::new(

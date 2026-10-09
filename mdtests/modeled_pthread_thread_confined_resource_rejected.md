@@ -1,7 +1,6 @@
 # A member lent to a worker exposes no shared accounting
 
-Under authority semantics a member is no longer thread confined: lending it to
-a worker is an ordinary transfer. The protected property is that a member alone
+A member is not thread confined: lending it to a worker is an ordinary transfer. The protected property is that a member alone
 cannot expose the population's accounting. The creator keeps the authority and
 the counter; the worker borrows only one member, so its claim about the count
 is refused because it lacks the authority.

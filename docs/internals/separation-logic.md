@@ -408,24 +408,30 @@ Abstract resources are exact-match owned capabilities:
 - returning the same resource adds one unit, and
 - one unit cannot satisfy a requirement for two.
 
-Resources with bodies add a definitional layer. One body belongs to the whole
-exact-argument population, regardless of its quantity:
+Resources with bodies add a definitional layer: each folded head owns its body.
 
-- `fold(resource)` initializes a population of one from one body.
-- `unfold(resource)` finalizes a population proved to contain one unit and
-  exposes its body.
-- `open(resource) { ... }` exposes the shared body without changing the
-  population and requires the complete body to be restored when the block
-  closes.
+- `fold(resource)` consumes the body's resources and pure facts and produces
+  the head.
+- `unfold(resource)` consumes the head and exposes its body.
+- `open(resource) { ... }` exposes the body without consuming the head and
+  requires the complete body to be restored when the block closes.
 - `observe(resource)` projects one view step without consuming the resource
   fact. It exposes immediate pure facts and viewed immediate contained resource
   facts, but not owned contained resource facts.
-- `count(resource(arguments))` observes the exact population quantity, while
-  `_` arguments sum all matching populations.
+
+Populations are separate. A family declared `authorized` has bodyless members
+governed by an exclusive `authority(R(..))` resource:
+
+- `fold(authority(R(..)))` establishes an empty population and
+  `unfold(authority(R(..)))` retires one whose count is zero.
+- `fold(R(..))` creates one member and `unfold(R(..))` destroys one, each
+  under the owned authority.
+- `count(R(arguments))` observes the exact population quantity under the
+  owned authority, while `_` arguments sum all matching populations.
 
 In the algebraic model, a composite resource is not a separate multiplicity
-kind. It is a declared resource whose facts have laws connecting its population
-to one body made from other resource facts and pure facts. Lending one exposes
+kind. It is a declared resource whose facts have laws connecting its head to
+one body made from other resource facts and pure facts. Lending one exposes
 its checked one-level frontier; a deeper child becomes readable only through a
 checked projection under the same loan.
 

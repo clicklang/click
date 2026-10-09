@@ -1033,18 +1033,6 @@ fn validate_resource_definition<'a>(
     let Some(composite_body) = definition.composite_body() else {
         return Ok(());
     };
-    if composite_body.guarded_by().is_some()
-        && (composite_body.matched.is_some()
-            || composite_body
-                .facts()
-                .iter()
-                .any(proposition_contains_resource_count))
-    {
-        return Err(ClickError::new(format!(
-            "resource `{}` must be exclusive and unmatched to use `guarded_by`",
-            definition.name()
-        )));
-    }
     if composite_body.matched.is_some() {
         for (_, _, arm) in resource_match_arm_scopes(
             definition,

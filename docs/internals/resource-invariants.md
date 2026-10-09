@@ -1,5 +1,15 @@
 # Resource invariants, counting, and synchronization
 
+**Status: superseded for populations.** This record's counted-population
+design, a body shared by all equal units and accessed implicitly, was replaced
+by explicit population authority: `authorized` families with bodyless members
+governed by `authority(...)`, whose controls state the population's facts. The
+[authority establishment review](authority-establishment-review.md) and the
+[worker authority protocol](worker-authority-protocol.md) describe the
+implemented model. The mutex material below still describes the
+protected-resource rules, except that a protected resource now comes only from
+its checked initialization.
+
 This record specifies the target semantics shared by counted populations and
 mutexes. It distinguishes the sequential implementation work from later
 concurrent extensions. It is not a claim that Click implements Iris or that

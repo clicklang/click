@@ -46,7 +46,12 @@ rules when their conditions are decided, and the cast back to a pointer
 records undecided ones as obligations, fails promptly on a refuted one, and
 additionally requires the tag proven zero, by a mask or by any other fact. A
 word whose tagged form is known only through a contract or resource equality,
-such as `node->word == address(next) + tag`, gets the same treatment.
+such as `node->word == address(next) + tag`, gets the same treatment. An exact
+address equation can also name the complete expression being cast, such as
+`(word & ~3) == address(next)`. The lookup still applies when `word` itself has
+no recorded address form (`mdtests/cast_masked_word_uses_exact_address.md`);
+clearing bits without that evidence gives no pointer origin
+(`mdtests/cast_masked_word_requires_pointer_origin.md`).
 
 Alignment is evidence, not a property of the pointee type. `aligned(p, n)`
 holds when the address of `p` is a multiple of `n`; Click derives it from a

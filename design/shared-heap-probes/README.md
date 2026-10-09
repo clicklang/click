@@ -1,8 +1,8 @@
 # Shared-parent ownership proof
 
 This source-backed probe for the P1
-[shared-heap-graph demo](../../issues/shared-heap-graph-demo.md) uses authority
-resource semantics, selected in `click.project.json`. Its
+[shared-heap-graph demo](../../issues/shared-heap-graph-demo.md) uses explicit
+population authority. Its
 [`shared_parent.c`](shared_parent.c) remains the frozen sequential C source.
 The sidecar [`shared_parent.click`](shared_parent.click) describes initialization,
 retain, branch-on-count release, parent attachment, payload reads, detachment,
@@ -96,6 +96,6 @@ The related negative fixtures still test missing references, a missing retain,
 a wrong child, an incorrect count after the first detach, missing initialization
 facts, and a leaked reference or allocation. Their C remains unchanged.
 
-Field-bearing population members, wildcard authority scopes, and concurrent
-control custody are later authority-migration checkpoints. This probe uses
-exact unary populations and sequential control ownership.
+This probe uses exact unary populations and sequential control ownership;
+field-bearing members, wildcard authority scopes, and mutex-held controls are
+supported elsewhere but not exercised here.

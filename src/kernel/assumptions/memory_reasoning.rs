@@ -2682,6 +2682,29 @@ impl PureFactContext {
         self.proves_resource_separate_inner(left, right)
     }
 
+    /// Project one selected separation from the live ownership partition.
+    /// Both operands must name different owned memory members; views and
+    /// two slices of the same member provide no such evidence. Member lookup
+    /// uses the context's resource index, without publishing the whole frame.
+    pub(crate) fn proves_held_resources_separate(
+        &self,
+        resources: &ResourceContext,
+        left: &CResource,
+        right: &CResource,
+    ) -> bool {
+        matches!((left, right), (CResource::Memory(_), CResource::Memory(_)))
+            && left != right
+            && !self.resource_separation_conflicts_with_equalities(left, right)
+            && resources
+                .exact_resource_facts(left)
+                .iter()
+                .any(CResourceFact::is_own)
+            && resources
+                .exact_resource_facts(right)
+                .iter()
+                .any(CResourceFact::is_own)
+    }
+
     fn proves_resource_separate_inner(&self, left: &CResource, right: &CResource) -> bool {
         if self.resource_separation_conflicts_with_equalities(left, right) {
             return false;

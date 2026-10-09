@@ -2461,13 +2461,13 @@ fn resource_field_schemas_are_typed_shared_and_non_countable() {
     ];
     let schema = ResourceFieldSchema::new(fields.clone()).unwrap();
     assert_eq!(schema.fields(), fields);
-    assert!(!schema.is_countable());
+    assert!(!schema.is_fieldless());
     let copy = schema.clone();
     assert!(std::ptr::eq(
         schema.fields().as_ptr(),
         copy.fields().as_ptr()
     ));
-    assert!(ResourceFieldSchema::new(vec![]).unwrap().is_countable());
+    assert!(ResourceFieldSchema::new(vec![]).unwrap().is_fieldless());
     assert!(ResourceFieldSchema::new(vec![fields[0].clone(), fields[0].clone()]).is_none());
     assert!(
         ResourceFieldSchema::new(vec![("".into(), ResourceFieldType::C(CType::Int32))]).is_none()
@@ -5076,7 +5076,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
 fn integer_resource_fields_require_mathematical_values() {
     let schema =
         ResourceFieldSchema::new(vec![("total".into(), ResourceFieldType::Integer)]).unwrap();
-    assert!(!schema.is_countable());
+    assert!(!schema.is_fieldless());
     let make = |value| {
         ResourceInstance::new(
             Variable(1),
@@ -5359,7 +5359,7 @@ fn unrelated_order_fact_context(size: usize) -> PureFactContext {
     assumptions
 }
 
-/// Package 3 regression. The quantity relations behind counted populations and
+/// Package 3 regression. The quantity relations behind populations and
 /// the resource algebra are decided by exact lookup and the retained atomic
 /// condition checker, so an ambient context of unrelated bounded variables must
 /// not change their work. The general prover this replaced scanned every
@@ -8366,4 +8366,104 @@ fn returned_resource_prefix_consumes_only_selected_padded_field_fragments() {
             "{samples:?}"
         );
     }
+}
+
+// Once a match supplies the constructor, opening its resource must not
+// reevaluate an expanding list of predicates about that same model.
+#[test]
+fn known_resource_constructor_skips_predicate_refutation_work() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = arm_selection_type(&["Empty"], "Filled");
+    let model = resource_index_variable(&ty, 850001);
+    let constructor = arm_selection_constructor(&ty, "Filled", vec![int32(7).into()]);
+    let schema = ResourceFieldSchema::new(vec![(
+        "model".into(),
+        ResourceFieldType::Algebraic(ty.clone()),
+    )])
+    .unwrap();
+    let instance = ResourceInstance::new(
+        Variable(850000),
+        "choice".into(),
+        vec![].into(),
+        schema.clone(),
+        vec![AlgebraicValue::Algebraic(model.clone())].into(),
+    )
+    .unwrap();
+    let mut definition =
+        CCompositeResourceDefinition::new("choice", vec![], None, false, vec![], vec![])
+            .with_instance_schema(Some(schema));
+    definition.matched = Some(CResourceMatchBody {
+        field_index: 0,
+        algebraic_type: ty.clone(),
+        arms: vec![
+            CResourceMatchArm {
+                variant: "Empty".into(),
+                bindings: vec![],
+                binding_types: vec![],
+                binding_variables: vec![],
+                contains: vec![],
+                facts: vec![],
+                children: vec![],
+            },
+            CResourceMatchArm {
+                variant: "Filled".into(),
+                bindings: vec!["value".into()],
+                binding_types: vec![AlgebraicValueType::C(CType::Int32)],
+                binding_variables: vec![None],
+                contains: vec![],
+                facts: vec![],
+                children: vec![],
+            },
+        ],
+    });
+    let state = CState::new().with_resource_context(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+    );
+    let mut costs = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut assumptions = PureFactContext::new();
+        for index in 0..size {
+            assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::ClickFunctionApplication {
+                        name: format!("predicate{index}"),
+                        arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
+                    },
+                    Bitvector32Term::Constant(1),
+                ),
+                true,
+            ));
+        }
+        let known = assumptions.clone().assume_proposition(Proposition::Equal(
+            Term::Algebraic(model.clone()),
+            Term::Algebraic(constructor.clone()),
+        ));
+        let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::functions::instance_arm_model_facts(
+                &instance,
+                std::slice::from_ref(&definition),
+                &state,
+                &known,
+            )
+        });
+        assert!(facts.is_empty());
+        costs.push(work);
+        let (_, unresolved_work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::functions::instance_arm_model_facts(
+                &instance,
+                std::slice::from_ref(&definition),
+                &state,
+                &assumptions,
+            )
+        });
+        assert!(
+            unresolved_work >= size,
+            "unknown model must still consider its predicate premises"
+        );
+    }
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] * 2),
+        "{costs:?}"
+    );
 }

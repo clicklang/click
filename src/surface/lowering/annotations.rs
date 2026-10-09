@@ -198,7 +198,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
     if file
         .resource_definitions
         .iter()
-        .all(ResourceDefinition::is_countable)
+        .all(ResourceDefinition::is_fieldless)
     {
         return Ok(());
     }
@@ -207,7 +207,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
         &super::super::validation::combined_algebraic_type_definitions(file)?,
     );
     for definition in &mut file.resource_definitions {
-        if definition.is_countable() {
+        if definition.is_fieldless() {
             continue;
         }
         definition.field_schema = Some(resolve_resource_field_schema(definition, &environment)?);
@@ -581,7 +581,8 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             result_type: CType::Int32,
             entry_values: BTreeMap::new(),
             aggregate_parameters: BTreeSet::new(),
-            parameter_array_element_types: definition
+            local_type_state: None,
+            pointer_element_types: definition
                 .parameters()
                 .iter()
                 .filter_map(|parameter| {
@@ -636,7 +637,8 @@ fn lower_kernel_pure_function_definition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        parameter_array_element_types: definition
+        local_type_state: None,
+        pointer_element_types: definition
             .parameters()
             .iter()
             .filter_map(|parameter| {
@@ -722,7 +724,8 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        parameter_array_element_types: definition
+        local_type_state: None,
+        pointer_element_types: definition
             .parameters()
             .iter()
             .filter_map(|parameter| {
@@ -803,7 +806,8 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        parameter_array_element_types: definition
+        local_type_state: None,
+        pointer_element_types: definition
             .parameters()
             .iter()
             .filter_map(|parameter| {
@@ -1004,7 +1008,8 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
-        parameter_array_element_types: parsed_function
+        local_type_state: None,
+        pointer_element_types: parsed_function
             .parameters()
             .iter()
             .filter_map(|parameter| {
@@ -1029,6 +1034,11 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         branch_join_target: None,
         snapshots: None,
     };
+    let parsed_kernel_function = parsed_function.to_kernel_function();
+    collect_local_pointer_element_types(
+        parsed_kernel_function.body(),
+        &mut lowerer.pointer_element_types,
+    );
     // Loop-level resource declarations are lowered once, before the body, so
     // every loop reaches its footprint and its body resource context without
     // re-walking the contract.
@@ -1039,7 +1049,6 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         &mut lowerer,
     )?;
     lowerer.loop_resources = loop_resources;
-    let parsed_kernel_function = parsed_function.to_kernel_function();
     let body = if parsed_function.prelowered_kernel_function().is_some() {
         lowerer.lower_kernel_statement(parsed_kernel_function.body())?
     } else {
@@ -1224,11 +1233,14 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
 /// proposition. Unlike fixed-state proof lowering, this keeps C bindings as
 /// expressions so the kernel can check the same interface against both
 /// concrete arm states and the abstract successor state.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn lower_branch_interface_fact(
     proposition: &ClickProposition,
     parsed_function: &syntax::C0Function,
     entry_state: &CState,
+    current_state: &CState,
     branch_join_target: &ProgramPointRef,
+    snapshots: &RecordedSnapshots,
     arguments: &[CExpression],
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
@@ -1254,7 +1266,8 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
-        parameter_array_element_types: parsed_function
+        local_type_state: Some(current_state),
+        pointer_element_types: parsed_function
             .parameters()
             .iter()
             .filter_map(|parameter| {
@@ -1274,7 +1287,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         statement_index: 0,
         next_quantifier_variable: 3_300_000,
         branch_join_target: Some(branch_join_target),
-        snapshots: None,
+        snapshots: Some(snapshots),
     };
     lowerer
         .click_proposition_to_spec_proposition(proposition, &SpecElaborationContext::default())
@@ -1310,7 +1323,8 @@ fn fixed_state_elaboration<'a>(
         result_type: result.map(CValue::c_type).unwrap_or(CType::Int32),
         entry_values,
         aggregate_parameters: BTreeSet::new(),
-        parameter_array_element_types: array_element_types,
+        local_type_state: None,
+        pointer_element_types: array_element_types,
         parameter_pointer_element_widths,
         quantified_values: BTreeMap::new(),
         algebraic_variables: BTreeMap::new(),
@@ -1647,7 +1661,8 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        parameter_array_element_types: parameters
+        local_type_state: None,
+        pointer_element_types: parameters
             .iter()
             .filter_map(|parameter| {
                 Some((
@@ -1710,7 +1725,8 @@ pub(in crate::surface) fn function_contract_summary(
         result_type: parsed_function.return_type().to_kernel_type(),
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),
-        parameter_array_element_types: parsed_function
+        local_type_state: None,
+        pointer_element_types: parsed_function
             .parameters()
             .iter()
             .filter_map(|parameter| {
@@ -1978,6 +1994,53 @@ fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> b
     }
 }
 
+/// Index declarations once, before any loop resource or invariant is lowered.
+/// Frontends give shadowed locals distinct kernel names; this index records
+/// types, never values or read authority, and never walks execution history.
+fn collect_local_pointer_element_types(body: &CStatement, types: &mut BTreeMap<String, CType>) {
+    let mut pending = vec![body];
+    while let Some(statement) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match statement {
+            CStatement::Declare { name, c_type, .. } => {
+                let element = c_type.pointee_type().or(match c_type {
+                    CType::Int8Array(_) => Some(CType::Int8),
+                    CType::Int16Array(_) => Some(CType::Int16),
+                    CType::Int32Array(_) => Some(CType::Int32),
+                    CType::Int64Array(_) => Some(CType::Int64),
+                    CType::Int128Array(_) => Some(CType::Int128),
+                    CType::UInt8Array(_) => Some(CType::UInt8),
+                    CType::UInt16Array(_) => Some(CType::UInt16),
+                    CType::UInt32Array(_) => Some(CType::UInt32),
+                    CType::UInt64Array(_) => Some(CType::UInt64),
+                    CType::UInt128Array(_) => Some(CType::UInt128),
+                    CType::Float32Array(_) => Some(CType::Float32),
+                    CType::Float64Array(_) => Some(CType::Float64),
+                    _ => None,
+                });
+                if let Some(element) = element {
+                    types.insert(name.clone(), element);
+                }
+            }
+            CStatement::Seq(first, second) => pending.extend([first.as_ref(), second.as_ref()]),
+            CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
+            CStatement::While { body, .. } => pending.push(body),
+            CStatement::ForStep { step, .. } => pending.push(step),
+            CStatement::TryCatchInt32 {
+                try_body, handler, ..
+            } => pending.extend([try_body.as_ref(), handler.as_ref()]),
+            CStatement::Switch { cases, .. } => {
+                pending.extend(cases.iter().map(|case| case.body.as_ref()))
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Lowers each loop's `owns` and `views` clauses once for the function.
 ///
 /// A loop declaration is the same contract shape as a callee's: the owned
@@ -2011,10 +2074,10 @@ fn loop_resource_declarations(
                     )
                     .map_err(ClickError::new)?;
                 let start = declaration.specs.len();
-                append_entry_resource_specs(
+                append_entry_resource_specs_with_pointer_types(
                     resource,
                     parsed_function.parameters(),
-                    resource_environment,
+                    &lowerer.pointer_element_types,
                     &mut declaration.specs,
                 )?;
                 for spec in &mut declaration.specs[start..] {
@@ -2023,10 +2086,10 @@ fn loop_resource_declarations(
                 continue;
             }
             let resource = &loop_resource_with_field_schema(resource, resource_environment)?;
-            append_entry_resource_specs(
+            append_entry_resource_specs_with_pointer_types(
                 resource,
                 parsed_function.parameters(),
-                resource_environment,
+                &lowerer.pointer_element_types,
                 &mut declaration.specs,
             )?;
         }
@@ -2104,7 +2167,12 @@ struct AnnotationLowerer<'a> {
     entry_state: &'a CState,
     result_type: CType,
     entry_values: BTreeMap<String, CValue>,
-    parameter_array_element_types: BTreeMap<String, CType>,
+    /// Live declaration types for state-parametric branch facts; values remain symbolic.
+    /// Each referenced name uses the state's existing index, without a body/history scan.
+    local_type_state: Option<&'a CState>,
+    /// Declared pointee types of parameters and encountered automatic locals.
+    /// Local names are the frontend's distinct kernel bindings.
+    pointer_element_types: BTreeMap<String, CType>,
     aggregate_parameters: BTreeSet<String>,
     /// Source-side pointee widths which are not representable in the kernel's
     /// nominal `CType` (notably pointers to structs, which use the compatible
@@ -2383,6 +2451,13 @@ fn spec_integer_to_term(
 }
 
 impl AnnotationLowerer<'_> {
+    fn declared_pointer_element_type(&self, name: &str) -> Option<CType> {
+        self.local_type_state
+            .and_then(|state| state.local_object_type(name))
+            .and_then(|ty| ty.pointee_type())
+            .or_else(|| self.pointer_element_types.get(name).copied())
+    }
+
     /// Attach the same checked loop clauses to compiler-lowered statements.
     fn lower_kernel_statement(&mut self, statement: &CStatement) -> Result<CStatement, ClickError> {
         Ok(match statement {
@@ -4847,10 +4922,7 @@ impl AnnotationLowerer<'_> {
                     return Err("`count(...)` expects a declared resource".to_string());
                 };
                 if environment.snapshot_state.is_some() {
-                    return Err(
-                        "`count(R(p))` at a recorded state is unavailable in authority mode"
-                            .to_string(),
-                    );
+                    return Err("`count(R(p))` at a recorded state is unavailable".to_string());
                 }
                 if arguments.is_empty()
                     || matches!(arguments[0], ContractExpression::ResourceWildcard)
@@ -4863,7 +4935,7 @@ impl AnnotationLowerer<'_> {
                         }))
                 {
                     return Err(
-                        "authority-mode count requires R(anchor), R(anchor, _, ...), or an exact member"
+                        "count requires R(anchor), R(anchor, _, ...), or an exact member"
                             .to_string(),
                     );
                 }
@@ -5595,9 +5667,16 @@ impl AnnotationLowerer<'_> {
                         element_type: array_ref.element_type,
                     })
                 }
-                ClickType::C(_) => self
-                    .lower_contract_expression_to_spec(argument, environment)
-                    .map(crate::kernel::SpecPureFunctionArgument::Value),
+                ClickType::C(_) => {
+                    // Lower the borrowed argument once; wrapping its surface
+                    // tree first would clone every nested call's subtree.
+                    let value = self.lower_contract_expression_to_spec(argument, environment)?;
+                    let value = match pure_function_parameter_scalar_type(parameter) {
+                        Some(target) => SpecExpression::Cast(Box::new(value), target),
+                        None => value,
+                    };
+                    Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
+                }
             })
             .collect()
     }
@@ -6519,9 +6598,7 @@ impl AnnotationLowerer<'_> {
         } else {
             name
         };
-        self.parameter_array_element_types
-            .get(name)
-            .copied()
+        self.declared_pointer_element_type(name)
             .or_else(|| {
                 (name == crate::kernel::C_CONTRACT_RESULT_NAME)
                     .then(|| self.result_type.pointee_type())
@@ -6546,9 +6623,7 @@ impl AnnotationLowerer<'_> {
     ) -> CType {
         match expression {
             ContractExpression::CBinding(name) => self
-                .parameter_array_element_types
-                .get(name)
-                .copied()
+                .declared_pointer_element_type(name)
                 .or_else(|| self.entry_state.global_array_element_type(name))
                 .or_else(|| {
                     environment.values.get(name).and_then(|value| match value {
@@ -6672,7 +6747,7 @@ impl AnnotationLowerer<'_> {
                 .array_refs
                 .get(name)
                 .map(|array_ref| array_ref.element_type)
-                .or_else(|| self.parameter_array_element_types.get(name).copied())
+                .or_else(|| self.declared_pointer_element_type(name))
                 .or_else(|| {
                     (name == crate::kernel::C_CONTRACT_RESULT_NAME)
                         .then(|| self.result_type.pointee_type())
@@ -6739,8 +6814,7 @@ impl AnnotationLowerer<'_> {
                 .map(|array_ref| array_ref.element_type.byte_width())
                 .or_else(|| self.parameter_pointer_element_widths.get(name).copied())
                 .or_else(|| {
-                    self.parameter_array_element_types
-                        .get(name)
+                    self.declared_pointer_element_type(name)
                         .map(|ty| ty.byte_width())
                 })
                 .or_else(|| {
@@ -7117,6 +7191,49 @@ mod integer_source_quantifier_tests {
             };
             assert_eq!(left, IntegerTerm::var(Variable(captured_variable)));
             assert_eq!(right, IntegerTerm::var(variable));
+        }
+    }
+}
+
+#[cfg(test)]
+mod local_pointer_type_index_tests {
+    use super::*;
+
+    // Index work is one traversal, independent of how many typed locals the
+    // selected function declares. Distinct frontend bindings retain types.
+    #[test]
+    fn local_pointer_types_index_once_with_linear_work() {
+        for count in [16, 64, 256] {
+            let mut body = crate::kernel::c_skip();
+            for index in 0..count {
+                body = c_seq(
+                    body,
+                    crate::kernel::c_declare(
+                        format!("local_{index}"),
+                        if index % 2 == 0 {
+                            CType::UInt8Pointer
+                        } else {
+                            CType::UInt64Pointer
+                        },
+                    ),
+                );
+            }
+            let mut types = BTreeMap::new();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                collect_local_pointer_element_types(&body, &mut types);
+            });
+            assert_eq!(work, 2 * count + 1);
+            assert_eq!(types.len(), count);
+            for index in 0..count {
+                assert_eq!(
+                    types[&format!("local_{index}")],
+                    if index % 2 == 0 {
+                        CType::UInt8
+                    } else {
+                        CType::UInt64
+                    }
+                );
+            }
         }
     }
 }

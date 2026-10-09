@@ -940,6 +940,21 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         let rewritten = match goal {
+            Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
+            } => Proposition::CMemoryLoadable {
+                // Same-block pointer equalities use offsets rather than the
+                // PointerEqual carrier. Substitute the selected address while
+                // retaining the exact snapshot and readable byte extent.
+                memory: memory.clone(),
+                base: Pointer {
+                    block: base.block.clone(),
+                    offset: rewrite_offset(&base.offset, left, right),
+                },
+                bytes: bytes.clone(),
+            },
             Proposition::ConditionIs(
                 ConditionTerm::PointerOffsetEqual(goal_left, goal_right),
                 expected,
@@ -2911,6 +2926,72 @@ mod tests {
                 .check_equality_rewrite(&goal, &premise)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source =
+            PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(192_920)), 1);
+        let target =
+            PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(192_921)), 1);
+        let cited = Proposition::ConditionIs(
+            ConditionTerm::PointerOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
+            true,
+        );
+        let memory = CMemory::new().with_block("offset-view-rewrite", 8);
+        let extent = Bitvector32Term::Variable(Variable(192_922));
+        let goal = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::add(source, PointerOffsetTerm::Constant(2)),
+            },
+            bytes: extent.clone(),
+        };
+        assert!(
+            ProofFacts::default()
+                .check_equality_rewrite(&goal, &cited)
+                .is_err()
+        );
+        let false_equality = match &cited {
+            Proposition::ConditionIs(condition, _) => {
+                Proposition::ConditionIs(condition.clone(), false)
+            }
+            _ => unreachable!(),
+        };
+        let false_facts = ProofFacts::from_ordered(&[false_equality]);
+        assert!(false_facts.check_equality_rewrite(&goal, &cited).is_err());
+        let mut costs = Vec::new();
+        for size in [0, 16, 64, 256, 1024] {
+            let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
+            for index in 0..size {
+                facts = facts.with_fact(equality(
+                    Bitvector32Term::Variable(Variable(210_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ));
+            }
+            let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &cited).unwrap()
+            });
+            let Proposition::CMemoryLoadable {
+                memory: snapshot,
+                base,
+                bytes,
+            } = rewritten.proposition()
+            else {
+                panic!("viewability changed kind")
+            };
+            assert_eq!(snapshot.diagnostic_identity(), memory.diagnostic_identity());
+            assert_eq!(base.block, PointerBlock::ExternalArgument);
+            assert_eq!(
+                base.offset,
+                PointerOffsetTerm::add(target.clone(), PointerOffsetTerm::Constant(2))
+            );
+            assert_eq!(bytes, &extent);
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
     }
 
     #[test]

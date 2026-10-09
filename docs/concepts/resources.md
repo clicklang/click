@@ -333,9 +333,9 @@ satisfy that requirement with one unit.
 
 ## Resource quantities
 
-### Authority migration
+### Populations and authority
 
-The migrated [refcount example](https://github.com/clicklang/click/blob/master/examples/refcount/README.md) uses explicit
+The [refcount example](https://github.com/clicklang/click/blob/master/examples/refcount/README.md) uses explicit
 population authority. Its references and shared control are separate resources:
 
 <!-- verified-example: mdtests/counted_resource_population_body.md -->
@@ -348,14 +348,13 @@ resource object_control(obj: struct object*) {
 }
 ```
 
-Under authority semantics, population accounting covers only families declared
-`authorized resource`.
+Population accounting covers only families declared `authorized resource`.
 `authority(...)` and `count(...)` may name only such a family; on any other
 family they are refused. An ordinary family such as `object_control` folds,
 unfolds and moves by its definition alone and creates or destroys no counted
 member.
 
-On this path, observing a live population with `count(object_ref(obj))`
+Observing a live population with `count(object_ref(obj))`
 requires the matching authority.
 An owned folded `object_control(obj)` also permits the observation: Click checks its
 definition and current custody as if opening it for the count read and closing
@@ -441,7 +440,7 @@ slot. Every transition has separate authority, exact-identity, and custody
 checks. The [four-effect fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_four_effect_exchange.md)
 retains neighboring ownership and checks all four resulting counts. Omitting a
 consumption reports `Requires consumes R(...)`; extra births are rejected even
-without count postconditions. This checkpoint supports unit exchanges, not
+without count postconditions. Click supports unit exchanges, not
 arbitrary groups of symbolic effects.
 
 For an authority passed into a function, retirement checks both that its
@@ -535,7 +534,7 @@ access to another member's cells and no population count observation.
 Creating or consuming a member still requires authority and transfers its
 private memory into or out of the member. Merely having a scalar local does
 not supply separable memory ownership to package into a member.
-This checkpoint covers owned memory ranges without member facts or proof fields.
+Click covers owned memory ranges without member facts or proof fields.
 
 An authority-only helper input can also create one field-free member:
 
@@ -645,7 +644,7 @@ the member without holding population authority, preserving membership.
 
 These facts may depend on the member's arguments and its privately owned
 memory. Ambient ownership of another cell does not let the member promise a
-fact about that cell. This increment supports unit members with field-free,
+fact about that cell. Click supports unit members with field-free,
 owned-memory bodies, not named proof fields, aggregate count invariants inside
 members, or independent external lifetime claims. Population-wide facts belong
 in the authority control resource.
@@ -671,7 +670,7 @@ member only.
 their owned contents, and neither requires population authority. Missing or
 mismatched children cannot establish the outer member; its child cannot also
 be returned as independent ownership while retained inside the folded member.
-Built-in `owns *p` also works inside a member body. This checkpoint
+Built-in `owns *p` also works inside a member body. Click
 supports unit owned contents in field-free bodies; named proof fields,
 conditional contents, and counted batches with nonempty bodies remain separate.
 Private facts inside each resource layer follow that layer's existing checks.
@@ -768,7 +767,7 @@ the capacity equation. Certificate checking verifies that the original sum,
 increment, and predecessor are all defined before cancelling the two unit
 changes; wrapping arithmetic cannot justify the new sum's domain.
 
-This checkpoint supports one or two distinct authority scopes at the same
+Click supports one or two distinct authority scopes at the same
 pointer anchor in a field-free control with owned memory and at most one
 allocation. Every contained authority is authenticated and transferred
 separately. An imported control assumes an existing population, never an empty
@@ -813,71 +812,42 @@ one unit between two different families at one anchor. Fixed
 trailing arguments in authority patterns, partially fixed subset observations,
 and field-bearing members remain future work.
 
-The rest of this section describes the legacy population path, retained while
-its consumers are migrated. The
-[migration inventory](../internals/authority-migration-inventory.md) records
-which examples and fixtures have moved to explicit authority.
+### Quantities
 
-### Legacy population quantities
-
-Every declared resource can have several independently consumable units with
-the same arguments:
+Equal owned units of a declared token are stored as one canonical fact with a
+quantity:
 
 <!-- verified-example: mdtests/composite_resource_composes_token.md -->
 ```click
 authorized abstract resource object_ref(object: struct object*);
 ```
 
-Click stores equal owned units as one canonical fact with a quantity. A clause
-without a coefficient transfers one unit: consuming one `object_ref(object)`
-from a quantity of two leaves one unit behind. An owned user-declared resource
-may use `owns amount of object_ref(object)`, `consumes amount of ...`, or
-`produces amount of ...` to transfer a runtime `int32` quantity algebraically.
-The coefficient must be proved nonnegative at the contract snapshot, and zero
-grants no authority. Viewed facts remain idempotent and do not carry a count.
+A clause without a coefficient transfers one unit: consuming one
+`object_ref(object)` from a quantity of two leaves one unit behind. An owned
+user-declared resource may use `owns amount of object_ref(object)`,
+`consumes amount of ...`, or `produces amount of ...` to transfer a runtime
+`int32` quantity algebraically. The coefficient must be proved nonnegative at
+the contract snapshot, and zero grants no authority. Viewed facts remain
+idempotent and do not carry a count.
 
 Symbolic coefficients are rejected for memory, allocation, and recursively
 defined composite resources. Those families need distinct semantics; Click
 does not interpret a symbolic coefficient by expanding it into repeated facts.
 
-`count(object_ref(object))` observes the exact quantity. A resource body may
-relate that count to C state and belongs to the population as a whole, not to
-each unit. Two keys of one family name one population whenever their arguments
-are equal, so a count or a transfer of `object_ref(p)` beside a tracked
-`object_ref(q)` needs `p == q` or `p != q` established; with neither, the
-count has no value the facts determine and `click verify` refuses the
-observation or the transfer rather than totalling the entries it happens to
-have proved equal. `open(object_ref(object)) { ... }` exposes that shared body for a
-scoped proof and requires it to be restored. Declaring a resource does not by
-itself justify minting a unit; retain and release contracts must preserve the
-body invariant while changing both the C state and logical quantity.
+`count(object_ref(object))` observes the exact quantity of an `authorized`
+family under its owned authority. Two keys of one family name one population
+whenever their arguments are equal, so a count or a transfer of `object_ref(p)`
+beside a tracked `object_ref(q)` needs `p == q` or `p != q` established; with
+neither, the count has no value the facts determine and `click verify` refuses
+the observation or the transfer rather than totalling the entries it happens to
+have proved equal. Declaring a resource does not by itself justify minting a
+unit: members are created and destroyed only under the authority, and the
+control that owns it keeps its facts true across each change.
 
-Closing `open` first tries to restore the invariant without changing Count.
-If that fails, it can fulfill one outstanding `consumes` clause of the enclosing
-function: spend an owned unit and prove the invariant at the total decreased
-by one. The shared body must remain alive. A later scope cannot fulfill the
-same effect again, and return checks the overall contract without spending
-that unit again. Being the last `open` in a block does not waive restoration.
-
-This currently supports one unconditional single-unit consumption clause for
-the resource family, with no produced units of that family. It uses the entry
-arguments even if C reassigns parameters. Consumption within a loop and partial
-fulfillment of symbolic or multiple effects remain unsupported. No new syntax
-is needed. The [checked example](https://github.com/clicklang/click/blob/master/mdtests/population_consumption_at_close.md)
-covers early closure, reopening for a read, branches, nested calls, and exact
-two contributions. The [scope-close design](https://github.com/clicklang/click/blob/master/design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
-records the obligations and remaining concurrency work.
-
-For an ordinary abstract population transferred to a pthread worker, a successful
-create reserves its Count until every outstanding worker for that population has
-joined. Current Count expressions (including wildcard queries) are unavailable
-while it is reserved; `old(count(...))` still describes the historical entry
-state. The final join publishes the combined checked effects. Failed creation
-adds no effect. Fixed consumption and neutral effects on ordinary abstract
-populations can overlap when their pure contracts are state independent.
-Count-dependent contracts, production, and symbolic effects remain excluded from
-overlap. Stateful population bodies still require shared-body synchronization
-support. These rules add no syntax.
+A worker thread receives members and the authority through ordinary checked
+transfers; the [worker authority protocol](../internals/worker-authority-protocol.md)
+describes how a created worker borrows the authority and what its join
+returns.
 
 Inside `count(...)`, `_` is a wildcard over one resource argument. For example,
 `count(pool_object(pool, _))` sums all exact object populations for `pool`.
@@ -1063,9 +1033,9 @@ authority.
 
 A fact in a lent body is stable for the whole borrow, because recovery restores
 the exact head that was escrowed rather than refolding it. Two body shapes
-cannot promise that and are refused when lent: a counted population, whose
-units another call may consume, and a definition whose facts claim that storage
-the body does not own is still live.
+cannot promise that and are refused when lent: a body whose facts read a
+population count, which another call may change, and a definition whose facts
+claim that storage the body does not own is still live.
 
 A contract cannot lend a composite and own a piece of it at the same time. An
 `owns` clause naming a cell inside a composite the same contract views is
@@ -1082,11 +1052,9 @@ composite holding it, and the caller recovers the input when it consumes the
 composite. Click infers the relationship when exactly one viewed input can back
 the piece and refuses the contract when none or several can.
 
-A counted population is the exception to all of this. Its body belongs to the
-population rather than to each unit, so a population body that views memory is
-read as an observation supported by whatever holds that memory, and folding a
-unit places no hold. Lending a unit of a bodyless token population leaves the
-remaining units usable.
+Members of an `authorized` family are the exception: they carry no body, so
+folding one places no hold, and lending one member of a quantity leaves the
+remaining members usable.
 
 An ordinary exclusive resource needs no mutex-specific declaration to be
 protected by a mutex. Initialization associates it: the proof supplies a
@@ -1183,6 +1151,11 @@ and a body fact such as `fact parent->left == child` instantiates to the link
 the body just walked. The fold's field values are read the same way, so one
 tactic never straddles two states
 (`mdtests/fold_argument_reads_current_cursor.md`).
+A resource argument may also read an owned field through a proved model-pointer
+alias. Named folds retain the facts already checked at that point when
+evaluating those arguments; a model pointer without read authority is refused
+(`mdtests/fold_argument_reads_through_model_pointer.md` and
+`mdtests/fold_argument_model_pointer_needs_read_authority.md`).
 
 ### Conditional and recursive bodies
 
@@ -1385,7 +1358,7 @@ has the same repair: say what you want kept.
   existed: `let c = fold(Cell(), { rank: old(c.rank) });`, or bind it at the
   unfold, `let { rank: r } = unfold(c);`, and write `r`.
 
-The same holds for a counted population. A contract's `produces` or `consumes`
+The same holds for a population count. A contract's `produces` or `consumes`
 moves `count(R(a))`, and the transition relates the two counts, so an `ensures`
 states that relation: `ensures count(R(a)) == old(count(R(a))) + 1`.
 
@@ -1452,6 +1425,11 @@ eight, and every one of them decides the same way from its own premises:
 | guard conjunct | the conjuncts of a short-circuit guard already known true |
 | `unfold` | the premises standing at the `unfold`, for the instance it opens and for each child it produces |
 | frontier case split | the premises standing at the split, for the instance the split is about |
+
+An exact constructor equality already decides the arm. In that case opening
+its resource uses the indexed constructor evidence directly; it does not
+reevaluate other predicate facts about the model to rediscover exclusions.
+Unknown models still use the refutation rules below.
 
 The order inside one publication is the decision's own: refutation first,
 because a refuted arm is evidence selection reads, then the read authority and
@@ -1720,7 +1698,10 @@ Click implements:
 - checked lending of owned memory to satisfy a viewed requirement, with scoped
   recovery at the return,
 - visible owned resources imply `separate(...)` facts; provably overlapping
-  visible writes are rejected,
+  visible writes are rejected. A `have separate(memory(...), memory(...))`
+  can select two distinct owned fields exposed by independent named-resource
+  unfolds from the current ownership partition. A viewed field or two
+  references to the same owned field cannot justify that separation,
 - composite resources project direct `contains(parent, child)` facts for owned
   contained resources and direct `separate(child1, child2)` facts for owned
   sibling resources without exposing the hidden owned resource facts,
@@ -1762,4 +1743,4 @@ births and exact returned custody. This bounded composition adds no creation
 right for an external pointer. `authority_two_control_birth_helpers.md` checks
 two initializer calls, and its extra-member companion rejects closing a
 control whose capacity no longer equals its population. Grouped symbolic
-quantities and arbitrary collections of effects remain outside this checkpoint.
+quantities and arbitrary collections of effects remain unsupported.

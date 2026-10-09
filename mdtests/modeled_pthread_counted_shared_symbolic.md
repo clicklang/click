@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# Borrowing workers over an opaque total of at least two
 
 ```c filename=modeled_pthread_counted_shared_symbolic.c
 #include <pthread.h>

@@ -14,10 +14,11 @@ workers mutate the same ordinary cell under one lock. The
 [shared-protocol design](mutex-shared-protocol.md) records the authority and
 interference rules. Typed mutex use now crosses worker boundaries, and the
 memory-safety control verifies the unchanged counter. The exact-two result
-remains unproved. The [counted-resource investigation](shared-count-authority.md)
-proposes requiring whole-population ownership when placing its shared body
-under a mutex. The [explicit-authority proposal](explicit-authority.md) remains
-an alternative if that restricted rule proves inadequate.
+remains unproved here. Both earlier proposals, the
+[counted-resource investigation](shared-count-authority.md) and the
+[explicit-authority proposal](explicit-authority.md), are superseded by
+population authority: a mutex protects an ordinary control that owns
+`authority(...)`, as `examples/shared-refcount/` shows.
 
 The unchanged [mutex parity source](mutex_held_parity.c) and its
 [sidecar](mutex_held_parity.click) now verify under the modeled pthread

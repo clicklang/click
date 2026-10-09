@@ -347,7 +347,7 @@ fn authority_member_private_heap_body_cannot_back_two_births() {
 }
 
 #[test]
-fn authority_mode_malloc_statement_evidence_starts_at_running_state() {
+fn authority_malloc_statement_evidence_starts_at_running_state() {
     let c_source =
         "int32 value(void) { int32* p; p = malloc(4); if (p == 0) return 0; free(p); return 0; }";
     let click_source = r#"

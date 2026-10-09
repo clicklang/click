@@ -10,6 +10,7 @@ use std::sync::Arc;
 pub(super) fn apply_branch_interface_with_proof_facts(
     target: &ProgramPointRef,
     assertions: &[ProofAssertion],
+    written_assertions: &[ProofAssertion],
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut ProofFacts,
@@ -22,6 +23,9 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     join_next_kernel_variable: u64,
     needs_abstraction: bool,
 ) -> Result<(), ClickError> {
+    // Lower the resolved proof-local values, but retain their written names
+    // for later certificates. Internal pointer values are not source syntax.
+    assert_eq!(assertions.len(), written_assertions.len());
     let tactic_index = proof_context.tactic_index;
     let parameters = proof_context.parsed_function.parameters();
     let arguments = proof_context.arguments;
@@ -34,9 +38,12 @@ pub(super) fn apply_branch_interface_with_proof_facts(
 
     let mut concrete_facts = available_pure_facts.clone();
     let mut established_interface_resources = Vec::new();
-    for assertion in assertions {
+    for (assertion, written) in assertions.iter().zip(written_assertions) {
         match assertion {
             ProofAssertion::Fact(surface_fact) => {
+                let ProofAssertion::Fact(written_fact) = written else {
+                    unreachable!("resolved interface assertion retains its written kind");
+                };
                 let fact = lower_fixed_state_proposition_with_assumptions(
                         surface_fact,
                         concrete_facts.assumptions(),
@@ -57,7 +64,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 execution
                     .presentation
                     .surface_propositions
-                    .record_lowering(surface_fact, &fact)?;
+                    .record_lowering(written_fact, &fact)?;
                 if !crate::kernel::proof::checked_branch_fact_is_available(&concrete_facts, &fact) {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` tactic {tactic_index}: `branch ensuring` did not establish fact: {}",
@@ -260,8 +267,11 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         .recorded_snapshots
         .insert(target.clone(), abstract_state.clone());
 
-    for assertion in assertions {
+    for (assertion, written) in assertions.iter().zip(written_assertions) {
         if let ProofAssertion::Fact(surface_fact) = assertion {
+            let ProofAssertion::Fact(written_fact) = written else {
+                unreachable!("resolved interface assertion retains its written kind");
+            };
             let fact = lower_fixed_state_proposition(
                     surface_fact,
                     &exported_pure_facts,
@@ -282,7 +292,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             execution
                 .presentation
                 .surface_propositions
-                .record_lowering(surface_fact, &fact)?;
+                .record_lowering(written_fact, &fact)?;
             if !exported_pure_facts.contains(&fact) {
                 exported_pure_facts.push(fact);
             }

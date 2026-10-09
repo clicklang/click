@@ -78,6 +78,12 @@ Current projects:
   allocation of its size among the freed cells.
 - `input-cursor/` verifies independently mutable cursors over a shared viewed
   input resource.
+- `refcount/` verifies a heap reference count whose stored value equals its
+  population of `reference(obj)` members, from initialization to final free.
+- `shared-refcount/` shares one reference-counted object between its owner and
+  two worker threads under a mutex.
+- `bounded-pool/` verifies an object pool's original C with two populations
+  under one control, including transfer between pools and cleanup.
 - `jsonc-refcount/` verifies synthetic json-c-shaped field reads and writes on
   a small object.
 - `jsonc-numeric/` verifies synthetic json-c-shaped `double` field reads and

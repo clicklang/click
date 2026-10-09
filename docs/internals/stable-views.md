@@ -235,10 +235,9 @@ bytewise disjoint, composites included, and the kernel does not reason
 inside a folded composite beyond its one-level frontier. The frame check
 that keeps a loaded cell's name across a call or loop havoc obeys the same
 boundary: it opens each owned composite of a published composition one
-level and frames a cell only from an owned range that opening exposes. Counted populations
-keep the population-wide reading: a unit's body enters the caller where the
-population is activated, and its viewed pieces are observations rather than
-escaping loans.
+level and frames a cell only from an owned range that opening exposes. The
+viewed pieces of an observed population family, or of more than one unit, are
+observations rather than escaping loans.
 
 ## Loops and branches
 
@@ -283,12 +282,13 @@ cannot authorize recovery. The runtime assumption that a valid join succeeds
 is explicit and scoped to this parent's live, terminating child.
 
 The modeled pthread C binding uses this checkpoint. Resource definitions carry
-a thread-confinement property computed when they are installed. A counted
-population with a body is confined: one unit cannot move to a worker while
-other units may rely on the population-wide body. A resource containing a
-confined resource inherits that property. Bodyless counted tokens and ordinary
-exclusive resources are not confined by their definitions; a worker handoff
-still needs a checked resource partition and stable loan plan.
+a thread-confinement property computed when they are built. An authority
+control, whose body owns a population authority, is confined: moving the
+control alone would not transfer the authority's loans or mutex custody. A
+resource containing a confined resource inherits that property. Bodyless
+members and ordinary exclusive resources are not confined by their
+definitions; a worker handoff still needs a checked resource partition and
+stable loan plan.
 
 The binding admits exclusive transfer of external memory and stable views,
 including views backed by live local storage without an ownership annotation.

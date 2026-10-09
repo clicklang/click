@@ -1,6 +1,9 @@
 # Explicit authority for the shared counter
 
-Status: alternative design, not selected for implementation, 2026-09-28.
+Status: superseded. The exclusive `authority(...)` resource it proposed was
+adopted, without fractional authority; see
+[object-anchored population authority](../../docs/internals/authority-establishment-review.md).
+The text below is the original 2026-09-28 proposal.
 The [counted-population investigation](shared-count-authority.md#investigation-one-mutex-protects-a-counted-population)
 now recommends checking whole-population publication under an ordinary mutex
 before adding this interface. The earlier recommendation below was premature:

@@ -1,11 +1,7 @@
 //! The declaration-level protected assertion, without acquisition observations.
 
 use super::*;
-use crate::kernel::{
-    AlgebraicValue, CMutexGuardDeclaration, CValue, ResourceDescription, ResourceInstance,
-};
-#[cfg(test)]
-use std::collections::BTreeMap;
+use crate::kernel::{ResourceDescription, ResourceInstance};
 
 /// This description grants no ownership and retains neither an instance binder
 /// nor its observed fields. Initialization identity and use authority must be
@@ -18,13 +14,11 @@ pub(super) struct MutexInvariantInterface {
 
 impl MutexInvariantInterface {
     /// Initialization authenticates the protected assertion from an owned
-    /// instance. A declaration may constrain the mutex, but is not itself
-    /// the source of the association or of ownership.
+    /// instance; the initialization itself is the source of the association.
     pub(super) fn check_definition(
         instance: &ResourceInstance,
         mutex: &Pointer,
         definition: &crate::kernel::CCompositeResourceDefinition,
-        assumptions: &PureFactContext,
     ) -> Result<Self, &'static str> {
         if definition.name() != instance.name()
             || definition.instance_field_schema() != Some(instance.schema())
@@ -39,52 +33,9 @@ impl MutexInvariantInterface {
         {
             return Err("selected mutex resource does not match its declaration");
         }
-        Self::check_association(instance, mutex, definition.mutex_guard(), assumptions)
-    }
-
-    #[cfg(test)]
-    pub(super) fn check(
-        instance: &ResourceInstance,
-        mutex: &Pointer,
-        declarations: &BTreeMap<String, CMutexGuardDeclaration>,
-        assumptions: &PureFactContext,
-    ) -> Result<Self, &'static str> {
-        let declaration = declarations
-            .get(instance.name())
-            .ok_or("selected resource has no `guarded_by` mutex field")?;
-        Self::check_association(instance, mutex, Some(declaration), assumptions)
-    }
-
-    fn check_association(
-        instance: &ResourceInstance,
-        mutex: &Pointer,
-        declaration: Option<&CMutexGuardDeclaration>,
-        assumptions: &PureFactContext,
-    ) -> Result<Self, &'static str> {
-        let Some(declaration) = declaration else {
-            return Ok(Self {
-                description: ResourceDescription::from_instance(instance),
-                mutex: mutex.clone(),
-            });
-        };
-        let Some(AlgebraicValue::C(CValue::Pointer(base))) =
-            instance.arguments().get(declaration.parameter_index)
-        else {
-            return Err("guarded resource parameter is not a pointer");
-        };
-        let expected = base
-            .pointer()
-            .offset_by_bytes(declaration.field_offset_bytes);
-        if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-            &expected,
-            mutex,
-            assumptions,
-        ) {
-            return Err("selected resource is guarded by a different mutex");
-        }
         Ok(Self {
             description: ResourceDescription::from_instance(instance),
-            mutex: expected,
+            mutex: mutex.clone(),
         })
     }
 
@@ -101,8 +52,9 @@ impl MutexInvariantInterface {
 mod tests {
     use super::*;
     use crate::kernel::{
-        CType, ResourceContext, ResourceFieldSchema, ResourceFieldType, Variable, int32,
+        CType, CValue, ResourceContext, ResourceFieldSchema, ResourceFieldType, Variable, int32,
     };
+    use std::collections::BTreeMap;
 
     fn instance(identity: u64, value: u32) -> ResourceInstance {
         ResourceInstance::new(
@@ -114,16 +66,6 @@ mod tests {
             vec![int32(value).into()].into(),
         )
         .unwrap()
-    }
-
-    fn declarations() -> BTreeMap<String, CMutexGuardDeclaration> {
-        BTreeMap::from([(
-            "counter_state".into(),
-            CMutexGuardDeclaration {
-                parameter_index: 0,
-                field_offset_bytes: 8,
-            },
-        )])
     }
 
     fn address() -> Pointer {
@@ -139,18 +81,15 @@ mod tests {
             vec![],
             vec![],
         )
-        .with_instance_schema(Some(instance(1, 0).schema().clone()))
-        .with_mutex_guard(declarations().remove("counter_state"));
+        .with_instance_schema(Some(instance(1, 0).schema().clone()));
         BTreeMap::from([("counter_state".into(), definition)])
     }
 
     #[test]
-    fn unannotated_publication_requires_owned_state_and_preserves_its_type() {
+    fn publication_requires_owned_state_and_preserves_its_type() {
         let assumptions = PureFactContext::new();
         let resource = instance(1, 7);
-        let mut definitions = definitions();
-        let definition = definitions.remove("counter_state").unwrap();
-        definitions.insert("counter_state".into(), definition.with_mutex_guard(None));
+        let definitions = definitions();
         let context = MutexContext::new(
             CState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -200,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn publication_rejects_unchecked_or_mismatched_schemas_without_annotations() {
+    fn publication_rejects_unchecked_or_mismatched_schemas() {
         let assumptions = PureFactContext::new();
         let resource = instance(1, 7);
         let context = MutexContext::new(
@@ -229,9 +168,7 @@ mod tests {
         .unwrap();
         definitions.insert(
             "counter_state".into(),
-            definition
-                .with_mutex_guard(None)
-                .with_instance_schema(Some(wrong_schema)),
+            definition.with_instance_schema(Some(wrong_schema)),
         );
         assert!(
             context
@@ -246,81 +183,36 @@ mod tests {
         );
     }
 
+    fn check(instance: &ResourceInstance) -> Result<MutexInvariantInterface, &'static str> {
+        MutexInvariantInterface::check_definition(
+            instance,
+            &address(),
+            &definitions()["counter_state"],
+        )
+    }
+
     #[test]
     fn invariant_interface_retains_parameters_but_not_observed_values_or_binders() {
-        let assumptions = PureFactContext::new();
-        let first = MutexInvariantInterface::check(
-            &instance(1, 10),
-            &address(),
-            &declarations(),
-            &assumptions,
-        )
-        .unwrap();
-        let later = MutexInvariantInterface::check(
-            &instance(2, 20),
-            &address(),
-            &declarations(),
-            &assumptions,
-        )
-        .unwrap();
+        let first = check(&instance(1, 10)).unwrap();
+        let later = check(&instance(2, 20)).unwrap();
         assert_eq!(first, later);
         assert_eq!(
             first.description(),
             &ResourceDescription::from_instance(&instance(1, 20))
         );
-        let mut other_argument = instance(2, 20);
-        other_argument.arguments =
-            vec![CValue::pointer(Pointer::symbolic(Variable(71))).into()].into();
-        assert!(
-            MutexInvariantInterface::check(
-                &other_argument,
-                &address(),
-                &declarations(),
-                &assumptions
-            )
-            .is_err()
-        );
     }
 
     #[test]
-    fn invariant_interface_checks_family_parameter_and_exact_mutex_field() {
-        let assumptions = PureFactContext::new();
+    fn invariant_interface_checks_family_and_parameters() {
         let resource = instance(1, 10);
-        assert!(
-            MutexInvariantInterface::check(&resource, &address(), &BTreeMap::new(), &assumptions)
-                .is_err()
-        );
-        assert!(
-            MutexInvariantInterface::check(
-                &resource,
-                &address().offset_by_bytes(8),
-                &declarations(),
-                &assumptions
-            )
-            .is_err()
-        );
         let mut malformed = resource.clone();
         malformed.arguments = vec![int32(0).into()].into();
-        assert!(
-            MutexInvariantInterface::check(&malformed, &address(), &declarations(), &assumptions)
-                .is_err()
-        );
+        assert!(check(&malformed).is_err());
         malformed.arguments = vec![].into();
-        assert!(
-            MutexInvariantInterface::check(&malformed, &address(), &declarations(), &assumptions)
-                .is_err()
-        );
+        assert!(check(&malformed).is_err());
         let mut wrong_family = resource;
         wrong_family.name = "other_state".into();
-        assert!(
-            MutexInvariantInterface::check(
-                &wrong_family,
-                &address(),
-                &declarations(),
-                &assumptions
-            )
-            .is_err()
-        );
+        assert!(check(&wrong_family).is_err());
     }
 
     #[test]
@@ -343,17 +235,6 @@ mod tests {
         let context = MutexContext::new(
             CState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone())),
-        );
-        assert!(
-            context
-                .publish_declared(
-                    &address().offset_by_bytes(8),
-                    resource.identity(),
-                    &definitions(),
-                    &assumptions,
-                    40
-                )
-                .is_err()
         );
         let published = context
             .publish_declared(

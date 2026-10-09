@@ -2169,6 +2169,22 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+/// Refuted helper arms have no generated return/postcondition suffix. Both
+/// certification and whole-claim expansion must preserve their contradiction.
+#[test]
+fn whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms() {
+    let (click, sources) = mdtest_sources("mdtests/user_tactic_match_refutes_impossible_arm.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "keep.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("contradiction("), "{expanded}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 /// Whole-claim expansion rebuilds a proof `match` from the paths through its
 /// arms. Each claim here verifies, and its expansion must too.
 #[test]
@@ -2605,6 +2621,20 @@ theorem pure_arithmetic_producer(n: int32) {
         verify_c0_sources(&expanded, &sources)
             .unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
     }
+}
+
+// The join's exported fact must remain writable after proof-local resolution:
+// the old metadata made this valid snapshot rewrite expand to a literal `…`.
+#[test]
+fn branch_interface_model_pointer_snapshot_rewrite_expands_and_rechecks() {
+    let (source, c) = mdtest_sources("mdtests/branch_interface_keeps_model_pointer_names.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "put", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
 }
 
 #[test]
@@ -16861,4 +16891,47 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
         verify_c0_sources(&invalid, &[]).is_err(),
         "changed conclusion relation accepted"
     );
+}
+
+// The arithmetic planner's affine sum is constant even though this goal
+// retains signed subexpressions. Its generated Add node must still recheck.
+#[test]
+fn signed_bounded_subtraction_preserves_generated_child_sum() {
+    let (source, sources) = mdtest_sources("mdtests/signed_arithmetic_bounded_subtraction.md");
+    let borrowed = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &borrowed).unwrap();
+    let expanded = expand_c0_claim_source(&source, &borrowed, "f", CProofClaim::Grouped).unwrap();
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        verify_c0_sources(&expanded, &borrowed)
+    });
+    result.unwrap();
+    assert_eq!(planning, 0, "expanded child sums must check without search");
+}
+
+#[test]
+#[ignore = "nightly: whole-proof arithmetic mutations and certificate rechecks"]
+fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
+    let (source, sources) = mdtest_sources("mdtests/signed_arithmetic_bounded_subtraction.md");
+    let borrowed = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace("(8 - x) <= (8 - x) + 4", "(8 - x) + 4 <= (8 - x)"),
+        source.replace("requires 4 <= x;", ""),
+        source.replace("requires x <= 8;", ""),
+    ] {
+        verify_c0_sources(&invalid, &borrowed)
+            .expect_err("false or undefined subtraction must be refused");
+    }
+    let expanded = expand_c0_claim_source(&source, &borrowed, "f", CProofClaim::Grouped).unwrap();
+    // Changing only the generated constant sum must not change the checked
+    // children, even if its replacement is itself a true inequality.
+    let forged = expanded.replacen("-4 <= 0", "-3 <= 0", 1);
+    assert_ne!(forged, expanded, "expected the nonzero cancellation node");
+    verify_c0_sources(&forged, &borrowed)
+        .expect_err("a different generated child sum must be refused");
 }

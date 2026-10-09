@@ -102,7 +102,7 @@ const NIGHTLY: &[(&str, &str)] = &[
     ),
     (
         "rbtree-erase",
-        "13 erase contracts take 176 s; the parent-link helper also runs here (2026-10-08)",
+        "erase sidecars take minutes; the earlier unlink corpus measured 176 s (2026-10-08)",
     ),
 ];
 
@@ -467,6 +467,16 @@ fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
 }
 
 fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after: &str) {
+    erase_source_refuses_replacement(sidecar, file, before, after, 1);
+}
+
+fn erase_source_refuses_replacement(
+    sidecar: &str,
+    file: &str,
+    before: &str,
+    after: &str,
+    occurrences: usize,
+) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree-erase").join(sidecar);
     let source = fs::read_to_string(&path).expect("the erase sidecar exists");
@@ -477,8 +487,8 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
         .expect("the bundle contains the selected erase input");
     assert_eq!(
         c.matches(before).count(),
-        1,
-        "mutation must identify exactly one statement"
+        occurrences,
+        "mutation must identify the expected statements"
     );
     *c = c.replace(before, after);
     let project = read_click_project_at_root(&path, &source, &root.join("examples"))
@@ -496,11 +506,16 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
                 .message()
                 .contains("selected child does not satisfy the proposed parent model")
             || error.message().contains("contract certification")
+            || (error.message().contains("missing resource fact")
+                && error.message().contains("C operation: parent = rb_parent"))
             || error
                 .message()
                 .contains("(close_erase_spine_link precondition)")
             || (error.message().contains("have body tactic")
                 && error.message().contains("could not establish"))
+            || error
+                .message()
+                .contains("unclosed goal: new->__rb_parent_color == old(old->__rb_parent_color)",)
             || error.message().contains("unclosed goal: result == 0")
             || error
                 .message()
@@ -1014,7 +1029,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
-        "",
+        "\t\t\tWRITE_ONCE(parent->rb_left, successor);\n",
     );
 }
 
@@ -1034,7 +1049,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\tWRITE_ONCE(successor->rb_right, child);\n",
-        "",
+        "\t\t\tWRITE_ONCE(successor->rb_right, successor->rb_right);\n",
     );
 }
 
@@ -1044,7 +1059,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\trb_set_parent(child, successor);\n",
-        "",
+        "\t\t\trb_set_parent(child, node);\n",
     );
 }
 
@@ -1712,4 +1727,158 @@ mod tests {
         assert!(error.contains("source integrity mismatch"), "{error}");
         fs::remove_dir_all(directory).unwrap();
     }
+}
+
+#[test]
+fn rbtree_erase_color_uses_the_unchanged_pinned_function() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let bytes = fs::read(root.join("examples/rbtree-erase/rb_erase_color.c"))
+        .expect("the pinned erase-color C input exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "1964275955333d0c872f193d30283e6de1fbbd2e3315606734321de0d5bc503e"
+    );
+}
+
+fn erase_color_refuses_mutation(sidecar: &str, before: &str, after: &str) {
+    // The pinned function repeats each update in its two mirrored arms.
+    // Replacing both preserves statement positions and covers either orientation.
+    erase_source_refuses_replacement(sidecar, "rb_erase_color.c", before, after, 2);
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 7s"]
+fn rbtree_erase_color_red_left_requires_parent_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_left.click",
+        "rb_set_black(parent);",
+        "parent->__rb_parent_color = parent->__rb_parent_color;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 7s"]
+fn rbtree_erase_color_red_left_requires_sibling_recoloring() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_left.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 7s"]
+fn rbtree_erase_color_red_left_requires_the_sibling_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_left.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 4s"]
+fn rbtree_erase_color_root_left_requires_sibling_recoloring() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_root_left.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 4s"]
+fn rbtree_erase_color_root_left_requires_the_sibling_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_root_left.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 4s"]
+fn rbtree_erase_color_root_left_requires_the_null_parent_cursor() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_root_left.click",
+        "parent = rb_parent(node);",
+        "parent = node;",
+    );
+}
+
+// These mutations exercise the repeated case-2 proof, including its back edge.
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_cursor_ascent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "parent = rb_parent(node);",
+        "parent = node;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_focus_ascent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "node = parent;",
+        "node = node;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_parent_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "rb_set_black(parent);",
+        "parent->__rb_parent_color = parent->__rb_parent_color;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_sibling_recoloring() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: rotation-helper verification checks both helper contracts"]
+fn rbtree_rotate_set_parents_requires_the_copied_word() {
+    erase_source_refuses_replacement(
+        "rbtree_rotate_set_parents.click",
+        "rbtree.h",
+        "new->__rb_parent_color = old->__rb_parent_color;",
+        "new->__rb_parent_color = new->__rb_parent_color;",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: rotation-helper verification checks both helper contracts"]
+fn rbtree_rotate_set_parents_requires_the_new_parent() {
+    erase_source_refuses_replacement(
+        "rbtree_rotate_set_parents.click",
+        "rbtree.h",
+        "rb_set_parent_color(old, new, color);",
+        "rb_set_parent_color(old, old, color);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: rotation-helper verification checks both helper contracts"]
+fn rbtree_rotate_set_parents_requires_root_replacement() {
+    erase_source_refuses_replacement(
+        "rbtree_rotate_set_parents.click",
+        "rbtree.h",
+        "WRITE_ONCE(root->rb_node, new);",
+        "WRITE_ONCE(root->rb_node, old);",
+        1,
+    );
 }

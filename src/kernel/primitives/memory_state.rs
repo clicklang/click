@@ -6316,8 +6316,8 @@ impl CState {
         self.next_local_frame
     }
 
-    /// Initialize the checked creation ledger only at a fresh authority-mode
-    /// source proof entry, before any C statement executes.
+    /// Initialize the checked creation ledger only at a fresh source proof
+    /// entry, before any C statement executes.
     pub(crate) fn with_population_creation_tracking(mut self) -> Self {
         if self.population_effects.creation.is_none() {
             Arc::make_mut(&mut self.population_effects).creation =
@@ -6405,7 +6405,7 @@ impl CState {
             .population_effects
             .creation
             .as_ref()
-            .ok_or("opaque import requires authority mode")?
+            .ok_or("opaque import requires the creation ledger")?
             .import_observable_contract_population(description, owned_members)
             .map_err(|refusal| format!("opaque population import refused: {refusal:?}"))?;
         let mut next = self.clone();
@@ -6420,7 +6420,7 @@ impl CState {
         let CResource::PopulationAuthority(description) = authority.resource() else {
             return Err("population import requires authority".into());
         };
-        if !description.schema().is_countable() {
+        if !description.schema().is_fieldless() {
             if authority
                 .owned_quantity_term()
                 .and_then(Bitvector32Term::as_const)
@@ -6433,7 +6433,7 @@ impl CState {
                 .population_effects
                 .creation
                 .as_ref()
-                .ok_or("opaque import requires authority mode")?
+                .ok_or("opaque import requires the creation ledger")?
                 .import_observable_named_authority(description)
                 .map_err(|refusal| format!("named authority import refused: {refusal:?}"))?;
             let mut next = self.clone();
@@ -6475,7 +6475,7 @@ impl CState {
                 .population_effects
                 .creation
                 .as_ref()
-                .ok_or("batch import requires authority mode")?
+                .ok_or("batch import requires the creation ledger")?
                 .import_observable_contract_population_quantity(
                     description,
                     &Bitvector32Term::Constant(total),
@@ -6521,7 +6521,7 @@ impl CState {
             .population_effects
             .creation
             .as_ref()
-            .ok_or("batch import requires authority mode")?
+            .ok_or("batch import requires the creation ledger")?
             .import_observable_contract_population_quantity(description, quantity)
             .map_err(|refusal| format!("batch population import refused: {refusal:?}"))?;
         let mut next = self.clone();
@@ -6559,7 +6559,7 @@ impl CState {
             .population_effects
             .creation
             .as_ref()
-            .ok_or("opaque import requires authority mode")?
+            .ok_or("opaque import requires the creation ledger")?
             .import_opaque_wildcard_population(scope, &description)
             .map_err(|refusal| format!("wildcard population import refused: {refusal:?}"))?;
         let mut next = self.clone();
@@ -6579,14 +6579,14 @@ impl CState {
         {
             return Err("Requires one declared owned authority".into());
         }
-        if !scope.schema().is_countable() {
+        if !scope.schema().is_fieldless() {
             return self.import_opaque_population_inputs(authority);
         }
         let events = self
             .population_effects
             .creation
             .as_ref()
-            .ok_or("opaque import requires authority mode")?
+            .ok_or("opaque import requires the creation ledger")?
             .import_opaque_wildcard_authority(scope)
             .map_err(|refusal| format!("wildcard authority import refused: {refusal:?}"))?;
         let mut next = self.clone();
@@ -6604,7 +6604,7 @@ impl CState {
             .population_effects
             .creation
             .as_ref()
-            .ok_or("control registration requires authority mode")?
+            .ok_or("control registration requires the creation ledger")?
             .checked_current_control_wrapper(self, selected, definition, assumptions)?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
@@ -6717,8 +6717,8 @@ impl CState {
     }
 
     /// Before a fold, require the exact body already owned. The certificate
-    /// still checks the resulting exchange; this preflight only permits the
-    /// surface tactic to avoid legacy counted-population bookkeeping.
+    /// still checks the resulting exchange; this preflight only refuses a
+    /// fold whose body is not yet owned.
     pub(crate) fn checked_authority_wrapper_fold_preflight(
         &self,
         selected: &CResourceFact,
@@ -6748,7 +6748,7 @@ impl CState {
                 .population_effects
                 .creation
                 .as_ref()
-                .ok_or("control resource requires authority mode")?;
+                .ok_or("control resource requires the creation ledger")?;
             if !events.owns_population_authority(&description) {
                 return Err("Requires owns authority(R(p))".into());
             }
@@ -6833,7 +6833,7 @@ impl CState {
                 .population_effects
                 .creation
                 .as_ref()
-                .ok_or("acquired control authority requires authority mode")?;
+                .ok_or("acquired control authority requires the creation ledger")?;
             if events.recognizes_population_authority(description) {
                 return Err(format!(
                     "this proof already holds a total for {}(...); acquire its control at most once",
@@ -6878,7 +6878,7 @@ impl CState {
             .population_effects
             .creation
             .as_ref()
-            .ok_or("opaque control requires authority mode")?
+            .ok_or("opaque control requires the creation ledger")?
             .import_checked_control_wrapper_with_members(
                 self,
                 selected,
@@ -7018,7 +7018,6 @@ impl CState {
                 .instance_schema
                 .as_ref()
                 .is_some_and(|schema| !schema.fields().is_empty())
-            || definition.guarded_by.is_some()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
@@ -7191,7 +7190,7 @@ impl CState {
             .population_effects
             .creation
             .as_ref()
-            .ok_or("authority mode has no creation history")?;
+            .ok_or("the state has no creation history")?;
         let imported_retirement = !establish
             && anchor.block == PointerBlock::ExternalArgument
             && self
@@ -7276,7 +7275,6 @@ impl CState {
         let batch = quantity.as_const() != Some(1);
         if definition.name != *name
             || !definition.resource_parameters.is_empty()
-            || definition.guarded_by.is_some()
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
@@ -7369,7 +7367,7 @@ impl CState {
             .population_effects
             .creation
             .as_ref()
-            .ok_or("authority mode has no creation history")?;
+            .ok_or("the state has no creation history")?;
         if batch && (!definition.contains().is_empty() || !definition.facts().is_empty()) {
             return Err("a quantified member needs an empty private body".into());
         }

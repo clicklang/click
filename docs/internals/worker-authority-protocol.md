@@ -1,14 +1,10 @@
 # Worker authority protocol
 
 This page specifies how population authority and members cross
-`pthread_create` and `pthread_join` for workers that hold no lock. Milestone 6
-chunk 1 of `issues/authority-migration.md` froze it, and chunks 2 and 3
-implemented it and migrated every worker fixture; the
-[implementation](#implementation) section says how. The
+`pthread_create` and `pthread_join` for workers that hold no lock. It is
+implemented; the [implementation](#implementation) section says how. The
 [object-anchored population authority](authority-establishment-review.md)
-page holds the sequential rules this protocol extends, and the
-[consumer inventory](authority-migration-inventory.md) records migration
-evidence.
+page holds the sequential rules this protocol extends.
 
 The protocol needs no new surface syntax and no new kernel algebra. A thread
 boundary uses the same exclusive authority resource, the same ordinary member
@@ -19,8 +15,8 @@ whose return is delayed until a checked join.
 ## Rules
 
 1. **One holder.** `authority(R(p))` stays one exclusive resource. At any
-   moment it is owned by exactly one thread, held in one mutex escrow
-   (milestone 4), or retired. No operation splits, copies, or shares it.
+   moment it is owned by exactly one thread, held in one mutex escrow, or
+   retired. No operation splits, copies, or shares it.
 2. **Only the holder changes or observes the population.** A thread observes
    a current `count(R(p))`, folds a new member, or unfolds an existing member
    only while it owns the matching authority. This applies inside workers
@@ -28,7 +24,7 @@ whose return is delayed until a checked join.
 3. **Authority crosses a thread boundary only as a task resource.** A worker
    obtains authority in exactly two ways: its contract transfers it with
    `owns authority(R(p))`, or it acquires a mutex-held control that contains
-   it (milestones 4 and 6). No other route gives a worker authority. A worker
+   it. No other route gives a worker authority. A worker
    contract borrows authority with `owns` and returns it at its exit. A worker
    contract that consumes authority (worker retirement) or produces it (worker
    establishment) is outside this protocol and stays refused.
@@ -84,11 +80,11 @@ deferred transfer that the issue allows: ownership of the member is deferred
 until join, while the change in the count is not deferred. No count changes
 outside the authority holder, and join performs no population update.
 
-The legacy fixtures let two lock-free workers each consume a member of one
-population and committed both consumptions at join. That is the retroactive
-authorization the issue forbids, and the new model does not keep it. Workers
-that must change a shared population concurrently use a mutex-held control
-(milestone 4), so each update happens while its worker owns the authority.
+Two lock-free workers cannot each consume a member of one population and
+commit both consumptions at join: that would authorize the change
+retroactively. Workers that must change a shared population concurrently use a
+mutex-held control, so each update happens while its worker owns the
+authority.
 
 ## Compatibility with ownership held elsewhere
 
@@ -115,10 +111,10 @@ fragment holders cannot change the authoritative total. They return fragments
 to the authoritative holder instead. Similar terminology implies no Iris
 embedding or inherited soundness.
 
-## Constraints on milestone 4
+## Mutex-held controls
 
-The lock-based shared refcount of milestone 6 chunk 4 reaches authority through
-a mutex. Milestone 4 must therefore provide these properties:
+A lock-based shared refcount (`examples/shared-refcount/`) reaches authority
+through a mutex, which provides these properties:
 
 - A control deposited at checked initialization may own `authority(R(p))`.
   While it is deposited, its registration and ledger stay live and belong to
@@ -134,69 +130,65 @@ a mutex. Milestone 4 must therefore provide these properties:
   `mutex_use` share has returned. Retirement and anchor reclamation happen
   only after that.
 - The escrow treats the control as an ordinary exclusive resource. No rule in
-  the mutex path refers to counted populations.
+  the mutex path refers to populations.
 
-## Fixture mapping
+## Fixtures
 
-Each legacy worker fixture keeps its C unchanged. Replacements that spend a
-member declare an ordinary field-free resource,
-`authorized resource ticket(p: void*) {}`, instead of
-`authorized abstract resource ticket(p: void*);`. Authority mode has no checked
-spend for abstract members: it refuses `unfold` of an abstract member because
-its members require an ordinary producing contract. A worker that spends
+Fixtures that spend a member declare an ordinary field-free resource,
+`authorized resource ticket(p: void*) {}`, rather than
+`authorized abstract resource ticket(p: void*);`. There is no checked spend for
+abstract members: `unfold` of an abstract member is refused because its members
+require an ordinary producing contract. A worker that spends
 carries `owns authority(ticket(argument))` and unfolds its member. A worker
 that borrows carries only `owns ticket(argument)`.
 
-Abstract workers and joins (milestone 6 chunk 2):
+Abstract workers and joins:
 
-| Fixture | Legacy | Replacement under this protocol |
-| --- | --- | --- |
-| `modeled_pthread_counted_join.md` | pass | Pass. The worker owns the authority and spends its member; the parent observes zero after join. |
-| `modeled_pthread_counted_reverse_join.md` | pass | Pass. Each worker owns the authority of its own population; both join orders observe fresh totals. |
-| `modeled_pthread_counted_before_join.md` | fail | Fail. The parent's observation between create and join lacks the authority lent to the worker. |
-| `modeled_pthread_counted_join_stale.md` | fail | Fail. After join, the fresh total is zero, so the stale `count == 1` is false. |
-| `modeled_pthread_counted_neutral_pending.md` | fail | Split; see [outcome changes](#outcome-changes). A borrowing worker leaves the authority with the parent, which observes the exact total before join. A worker that borrows the authority neutrally still blocks the parent's observation. |
-| `modeled_pthread_counted_pending_helper.md` | fail | Fail. The helper's count precondition needs authority, which the caller has lent to the worker. |
-| `modeled_pthread_counted_pending_wildcard.md` | fail | Fail. A wildcard count needs the wildcard authority, which the parent does not own; the lent exact authority does not supply it. |
-| `modeled_pthread_counted_overlap_rejected.md` | fail | Fail. A worker that observes the count needs the authority, so a second worker of the same population cannot also hold it. |
-| `modeled_pthread_thread_confined_resource_rejected.md` | fail | Replaced; see [outcome changes](#outcome-changes). Its member-body counter invariant is a legacy-only shape. |
+| Fixture | Outcome under this protocol |
+| --- | --- |
+| `modeled_pthread_counted_join.md` | Pass. The worker owns the authority and spends its member; the parent observes zero after join. |
+| `modeled_pthread_counted_reverse_join.md` | Pass. Each worker owns the authority of its own population; both join orders observe fresh totals. |
+| `modeled_pthread_counted_before_join.md` | Fail. The parent's observation between create and join lacks the authority lent to the worker. |
+| `modeled_pthread_counted_join_stale.md` | Fail. After join, the fresh total is zero, so the stale `count == 1` is false. |
+| `modeled_pthread_counted_neutral_pending.md` | Split; see [outcome changes](#outcome-changes). A borrowing worker leaves the authority with the parent, which observes the exact total before join. A worker that borrows the authority neutrally still blocks the parent's observation. |
+| `modeled_pthread_counted_pending_helper.md` | Fail. The helper's count precondition needs authority, which the caller has lent to the worker. |
+| `modeled_pthread_counted_pending_wildcard.md` | Fail. A wildcard count needs the wildcard authority, which the parent does not own; the lent exact authority does not supply it. |
+| `modeled_pthread_counted_overlap_rejected.md` | Fail. A worker that observes the count needs the authority, so a second worker of the same population cannot also hold it. |
+| `modeled_pthread_thread_confined_resource_rejected.md` | Replaced; see [outcome changes](#outcome-changes). Its member-body counter invariant is not an admitted shape. |
 
-Shared abstract worker population (milestone 6 chunk 3). In each positive
-replacement, both workers borrow members, and the parent spends each returned
+Shared abstract worker population. In each positive fixture, both workers borrow members, and the parent spends each returned
 member after the join that returns it:
 
-| Fixture | Legacy | Replacement under this protocol |
-| --- | --- | --- |
-| `modeled_pthread_counted_shared_join.md` | pass | Pass in reverse join order; the parent spends after each join and observes fresh totals. |
-| `modeled_pthread_counted_shared_forward_join.md` | pass | Pass in forward join order. |
-| `modeled_pthread_counted_shared_partial_then_create.md` | pass | Pass. A returned member is spent before the reused handle creates a third worker. |
-| `modeled_pthread_counted_shared_retained.md` | pass | Pass. The parent's retained member keeps the final total at one. |
-| `modeled_pthread_counted_shared_symbolic.md` | pass | Pass with an opaque entry total `n >= 2`; the final total is `n - 2`. |
-| `modeled_pthread_counted_shared_neutral.md` | pass | Pass. Nothing is spent; the total stays two. |
-| `modeled_pthread_counted_shared_observer.md` | fail | Fail. The observing worker needs the authority, which a borrowing worker cannot share. |
-| `modeled_pthread_counted_shared_stale.md` | fail | Fail. After both spends, the stale `count == 2` is false. |
-| `modeled_pthread_counted_shared_early_count.md` | fail | Fail. The first worker's member is still lent, so the parent cannot spend it, and the total cannot reach zero before that join. |
-| `modeled_pthread_counted_shared_missing_unit.md` | fail | Fail. The second create needs a member the parent does not own. |
+| Fixture | Outcome under this protocol |
+| --- | --- |
+| `modeled_pthread_counted_shared_join.md` | Pass in reverse join order; the parent spends after each join and observes fresh totals. |
+| `modeled_pthread_counted_shared_forward_join.md` | Pass in forward join order. |
+| `modeled_pthread_counted_shared_partial_then_create.md` | Pass. A returned member is spent before the reused handle creates a third worker. |
+| `modeled_pthread_counted_shared_retained.md` | Pass. The parent's retained member keeps the final total at one. |
+| `modeled_pthread_counted_shared_symbolic.md` | Pass with an opaque entry total `n >= 2`; the final total is `n - 2`. |
+| `modeled_pthread_counted_shared_neutral.md` | Pass. Nothing is spent; the total stays two. |
+| `modeled_pthread_counted_shared_observer.md` | Fail. The observing worker needs the authority, which a borrowing worker cannot share. |
+| `modeled_pthread_counted_shared_stale.md` | Fail. After both spends, the stale `count == 2` is false. |
+| `modeled_pthread_counted_shared_early_count.md` | Fail. The first worker's member is still lent, so the parent cannot spend it, and the total cannot reach zero before that join. |
+| `modeled_pthread_counted_shared_missing_unit.md` | Fail. The second create needs a member the parent does not own. |
 
 ## Outcome changes
 
-Three behaviors change. Each change follows from the authority rule, and a
-negative fixture keeps the refusal it protected:
+Three behaviors follow from the authority rule, and a negative fixture keeps
+each refusal:
 
-- **Count refusals while a worker is outstanding.** Legacy refused any parent
-  count observation while a worker that mentioned the population was
-  outstanding. The new refusal is narrower and explicit: an observation needs
-  the authority, so it fails exactly when the authority is lent. The diagnostic
-  must name the missing authority and the worker that holds it, in place of
-  `count(...) requires joining its outstanding worker`.
+- **Count refusals while a worker is outstanding.** An observation needs the
+  authority, so it fails exactly when the authority is lent, not whenever a
+  worker that mentions the population is outstanding. The diagnostic names the
+  missing authority and the worker that holds it.
 - **`modeled_pthread_counted_neutral_pending.md`.** Its worker borrows only a
   member, so under this protocol the parent keeps the authority and may observe
   the exact total before join. That observation is sound because the borrowing
-  worker cannot change the total. Migration adds this positive and keeps the
-  refusal as a negative in which the neutral worker also borrows the authority.
+  worker cannot change the total. The refusal remains as a negative in which the
+  neutral worker also borrows the authority.
 - **`modeled_pthread_thread_confined_resource_rejected.md`.** Its member body
-  owns the counter and states a count fact, a shape that authority mode does
-  not admit. Under authority, a member is no longer thread-confined: lending it
+  owns the counter and states a count fact, a shape that is not admitted. A
+  member is not thread-confined: lending it
   to a worker is an ordinary transfer. The replacement keeps the protected
   property, that a member alone cannot expose shared accounting, with
   negatives in which a worker that borrows only the member observes the count
@@ -223,9 +215,9 @@ no population transition, and every count observed afterward is read from the
 ledger. A count whose authority is lent reports `count(...) requires owning
 authority for that population, which an outstanding worker holds until its
 pthread_join`. The contract-claims recheck executes both transitions again, and
-`click audit` expands and reverifies the migrated fixtures.
+`click audit` expands and reverifies the worker fixtures.
 
-A worker contract is admitted by the sequential authority-mode rules, so a
+A worker contract is admitted by the sequential authority rules, so a
 worker that consumes or produces authority, or keeps a member it cannot
 spend, is refused at create or in its own proof.
 
@@ -248,18 +240,13 @@ the workers that change this population under its mutex`; the parent may
 still lock and unlock the mutex without opening the control. Destroying the
 mutex needs every use share back, so it follows the joins.
 
-## Implementation chunks
+## Misuse regressions
 
-Milestone 6 chunk 2 implements this protocol for authority-mode
-`pthread_create` and `pthread_join`. It suspends the parent's use of the
-transferred authority, applies the worker's checked delta at join, and adds
-independent certificate checks for both transitions. Misuse regressions cover:
+The create and join transitions suspend the parent's use of the transferred
+authority, apply the worker's checked delta at join, and have independent
+certificate checks. Misuse regressions cover:
 
 - observing, retiring, or freeing while a worker holds the authority;
 - a worker that relinquishes a member;
 - a worker that consumes or produces the authority; and
 - reusing a pre-create observation after join.
-
-Chunk 3 migrates the shared fixtures with no further capability. If either
-chunk finds that the protocol needs more than these existing transfers, that is
-a design change to discuss before coding, not an implementation detail.

@@ -74,10 +74,10 @@ positive `shared_heap_population_certification.md` regression now verifies
 all six helpers with that ensure. The helper-side repair is not evidence
 that the complete caller lifecycle or concurrent use is verified.
 
-The existing [resource documentation](../docs/concepts/resources.md) says a
-population body belongs to the population as a whole and that retain/release
-must preserve it. Its `open(resource) { ... }` proof scope restores the body at
-scope exit. The frozen probe uses ordinary non-atomic C, and Click's selected
+The [resource documentation](../docs/concepts/resources.md) describes a
+population's control, which owns the authority and states the count's facts;
+retain and release must keep them true. Its `open(resource) { ... }` proof
+scope restores the control at scope exit. The frozen probe uses ordinary non-atomic C, and Click's selected
 pthread model does not yet establish a concurrent shared-heap protocol.
 
 ## Required positive and negative regressions
@@ -98,7 +98,7 @@ pthread model does not yet establish a concurrent shared-heap protocol.
   shared counter and unsafe final reclamation. This may depend on work in the
   linked concurrency issues; record the dependency rather than treating the
   sequential fixture as a concurrency proof.
-- Keep the resource rules general to counted populations and independent
+- Keep the resource rules general to populations and independent
   parents, not this struct layout or two-parent count. Add deterministic
   scaling checks for more parents and unrelated live graph resources, as
   required by the [efficiency contract](../docs/internals/verification-efficiency.md).

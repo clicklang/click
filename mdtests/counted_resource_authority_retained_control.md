@@ -1,7 +1,7 @@
 # Retained authority control passes certification
 
-A proof that retains a folded control must certify its return without asking
-the legacy population body transition to unfold its contained authority.
+A proof that retains a folded control must certify its return without
+unfolding its contained authority.
 
 ```c filename=counted_resource_retained_control.c
 struct object { int32 refs; };

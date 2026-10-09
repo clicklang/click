@@ -1,4 +1,4 @@
-The population cannot be destroyed while its mutex is live
+# The population cannot be destroyed while its mutex is live
 
 After unlock, the population authority is back in the mutex. Spending the
 members before destroying the mutex needs that authority, so cleanup must

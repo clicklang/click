@@ -16,6 +16,9 @@ const TAIL_BOUNDS: &str = include_str!("../../design/charon-trial/adler2/tail-bo
 const SMALL_BATCH_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/small-batch-compute.click");
 
+const GENERAL_COMPUTE: &str =
+    include_str!("../../design/charon-trial/adler2/general-compute.click");
+
 fn compute_proof(contract: &str) -> String {
     let computation = HELPERS.split_once("# Empty-input boundary").unwrap().1;
     let getters = &computation[computation.find("\nuint32 ").unwrap()..];
@@ -37,13 +40,18 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let general_partition = if contract.contains("adler_general_bounded_tail_metadata(") {
+        GENERAL_PARTITION
+    } else {
+        ""
+    };
     let tail_bounds = if contract.contains("adler_tail_iterator_step(") {
         TAIL_BOUNDS
     } else {
         ""
     };
     format!(
-        "{}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{tail_bounds}\n{contract}\n{getters}",
+        "{}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -1514,7 +1522,7 @@ fn charon_adler2_small_partition_verifies() {
 const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32-spec.click");
 
 // Checks the common mathematical target independently of an imported body:
-// weighted byte order, canonical residues, empty seeds and packed bounds.
+// one/four-byte weighted order, canonical residues, empty seeds and packed bounds.
 #[test]
 fn adler_common_spec_recurrences_and_bounds_verify() {
     click::surface::verify_c0_sources(COMMON_ADLER_SPEC, &[]).unwrap();
@@ -1524,6 +1532,9 @@ fn adler_common_spec_recurrences_and_bounds_verify() {
 #[ignore = "nightly: common checksum specification expansion and mutation checks"]
 fn adler_common_spec_expands_and_rejects_false_results() {
     for claim in [
+        "adler_byte_observation_same_index.ensures_0",
+        "adler_sum_append_four.ensures_0",
+        "adler_weighted_append_four.ensures_0",
         "adler_weight_shift.ensures_0",
         "adler_weighted_prefix_step.ensures_0",
         "adler_sum_nonnegative.ensures_0",
@@ -1546,6 +1557,11 @@ fn adler_common_spec_expands_and_rejects_false_results() {
             "adler_weighted_sum(bytes, n - 1, n - 1) + adler_byte_sum(bytes, n) by",
             "adler_weighted_sum(bytes, n - 1, n - 1) + 2 * adler_byte_sum(bytes, n) by",
         ),
+        (
+            "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
+            "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
+        ),
+        ("requires n <= 2147483643;", "requires n <= 2147483644;"),
         ("<= 4293984240 by", "<= 4293984239 by"),
         (
             "adler_spec_a(bytes, 0, a0) == a0 by",
@@ -1571,21 +1587,90 @@ fn adler_common_spec_expands_and_rejects_false_results() {
 const GENERAL_PARTITION: &str =
     include_str!("../../design/charon-trial/adler2/general-partition.click");
 
+const STORED_GUARD_C: &str = r#"int adler_stored_guard(int remaining, unsigned long size) {
+    while (0 < remaining && (size <= 2147483647UL && (int)(unsigned int)size <= remaining)) {
+        remaining -= 22208;
+    }
+    return remaining;
+}
+"#;
+
+const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64 size) {
+ requires 0 <= remaining;
+ requires remaining % 22208 == 0;
+ requires size == 22208u64;
+ ensures result == 0;
+} by {
+ loop {
+  decreases remaining;
+  invariant 0 <= remaining;
+  invariant remaining % 22208 == 0;
+  invariant size == 22208u64;
+  preserve by {
+   have 0 < remaining by { simp(); }
+   apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; }
+   mark head;
+   apply(adler_outer_remaining_step(at(head, remaining), at(head, remaining))) using { 0 <= at(head, remaining); at(head, remaining) <= at(head, remaining); 22208 <= at(head, remaining); }
+   apply(adler_outer_remaining_step_divisible(at(head, remaining))) using { 22208 <= at(head, remaining); at(head, remaining) % 22208 == 0; }
+   step();
+   have remaining == at(head, remaining) - 22208 by { simp(); }
+   have 0 <= remaining by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
+   have remaining % 22208 == 0 by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
+   have remaining < at(head, remaining) by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
+   close_invariants by { simp(); }
+  }
+ }
+ have not (0 < remaining) or not ((int32)(uint32)size <= remaining) by { assumption(); }
+ apply(adler_outer_exhausted_remaining(remaining, size)) using { 0 <= remaining; remaining % 22208 == 0; size == 22208u64; not (0 < remaining) or not ((int32)(uint32)size <= remaining); }
+ execute(); simp();
+}
+"#;
+
 // Unlike the small-batch fixture, checks full signed-range usize observations,
-// aligned short remainders and progress of the actual full-batch remaining count.
+// aligned short remainders and actual full-batch progress. The native guard
+// catches confusing its captured size comparison with a literal endpoint.
 #[test]
 fn charon_adler2_general_partition_and_outer_progress_verify() {
-    click::surface::verify_c0_sources(GENERAL_PARTITION, &[]).unwrap();
+    let proof = format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_PROOF}");
+    click::surface::verify_c0_sources(&proof, &[("stored-guard.c", STORED_GUARD_C)]).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: general batch metadata expansion and mutation checks"]
 fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
+    let guard_proof =
+        format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_PROOF}");
+    let guard_sources = [("stored-guard.c", STORED_GUARD_C)];
+    let expanded_guard = click::surface::expand_c0_claim_source_by_label(
+        &guard_proof,
+        &guard_sources,
+        "adler_stored_guard.contract",
+    )
+    .unwrap();
+    click::surface::verify_c0_sources(&expanded_guard, &guard_sources).unwrap();
+    for (before, after) in [
+        ("requires remaining % 22208 == 0;", ""),
+        ("ensures result == 0;", "ensures result == 1;"),
+    ] {
+        let invalid_guard = STORED_GUARD_PROOF.replacen(before, after, 1);
+        assert_ne!(invalid_guard, STORED_GUARD_PROOF);
+        let invalid =
+            format!("verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{invalid_guard}");
+        assert!(click::surface::verify_c0_sources(&invalid, &guard_sources).is_err());
+    }
     for claim in [
         "adler_aligned_outer_partition.ensures_0",
         "adler_outer_bulk_signed_multiple.ensures_0",
         "adler_outer_remaining_step.ensures_0",
         "adler_outer_remaining_step_divisible.ensures_0",
+        "adler_absolute_chunk_access.ensures_0",
+        "adler_absolute_chunk_access.ensures_1",
+        "adler_pointer_sum_association.ensures_0",
+        "adler_outer_cursor_step.ensures_0",
+        "adler_bounded_slice_access.ensures_0",
+        "adler_outer_bulk_within_prefix.ensures_0",
+        "adler_outer_signed_partition_identity.ensures_0",
+        "adler_outer_exhausted_remaining.ensures_0",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
@@ -1593,6 +1678,21 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         click::surface::verify_c0_sources(&expanded, &[]).unwrap();
     }
     for (before, after) in [
+        (
+            "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22208u64) by",
+            "and (int32)(uint32)p == (int32)(uint32)(p - p % 22208u64) + (int32)(uint32)(p % 22204u64) by",
+        ),
+        (
+            "requires not (0 < remaining) or not ((int32)(uint32)size <= remaining);",
+            "requires 0 < remaining or (int32)(uint32)size <= remaining;",
+        ),
+        ("requires pos + 4 <= length;", "requires pos <= length;"),
+        ("requires pos <= 22204;", "requires pos <= 22205;"),
+        (
+            "base + (total - (remaining - 22208)) by",
+            "base + (total - (remaining - 22204)) by",
+        ),
+        ("and (t + pos) + 4 <= n by", "and (t + pos) + 4 < n by"),
         ("<= 2147483647u64;", "<= 2147483648u64;"),
         ("<= 22204 by", "<= 22200 by"),
         (
@@ -1610,5 +1710,59 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
             click::surface::verify_c0_sources(&invalid, &[]).is_err(),
             "{before}"
         );
+    }
+}
+
+#[test]
+#[ignore = "nightly: whole unchanged computation for all signed-range lengths"]
+fn charon_adler2_general_compute_proves_original_body() {
+    let p = compute_project(GENERAL_COMPUTE);
+    C0VerificationSession::new_program_prepared(
+        &compute_proof(GENERAL_COMPUTE),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: general computation authority, seeds and final bounds"]
+fn charon_adler2_general_compute_rejects_invalid_contracts() {
+    for (before, after) in [
+        (" views bytes[0..(int32)(uint32)bytes_len];", ""),
+        (" requires (uint32)self->a <= 65520u32;", ""),
+        (" requires (uint32)self->b <= 65520u32;", ""),
+        ("ensures self->a < 65521;", "ensures self->a < 1;"),
+    ] {
+        reject_compute(GENERAL_COMPUTE, before, after);
+    }
+}
+
+#[test]
+#[ignore = "nightly: general whole-body proof-tool agreement and expansion"]
+fn charon_adler2_general_compute_tools_recheck_original_contract() {
+    let p = compute_project(GENERAL_COMPUTE);
+    let claim = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute.contract";
+    for command in ["verify", "profile"] {
+        assert_cli(&p, &[command]);
+    }
+    assert_cli(&p, &["audit", "--claim", claim]);
+    assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[ignore = "nightly: actual general outer and tail cursor rejection"]
+fn charon_adler2_general_compute_rejects_false_iterator_state() {
+    for (before, after) in [
+        (
+            "have __rust_mir_27_cursor == old(bytes) by { simp(); }",
+            "have __rust_mir_27_cursor == old(bytes) + 1 by { assumption(); }",
+        ),
+        (
+            "have __rust_mir_138_cursor == remainder by { simp(); }",
+            "have __rust_mir_138_cursor == remainder + 1 by { assumption(); }",
+        ),
+    ] {
+        reject_compute(GENERAL_COMPUTE, before, after);
     }
 }

@@ -7,7 +7,7 @@ already-proved memory predicate needed by the resource body.
 
 The helper receives authority for an empty family explicitly and exchanges its
 owned cell for the first member. Its count-independent predicate still holds
-after that checked birth; no legacy population rules are used.
+after that checked birth.
 
 ```c filename=predicate_without_count_ignores_resource_population.c
 void wrap_zero(int32 *cell) {

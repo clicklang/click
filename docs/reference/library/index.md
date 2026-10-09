@@ -104,9 +104,9 @@ abstract resource authority();
 one population of the declared resource type `reference(p)`. The empty
 population may be established with `fold(authority(reference(p)))` only in the
 execution proof that created `p`'s storage. It may be retired with
-`unfold(authority(reference(p)))` only when its member count is zero. The
-authority mode admits exact field-free members with private owned memory,
-their current `count(...)`, and direct authority/member helper contracts. An
+`unfold(authority(reference(p)))` only when its member count is zero. Its
+members may be field-free with private owned memory, observed by their current
+`count(...)` and moved by direct authority/member helper contracts. An
 ordinary field-free control can package counter memory, authorities, and facts
 relating the memory to population counts. Ordinary helper contracts transfer
 these controls, concrete members, and checked symbolic groups.
@@ -134,7 +134,6 @@ exact owned occurrence. Unary and wildcard imports preserve arbitrary entry
 totals and record relative effects without anonymous member rights. Assumed
 interfaces may preserve named ownership but cannot perform these lifecycle
 effects. Symbolic quantities of heterogeneous named instances remain unsupported.
-Legacy mode retains its field-count restriction.
 
 **Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
 

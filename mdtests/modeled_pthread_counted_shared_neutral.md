@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# Borrowing workers that spend nothing leave the total at two
 
 ```c filename=modeled_pthread_counted_shared_neutral.c
 #include <pthread.h>

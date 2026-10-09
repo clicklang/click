@@ -115,7 +115,6 @@ impl<'a> Proof<'a> {
         definition.resource_parameters().is_empty()
             && definition.fields().is_empty()
             && body.children.is_empty()
-            && body.guarded_by.is_none()
             && body.matched.is_none()
             && body.condition.is_none()
             && body.facts.is_empty()
@@ -136,14 +135,11 @@ impl<'a> Proof<'a> {
             ResourceClause::Quantified { resource, .. } => match resource.as_ref() {
                 ResourceClause::Declared { name, .. } => name,
                 _ => {
-                    return Err(self
-                        .step_error("authority-mode member changes require a declared resource"));
+                    return Err(self.step_error("member changes require a declared resource"));
                 }
             },
             _ => {
-                return Err(
-                    self.step_error("authority-mode member changes require a declared resource")
-                );
+                return Err(self.step_error("member changes require a declared resource"));
             }
         };
         let name = declared;
@@ -166,14 +162,13 @@ impl<'a> Proof<'a> {
         if !definition.resource_parameters().is_empty()
             || !definition.fields().is_empty()
             || !body.children.is_empty()
-            || body.guarded_by.is_some()
             || body.matched.is_some()
             || body.condition.is_some()
             || contains_nonprivate_resource
             || !body.witnesses.is_empty()
         {
             return Err(self.step_error(format!(
-                "authority-mode fold/unfold of `{name}` requires a private body of owned memory or declared resources"
+                "member fold/unfold of `{name}` requires a private body of owned memory or declared resources"
             )));
         }
         self.require_execution_frontier("population member change")?;
@@ -427,12 +422,13 @@ impl<'a> Proof<'a> {
             // arguments, so `fold(cell_at(id), ...)` names the pointer a
             // `have` goal spelling `id` does.
             let resource = &self.substitute_fixed_state_locals_in_resource_arguments(resource)?;
-            let lowered = lower_resource_clause_at_current_locals(
+            let lowered = lower_resource_clause_at_current_locals_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 before,
                 outcome.map(|goal| &*goal.data.core.result),
+                self.facts().assumptions(),
             )?;
             let CResourceFact::Own(CResource::Composite { name, arguments }, _) = lowered else {
                 return Err(self.step_error("fold construction requires an owned resource"));
@@ -960,7 +956,12 @@ impl<'a> Proof<'a> {
             .parameters()
             .iter()
             .zip(&checked_arguments)
-            .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+            .map(|(parameter, argument)| {
+                (
+                    parameter.name().to_string(),
+                    crate::surface::lowering::pure_function_parameter_argument(parameter, argument),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         let checked_body =
             substitute_contract_expression(definition.body(), &checked_substitutions).map_err(
@@ -1130,7 +1131,14 @@ impl<'a> Proof<'a> {
                     .parameters()
                     .iter()
                     .zip(&application.arguments)
-                    .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+                    .map(|(parameter, argument)| {
+                        (
+                            parameter.name().to_string(),
+                            crate::surface::lowering::pure_function_parameter_argument(
+                                parameter, argument,
+                            ),
+                        )
+                    })
                     .collect::<BTreeMap<_, _>>();
                 let surface_body =
                     substitute_contract_expression(definition.body(), &substitutions).map_err(
@@ -1531,7 +1539,12 @@ impl<'a> Proof<'a> {
             .parameters()
             .iter()
             .zip(&application.arguments)
-            .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
+            .map(|(parameter, argument)| {
+                (
+                    parameter.name().to_string(),
+                    crate::surface::lowering::pure_function_parameter_argument(parameter, argument),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
         let substitute = |expression: &ContractExpression| {
             substitute_contract_expression(expression, &substitutions).ok()
@@ -2212,9 +2225,7 @@ impl<'a> Proof<'a> {
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
         {
-            return Err(self.step_error(
-                "resource unfold after function outcome is unavailable in authority mode",
-            ));
+            return Err(self.step_error("resource unfold after function outcome is unavailable"));
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return Err(self.step_error(
@@ -2303,9 +2314,7 @@ impl<'a> Proof<'a> {
             && !matches!(resource, ResourceClause::Named { .. })
             && !self.names_unauthorized_family(resource)
         {
-            return Err(self.step_error(
-                "resource fold after function outcome is unavailable in authority mode",
-            ));
+            return Err(self.step_error("resource fold after function outcome is unavailable"));
         }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, false);
@@ -2434,9 +2443,7 @@ impl<'a> Proof<'a> {
         // Constructing an ordinary family's token creates no population
         // member; an authorized family's member needs its authority.
         if self.execution().is_some() && !self.names_unauthorized_family(resource) {
-            return Err(self.step_error(
-                "resource construction may create untracked members in authority mode",
-            ));
+            return Err(self.step_error("resource construction may create untracked members"));
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `construct` requires an execution proof"));

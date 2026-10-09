@@ -1,4 +1,4 @@
-# Workers consume one shared abstract population in either join order
+# The parent's retained member keeps the final total at one
 
 ```c filename=modeled_pthread_counted_shared_retained.c
 #include <pthread.h>

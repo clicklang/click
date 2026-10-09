@@ -82,8 +82,8 @@ enum OpaqueMemberInputs {
 
 struct Root {
     identity: u64,
-    /// Stable rechecking of the same function-entry transition. Authority-mode C
-    /// calls remain closed until each occurrence has its own identity.
+    /// Stable rechecking of the same function-entry transition. C calls remain
+    /// closed until each occurrence has its own identity.
     entry_call: OnceLock<CreationEvents>,
     proof_entry: OnceLock<CreationEvents>,
     /// Rechecking a transfer or return uses the same successor identity.
@@ -466,6 +466,7 @@ impl CreationEvents {
         Ok(self.memoized_c_event(key, || next))
     }
 
+    #[cfg(test)]
     /// Standalone helper entry may assume one already existing population
     /// named by an exact external-argument pointer. This records only the
     /// contract's input custody; it cannot create storage or assert a total.
@@ -541,7 +542,7 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Result<Self, CreationRefusal> {
-        if description.schema().is_countable() {
+        if description.schema().is_fieldless() {
             return Err(CreationRefusal::InvalidMember);
         }
         let count = if let Some(import) = self.0.opaque_imports.get(description) {
@@ -805,7 +806,7 @@ impl CreationEvents {
         let named_authority = matches!(members, OpaqueMemberInputs::NamedAuthority);
         let acquired = matches!(members, OpaqueMemberInputs::Acquired);
         if named_authority
-            && (description.schema().is_countable()
+            && (description.schema().is_fieldless()
                 || owned_members != 0
                 || symbolic_members.is_some()
                 || control.is_some())
@@ -821,7 +822,7 @@ impl CreationEvents {
         };
         if (description.population_arity().is_none() && wildcard_member.is_some())
             || pointer.pointer().block != PointerBlock::ExternalArgument
-            || !description.schema().is_countable() && !named_authority
+            || !description.schema().is_fieldless() && !named_authority
             || !description.resource_arguments().is_empty()
             || owned_members > i32::MAX as u32
         {
@@ -1076,6 +1077,7 @@ impl CreationEvents {
                 .is_ok()
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn owns_population_member(
         &self,
         description: &ResourceDescription,
@@ -1277,6 +1279,7 @@ impl CreationEvents {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn born_imported_member_since(
         &self,
         before: &Self,
@@ -1695,6 +1698,7 @@ impl CreationEvents {
         Ok(block)
     }
 
+    #[cfg(test)]
     /// Read the total only while this proof environment holds the authority.
     pub(in crate::kernel) fn observe(
         &self,
@@ -1762,7 +1766,7 @@ impl CreationEvents {
                     });
                 }
             }
-            if !scope.schema().is_countable() {
+            if !scope.schema().is_fieldless() {
                 let key = Self::exact_count_key(description);
                 if import.named_ambiguous
                     || import
@@ -2017,7 +2021,7 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
-        if !description.schema().is_countable() {
+        if !description.schema().is_fieldless() {
             // Named occurrences carry independent fields, not an anonymous
             // quantity that can be produced without those owned instances.
             return Err(CreationRefusal::InvalidMember);
@@ -2372,6 +2376,7 @@ impl CreationEvents {
         Ok((after, evidence))
     }
 
+    #[cfg(test)]
     /// Change exactly one member. The caller supplies a checked resource type;
     /// this method independently rejects fields, references and non-base anchors.
     pub(in crate::kernel) fn checked_member_exchange(
@@ -2410,7 +2415,7 @@ impl CreationEvents {
         let reference = ResourceReference::from_instance(instance);
         let description = reference.description();
         if description.population_arity().is_some()
-            || description.schema().is_countable()
+            || description.schema().is_fieldless()
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);
@@ -2640,7 +2645,7 @@ impl CreationEvents {
             }
         );
         if description.population_arity().is_some()
-            || matches!(form, MemberForm::Quantity { .. }) && !description.schema().is_countable()
+            || matches!(form, MemberForm::Quantity { .. }) && !description.schema().is_fieldless()
         {
             return Err(CreationRefusal::InvalidMember);
         }
@@ -2981,7 +2986,7 @@ impl CreationEvents {
     /// environment. The caller's current creation rights do not follow it.
     /// Rechecking one entry must recover exactly the same child identity.
     /// Distinct C call occurrences need their own event key before calls are
-    /// enabled in authority mode.
+    /// enabled.
     pub(in crate::kernel) fn enter_call(&self) -> Self {
         self.0
             .entry_call
@@ -3612,6 +3617,7 @@ impl CreationEvents {
         }))
     }
 
+    #[cfg(test)]
     /// A checked source fold may establish only at its own creation event,
     /// before any member of this family has existed in the storage lifetime.
     pub(in crate::kernel) fn establish(

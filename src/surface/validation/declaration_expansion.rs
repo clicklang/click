@@ -26,7 +26,9 @@ struct DeclaredResourceInfo {
 /// records the parent's family provisionally and the slot decides the real
 /// one here.
 struct DeclaredResourceScope {
-    authority_mode: bool,
+    /// Whether the family rules apply: only `authorized` families are
+    /// counted. The standard library's own expansion applies none.
+    family_rules: bool,
     definitions: BTreeMap<String, DeclaredResourceInfo>,
     /// Instances introduced as matched-arm children, by identity. These
     /// override whatever family the parser recorded.
@@ -231,8 +233,8 @@ fn expand_declared_resource_clauses_with_rules(
 ) -> Result<ClickFile, ClickError> {
     // A failure before the first declaration belongs to none of them.
     crate::surface::clear_ambient_proof_source();
-    // Legacy standard-library expansion must not re-enter its OnceLock.
-    // Authority schemas use the same checked algebraic definitions as lowering.
+    // The standard library's expansion must not re-enter its OnceLock.
+    // Field schemas use the same checked algebraic definitions as lowering.
     if family_rules {
         super::validate_resource_fields(&file)?;
     }
@@ -240,7 +242,7 @@ fn expand_declared_resource_clauses_with_rules(
         && file
             .resource_definitions()
             .iter()
-            .any(|definition| !definition.is_countable())
+            .any(|definition| !definition.is_fieldless())
     {
         Some(ClickFunctionEnvironment::with_algebraic_types(
             &[],
@@ -262,7 +264,7 @@ fn expand_declared_resource_clauses_with_rules(
                     field_schema: field_environment.as_ref().map(|environment|
                         crate::surface::lowering::resolve_resource_field_schema(definition, environment)
                     ).transpose()?,
-                    has_fields: !definition.is_countable(),
+                    has_fields: !definition.is_fieldless(),
                     authorized: definition.is_authorized(),
                     resource_parameter_families: definition.resource_parameters().iter().map(|parameter| {
                         let ResourceClause::Named { resource, .. } = parameter else { unreachable!() };
@@ -357,7 +359,7 @@ fn expand_declared_resource_clauses_with_rules(
         },
     );
     let resource_definitions = DeclaredResourceScope {
-        authority_mode: family_rules,
+        family_rules,
         definitions: resource_definitions,
         children: Default::default(),
         instances: Default::default(),
@@ -560,7 +562,6 @@ fn expand_declared_composite_resource_body(
     Ok(CompositeResourceBody {
         children: composite_body.children,
         fields: composite_body.fields,
-        guarded_by: composite_body.guarded_by,
         matched: composite_body
             .matched
             .map(|matched| {
@@ -2454,7 +2455,7 @@ fn expand_declared_resource_expression_node(
             Ok(ContractExpression::ResourceField(access))
         }
         ContractExpression::ResourceCount(resource) => {
-            if resource_definitions.authority_mode
+            if resource_definitions.family_rules
                 && let ResourceClause::Declared { name, .. } = resource.as_ref()
                 && resource_definitions
                     .get(name)
@@ -2467,7 +2468,7 @@ fn expand_declared_resource_expression_node(
             {
                 return Err(unauthorized_family_error("count", name));
             }
-            if resource_definitions.authority_mode
+            if resource_definitions.family_rules
                 && let ResourceClause::Declared {
                     name,
                     arguments,
@@ -2753,11 +2754,9 @@ fn reject_counted_field_resource(
         ResourceClause::Declared { name, .. }
             if definitions.get(name).is_some_and(|info| info.has_fields) =>
         {
-            Err(ClickError::new(if definitions.authority_mode {
-                format!("resource `{name}` has fields; quantities require separately named members")
-            } else {
-                format!("resource `{name}` has fields and is not countable")
-            }))
+            Err(ClickError::new(format!(
+                "resource `{name}` has fields; quantities require separately named members"
+            )))
         }
         ResourceClause::Quantified { resource, .. } => {
             reject_counted_field_resource(resource, definitions)

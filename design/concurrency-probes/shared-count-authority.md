@@ -1,10 +1,11 @@
 # Exact-two counter using ordinary counted resources
 
-Status: implemented sequential controls and local counted-body mutex custody.
-Worker transfer and shared-population observations remain proposed. The
-investigation below recommends testing those rules before adding another
-algebra interface. [Explicit fractional authority](explicit-authority.md)
-remains an unimplemented alternative, not the selected plan.
+Status: superseded. Population authority replaced the counted-body model this
+investigation explored: `authorized` families have bodyless members, a control
+owns `authority(...)`, a mutex protects that control, and workers follow the
+[worker authority protocol](../../docs/internals/worker-authority-protocol.md).
+The counted-body mutex custody described below was deleted. The record is kept
+for its reasoning.
 
 A sequential control verifies exact value two with existing resource
 declarations, `count`, `owns`/`consumes`/`produces`, `fold`, `open`, and `unfold`.
@@ -50,9 +51,8 @@ one nested unit must never create a second copy of that custody.
 Initialization establishes the association from actual ownership and the
 selected resource. The proposed rule does not depend on a mutex annotation.
 Initialization now supports ordinary unannotated exclusive resources, with
-declaration/schema and actual ownership checks. No fixture uses the legacy
-declaration annotation any more; milestone 7 of `issues/authority-migration.md`
-removes it. Both concrete and independently checked
+declaration/schema and actual ownership checks; the declaration annotation is
+retired. Both concrete and independently checked
 typed-use paths accept the unannotated exclusive form. The frozen counter's
 existing memory-safety sidecar uses it. Counted wrappers have the local custody
 implementation below, but typed-use sharing of them remains refused.

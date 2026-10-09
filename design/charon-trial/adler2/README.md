@@ -2,7 +2,7 @@
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
 proves the four-lane helper bodies, zero through four constructor-state input
-bytes, and bounds for every length from zero through 22,207 bytes from canonical initial
+bytes, and bounds for every length from zero through 2,147,483,647 bytes from canonical initial
 states (`a,b < 65521`). **The general Adler-32 checksum postcondition remains
 unproved.**
 
@@ -40,7 +40,8 @@ Integer sum bounds and derives the widened `(int64)` Rust overflow guards;
 it permits the full safe u32 domain. Multiplication's disjunction includes a zero multiplier
 without evaluating division by zero. These proofs establish the access and
 panic prerequisites in the helper bodies, conditional on their contracts.
-They do not establish that the checksum loops satisfy those contracts.
+The whole-body bounds proof establishes those prerequisites at the actual
+helper calls in every batch and remainder.
 
 The constructor also exports `0 <= to_integer(lane) <= 255` for each lane.
 Its proof applies checked unsigned-order bridges to the actual returned
@@ -52,8 +53,8 @@ The remainder helper exports the strict native and Integer divisor bounds
 for all four lanes, along with nonnegative Integer observations. Its original
 `%=` body proves those guarantees for every nonzero u32 divisor. Specializing
 the call to `MOD = 65521` yields the `0..65520` range needed to reset both
-lane ceilings before a new batch. This does not establish the reset or
-preservation over the original outer loop yet.
+lane ceilings before a new batch. The general computation proof checks this
+reset and preserves the ceilings over the original outer loop.
 
 The multiplication helper also exports the exact Integer product for each lane.
 `uint32_mul_to_integer` uses the original native quotient guard, including its
@@ -80,8 +81,23 @@ through `INT32_MAX`, the current memory-index boundary. They relate full-width
 Rust metadata to signed indices, split a four-byte prefix into full 22,208-byte
 batches and an aligned remainder of at most 22,204 bytes, and establish the
 actual outer iterator's nonempty-step bound, divisibility and strict progress.
-No generated processed counter is used. These arithmetic lemmas do not yet
-establish the original outer-loop invariant or checksum result.
+A checked access lemma combines a batch's absolute start with the inner
+cursor displacement to keep the four-byte read inside the original input,
+including at the signed-index boundary. Native additions use checked Integer
+bridges and preserve their overflow prerequisites. A cursor-step lemma
+relates the original pointer advance to the decreasing outer remaining count;
+its pointer equalities grant no memory authority.
+The bounded-slice access lemma uses the actual final-batch length rather than
+requiring room for a complete batch. It preserves the nested signed additions'
+definedness even when the last four-byte read ends at `INT32_MAX`.
+A signed partition identity proves that the full-batch prefix and aligned
+remainder reconstruct the original prefix without overflowing. The exhaustion
+lemma reasons from the stored size comparison in the actual iterator exit
+disjunction. A native C guard regression checks that control-flow shape and its
+decreasing remaining count; it is independent of the Rust computation proof.
+No generated processed counter is used. The general computation proof
+composes these lemmas with the original outer-loop invariant; they do not
+establish checksum correctness.
 
 ## Lane batch arithmetic
 
@@ -318,18 +334,13 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Extend the whole-body bounds proof below over full 22,208-byte outer batches,
-including lane reduction/reset and the subsequent vector remainder. Preserve
-byte order and shared input authority while ranking the original iterators by
-their actual remaining lengths. The signed-word memory range must stay explicit
-when admitting larger full-width Rust lengths.
-
-Then connect the optimized lane recurrences and packed result to the shared
+Connect the optimized lane recurrences and packed result to the shared
 mathematical checksum specification in the [checksum assessment](../../rust-checksum-assessment.md).
 The constructor-state contracts for zero through four bytes provide exact
-result and byte-order checks; the arbitrary small-batch contract supplies
-induction and bounds rather than a checksum postcondition. All helper bodies
-must remain checked alongside the computation.
+result and byte-order checks. The general contract supplies induction and
+bounds rather than a checksum postcondition. All helper bodies remain checked
+alongside the computation. Then prove incremental processing, the unchanged
+C implementation, and equality under matched input and seed conditions.
 
 ## Historical trial
 
@@ -367,3 +378,29 @@ bound. Whole-proof verification, tool agreement, and cursor, ranking,
 induction, and final-bound rejections also run nightly.
 Full outer batches and the mathematical checksum postcondition remain unproved
 by this contract.
+
+## General whole-body induction
+
+The [general computation contract](general-compute.click) verifies the original
+body for every length in `0..2147483647`, with canonical seeds `a,b < 65521`.
+The signed observation limit is explicit; full-width metadata is not truncated
+to admit larger inputs. The proof includes arbitrary numbers of full
+22,208-byte batches, the aligned vector remainder, and the scalar tail.
+It preserves the original shared input view, checks every native access and
+arithmetic guard, and ranks all loops by their actual stored remaining state.
+Both final fields remain below 65,521. No assumed checksum summary or generated
+processed counter supplies these guarantees.
+
+The harness assembles the contract with the checked helper/getter bodies,
+iterator and recombination libraries, general partition lemmas, and tail
+bounds. Normal tests check the bounded metadata and native stored-guard
+regression. Nightly tests check the complete body, missing authority and seeds,
+false final bounds, and CLI verify/profile/audit/expanded-proof agreement.
+
+```sh
+cargo nextest run --profile nightly --test rust_import \
+  -E 'test(charon_adler2_general_compute)'
+```
+
+This is a bounds and termination proof. The functional checksum and incremental
+processing postconditions remain separate roadmap work.

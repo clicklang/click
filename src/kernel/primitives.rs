@@ -1807,7 +1807,7 @@ impl ResourceFieldSchema {
         &self.fields
     }
 
-    pub fn is_countable(&self) -> bool {
+    pub fn is_fieldless(&self) -> bool {
         self.fields.is_empty()
     }
 }
@@ -3290,7 +3290,6 @@ pub struct CCompositeResourceDefinition {
     /// owned ingredients; custody requires an explicit body clause.
     pub(super) resource_parameters: Vec<CResourceSpec>,
     pub(super) instance_schema: Option<ResourceFieldSchema>,
-    pub(super) guarded_by: Option<CMutexGuardDeclaration>,
     pub(super) matched: Option<CResourceMatchBody>,
     pub(super) name: String,
     pub(super) parameters: Vec<CParameter>,
@@ -3306,14 +3305,16 @@ pub struct CCompositeResourceDefinition {
     /// fold/unfold rewrites; [`CCompositeResourceDefinition::is_recursive`]
     /// answers for the definition as a whole.
     pub(super) matched_recursive: bool,
-    pub(super) counted_population: bool,
+    /// Whether a body fact reads a population count. Such a fact can change
+    /// while the head is lent, so a stable loan cannot carry it.
+    pub(super) facts_read_counts: bool,
     /// A definition-level restriction on direct transfer to another thread.
     /// Computed when definitions are installed, including contained families.
     pub(super) thread_confined: bool,
     /// Transitive mutex-authority ingredient marker; contract protocol effects are not modeled yet.
     pub(super) contains_mutex_authority: bool,
     /// Declared `authorized resource`: only these families take part in
-    /// population accounting under authority semantics.
+    /// population accounting.
     pub(super) authorized: bool,
     /// Whether the family is authorized, holds a population authority, or
     /// contains or names such a family. Computed when definitions are
@@ -3341,15 +3342,6 @@ pub struct CCompositeResourceDefinition {
     pub(super) fact_source_indices: Vec<usize>,
     /// Source spellings are diagnostic metadata. They never justify a fact.
     pub(super) fact_source_spellings: Vec<String>,
-}
-
-/// The direct C struct member named by a resource body's `guarded_by` clause.
-/// Parsing and declaration validation check its pthread type and ABI. The
-/// parameter index and byte offset make guard matching independent of names.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CMutexGuardDeclaration {
-    pub parameter_index: usize,
-    pub field_offset_bytes: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3503,7 +3495,6 @@ pub struct CExecutionEnvironment {
         Option<crate::languages::c::thread_runtime::ModeledPthreadBinding>,
     /// Resource-definition metadata for selected modeled mutex calls. Named
     /// lookup avoids scanning unrelated project definitions at each call.
-    pub(super) modeled_mutex_guards: std::sync::Arc<BTreeMap<String, CMutexGuardDeclaration>>,
     pub(super) modeled_mutex_definitions:
         std::sync::Arc<BTreeMap<String, CCompositeResourceDefinition>>,
     /// The selected target's byte order. It decides whether a one-byte C
@@ -3545,7 +3536,6 @@ impl std::fmt::Debug for CExecutionEnvironment {
                 &self.verified_function_termination_rules,
             )
             .field("modeled_pthread_binding", &self.modeled_pthread_binding)
-            .field("modeled_mutex_guards", &self.modeled_mutex_guards)
             .field("modeled_mutex_definitions", &self.modeled_mutex_definitions)
             .field("byte_order", &self.byte_order)
             .field("verified_loop_rules", &self.verified_loop_rules)
@@ -3569,7 +3559,6 @@ impl PartialEq for CExecutionEnvironment {
             && self.verified_function_rules == other.verified_function_rules
             && self.verified_function_termination_rules == other.verified_function_termination_rules
             && self.modeled_pthread_binding == other.modeled_pthread_binding
-            && self.modeled_mutex_guards == other.modeled_mutex_guards
             && self.modeled_mutex_definitions == other.modeled_mutex_definitions
             && self.byte_order == other.byte_order
             && self.verified_loop_rules == other.verified_loop_rules
@@ -4214,9 +4203,6 @@ pub enum CRuntimeError {
         /// was lost instead of reverse-engineering resource definitions from
         /// a lowered allocation fact.
         resource: Option<Box<CResourceFact>>,
-        /// Advisory fix hint (e.g. proving a counted population non-empty).
-        /// Never affects checking; `None` preserves the historical message.
-        hint: Option<String>,
     },
     StaleResourceAfterFree {
         resource: Box<CResourceFact>,
@@ -4287,7 +4273,7 @@ pub enum ExecutionLimit {
     /// Another tracked population of the family is neither proven equal to
     /// nor proven different from the counted one, so no total is a count.
     ResourceCountPossiblyAliased,
-    /// Authority-mode count names one concrete population anchor.
+    /// A count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
     AuthorityCountNeedsResolvedMember,
     /// Both the visible authority fact and checked ledger custody are needed.
@@ -4340,7 +4326,7 @@ impl ExecutionLimit {
                 "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
             }
             Self::AuthorityCountNeedsExactPointer => {
-                "authority-mode count(...) needs one exact base pointer".to_string()
+                "count(...) needs one exact base pointer".to_string()
             }
             Self::AuthorityCountNeedsResolvedMember => {
                 "count(...) requires resolved member indices or the helper's selected member"
@@ -5117,7 +5103,7 @@ impl SharedCMemory {
     /// Producer-recorded identity of unchanged program bytes, for graph load
     /// congruence only. This is trusted-kernel metadata, not snapshot equality
     /// or access authority. It is fixed at first interning and looked up in O(1).
-    pub(in crate::kernel) fn read_identity(&self) -> (u32, u32) {
+    pub(crate) fn read_identity(&self) -> (u32, u32) {
         C_MEMORY_ARENA.with(|arena| {
             let arena = arena.borrow();
             if arena.0 != self.arena {
@@ -6799,7 +6785,7 @@ impl ResourceInstance {
         fields: ResourceArguments,
         resource_arguments: Vec<super::ResourceReference>,
     ) -> Option<Self> {
-        if schema.is_countable() || schema.fields().len() != fields.len() {
+        if schema.is_fieldless() || schema.fields().len() != fields.len() {
             return None;
         }
         for ((_, ty), value) in schema.fields().iter().zip(fields.iter()) {

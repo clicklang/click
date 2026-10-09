@@ -215,15 +215,7 @@ impl AssumedMutexProtocol {
             }
             return Ok((state.memory.clone(), None));
         };
-        fresh_protected_payload(
-            state,
-            assumptions,
-            self.mutex(),
-            description,
-            definition,
-            output,
-            budget,
-        )
+        fresh_protected_payload(state, assumptions, description, definition, output, budget)
     }
 
     pub(super) fn release(
@@ -547,7 +539,6 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
 pub(super) fn fresh_protected_payload(
     state: &CState,
     assumptions: &PureFactContext,
-    mutex: &Pointer,
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CCompositeResourceDefinition>,
     output: Option<crate::kernel::Variable>,
@@ -573,23 +564,6 @@ pub(super) fn fresh_protected_payload(
         || !description.resource_arguments().is_empty()
     {
         return Err("protected mutex acquisition requires an unconditional leaf resource".into());
-    }
-    if let Some(declaration) = definition.guarded_by.as_ref() {
-        let Some(crate::kernel::AlgebraicValue::C(crate::kernel::CValue::Pointer(base))) =
-            description.arguments().get(declaration.parameter_index)
-        else {
-            return Err("guarded resource parameter is not a pointer".into());
-        };
-        let expected = base
-            .pointer()
-            .offset_by_bytes(declaration.field_offset_bytes);
-        if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-            &expected,
-            mutex,
-            assumptions,
-        ) {
-            return Err("protected resource is guarded by a different mutex".into());
-        }
     }
     let identity = match output {
         Some(identity) => identity,
@@ -757,11 +731,7 @@ mod tests {
             vec![],
             vec![],
         )
-        .with_instance_schema(Some(schema))
-        .with_mutex_guard(Some(CMutexGuardDeclaration {
-            parameter_index: 0,
-            field_offset_bytes: 0,
-        }));
+        .with_instance_schema(Some(schema));
         (state, protocol, definition)
     }
 
@@ -860,13 +830,6 @@ mod tests {
             )
             .unwrap();
         assert_ne!(payload.fields(), second.payload.unwrap().fields());
-        let mut wrong = definition;
-        wrong.guarded_by.as_mut().unwrap().field_offset_bytes = 4;
-        assert!(
-            protocol
-                .acquire_with_payload(&state, &assumptions, Some(&wrong), None, &mut budget)
-                .is_err()
-        );
     }
 
     #[test]

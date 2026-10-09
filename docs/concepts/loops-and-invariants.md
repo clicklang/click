@@ -14,6 +14,18 @@ A loop invariant is a fact that must hold:
 - at the start of every iteration,
 - and after one iteration preserves it.
 
+A loop's `views` clause and `viewable` invariant over a local pointer use its
+declared element type:
+`uint8*` counts bytes and `uint64*` counts eight-byte elements. The C and typed
+Rust annotation paths retain those types; the invariant does not acquire
+read authority merely from the pointer declaration.
+
+A nested loop can select a subview through an outer cursor whose address is
+proved equal to that subrange of the enclosing view. Resource selection uses
+the checked pointer-alias graph and range bounds at entry, retaining the
+enclosing owner's authority and any stable-view binding. A pure `viewable`
+fact alone supplies no resource.
+
 A loop may declare conditional resources using the same `if` form as a
 resource body:
 
@@ -466,6 +478,17 @@ loops](#modeled-instances-in-loops), applied at the exits:
 - each exit contributes, as its own disjunct, what it established about those
   fresh names, so the successor states exactly "this is what one of the exits
   reached" and nothing more.
+
+A binder argument declared as a current local, such as `owns c: cursor(cur,
+anchor);`, shares that local's joined value when every exit holds the instance
+at its own `cur`. Rebinding can use pointer equalities established on that
+particular exit (`mdtests/loop_exit_resource_argument_uses_exit_alias.md`);
+other exits cannot supply missing equalities
+(`mdtests/loop_exit_resource_argument_requires_exit_alias.md`). A helper after the loop can therefore consume `cursor(cur,
+anchor)` even if the exits chose different cursors
+(`mdtests/loop_exit_resource_argument_tracks_current_local.md`). This does not
+preserve the entry pointer or equate unrelated model fields
+(`mdtests/loop_exit_resource_argument_rejects_entry_pointer.md`).
 
 A cell the exits wrote differently is a cell folded into one of the declared
 binders, since the body owns nothing else, and a proof after the loop reads it

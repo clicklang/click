@@ -1,8 +1,7 @@
 # A verified helper cannot own a live mutex's storage beside its lifetime
 
-The authority-mode form of `mutex_reserved_mutable_contract.md`. There
-`touch` is an assumed contract, which authority semantics refuse when it
-moves mutex resources. Here `touch` is a verified helper whose contract owns
+A companion of `mutex_reserved_mutable_contract.md`. There `touch` is an
+assumed contract, which is refused when it moves mutex resources. Here `touch` is a verified helper whose contract owns
 both the mutex lifetime and the mutex's raw storage; the lifetime reserves
 that storage, so the two cannot be held together and the call is refused.
 

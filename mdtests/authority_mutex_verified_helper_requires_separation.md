@@ -1,8 +1,7 @@
 # A verified helper borrowing a mutex lifetime still requires separation
 
-The authority-mode form of `mutex_abstract_reserved_call.md`. There `touch`
-is an assumed contract, which authority semantics refuse when it moves mutex
-resources. Here `touch` is a verified helper that borrows the mutex lifetime
+A companion of `mutex_abstract_reserved_call.md`. There `touch` is an
+assumed contract, which is refused when it moves mutex resources. Here `touch` is a verified helper that borrows the mutex lifetime
 and returns it unchanged, so the call is admitted and reaches the same
 storage check: the caller's contract must establish that `data` is separate
 from the mutex.

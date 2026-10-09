@@ -2867,7 +2867,7 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
             "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
         }
         ExecutionLimit::AuthorityCountNeedsExactPointer => {
-            "authority-mode count(...) needs one exact base pointer".to_string()
+            "count(...) needs one exact base pointer".to_string()
         }
         ExecutionLimit::AuthorityCountNeedsResolvedMember => {
             "count(...) requires resolved member indices or the helper's selected member"

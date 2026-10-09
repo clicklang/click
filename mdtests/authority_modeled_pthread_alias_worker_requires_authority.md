@@ -1,9 +1,8 @@
 # A worker spending a possibly aliased member needs that member's authority
 
 Two workers each spend one `ticket(argument)`, started with `p` and `q`, and
-nothing is known about `p` and `q`. Under authority semantics a count comes
-from the authority's ledger, so the legacy ambiguity of an aliased total
-cannot arise. The worker that spends `ticket(q)` needs
+nothing is known about `p` and `q`. A count comes from the authority's
+ledger, so an aliased total is never ambiguous. The worker that spends `ticket(q)` needs
 `authority(ticket(q))`; `run` holds only `authority(ticket(p))`, so starting
 it is refused.
 

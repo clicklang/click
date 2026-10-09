@@ -948,13 +948,14 @@ fn with_tactic_procedures(
 
 /// Appends `suffix` where every path of `script` ends. A proof `match` must
 /// complete the proof in each arm, so a script ending in one gets the suffix
-/// at the end of each arm instead.
+/// at the end of each arm instead. Refuted paths have no continuation; keep
+/// their terminal contradiction last so the match checker can certify them.
 fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
     if let Some(ProofTactic::Match(proof_match)) = script.last_mut() {
         for arm in &mut std::sync::Arc::make_mut(proof_match).arms {
             append_on_every_path(&mut arm.tactics, suffix);
         }
-    } else {
+    } else if !matches!(script.last(), Some(ProofTactic::Contradiction(_))) {
         script.extend(suffix.iter().cloned());
     }
 }
@@ -2525,14 +2526,6 @@ fn verify_c0_sources_in_context(
         } else {
             BTreeMap::new()
         };
-        let modeled_mutex_guards = modeled_mutex_definitions
-            .iter()
-            .filter_map(|(name, definition)| {
-                definition
-                    .mutex_guard()
-                    .map(|guard| (name.clone(), guard.clone()))
-            })
-            .collect();
         let mut function_environment = initial_function_environment
             .unwrap_or(built_function_environment)
             .with_modeled_pthread_binding(
@@ -2540,7 +2533,6 @@ fn verify_c0_sources_in_context(
                     == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread)
                     .then(|| c_sources.modeled_pthread_binding()),
             )
-            .with_modeled_mutex_guards(modeled_mutex_guards)
             .with_modeled_mutex_definitions(modeled_mutex_definitions)
             .with_byte_order(selected_target.byte_order());
         // Contracts are declaration interfaces. A selected function receives
@@ -7293,6 +7285,7 @@ pub(in crate::surface) fn function_resource_summary(
             (!ensure.borrowed()).then(|| parsed_function.return_type().to_kernel_type()),
             role,
             snapshot,
+            None,
         )?;
         let guard = ensure
             .condition()
@@ -7381,6 +7374,7 @@ pub(in crate::surface) fn function_resource_constructors(
                 None,
                 CResourceTransferRole::Produce,
                 CResourceSnapshot::Current,
+                None,
             )
         })
         .collect()
@@ -7430,39 +7424,6 @@ pub(in crate::surface) fn composite_resource_definitions(
         let Some(body) = definition.composite_body() else {
             continue;
         };
-        let guarded_by = body
-            .guarded_by()
-            .map(|guard| {
-                let CExpression::Variable(parameter) = &guard.base else {
-                    return Err(ClickError::new(
-                        "`guarded_by` requires a direct resource parameter",
-                    ));
-                };
-                let parameter_index = definition
-                    .parameters()
-                    .iter()
-                    .position(|candidate| candidate.name() == parameter)
-                    .ok_or_else(|| ClickError::new("`guarded_by` names no resource parameter"))?;
-                let CExpression::Value(crate::kernel::CValue::Int32(
-                    crate::kernel::Bitvector32Term::Constant(start),
-                )) = &guard.start
-                else {
-                    return Err(ClickError::new(
-                        "`guarded_by` requires a fixed member offset",
-                    ));
-                };
-                let width = guard
-                    .field_element_width()
-                    .ok_or_else(|| ClickError::new("`guarded_by` has no member width"))?;
-                let field_offset_bytes = start
-                    .checked_mul(width)
-                    .ok_or_else(|| ClickError::new("`guarded_by` member offset overflows"))?;
-                Ok(crate::kernel::CMutexGuardDeclaration {
-                    parameter_index,
-                    field_offset_bytes,
-                })
-            })
-            .transpose()?;
         // The body's memory clauses take their element widths from the
         // definition's own parameters and field types, as contract clauses
         // do, so a `uint64` field is one 8-byte element on both sides of
@@ -7524,7 +7485,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                 crate::kernel::CParameter::new(witness.name(), witness.c_type().to_kernel_type())
             })
             .collect();
-        let observes_its_population = body.facts().iter().any(proposition_contains_resource_count);
+        let facts_read_counts = body.facts().iter().any(proposition_contains_resource_count);
         let owned_bases = body
             .contains()
             .iter()
@@ -7651,24 +7612,15 @@ pub(in crate::surface) fn composite_resource_definitions(
             })
         });
         definitions.push(
-            if observes_its_population {
-                CCompositeResourceDefinition::counted_population(
-                    definition.name(),
-                    parameters,
-                    condition,
-                    contains,
-                    facts,
-                )
-            } else {
-                CCompositeResourceDefinition::new(
-                    definition.name(),
-                    parameters,
-                    condition,
-                    recursive,
-                    contains,
-                    facts,
-                )
-            }
+            CCompositeResourceDefinition::new(
+                definition.name(),
+                parameters,
+                condition,
+                recursive,
+                contains,
+                facts,
+            )
+            .with_facts_read_counts(facts_read_counts)
             .with_authorized(definition.is_authorized())
             .with_resource_parameters(
                 definition
@@ -7681,6 +7633,7 @@ pub(in crate::surface) fn composite_resource_definitions(
                             None,
                             CResourceTransferRole::Borrow,
                             CResourceSnapshot::Current,
+                            None,
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?
@@ -7700,8 +7653,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .with_resource_match_body(matched)
             .with_children(lower_resource_body_children(body)?)
             .with_matched_recursion(matched_recursive)
-            .with_instance_schema(definition.field_schema().cloned())
-            .with_mutex_guard(guarded_by),
+            .with_instance_schema(definition.field_schema().cloned()),
         );
     }
     crate::kernel::propagate_population_reach(&mut definitions);
@@ -7742,6 +7694,24 @@ pub(in crate::surface) fn append_entry_resource_specs(
         None,
         CResourceTransferRole::Borrow,
         CResourceSnapshot::Entry,
+        None,
+    )?);
+    Ok(())
+}
+
+pub(in crate::surface) fn append_entry_resource_specs_with_pointer_types(
+    resource: &ResourceClause,
+    parameters: &[syntax::C0Parameter],
+    pointer_element_types: &BTreeMap<String, crate::kernel::CType>,
+    specs: &mut Vec<CResourceSpec>,
+) -> Result<(), ClickError> {
+    specs.extend(resource_clause_to_resource_specs_with_metadata(
+        resource,
+        parameters,
+        None,
+        CResourceTransferRole::Borrow,
+        CResourceSnapshot::Entry,
+        Some(pointer_element_types),
     )?);
     Ok(())
 }
@@ -7752,6 +7722,7 @@ fn resource_clause_to_resource_specs_with_metadata(
     result_type: Option<crate::kernel::CType>,
     role: crate::kernel::CResourceTransferRole,
     snapshot: crate::kernel::CResourceSnapshot,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
 ) -> Result<Vec<CResourceSpec>, ClickError> {
     if let ResourceClause::MemoryAggregate { access, segments } = resource {
         return segments
@@ -7767,6 +7738,7 @@ fn resource_clause_to_resource_specs_with_metadata(
                     result_type,
                     role,
                     snapshot,
+                    pointer_element_types,
                 )
             })
             .collect();
@@ -7777,6 +7749,7 @@ fn resource_clause_to_resource_specs_with_metadata(
         result_type,
         role,
         snapshot,
+        pointer_element_types,
     )?;
     fn declared_arguments(resource: &ResourceClause) -> Option<&[ContractExpression]> {
         match resource {
@@ -7808,6 +7781,7 @@ fn resource_clause_to_resource_spec_with_parameters(
         result_type,
         crate::kernel::CResourceTransferRole::Borrow,
         crate::kernel::CResourceSnapshot::Entry,
+        None,
     )
 }
 
@@ -7864,6 +7838,7 @@ fn resource_clause_to_resource_spec_for_body(
         result_type,
         role,
         CResourceSnapshot::Current,
+        None,
     )
 }
 
@@ -7873,6 +7848,7 @@ fn resource_clause_to_resource_spec_with_metadata(
     result_type: Option<crate::kernel::CType>,
     role: crate::kernel::CResourceTransferRole,
     snapshot: crate::kernel::CResourceSnapshot,
+    pointer_element_types: Option<&BTreeMap<String, crate::kernel::CType>>,
 ) -> Result<CResourceSpec, ClickError> {
     match resource {
         ResourceClause::Conditional { .. } => Err(ClickError::new(
@@ -7885,6 +7861,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 result_type,
                 role,
                 snapshot,
+                pointer_element_types,
             )?;
             if matches!(
                 inner.term(),
@@ -7915,6 +7892,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 result_type,
                 role,
                 snapshot,
+                pointer_element_types,
             )?;
             let (quantity, quantity_snapshot) =
                 crate::surface::lowering::resource_argument_to_typed_c_expression_with_snapshot(
@@ -7937,10 +7915,11 @@ fn resource_clause_to_resource_spec_with_metadata(
                 segment.end.clone(),
             )
             .with_element_width(
-                crate::surface::lowering::contract_segment_element_width_for_result_type(
+                crate::surface::lowering::contract_segment_element_width_with_pointer_types(
                     parameters,
                     segment,
                     result_type,
+                    pointer_element_types,
                 ),
             ),
             CResourceAccessMode::View,
@@ -7954,10 +7933,11 @@ fn resource_clause_to_resource_spec_with_metadata(
                 segment.end.clone(),
             )
             .with_element_width(
-                crate::surface::lowering::contract_segment_element_width_for_result_type(
+                crate::surface::lowering::contract_segment_element_width_with_pointer_types(
                     parameters,
                     segment,
                     result_type,
+                    pointer_element_types,
                 ),
             ),
             CResourceAccessMode::Own,
@@ -8050,6 +8030,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                     result_type,
                     role,
                     snapshot,
+                    pointer_element_types,
                 )?
                 .with_source_arguments(
                     protected_arguments
@@ -8115,7 +8096,8 @@ fn resource_clause_to_resource_spec_with_metadata(
                         protected: resource_type_arguments.first().map(|resource| {
                             let ResourceClause::Declared { type_schema: Some(schema), .. } = resource else { return Err(ClickError::new("protected resource type has no checked schema")); };
                             Ok(Box::new(crate::kernel::CResourceTypeSpec {
-                                resource: Box::new(resource_clause_to_resource_spec_with_metadata(resource, parameters, result_type, role, snapshot)?.with_source_arguments(match resource {
+                                resource: Box::new(resource_clause_to_resource_spec_with_metadata(resource, parameters, result_type, role, snapshot, pointer_element_types,
+)?.with_source_arguments(match resource {
                                     ResourceClause::Declared { arguments, .. } => arguments.iter().map(crate::surface::diagnostics::describe_contract_expression).collect(),
                                     _ => unreachable!(),
                                 })),
@@ -8328,6 +8310,7 @@ pub(in crate::surface) fn resource_clause_to_resource_spec(
         None,
         crate::kernel::CResourceTransferRole::Borrow,
         crate::kernel::CResourceSnapshot::Current,
+        None,
     )
 }
 
@@ -8701,7 +8684,7 @@ mod modeled_pthread_binding_tests {
             .modeled_pthread_binding
             .as_ref()
             .unwrap();
-        assert_eq!(binding.specification_version, 9);
+        assert_eq!(binding.specification_version, 10);
         assert_eq!(binding.mutex_storage_alignment, 8);
         assert_eq!(binding.mutex_storage_bytes, 40);
         assert_eq!(binding.target, CTarget::X86_64LinuxUserspace);

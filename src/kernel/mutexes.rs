@@ -1026,10 +1026,7 @@ impl MutexContext {
             .get(instance.name())
             .ok_or("selected mutex resource has no checked declaration")?;
         let interface = invariant_interface::MutexInvariantInterface::check_definition(
-            instance,
-            mutex,
-            definition,
-            assumptions,
+            instance, mutex, definition,
         )?;
         self.publish_with_interface(
             interface.mutex().clone(),
@@ -1876,7 +1873,6 @@ impl MutexLedger {
         let (memory, payload) = assumed_protocol::fresh_protected_payload(
             state,
             assumptions,
-            mutex,
             interface.description(),
             Some(definition),
             Some(previous.identity()),
@@ -4612,8 +4608,7 @@ mod tests {
     #[test]
     fn shared_acquisitions_forget_each_previous_payload_observation() {
         use crate::kernel::{
-            CCompositeResourceDefinition, CMutexGuardDeclaration, CParameter, CValue,
-            ExecutionBudget, ResourceDescription,
+            CCompositeResourceDefinition, CParameter, CValue, ExecutionBudget, ResourceDescription,
         };
         use std::collections::BTreeMap;
 
@@ -4633,10 +4628,6 @@ mod tests {
         )
         .unwrap();
         let expected_type = ResourceDescription::from_instance(&instance);
-        let declaration = CMutexGuardDeclaration {
-            parameter_index: 0,
-            field_offset_bytes: 0,
-        };
         let definition = CCompositeResourceDefinition::new(
             "counter_state",
             vec![CParameter::new("p", CType::Int32Pointer)],
@@ -4645,8 +4636,7 @@ mod tests {
             vec![],
             vec![],
         )
-        .with_instance_schema(Some(schema))
-        .with_mutex_guard(Some(declaration));
+        .with_instance_schema(Some(schema));
         let definitions = BTreeMap::from([("counter_state".into(), definition.clone())]);
         let initialized = context(CResourceFact::own(CResource::Instance(instance.clone())))
             .publish_declared(

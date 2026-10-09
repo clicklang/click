@@ -66,11 +66,13 @@ The exact replacement blackens that child and preserves the outer context.
 The contract proves whole-tree balance, parent consistency, in-order contents,
 and null fixup without assuming the erased node's, successor's, or child's color.
 
-`rbtree_erase_spine.click` covers root deletion with a deeper successor that
-is a red leaf or has a nonempty right child. Its terminating descent loop
-retains the exact left-only path. Small opening and closing helper contracts
-expose the splice link. The replacement branches join with one owned subtree
-and its exact model, then share the path rebuild and root reconstruction.
+`rbtree_erase_spine.click` covers deletion at any tree position with a deeper
+successor that is a red leaf or has a nonempty right child. Its terminating
+descent loop retains the exact left-only path. Small opening and closing helper contracts
+expose the splice link. The verified parent-link helper transfers the outer
+context to the successor.
+The replacement branches join with one owned replacement link and its exact
+model, then share the path rebuild and terminating outer-context reconstruction.
 The nonempty child is blackened; a red leaf needs no color repair. Both cases
 return the exact successor transplant with red-black validity, parent
 consistency, preserved in-order contents, detached-node ownership, and null
@@ -92,10 +94,45 @@ by deeper non-root deletion.
 
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
-all immediate-successor exits now verify at any tree position, as does a deeper
-black-leaf successor. Root deletion also covers every deeper-successor exit.
-Non-root deeper red-leaf and nonempty-child successors remain. The C file
-retains all branches; each sidecar states its coverage.
+all immediate and deeper-successor exits now verify at any tree position.
+This completes chunk 11 across the sidecars; each contract states its coverage,
+and the C file retains all branches. Erase-color repair is next, in chunks 12–13.
+
+`rbtree_erase_color_red_left.click` starts chunk 12 on the unchanged pinned
+`____rb_erase_color`. It covers an empty left child below a red parent whose
+right sibling is a black leaf. The two color writes restore balance; the
+contract returns the exact whole-root model, parent consistency, and unchanged
+in-order contents. The proof terminates through the first iteration's `break`
+and a decreasing context-reconstruction helper. Its 31 expansion-audit sites
+pass. `rbtree_erase_color_root_left.click` covers the black-root exit with the
+same empty left child and black leaf sibling. It preserves the black root,
+recolors the sibling, and proves that the parent cursor becomes null before
+leaving the loop. Its exact model has the same balance, parent-consistency,
+and in-order guarantees; all 20 audit sites pass.
+
+`rbtree_erase_color_flips.click` covers repeated color flips with either
+orientation at every ancestor, including nonempty focus and sibling subtrees
+on later iterations. Its selector admits black siblings with black children, propagates through black
+parents, and stops at a red parent or the root. Every continuing iteration
+consumes a strict child of the context resource, which proves termination.
+The result function specifies the exact whole-tree model; balance, parent
+consistency, and in-order contents follow across the entire loop. All 39
+expansion-audit sites pass. Mutations reject either missing cursor assignment,
+missing parent blackening, and incorrect sibling recoloring. Rotations remain
+on both sides.
+
+The combined sidecar has 1,091 lines, against the pinned function's 182 lines
+including its remaining rotations. On this development build it profiles at
+about 25 seconds (43 sidecar lines/second), down from 33 seconds after avoiding
+redundant constructor refutations. No simple-step tail exceeds 500 ms; about
+11 seconds remain in loop-control work. This is still below the project's
+verification-speed target.
+
+`rbtree_rotate_set_parents.click` verifies the rotation helper's incoming-link
+replacement at the root or either parent link. It copies the original packed
+word to the new root, reparents and recolors the old root, and preserves the
+exact outer context. All 35 expansion-audit sites pass. This supplies the
+shared parent-update step for the remaining rotations.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
@@ -110,8 +147,7 @@ example's supported rbtree types and macros and spells the pinned
 `__rb_parent` mask. This is not yet the complete pinned translation-unit
 integration planned in chunks 21–24. The source is GPL-2.0-or-later.
 
-The full erase project verifies in about 158 seconds and runs in the nightly
-example suite. Run `click verify examples/rbtree-erase` and
+The full erase project runs in the nightly example suite. Run `click verify examples/rbtree-erase` and
 `click verify examples/rbtree-model`. The latter checks the imported pure
 root-deletion and successor-splice theorems independently. Example regressions
 pin the source and reject skipped parent/color writes, root replacement, or

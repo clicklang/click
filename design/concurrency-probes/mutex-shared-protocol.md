@@ -8,7 +8,7 @@ in `tests/examples.rs`; proof work must not reshape its control flow.
 ## Required authority
 
 Initialization deposits one folded `counter_state(counter)` instance. Its
-identity, definition, and guarded mutex address remain in one protocol
+identity, definition, and mutex address remain in one protocol
 escrow. A worker contract may require a share of permission to use that
 live protocol. The permission grants no direct memory resource, current
 field value, or right to destroy the mutex. Creation checks that the named

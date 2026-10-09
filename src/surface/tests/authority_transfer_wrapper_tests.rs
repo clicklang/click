@@ -170,7 +170,7 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
     assert!(
         error
             .message()
-            .contains("resource fold after function outcome is unavailable in authority mode"),
+            .contains("resource fold after function outcome is unavailable"),
         "{error:?}"
     );
 }

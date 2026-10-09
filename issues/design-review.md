@@ -139,7 +139,9 @@ Remaining:
   (`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`).
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
-  regressions. Lacker said to go ahead on 2026-10-08.
+  regressions. Lacker said to go ahead on 2026-10-08. In progress on a
+  local branch behind a switch, to land as one series; the decisions taken
+  along the way are in the design's stage 2 section.
 - A 64-bit index expression that is not a lone parameter still takes the
   cast in a contract. It follows stage 3.
 

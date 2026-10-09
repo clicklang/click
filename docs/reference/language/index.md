@@ -1193,7 +1193,7 @@ function-entry memory, the connectives and quantifiers over those, finite
 sequence comparisons, reads of a resource instance's fields on either state,
 algebraic equalities, `match` over an algebraic value, and algebraic arguments
 to a pure function. It excludes `at(...)`, explicit memory snapshots,
-counted-resource populations, range folds, and mathematical `Integer`
+population counts, range folds, and mathematical `Integer`
 comparisons.
 
 Every admitted clause must also follow by an exact route: the clause is already
@@ -1368,74 +1368,91 @@ post-execution `construct(open_fd(result));` step to create exactly one owned
 abstract token without consuming an input resource. The constructed token must
 also be named by the function's `produces` contract.
 
-An ordinary resource declaration requires a body shared by all equal units:
+Repeated owned clauses denote a quantity rather than a duplicate-ownership
+error. Omitting a coefficient transfers one unit. An owned user-declared
+token may instead transfer an `int32` quantity explicitly:
+
+<!-- verified-example: mdtests/symbolic_token_quantity_contracts.md -->
+```click
+owns amount of permit();
+consumes amount of permit();
+```
+
+The coefficient must be provably nonnegative at the contract snapshot. Zero is
+the resource identity and grants no authority. Symbolic coefficients are not
+accepted on memory, allocation, or recursively defined composite resources.
+
+### Populations
+
+A family whose units are counted is declared `authorized`. Its members carry
+no body of their own; the population is governed by an exclusive
+`authority(...)` resource, usually owned by an ordinary control resource that
+relates the count to C state:
 
 <!-- verified-example: mdtests/counted_resource_refcount_transitions.md -->
 ```click
-resource object_ref(obj: struct object*) {
-    owns *obj;
+authorized resource object_ref(obj: struct object*) {}
+
+resource object_control(obj: struct object*) {
+    owns obj->refs;
+    owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));
 }
 ```
 
-Repeated owned clauses denote a quantity rather than a duplicate-ownership
-error. Omitting a coefficient transfers one unit. An owned user-declared
-resource may instead transfer an `int32` quantity explicitly:
+`count(object_ref(obj))` is an `int32` expression naming the population size.
+It may name only an `authorized` family, and it observes the population only
+where that family's authority is owned, as in the control's facts above. A
+wildcard argument sums matching exact populations, so
+`count(pool_object(pool, _))` counts every member belonging to `pool`.
+`authority(...)` likewise names only an `authorized` family. Fields do not
+decide whether a family can be counted: a family with fields has separately
+named members rather than quantities.
 
-<!-- verified-example: mdtests/symbolic_token_quantity_contracts.md -->
+Members are created and destroyed only under the authority.
+`fold(object_ref(obj))` creates one member and `unfold(object_ref(obj))`
+destroys one, each while the authority is owned, typically inside
+`open(object_control(obj)) { ... }`. Closing the `open` proves the control's
+facts again, so a retain must update the stored count in the same scope:
+
+<!-- verified-example: mdtests/counted_resource_refcount_transitions.md -->
 ```click
-owns amount of object_ref(obj);
-consumes amount of object_ref(obj);
-produces amount of object_ref(obj);
+struct object* object_retain(struct object* obj) {
+    requires count(object_ref(obj)) < 2147483647;
+    owns object_control(obj);
+    owns object_ref(obj);
+    produces object_ref(obj);
+
+    ensures result == obj;
+} by {
+    open(object_control(obj)) {
+        step();
+        fold(object_ref(obj));
+    }
+    execute();
+    simp();
+}
 ```
 
-The coefficient must be provably nonnegative at the contract snapshot. Zero is
-the resource identity and grants no authority. The body belongs to the
-population as a whole, not once per unit.
-`count(object_ref(obj))` is an `int32` expression naming the population size.
-The example above therefore says that all references together own the object
-and that its stored count equals their logical total. A wildcard argument sums
-matching exact populations, so `count(pool_object(pool, _))` counts every
-checked-out object belonging to `pool`.
+A contract's net transfer of members is checked against the same facts:
+`produces object_ref(obj)` is a one-member retain and `consumes object_ref(obj)`
+a one-member release, so these clauses cannot mint or drop a member without
+the corresponding counter update.
 
-A contract's net resource transfer changes the population count. For
-example, `owns object_ref(obj); produces object_ref(obj);` is a one-unit
-retain, while `owns object_ref(obj); consumes object_ref(obj);` is a one-unit
-nonfinal release. Returning the new resource context is valid only when the
-population body facts hold in the post-state, so these clauses cannot mint a
-reference without the corresponding concrete counter update.
-
-Once C execution returns, the remaining proof uses the post-return population
-counts while retaining the body's ownership for closing open resources. The
-new count does not itself establish any body invariant: the proof must still
-show that the stored values agree with it. This return-count interpretation
-comes from the contract's checked exit rule and requires no framing step of
-its own.
-
-`fold(object_ref(obj))` initializes a population of one from its body
-resources. `open(object_ref(obj)) { ... }` temporarily exposes the one shared
-body and requires it to be restored on exit without changing the population.
-A call inside the block cannot be passed a unit of that population, and its
-return does not assume that population's body facts: closing the block proves
-them from what the caller knows
+`fold(authority(object_ref(obj)))` establishes an empty population and
+`unfold(authority(object_ref(obj)))` retires one whose count is zero
+(`mdtests/authority_count_after_cleanup.md`; the lifecycle of a heap
+reference count is `examples/refcount/`). A call inside an `open` block does
+not assume the control's facts on return: closing the block proves them from
+what the caller knows
 (`mdtests/call_inside_open_population_does_not_assume_its_body.md`).
-`unfold(object_ref(obj))` is the inverse lifetime operation and is allowed only
-after proving that the count is exactly one; it exposes the body for a final
-destructor or `free`. Ordinary retain and release operations use `open` rather
-than folding or unfolding the body. Symbolic coefficients are not accepted on
-memory, allocation, or recursively defined composite resources. Those
-resource families need separate certified semantics rather than treating a
-quantity as repeated clauses.
 
-Population bodies preserved across opaque calls must have a resource footprint
-determined entirely by the declared resource arguments. A body whose owned
-range or contained resource is selected by mutable memory, a changing guard,
-or a recursive path is not supported across a call that can change that
-selector. Click does not currently have transition authority that can retire
-the exact pre-call footprint before activating the post-call footprint without
-risking stale or duplicated ownership. Use a stable-footprint resource design;
-support for dynamic population footprints is not part of the current language
-contract.
+Every other family keeps its ordinary definition law: `fold` consumes the
+body's resources and `unfold` exposes them, with no population accounting.
+`docs/concepts/resources.md` describes populations, controls, and worker and
+mutex custody in more detail.
+
+### Composite resources
 
 Composite resources are declared resources with a body:
 
@@ -1469,10 +1486,12 @@ another, resource parameters, and body witnesses. Fields precede any guard
 and cannot be declared inside it. Qualified C types, struct types/pointers,
 arrays, and function-pointer field types are not supported in this slice.
 
-Resources with fields are non-countable and intended for exclusive
-instance-based ownership. Both `count(resource(...))` and quantities such as
-`1 of resource(...)` are rejected. Field-free resources keep their existing
-rules. Named ownership binds an exclusive instance with arbitrary typed fields:
+Resources with fields are intended for exclusive instance-based ownership:
+each member is a separately named instance, so quantities such as
+`1 of resource(...)` are rejected. Fields do not decide whether a family can be
+counted; `count(resource(...))` is admitted exactly when the family is declared
+`authorized resource`, with or without fields. Named ownership binds an
+exclusive instance with arbitrary typed fields:
 
 <!-- verified-example: mdtests/resource_instance_bindings.md -->
 ```click
@@ -2267,7 +2286,10 @@ let { root: node } = step(init(p, left, right, value), { l: a, r: b });
 
 The introduced name is an ordinary owned instance afterwards: it can be folded
 into a parent as a child, or returned by the caller's own `produces` clause.
-Multiple named outputs use a destructuring pattern:
+A non-mutex output may reuse the name of an instance consumed by the call.
+Its current arguments and fields come from the produced contract; `old(...)`
+still observes the caller's entry instance. Reuse does not let a call overwrite
+another live instance. Multiple named outputs use a destructuring pattern:
 
 <!-- verified-example: mdtests/c_call_binder_transport_multiple_produces.md -->
 ```click
@@ -2469,7 +2491,8 @@ Wide examples are in
 
 Contract expressions accept the unsigned narrowing cast `(uint32)x`, including
 `old((uint32)p->value)`. The operand must be
-a current C expression; put `old(...)` or `at(...)` around the whole cast to
+a current scalar expression, including a pure-function call; put `old(...)`
+or `at(...)` around the whole cast to
 select another snapshot. A 64-to-`uint32` cast retains the low 32 bits, rather
 than requiring the source value to fit. Casts retain their selected memory
 snapshot even when the underlying field is subsequently updated.

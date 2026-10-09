@@ -1588,6 +1588,27 @@ pub(in crate::surface) fn lower_interface_resource_clause(
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
+    lower_resource_clause_at_current_locals_with_assumptions(
+        resource,
+        parameters,
+        arguments,
+        state,
+        None,
+        assumptions,
+    )
+}
+
+/// Lower a proof resource argument at the current C bindings, retaining only
+/// the facts already checked at this frontier. These facts can identify an
+/// owned cell through an alias; they do not assume the proposed fold's body.
+pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptions(
+    resource: &ResourceClause,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+    result: Option<&CValue>,
+    assumptions: &PureFactContext,
+) -> Result<CResourceFact, ClickError> {
     let values =
         parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
     let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
@@ -1599,7 +1620,7 @@ pub(in crate::surface) fn lower_interface_resource_clause(
             &values,
             state,
             state,
-            None,
+            result,
             false,
             assumptions,
         )?;
@@ -1617,7 +1638,7 @@ pub(in crate::surface) fn lower_interface_resource_clause(
         &values,
         state,
         state,
-        None,
+        result,
         false,
         assumptions,
     )
@@ -3018,6 +3039,43 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
         return element_width;
     }
     contract_expression_element_width(parameters, &segment.base).unwrap_or(4)
+}
+
+/// Loop locals have frontend-declared types even before execution binds values.
+/// Preserve explicit field layouts and parameter ABI widths before consulting
+/// that index. No scalar declaration itself supplies a readable range.
+pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
+    parameters: &[syntax::C0Parameter],
+    segment: &ContractSegment,
+    result_type: Option<CType>,
+    pointer_types: Option<&BTreeMap<String, CType>>,
+) -> u32 {
+    fn local_element(expression: &CExpression, types: &BTreeMap<String, CType>) -> Option<CType> {
+        match expression {
+            CExpression::Variable(name) => types.get(name).copied(),
+            CExpression::Add(left, right) => {
+                local_element(left, types).or_else(|| local_element(right, types))
+            }
+            CExpression::Subtract(left, _) => local_element(left, types),
+            CExpression::PointerOffsetBytes { pointer, .. } => local_element(pointer, types),
+            _ => None,
+        }
+    }
+    if segment.field_element_width().is_some()
+        || contract_expression_element_width(parameters, &segment.base).is_some()
+        || matches!(&segment.base, CExpression::Variable(name)
+            if name == crate::kernel::C_CONTRACT_RESULT_NAME
+                || (name == "result" && !matches!(&segment.surface,
+                    ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
+    {
+        return contract_segment_element_width_for_result_type(parameters, segment, result_type);
+    }
+    pointer_types
+        .and_then(|types| local_element(&segment.base, types))
+        .map(CType::byte_width)
+        .unwrap_or_else(|| {
+            contract_segment_element_width_for_result_type(parameters, segment, result_type)
+        })
 }
 
 pub(in crate::surface) fn contract_segment_element_type(

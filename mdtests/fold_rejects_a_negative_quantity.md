@@ -1,9 +1,9 @@
 # fold rejects a negative quantity
 
-A resource quantity is a signed `int32`. Authority-mode folding rejects a
+A resource quantity is a signed `int32`. Folding rejects a
 negative coefficient before changing either ownership or the population ledger.
 Zero remains valid and does not create a member. Counter memory is held
-separately from the empty reference family, as in the authority model.
+separately from the empty reference family.
 
 ```c filename=fold_rejects_a_negative_quantity.c
 struct s { int32 x; };

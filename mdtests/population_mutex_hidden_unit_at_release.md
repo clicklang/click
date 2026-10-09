@@ -1,4 +1,4 @@
-A unit hidden in a wrapper prevents release
+# A unit hidden in a wrapper prevents release
 
 Moving a member into another wrapper inside the critical section does not
 remove it from the population. The count still includes it, so a smaller

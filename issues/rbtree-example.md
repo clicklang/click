@@ -26,14 +26,16 @@ immediate-successor exit, at the root or below it on either parent link.
 Red-leaf and nonempty-child successors return balanced trees with null fixup;
 black-leaf successors retain the exact deficit context and return the successor
 for fixup. Exact models preserve parent consistency and in-order contents.
-Root deletion with a deeper red-leaf successor or a nonempty replacement child
-verifies in `rbtree_erase_spine.click`. The C descent loop carries the exact
+Deletion at any tree position with a deeper red-leaf successor or a nonempty
+replacement child verifies in `rbtree_erase_spine.click`. The C descent loop carries the exact
 left-only `EraseSpine`; opening and closing helper contracts expose its
 innermost link around one shared C continuation. `refold_erase_spine` rebuilds
 the path, and `rb_erase_no_fixup_successor_splice` proves balance, exact
 in-order removal, and parent consistency for both complete transplants.
-The leaf and nonempty-child C branches join before the shared reconstruction. The
-contract also returns detached-node ownership and null fixup.
+The verified parent-link call preserves the outer context. The leaf and
+nonempty-child C branches join before shared spine and outer-context
+reconstruction. The contract returns the exact whole-root model, detached-node
+ownership, and null fixup.
 Deletion at any tree position with a deeper black-leaf successor verifies in
 `rbtree_erase_black_spine.click`: the terminating graft helper joins the
 retained descent spine to the transplanted successor's context. Its contract
@@ -44,9 +46,9 @@ modules. The generalized black-leaf proof preserves the outer context through
 one verified parent-link call and reconstructs the exact deficit at any tree
 position. All 136 expansion-audit sites pass across the shared model and
 black-leaf sidecar; its four splice/fixup mutations are rejected, and the
-root red-leaf/nonempty-child sidecar still verifies. Deeper-successor mutation
-checks run nightly. Non-root deeper
-red-leaf and nonempty-child successors remain in chunk 11.
+red-leaf/nonempty-child sidecar now also covers arbitrary outer contexts.
+Deeper-successor mutation checks run nightly. All unlink-function exits are
+covered across the sidecars, completing chunk 11; erase-color repair is next.
 The C parent-link helper now verifies separately in `rbtree_change_child.click`
 for root, left, and right links. Its contract transfers the surrounding context
 to the new focus with the same model and preserves the old node's tag; three
@@ -85,7 +87,7 @@ Explicit `transport` now shares its existing context-keyed failure memo across
 its proof routes. The frozen non-root pointer frame returns a local refusal
 instead of exhausting the simple budget. A reduced frame refusal is pinned
 below 250,000 units, with a separate check that grows unrelated premises. The
-non-root splice proof still needs explicit frame and packed-parent facts.
+non-root splice proof uses explicit frame and packed-parent facts.
 The packed-parent reduction exposed a certificate gap when reading low tag
 bits back from an aligned pointer word. Explicit arithmetic now checks that
 projection using only the selected alignment and word syntax, including
@@ -104,6 +106,27 @@ passes with the same checked load-history rule used for 32-bit equality. The
 black-leaf sidecar now verifies through its final augmentation callback for
 root, left-child, and right-child transplants, retaining the original outer
 context. The callback resource stays folded across the parent-link helper call.
+The generalized red-leaf/nonempty-child continuation exposed a join-lowering
+bug: a comparison mentioning a mark was treated as wholly historical even
+when its other side read current memory. Every exported interface fact now
+gets checked state-parametric lowering with the snapshots shared by both
+arms; the marked expression stays fixed while the current read is checked at
+each frontier. A loaded-pointer reduction pins the former kernel refusal.
+The generalized proof also exposed lost source names in exported interface
+facts: later snapshot rewrites printed resolved model pointers as `…`. Interface
+checking now retains the written facts alongside resolved values. A reduced
+packed-word rewrite and the complete successor expansion audit cover the fix.
+The reduction also exposed lost element types for loaded local pointers in
+branch interfaces. Interface lowering now looks up each referenced declaration
+in the current state while keeping values symbolic; a small wide-word fixture
+checks that both arm proofs agree with the kernel join.
+The first erase-color proof also exposed a discarded theorem-premise refusal
+inside model-match arms. Written arm applications now retain that diagnostic
+instead of blaming an unsupported proof shape; a reduced negative pins it.
+The color-flip proof also exposed discarded alias facts in named-fold
+arguments. Folding now evaluates those arguments with the checked facts at the
+current frontier, as branch interfaces already do. A reduced model-pointer
+field read verifies and expands; an unproved model alias remains unreadable.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
@@ -890,9 +913,7 @@ as follows:
 | [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md), [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md) | chunks 15 to 23 |
 | D1 (attach sidecars to the pinned source; not design decision D1) | chunk 24 |
 
-Chunks 8, 10, and 15 have no unlanded prerequisite; chunk 3 is landed. None depends on the
-[authority migration](authority-migration.md): the rbtree fixtures use neither
-`count(...)` nor `guarded_by`.
+Chunks 8, 10, and 15 have no unlanded prerequisite; chunk 3 is landed.
 
 ### Insert
 
@@ -1166,28 +1187,40 @@ context reconstruction, reparenting, contents, and parent-preservation lemmas.
 Keep these cases separate from the black-leaf theorem, whose whole spliced
 tree still needs fixup.
 
-**Chunk 11. `__rb_erase_augmented`: C coverage in progress.**
-The unchanged C verifies zero/one-child deletion and every immediate-successor
-exit, at the root and on either non-root parent link. It also verifies root
-deletion with a deeper red-leaf successor or a nonempty replacement child,
-including the descent loop and a shared splice continuation. No-deficit cases return
-exact remaining models, whole-tree balance, parent consistency, in-order
-contents, and null fixup. Black-leaf cases retain the exact one-black-level
-deficit and return the correct fixup parent for chunk 12.
-
-Deletion at any tree position with a deeper black-leaf successor verifies in
-`rbtree_erase_black_spine.click`. Non-root deeper red-leaf and nonempty-child
-successors remain. The model selectors, reconstruction equations, and
-nonempty-child blackening connection
-already cover arbitrary depth through `rb_min_parent`,
-`rb_min_context_cut_child`, and `rb_erase_nonempty_successor_splice`.
+**Chunk 11. `__rb_erase_augmented`: C coverage complete.**
+The unchanged C verifies zero/one-child deletion and every immediate and deeper
+successor exit, at the root and on either non-root parent link. The deeper
+sidecars verify the terminating descent loop, shared splice continuation, and
+reconstruction through arbitrary outer contexts. No-deficit cases return exact
+remaining models, whole-tree balance, parent consistency, in-order contents,
+detached-node ownership, and null fixup. Black-leaf cases retain the exact
+one-black-level deficit and return the correct fixup parent for chunk 12.
+Mutation checks reject incorrect links, parent/color writes, and fixup results.
 Depends on 7 and 10.
 
-**Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
-every continuing back edge. Depends on 11.
+**Chunk 12. `____rb_erase_color`, left-sibling cases: in progress.**
+`rbtree_erase_color_red_left.click` verifies the first-iteration color-flip exit
+for an empty left child, a red parent, and a black leaf right sibling, through
+arbitrary outer contexts. The exact whole-root model is balanced and
+parent-consistent and preserves in-order contents; all 31 expansion-audit
+sites pass. `rbtree_erase_color_root_left.click` covers the black-root exit,
+including the null parent cursor, with the same exact-model guarantees and
+20 passing audit sites. `rbtree_erase_color_flips.click` now handles
+repeated propagation through black parents, with either orientation at every
+ancestor, arbitrary black sibling children, and both red-parent and root exits.
+It returns the exact balanced,
+parent-consistent whole-root model with unchanged in-order contents. Structural
+context descent checks every continuing back edge. All 39 audit sites and
+four mutation checks pass. `rbtree_rotate_set_parents.click` verifies the
+shared incoming-link and packed-word updates for rotations at any tree
+position, with 35 passing audit sites. The pinned C keeps every case.
+Left-focus rotation cases remain.
+Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
-mirror of chunk 12; the exit model is red-black; a negative. Depends on 12.
+color-flip propagation proof already covers both orientations, including
+alternating sides. Mirrored rotations and the complete `rb_erase` wrapper
+remain; the exit model is red-black, with mutation checks. Depends on 12.
 
 ### Augmented
 
