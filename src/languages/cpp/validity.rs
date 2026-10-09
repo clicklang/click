@@ -264,6 +264,7 @@ impl Metadata<'_> {
 
     fn initializer(&self, initializer: &CppInitializer) -> Result<(), String> {
         match initializer {
+            CppInitializer::Uninitialized => Ok(()),
             CppInitializer::Value { value } => self.expression(value),
             CppInitializer::Call {
                 callee,

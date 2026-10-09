@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 52;
+pub(crate) const EXPORT_SCHEMA: u32 = 53;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -810,6 +810,8 @@ fn validate_scalar_conversions(
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppInitializer {
+    /// Default-initialize an automatic scalar without inventing a value.
+    Uninitialized,
     /// Initialize a new object from an admitted construction-return call.
     ConstructionCall {
         callee: CppFunctionReference,
@@ -2792,6 +2794,9 @@ impl CppInitializer {
             _ => {}
         }
         match (self, local_type) {
+            (Self::Uninitialized, CppType::Integer { .. }) => {
+                require_scalar_integer(local_type, "uninitialized automatic local")
+            }
             (
                 Self::ConstructionCall {
                     callee,
@@ -4874,6 +4879,7 @@ impl CppInitializer {
         referenced_constants: &mut BTreeSet<String>,
     ) -> Result<(), String> {
         match self {
+            Self::Uninitialized => Ok(()),
             Self::Value { value } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }

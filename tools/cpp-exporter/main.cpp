@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 52;
+    artifact["schema"] = 53;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1710,7 +1710,7 @@ private:
            "32/64/128-bit integer, an int lvalue reference, or one simple record object");
       return std::nullopt;
     }
-    if (!local->hasInit()) {
+    if (!local->hasInit() && !mutable_int) {
       fail(local->getLocation(),
            record_object
                ? "a supported C++ record local requires direct aggregate or constructor initialization"
@@ -1769,6 +1769,17 @@ private:
     place["name"] = local->getNameAsString();
     place["value_type"] = std::move(*value_type);
     place["span"] = span(local->getSourceRange());
+
+    if (!local->hasInit()) {
+      llvm::json::Object initializer;
+      initializer["kind"] = "uninitialized";
+      llvm::json::Object result;
+      result["kind"] = "declare";
+      result["local"] = std::move(place);
+      result["initializer"] = std::move(initializer);
+      result["span"] = span(statement->getSourceRange());
+      return Json(std::move(result));
+    }
 
     llvm::json::Object initializer;
     const clang::Expr *source_initializer = local->getInit();

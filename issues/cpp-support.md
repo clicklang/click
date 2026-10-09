@@ -392,8 +392,14 @@ target. Partial local and helper writes remain uninitialized, and helper byte
 writes refresh the caller's scalar binding rather than retaining its old value.
 The rule is shared execution semantics, not a trusted decoder intrinsic; untyped
 storage, other scalar kinds and specification byte views remain outside the
-profile. The C++ importer still needs uninitialized scalar declarations, native
-byte/`std::byte` types and checked writable byte-span construction before the
+profile. Automatic mutable signed/unsigned 32/64/128-bit C++ integers may now
+omit their initializer. Their declarations lower to ordinary uninitialized
+storage, and reads require initialization; record construction and reference
+binding remain mandatory. Normal, expanded and retained checks cover later
+assignment, and offline validation rejects forged uninitialized record or
+reference declarations. This changes the artifact schema to 53; refresh older
+locks. The C++ importer still needs native byte/`std::byte` types and checked
+writable byte-span construction before the
 unchanged decoder can use it. The agreed enum boundary uses native integer
 contracts while checking nominal enum identities in the C++ importer. Byte
 alias access must be restricted to the actual pinned `std::byte` declaration;
