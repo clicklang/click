@@ -92,6 +92,11 @@ projection using only the selected alignment and word syntax, including
 masked tags and unsigned addition. Negative checks reject insufficient or
 foreign alignment and changed tag bits; deterministic work checks cover
 growing words within the certificate's existing payload bound.
+A smaller named-call reduction also exposed a missing explicit read-value
+normalization route. `normalize() using { child == identity; }` can follow
+the typed memory history to a wide stored value using the cited alias and
+the call’s recorded caller-owned ranges. The original `normalize()` remains
+context-free; partial overwrites and withdrawn aliases do not recover a value.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
