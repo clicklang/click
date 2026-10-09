@@ -484,7 +484,7 @@ fn audit_mul_site(tactic: &str) {
         String::from_utf8_lossy(&result.stderr)
     );
     assert!(
-        stdout.contains("SUMMARY: 1 sites passed; 0 site failures; 0 session failures;"),
+        stdout.contains("SUMMARY: 1 sites passed; 0 site failures; 0 claim failures; 0 session failures;"),
         "{stdout}"
     );
 }
@@ -1249,8 +1249,8 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4 by",
-        "# Both actual helper results satisfy the ceiling at next()'s new state.\n have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4 by",
+        "# Both actual helper results satisfy the ceiling at next()'s new state.\n   have __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) by",
     );
 }
 
