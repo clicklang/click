@@ -166,8 +166,14 @@ folded throughout the rotation and color flip. Both proofs return the exact
 balanced root, consistent parents, and unchanged in-order contents. Each passes
 all 104 expansion-audit sites; six mutations reject either missing child-link
 update or incorrect parent recoloring in the first rotation.
-Red-sibling cases followed by further rotations, and rotations after deficit
-propagation, remain.
+`rbtree_erase_color_red_sibling_outer_left.click` and its mirrored right sidecar
+cover cases 1 and 4: the red sibling's black near child has an empty near child
+and a red far leaf. Both rotations retain the original opaque far subtree and
+return the exact balanced root, consistent parents, and unchanged in-order
+contents under any outer context. Each passes all 121 expansion-audit sites.
+Six mutations reject incorrect first- or second-rotation parent links and an
+incorrect far-child parent. Other red-sibling continuations and rotations
+after deficit propagation remain.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
