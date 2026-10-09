@@ -2768,6 +2768,9 @@ fn verify_c0_sources_in_context(
                     "pthread_mutex_lock".to_string(),
                     "pthread_mutex_unlock".to_string(),
                     "pthread_mutex_destroy".to_string(),
+                    "atomic_init".to_string(),
+                    "atomic_store_explicit".to_string(),
+                    "atomic_load_explicit".to_string(),
                 ]);
                 let preliminary = c_verified_function_termination_rules(
                     &partial_rules,
@@ -3732,6 +3735,9 @@ fn verify_c0_sources_in_context(
             "pthread_mutex_lock".to_string(),
             "pthread_mutex_unlock".to_string(),
             "pthread_mutex_destroy".to_string(),
+            "atomic_init".to_string(),
+            "atomic_store_explicit".to_string(),
+            "atomic_load_explicit".to_string(),
         ]);
     }
     // A selected function may recurse only through a function this run
@@ -4110,7 +4116,7 @@ fn verification_required_functions_with_blocks(
             continue;
         }
         if runtime == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
-            && matches!(
+            && (matches!(
                 name.as_str(),
                 "pthread_create"
                     | "pthread_join"
@@ -4118,7 +4124,7 @@ fn verification_required_functions_with_blocks(
                     | "pthread_mutex_lock"
                     | "pthread_mutex_unlock"
                     | "pthread_mutex_destroy"
-            )
+            ) || crate::languages::c::thread_runtime::is_publication_operation(&name))
         {
             continue;
         }
@@ -4128,6 +4134,14 @@ fn verification_required_functions_with_blocks(
                 .any(|function| function.is_external() && function.signature().name() == name)
             {
                 continue;
+            }
+            if matches!(
+                name.as_str(),
+                "atomic_init" | "atomic_store_explicit" | "atomic_load_explicit"
+            ) {
+                return Err(ClickError::new(format!(
+                    "`{name}` is declared by Click's `<stdatomic.h>` projection, but only the modeled-pthread thread runtime models C11 atomic operations"
+                )));
             }
             return Err(ClickError::new(format!("no C source defines `{name}`")));
         };
@@ -6745,7 +6759,7 @@ fn validate_modeled_pthread_binding(
 ) -> Result<(), ClickError> {
     let header_source = BTreeMap::from([(
         "__click_modeled_pthread_reference.c",
-        "#include <pthread.h>\n",
+        "#include <pthread.h>\n#include <stdatomic.h>\n",
     )]);
     let reference = crate::languages::c::source::expand_includes_for_target(
         "__click_modeled_pthread_reference.c",
@@ -6824,6 +6838,34 @@ fn validate_modeled_pthread_binding(
                 )));
             }
             found_pthread.insert(name);
+        }
+        // The atomic operations the runtime models are optional, but when a
+        // unit names one it is Click's own `<stdatomic.h>` declaration:
+        // a program's own function of that name is never modeled.
+        for name in [
+            crate::languages::c::thread_runtime::ATOMIC_INIT_NAME,
+            crate::languages::c::thread_runtime::ATOMIC_STORE_NAME,
+            crate::languages::c::thread_runtime::ATOMIC_LOAD_NAME,
+        ] {
+            if unit
+                .functions
+                .iter()
+                .any(|function| function.name() == name)
+            {
+                return Err(ClickError::new(format!(
+                    "modeled-pthread binding refuses local definition of `{name}` in `{source_path}`"
+                )));
+            }
+            let Some(declaration) = unit.function_declarations.get(name) else {
+                continue;
+            };
+            if !unit.builtin_pthread_declarations.contains(name)
+                || !declaration.compatible_with(&reference.function_declarations[name])
+            {
+                return Err(ClickError::new(format!(
+                    "modeled-pthread binding requires `{name}` from Click's built-in `<stdatomic.h>` in `{source_path}`"
+                )));
+            }
         }
         for function in &unit.functions {
             validate_modeled_pthread_calls(function.body(), source_path)?;
@@ -7397,7 +7439,12 @@ pub(in crate::surface) fn ordinary_abstract_families(
                 // The built-in resources have their own kernel forms.
                 && !matches!(
                     definition.name(),
-                    "authority" | "mutex_guard" | "mutex_live" | "mutex_use"
+                    "authority"
+                        | "mutex_guard"
+                        | "mutex_live"
+                        | "mutex_use"
+                        | "publisher"
+                        | "subscriber"
                 )
                 && definition.name() != crate::kernel::CResourceFact::ALLOCATION_RESOURCE_NAME
         })
@@ -7971,8 +8018,10 @@ fn resource_clause_to_resource_spec_with_metadata(
             parameter_types,
         } => {
             if !resource_type_arguments.is_empty()
-                && (!matches!(name.as_str(), "mutex_use" | "authority")
-                    || resource_type_arguments.len() != 1)
+                && (!matches!(
+                    name.as_str(),
+                    "mutex_use" | "authority" | "publisher" | "subscriber"
+                ) || resource_type_arguments.len() != 1)
             {
                 return Err(ClickError::new("unsupported resource type arguments"));
             }
@@ -8081,6 +8130,57 @@ fn resource_clause_to_resource_spec_with_metadata(
                 return CResourceSpec::new(
                     crate::kernel::CResourceTerm::MutexLive {
                         mutex: Box::new(mutex.clone()),
+                        snapshot: argument_snapshots[0],
+                    },
+                    access,
+                    crate::kernel::CResourceQuantity::One,
+                    role,
+                    snapshot,
+                )
+                .map_err(|error| ClickError::new(error.to_string()));
+            }
+            if let Some(side) = crate::kernel::PublicationSide::for_keyword(name) {
+                let [flag] = arguments.as_slice() else {
+                    return Err(ClickError::new(format!(
+                        "{name} expects one atomic flag pointer"
+                    )));
+                };
+                let Some(
+                    payload @ ResourceClause::Declared {
+                        type_schema: Some(schema),
+                        arguments: payload_arguments,
+                        ..
+                    },
+                ) = resource_type_arguments.first()
+                else {
+                    return Err(ClickError::new(format!(
+                        "{name} requires the published resource type"
+                    )));
+                };
+                let payload = crate::kernel::CResourceTypeSpec {
+                    resource: Box::new(
+                        resource_clause_to_resource_spec_with_metadata(
+                            payload,
+                            parameters,
+                            result_type,
+                            role,
+                            snapshot,
+                            pointer_element_types,
+                        )?
+                        .with_source_arguments(
+                            payload_arguments
+                                .iter()
+                                .map(crate::surface::diagnostics::describe_contract_expression)
+                                .collect(),
+                        ),
+                    ),
+                    schema: schema.clone(),
+                };
+                return CResourceSpec::new(
+                    crate::kernel::CResourceTerm::Publication {
+                        side,
+                        payload: Box::new(payload),
+                        flag: Box::new(flag.clone()),
                         snapshot: argument_snapshots[0],
                     },
                     access,

@@ -75,6 +75,20 @@ pub const MUTEX_UNLOCK_STATE_BINDER_ID: u64 = u64::MAX - 9;
 pub const MUTEX_DESTROY_LIFETIME_BINDER_ID: u64 = u64::MAX - 10;
 pub const MUTEX_DESTROY_STORAGE_BINDER_ID: u64 = u64::MAX - 11;
 pub const MUTEX_DESTROY_STATE_BINDER_ID: u64 = u64::MAX - 12;
+/// The resource type an `atomic_init` call publishes through its flag.
+pub const ATOMIC_INIT_PAYLOAD_BINDER_ID: u64 = u64::MAX - 13;
+
+/// The C11 atomic operations of the one-shot publication subset.
+pub const ATOMIC_INIT_NAME: &str = "atomic_init";
+pub const ATOMIC_STORE_NAME: &str = "atomic_store_explicit";
+pub const ATOMIC_LOAD_NAME: &str = "atomic_load_explicit";
+
+pub fn is_publication_operation(name: &str) -> bool {
+    matches!(
+        name,
+        ATOMIC_INIT_NAME | ATOMIC_STORE_NAME | ATOMIC_LOAD_NAME
+    )
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MutexResourceBinder {
@@ -240,6 +254,9 @@ pub struct ModeledPthreadBinding {
     pub target: super::target::CTarget,
     pub specification_version: u32,
     pub header_digest: [u8; 32],
+    /// Click's `<stdatomic.h>` projection, which declares the modeled
+    /// publication operations.
+    pub atomic_header_digest: [u8; 32],
     pub specification_digest: [u8; 32],
     pub create_name: &'static str,
     pub join_name: &'static str,
@@ -259,8 +276,10 @@ impl ModeledPthreadBinding {
     pub fn builtin() -> Self {
         Self {
             target: super::target::CTarget::X86_64LinuxUserspace,
-            specification_version: 10,
+            specification_version: 11,
             header_digest: Sha256::digest(include_str!("modeled_pthread.h").as_bytes()).into(),
+            atomic_header_digest: Sha256::digest(include_str!("modeled_stdatomic.h").as_bytes())
+                .into(),
             specification_digest: Sha256::digest(
                 include_str!("modeled_pthread_spec.md").as_bytes(),
             )
@@ -296,6 +315,7 @@ impl ModeledPthreadBinding {
             self.target.name().as_bytes(),
             &self.specification_version.to_be_bytes(),
             &self.header_digest,
+            &self.atomic_header_digest,
             &self.specification_digest,
             self.create_name.as_bytes(),
             self.join_name.as_bytes(),
@@ -354,7 +374,7 @@ impl CThreadRuntime {
         match self {
             Self::None => None,
             Self::ModeledPthread => Some(
-                "modeled-pthread v10: pthread create/join and shared mutex calls obey the trusted Click specification; native runtime binding unvalidated",
+                "modeled-pthread v11: pthread create/join, shared mutex calls, and one-shot atomic publication obey the trusted Click specification; native runtime binding unvalidated",
             ),
         }
     }

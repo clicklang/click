@@ -3465,6 +3465,8 @@ pub struct CCallBinderTransport {
     /// that supplies it. A `produces` binder maps to the fresh identity the
     /// caller's `let` introduced.
     pub(crate) bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
+    /// Runtime binders that name a resource type, evaluated at the call.
+    pub(crate) type_arguments: std::sync::Arc<BTreeMap<Variable, super::ResourceDescription>>,
 }
 
 impl CCallBinderTransport {
@@ -6377,6 +6379,9 @@ pub(super) struct ResourceContextIndex {
     /// u128 covers every u64 entry ID times a positive signed-32 quantity.
     pub(super) numeric_owned_units: PersistentMap<CResource, (u128, usize)>,
     pub(super) mutex_authorities: PersistentMap<(ResourceFamily, Pointer), ResourceEntryIds>,
+    /// Subscriber rights an acquire load has read through, awaiting the C
+    /// branch that tests the value (`publication::resolve_observed_publications`).
+    pub(super) observed_publications: PersistentMap<(), ResourceEntryIds>,
     pub(super) exact_shapes: PersistentMap<(ResourceFamily, String, usize), ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Iterated guarded-ownership facts keyed by both blocks their
@@ -6729,6 +6734,74 @@ pub enum CResource {
     /// Iterated guarded ownership: one fact for every element of a bounded
     /// index range whose guard cell holds (`iterated.rs`).
     Iterated(Arc<CIteratedMemory>),
+    /// One half of a one-shot release/acquire publication channel.
+    Publication(PublicationRight),
+}
+
+/// Which half of a one-shot publication channel a right is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum PublicationSide {
+    /// May release-store once, surrendering one owned payload.
+    Publisher,
+    /// Receives the payload from the acquire load that observes it.
+    Subscriber,
+}
+
+impl PublicationSide {
+    pub(crate) fn for_keyword(keyword: &str) -> Option<Self> {
+        match keyword {
+            "publisher" => Some(Self::Publisher),
+            "subscriber" => Some(Self::Subscriber),
+            _ => None,
+        }
+    }
+    pub(crate) const fn keyword(self) -> &'static str {
+        match self {
+            Self::Publisher => "publisher",
+            Self::Subscriber => "subscriber",
+        }
+    }
+}
+
+/// Owned authority over one half of the one-shot publication channel an
+/// `atomic_init` created at `flag`. Initialization mints exactly one right of
+/// each side and consumes the flag's storage for good, so the address names
+/// one channel and its payload type; nothing else mints a right.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct PublicationRight {
+    pub(in crate::kernel) side: PublicationSide,
+    pub(in crate::kernel) flag: Pointer,
+    pub(in crate::kernel) payload: super::ResourceDescription,
+    /// A subscriber right an acquire load has read `observed` through, until
+    /// a C branch decides whether that value is zero.
+    pub(in crate::kernel) observed: Option<CValue>,
+}
+
+impl PublicationRight {
+    pub(crate) fn new(
+        side: PublicationSide,
+        flag: Pointer,
+        payload: super::ResourceDescription,
+    ) -> Self {
+        Self {
+            side,
+            flag,
+            payload,
+            observed: None,
+        }
+    }
+    pub(crate) fn observed(&self) -> Option<&CValue> {
+        self.observed.as_ref()
+    }
+    pub(crate) fn side(&self) -> PublicationSide {
+        self.side
+    }
+    pub(crate) fn flag(&self) -> &Pointer {
+        &self.flag
+    }
+    pub(crate) fn payload(&self) -> &super::ResourceDescription {
+        &self.payload
+    }
 }
 
 /// Opaque identity for one mutex initialization or acquisition. The resource
@@ -6922,7 +6995,8 @@ pub(super) trait ResourceFamilyAlgebra {
             ResourceFamily::PopulationAuthority
             | ResourceFamily::MutexGuard
             | ResourceFamily::MutexLive
-            | ResourceFamily::MutexUse => {
+            | ResourceFamily::MutexUse
+            | ResourceFamily::Publication => {
                 if spec.access != CResourceAccessMode::Own {
                     return Err(CResourceSpecError::InvalidAccess {
                         family: self.family(),
@@ -7041,6 +7115,8 @@ static MUTEX_LIVE_RESOURCE_ALGEBRA: MutexLiveResourceAlgebra = MutexLiveResource
 
 struct MutexGuardResourceAlgebra;
 static MUTEX_GUARD_RESOURCE_ALGEBRA: MutexGuardResourceAlgebra = MutexGuardResourceAlgebra;
+struct PublicationResourceAlgebra;
+static PUBLICATION_RESOURCE_ALGEBRA: PublicationResourceAlgebra = PublicationResourceAlgebra;
 
 static MEMORY_RESOURCE_ALGEBRA: MemoryResourceAlgebra = MemoryResourceAlgebra;
 struct PopulationAuthorityResourceAlgebra;
@@ -7070,6 +7146,8 @@ pub enum ResourceFamily {
     MutexUse,
     /// Iterated guarded ownership (`CResource::Iterated`).
     Iterated,
+    /// One half of a one-shot publication channel (`CResource::Publication`).
+    Publication,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -7112,6 +7190,13 @@ pub enum CResourceTerm {
     MutexUse {
         protected: Option<Box<CResourceTypeSpec>>,
         mutex: Box<CExpression>,
+        snapshot: CResourceSnapshot,
+    },
+    /// `publisher(flag, P)` or `subscriber(flag, P)`.
+    Publication {
+        side: PublicationSide,
+        payload: Box<CResourceTypeSpec>,
+        flag: Box<CExpression>,
         snapshot: CResourceSnapshot,
     },
     Composite {
@@ -7272,6 +7357,7 @@ impl CResourceTerm {
             Self::Token { .. } => ResourceFamily::Token,
             Self::Instance { .. } => ResourceFamily::Instance,
             Self::Iterated(_) => ResourceFamily::Iterated,
+            Self::Publication { .. } => ResourceFamily::Publication,
         }
     }
 
@@ -7464,7 +7550,8 @@ impl CResourceSpec {
                 argument_snapshots,
                 parameter_types,
             },
-            ResourceFamily::Memory
+            ResourceFamily::Publication
+            | ResourceFamily::Memory
             | ResourceFamily::PopulationAuthority
             | ResourceFamily::Instance
             | ResourceFamily::Iterated

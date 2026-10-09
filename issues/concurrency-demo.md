@@ -36,7 +36,7 @@ historical checkpoints.
 | [Disjoint fork/join](../examples/concurrency-fork-join/fork_join.click) | Exact outputs, ownership transfer, stable input loans, matching joins, and create-failure cleanup | Native runtime validation and broader threading APIs |
 | [Even/odd locking](../design/concurrency-probes/mutex_held_parity.click) | Conditional acquisition across loop iterations, final unlock, and destruction | The conditional acquisition abstraction with protected payloads or use-loan-backed guards |
 | [Shared-worker counter](../design/concurrency-probes/mutex_counter.click) | Worker and parent safety, shared typed use permissions, create-failure cleanup, final destruction, and the exact final value of two | Nothing for the frozen C |
-| One-shot publication | Design obligation only | Checked release/acquire semantics and a frozen C demonstration |
+| [One-shot publication](../design/concurrency-publication/publication.click) | The consumer reads the producer's value through a spin loop that need not terminate; the payload moves once from producer to consumer, and reads before publication, producer writes after it, other orders, and a second store or consumer are refused | Scaling regressions |
 
 The parity loop works both through an ordinary conditional guard resource and
 [direct conditional ownership in its loop contract](../design/concurrency-probes/mutex_held_parity_direct.click).
@@ -235,24 +235,32 @@ release without restored state, and destruction with surviving loans or guards.
 Do not move pthread guards across threads. Direct `pthread_mutex_t *` sidecar
 parameters remain a separate parser limitation with a frozen negative test.
 
-One-shot publication is the next launch milestone; it is not part of the
-authority migration's initial implementation scope.
+### 4. One-shot release/acquire publication
+
+Implemented. The unchanged [publication C](../design/concurrency-publication/publication.c)
+verifies: `atomic_init(&f, 0)` with `{ payload: P(args) }` takes the flag's
+storage and mints unique `publisher(&f, P)` and `subscriber(&f, P)` rights.
+A release store of a nonzero value spends the publisher right and a folded
+`P`. An acquire load marks the subscriber right as read through its value, and
+the C branch that decides the value settles it: zero keeps the right, nonzero
+receives `P`. The consumer's spin loop keeps the subscriber right as its
+invariant and is `diverges`, so the value is proved without assuming that
+polling terminates. The `mdtests/publication_*.md` regressions refuse a read
+before acquisition, a producer write after release, relaxed and
+`seq_cst` orders, a zero store, a second store, a load whose value no branch
+tests, the zero branch, a load without the right, a nonzero initial value,
+and a plain write to the flag. The flag storage stays consumed, because C has
+no atomic destroy. The rules are in the
+[modeled pthread specification](../src/languages/c/modeled_pthread_spec.md).
 
 ## Remaining launch obligations
 
-### One-shot release/acquire publication
+### Publication scaling
 
-Freeze a C11 producer/consumer example. The producer initializes ordinary
-payload and release-stores a ready flag; the consumer acquire-loads the flag
-and reads only after observing publication. Prove the initialized value is
-observed without requiring the polling loop to terminate.
-
-Tie the acquire observation to the actual release and its resource transfer.
-Transfer exclusive payload authority at most once; repeated observations and
-competing consumers cannot duplicate it. Reject reads before publication,
-producer accesses after surrendering ownership, and proofs with a required
-ordering edge weakened to relaxed. Unsupported orders must be refused locally,
-not silently strengthened.
+Add deterministic scaling regressions for publication amid many unrelated
+resources and flags. Settling a read is indexed by the rights that are
+awaiting a branch, so it is not a scan of the context. A regression should
+pin that.
 
 ### Native pthread binding
 

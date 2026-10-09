@@ -3336,6 +3336,11 @@ fn execute_c_statement_leaf_paths(
                             );
                             let branch_state =
                                 resolve_pending_heap_allocations(state, &path_assumptions);
+                            let branch_state =
+                                crate::kernel::publication::resolve_observed_publications(
+                                    &branch_state,
+                                    &path_assumptions,
+                                );
                             let branch_state = if let Some(pending) =
                                 &branch_state.pending_thread_create
                             {

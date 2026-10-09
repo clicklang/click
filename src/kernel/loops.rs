@@ -333,7 +333,7 @@ mod pointee_const_return_tests {
     }
 }
 
-fn assign_call_result(
+pub(super) fn assign_call_result(
     state: &mut CState,
     target: &str,
     value: CValue,
@@ -522,6 +522,19 @@ pub(super) fn execute_c_call_assign_paths(
         .contains(&function_name)
     {
         return execute_modeled_pthread_mutex_paths(
+            state,
+            Some(target),
+            function_name,
+            arguments,
+            assumptions,
+            environment,
+            budget,
+        );
+    }
+    if environment.modeled_pthread_binding.is_some()
+        && super::publication::is_publication_operation(function_name)
+    {
+        return super::publication::execute_publication_paths(
             state,
             Some(target),
             function_name,
@@ -875,6 +888,19 @@ pub(super) fn execute_c_call_paths(
         .contains(&function_name)
     {
         return execute_modeled_pthread_mutex_paths(
+            state,
+            None,
+            function_name,
+            arguments,
+            assumptions,
+            environment,
+            budget,
+        );
+    }
+    if environment.modeled_pthread_binding.is_some()
+        && super::publication::is_publication_operation(function_name)
+    {
+        return super::publication::execute_publication_paths(
             state,
             None,
             function_name,
@@ -2319,6 +2345,10 @@ pub(super) fn execute_c_statement_verification_paths(
                             );
                             let branch_state =
                                 resolve_pending_heap_allocations(state, &branch_assumptions);
+                            let branch_state = super::publication::resolve_observed_publications(
+                                &branch_state,
+                                &branch_assumptions,
+                            );
                             // The arm is a scope: what it declares stops
                             // existing however control leaves it.
                             let declared = scope_declared_names(branch);
@@ -8320,6 +8350,7 @@ fn viewed_form_of_resource_fact(fact: &CResourceFact) -> Option<CResourceFact> {
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_),
             _,
         ) => None,

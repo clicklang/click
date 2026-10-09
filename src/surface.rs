@@ -989,12 +989,44 @@ pub struct CallBinderTransport {
     arguments: Vec<ContractExpression>,
     binders: Vec<CallBinderBinding>,
     produced: Vec<CallBinderBinding>,
+    /// Runtime binders that name a resource type, with the type written.
+    type_arguments: Vec<(String, Variable, ResourceClause)>,
     result: Option<String>,
 }
 
 impl CallBinderTransport {
     pub fn callee(&self) -> &str {
         &self.callee
+    }
+
+    pub fn type_arguments(&self) -> &[(String, Variable, ResourceClause)] {
+        &self.type_arguments
+    }
+
+    /// The transport with each written resource type replaced by `map`'s
+    /// result, as declaration expansion resolves resource clauses.
+    pub(crate) fn try_map_type_arguments(
+        mut self,
+        mut map: impl FnMut(ResourceClause) -> Result<ResourceClause, ClickError>,
+    ) -> Result<Self, ClickError> {
+        self.type_arguments = self
+            .type_arguments
+            .into_iter()
+            .map(|(name, identity, resource)| Ok((name, identity, map(resource)?)))
+            .collect::<Result<_, ClickError>>()?;
+        Ok(self)
+    }
+
+    /// `binder: instance` and `binder: Type(args)` entries in written order
+    /// of kind: instances first, then resource types.
+    fn map_entries(&self) -> Vec<String> {
+        self.binders
+            .iter()
+            .map(|binding| format!("{}: {}", binding.binder, binding.instance))
+            .chain(self.type_arguments.iter().map(|(name, _, resource)| {
+                format!("{name}: {}", printing::format_resource_call(resource))
+            }))
+            .collect()
     }
 
     pub fn arguments(&self) -> &[ContractExpression] {
@@ -1040,18 +1072,12 @@ impl CallBinderTransport {
             }
             spelling.push_str(&diagnostics::describe_contract_expression(argument));
         }
-        if !self.binders.is_empty() {
+        let entries = self.map_entries();
+        if !entries.is_empty() {
             if !self.arguments.is_empty() {
                 spelling.push_str(", ");
             }
-            spelling.push_str("{ ");
-            for (index, binding) in self.binders.iter().enumerate() {
-                if index != 0 {
-                    spelling.push_str(", ");
-                }
-                spelling.push_str(&format!("{}: {}", binding.binder, binding.instance));
-            }
-            spelling.push_str(" }");
+            spelling.push_str(&format!("{{ {} }}", entries.join(", ")));
         }
         spelling.push(')');
         spelling
@@ -1083,17 +1109,11 @@ impl std::fmt::Display for CallBinderTransport {
         // The map is what makes this a call step: without it the same text
         // is `step(Contract(...))`, a named-contract step. A call that lends
         // no instance keeps its empty map.
-        if self.binders.is_empty() {
+        let entries = self.map_entries();
+        if entries.is_empty() {
             write!(f, ", {{}}")?;
         } else {
-            write!(f, ", {{ ")?;
-            for (index, binding) in self.binders.iter().enumerate() {
-                if index != 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}: {}", binding.binder, binding.instance)?;
-            }
-            write!(f, " }}")?;
+            write!(f, ", {{ {} }}", entries.join(", "))?;
         }
         write!(f, ")")
     }

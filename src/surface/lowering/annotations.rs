@@ -298,7 +298,12 @@ pub(in crate::surface) fn check_resource_field_schemas(
             };
             if matches!(
                 name.as_str(),
-                "mutex_live" | "mutex_guard" | "mutex_use" | "authority"
+                "mutex_live"
+                    | "mutex_guard"
+                    | "mutex_use"
+                    | "authority"
+                    | "publisher"
+                    | "subscriber"
             ) {
                 bindings.insert(binding.identity, binding.clone());
                 continue;
@@ -344,7 +349,12 @@ pub(in crate::surface) fn check_resource_field_schemas(
                     };
                     if matches!(
                         name.as_str(),
-                        "mutex_live" | "mutex_guard" | "mutex_use" | "authority"
+                        "mutex_live"
+                            | "mutex_guard"
+                            | "mutex_use"
+                            | "authority"
+                            | "publisher"
+                            | "subscriber"
                     ) {
                         // Primitive authority binders have no model-field
                         // schema, whether they are inputs or new outputs.

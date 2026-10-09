@@ -1885,8 +1885,10 @@ fn lower_resource_clause_with_values_mode_at_entry(
             parameter_types,
         } => {
             if !resource_type_arguments.is_empty()
-                && (!matches!(name.as_str(), "mutex_use" | "authority")
-                    || resource_type_arguments.len() != 1)
+                && (!matches!(
+                    name.as_str(),
+                    "mutex_use" | "authority" | "publisher" | "subscriber"
+                ) || resource_type_arguments.len() != 1)
             {
                 return Err(ClickError::new("unsupported resource type arguments"));
             }
@@ -2050,6 +2052,56 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
                     ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
+                });
+            }
+            if let Some(side) = crate::kernel::PublicationSide::for_keyword(name) {
+                let [CValue::Pointer(flag)] = resource_values.as_slice() else {
+                    return Err(ClickError::new(format!(
+                        "{name} expects one atomic flag pointer"
+                    )));
+                };
+                let Some(
+                    payload @ ResourceClause::Declared {
+                        type_schema: Some(schema),
+                        ..
+                    },
+                ) = resource_type_arguments.first()
+                else {
+                    return Err(ClickError::new(format!(
+                        "{name} requires the published resource type"
+                    )));
+                };
+                let fact = lower_resource_clause_with_values_mode_at_entry(
+                    payload,
+                    parameters,
+                    values,
+                    entry_state,
+                    state,
+                    result,
+                    allow_symbolic_resource_arguments,
+                    base_assumptions,
+                )?;
+                let CResource::Composite {
+                    name: payload_name,
+                    arguments,
+                } = fact.resource()
+                else {
+                    return Err(ClickError::new(
+                        "the published resource type must be a composite resource",
+                    ));
+                };
+                let right = CResource::Publication(crate::kernel::PublicationRight::new(
+                    side,
+                    flag.pointer().clone(),
+                    crate::kernel::ResourceDescription::new(
+                        payload_name.clone(),
+                        arguments.clone(),
+                        schema.clone(),
+                    ),
+                ));
+                return Ok(match access {
+                    ResourceAccessMode::Own => CResourceFact::own(right),
+                    ResourceAccessMode::View => CResourceFact::View(right),
                 });
             }
             if name == "mutex_use" {

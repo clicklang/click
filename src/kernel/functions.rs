@@ -11459,7 +11459,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
-            CResource::MutexUse(_) | CResource::MutexLive(_) => {}
+            CResource::MutexUse(_) | CResource::Publication(_) | CResource::MutexLive(_) => {}
             CResource::Composite { name, arguments } => self.composite(name, arguments),
             CResource::Instance(instance) => {
                 let Some(definition) = self.definition(instance.name()) else {
@@ -19284,6 +19284,7 @@ fn evaluate_resource_population_body_resources(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_) => continue,
         };
         let Some(definition) = definitions
@@ -24271,7 +24272,8 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 ResourceFamily::Composite
                 | ResourceFamily::Token
                 | ResourceFamily::PopulationAuthority => true,
-                ResourceFamily::Instance => false,
+                // A publication right is not yet held inside a resource body.
+                ResourceFamily::Instance | ResourceFamily::Publication => false,
             }
     })
 }
@@ -25628,6 +25630,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_) => continue,
         };
         if fact.owned_quantity_term().is_some() {
@@ -28890,6 +28893,7 @@ fn resource_clause_supply_with_fact(
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::Iterated(_) => {}
             }
         }
@@ -29482,6 +29486,49 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 fact = CResourceFact::own(CResource::MutexUse(identity));
             }
             Ok(Ok(fact))
+        }
+        CResourceTerm::Publication {
+            side,
+            payload,
+            flag,
+            snapshot,
+        } => {
+            let selected = match snapshot {
+                CResourceSnapshot::Entry => entry_state,
+                _ => state,
+            };
+            let value = evaluate_loop_effect_segment_value(
+                selected,
+                flag,
+                assumptions,
+                "publication flag pointer",
+                budget,
+            )?;
+            let Ok(CValue::Pointer(pointer)) = value else {
+                return Ok(Err(CRuntimeError::FunctionContract(format!(
+                    "{} expects an atomic flag pointer",
+                    side.keyword()
+                ))));
+            };
+            let payload = match evaluate_resource_type(
+                entry_state,
+                state,
+                payload,
+                false,
+                assumptions,
+                budget,
+            )? {
+                Ok(description) => description,
+                Err(error) => return Ok(Err(error)),
+            };
+            Ok(Ok(CResourceFact::own(CResource::Publication(
+                PublicationRight {
+                    side: *side,
+                    flag: pointer.pointer().clone(),
+                    payload,
+                    observed: None,
+                },
+            ))))
         }
         CResourceTerm::Instance {
             identity,
@@ -30195,6 +30242,7 @@ fn evaluate_function_declared_resource_spec(
         | ResourceFamily::MutexGuard
         | ResourceFamily::MutexLive
         | ResourceFamily::MutexUse
+        | ResourceFamily::Publication
         | ResourceFamily::Iterated => {
             return Ok(Err(CRuntimeError::FunctionContract(
                 "declared resources cannot use the raw memory family".to_string(),
@@ -30219,6 +30267,7 @@ fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_),
             _,
         ) => 2,

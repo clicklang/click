@@ -1645,6 +1645,7 @@ fn c_function_contract_entry_facts(
                     CResource::MutexGuard(_) => "mutex guard".to_string(),
                     CResource::MutexLive(_) => "mutex lifetime".to_string(),
                     CResource::MutexUse(_) => "mutex use".to_string(),
+                    CResource::Publication(_) => "publication right".to_string(),
                     CResource::Instance(instance) => format!("instance {}", instance.name()),
                     CResource::Iterated(iterated) => {
                         format!("iterated ownership of {}", iterated.owner())
@@ -1685,6 +1686,7 @@ fn c_function_contract_entry_facts(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::Iterated(_) => continue,
         };
         // Retain the same authenticated population facts as a written

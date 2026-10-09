@@ -1384,6 +1384,14 @@ impl Renderer<'_> {
                 self.pointer(identity.mutex());
                 self.push(")");
             }
+            CResource::Publication(right) => {
+                self.push(right.side().keyword());
+                self.push("(");
+                self.pointer(right.flag());
+                self.push(", ");
+                self.push(right.payload().family());
+                self.push(")");
+            }
             CResource::PopulationAuthority(description) => {
                 self.push("authority(");
                 self.push(description.family());
@@ -1441,6 +1449,14 @@ impl Renderer<'_> {
             CResource::MutexUse(identity) => {
                 self.push("mutex_use(");
                 self.pointer(identity.mutex());
+                self.push(")");
+            }
+            CResource::Publication(right) => {
+                self.push(right.side().keyword());
+                self.push("(");
+                self.pointer(right.flag());
+                self.push(", ");
+                self.push(right.payload().family());
                 self.push(")");
             }
             CResource::PopulationAuthority(description) => {

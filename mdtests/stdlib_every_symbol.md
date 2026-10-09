@@ -28,6 +28,9 @@ The modeled-runtime resource `mutex_use` is verified in
 [`mutex_use_contract.md`](mutex_use_contract.md) and
 [`mutex_use_mixed.md`](mutex_use_mixed.md).
 
+The modeled-runtime resources `publisher` and `subscriber` are verified in
+[`publication_one_shot_handoff.md`](publication_one_shot_handoff.md).
+
 ```c filename=stdlib_every_symbol.c
 int32 docs_identity(int32 value) {
     return value;

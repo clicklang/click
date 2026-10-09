@@ -1232,6 +1232,13 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::UnboundVariable(name) => {
             format!("unbound variable `{name}`")
         }
+        crate::kernel::CRuntimeError::UnknownFunction(name)
+            if crate::languages::c::thread_runtime::is_publication_operation(name) =>
+        {
+            format!(
+                "`{name}` is declared by Click's `<stdatomic.h>` projection, but only the modeled-pthread thread runtime models C11 atomic operations"
+            )
+        }
         crate::kernel::CRuntimeError::UnknownFunction(name) => {
             format!("unknown function `{name}`")
         }
@@ -1633,6 +1640,12 @@ pub(super) fn describe_resource_fact(
             if resource.is_own() { "owns" } else { "views" },
             format_mutex_use(identity, parameters, arguments)
         ),
+        CResourceFact::Own(CResource::Publication(right), _)
+        | CResourceFact::View(CResource::Publication(right)) => format!(
+            "{} {}",
+            if resource.is_own() { "owns" } else { "views" },
+            format_publication_right(right, parameters, arguments)
+        ),
         CResourceFact::Own(CResource::PopulationAuthority(description), _)
         | CResourceFact::View(CResource::PopulationAuthority(description)) => format!(
             "{} authority({})",
@@ -1772,6 +1785,7 @@ fn describe_c_resource(
             describe_mutex_pointer(identity.mutex(), parameters, arguments)
         ),
         CResource::MutexUse(identity) => format_mutex_use(identity, parameters, arguments),
+        CResource::Publication(right) => format_publication_right(right, parameters, arguments),
         CResource::PopulationAuthority(description) => format!(
             "authority({})",
             format_population_description(description, parameters, arguments)
@@ -1815,6 +1829,29 @@ fn format_mutex_use(
             )
         ),
         None => format!("mutex_use({mutex})"),
+    }
+}
+
+fn format_publication_right(
+    right: &crate::kernel::PublicationRight,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    let right_text = format!(
+        "{}({}, {})",
+        right.side().keyword(),
+        describe_mutex_pointer(right.flag(), parameters, arguments),
+        format_declared_resource(
+            right.payload().family(),
+            right.payload().arguments(),
+            parameters,
+            arguments
+        )
+    );
+    if right.observed().is_some() {
+        format!("{right_text}, read by an acquire load whose value no C branch has tested yet")
+    } else {
+        right_text
     }
 }
 

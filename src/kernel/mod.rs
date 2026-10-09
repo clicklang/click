@@ -73,6 +73,7 @@ mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod primitives;
 pub(crate) mod proof;
+mod publication;
 mod pure_functions;
 pub(crate) mod sorry;
 #[cfg(test)]

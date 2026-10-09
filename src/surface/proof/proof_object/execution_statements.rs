@@ -1003,10 +1003,53 @@ impl<'a> Proof<'a> {
                     )));
                 }
             }
+            // A runtime type binder names the resource type as the call's
+            // state reads it.
+            let mut type_arguments = BTreeMap::new();
+            for (_, identity, resource) in transport.type_arguments() {
+                let ResourceClause::Declared { name, .. } = resource else {
+                    return Err(self.step_error("a type binder names a declared resource type"));
+                };
+                let state = &*self
+                    .execution()
+                    .ok_or_else(|| self.step_error("a type binder needs an execution state"))?
+                    .core
+                    .state;
+                let fact = crate::surface::lowering::lower_resource_clause_at_state(
+                    resource,
+                    context.parsed_function.parameters(),
+                    context.arguments,
+                    state,
+                )?;
+                let crate::kernel::CResource::Composite { arguments, .. } = fact.resource() else {
+                    return Err(self.step_error(format!(
+                        "type binder `{name}` must name a resource with a body"
+                    )));
+                };
+                let schema = context
+                    .resource_environment
+                    .get(name)
+                    .and_then(|definition| definition.field_schema().cloned())
+                    .or_else(|| crate::kernel::ResourceFieldSchema::new(Vec::new()))
+                    .ok_or_else(|| self.step_error("resource type has no field schema"))?;
+                type_arguments.insert(
+                    *identity,
+                    crate::kernel::ResourceDescription::new(
+                        name.clone(),
+                        arguments.clone(),
+                        schema,
+                    ),
+                );
+            }
             selected_environment = context
                 .function_environment
                 .clone()
-                .with_selected_call_binders(callee, transport.arguments().len(), bindings);
+                .with_selected_call_binders_and_types(
+                    callee,
+                    transport.arguments().len(),
+                    bindings,
+                    type_arguments,
+                );
             selected_context = context.with_loop_binding(
                 context.function_block,
                 context.function,

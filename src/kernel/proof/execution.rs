@@ -8903,6 +8903,27 @@ impl ExecutionProofCore {
                 *reached = resolved;
             }
         }
+        // Likewise a condition on an acquire load's value keeps or exchanges
+        // the subscriber right that load read through.
+        if reached.resources.has_observed_publication_rights() {
+            let no_assumptions = PureFactContext::new();
+            let entry_assumptions = self
+                .function_entry
+                .as_ref()
+                .map_or(&no_assumptions, |entry| entry.assumptions());
+            let theorem_assumptions =
+                crate::kernel::api::proof_evidence_assumptions(theorem, entry_assumptions);
+            let decided_assumptions =
+                crate::kernel::reasoning::path_facts::assumptions_with_path_context(
+                    &theorem_assumptions,
+                    &path_facts,
+                    obligations,
+                );
+            *reached = crate::kernel::publication::resolve_observed_publications(
+                &reached,
+                &decided_assumptions,
+            );
+        }
         Ok((*reached, source_after))
     }
 

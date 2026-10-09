@@ -92,6 +92,41 @@ also unsupported. Missing call-site authority is reported as
 **Verified use:** [`mdtests/mutex_use_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_contract.md)
 and [`mdtests/mutex_use_mixed.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_mixed.md).
 
+## One-shot publication rights
+
+### `publisher`
+
+```click
+abstract resource publisher(flag: void*);
+```
+
+**Meaning:** The right to publish one payload through the C11 `atomic_int`
+flag at `flag`, written `publisher(flag, P(args))` with the payload's resource
+type. `atomic_init(flag, 0)` with `{ payload: P(args) }` creates it in the
+modeled-pthread runtime. A release store of a nonzero value consumes it
+together with a folded `P(args)`. It is unique per flag, grants no memory
+access, and may be transferred to a worker. A second release store is reported
+as requiring `owns publisher(flag, P)`.
+
+**Verified use:** [`mdtests/publication_one_shot_handoff.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_one_shot_handoff.md)
+and [`mdtests/publication_second_release_store_has_no_publisher.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_second_release_store_has_no_publisher.md).
+
+### `subscriber`
+
+```click
+abstract resource subscriber(flag: void*);
+```
+
+**Meaning:** The right to receive the payload published through the flag at
+`flag`, written `subscriber(flag, P(args))`. An acquire load marks it as read
+through the loaded value. The C branch that knows the value is zero keeps the
+right, and the branch that knows it is nonzero receives an owned `P(args)` in
+its place. It is unique per flag and grants no memory access by itself. Loads
+without it receive nothing.
+
+**Verified use:** [`mdtests/publication_one_shot_handoff.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_one_shot_handoff.md)
+and [`mdtests/publication_unpublished_branch_does_not_receive.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_unpublished_branch_does_not_receive.md).
+
 ## Population authority
 
 ### `authority`

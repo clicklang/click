@@ -159,8 +159,14 @@ pub(super) fn confined_resource_name<'a>(
         | CResourceFact::View(CResource::Token { name, .. }) => name.as_str(),
         CResourceFact::Own(CResource::Instance(instance), _)
         | CResourceFact::View(CResource::Instance(instance)) => instance.name.as_str(),
-        CResourceFact::Own(CResource::Memory(_) | CResource::Iterated(_), _)
-        | CResourceFact::View(CResource::Memory(_) | CResource::Iterated(_)) => {
+        // A publication right is the handoff itself: a worker may hold it.
+        CResourceFact::Own(
+            CResource::Memory(_) | CResource::Iterated(_) | CResource::Publication(_),
+            _,
+        )
+        | CResourceFact::View(
+            CResource::Memory(_) | CResource::Iterated(_) | CResource::Publication(_),
+        ) => {
             return None;
         }
     };

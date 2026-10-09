@@ -153,7 +153,8 @@ LP64 eight-byte alignment requirement; other alignment forms remain
 unsupported. Const-qualified static-storage aggregates are read-only, while
 automatic/local const aggregates remain unsupported.
 System header includes other than the modeled `<stdint.h>`, `<inttypes.h>`,
-and `<stdbool.h>`, function-like macros
+and `<stdbool.h>` (and, for the user-space target, `<stddef.h>`,
+`<pthread.h>` and the declaration-only `<stdatomic.h>` subset), function-like macros
 with more than three parameters, empty arguments, stringification, token pasting,
 macro redefinitions without an intervening `#undef`,
 relational comparisons, arithmetic, ternaries, and other general conditional
@@ -181,6 +182,15 @@ argument substitution, balanced nested calls, and bounded rescanning of
 replacements. They are expanded in source order across a source file and its
 local headers. Recursive expansion and unsupported parameter features receive
 diagnostics.
+
+## Atomics are one publication protocol
+
+The modeled `<stdatomic.h>` operations cover one protocol: an `atomic_int`
+flag initialized to zero publishes one field-less payload once, through a
+release store and an acquire load. Other atomic types, read-modify-write
+operations, fences, and orders other than release/acquire (including
+`memory_order_seq_cst`) are refused. A flag's storage is not returned after
+the protocol, and a flag cannot be reinitialized for a second publication.
 
 ## Callback contracts have known gaps
 

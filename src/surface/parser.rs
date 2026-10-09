@@ -642,6 +642,9 @@ enum CalleeResourceBinderKind {
     Supplied,
     /// `produces`: the caller introduces the instance with `let`.
     Produced,
+    /// A runtime binder that names a resource type, not an instance:
+    /// `atomic_init`'s `payload`.
+    Type,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4707,9 +4710,27 @@ impl Parser {
         let mut binders: Vec<CallBinderBinding> = Vec::new();
         let mut bound = BTreeSet::new();
         let mut instances = BTreeSet::new();
+        let mut type_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
             let binder = self.expect_ident("callee resource binder")?;
             self.expect(Token::Colon)?;
+            if let Some(declaration) = declared.get(&binder)
+                && declaration.kind == CalleeResourceBinderKind::Type
+            {
+                if !bound.insert(binder.clone()) {
+                    return Err(self.error(format!("duplicate binder `{binder}` in the call map")));
+                }
+                type_arguments.push((
+                    binder.clone(),
+                    declaration.identity,
+                    self.parse_declared_resource_call()?,
+                ));
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+                continue;
+            }
             let instance = self.expect_ident("caller resource instance")?;
             crate::instrumentation::record_deterministic_work(1);
             let Some(declaration) = declared.get(&binder) else {
@@ -4771,7 +4792,10 @@ impl Parser {
             declared.remove("state");
         }
         if let Some((missing, _)) = declared.iter().find(|(name, entry)| {
-            entry.kind == CalleeResourceBinderKind::Supplied && !bound.contains(*name)
+            matches!(
+                entry.kind,
+                CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
+            ) && !bound.contains(*name)
         }) {
             return Err(self.error(format!("call map omits `{callee}` binder `{missing}`")));
         }
@@ -4919,6 +4943,7 @@ impl Parser {
             arguments,
             binders,
             produced,
+            type_arguments,
             result,
         })
     }
@@ -5068,6 +5093,22 @@ impl Parser {
                 );
             }
         }
+        use crate::languages::c::thread_runtime::{
+            ATOMIC_INIT_NAME, ATOMIC_INIT_PAYLOAD_BINDER_ID,
+        };
+        self.callee_resource_binders
+            .entry(ATOMIC_INIT_NAME.to_string())
+            .or_default()
+            .insert(
+                "payload".to_string(),
+                CalleeResourceBinder {
+                    identity: Variable(ATOMIC_INIT_PAYLOAD_BINDER_ID),
+                    family: None,
+                    resource: None,
+                    parameter_names: vec!["object".to_string(), "value".to_string()],
+                    kind: CalleeResourceBinderKind::Type,
+                },
+            );
     }
 
     /// Records one instance binder of the C function block being parsed, so a
@@ -7768,7 +7809,9 @@ impl Parser {
         }
         if self.peek() != Some(&Token::RParen) {
             loop {
-                if name == "mutex_use" && arguments.len() == 1 {
+                if matches!(name.as_str(), "mutex_use" | "publisher" | "subscriber")
+                    && arguments.len() == 1
+                {
                     resource_type_arguments.push(self.parse_declared_resource_call()?);
                 } else {
                     arguments.push(self.parse_contract_expression()?);

@@ -460,6 +460,7 @@ fn materialize_folded_composite_resource_memory(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::PopulationAuthority(_)
             | CResource::Iterated(_) => {
                 continue;
@@ -2189,6 +2190,7 @@ fn project_held_resource_observable_facts(
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)
+        | CResource::Publication(_)
         | CResource::PopulationAuthority(_)
         | CResource::Iterated(_) => {
             return Ok(state.memory().clone());
@@ -3124,6 +3126,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::Publication(_)
             | CResource::PopulationAuthority(_)
             | CResource::Iterated(_) => {
                 return Err(ClickError::new(
@@ -3776,6 +3779,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::PopulationAuthority(_)
                 | CResource::Iterated(_) => {
                     return Err(ClickError::new(format!(
@@ -3872,6 +3876,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::Publication(_)
                 | CResource::PopulationAuthority(_)
                 | CResource::Iterated(_) => {
                     return Err(ClickError::new(
