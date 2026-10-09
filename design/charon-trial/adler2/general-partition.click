@@ -836,3 +836,52 @@ theorem adler_outer_cursor_step(base: const uint8*, total: int32, remaining: int
   }
  }
 }
+
+theorem adler_bounded_slice_access(t: int32, pos: int32, length: int32, n: int32) {
+ requires 0 <= t;
+ requires 0 <= pos;
+ requires pos <= 22204;
+ requires pos + 4 <= length;
+ requires defined(t + length);
+ requires t + length <= n;
+ ensures 0 <= t + pos and (t + pos) + 4 <= n by {
+  have defined(pos + 4) by { simp() using { 0 <= pos; pos <= 22204; } }
+  apply(int32_add_to_integer(pos, 4)) using { defined(pos + 4); }
+  apply(int32_add_to_integer(t, length)) using { defined(t + length); }
+  apply(int32_less_equal_to_integer(pos + 4, length)) using { pos + 4 <= length; }
+  apply(int32_less_equal_to_integer(t + length, n)) using { t + length <= n; }
+  apply(int32_less_equal_to_integer(0, t)) using { 0 <= t; }
+  apply(int32_less_equal_to_integer(0, pos)) using { 0 <= pos; }
+  have n <= 2147483647 by { normalize(); }
+  apply(int32_less_equal_to_integer(n, 2147483647)) using { n <= 2147483647; }
+  have to_integer(n) <= 2147483647 by { simp() using { to_integer(n) <= to_integer(2147483647); } }
+  have to_integer(pos + 4) == to_integer(pos) + 4 by { simp() using { to_integer(pos + 4) == to_integer(pos) + to_integer(4); } }
+  have to_integer(t) + to_integer(pos) >= -2147483648 by { arithmetic() using { to_integer(0) <= to_integer(t); to_integer(0) <= to_integer(pos); } }
+  have to_integer(pos) + 4 <= to_integer(length) by { arithmetic() using { to_integer(pos + 4) == to_integer(pos) + 4; to_integer(pos + 4) <= to_integer(length); } }
+  have to_integer(t) + to_integer(length) <= to_integer(n) by { arithmetic() using { to_integer(t + length) == to_integer(t) + to_integer(length); to_integer(t + length) <= to_integer(n); } }
+  have to_integer(t) + to_integer(pos) <= 2147483643 by {
+   arithmetic_certificate {
+    premise 0: to_integer(pos) + 4 <= to_integer(length) => to_integer(pos) + 4 <= to_integer(length);
+    premise 1: to_integer(t) + to_integer(length) <= to_integer(n) => to_integer(t) + to_integer(length) <= to_integer(n);
+    premise 2: to_integer(n) <= 2147483647 => to_integer(n) <= 2147483647;
+    add 0, 1 => (to_integer(pos) + 4) + (to_integer(t) + to_integer(length)) <= to_integer(length) + to_integer(n);
+    add 3, 2 => ((to_integer(pos) + 4) + (to_integer(t) + to_integer(length))) + to_integer(n) <= (to_integer(length) + to_integer(n)) + 2147483647;
+    conclusion 4;
+   }
+  }
+  have to_integer(t) + to_integer(pos) <= 2147483647 by { arithmetic() using { to_integer(t) + to_integer(pos) <= 2147483643; } }
+  apply(int32_add_defined_by_integer_bounds(t, pos)) using { to_integer(t) + to_integer(pos) >= -2147483648; to_integer(t) + to_integer(pos) <= 2147483647; }
+  apply(int32_add_to_integer(t, pos)) using { defined(t + pos); }
+  have 0 <= to_integer(t + pos) by { arithmetic() using { to_integer(t + pos) == to_integer(t) + to_integer(pos); to_integer(0) <= to_integer(t); to_integer(0) <= to_integer(pos); } }
+  have to_integer(t + pos) <= 2147483643 by { rewrite(to_integer(t + pos) == to_integer(t) + to_integer(pos)); assumption(); }
+  have to_integer(t + pos) + to_integer(4) >= -2147483648 by { arithmetic() using { 0 <= to_integer(t + pos); } }
+  have to_integer(t + pos) + to_integer(4) <= 2147483647 by { arithmetic() using { to_integer(t + pos) <= 2147483643; } }
+  apply(int32_add_defined_by_integer_bounds(t + pos, 4)) using { to_integer(t + pos) + to_integer(4) >= -2147483648; to_integer(t + pos) + to_integer(4) <= 2147483647; }
+  have defined((t + pos) + 4) by { both { assumption(); } and { assumption(); } }
+  apply(int32_add_to_integer(t + pos, 4)) using { defined((t + pos) + 4); }
+  have to_integer((t + pos) + 4) <= to_integer(n) by { arithmetic() using { to_integer((t + pos) + 4) == to_integer(t + pos) + to_integer(4); to_integer(t + pos) == to_integer(t) + to_integer(pos); to_integer(pos + 4) == to_integer(pos) + to_integer(4); to_integer(pos + 4) <= to_integer(length); to_integer(t + length) == to_integer(t) + to_integer(length); to_integer(t + length) <= to_integer(n); } }
+  apply(int32_less_equal_of_to_integer(0, t + pos)) using { to_integer(0) <= to_integer(t + pos); }
+  apply(int32_less_equal_of_to_integer((t + pos) + 4, n)) using { to_integer((t + pos) + 4) <= to_integer(n); }
+  both { assumption(); } and { assumption(); }
+ }
+}
