@@ -317,6 +317,7 @@ fn describe_access_bound_prerequisite(
             memory,
             base,
             bytes,
+            wide: false,
         } => ("read of", "read", memory, base, bytes.as_const()?),
         _ => return None,
     };

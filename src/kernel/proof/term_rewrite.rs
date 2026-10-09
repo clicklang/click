@@ -7092,6 +7092,7 @@ mod tests {
                     offset: PointerOffsetTerm::Variable(load),
                 },
                 bytes: Bitvector32Term::Constant(4),
+                wide: false,
             };
             let mut proposition = atom.clone();
             for _ in 0..depth {
@@ -7136,6 +7137,7 @@ mod tests {
                 },
             },
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         };
         let mut proposition = atom.clone();
         for _ in 0..64 {

@@ -247,6 +247,7 @@ impl PureFactContext {
                 memory,
                 base,
                 bytes,
+                wide: false,
             } => self.proves_memory_loadable(memory, base, bytes),
             Proposition::CMemoryCanStore {
                 memory,
@@ -337,6 +338,7 @@ impl PureFactContext {
                 memory,
                 base,
                 bytes,
+                wide: false,
             } => {
                 self.proves_memory_loadable(memory, base, bytes)
                     // Loadability survives writes: an assumed loadable fact
@@ -347,6 +349,7 @@ impl PureFactContext {
                             memory: fact_memory,
                             base: fact_base,
                             bytes: fact_bytes,
+                            wide: false,
                         } = fact
                         else {
                             return false;

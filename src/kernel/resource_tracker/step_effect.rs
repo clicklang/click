@@ -717,6 +717,7 @@ pub(in crate::kernel) fn seeded_cell_effect(
             }
         }
         crate::kernel::reasoning::memory_resolution::RunAccess::Scaled { .. }
+        | crate::kernel::reasoning::memory_resolution::RunAccess::ScaledWide { .. }
         | crate::kernel::reasoning::memory_resolution::RunAccess::Other => {
             // Prove a cache-only edge unchanged before asking any separation
             // search. Each of its loads already denotes the predecessor's

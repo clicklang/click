@@ -843,7 +843,7 @@ fn with_canonical_borrowed_pointer_memory(
                     continue;
                 };
                 if checked.base().offset != PointerOffsetTerm::Constant(0)
-                    || checked.start().as_const() != Some(0)
+                    || checked.constant_start() != Some(0)
                 {
                     continue;
                 }
@@ -1427,10 +1427,10 @@ fn candidate_memory_ranges_relation_by_bounds(
         // so it suppressed the `LoanRefusal` a caller's overlapping effect
         // and view owe each other.
         let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
-            signed_bitvector_constant(left.start()),
-            signed_bitvector_constant(left.end()),
-            signed_bitvector_constant(right.start()),
-            signed_bitvector_constant(right.end()),
+            left.signed_constant_start(),
+            left.signed_constant_end(),
+            right.signed_constant_start(),
+            right.signed_constant_end(),
         ) else {
             return CandidateMemoryRangeRelation::SeparationUnproved;
         };
@@ -1504,10 +1504,11 @@ fn canonical_memory_range(range: CMemoryRange) -> CMemoryRange {
         block: range.base().block.clone(),
         offset: crate::kernel::eval::canonical_offset_term(&range.base().offset),
     };
+    let (start, end) = range.bound_terms();
     range.with_bounds(
         base,
-        crate::kernel::eval::canonical_term(range.start()),
-        crate::kernel::eval::canonical_term(range.end()),
+        crate::kernel::eval::canonical_term(start),
+        crate::kernel::eval::canonical_term(end),
     )
 }
 
@@ -10067,6 +10068,11 @@ fn storage_write_within_owned_footprint(
         1,
     );
     owned.iter().any(|range| {
+        // A wide range has no 32-bit byte footprint; it is read in its own
+        // element coordinates only.
+        if range.wide_bounds().is_some() {
+            return storage_write_within_owned_elements(pointer, write_bytes, range, assumptions);
+        }
         let (base, bytes) = range.byte_footprint();
         let owned_bytes =
             CMemoryRange::new_with_element_width(base, Bitvector32Term::Constant(0), bytes, 1);
@@ -10105,6 +10111,38 @@ fn storage_write_within_owned_elements(
     if width == 0 || write_bytes == 0 || !write_bytes.is_multiple_of(width) {
         return false;
     }
+    // One whole element at an unsigned 64-bit index. A wide range has its
+    // one membership rule. A range with nonnegative constant bounds takes
+    // such an index too: the bounds are the same numbers in either reading,
+    // and they keep the index's byte offset exact.
+    if write_bytes == width {
+        if range.wide_bounds().is_some() {
+            return assumptions.pointer_access_in_wide_range(pointer, width, range);
+        }
+        if let (Some(start), Some(end)) =
+            (range.signed_constant_start(), range.signed_constant_end())
+            && let (Ok(start), Ok(end)) = (u64::try_from(start), u64::try_from(end))
+            && let Some(index) = pointer.wide_element_index_from_base(range.base(), width)
+            && index.uint64_as_const().is_none()
+        {
+            let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+            if (start == 0
+                || holds(ConditionTerm::uint64_less_equal(
+                    Bitvector32Term::UInt64Constant(start),
+                    index.clone(),
+                )))
+                && holds(ConditionTerm::uint64_less_than(
+                    index,
+                    Bitvector32Term::UInt64Constant(end),
+                ))
+            {
+                return true;
+            }
+        }
+    }
+    if range.wide_bounds().is_some() {
+        return false;
+    }
     let Some(delta) = pointer.exact_element_delta_from_base(range.base(), width, Some(assumptions))
     else {
         return false;
@@ -10129,8 +10167,8 @@ fn storage_write_within_owned_elements(
         )),
         Err(_) => bound > i64::from(i32::MAX),
     };
-    let start = signed_bitvector_constant(range.start());
-    let end = signed_bitvector_constant(range.end());
+    let start = range.signed_constant_start();
+    let end = range.signed_constant_end();
     let lower = match start {
         Some(start) => start
             .checked_sub(delta.constant)
@@ -10349,12 +10387,7 @@ fn project_explicit_memory_segments(
                 projection_assumptions =
                     assumptions_with_path_context(&projection_assumptions, &facts, &[]);
                 evidence_facts.extend(facts);
-                let range = canonical_memory_range(CMemoryRange::new_with_element_width(
-                    segment.base,
-                    segment.start,
-                    segment.end,
-                    segment.element_width,
-                ));
+                let range = canonical_memory_range(segment.into_range());
                 ranges.insert(range);
             }
             Err(message) => return Ok(Err(message)),
@@ -10976,6 +11009,7 @@ fn unmatched_instance_body_ownership(
                 Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
                 Bitvector32Term::Constant(width),
             ),
+            wide: false,
         });
     }
     body_facts.push(Proposition::CResourceComposition(body_resources.clone()));
@@ -16528,6 +16562,7 @@ fn append_string_literal_loadable_facts(
             memory: state.memory.clone(),
             base,
             bytes: Bitvector32Term::Constant(literal.bytes().len() as u32),
+            wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {
             facts.push(ExecutionPureFact::certified(proposition));
@@ -18520,10 +18555,8 @@ fn local_view_range_within_block(range: &CMemoryRange, memory: &CMemory) -> bool
     // bounds" for every range that begins below its block — the exact
     // opposite of what this asks. `pair[-1..3]` was placed inside a
     // two-element local while the contained `pair[0..3]` was refused.
-    let (Some(start), Some(end)) = (
-        crate::kernel::prelude::signed_bitvector_constant(range.start()),
-        crate::kernel::prelude::signed_bitvector_constant(range.end()),
-    ) else {
+    let (Some(start), Some(end)) = (range.signed_constant_start(), range.signed_constant_end())
+    else {
         return true;
     };
     // An empty range names no storage, and `end < start` is how a range says
@@ -18539,9 +18572,7 @@ fn local_view_range_within_block(range: &CMemoryRange, memory: &CMemory) -> bool
     else {
         return false;
     };
-    let base = range
-        .base()
-        .offset_by_elements(range.start().clone(), range.element_width());
+    let base = range.start_pointer();
     memory.access_in_bounds(&base, bytes)
 }
 
@@ -23396,6 +23427,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
                 Bitvector32Term::Constant(width),
             ),
+            wide: false,
         });
     }
     // What a fold consumes is what holding the folded instance lets C read.
@@ -23717,6 +23749,7 @@ fn matched_resource_instance_case_read_projection(
                 Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
                 Bitvector32Term::Constant(width),
             ),
+            wide: false,
         });
     }
     supporting_facts.push(Proposition::CResourceComposition(body_resources));
@@ -25657,6 +25690,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
                         memory: obligation_memory,
                         base,
                         bytes,
+                        wide: false,
                     } = obligation.proposition()
                     else {
                         return false;
@@ -25857,6 +25891,7 @@ pub(super) fn evaluate_composite_resource_loadable_propositions(
                 Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
                 Bitvector32Term::Constant(element_width),
             ),
+            wide: false,
         });
     }
     Some(propositions)
@@ -26017,6 +26052,7 @@ fn instantiate_composite_resource_facts_with_state(
                     memory: obligation_memory,
                     base,
                     bytes,
+                    wide: false,
                 } = obligation.proposition()
                 else {
                     return false;
@@ -26411,7 +26447,7 @@ pub(super) fn resource_context_satisfies_definitional_fact(
 /// loadable, so a view of it is represented by the materialized cells rather
 /// than a resource fact.
 fn view_range_concretely_loadable(memory: &CMemory, range: &CMemoryRange) -> bool {
-    let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const()) else {
+    let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
         return false;
     };
     if end <= start || end - start > 64 {
@@ -29466,12 +29502,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     ))));
                 }
             };
-            let range = CMemoryRange::new_with_element_width(
-                segment.base,
-                segment.start,
-                segment.end,
+            let range = EvaluatedMemorySegment {
                 element_width,
-            );
+                ..segment
+            }
+            .into_range();
             Ok(Ok(if resource.is_view() {
                 CResourceFact::view_memory(range)
             } else {
@@ -32190,11 +32225,13 @@ mod provisional_ensure_obligation_tests {
                 memory: memory.clone(),
                 base: data.clone(),
                 bytes: Bitvector32Term::Constant(8),
+                wide: false,
             });
         let element_loadable = Proposition::CMemoryLoadable {
             memory,
             base: data.offset_by_int32_elements(Bitvector32Term::Constant(1)),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         };
         let mut work_by_size = Vec::new();
         for unrelated_count in [16, 64, 256, 1024] {

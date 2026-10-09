@@ -870,6 +870,7 @@ fn check_segment_base_loadability(
         memory: state.memory().clone(),
         base: cell.into_pointer(),
         bytes: Bitvector32Term::Constant(value_type.byte_width()),
+        wide: false,
     };
     if crate::kernel::c_state_justifies_loadability_obligation(state, &obligation, assumptions) {
         return Ok(());
@@ -2617,6 +2618,21 @@ fn lower_resource_segment_with_values(
             ))),
         }
     };
+    // A range from constant zero to an unsigned 64-bit bound keeps that
+    // bound's type (`design/typed-indices.md`, stage 2).
+    if matches!(
+        evaluate(&segment.start, surface_start),
+        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
+    ) && let Ok(CValue::UInt64(end)) = evaluate(&segment.end, surface_end)
+        && end.uint64_as_const().is_none()
+    {
+        return Ok(CMemoryRange::new_wide(
+            base,
+            Bitvector32Term::UInt64Constant(0),
+            end,
+            element_width,
+        ));
+    }
     let start = bound(&segment.start, surface_start, "start")?;
     let end = bound(&segment.end, surface_end, "end")?;
     if let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) = (&start, &end)
@@ -2647,6 +2663,7 @@ fn loadable_requirement_props(
         memory: memory.clone(),
         base,
         bytes,
+        wide: false,
     }];
     propositions.extend(guards);
     Ok(propositions)
@@ -2787,11 +2804,15 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
     memory: &CMemory,
     range: &CMemoryRange,
 ) -> Proposition {
+    if range.wide_bounds().is_some() {
+        return range.loadable_fact(memory);
+    }
     let (base, bytes) = range.byte_footprint();
     Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base,
         bytes,
+        wide: false,
     }
 }
 

@@ -2636,6 +2636,7 @@ mod tests {
                         offset: PointerOffsetTerm::Constant(0),
                     },
                     bytes: Bitvector32Term::Variable(variable),
+                    wide: false,
                 }),
             )),
         };

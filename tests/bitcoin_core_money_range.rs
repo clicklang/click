@@ -1353,7 +1353,9 @@ fn check_pinned_std_span_front(phase: SpanFrontPhase) {
         _ => "#include <span.h>\nint& probe(std::span<int>& span) { return span.front(); }\n",
     };
     let (root, import) = pinned_span_fixture("symbolic-front", harness);
-    let source = r#"verifying "span-probe.cpp";
+    // The extent is the code's `unsigned long`, uncast. Nothing bounds it
+    // from above: the held range states its own extent limit.
+    let prelude = r#"verifying "span-probe.cpp";
 bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
 uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
  views this->_M_extent_value;
@@ -1371,87 +1373,46 @@ bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span
 int32& span__int__value_unsigned_long_18446744073709551615_front(const struct span__int__value_unsigned_long_18446744073709551615* this) {
  views this->_M_ptr;
  views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];
+ views this->_M_ptr[0..this->_M_extent._M_extent_value];
  requires 1u64 <= this->_M_extent._M_extent_value;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
  ensures &result == this->_M_ptr;
  ensures result == old(this->_M_ptr[0]);
-} by {
- apply(uint64_less_equal_to_integer(1u64, this->_M_extent._M_extent_value));
- apply(uint64_less_equal_to_integer(this->_M_extent._M_extent_value, 1073741823u64));
- have to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(this->_M_extent._M_extent_value) => 1 <= to_integer(this->_M_extent._M_extent_value);
- premise 1: to_integer(this->_M_extent._M_extent_value) <= 1073741823 => to_integer(this->_M_extent._M_extent_value) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)this->_M_extent._M_extent_value) by {
- arithmetic() using {
-  1 <= to_integer(this->_M_extent._M_extent_value);
-  to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value);
- }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)this->_M_extent._M_extent_value));
- execute(); simp();
-}
-int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
- requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures &result == span._M_ptr;
- ensures result == old(span._M_ptr[0]);
 } by { execute(); simp(); }
 "#;
-    let source = if matches!(phase, SpanFrontPhase::WriteCaller) {
-        let start = source.find("int32& probe(").unwrap();
-        format!(
-            "{}{}",
-            &source[..start],
-            r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {
+    let caller = if matches!(phase, SpanFrontPhase::WriteCaller) {
+        r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {
  views span._M_ptr;
  views span._M_extent._M_extent_value;
- owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
+ owns span._M_ptr[0..span._M_extent._M_extent_value];
  requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
  ensures result == input;
  ensures span._M_ptr[0] == input;
  ensures span._M_ptr == old(span._M_ptr);
  ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != 0 implies span._M_ptr[k] == old(span._M_ptr[k]) };
+ ensures forall (k: uint64) { k < span._M_extent._M_extent_value and k != 0u64 implies span._M_ptr[k] == old(span._M_ptr[k]) };
 } by {
- apply(uint64_less_equal_to_integer(1u64, span._M_extent._M_extent_value));
- apply(uint64_less_equal_to_integer(span._M_extent._M_extent_value, 1073741823u64));
- have to_integer((int32)span._M_extent._M_extent_value) == to_integer(span._M_extent._M_extent_value) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(span._M_extent._M_extent_value) => 1 <= to_integer(span._M_extent._M_extent_value);
- premise 1: to_integer(span._M_extent._M_extent_value) <= 1073741823 => to_integer(span._M_extent._M_extent_value) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)span._M_extent._M_extent_value) == to_integer(span._M_extent._M_extent_value); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)span._M_extent._M_extent_value) by {
- arithmetic() using {
-  1 <= to_integer(span._M_extent._M_extent_value);
-  to_integer((int32)span._M_extent._M_extent_value) == to_integer(span._M_extent._M_extent_value);
- }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)span._M_extent._M_extent_value));
  execute();
  have span._M_ptr == old(span._M_ptr) by simp();
  have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
  transport(
-  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != 0 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
-  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != 0 implies span._M_ptr[k] == old(span._M_ptr[k]) }
+  forall (k: uint64) { k < span._M_extent._M_extent_value and k != 0u64 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
+  forall (k: uint64) { k < span._M_extent._M_extent_value and k != 0u64 implies span._M_ptr[k] == old(span._M_ptr[k]) }
  );
  simp(); }
 
 "#
-        )
     } else {
-        source.to_owned()
+        r#"int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+ views span._M_ptr;
+ views span._M_extent._M_extent_value;
+ views span._M_ptr[0..span._M_extent._M_extent_value];
+ requires 1u64 <= span._M_extent._M_extent_value;
+ ensures &result == span._M_ptr;
+ ensures result == old(span._M_ptr[0]);
+} by { execute(); simp(); }
+"#
     };
+    let source = format!("{prelude}{caller}");
     let source = source.as_str();
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
@@ -1480,8 +1441,8 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
             if matches!(phase, SpanFrontPhase::WriteCaller) {
                 for hostile in [
                     source.replace(
-                        " owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
-                        " views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
+                        " owns span._M_ptr[0..span._M_extent._M_extent_value];",
+                        " views span._M_ptr[0..span._M_extent._M_extent_value];",
                     ),
                     source.replace(
                         " ensures span._M_ptr[0] == input;",
@@ -1503,10 +1464,7 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
             let hostile = match phase {
                 SpanFrontPhase::RejectBounds => vec![
                     source.replace(" requires 1u64 <= this->_M_extent._M_extent_value;", ""),
-                    source.replace(
-                        " requires this->_M_extent._M_extent_value <= 1073741823u64;",
-                        "",
-                    ),
+                    source.replace(" requires 1u64 <= span._M_extent._M_extent_value;", ""),
                     source.replace(
                         " requires 1u64 <= span._M_extent._M_extent_value;",
                         " requires span._M_extent._M_extent_value == 0u64;",
@@ -1514,13 +1472,10 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
                 ],
                 _ => vec![
                     source.replace(
-                        " views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];",
+                        " views this->_M_ptr[0..this->_M_extent._M_extent_value];",
                         "",
                     ),
-                    source.replace(
-                        " views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
-                        "",
-                    ),
+                    source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
                     source.replace(" views this->_M_ptr;", ""),
                     source.replace(" views this->_M_extent._M_extent_value;", ""),
                     source.replace(
@@ -1591,11 +1546,10 @@ fn check_pinned_std_span_index(phase: SpanIndexPhase) {
         "#include <span.h>\nint& probe(std::span<int>& span, unsigned long index) { return span[index]; }\n"
     };
     let (root, import) = pinned_span_fixture("symbolic-index", harness);
-    let source = r#"verifying "span-probe.cpp";
-theorem bounded_span_index_address(pointer: int32*, index: uint64) {
- requires index <= 1073741823u64;
- ensures pointer + (int32)index == pointer + index by { simp() using { index <= 1073741823u64; } }
-}
+    // The extent and the index are the code's `unsigned long`, uncast.
+    // Nothing bounds the extent from above: the held range states its own
+    // extent limit.
+    let prelude = r#"verifying "span-probe.cpp";
 bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
 uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
  views this->_M_extent_value;
@@ -1608,101 +1562,46 @@ uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct spa
 int32& span__int__value_unsigned_long_18446744073709551615_operator_index(const struct span__int__value_unsigned_long_18446744073709551615* this, uint64 __idx) {
  views this->_M_ptr;
  views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];
+ views this->_M_ptr[0..this->_M_extent._M_extent_value];
  requires __idx < this->_M_extent._M_extent_value;
- requires 1u64 <= this->_M_extent._M_extent_value;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
  ensures &result == this->_M_ptr + __idx;
  ensures result == old(this->_M_ptr[__idx]);
-} by {
- apply(uint64_less_equal_to_integer(1u64, this->_M_extent._M_extent_value));
- apply(uint64_less_equal_to_integer(this->_M_extent._M_extent_value, 1073741823u64));
- apply(uint64_less_than_to_integer(__idx, this->_M_extent._M_extent_value));
- have to_integer(__idx) <= 1073741823 by {
-  arithmetic() using {
-   to_integer(__idx) < to_integer(this->_M_extent._M_extent_value);
-   to_integer(this->_M_extent._M_extent_value) <= 1073741823;
-  }
- }
- have __idx <= 1073741823u64 by apply(uint64_less_equal_of_to_integer(__idx, 1073741823u64));
- have to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(this->_M_extent._M_extent_value) => 1 <= to_integer(this->_M_extent._M_extent_value);
- premise 1: to_integer(this->_M_extent._M_extent_value) <= 1073741823 => to_integer(this->_M_extent._M_extent_value) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)this->_M_extent._M_extent_value) by {
- arithmetic() using {
-  1 <= to_integer(this->_M_extent._M_extent_value);
-  to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value);
- }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)this->_M_extent._M_extent_value));
- execute();
- apply(bounded_span_index_address(this->_M_ptr, __idx));
- simp();
-}
-int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span, uint64 index) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
- requires index < span._M_extent._M_extent_value;
- requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures &result == span._M_ptr + index;
- ensures result == old(span._M_ptr[index]);
 } by { execute(); simp(); }
 "#;
-    let source = if writes {
-        let caller = source.find("int32& probe(").unwrap();
-        let method = source.find("int32& span__int__").unwrap();
-        let body = source[method..caller]
-            .split_once("} by {\n")
-            .unwrap()
-            .1
-            .split_once(" execute();")
-            .unwrap()
-            .0;
-        let preparation = body.replace("this->", "span.").replace("__idx", "index");
-        format!(
-            "{}{}{}{}",
-            &source[..caller],
-            r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, uint64 index, int32 input) {
+    let caller = if writes {
+        r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, uint64 index, int32 input) {
  views span._M_ptr;
  views span._M_extent._M_extent_value;
- owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
+ owns span._M_ptr[0..span._M_extent._M_extent_value];
  requires index < span._M_extent._M_extent_value;
- requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
  ensures result == input;
  ensures span._M_ptr[index] == input;
  ensures span._M_ptr == old(span._M_ptr);
  ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)index implies span._M_ptr[k] == old(span._M_ptr[k]) };
+ ensures forall (k: uint64) { k < span._M_extent._M_extent_value and k != index implies span._M_ptr[k] == old(span._M_ptr[k]) };
 } by {
-"#,
-            preparation,
-            r#"
- apply(bounded_span_index_address(span._M_ptr, index));
  execute();
  have span._M_ptr == old(span._M_ptr) by simp();
  have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
- apply(bounded_span_index_address(span._M_ptr, index));
- have span._M_ptr + index == span._M_ptr + (int32)index by {
-  simp() using { span._M_ptr + (int32)index == span._M_ptr + index; }
- }
  transport(
-  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)index implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
-  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)index implies span._M_ptr[k] == old(span._M_ptr[k]) }
+  forall (k: uint64) { k < span._M_extent._M_extent_value and k != index implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
+  forall (k: uint64) { k < span._M_extent._M_extent_value and k != index implies span._M_ptr[k] == old(span._M_ptr[k]) }
  );
  simp();
 }
 "#
-        )
     } else {
-        source.to_owned()
+        r#"int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span, uint64 index) {
+ views span._M_ptr;
+ views span._M_extent._M_extent_value;
+ views span._M_ptr[0..span._M_extent._M_extent_value];
+ requires index < span._M_extent._M_extent_value;
+ ensures &result == span._M_ptr + index;
+ ensures result == old(span._M_ptr[index]);
+} by { execute(); simp(); }
+"#
     };
+    let source = format!("{prelude}{caller}");
     let source = source.as_str();
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
@@ -1737,14 +1636,14 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span, u
         SpanIndexPhase::RejectWriteCaller => {
             for bad in [
                 source.replace(
-                    " owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
-                    " views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
+                    " owns span._M_ptr[0..span._M_extent._M_extent_value];",
+                    " views span._M_ptr[0..span._M_extent._M_extent_value];",
                 ),
                 source.replace(
                     " ensures span._M_ptr[index] == input;",
                     " ensures span._M_ptr[index] == old(span._M_ptr[index]);",
                 ),
-                source.replace(" and k != (int32)index implies", " implies"),
+                source.replace(" and k != index implies", " implies"),
             ] {
                 assert_ne!(bad, source);
                 assert!(
@@ -1782,8 +1681,8 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span, u
                 SpanIndexPhase::RejectBounds => vec![
                     source.replace(" requires __idx < this->_M_extent._M_extent_value;", ""),
                     source.replace(
-                        " requires this->_M_extent._M_extent_value <= 1073741823u64;",
-                        "",
+                        " requires __idx < this->_M_extent._M_extent_value;",
+                        " requires __idx <= this->_M_extent._M_extent_value;",
                     ),
                     source.replace(
                         " requires index < span._M_extent._M_extent_value;",
@@ -1792,13 +1691,10 @@ int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span, u
                 ],
                 _ => vec![
                     source.replace(
-                        " views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];",
+                        " views this->_M_ptr[0..this->_M_extent._M_extent_value];",
                         "",
                     ),
-                    source.replace(
-                        " views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];",
-                        "",
-                    ),
+                    source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
                     source.replace(" views this->_M_ptr;", ""),
                     source.replace(" views this->_M_extent._M_extent_value;", ""),
                     source.replace(
@@ -1870,71 +1766,6 @@ enum SpanBackPhase {
     RejectValue,
 }
 
-fn pinned_span_back_contracts() -> &'static str {
-    r#"bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures this->_M_extent._M_extent_value == 0u64 implies result == 1;
- ensures this->_M_extent._M_extent_value != 0u64 implies result == 0;
-} by { execute(); simp(); }
-int32& span__int__value_unsigned_long_18446744073709551615_back(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_ptr;
- views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];
- requires 1u64 <= this->_M_extent._M_extent_value;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
- ensures &result == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64);
- ensures result == old(this->_M_ptr[this->_M_extent._M_extent_value - 1u64]);
-} by {
- apply(uint64_less_equal_to_integer(1u64, this->_M_extent._M_extent_value));
- apply(uint64_less_equal_to_integer(this->_M_extent._M_extent_value, 1073741823u64));
- apply(uint64_subtract_to_integer(this->_M_extent._M_extent_value, 1u64));
- have 0 <= to_integer((this->_M_extent._M_extent_value - 1u64)) by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
-         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
-     }
- }
- have to_integer((this->_M_extent._M_extent_value - 1u64)) <= 1073741822 by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
-         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
-         0 <= to_integer((this->_M_extent._M_extent_value - 1u64));
-     }
- }
- have this->_M_extent._M_extent_value - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((this->_M_extent._M_extent_value - 1u64), 1073741822u64));
- have to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(this->_M_extent._M_extent_value) => 1 <= to_integer(this->_M_extent._M_extent_value);
- premise 1: to_integer(this->_M_extent._M_extent_value) <= 1073741823 => to_integer(this->_M_extent._M_extent_value) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)this->_M_extent._M_extent_value) by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value);
-     }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)this->_M_extent._M_extent_value));
- have 0 <= (int32)this->_M_extent._M_extent_value - 1 by {
-     arithmetic() using {
-         1 <= (int32)this->_M_extent._M_extent_value;
-         (int32)this->_M_extent._M_extent_value <= 1073741823;
-     }
- }
- have (int32)this->_M_extent._M_extent_value - 1 < (int32)this->_M_extent._M_extent_value by {
-     arithmetic() using {
-         1 <= (int32)this->_M_extent._M_extent_value;
-         (int32)this->_M_extent._M_extent_value <= 1073741823;
-     }
- }
- execute(); simp();
-}
-"#
-}
-
 fn check_pinned_std_span_back_symbolic_bounded_range(phase: SpanBackPhase) {
     let harness = match phase {
         SpanBackPhase::WriteCaller
@@ -1946,145 +1777,10 @@ fn check_pinned_std_span_back_symbolic_bounded_range(phase: SpanBackPhase) {
         _ => "#include <span.h>\nint& probe(std::span<int>& span) { return span.back(); }\n",
     };
     let (root, import) = pinned_span_fixture("symbolic-back", harness);
-    let source = r#"verifying "span-probe.cpp";
-bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
-uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent_value;
- ensures result == this->_M_extent_value;
-} by { execute(); simp(); }
-uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
- views this->_M_extent._M_extent_value;
- ensures result == this->_M_extent._M_extent_value;
-} by { execute(); simp(); }
-"#;
-    let source = format!(
-        "{}{}{}",
-        source,
-        pinned_span_back_contracts(),
-        r#"int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
- views span._M_ptr;
- views span._M_extent._M_extent_value;
- views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
- requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
- ensures &result == span._M_ptr + (span._M_extent._M_extent_value - 1u64);
- ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
-} by { execute(); simp(); }
-"#
-    );
-    let source = if matches!(
-        phase,
-        SpanBackPhase::WriteCaller
-            | SpanBackPhase::ExpandWriteCaller
-            | SpanBackPhase::RetainWriteCaller
-            | SpanBackPhase::RejectWriteCaller
-    ) {
-        format!(
-            "{}{}",
-            r#"verifying "span-probe.cpp";
-theorem bounded_span_back_address(pointer: int32*, index: uint64) {
- requires index <= 1073741822u64;
- ensures pointer + (int32)index == pointer + index by { simp() using { index <= 1073741822u64; } }
-}
-theorem bounded_span_last_index(n: uint64) {
- requires 1u64 <= n;
- requires n <= 1073741823u64;
- ensures (int32)(n - 1u64) == (int32)n - 1 by {
- apply(uint64_less_equal_to_integer(1u64, n));
- apply(uint64_less_equal_to_integer(n, 1073741823u64));
- apply(uint64_subtract_to_integer(n, 1u64));
- have 0 <= to_integer((n - 1u64)) by {
-     arithmetic() using {
-         1 <= to_integer(n);
-         to_integer(n) <= 1073741823;
-         to_integer((n - 1u64)) == to_integer(n) - 1;
-     }
- }
- have to_integer((n - 1u64)) <= 1073741822 by {
-     arithmetic() using {
-         1 <= to_integer(n);
-         to_integer(n) <= 1073741823;
-         to_integer((n - 1u64)) == to_integer(n) - 1;
-         0 <= to_integer((n - 1u64));
-     }
- }
- have n - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((n - 1u64), 1073741822u64));
- have to_integer((int32)n) == to_integer(n) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(n) => 1 <= to_integer(n);
- premise 1: to_integer(n) <= 1073741823 => to_integer(n) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)n) == to_integer(n); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)n) by {
-     arithmetic() using {
-         1 <= to_integer(n);
-         to_integer((int32)n) == to_integer(n);
-     }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)n));
- have to_integer((int32)n) <= 1073741823 by {
- arithmetic() using {
-  to_integer((int32)n) == to_integer(n);
-  to_integer(n) <= 1073741823;
- }
- }
- apply(int32_less_equal_of_to_integer((int32)n, 1073741823));
- have 0 <= (int32)n - 1 by {
-     arithmetic() using {
-         1 <= (int32)n;
-         (int32)n <= 1073741823;
-     }
- }
- have (int32)n - 1 < (int32)n by {
-     arithmetic() using {
-         1 <= (int32)n;
-         (int32)n <= 1073741823;
-     }
- }
- have to_integer((int32)(n - 1u64)) == to_integer(n - 1u64) by {
- arithmetic_certificate special {
- premise 0: 0 <= to_integer(n - 1u64) => 0 <= to_integer(n - 1u64);
- premise 1: to_integer(n - 1u64) <= 1073741822 => to_integer(n - 1u64) <= 1073741822;
- integer_cast_identity bounds [0, 1] => to_integer((int32)(n - 1u64)) == to_integer(n - 1u64); conclusion 0;
- }
- }
- have to_integer((int32)n) - to_integer(1) >= -2147483648 by {
- arithmetic() using { 1 <= to_integer((int32)n); }
- }
- have to_integer((int32)n) - to_integer(1) <= 2147483647 by {
- arithmetic() using { to_integer((int32)n) <= 1073741823; }
- }
- have to_integer(n) <= 2147483647 by { arithmetic() using { to_integer(n) <= 1073741823; } }
- have n <= 2147483647u64 by apply(uint64_less_equal_of_to_integer(n, 2147483647u64));
- have defined((int32)n - 1) by {
- apply(int32_subtract_defined_by_integer_bounds((int32)n, 1));
- simp();
- }
- apply(int32_subtract_to_integer((int32)n, 1)) using { defined((int32)n - 1); }
- have to_integer((int32)(n - 1u64)) == to_integer((int32)n - 1) by {
- arithmetic() using {
-  to_integer((int32)(n - 1u64)) == to_integer(n - 1u64);
-  to_integer(n - 1u64) == to_integer(n) - 1;
-  to_integer((int32)n) == to_integer(n);
-  to_integer((int32)n - 1) == to_integer((int32)n) - to_integer(1);
- }
- }
- apply(int32_equal_of_to_integer((int32)(n - 1u64), (int32)n - 1));
- simp();
- }
-}
-theorem bounded_span_last_address(pointer: int32*, n: uint64) {
- requires 1u64 <= n;
- requires n <= 1073741823u64;
- requires n - 1u64 <= 1073741822u64;
- ensures pointer + ((int32)n - 1) == pointer + (n - 1u64) by {
-  apply(bounded_span_last_index(n));
-  have (int32)n - 1 == (int32)(n - 1u64) by { simp() using { (int32)(n - 1u64) == (int32)n - 1; } }
-  rewrite((int32)n - 1 == (int32)(n - 1u64));
-  simp() using { n - 1u64 <= 1073741822u64; }
- }
-}
+    // The extent is the code's `unsigned long`, uncast, and the last element
+    // is at `extent - 1` in that type. Nothing bounds the extent from above:
+    // the held range states its own extent limit.
+    let prelude = r#"verifying "span-probe.cpp";
 bool std___is_constant_evaluated() { ensures result == 0; } by { execute(); simp(); }
 uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
  views this->_M_extent_value;
@@ -2102,143 +1798,52 @@ bool span__int__value_unsigned_long_18446744073709551615_empty(const struct span
 int32& span__int__value_unsigned_long_18446744073709551615_back(const struct span__int__value_unsigned_long_18446744073709551615* this) {
  views this->_M_ptr;
  views this->_M_extent._M_extent_value;
- views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];
+ views this->_M_ptr[0..this->_M_extent._M_extent_value];
  requires 1u64 <= this->_M_extent._M_extent_value;
- requires this->_M_extent._M_extent_value <= 1073741823u64;
- ensures &result == this->_M_ptr + ((int32)this->_M_extent._M_extent_value - 1);
  ensures &result == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64);
  ensures result == old(this->_M_ptr[this->_M_extent._M_extent_value - 1u64]);
-} by {
- apply(uint64_less_equal_to_integer(1u64, this->_M_extent._M_extent_value));
- apply(uint64_less_equal_to_integer(this->_M_extent._M_extent_value, 1073741823u64));
- apply(uint64_subtract_to_integer(this->_M_extent._M_extent_value, 1u64));
- have 0 <= to_integer((this->_M_extent._M_extent_value - 1u64)) by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
-         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
-     }
- }
- have to_integer((this->_M_extent._M_extent_value - 1u64)) <= 1073741822 by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer(this->_M_extent._M_extent_value) <= 1073741823;
-         to_integer((this->_M_extent._M_extent_value - 1u64)) == to_integer(this->_M_extent._M_extent_value) - 1;
-         0 <= to_integer((this->_M_extent._M_extent_value - 1u64));
-     }
- }
- have this->_M_extent._M_extent_value - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((this->_M_extent._M_extent_value - 1u64), 1073741822u64));
- have to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(this->_M_extent._M_extent_value) => 1 <= to_integer(this->_M_extent._M_extent_value);
- premise 1: to_integer(this->_M_extent._M_extent_value) <= 1073741823 => to_integer(this->_M_extent._M_extent_value) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)this->_M_extent._M_extent_value) by {
-     arithmetic() using {
-         1 <= to_integer(this->_M_extent._M_extent_value);
-         to_integer((int32)this->_M_extent._M_extent_value) == to_integer(this->_M_extent._M_extent_value);
-     }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)this->_M_extent._M_extent_value));
- have 0 <= (int32)this->_M_extent._M_extent_value - 1 by {
-     arithmetic() using {
-         1 <= (int32)this->_M_extent._M_extent_value;
-         (int32)this->_M_extent._M_extent_value <= 1073741823;
-     }
- }
- have (int32)this->_M_extent._M_extent_value - 1 < (int32)this->_M_extent._M_extent_value by {
-     arithmetic() using {
-         1 <= (int32)this->_M_extent._M_extent_value;
-         (int32)this->_M_extent._M_extent_value <= 1073741823;
-     }
- }
- apply(bounded_span_last_index(this->_M_extent._M_extent_value));
- execute();
- apply(bounded_span_last_address(this->_M_ptr, this->_M_extent._M_extent_value));
- rewrite(this->_M_ptr + ((int32)this->_M_extent._M_extent_value - 1) == this->_M_ptr + (this->_M_extent._M_extent_value - 1u64));
- simp();
-}
-"#,
-            r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {
+} by { execute(); simp(); }
+"#;
+    let caller = if matches!(
+        phase,
+        SpanBackPhase::WriteCaller
+            | SpanBackPhase::ExpandWriteCaller
+            | SpanBackPhase::RetainWriteCaller
+            | SpanBackPhase::RejectWriteCaller
+    ) {
+        r#"int32 probe(struct span__int__value_unsigned_long_18446744073709551615& span, int32 input) {
  views span._M_ptr;
  views span._M_extent._M_extent_value;
- owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];
+ owns span._M_ptr[0..span._M_extent._M_extent_value];
  requires 1u64 <= span._M_extent._M_extent_value;
- requires span._M_extent._M_extent_value <= 1073741823u64;
  ensures result == input;
  ensures span._M_ptr[span._M_extent._M_extent_value - 1u64] == input;
  ensures span._M_ptr == old(span._M_ptr);
  ensures span._M_extent._M_extent_value == old(span._M_extent._M_extent_value);
- ensures forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)span._M_extent._M_extent_value - 1 implies span._M_ptr[k] == old(span._M_ptr[k]) };
+ ensures forall (k: uint64) { k < span._M_extent._M_extent_value and k != span._M_extent._M_extent_value - 1u64 implies span._M_ptr[k] == old(span._M_ptr[k]) };
 } by {
- apply(uint64_less_equal_to_integer(1u64, span._M_extent._M_extent_value));
- apply(uint64_less_equal_to_integer(span._M_extent._M_extent_value, 1073741823u64));
- apply(uint64_subtract_to_integer(span._M_extent._M_extent_value, 1u64));
- have 0 <= to_integer((span._M_extent._M_extent_value - 1u64)) by {
-     arithmetic() using {
-         1 <= to_integer(span._M_extent._M_extent_value);
-         to_integer(span._M_extent._M_extent_value) <= 1073741823;
-         to_integer((span._M_extent._M_extent_value - 1u64)) == to_integer(span._M_extent._M_extent_value) - 1;
-     }
- }
- have to_integer((span._M_extent._M_extent_value - 1u64)) <= 1073741822 by {
-     arithmetic() using {
-         1 <= to_integer(span._M_extent._M_extent_value);
-         to_integer(span._M_extent._M_extent_value) <= 1073741823;
-         to_integer((span._M_extent._M_extent_value - 1u64)) == to_integer(span._M_extent._M_extent_value) - 1;
-         0 <= to_integer((span._M_extent._M_extent_value - 1u64));
-     }
- }
- have span._M_extent._M_extent_value - 1u64 <= 1073741822u64 by apply(uint64_less_equal_of_to_integer((span._M_extent._M_extent_value - 1u64), 1073741822u64));
- have to_integer((int32)span._M_extent._M_extent_value) == to_integer(span._M_extent._M_extent_value) by {
- arithmetic_certificate special {
- premise 0: 1 <= to_integer(span._M_extent._M_extent_value) => 1 <= to_integer(span._M_extent._M_extent_value);
- premise 1: to_integer(span._M_extent._M_extent_value) <= 1073741823 => to_integer(span._M_extent._M_extent_value) <= 1073741823;
- integer_cast_identity bounds [0, 1] => to_integer((int32)span._M_extent._M_extent_value) == to_integer(span._M_extent._M_extent_value); conclusion 0;
- }
- }
- have 1 <= to_integer((int32)span._M_extent._M_extent_value) by {
-     arithmetic() using {
-         1 <= to_integer(span._M_extent._M_extent_value);
-         to_integer((int32)span._M_extent._M_extent_value) == to_integer(span._M_extent._M_extent_value);
-     }
- }
- apply(int32_less_equal_of_to_integer(1, (int32)span._M_extent._M_extent_value));
- have 0 <= (int32)span._M_extent._M_extent_value - 1 by {
-     arithmetic() using {
-         1 <= (int32)span._M_extent._M_extent_value;
-         (int32)span._M_extent._M_extent_value <= 1073741823;
-     }
- }
- have (int32)span._M_extent._M_extent_value - 1 < (int32)span._M_extent._M_extent_value by {
-     arithmetic() using {
-         1 <= (int32)span._M_extent._M_extent_value;
-         (int32)span._M_extent._M_extent_value <= 1073741823;
-     }
- }
- apply(bounded_span_back_address(span._M_ptr, span._M_extent._M_extent_value - 1u64));
- apply(bounded_span_last_index(span._M_extent._M_extent_value));
  execute();
  have span._M_ptr == old(span._M_ptr) by simp();
  have span._M_extent._M_extent_value == old(span._M_extent._M_extent_value) by simp();
- apply(bounded_span_last_address(span._M_ptr, span._M_extent._M_extent_value));
- have span._M_ptr + (span._M_extent._M_extent_value - 1u64) == span._M_ptr + ((int32)span._M_extent._M_extent_value - 1) by {
-  simp() using { span._M_ptr + ((int32)span._M_extent._M_extent_value - 1) == span._M_ptr + (span._M_extent._M_extent_value - 1u64); }
- }
- rewrite(span._M_ptr + (span._M_extent._M_extent_value - 1u64) == span._M_ptr + ((int32)span._M_extent._M_extent_value - 1));
  transport(
-  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)span._M_extent._M_extent_value - 1 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
-  forall (k: int32) { 0 <= k and k < (int32)span._M_extent._M_extent_value and k != (int32)span._M_extent._M_extent_value - 1 implies span._M_ptr[k] == old(span._M_ptr[k]) }
+  forall (k: uint64) { k < span._M_extent._M_extent_value and k != span._M_extent._M_extent_value - 1u64 implies old(span._M_ptr[k]) == old(span._M_ptr[k]) },
+  forall (k: uint64) { k < span._M_extent._M_extent_value and k != span._M_extent._M_extent_value - 1u64 implies span._M_ptr[k] == old(span._M_ptr[k]) }
  );
  simp();
 }
 "#
-        )
     } else {
-        source.to_owned()
+        r#"int32& probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
+ views span._M_ptr;
+ views span._M_extent._M_extent_value;
+ views span._M_ptr[0..span._M_extent._M_extent_value];
+ requires 1u64 <= span._M_extent._M_extent_value;
+ ensures &result == span._M_ptr + (span._M_extent._M_extent_value - 1u64);
+ ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);
+} by { execute(); simp(); }
+"#
     };
+    let source = format!("{prelude}{caller}");
     let source = source.as_str();
     let path = root.join("span.click");
     fs::write(&path, source).unwrap();
@@ -2256,7 +1861,7 @@ int32& span__int__value_unsigned_long_18446744073709551615_back(const struct spa
         }
         SpanBackPhase::RejectWriteCaller => {
             for bad in [
-                source.replace(" owns span._M_ptr[0..((int32)span._M_extent._M_extent_value)];", " views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];"),
+                source.replace(" owns span._M_ptr[0..span._M_extent._M_extent_value];", " views span._M_ptr[0..span._M_extent._M_extent_value];"),
                 source.replace(" ensures span._M_ptr[span._M_extent._M_extent_value - 1u64] == input;", " ensures span._M_ptr[span._M_extent._M_extent_value - 1u64] == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);"),
             ] {
                 assert_ne!(bad, source);
@@ -2292,20 +1897,19 @@ int32& span__int__value_unsigned_long_18446744073709551615_back(const struct spa
         | SpanBackPhase::RejectAuthority
         | SpanBackPhase::RejectValue => {
             let hostile = match phase {
-                SpanBackPhase::RejectBounds => [
+                SpanBackPhase::RejectBounds => vec![
                     source.replace(" requires 1u64 <= this->_M_extent._M_extent_value;", ""),
-                    source.replace(" requires this->_M_extent._M_extent_value <= 1073741823u64;", ""),
                     source.replace("requires 1u64 <= this->_M_extent._M_extent_value;", "requires this->_M_extent._M_extent_value == 0u64;"),
+                    source.replace(" requires 1u64 <= span._M_extent._M_extent_value;", ""),
                 ],
-                SpanBackPhase::RejectAuthority => [
-                    source.replace(" views this->_M_ptr[0..((int32)this->_M_extent._M_extent_value)];", ""),
-                    source.replace(" views span._M_ptr[0..((int32)span._M_extent._M_extent_value)];", ""),
+                SpanBackPhase::RejectAuthority => vec![
+                    source.replace(" views this->_M_ptr[0..this->_M_extent._M_extent_value];", ""),
+                    source.replace(" views span._M_ptr[0..span._M_extent._M_extent_value];", ""),
                     source.replace(" views this->_M_extent._M_extent_value;", ""),
                 ],
-                _ => [
+                _ => vec![
                     source.replace("ensures &result == span._M_ptr + (span._M_extent._M_extent_value - 1u64);", "ensures &result == span._M_ptr + span._M_extent._M_extent_value;"),
                     source.replace("ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]);", "ensures result == old(span._M_ptr[span._M_extent._M_extent_value - 1u64]) + 1;"),
-                    source.replace(" requires span._M_extent._M_extent_value <= 1073741823u64;", " requires span._M_extent._M_extent_value <= 1073741824u64;"),
                 ],
             };
             for bad in hostile {

@@ -23,7 +23,6 @@ use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
-pub(in crate::kernel) use condition_reasoning::uint64_upper_bound_below_sign_bit;
 #[cfg(test)]
 pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;
 mod constant_classes;
@@ -327,15 +326,11 @@ fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
 }
 
 pub(in crate::kernel) fn memory_range_anchor(range: &CMemoryRange) -> Option<PointerOffsetTerm> {
-    let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const()) else {
+    let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
         return None;
     };
-    (range.element_width() > 0 && (start as i32) < (end as i32)).then(|| {
-        range
-            .base()
-            .offset_by_elements(range.start().clone(), range.element_width())
-            .offset
-    })
+    (range.element_width() > 0 && (start as i32) < (end as i32))
+        .then(|| range.start_pointer().offset)
 }
 
 pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResource) -> bool {
@@ -2855,15 +2850,51 @@ impl PureFactContext {
             self.signed_order_bounds = index;
         } else if let Some((left, right, strict)) = condition_as_int64_order_fact(condition, value)
         {
+            self.adjust_wide_order_edges(1, &left, &right, strict, insert);
             let mut index = std::mem::take(&mut self.int64_signed_order_bounds);
             Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
             self.int64_signed_order_bounds = index;
         } else if let Some((left, right, strict)) =
             condition_reasoning::condition_as_uint64_order_fact(condition, value)
         {
+            self.adjust_wide_order_edges(0, &left, &right, strict, insert);
             let mut index = std::mem::take(&mut self.uint64_order_bounds);
             Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
             self.uint64_order_bounds = index;
+        }
+    }
+
+    /// Files or removes one 64-bit order fact `left < right` (or `<=`) in
+    /// the direction-split edges of `kind` (0 unsigned, 1 signed), under
+    /// canonical terms: an upward edge from `left` and a downward one from
+    /// `right`.
+    fn adjust_wide_order_edges(
+        &mut self,
+        kind: usize,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+        strict: bool,
+        insert: bool,
+    ) {
+        let left = crate::kernel::eval::canonical_term(left);
+        let right = crate::kernel::eval::canonical_term(right);
+        for (direction, from, to) in [(0, &left, &right), (1, &right, &left)] {
+            let index = &mut self.wide_order_edges[kind][direction];
+            let mut edges = index.get(from).cloned().unwrap_or_default();
+            let edge = (to.clone(), strict);
+            let count = edges.get(&edge).copied().unwrap_or(0);
+            if insert {
+                edges = edges.with_inserted(edge, count + 1);
+            } else if count <= 1 {
+                edges = edges.without_key(&edge);
+            } else {
+                edges = edges.with_inserted(edge, count - 1);
+            }
+            *index = if edges.is_empty() {
+                index.without_key(from)
+            } else {
+                index.with_inserted(from.clone(), edges)
+            };
         }
     }
 
@@ -3525,6 +3556,7 @@ impl PureFactContext {
         self.signed_order_bounds = crate::persistent::PersistentMap::default();
         self.int64_signed_order_bounds = crate::persistent::PersistentMap::default();
         self.uint64_order_bounds = crate::persistent::PersistentMap::default();
+        self.wide_order_edges = Default::default();
         let facts = self
             .condition_facts
             .iter()
@@ -5987,10 +6019,10 @@ fn signed_int_max_term() -> Bitvector32Term {
 }
 
 fn range_intervals_cover_target(target: &CMemoryRange, mut intervals: Vec<(i64, i64)>) -> bool {
-    let Some(target_start) = signed_bitvector_constant(target.start()) else {
+    let Some(target_start) = target.signed_constant_start() else {
         return false;
     };
-    let Some(target_end) = signed_bitvector_constant(target.end()) else {
+    let Some(target_end) = target.signed_constant_end() else {
         return false;
     };
     if target_end <= target_start {
@@ -6114,6 +6146,13 @@ fn memory_range_contained_by_exact_arithmetic(
             return false;
         };
         return parent_start <= start && start <= end && end <= parent_end;
+    }
+    // With a wide range on either side the endpoints are compared as
+    // unsigned 64-bit values at one base, which needs the facts.
+    if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
+        return assumptions.is_some_and(|assumptions| {
+            crate::kernel::primitives::wide_memory_range_covers(parent, range, assumptions)
+        });
     }
     let Some(base_delta) = range.base().exact_element_delta_from_base(
         parent.base(),
@@ -6556,6 +6595,11 @@ pub(in crate::kernel) fn pointer_in_memory_range_shallow(
     pointer: &Pointer,
     range: &CMemoryRange,
 ) -> bool {
+    // A wide range's bounds are 64-bit terms, which nothing decides without
+    // a fact context.
+    if range.wide_bounds().is_some() {
+        return false;
+    }
     pointer_in_range_shallow(
         pointer,
         range.base(),
@@ -6573,6 +6617,11 @@ pub(in crate::kernel) fn pointer_in_memory_range_shallow_with_facts(
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A wide range has one membership rule: the pointer addresses a whole
+    // element at an unsigned 64-bit index inside the bounds.
+    if range.wide_bounds().is_some() {
+        return assumptions.pointer_access_in_wide_range(pointer, range.element_width(), range);
+    }
     pointer_in_range_shallow(
         pointer,
         range.base(),
@@ -6615,6 +6664,10 @@ fn pointer_in_memory_range_for_memory_resolution(
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A wide range has its one membership rule.
+    if range.wide_bounds().is_some() {
+        return assumptions.pointer_access_in_wide_range(pointer, range.element_width(), range);
+    }
     pointer_in_range_for_memory_resolution(
         pointer,
         range.base(),
@@ -7455,6 +7508,7 @@ impl ProofObligation {
             memory,
             base: pointer,
             bytes: Bitvector32Term::Constant(byte_width),
+            wide: false,
         })
     }
 

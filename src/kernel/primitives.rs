@@ -27,7 +27,7 @@ pub(crate) use contracts::{
     memory_range_extent_guard_spellings, memory_range_extent_guards, scaled_extent_element_width,
     stated_extent_element_width, stated_loadable_extent_guard_spellings,
     stated_loadable_extent_guards, stated_separation_extent_bounds,
-    stated_separation_extent_guards,
+    stated_separation_extent_guards, wide_loadable_element_count,
 };
 mod integer;
 mod machine_integer;
@@ -2659,14 +2659,31 @@ pub struct CMemorySegment {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CMemoryRange {
     pub(super) base: Pointer,
-    pub(super) start: Bitvector32Term,
-    pub(super) end: Bitvector32Term,
+    /// The bounds, in elements. Read them through [`CMemoryRange::start`]
+    /// and [`CMemoryRange::end`], which hold only for an `Int32` range, or
+    /// through [`CMemoryRange::wide_bounds`]: a term carries no width, so a
+    /// wide bound read as a signed 32-bit index is a different number.
+    start_bound: Bitvector32Term,
+    end_bound: Bitvector32Term,
     /// The size in bytes of one logical element in `start..end`.
     ///
     /// Resource ranges remain expressed in logical element coordinates, but
     /// retaining this width lets kernel consumers derive their physical byte
     /// footprint without recovering the source C type.
     pub(super) element_width: u32,
+    /// How the bounds are read. Last, so ranges order by base first and
+    /// `Int32` ranges keep the order they had among themselves.
+    kind: RangeIndexKind,
+}
+
+/// The integer type of a range's bounds. Two ranges with the same terms in
+/// different kinds are different ranges.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum RangeIndexKind {
+    /// Signed 32-bit element indices, as a C `int` index is.
+    Int32,
+    /// Unsigned 64-bit element indices, as a C `size_t` or a Rust `usize`.
+    UInt64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8150,10 +8167,14 @@ pub enum Proposition {
         pointer: Pointer,
         byte_width: u32,
     },
+    /// `bytes` bytes at `base` are live in `memory`. The count is a 32-bit
+    /// term, or, when `wide`, an unsigned 64-bit one: a term carries no
+    /// width, so a reader that takes a wide count as 32 bits misreads it.
     CMemoryLoadable {
         memory: CMemory,
         base: Pointer,
         bytes: Bitvector32Term,
+        wide: bool,
     },
     /// A typed read is valid in this snapshot, including initialization.
     /// This is a pure fact; it grants no resource access permission.
@@ -8522,10 +8543,12 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             memory,
             base,
             bytes,
+            wide,
         } => Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
             bytes: bytes.clone(),
+            wide: *wide,
         },
         Proposition::CMemoryReadDefined {
             memory,
@@ -9348,6 +9371,18 @@ pub struct PureFactContext {
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
     >,
+    /// The 64-bit order facts again, split by direction for the chain walk:
+    /// for each kind (`[unsigned, signed]`) and each direction (`[upward,
+    /// downward]`), the canonical far ends of the facts leaving a canonical
+    /// term in that direction, with whether the fact is strict. A walk reads
+    /// only the edges it can follow, so a bound many indices share, `n` under
+    /// `c0 < n`, `c1 < n`, ..., costs an upward walk through it nothing for
+    /// the facts below it. Derived from the two indexes above by the same
+    /// insert and remove path.
+    pub(super) wide_order_edges: [[crate::persistent::PersistentMap<
+        Bitvector32Term,
+        crate::persistent::PersistentMap<(Bitvector32Term, bool), usize>,
+    >; 2]; 2],
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks

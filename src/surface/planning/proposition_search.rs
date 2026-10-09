@@ -295,6 +295,7 @@ impl PropositionSearch for PureFactContext {
                 memory,
                 base,
                 bytes,
+                wide: false,
             } => self.proves_memory_loadable(memory, base, bytes),
             Proposition::CMemoryCanStore {
                 memory,
@@ -611,6 +612,7 @@ impl PropositionSearch for PureFactContext {
             memory,
             base,
             bytes,
+            wide: false,
         } = proposition
             && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
             && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
@@ -643,6 +645,7 @@ impl PropositionSearch for PureFactContext {
                 memory,
                 base,
                 bytes,
+                wide: false,
             } = proposition
             && candidates.len() > 1
         {

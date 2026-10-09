@@ -189,6 +189,7 @@ fn spell_condition(
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
                 bytes: Bitvector32Term::Constant(4),
+                wide: false,
             })
             .as_ref(),
         );

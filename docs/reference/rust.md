@@ -395,16 +395,14 @@ uses variable-length contracts with existing memory ranges:
 <!-- verified-example: mdtests/uint64_index_variable_length.md -->
 ```click
 uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
-    requires bytes_len <= 2147483647u64;
     requires index < bytes_len;
-    views bytes[0..(int32)bytes_len];
-    ensures result == bytes[(int32)index];
+    views bytes[0..bytes_len];
+    ensures result == bytes[index];
 } by { execute(); simp(); }
 ```
 
-The length bound reflects the current signed-word memory-range model; it does
-not truncate Rust slice metadata. `.len()` alone needs no byte resource and
-preserves larger 64-bit lengths. Slice returns, general range subscripts,
+A range bounded by a `usize` has 64-bit bounds, so the contract states no
+limit on the length. `.len()` alone needs no byte resource. Slice returns, general range subscripts,
 indexed compound assignment, other slice element types, and slices in owned-value
 MIR functions remain unsupported. Normal numeric contract casts now include
 `(int32)`, `(uint32)`, `(int64)`, and `(uint64)`.

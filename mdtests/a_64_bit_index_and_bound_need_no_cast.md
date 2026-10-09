@@ -2,13 +2,12 @@
 
 `read` and `write` take a `size_t` length and index. Their contracts name the
 range `bytes[0..length]` and the element `bytes[index]` in the types the C
-has. A place takes a 32-bit index, so each is converted as the cast
-`(int32)length` converts it, and the requirement `length <= 2147483647` is
-what makes the conversion exact.
+has, and both are read at their 64-bit values. The requirement
+`length <= 2147483647` is not needed for that; it is kept here as a
+contract that states more than it must.
 
-`uint64_index_variable_length.md` is the same pair with the casts written.
-`a_64_bit_bound_must_be_shown_to_fit_a_32_bit_index.md` leaves the
-requirement out.
+`a_64_bit_range_needs_no_bound_on_its_length.md` leaves the requirement
+out.
 
 ```c filename=a_64_bit_index_and_bound_need_no_cast.c
 unsigned char read(const unsigned char *bytes, unsigned long length, unsigned long index) {

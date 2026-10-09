@@ -242,6 +242,7 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             memory,
             base,
             bytes,
+            wide: false,
         } => bytes
             .as_const()
             .is_some_and(|bytes| memory.access_in_bounds(base, bytes)),

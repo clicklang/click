@@ -2565,7 +2565,7 @@ mod tests {
             );
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             let sidecar = format!(
-                "verifying \"fields.rs\"; uint32 read(const struct Lanes* state, uint64 index) {{ requires index == 0u64; views state->values[0..{length}]; ensures result == old(state->values[(int32)(uint32)index]); }} by {{ execute(); simp(); }}"
+                "verifying \"fields.rs\"; uint32 read(const struct Lanes* state, uint64 index) {{ requires index == 0u64; views state->values[0..{length}]; ensures result == old(state->values[index]); }} by {{ execute(); simp(); }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
                 C0VerificationSession::new_program_prepared(&sidecar, &prepared)

@@ -352,7 +352,9 @@ pub(super) fn storage_write_refusal(
     write: &super::CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
-    if write.start() == write.end() {
+    // An empty write, whose bounds are one term in either index kind.
+    let (write_start, write_end) = write.bound_terms();
+    if write_start == write_end {
         return None;
     }
     // A contract input's mutex storage is not checked here. Its initializer
@@ -450,9 +452,9 @@ fn ledger_storage_write_refusal(
             if !delta.is_constant() {
                 return None;
             }
-            let start = i64::from(write.start().as_const()? as i32)
+            let start = i64::from(write.constant_start()? as i32)
                 .checked_mul(i64::from(write.element_width()))?;
-            let end = i64::from(write.end().as_const()? as i32)
+            let end = i64::from(write.constant_end()? as i32)
                 .checked_mul(i64::from(write.element_width()))?;
             let storage_end = delta.constant.checked_add(i64::from(*bytes))?;
             Some(start == end || (start < end && (storage_end <= start || end <= delta.constant)))
@@ -542,8 +544,8 @@ impl MutexInputReservations {
                 result.unnamed = true;
                 continue;
             }
-            let Some(bytes) = range.end().as_const().filter(|bytes| {
-                *bytes > 0 && range.start().as_const() == Some(0) && range.element_width() == 1
+            let Some(bytes) = range.constant_end().filter(|bytes| {
+                *bytes > 0 && range.constant_start() == Some(0) && range.element_width() == 1
             }) else {
                 result.unnamed = true;
                 continue;
@@ -565,8 +567,8 @@ impl MutexInputReservations {
                 result.guard_unnamed = true;
                 continue;
             }
-            let Some(bytes) = range.end().as_const().filter(|bytes| {
-                *bytes > 0 && range.start().as_const() == Some(0) && range.element_width() == 1
+            let Some(bytes) = range.constant_end().filter(|bytes| {
+                *bytes > 0 && range.constant_start() == Some(0) && range.element_width() == 1
             }) else {
                 result.guard_unnamed = true;
                 continue;
@@ -2042,10 +2044,10 @@ impl MutexLedger {
             // signed 32-bit element arithmetic: a large allocation or a
             // footprint crossing INT32_MAX could otherwise appear disjoint.
             let disjoint = (|| {
-                if allocation.element_width() != 1 || allocation.start().as_const() != Some(0) {
+                if allocation.element_width() != 1 || allocation.constant_start() != Some(0) {
                     return None;
                 }
-                let extent = i64::from(allocation.end().as_const()?);
+                let extent = i64::from(allocation.constant_end()?);
                 let delta = mutex.exact_element_delta_from_base(allocation.base(), 1, None)?;
                 if !delta.is_constant() {
                     return None;
@@ -2058,8 +2060,8 @@ impl MutexLedger {
                     left: Box::new(allocation_resource.clone()),
                     right: Box::new(storage.clone()),
                 }) || (allocation.element_width() == 1
-                    && allocation.start().as_const() == Some(0)
-                    && allocation.end().as_const().is_some_and(|extent| {
+                    && allocation.constant_start() == Some(0)
+                    && allocation.constant_end().is_some_and(|extent| {
                         assumptions.proves_stated_byte_separation(
                             allocation.base(),
                             extent,

@@ -60,6 +60,7 @@ pub(crate) struct SnapshotBlindMemoryRangeKey {
     offset: SnapshotBlindPointerOffsetKey,
     start: SnapshotBlindBitvectorKey,
     end: SnapshotBlindBitvectorKey,
+    wide: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -349,8 +350,11 @@ fn snapshot_blind_memory_range_key(range: &CMemoryRange) -> Box<SnapshotBlindMem
     Box::new(SnapshotBlindMemoryRangeKey {
         block: range.base().block.clone(),
         offset: snapshot_blind_pointer_offset_key(&range.base().offset),
-        start: snapshot_blind_bitvector_key(range.start()),
-        end: snapshot_blind_bitvector_key(range.end()),
+        start: snapshot_blind_bitvector_key(range.bound_terms().0),
+        end: snapshot_blind_bitvector_key(range.bound_terms().1),
+        // One untyped term can bound a range of either kind, and the two
+        // are different ranges.
+        wide: range.wide_bounds().is_some(),
     })
 }
 
@@ -629,6 +633,7 @@ enum AlphaPropositionKey {
         memory: AlphaSnapshotKey,
         base: AlphaPointerKey,
         bytes: AlphaBitvectorKey,
+        wide: bool,
     },
     And(Box<Self>, Box<Self>),
     Or(Box<Self>, Box<Self>),
@@ -3045,16 +3050,19 @@ mod proposition_identity_tests {
             memory: left_memory.clone(),
             base: pointer.clone(),
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         };
         let same = Proposition::CMemoryLoadable {
             memory: left_memory,
             base: pointer.clone(),
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         };
         let changed = Proposition::CMemoryLoadable {
             memory: right_memory,
             base: pointer,
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         };
         assert!(propositions_are_alpha_equal(&left, &same));
         assert!(!propositions_are_alpha_equal(&left, &changed));
@@ -3297,6 +3305,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             memory,
             base,
             bytes,
+            wide: false,
         } => {
             if !ALLOW_LOADS {
                 return None;
@@ -3324,6 +3333,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
+                    wide: false,
                 })
             })();
             bindings.snapshot_aware = prior_snapshot_aware;

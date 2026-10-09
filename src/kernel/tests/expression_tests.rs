@@ -2487,6 +2487,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
         memory: state.memory().clone(),
         base: pointer.clone(),
         bytes: Bitvector32Term::Constant(bytes),
+        wide: false,
     };
 
     let nonempty = PureFactContext::new().assume_proposition(loadable(4));
@@ -2530,6 +2531,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
         memory: CMemory::new(),
         base,
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
 
     let samples = [4usize, 16, 64, 256]
@@ -2728,6 +2730,7 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
                 Box::new(n_bits.clone()),
                 Box::new(Bitvector32Term::Constant(4)),
             ),
+            wide: false,
         })
         .assume_condition(
             ConditionTerm::signed_greater_equal(i_bits.clone(), Bitvector32Term::Constant(0)),

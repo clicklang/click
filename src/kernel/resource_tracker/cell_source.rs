@@ -605,8 +605,8 @@ impl RangeDisjointFromPointerEvidence {
                 *judged_bytes == bytes
                     && direct_constant_element_index(pointer, range.base(), element_width)
                         == Some(*index)
-                    && signed_bitvector_constant(range.start()) == Some(*start)
-                    && signed_bitvector_constant(range.end()) == Some(*end)
+                    && range.signed_constant_start() == Some(*start)
+                    && range.signed_constant_end() == Some(*end)
                     && access_element_span(bytes, element_width).is_some_and(|span| {
                         index.checked_add(span).is_some_and(|last| last <= *start) || *end <= *index
                     })
@@ -615,7 +615,7 @@ impl RangeDisjointFromPointerEvidence {
                 bytes <= range.element_width()
                     && forward_range_offset_from_pointer(range, pointer) == Some(offset.clone())
                     && positive.checks(
-                        &Bitvector32Term::add(offset.clone(), range.start.clone()),
+                        &Bitvector32Term::add(offset.clone(), range.start().clone()),
                         assumptions,
                     )
             }
@@ -893,6 +893,11 @@ impl PointerInRangeEvidence {
             assumptions,
         ) {
             return Some(Self::Shallow);
+        }
+        // A wide range has the one membership rule the shallow check just
+        // applied; the signed 32-bit index evidence below does not read it.
+        if range.wide_bounds().is_some() {
+            return None;
         }
         let index =
             pointer.element_index_from_base_with_width(range.base(), range.element_width())?;

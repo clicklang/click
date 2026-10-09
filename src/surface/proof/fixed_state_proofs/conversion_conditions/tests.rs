@@ -84,6 +84,7 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         }),
         &PureFactContext::new(),
         &site,
@@ -127,12 +128,14 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
                 Box::new(Bitvector32Term::Variable(Variable(1))),
                 Box::new(Bitvector32Term::Constant(4)),
             ),
+            wide: false,
         });
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::CMemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         }),
         &assumptions,
         &site,
@@ -193,6 +196,7 @@ fn established_conditions_are_named_beside_the_missing_one() {
         memory: state.memory().clone(),
         base: indexed_cell(&values),
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::And(
@@ -251,6 +255,7 @@ fn an_assumable_obligation_is_not_refused() {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         },
     )];
     assert!(refuse_unproved_conversion_bounds(&assumable, &PureFactContext::new(), &site).is_ok());

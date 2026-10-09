@@ -1954,10 +1954,134 @@ impl CMemoryRange {
         assert!(element_width > 0, "memory element width must be positive");
         Self {
             base,
-            start,
-            end,
+            start_bound: start,
+            end_bound: end,
             element_width,
+            kind: RangeIndexKind::Int32,
         }
+    }
+
+    pub fn kind(&self) -> RangeIndexKind {
+        self.kind
+    }
+
+    /// A bound's bit pattern when it is a signed 32-bit constant. A wide
+    /// range answers as a symbolic one does: not constant.
+    pub(crate) fn constant_start(&self) -> Option<u32> {
+        self.int32_bounds()?.0.as_const()
+    }
+
+    pub(crate) fn constant_end(&self) -> Option<u32> {
+        self.int32_bounds()?.1.as_const()
+    }
+
+    /// A bound as the signed number it is, when it is a 32-bit constant.
+    pub(crate) fn signed_constant_start(&self) -> Option<i64> {
+        signed_bitvector_constant(self.int32_bounds()?.0)
+    }
+
+    pub(crate) fn signed_constant_end(&self) -> Option<i64> {
+        signed_bitvector_constant(self.int32_bounds()?.1)
+    }
+
+    /// Whether either bound is not a constant.
+    pub(crate) fn has_symbolic_bounds(&self) -> bool {
+        match self.kind {
+            RangeIndexKind::Int32 => {
+                self.start_bound.as_const().is_none() || self.end_bound.as_const().is_none()
+            }
+            RangeIndexKind::UInt64 => {
+                self.start_bound.uint64_as_const().is_none()
+                    || self.end_bound.uint64_as_const().is_none()
+            }
+        }
+    }
+
+    /// The address of the range's first element, in its own index kind.
+    pub(crate) fn start_pointer(&self) -> Pointer {
+        match self.kind {
+            RangeIndexKind::Int32 => self
+                .base
+                .offset_by_elements(self.start_bound.clone(), self.element_width),
+            RangeIndexKind::UInt64 => self.base.offset_by_typed_elements(
+                self.start_bound.clone(),
+                self.element_width,
+                true,
+                true,
+            ),
+        }
+    }
+
+    /// The address one past the range's last element, in its own kind.
+    pub(crate) fn end_pointer(&self) -> Pointer {
+        match self.kind {
+            RangeIndexKind::Int32 => self
+                .base
+                .offset_by_elements(self.end_bound.clone(), self.element_width),
+            RangeIndexKind::UInt64 => self.base.offset_by_typed_elements(
+                self.end_bound.clone(),
+                self.element_width,
+                true,
+                true,
+            ),
+        }
+    }
+
+    /// The bounds as signed 32-bit indices, or nothing for a wide range: for
+    /// a reader that answers "unknown" where it cannot read the bounds.
+    pub(crate) fn int32_bounds(&self) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+        (self.kind == RangeIndexKind::Int32).then_some((&self.start_bound, &self.end_bound))
+    }
+
+    /// That this range's memory is live in `memory`. An `Int32` range
+    /// counts its bytes in 32 bits. A wide one states the wide fact: its
+    /// count is the unsigned 64-bit `(end - start) * width`, written by
+    /// [`wide_loadable_byte_count`] and read back by
+    /// [`wide_loadable_element_count`].
+    pub(crate) fn loadable_fact(&self, memory: &CMemory) -> Proposition {
+        match self.wide_bounds() {
+            None => {
+                let (base, bytes) = self.byte_footprint();
+                Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base,
+                    bytes,
+                    wide: false,
+                }
+            }
+            Some((start, end)) => Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: self.start_pointer(),
+                bytes: wide_loadable_byte_count(
+                    Bitvector32Term::uint64_subtract(end.clone(), start.clone()),
+                    self.element_width,
+                ),
+                wide: true,
+            },
+        }
+    }
+
+    /// The bound terms themselves, in either kind: for a traversal that
+    /// reads their structure (the variables in them, a substitution into
+    /// them) and never the numbers they denote.
+    pub(crate) fn bound_terms(&self) -> (&Bitvector32Term, &Bitvector32Term) {
+        (&self.start_bound, &self.end_bound)
+    }
+
+    /// The bounds of a wide range, which no signed 32-bit reader may take.
+    pub(crate) fn wide_bounds(&self) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+        (self.kind == RangeIndexKind::UInt64).then_some((&self.start_bound, &self.end_bound))
+    }
+
+    /// A reader of signed 32-bit bounds met a wide range. It was never
+    /// taught the wide reading, and answering would misread the bounds, so
+    /// it stops.
+    #[track_caller]
+    fn assert_int32(&self) {
+        assert!(
+            self.kind == RangeIndexKind::Int32,
+            "a signed 32-bit reader was given a wide memory range"
+        );
     }
 
     /// Returns this element-indexed range as a physical byte footprint.
@@ -1970,9 +2094,8 @@ impl CMemoryRange {
     /// the second value is its byte length.
     pub(crate) fn byte_footprint(&self) -> (Pointer, Bitvector32Term) {
         (
-            self.base
-                .offset_by_elements(self.start.clone(), self.element_width),
-            memory_range_byte_count(self.start.clone(), self.end.clone(), self.element_width),
+            self.start_pointer(),
+            memory_range_byte_count(self.start().clone(), self.end().clone(), self.element_width),
         )
     }
 
@@ -1988,19 +2111,39 @@ impl CMemoryRange {
         start: Bitvector32Term,
         end: Bitvector32Term,
     ) -> Self {
-        Self::new_with_element_width(base, start, end, self.element_width)
+        Self {
+            kind: self.kind,
+            ..Self::new_with_element_width(base, start, end, self.element_width)
+        }
+    }
+
+    /// A range whose bounds are unsigned 64-bit element indices.
+    pub(crate) fn new_wide(
+        base: Pointer,
+        start: Bitvector32Term,
+        end: Bitvector32Term,
+        element_width: u32,
+    ) -> Self {
+        Self {
+            kind: RangeIndexKind::UInt64,
+            ..Self::new_with_element_width(base, start, end, element_width)
+        }
     }
 
     pub fn base(&self) -> &Pointer {
         &self.base
     }
 
+    #[track_caller]
     pub fn start(&self) -> &Bitvector32Term {
-        &self.start
+        self.assert_int32();
+        &self.start_bound
     }
 
+    #[track_caller]
     pub fn end(&self) -> &Bitvector32Term {
-        &self.end
+        self.assert_int32();
+        &self.end_bound
     }
 
     /// The write set of memory no clause names: the largest valid extent at
@@ -2338,6 +2481,9 @@ fn collect_stated_loadable_extent_guards(
 /// Byte ranges can span more than `i32::MAX` elements and retain the exact
 /// endpoint form instead.
 pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Proposition> {
+    if let Some(guards) = wide_memory_range_extent_guards(range) {
+        return guards;
+    }
     match memory_range_byte_count_extent(
         range.start().clone(),
         range.end().clone(),
@@ -2367,9 +2513,65 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
     }
 }
 
+/// The byte count of a wide liveness fact over `elements` elements of
+/// `width` bytes: the count itself at width one, and otherwise the product
+/// with the width on the right, so the two parts can be read back.
+pub(crate) fn wide_loadable_byte_count(elements: Bitvector32Term, width: u32) -> Bitvector32Term {
+    if width == 1 {
+        return elements;
+    }
+    Bitvector32Term::UInt64Multiply(
+        Box::new(elements),
+        Box::new(Bitvector32Term::UInt64Constant(u64::from(width))),
+    )
+}
+
+/// The element count of a wide liveness fact's byte count, for elements of
+/// `width` bytes; nothing when the count was not written for that width.
+pub(crate) fn wide_loadable_element_count(
+    bytes: &Bitvector32Term,
+    width: u32,
+) -> Option<&Bitvector32Term> {
+    if width == 1 {
+        return Some(bytes);
+    }
+    match bytes {
+        Bitvector32Term::UInt64Multiply(elements, by)
+            if by.uint64_as_const() == Some(u64::from(width)) =>
+        {
+            Some(elements)
+        }
+        _ => None,
+    }
+}
+
+/// What a wide range's bounds must satisfy to denote memory: they are in
+/// order, and the range ends within the largest object there can be,
+/// `isize::MAX` bytes. The second is what makes every element offset inside
+/// the range an exact byte offset. A contract that holds the range on entry
+/// is given both, as it is given the 32-bit guards of an `Int32` range; a
+/// caller supplying the range proves them.
+fn wide_memory_range_extent_guards(range: &CMemoryRange) -> Option<Vec<Proposition>> {
+    let (start, end) = range.wide_bounds()?;
+    let limit = i64::MAX as u64 / u64::from(range.element_width());
+    Some(vec![
+        Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(start.clone(), end.clone()),
+            true,
+        ),
+        Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(end.clone(), Bitvector32Term::UInt64Constant(limit)),
+            true,
+        ),
+    ])
+}
+
 /// Equivalent forms retained with an actual held range. The original endpoint
 /// form serves memory reasoning; the signed form is available to proof text.
 pub(crate) fn memory_range_extent_guard_spellings(range: &CMemoryRange) -> Vec<Proposition> {
+    if let Some(guards) = wide_memory_range_extent_guards(range) {
+        return guards;
+    }
     let mut guards = memory_range_byte_count_guards(
         range.start().clone(),
         range.end().clone(),
@@ -2406,11 +2608,16 @@ pub(crate) fn stated_separation_extent_bounds(proposition: &Proposition) -> Vec<
 pub(crate) fn stated_separation_extent_guards(proposition: &Proposition) -> Vec<Proposition> {
     let mut guards = Vec::new();
     for range in stated_separation_memory_ranges(proposition) {
-        for guard in memory_range_byte_count_guards(
-            range.start().clone(),
-            range.end().clone(),
-            range.element_width(),
-        ) {
+        // A wide range's validity is its own pair of 64-bit guards.
+        let range_guards = match wide_memory_range_extent_guards(range) {
+            Some(guards) => guards,
+            None => memory_range_byte_count_guards(
+                range.start().clone(),
+                range.end().clone(),
+                range.element_width(),
+            ),
+        };
+        for guard in range_guards {
             if !guards.contains(&guard) {
                 guards.push(guard);
             }
@@ -2984,6 +3191,7 @@ impl CExecutionEnvironment {
                                 memory,
                                 base,
                                 bytes,
+                                wide: false,
                             } => {
                                 memory_snapshots_proven_equal_at_pointer(
                                     memory,

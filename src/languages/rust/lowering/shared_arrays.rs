@@ -27,7 +27,8 @@ impl Context<'_> {
             self.shared_array_iterators.insert(name.into(), element);
             vec![
                 ("cursor", pointer, true),
-                ("remaining", CType::Int32, false),
+                // The remaining count is a `usize`.
+                ("remaining", CType::UInt64, false),
                 ("live", CType::Int32, false),
             ]
         };
@@ -72,36 +73,23 @@ impl Context<'_> {
             },
         )?;
         let (l_capture, l) = self.capture_operand(length, &Type::Usize)?;
+        let begin = |remaining: CExpression| {
+            c_seq(
+                c_assign(format!("{target}_cursor"), c_variable(&p)),
+                c_seq(
+                    c_assign(format!("{target}_remaining"), remaining),
+                    c_assign(format!("{target}_live"), c_int32_literal(1)),
+                ),
+            )
+        };
+        // A held range states its own extent limit, so the count is the
+        // length as it is and nothing is asserted about it.
         Ok(c_seq(
             c_assert(c_equal(
                 c_variable(format!("{target}_live")),
                 c_int32_literal(0),
             )),
-            c_seq(
-                p_capture,
-                c_seq(
-                    l_capture,
-                    c_seq(
-                        c_labeled_assert(
-                            c_less_equal(
-                                c_variable(&l),
-                                c_uint64_literal(i32::MAX as u64 / u64::from(element.byte_width())),
-                            ),
-                            "Rust shared array iterator memory-model extent bound",
-                        ),
-                        c_seq(
-                            c_assign(format!("{target}_cursor"), c_variable(p)),
-                            c_seq(
-                                c_assign(
-                                    format!("{target}_remaining"),
-                                    c_cast(c_cast(c_variable(l), CType::UInt32), CType::Int32),
-                                ),
-                                c_assign(format!("{target}_live"), c_int32_literal(1)),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
+            c_seq(p_capture, c_seq(l_capture, begin(c_variable(&l)))),
         ))
     }
     pub(super) fn shared_array_live(&self, iterator: &str) -> Result<CStatement, String> {
@@ -118,7 +106,7 @@ impl Context<'_> {
             return Err("unknown shared iterator".into());
         }
         Ok(c_less_than(
-            c_int32_literal(0),
+            c_uint64_literal(0),
             c_variable(format!("{iterator}_remaining")),
         ))
     }
@@ -177,7 +165,7 @@ impl Context<'_> {
                     c_assign(&cursor, c_add(c_variable(&cursor), c_int32_literal(1))),
                     c_assign(
                         &remaining,
-                        c_subtract(c_variable(&remaining), c_int32_literal(1)),
+                        c_subtract(c_variable(&remaining), c_uint64_literal(1)),
                     ),
                 ),
             ),

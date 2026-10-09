@@ -411,6 +411,7 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
             Bitvector32Term::Variable(Variable(1)),
             Bitvector32Term::Constant(1),
         ),
+        wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
         &requirement,
@@ -453,6 +454,7 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
             Bitvector32Term::Variable(Variable(1)),
             Bitvector32Term::Constant(1),
         ),
+        wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
         &requirement,
@@ -484,6 +486,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
             _ => unreachable!(),
         },
         bytes: Bitvector32Term::Constant(4),
+        wide: false,
     };
     assert!(
         synthesize_source_projection_proposition_with_bound_variable_names(
@@ -545,6 +548,7 @@ fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -
                     )),
                     Box::new(index),
                 ),
+                wide: false,
             }),
         )),
     }
@@ -607,6 +611,7 @@ fn external_symbolic_element_requirement_term(
             )),
             Box::new(index),
         ),
+        wide: false,
     }
 }
 
@@ -871,6 +876,7 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
             )),
             Box::new(Bitvector32Term::Variable(Variable(100_001))),
         ),
+        wide: false,
     };
     assert!(synthesize_surface_proposition(&wrong_base, &parameters, &arguments, &state).is_none());
 
@@ -1014,6 +1020,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
             )),
             Box::new(Bitvector32Term::Variable(Variable(100_001))),
         ),
+        wide: false,
     };
     let synthesized = synthesize_surface_proposition(&requirement, &[], &[], &state)
         .expect("the general named-range path must remain available for local pointers");
@@ -1141,6 +1148,7 @@ fn external_element_range_requirement(
             Box::new(Bitvector32Term::Subtract(Box::new(end), Box::new(start))),
             Box::new(Bitvector32Term::Constant(width)),
         ),
+        wide: false,
     }
 }
 

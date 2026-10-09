@@ -809,16 +809,8 @@ impl EqualityGraph {
         &self,
         range: &crate::kernel::CMemoryRange,
     ) -> Option<u64> {
-        let start = self.address_class(
-            &range
-                .base()
-                .offset_by_elements(range.start().clone(), range.element_width()),
-        )?;
-        let end = self.address_class(
-            &range
-                .base()
-                .offset_by_elements(range.end().clone(), range.element_width()),
-        )?;
+        let start = self.address_class(&range.start_pointer())?;
+        let end = self.address_class(&range.end_pointer())?;
         Some(
             self.state
                 .lock()

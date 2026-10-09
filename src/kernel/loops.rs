@@ -6673,6 +6673,24 @@ pub(super) struct EvaluatedMemorySegment {
     pub(super) start: Bitvector32Term,
     pub(super) end: Bitvector32Term,
     pub(super) element_width: u32,
+    pub(super) kind: RangeIndexKind,
+}
+
+impl EvaluatedMemorySegment {
+    /// The range this segment denotes, in its own index kind.
+    pub(super) fn into_range(self) -> CMemoryRange {
+        match self.kind {
+            RangeIndexKind::Int32 => CMemoryRange::new_with_element_width(
+                self.base,
+                self.start,
+                self.end,
+                self.element_width,
+            ),
+            RangeIndexKind::UInt64 => {
+                CMemoryRange::new_wide(self.base, self.start, self.end, self.element_width)
+            }
+        }
+    }
 }
 
 fn evaluate_whole_loop_effect_ranges(
@@ -8409,9 +8427,10 @@ pub(super) fn collect_loop_effect_check_obligations(
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
                             base: range.base.clone(),
-                            start: range.start.clone(),
-                            end: range.end.clone(),
+                            start: range.start().clone(),
+                            end: range.end().clone(),
                             element_width: range.element_width,
+                            kind: RangeIndexKind::Int32,
                         })
                         .collect()
                 } else if matches!(
@@ -8494,8 +8513,8 @@ pub(super) fn collect_loop_effect_check_obligations(
                         format!(
                             "a call in the loop body may write {} outside the loop's mutable footprint ({})",
                             describe_loop_footprint_range(
-                                &range.start,
-                                &range.end,
+                                range.start(),
+                                range.end(),
                                 range.element_width
                             ),
                             describe_loop_footprint_segments(&segments)
@@ -8525,6 +8544,18 @@ pub(crate) fn place_index_from_wide(index: CExpression) -> CExpression {
     }
 }
 
+/// The bound a cast `(int32)bound` wraps.
+fn wide_bound_before_its_cast(bound: &CExpression) -> &CExpression {
+    match bound {
+        CExpression::Cast {
+            expression,
+            target_type: CType::Int32,
+            ..
+        } => expression,
+        bound => bound,
+    }
+}
+
 pub(super) fn evaluate_loop_effect_segment(
     state: &CState,
     segment: &CMemorySegment,
@@ -8547,6 +8578,32 @@ pub(super) fn evaluate_loop_effect_segment(
         }
         Err(message) => return Ok(Err(message)),
     };
+    // As in `evaluate_loop_effect_segment_with_facts`.
+    if matches!(
+        evaluate_loop_effect_segment_value(
+            state,
+            &segment.start,
+            assumptions,
+            "segment start",
+            budget
+        )?,
+        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
+    ) && let Ok(CValue::UInt64(end)) = evaluate_loop_effect_segment_value(
+        state,
+        wide_bound_before_its_cast(&segment.end),
+        assumptions,
+        "segment end",
+        budget,
+    )? && end.uint64_as_const().is_none()
+    {
+        return Ok(Ok(EvaluatedMemorySegment {
+            base,
+            start: Bitvector32Term::UInt64Constant(0),
+            end,
+            element_width: segment.element_width,
+            kind: RangeIndexKind::UInt64,
+        }));
+    }
     let start = match evaluate_loop_effect_segment_value(
         state,
         &segment.start,
@@ -8620,6 +8677,7 @@ pub(super) fn evaluate_loop_effect_segment(
         start,
         end,
         element_width,
+        kind: RangeIndexKind::Int32,
     }))
 }
 
@@ -8660,6 +8718,26 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         }
         Err(message) => return Ok(Err(message)),
     };
+    // A range from constant zero to an unsigned 64-bit bound keeps that
+    // bound's type.
+    if matches!(
+        evaluate(&segment.start, "segment start")?,
+        Ok(CValue::Int32(Bitvector32Term::Constant(0)))
+    ) && let Ok(CValue::UInt64(end)) =
+        evaluate(wide_bound_before_its_cast(&segment.end), "segment end")?
+        && end.uint64_as_const().is_none()
+    {
+        return Ok(Ok((
+            EvaluatedMemorySegment {
+                base,
+                start: Bitvector32Term::UInt64Constant(0),
+                end,
+                element_width: segment.element_width,
+                kind: RangeIndexKind::UInt64,
+            },
+            facts.into(),
+        )));
+    }
     let start = match evaluate(&segment.start, "segment start")? {
         Ok(CValue::Int32(value)) => value,
         // A 64-bit bound is converted as `(int32)bound` converts it.
@@ -8716,6 +8794,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
             start,
             end,
             element_width,
+            kind: RangeIndexKind::Int32,
         },
         facts.into(),
     )))

@@ -133,11 +133,7 @@ impl RangeSupports {
         if Self::needs_base(range) {
             graph.address_class(range.base());
         }
-        graph.address_class(
-            &range
-                .base()
-                .offset_by_elements(range.start().clone(), range.element_width()),
-        );
+        graph.address_class(&range.start_pointer());
         if Self::symbolic(range) {
             graph.footprint_class(range);
         }
@@ -151,7 +147,7 @@ impl RangeSupports {
         }
     }
     fn symbolic(range: &CMemoryRange) -> bool {
-        range.start().as_const().is_none() || range.end().as_const().is_none()
+        range.has_symbolic_bounds()
     }
     pub(super) fn update(
         &mut self,
@@ -189,9 +185,7 @@ impl RangeSupports {
             }
         }
         if Self::symbolic(range) {
-            let start = range
-                .base()
-                .offset_by_elements(range.start().clone(), range.element_width());
+            let start = range.start_pointer();
             if let Some(class) = graph.address_class(&start) {
                 self.read_starts.update(entry, insert, class, graph);
             }
@@ -309,7 +303,7 @@ impl ResourceContext {
         // lowering formed it. This is a conversion of one selected footprint,
         // not another supplier search or an inferred permission premise.
         let element_required = (required.element_width() == 1
-            && required.start().as_const() == Some(0))
+            && required.constant_start() == Some(0))
         .then(|| {
             crate::kernel::reasoning::element_count_from_bytes(
                 required.end(),

@@ -216,8 +216,8 @@ mod resource_frame_substitution_tests {
         let actual = effect_checks[0]
             .validated_ranges()
             .expect("validated carrier must be retained");
-        assert_eq!(actual[0].start, Bitvector32Term::Constant(4));
-        assert_eq!(actual[0].end, Bitvector32Term::Constant(5));
+        assert_eq!(actual[0].start(), &Bitvector32Term::Constant(4));
+        assert_eq!(actual[0].end(), &Bitvector32Term::Constant(5));
         assert_eq!(actual[0].base.offset, PointerOffsetTerm::Constant(16));
     }
 
@@ -483,10 +483,12 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             memory,
             base,
             bytes,
+            wide,
         } => Proposition::CMemoryLoadable {
             memory: substitute_bitvector_variable_in_memory(memory, from, to),
             base: substitute_bitvector_variable_in_pointer(base, from, to),
             bytes: substitute_bitvector_variable(bytes, from, to),
+            wide: *wide,
         },
         Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
             left: Box::new(substitute_bitvector_variable_in_c_resource(left, from, to)),
@@ -919,6 +921,7 @@ fn collect_proposition_bound_variables_one(
             memory,
             base,
             bytes,
+            wide: _,
         } => {
             collect_memory_bound_variables(memory, variables);
             collect_pointer_bound_variables(base, variables);
@@ -957,8 +960,8 @@ fn collect_proposition_bound_variables_one(
             collect_memory_bound_variables(after, variables);
             for range in mutable_ranges {
                 collect_pointer_bound_variables(&range.base, variables);
-                collect_bitvector_bound_variables(&range.start, variables);
-                collect_bitvector_bound_variables(&range.end, variables);
+                collect_bitvector_bound_variables(range.bound_terms().0, variables);
+                collect_bitvector_bound_variables(range.bound_terms().1, variables);
             }
         }
         Proposition::CHeapAllocationFreed {
@@ -1539,8 +1542,8 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
 
         CResource::Memory(range) => {
             collect_pointer_bound_variables(&range.base, variables);
-            collect_bitvector_bound_variables(&range.start, variables);
-            collect_bitvector_bound_variables(&range.end, variables);
+            collect_bitvector_bound_variables(range.bound_terms().0, variables);
+            collect_bitvector_bound_variables(range.bound_terms().1, variables);
         }
         CResource::Iterated(iterated) => {
             for pointer in iterated.pointers() {
@@ -2631,6 +2634,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         memory,
         base,
         bytes,
+        wide: false,
     } = proposition
     else {
         unreachable!("memory-viewable helper called for another proposition carrier")
@@ -2651,6 +2655,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         memory: memory.clone(),
         base: pointer.pointer().clone(),
         bytes,
+        wide: false,
     })
 }
 
@@ -4456,8 +4461,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_memory_range(
 ) -> CMemoryRange {
     range.with_bounds(
         substitute_bitvector_variable_in_pointer(&range.base, from, to),
-        substitute_bitvector_variable(&range.start, from, to),
-        substitute_bitvector_variable(&range.end, from, to),
+        substitute_bitvector_variable(range.bound_terms().0, from, to),
+        substitute_bitvector_variable(range.bound_terms().1, from, to),
     )
 }
 
@@ -5757,10 +5762,12 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             memory,
             base,
             bytes,
+            wide,
         } => Proposition::CMemoryLoadable {
             memory: substitute_pointer_variable_in_memory(memory, from, to),
             base: substitute_pointer_variable_in_pointer(base, from, to),
             bytes: bytes.clone(),
+            wide: *wide,
         },
         Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
             left: Box::new(substitute_pointer_variable_in_c_resource(left, from, to)),
@@ -6868,8 +6875,8 @@ fn substitute_pointer_variable_in_c_memory_range(
 ) -> CMemoryRange {
     range.with_bounds(
         substitute_pointer_variable_in_pointer(&range.base, from, to),
-        range.start.clone(),
-        range.end.clone(),
+        range.bound_terms().0.clone(),
+        range.bound_terms().1.clone(),
     )
 }
 

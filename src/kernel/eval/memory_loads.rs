@@ -1153,6 +1153,7 @@ fn evaluate_c_memory_load_case(
             memory: memory.clone(),
             base: pointer.clone(),
             bytes: Bitvector32Term::Constant(value_type.byte_width()),
+            wide: false,
         };
         if purpose == LoadPurpose::Validity {
             if add_proof_obligation(&mut obligations, assumptions, proposition).is_none() {
@@ -1420,13 +1421,18 @@ fn symbolic_index_run_load(
         .candidate_runs(&AliasCandidates::of_block(&pointer.block))
         .find(|run| {
             crate::instrumentation::record_deterministic_work(1);
-            let RunAccess::Scaled {
-                index,
-                scale,
-                shift,
-            } = run_access(run, pointer)
-            else {
-                return false;
+            let (index, scale, shift, wide) = match run_access(run, pointer) {
+                RunAccess::Scaled {
+                    index,
+                    scale,
+                    shift,
+                } => (index, scale, shift, false),
+                RunAccess::ScaledWide {
+                    index,
+                    scale,
+                    shift,
+                } => (index, scale, shift, true),
+                _ => return false,
             };
             let width = i64::from(run.element_width());
             if run.element_type() != value_type
@@ -1437,6 +1443,27 @@ fn symbolic_index_run_load(
                 return false;
             }
             let first_element = shift.div_euclid(width);
+            // An unsigned 64-bit index starts at zero, so its slots begin at
+            // `first_element`; they all lie in one live interval when the
+            // index is decided below that interval's remaining length.
+            if wide {
+                let Ok(first) = u32::try_from(first_element) else {
+                    return false;
+                };
+                return run
+                    .live_intervals()
+                    .intervals()
+                    .iter()
+                    .any(|(live_low, live_high)| {
+                        *live_low <= first
+                            && first < *live_high
+                            && *live_high <= run.count()
+                            && assumptions.decide(&ConditionTerm::uint64_less_than(
+                                index.clone(),
+                                Bitvector32Term::UInt64Constant(u64::from(*live_high - first)),
+                            )) == Some(true)
+                    });
+            }
             let Some((low, high)) = assumptions.signed_interval_past_exclusions(&index) else {
                 return false;
             };
@@ -4255,6 +4282,7 @@ mod tests {
                 memory: memory.clone(),
                 base: cell.clone(),
                 bytes: Bitvector32Term::Constant(8),
+                wide: false,
             });
         let paths = evaluate_spec_memory_load_paths(
             &memory,
@@ -4297,6 +4325,7 @@ mod tests {
                         memory: memory.clone(),
                         base: cell.clone(),
                         bytes: Bitvector32Term::Constant(8),
+                        wide: false,
                     });
                 for logical in [false, true] {
                     let paths = if logical {
@@ -4968,6 +4997,7 @@ mod tests {
                 memory: memory.clone(),
                 base: alias.clone(),
                 bytes: 8u32.into(),
+                wide: false,
             });
         let context = without_alias.clone().assume_condition(
             ConditionTerm::pointer_equal(owner.clone(), alias.clone()),

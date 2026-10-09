@@ -12,7 +12,6 @@ use super::primitives::{
     PointerBlock, ResourceMemoryIntervalNode, memory_interval_ancestors, memory_interval_nodes,
     memory_range_is_proven_empty, memory_ranges_proven_overlapping,
 };
-use super::reasoning::signed_bitvector_constant;
 use super::{
     Bitvector32Term, CMemoryRange, CResource, CResourceFact, CResourceSnapshot,
     CResourceTransferRole, PureFactContext, ResourceContext, ResourceDescription,
@@ -526,8 +525,8 @@ fn without_unindexed_memory(
 fn memory_range_is_empty(range: &CMemoryRange) -> bool {
     matches!(
         (
-            signed_bitvector_constant(range.start()),
-            signed_bitvector_constant(range.end()),
+            range.signed_constant_start(),
+            range.signed_constant_end(),
         ),
         (Some(start), Some(end)) if start >= end
     )
@@ -545,7 +544,12 @@ fn memory_range_aliases(range: &CMemoryRange, assumptions: &PureFactContext) -> 
     }
     bases
         .into_iter()
-        .map(|base| range.with_bounds(base, range.start().clone(), range.end().clone()))
+        .map(|base| {
+            // The bounds move unread to another spelling of the base, so
+            // either kind of range is rebased the same way.
+            let (start, end) = range.bound_terms();
+            range.with_bounds(base, start.clone(), end.clone())
+        })
         .collect()
 }
 
@@ -612,6 +616,20 @@ fn protected_range_proven_overlapping_with_separation(
     };
     queries.iter().any(|query| {
         protected_ranges.iter().any(|protected| {
+            // A wide range has no 32-bit byte footprint. Its overlap is
+            // decided on its own 64-bit bounds, and an explicit separation
+            // vetoes it last, as in the byte comparison.
+            if query.wide_bounds().is_some() || protected.wide_bounds().is_some() {
+                return super::primitives::wide_memory_ranges_proven_overlapping(
+                    query,
+                    protected,
+                    assumptions,
+                ) && (!use_separation
+                    || !assumptions
+                        .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                            query, protected,
+                        ));
+            }
             let (query, protected) = (byte_range(query), byte_range(protected));
             let overlapping = if use_separation {
                 memory_ranges_proven_overlapping
@@ -632,8 +650,8 @@ fn protected_ranges_constant_overlap(
     // and large widths must not wrap through a 32-bit byte-count term.
     let byte_bounds = |range: &CMemoryRange| {
         let width = i64::from(range.element_width());
-        let start = signed_bitvector_constant(range.start())?;
-        let end = signed_bitvector_constant(range.end())?;
+        let start = range.signed_constant_start()?;
+        let end = range.signed_constant_end()?;
         (start < end).then_some(())?;
         Some((start.checked_mul(width)?, end.checked_mul(width)?))
     };
@@ -2830,9 +2848,29 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         };
         let same_memory_extent = match (requirement.fact.resource(), caller_fact.resource()) {
             (CResource::Memory(required), CResource::Memory(caller)) => {
-                let (_, required_bytes) = required.byte_footprint();
-                let (_, caller_bytes) = caller.byte_footprint();
-                assumptions.bitvector_terms_equal_for_transport(&required_bytes, &caller_bytes)
+                match (required.wide_bounds(), caller.wide_bounds()) {
+                    (None, None) => {
+                        let (_, required_bytes) = required.byte_footprint();
+                        let (_, caller_bytes) = caller.byte_footprint();
+                        assumptions
+                            .bitvector_terms_equal_for_transport(&required_bytes, &caller_bytes)
+                    }
+                    // Two wide ranges have one extent when their widths and
+                    // 64-bit bounds agree.
+                    (Some((required_start, required_end)), Some((caller_start, caller_end))) => {
+                        let same = |left: &Bitvector32Term, right: &Bitvector32Term| {
+                            left == right
+                                || assumptions.decide(&crate::kernel::ConditionTerm::uint64_equal(
+                                    left.clone(),
+                                    right.clone(),
+                                )) == Some(true)
+                        };
+                        required.element_width() == caller.element_width()
+                            && same(required_start, caller_start)
+                            && same(required_end, caller_end)
+                    }
+                    _ => false,
+                }
             }
             _ => false,
         };
@@ -2967,9 +3005,11 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             CResource::Memory(_) | CResource::Token { .. } => {}
         }
-        if requirement.fact.memory_range().is_some_and(|range| {
-            range.start().as_const().is_none() || range.end().as_const().is_none()
-        }) {
+        if requirement
+            .fact
+            .memory_range()
+            .is_some_and(|range| range.constant_start().is_none() || range.constant_end().is_none())
+        {
             // A symbolic view range is plannable exactly when one owned
             // occurrence already covers it: the entailment above is the
             // checked coverage witness, and the whole covering owner becomes
@@ -3126,7 +3166,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 clusters[cluster_index].push(item);
                 continue;
             };
-            if range.start().as_const().is_none() || range.end().as_const().is_none() {
+            if range.constant_start().is_none() || range.constant_end().is_none() {
                 return Err(StableViewPlanError::UnsupportedPartition);
             }
             memory_items.push((item, range));
@@ -3140,8 +3180,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             left.base()
                 .cmp(right.base())
                 .then_with(|| left.element_width().cmp(&right.element_width()))
-                .then_with(|| left.start().as_const().cmp(&right.start().as_const()))
-                .then_with(|| left.end().as_const().cmp(&right.end().as_const()))
+                .then_with(|| left.constant_start().cmp(&right.constant_start()))
+                .then_with(|| left.constant_end().cmp(&right.constant_end()))
         });
         for (item, range) in memory_items {
             let can_extend = cluster_unions
@@ -4044,10 +4084,10 @@ fn concrete_memory_union(left: &CMemoryRange, right: &CMemoryRange) -> Option<CM
     if left.base() != right.base() || left.element_width() != right.element_width() {
         return None;
     }
-    let left_start = left.start().as_const()?;
-    let left_end = left.end().as_const()?;
-    let right_start = right.start().as_const()?;
-    let right_end = right.end().as_const()?;
+    let left_start = left.constant_start()?;
+    let left_end = left.constant_end()?;
+    let right_start = right.constant_start()?;
+    let right_end = right.constant_end()?;
     if left_start > left_end || right_start > right_end {
         return None;
     }

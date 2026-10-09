@@ -27,7 +27,11 @@ fn write_read(bytes: &mut [u8], index: usize, value: u8) -> u8 {
     owns bytes[0..bytes.len()];
     ensures result == value;
     ensures bytes[index] == value;
-} by { execute(); simp(); }
+} by {
+    execute();
+    have result == bytes[index] by { simp(); }
+    simp();
+}
 
 impl Drop for Guard {
     fn drop(&mut self) {

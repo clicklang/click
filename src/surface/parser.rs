@@ -534,11 +534,6 @@ struct Parser {
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
-    /// The 64-bit integer parameters of the signature being parsed: a Rust
-    /// `usize` and a slice's length, a C `uint64`, `int64` or `size_t`. One
-    /// written alone as an index is converted to the 32-bit index a place
-    /// takes (`design/typed-indices.md`, stage 1).
-    wide_index_params: BTreeSet<String>,
     /// The type of the `impl` block being parsed: its methods are the
     /// functions `Type_name`, and `self` is their receiver.
     rust_impl_type: Option<String>,
@@ -863,7 +858,6 @@ impl Parser {
             hidden_child_fields: BTreeMap::new(),
             verifies_rust: false,
             rust_slice_params: BTreeSet::new(),
-            wide_index_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
             rust_impl_module: None,
@@ -3371,7 +3365,6 @@ impl Parser {
             });
         }
         self.rust_slice_params.clear();
-        self.wide_index_params.clear();
         if self.peek_ident() == Some("fn") {
             return self.parse_rust_function_signature();
         }
@@ -3431,17 +3424,6 @@ impl Parser {
         if diverges && self.peek_ident() == Some("throws") {
             return Err(self.error("`throws` must come before `diverges` in a signature"));
         }
-        self.wide_index_params = parsed_parameters
-            .parameters
-            .iter()
-            .filter(|parameter| {
-                matches!(
-                    parameter.click_type(),
-                    ClickType::C(C0Type::UInt64 | C0Type::Int64)
-                )
-            })
-            .map(|parameter| parameter.name().to_string())
-            .collect();
         let struct_params = parsed_parameters.struct_params;
         let struct_array_params = parsed_parameters.struct_array_params;
         let reference_params = parsed_parameters.reference_params;
@@ -3521,7 +3503,6 @@ impl Parser {
                 // sidecar names the slice once and reads `bytes.len()`.
                 let length = format!("{parameter_name}_len");
                 self.rust_slice_params.insert(parameter_name.clone());
-                self.wide_index_params.insert(length.clone());
                 parameters.push(
                     self.parse_parameter_array_suffix(parameter_name, element)?
                         .parameter,
@@ -3543,9 +3524,6 @@ impl Parser {
                 }
                 self.position += 1;
                 continue;
-            }
-            if self.peek_ident() == Some("usize") {
-                self.wide_index_params.insert(parameter_name.clone());
             }
             let parsed_type = self.parse_rust_type()?;
             let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
@@ -3812,7 +3790,7 @@ impl Parser {
     #[inline(never)]
     fn parse_place_index(&mut self) -> Result<ContractExpression, ClickError> {
         let index = self.parse_contract_expression()?;
-        Ok(self.rust_place_index(index))
+        Ok(index)
     }
 
     /// The right operand of a binary operator, with any Rust `as` casts.
@@ -3828,32 +3806,6 @@ impl Parser {
     fn c_variable_expression(&mut self, name: String) -> ContractExpression {
         let name = self.take_rust_slice_len(&name).unwrap_or(name);
         ContractExpression::CFragment(CExpression::Variable(name))
-    }
-
-    /// An index or range bound. A place takes a 32-bit index, so a 64-bit
-    /// parameter or a slice length written alone is converted as the cast
-    /// `(int32)index` converts it. The contract still states the bound that
-    /// makes the conversion exact. Any other expression is left as written:
-    /// a range bound is converted where it is lowered, whatever it is, and
-    /// an index that is not a lone parameter takes the cast.
-    #[inline(never)]
-    fn rust_place_index(&self, index: ContractExpression) -> ContractExpression {
-        let ContractExpression::CFragment(CExpression::Variable(name)) = &index else {
-            return index;
-        };
-        if !self.wide_index_params.contains(name) {
-            return index;
-        }
-        let lowered = CExpression::Cast {
-            expression: Box::new(CExpression::Variable(name.clone())),
-            target_type: CType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
-            pointee_struct: None,
-            pointee_volatile: false,
-            pointee_constant: false,
-            explicit_qualification: false,
-        };
-        crate::surface::lowering::contract_c_unary(index, lowered)
     }
 
     /// `name.len()` where `name` is a slice parameter: consumes `.len()` and
@@ -9367,7 +9319,7 @@ impl Parser {
             {
                 let length =
                     ContractExpression::CFragment(CExpression::Variable(format!("{name}_len")));
-                let end_expression = self.rust_place_index(length);
+                let end_expression = length;
                 let end = contract_expression_as_c_fragment(&end_expression)
                     .expect("a slice length is a C expression");
                 let start = CExpression::Value(int32(0));
@@ -9457,7 +9409,6 @@ impl Parser {
             .transpose()?;
         self.expect(Token::LBracket)?;
         let start_expression = self.parse_contract_expression()?;
-        let start_expression = self.rust_place_index(start_expression);
         let mut start = resource_body_c_fragment(&start_expression).ok_or_else(|| {
             self.error(
                 "memory segment start must be a current C expression or a scalar field of the resource being defined",
@@ -9465,7 +9416,6 @@ impl Parser {
         })?;
         self.expect(Token::DotDot)?;
         let end_expression = self.parse_contract_expression()?;
-        let end_expression = self.rust_place_index(end_expression);
         let mut end = resource_body_c_fragment(&end_expression).ok_or_else(|| {
             self.error(
                 "memory segment end must be a current C expression or a scalar field of the resource being defined",

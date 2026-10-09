@@ -1709,6 +1709,7 @@ fn pointer_has_object_provenance_evidence(
                     memory,
                     base,
                     bytes,
+                    wide: false,
                 } = proposition
                 else {
                     unreachable!("viewability object index contains only viewability facts")
@@ -2162,14 +2163,8 @@ fn pointer_index_term(
         }
         CValue::UInt32(value) => Some((Bitvector32Term::uint64_from_32(value), true, true)),
         CValue::Int64(value) => Some((value, false, true)),
-        // The same for a sixty-four-bit unsigned index an unsigned order
-        // fact bounds below `2^31`: it is its own low word, read as a
-        // nonnegative signed one, and the fact filed that word's range. An
-        // index pinned by an equality keeps its exact form, which the
-        // element rules read through the constant.
-        CValue::UInt64(value) if uint64_index_has_signed_word_range(&value, facts, assumptions) => {
-            Some((Bitvector32Term::uint32_from_64(value), false, false))
-        }
+        // A 64-bit index keeps its own form, so a body's access and a
+        // contract's place name one address in one spelling.
         CValue::UInt64(value) => Some((value, true, true)),
         CValue::Int128(_)
         | CValue::UInt128(_)
@@ -2178,38 +2173,6 @@ fn pointer_index_term(
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
-}
-
-/// Whether an unsigned order fact bounds the `uint64` index `value` below
-/// `2^31`, so a context holding it files the signed range of its low word:
-/// the sign-bit bound `value <=u INT_MAX` that filing records, held by key,
-/// or a path fact of that shape on `value` itself. Keyed lookups and one
-/// constant-size match per path fact.
-fn uint64_index_has_signed_word_range(
-    value: &Bitvector32Term,
-    facts: &(impl ExecutionFactSource + ?Sized),
-    assumptions: &PureFactContext,
-) -> bool {
-    let sign_bit_clear = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(
-            value.clone(),
-            Bitvector32Term::UInt64Constant(i32::MAX as u64),
-        ),
-        true,
-    );
-    // Exact constant indices retain their wide form: memory resolution reads
-    // their equality directly, including across an unrelated store.
-    let range_from_order_chain = assumptions.wide_constant_from_equalities(value).is_none()
-        && matches!(&sign_bit_clear, Proposition::ConditionIs(condition, true) if assumptions.decide(condition) == Some(true));
-    assumptions.proves_exact(&sign_bit_clear)
-        || range_from_order_chain
-        || facts.fact_iter().any(|fact| match fact.proposition() {
-            Proposition::ConditionIs(condition, held) => {
-                crate::kernel::assumptions::uint64_upper_bound_below_sign_bit(condition, *held)
-                    .is_some_and(|(term, _, _)| term == value)
-            }
-            _ => false,
-        })
 }
 
 fn pointer_offset_by_elements_paths(
@@ -2256,9 +2219,15 @@ fn pointer_offset_by_elements_paths(
     // wide operand needs a wide addition guard instead. This catches the cumulative case
     // `data + INT_MAX + 1`, even though each individual source operand is a
     // valid int32.
+    // An unsigned 64-bit operand decided to be at most `INT_MAX` cannot
+    // overflow the sum with a signed 32-bit index, so it owes no guard:
+    // the guard below reads the operand as signed, which order facts over
+    // an unsigned value do not decide.
+    let small_unsigned = wide && unsigned && assumptions.uint64_index_fits_int32(&offset);
     if let Some(index) = pointer_index_from_offset(&pointer, byte_width)
         && index != Bitvector32Term::Constant(0)
         && offset != Bitvector32Term::Constant(0)
+        && !small_unsigned
     {
         guards.push(PointerFormationGuard {
             condition: if wide {
@@ -2822,9 +2791,16 @@ impl HeldRangeSurvey {
         judge: bool,
         from_operand: bool,
         guard_source: bool,
+        wide: bool,
     ) -> bool {
-        let lower = ConditionTerm::signed_less_equal(start, index.clone());
-        let upper = ConditionTerm::signed_less_equal(index, end);
+        // A wide range orders its unsigned 64-bit bounds and index.
+        let order = if wide {
+            ConditionTerm::uint64_less_equal
+        } else {
+            ConditionTerm::signed_less_equal
+        };
+        let lower = order(start, index.clone());
+        let upper = order(index, end);
         match (
             decide_with_facts(assumptions, facts, &lower),
             decide_with_facts(assumptions, facts, &upper),
@@ -2910,7 +2886,38 @@ fn held_range_membership(
             if range.element_width() != byte_width {
                 continue;
             }
-            let Some(index) = pointer_index_from_base(pointer, range.base(), byte_width) else {
+            if let Some((start, end)) = range.wide_bounds() {
+                let Some(index) = pointer.wide_element_index_from_base(range.base(), byte_width)
+                else {
+                    continue;
+                };
+                if survey.consider(
+                    assumptions,
+                    facts,
+                    start.clone(),
+                    index,
+                    end.clone(),
+                    range.base().object_base() == object,
+                    range.base() == operand,
+                    true,
+                    true,
+                ) {
+                    return HeldRangeMembership::Inside;
+                }
+                continue;
+            }
+            // A 64-bit index keeps its own form in the pointer. Against a
+            // range of 32-bit indices it is read as one where it is proved
+            // to fit.
+            let Some(index) =
+                pointer_index_from_base(pointer, range.base(), byte_width).or_else(|| {
+                    crate::kernel::reasoning::element_index_from_offset_with_facts(
+                        &pointer.offset_from_base(range.base())?,
+                        byte_width,
+                        assumptions,
+                    )
+                })
+            else {
                 continue;
             };
             if survey.consider(
@@ -2922,6 +2929,7 @@ fn held_range_membership(
                 range.base().object_base() == object,
                 range.base() == operand,
                 true,
+                false,
             ) {
                 return HeldRangeMembership::Inside;
             }
@@ -2932,6 +2940,7 @@ fn held_range_membership(
             memory,
             base,
             bytes,
+            wide: false,
         } = proposition
         else {
             continue;
@@ -2954,6 +2963,7 @@ fn held_range_membership(
             offset,
             bytes.clone(),
             true,
+            false,
             false,
             false,
         ) {

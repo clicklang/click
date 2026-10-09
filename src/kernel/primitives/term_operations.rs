@@ -2269,6 +2269,16 @@ impl ConditionTerm {
                     Self::uint64_less_equal(midpoint.as_ref().clone(), length.as_ref().clone())
                 })
             }
+            // `length - c < length` for a constant `c >= 1`, when the
+            // difference does not wrap: `c <= length`.
+            Self::Bitvector64UnsignedLessThan(difference, upper) => {
+                let Bitvector32Term::UInt64Subtract(length, midpoint) = difference.as_ref() else {
+                    return None;
+                };
+                (length == upper && midpoint.uint64_as_const().is_some_and(|c| c >= 1)).then(|| {
+                    Self::uint64_less_equal(midpoint.as_ref().clone(), length.as_ref().clone())
+                })
+            }
             _ => None,
         }
     }
@@ -3581,6 +3591,29 @@ impl Pointer {
 
     pub(crate) fn element_index_from_base(&self, base: &Self) -> Option<Bitvector32Term> {
         self.element_index_from_base_with_width(base, 4)
+    }
+
+    /// This pointer's exact unsigned 64-bit element index from `base`, for
+    /// elements of `byte_width` bytes: the index of a wide offset `i *
+    /// byte_width`, or a nonnegative constant offset divided out. No
+    /// 32-bit reading of an index takes part.
+    pub(crate) fn wide_element_index_from_base(
+        &self,
+        base: &Self,
+        byte_width: u32,
+    ) -> Option<Bitvector32Term> {
+        let width = i64::from(byte_width);
+        match self.offset_from_base(base)? {
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned: true,
+            } if byte_width == width => Some(*value),
+            PointerOffsetTerm::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
+                Some(Bitvector32Term::UInt64Constant((bytes / width) as u64))
+            }
+            _ => None,
+        }
     }
 
     pub(crate) fn element_index_from_base_with_width(

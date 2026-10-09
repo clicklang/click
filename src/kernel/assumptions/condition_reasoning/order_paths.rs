@@ -2176,9 +2176,25 @@ impl PureFactContext {
             term.clone(),
             Bitvector32Term::UInt64Constant(i32::MAX as u64),
         );
-        guard.reflexive_value() == Some(true)
+        if guard.reflexive_value() == Some(true)
             || self.exact_condition_value(&guard) == Some(true)
             || self.decide_uint64_constant_order_bounds_inner(&guard, true) == Some(true)
+        {
+            return true;
+        }
+        // `x - c` for a constant `c` fits where `x` does and the
+        // difference does not wrap, `c <= x`. Both are 64-bit facts about
+        // `x` itself.
+        if let Bitvector32Term::UInt64Subtract(minuend, subtrahend) = term
+            && subtrahend.uint64_as_const().is_some()
+        {
+            return self.uint64_index_fits_int32(minuend)
+                && self.decide(&ConditionTerm::uint64_less_equal(
+                    subtrahend.as_ref().clone(),
+                    minuend.as_ref().clone(),
+                )) == Some(true);
+        }
+        false
     }
 
     /// The signed counterpart: the full signed value lies in `0..=INT_MAX`,
@@ -2356,10 +2372,11 @@ impl PureFactContext {
     /// and whether some chain does so strictly: `Some(true)` for a strict
     /// chain, `Some(false)` for a chain of `<=` only, `None` for no chain.
     ///
-    /// One walk over the queried kind's order index, from `lower` along
-    /// upper edges, or from `upper` along lower edges when `lower` is a
-    /// literal. Each term is visited at most twice, once reached strictly
-    /// and once not, and only the edges of a visited term are read. A
+    /// One walk over the queried kind's direction-split edges, from `lower`
+    /// along upper edges, or from `upper` along lower edges when `lower` is
+    /// a literal. Each term is visited at most twice, once reached strictly
+    /// and once not, and only the edges leaving a visited term in the
+    /// walk's direction are read. A
     /// literal is an end of a chain and never a step in one: its edges name
     /// every term bounded by it, related to the question or not. Terms join
     /// by their canonical spelling; a visited term and the far end that
@@ -2371,11 +2388,6 @@ impl PureFactContext {
         upper: &Bitvector32Term,
         unsigned: bool,
     ) -> Option<bool> {
-        let index = if unsigned {
-            &self.uint64_order_bounds
-        } else {
-            &self.int64_signed_order_bounds
-        };
         let literal = |term: &Bitvector32Term| {
             term.uint64_as_const().is_some() || term.int64_as_const().is_some()
         };
@@ -2387,6 +2399,8 @@ impl PureFactContext {
         } else {
             (upper, lower)
         };
+        // Only the edges leaving a term in the walk's direction are read.
+        let index = &self.wide_order_edges[usize::from(!unsigned)][usize::from(!upward)];
         let goal_constant = self.wide_constant_from_equalities(&goal);
         // How a visited value and the goal's value order along the walk.
         let toward_goal = |value: u64, goal: u64| {
@@ -2427,14 +2441,9 @@ impl PureFactContext {
             let Some(edges) = index.get(&term) else {
                 continue;
             };
-            for (_, other, strict, forward) in edges.keys() {
+            for (other, strict) in edges.keys() {
                 crate::instrumentation::record_deterministic_work(1);
-                if *forward == upward {
-                    stack.push((
-                        crate::kernel::eval::canonical_term(other),
-                        strict_so_far || *strict,
-                    ));
-                }
+                stack.push((other.clone(), strict_so_far || *strict));
             }
         }
         chained
@@ -2453,6 +2462,21 @@ impl PureFactContext {
                 (lower, upper, strict, false)
             }
         };
+        // An unsigned value held unequal to zero is at least one.
+        if unsigned
+            && matches!(
+                (lower.uint64_as_const(), strict),
+                (Some(0), true) | (Some(1), false)
+            )
+            && [
+                ConditionTerm::uint64_equal(upper.clone(), Bitvector32Term::UInt64Constant(0)),
+                ConditionTerm::uint64_equal(Bitvector32Term::UInt64Constant(0), upper.clone()),
+            ]
+            .iter()
+            .any(|zero| self.exact_condition_value(zero) == Some(false))
+        {
+            return Some(true);
+        }
         match self.wide_order_chain(&lower, &upper, unsigned) {
             Some(true) => return Some(true),
             Some(false) if !strict => return Some(true),

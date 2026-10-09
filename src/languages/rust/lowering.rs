@@ -685,13 +685,9 @@ impl Context<'_> {
             (left, c_variable(&pointer_name), c_variable(&midpoint_name)),
             (
                 right,
-                c_add(
-                    c_variable(&pointer_name),
-                    c_cast(
-                        c_cast(c_variable(&midpoint_name), CType::UInt32),
-                        CType::Int32,
-                    ),
-                ),
+                // The right half starts at the midpoint in its own type, as
+                // the contract's `bytes[mid]` does.
+                c_add(c_variable(&pointer_name), c_variable(&midpoint_name)),
                 c_subtract(c_variable(&length_name), c_variable(&midpoint_name)),
             ),
         ] {
@@ -803,6 +799,7 @@ impl Context<'_> {
                 }),
             )
         };
+        // The remaining count is the slice's length, a `usize`.
         let next = c_seq(
             c_declare_with_all_qualifiers(&item, CType::UInt8Pointer, false, false, false, true),
             c_seq(
@@ -812,7 +809,7 @@ impl Context<'_> {
                     c_seq(
                         c_assign(
                             &remaining,
-                            c_subtract(c_variable(&remaining), c_int32_literal(1)),
+                            c_subtract(c_variable(&remaining), c_uint64_literal(1)),
                         ),
                         c_seq(declaration, c_assign(&binding.name, yielded)),
                     ),
@@ -821,33 +818,17 @@ impl Context<'_> {
         );
         let source_body = self.body(body)?;
         Ok(c_seq(
-            c_labeled_assert(
-                c_less_equal(length.clone(), c_uint64_literal(i32::MAX as u64)),
-                "Rust iterator memory-model length bound",
-            ),
+            c_declare_with_all_qualifiers(&cursor, CType::UInt8Pointer, false, false, false, true),
             c_seq(
-                c_declare_with_all_qualifiers(
-                    &cursor,
-                    CType::UInt8Pointer,
-                    false,
-                    false,
-                    false,
-                    true,
-                ),
+                c_assign(&cursor, pointer),
                 c_seq(
-                    c_assign(&cursor, pointer),
+                    c_declare(&remaining, CType::UInt64),
                     c_seq(
-                        c_declare(&remaining, CType::Int32),
-                        c_seq(
-                            c_assign(
-                                &remaining,
-                                c_cast(c_cast(length, CType::UInt32), CType::Int32),
-                            ),
-                            c_while(
-                                c_not(c_equal(c_variable(&remaining), c_int32_literal(0))),
-                                Vec::new(),
-                                c_seq(next, source_body),
-                            ),
+                        c_assign(&remaining, length),
+                        c_while(
+                            c_not(c_equal(c_variable(&remaining), c_uint64_literal(0))),
+                            Vec::new(),
+                            c_seq(next, source_body),
                         ),
                     ),
                 ),
@@ -1368,17 +1349,8 @@ impl Context<'_> {
             let (checks, value) = self.prepared_expr(index)?;
             let (capture, name) = self.capture_operand(value, &Type::Usize)?;
             let index = c_variable(name);
-            // Fixed-array extents have already been checked against signed-word
-            // storage. Only after the full-width Rust bound below succeeds may
-            // their index use the shared model's signed-word offset.
-            let offset = if matches!(
-                length,
-                CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(_)))
-            ) {
-                c_cast(c_cast(index.clone(), CType::UInt32), CType::Int32)
-            } else {
-                index.clone()
-            };
+            // The index keeps its own type, as the contract's place does.
+            let offset = index.clone();
             return Ok((
                 c_seq(
                     checks,

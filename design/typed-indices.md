@@ -137,6 +137,25 @@ contracts drop the bound. Lacker said to go ahead on 2026-10-08. A survey
 of the kernel the same day gave the plan below; its site counts are text
 searches.
 
+**Status, 2026-10-09.** Built for the shape a `size_t` or `usize` length
+gives: a range from constant zero to a symbolic `uint64` bound is wide, in
+contracts, loop clauses and proofs, and a 64-bit index is never narrowed.
+Steps 0 to 4, 7 and 8 below are done for that shape, with `viewable` over a
+wide range, `uint64` folds for model functions, and the Rust iterators
+counting a `usize`. Not built: a nonzero start (step 5), the remaining
+clause shapes and the deletion of the 32-bit conversion for them (step 9),
+and the signed wide kind. What was learned along the way:
+
+- Offsets of two unequal 64-bit indices are different without a no-wrap
+  bound. An `Int64Scaled` offset is the exact product, folded to a constant
+  only when it fits `i64`, so the object-size limit is needed for
+  membership (condition 4 below) and not for telling two cells apart.
+- The wide order walk needed its own direction-split edges. Walking up
+  through a bound many indices share read every fact below it, which made
+  a line of stores quadratic; the scaling test caught it.
+- An index that is a call's result is compared with the bound in the
+  bound's spelling, when the two are decided equal.
+
 Keeping 32-bit ranges and letting the memory model discharge the bound is
 a dead end: the object limit gives `length <= isize::MAX / width`, far
 above `INT_MAX`, so `(int32)length` is still inexact.

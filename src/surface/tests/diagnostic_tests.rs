@@ -1650,11 +1650,8 @@ int32 last(int32* data, uint64 length) {
         !message.contains("state `(length - 1u64) != 0`"),
         "{message}"
     );
-    let explicit = sidecar.replace(
-        "execute(); simp();",
-        "execute(); rewrite(length == 1u64); simp();",
-    );
-    verify_c0_sources(&explicit, &[("last.c", source)]).unwrap();
+    // The index is resolved while the function runs, so the claim at exit
+    // no longer mentions `length` and there is nothing left to rewrite.
 }
 
 #[test]

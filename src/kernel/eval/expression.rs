@@ -1438,6 +1438,21 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                         );
                         continue;
                     }
+                    // A wide range states no loadable fact, which counts
+                    // bytes in 32 bits. A held range that permits reading
+                    // the whole referent is the same evidence of live
+                    // storage, and is what a load of it would rest on.
+                    if !assumptions.proves_memory_loadable(
+                        state.memory(),
+                        pointer.pointer(),
+                        &Bitvector32Term::Constant(width),
+                    ) && state.resources().permits_memory_read(
+                        pointer.pointer(),
+                        width,
+                        assumptions,
+                    ) {
+                        continue;
+                    }
                     let _ = add_proof_obligation_with_context(
                         &mut path.obligations,
                         assumptions,
@@ -1445,6 +1460,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                             memory: state.memory().clone(),
                             base: pointer.pointer().clone(),
                             bytes: Bitvector32Term::Constant(width),
+                            wide: false,
                         },
                         Some("reference binding requires live storage for the complete referent"),
                     );

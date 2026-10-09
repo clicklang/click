@@ -28,9 +28,7 @@ fn range_addresses(range: &CMemoryRange, owned: bool) -> Vec<(AddressKind, Point
         } else {
             AddressKind::ViewedStart
         },
-        range
-            .base()
-            .offset_by_elements(range.start().clone(), range.element_width()),
+        range.start_pointer(),
     )];
     addresses
 }
@@ -58,8 +56,10 @@ pub(super) fn read_extent(fact: &CResourceFact) -> Option<u64> {
         return None;
     }
     let range = fact.memory_range()?;
-    let start = range.start().as_const()? as i32;
-    let end = range.end().as_const()? as i32;
+    // A wide range has no constant extent here; it is an unsupported entry.
+    let (start, end) = range.int32_bounds()?;
+    let start = start.as_const()? as i32;
+    let end = end.as_const()? as i32;
     let count = u64::try_from(i64::from(end) - i64::from(start)).ok()?;
     let width = u64::from(range.element_width());
     let extent = count.checked_mul(width)?;
@@ -78,10 +78,8 @@ fn start_access_extent(fact: &CResourceFact) -> Option<u64> {
             return None;
         }
         let range = fact.memory_range()?;
-        let count = crate::kernel::assumptions::affine_bitvector_difference_constant(
-            range.end(),
-            range.start(),
-        )?;
+        let (start, end) = range.int32_bounds()?;
+        let count = crate::kernel::assumptions::affine_bitvector_difference_constant(end, start)?;
         let count = u64::try_from(count).ok()?;
         (count > 0 && count <= i32::MAX as u64)
             .then_some(count.checked_mul(u64::from(range.element_width()))?)
@@ -445,9 +443,7 @@ impl AddressPoints {
             return;
         };
         let class = if insert {
-            let start = range
-                .base()
-                .offset_by_elements(range.start().clone(), range.element_width());
+            let start = range.start_pointer();
             let Some(class) = graph.address_class(&start) else {
                 return;
             };
@@ -567,9 +563,7 @@ impl MemoryAccessCandidates {
     pub(super) fn address(&self, entry: ResourceEntryId) -> Option<Pointer> {
         let range = self.index.resources.facts.get(&entry)?.memory_range()?;
         if self.entries.exact() {
-            let start = range
-                .base()
-                .offset_by_elements(range.start().clone(), range.element_width());
+            let start = range.start_pointer();
             self.index
                 .graph
                 .are_equal(&self.query, &start)
@@ -756,12 +750,8 @@ impl MemoryFactEntries {
         {
             streams.push(Box::new(entries.owned_values()));
         }
-        let start_pointer = range
-            .base()
-            .offset_by_elements(range.start().clone(), range.element_width());
-        let end_pointer = range
-            .base()
-            .offset_by_elements(range.end().clone(), range.element_width());
+        let start_pointer = range.start_pointer();
+        let end_pointer = range.end_pointer();
         if let (Some(point), Some(limit)) = (
             graph.canonical_pointer(&start_pointer),
             graph.canonical_pointer(&end_pointer),
@@ -866,9 +856,14 @@ impl MemoryFactEntries {
             let paired = self.index.clone();
             let requested = range.clone();
             let assumptions = self.assumptions.clone();
-            let target = memory_candidate_coordinate(range, range.end())
+            // Fragments are chained in 32-bit element coordinates; a wide
+            // range is not assembled from fragments yet.
+            let bounds = range.int32_bounds();
+            let target = bounds
+                .and_then(|(_, end)| memory_candidate_coordinate(range, end))
                 .map(|(base, end)| base.offset_by_elements(end, range.element_width()));
-            let mut cursor = memory_candidate_coordinate(range, range.start())
+            let mut cursor = bounds
+                .and_then(|(start, _)| memory_candidate_coordinate(range, start))
                 .map(|(base, start)| base.offset_by_elements(start, range.element_width()));
             let mut visited = BTreeSet::new();
             streams.push(Box::new(std::iter::from_fn(move || {
@@ -981,12 +976,8 @@ impl MemoryQuery<'_> {
                 });
             }
             Self::Footprint(range) => {
-                let start = range
-                    .base()
-                    .offset_by_elements(range.start().clone(), range.element_width());
-                let end = range
-                    .base()
-                    .offset_by_elements(range.end().clone(), range.element_width());
+                let start = range.start_pointer();
+                let end = range.end_pointer();
                 MemoryQuery::Address(range.base()).register(graph);
                 MemoryQuery::Address(&start).register(graph);
                 MemoryQuery::Address(&end).register(graph);
@@ -1008,9 +999,7 @@ impl ResourceContext {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
-        let pointer = range
-            .base()
-            .offset_by_elements(range.start().clone(), range.element_width());
+        let pointer = range.start_pointer();
         self.write_access_entries(&pointer, range.element_width(), assumptions)
             .is_some()
             && self.memory_write_range(&pointer, range.element_width(), assumptions) == Some(range)
@@ -1776,7 +1765,11 @@ impl ResourceContext {
             false,
             Some(MemoryQuery::Footprint(range)),
         );
-        let bound_coordinates = memory_candidate_coordinate(range, range.start());
+        // A wide range is found by its footprint and addresses; it has no
+        // 32-bit element coordinate.
+        let bound_coordinates = range
+            .int32_bounds()
+            .and_then(|(start, _)| memory_candidate_coordinate(range, start));
         MemoryFactCandidates {
             entries: MemoryFactEntries {
                 index: index.clone(),

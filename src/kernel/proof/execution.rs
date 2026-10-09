@@ -1360,8 +1360,7 @@ impl CheckedResourceRewrite {
             let Some(range) = child.memory_own_range() else {
                 continue;
             };
-            let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
-            else {
+            let (Some(start), Some(end)) = (range.constant_start(), range.constant_end()) else {
                 return Err("authority control memory needs concrete bounds".into());
             };
             let bytes = (end as i32)
@@ -1370,9 +1369,7 @@ impl CheckedResourceRewrite {
                 .and_then(|length| length.checked_mul(range.element_width() as i32))
                 .and_then(|bytes| u32::try_from(bytes).ok())
                 .ok_or("authority control memory needs a positive bounded range")?;
-            let base = range
-                .base()
-                .offset_by_elements(range.start().clone(), range.element_width());
+            let base = range.start_pointer();
             if !folded.memory().access_in_bounds(&base, bytes) && !imported_control_cell {
                 return Err("authority control body exceeds live storage".into());
             }
@@ -1957,8 +1954,7 @@ impl CheckedResourceRewrite {
                         }
                         return Err("member body access contains a nonprivate resource".into());
                     };
-                    let (Some(start), Some(end)) =
-                        (range.start().as_const(), range.end().as_const())
+                    let (Some(start), Some(end)) = (range.constant_start(), range.constant_end())
                     else {
                         return Err("member private body needs concrete bounds".into());
                     };
@@ -1968,9 +1964,7 @@ impl CheckedResourceRewrite {
                         .and_then(|length| length.checked_mul(range.element_width() as i32))
                         .and_then(|bytes| u32::try_from(bytes).ok())
                         .ok_or("member private body needs a positive bounded range")?;
-                    let base = range
-                        .base()
-                        .offset_by_elements(range.start().clone(), range.element_width());
+                    let base = range.start_pointer();
                     if !before_state.memory().access_in_bounds(&base, bytes)
                         && base.block != crate::kernel::PointerBlock::ExternalArgument
                     {
@@ -2571,6 +2565,7 @@ fn resource_read_key(proposition: &Proposition) -> Option<ResourceReadKey> {
         memory,
         base,
         bytes,
+        wide: false,
     } = proposition
     else {
         return None;
@@ -5233,6 +5228,7 @@ fn interface_resource_intrinsic_fact(
             crate::kernel::Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
             crate::kernel::Bitvector32Term::Constant(element_width),
         ),
+        wide: false,
     })
 }
 
@@ -5391,6 +5387,7 @@ impl InterfaceReadPremises {
                 memory,
                 base,
                 bytes,
+                wide: false,
             } = &premise
             else {
                 continue;
@@ -5423,11 +5420,13 @@ pub(super) fn interface_read_is_subrange(goal: &Proposition, premise: &Propositi
             memory,
             base,
             bytes,
+            wide: false,
         },
         Proposition::CMemoryLoadable {
             memory: source_memory,
             base: source_base,
             bytes: source_bytes,
+            wide: false,
         },
     ) = (goal, premise)
     else {
@@ -7271,7 +7270,7 @@ fn trace_completion_from_entry(
                     // This is read validity, not ownership or a value equality;
                     // no ambient range search or cross-snapshot transport occurs.
                     let materialized_read = matches!(fact,
-                        Proposition::CMemoryLoadable { memory, base, bytes }
+                        Proposition::CMemoryLoadable { memory, base, bytes, wide: false }
                             if bytes.as_const().is_some_and(|width|
                                 width > 0 && memory.is_loadable_concretely(base, width)));
                     if !materialized_read
@@ -11812,6 +11811,7 @@ mod tests {
             memory,
             base,
             bytes,
+            wide: false,
         };
         let valid = read(
             memory.clone(),
@@ -11894,6 +11894,7 @@ mod tests {
                     memory: memory.clone(),
                     base: pointer,
                     bytes: Bitvector32Term::Constant(4),
+                    wide: false,
                 };
                 let roots = base.with_fact(fact.clone());
                 events.push(returned_proposition_event(
@@ -12734,6 +12735,7 @@ mod tests {
                 memory: CMemory::new(),
                 base: a,
                 bytes: Bitvector32Term::Constant(8),
+                wide: false,
             }
         ));
     }
@@ -12887,6 +12889,7 @@ mod tests {
             memory,
             base,
             bytes,
+            wide: false,
         };
         let source = read(
             memory.clone(),
@@ -12980,6 +12983,7 @@ mod tests {
             memory: CMemory::new(),
             base: pointer(i),
             bytes: Bitvector32Term::Constant(4),
+            wide: false,
         };
         let source = read(20);
         let goal = read(21);
@@ -13097,11 +13101,13 @@ mod tests {
                 memory: memory.clone(),
                 base: pointer.clone(),
                 bytes: Bitvector32Term::Variable(Variable(42)),
+                wide: false,
             };
             let goal = Proposition::CMemoryLoadable {
                 memory: memory.store(pointer.clone(), int32(7)),
                 base: pointer.clone(),
                 bytes: Bitvector32Term::Variable(Variable(42)),
+                wide: false,
             };
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let index = ResourceDeltaPremises::new(std::slice::from_ref(&source));
@@ -13123,6 +13129,7 @@ mod tests {
                         offset: PointerOffsetTerm::Constant(0),
                     },
                     bytes: Bitvector32Term::Constant(4),
+                    wide: false,
                 })
                 .collect::<Vec<_>>();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -14365,6 +14372,7 @@ mod tests {
                 offset: PointerOffsetTerm::Constant(0),
             },
             bytes: Bitvector32Term::Constant(width),
+            wide: false,
         };
         let goal = readable(memory.clone(), "selected".into(), 4);
         let source = readable(memory.clone(), "selected".into(), 8);
@@ -15404,6 +15412,7 @@ mod population_authority_rewrite_tests {
             memory: owned.memory().clone(),
             base: external.clone(),
             bytes: Bitvector32Term::Constant(bytes),
+            wide: false,
         };
         let small = ProofFacts::default().with_fact(extent(1));
         assert!(

@@ -1325,18 +1325,22 @@ so `int32 p[]` ranges count four-byte cells and `uint8 bytes[]` ranges count
 bytes. Local stack accesses do not require resources. A function with no
 resource context has no permission to access external memory.
 
-An index or a range bound keeps the integer type the source gives it. A place
-takes a 32-bit index, so a 64-bit one is converted as the cast `(int32)n`
-converts it, and the contract states the bound that makes the conversion
-exact. A range bound of any form is converted; an indexed read converts a
-64-bit parameter written alone, and any other 64-bit index expression takes
-the cast, `bytes[(int32)(index + 1)]`. A contract that leaves the bound out is
-refused when it is set up, with the requirement to state.
+An index or a range bound keeps the integer type the source gives it. A range
+from zero to a `uint64` bound, the shape a `size_t` or `usize` length gives,
+has 64-bit bounds, and an element at a `uint64` index is placed in it by
+64-bit comparisons. Nothing is cast and the contract states no limit on the
+length. The range itself carries the object-size limit,
+`length <= 9223372036854775807` divided by the element width, which holds of
+any object. A range with a nonzero start, or a signed 64-bit bound, is still
+read through 32-bit indices and needs its bound shown to fit.
 
-<!-- verified-example: mdtests/a_64_bit_index_and_bound_need_no_cast.md -->
+A cast written in a place keeps its meaning: `bytes[(int32)index]` is the
+element at the truncated index, which is not the element the code reads at
+`bytes[index]` (`mdtests/a_cast_in_a_place_reads_the_truncated_index.md`).
+
+<!-- verified-example: mdtests/a_64_bit_range_needs_no_bound_on_its_length.md -->
 ```click
 uint8 read(const uint8* bytes, uint64 length, uint64 index) {
-    requires length <= 2147483647u64;
     requires index < length;
     views bytes[0..length];
     ensures result == bytes[index];

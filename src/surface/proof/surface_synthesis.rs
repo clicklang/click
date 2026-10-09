@@ -1894,6 +1894,7 @@ fn synthesize_surface_atomic_proposition(
         memory,
         base,
         bytes,
+        wide: false,
     } = proposition
     {
         let loadable = synthesize_zero_based_loadable_segment(
@@ -2211,10 +2212,12 @@ fn synthesize_surface_resource_subject(
         bound_variables,
     )
     .unwrap_or_else(|| ContractExpression::CFragment(semantic_base.clone()));
+    // The bounds are spelled as the terms they are, in either index kind.
+    let (range_start, range_end) = range.bound_terms();
     let surface_start =
-        synthesize_surface_bitvector(range.start(), parameters, arguments, state, bound_variables)?;
+        synthesize_surface_bitvector(range_start, parameters, arguments, state, bound_variables)?;
     let surface_end =
-        synthesize_surface_bitvector(range.end(), parameters, arguments, state, bound_variables)?;
+        synthesize_surface_bitvector(range_end, parameters, arguments, state, bound_variables)?;
     let start = contract_expression_to_c_fragment(&surface_start)?;
     let end = contract_expression_to_c_fragment(&surface_end)?;
     Some(ResourceSubject::Memory(ContractSegment {

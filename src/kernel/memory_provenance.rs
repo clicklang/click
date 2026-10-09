@@ -2005,8 +2005,8 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     if let (Some(index), Some(span), Some(start), Some(end)) = (
         direct_constant_element_index(pointer, range.base(), element_width),
         access_element_span(bytes, element_width),
-        signed_bitvector_constant(range.start()),
-        signed_bitvector_constant(range.end()),
+        range.signed_constant_start(),
+        range.signed_constant_end(),
     ) && (index.checked_add(span).is_some_and(|last| last <= start) || end <= index)
     {
         return Some(RangeDisjointFromPointerEvidence::DirectConstantOutside {
@@ -2023,7 +2023,7 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
         return None;
     }
     let offset = forward_range_offset_from_pointer(range, pointer)?;
-    let range_start = Bitvector32Term::add(offset.clone(), range.start.clone());
+    let range_start = Bitvector32Term::add(offset.clone(), range.start().clone());
     let positive = PositiveTermEvidence::for_term(&range_start, assumptions)?;
     Some(RangeDisjointFromPointerEvidence::ForwardOffset { offset, positive })
 }
@@ -5152,6 +5152,7 @@ pub(crate) fn certified_store_loadability_facts(
                 memory: store.after.clone(),
                 base: store.pointer.clone(),
                 bytes: Bitvector32Term::Constant(byte_width),
+                wide: false,
             })
         })
         .collect()

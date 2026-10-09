@@ -3152,6 +3152,7 @@ fn verify_c0_sources_in_context(
                 memory: certification_state.memory().clone(),
                 base: base.pointer().clone(),
                 bytes: Bitvector32Term::Constant(*bytes),
+                wide: false,
             });
         }
         // Certification reuses the checked caller's authority identities,

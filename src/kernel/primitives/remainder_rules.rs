@@ -63,6 +63,39 @@ impl B {
             B::UInt64Remainder(_, d) if d.uint64_as_const() == Some(1) => {
                 Some((Vec::new(), B::UInt64Constant(0)))
             }
+            // `n - n % d` is a multiple of `d`: the difference does not wrap,
+            // since a remainder is at most its dividend.
+            B::UInt64Remainder(n, d)
+                if d.uint64_as_const().is_some_and(|d| d != 0)
+                    && matches!(
+                        n.as_ref(),
+                        B::UInt64Subtract(original, tail)
+                            if matches!(
+                                tail.as_ref(),
+                                B::UInt64Remainder(tail_original, tail_d)
+                                    if tail_original == original && tail_d == d
+                            )
+                    ) =>
+            {
+                Some((Vec::new(), B::UInt64Constant(0)))
+            }
+            // `(n - d) % d` is `n % d` when `d <= n`, where the difference
+            // does not wrap.
+            B::UInt64Remainder(n, d)
+                if d.uint64_as_const().is_some_and(|d| d != 0)
+                    && matches!(n.as_ref(), B::UInt64Subtract(_, step) if step == d) =>
+            {
+                let B::UInt64Subtract(original, _) = n.as_ref() else {
+                    unreachable!("matched above")
+                };
+                Some((
+                    vec![C::uint64_less_equal(
+                        d.as_ref().clone(),
+                        original.as_ref().clone(),
+                    )],
+                    B::uint64_remainder(original.as_ref().clone(), d.as_ref().clone()),
+                ))
+            }
             B::UInt64Remainder(n, d) => Some((
                 vec![C::uint64_less_than(n.as_ref().clone(), d.as_ref().clone())],
                 n.as_ref().clone(),

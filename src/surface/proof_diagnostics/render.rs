@@ -523,6 +523,7 @@ impl Renderer<'_> {
                 memory,
                 base,
                 bytes,
+                wide: _,
             } => {
                 self.push("viewable(memory=");
                 self.memory(memory);
@@ -1742,6 +1743,7 @@ mod tests {
                 offset: PointerOffsetTerm::Constant(0),
             },
             bytes: Bitvector32Term::Constant(1),
+            wide: false,
         }
     }
 
