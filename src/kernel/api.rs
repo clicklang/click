@@ -9026,6 +9026,57 @@ pub fn prove_uint32_mul_guard_by_integer_bound(
     ))
 }
 
+/// Observe unsigned machine division in Integer arithmetic. Both domains
+/// explicitly exclude a zero divisor; no no-wrap premise is needed.
+pub fn prove_uint32_divide_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_uint32_integer_division_bridge(left, right, false)
+}
+
+/// Observe unsigned machine remainder in nonnegative Integer arithmetic.
+pub fn prove_uint32_remainder_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_uint32_integer_division_bridge(left, right, true)
+}
+
+fn prove_uint32_integer_division_bridge(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+    remainder: bool,
+) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    let dividend = observe(left.clone());
+    let divisor = observe(right.clone());
+    let native_nonzero = Proposition::ConditionIs(
+        ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+        false,
+    );
+    let integer_nonzero = Proposition::ConditionIs(
+        ConditionTerm::integer_not_equal(divisor.clone(), IntegerTerm::constant_i64(0)),
+        true,
+    );
+    let (machine, exact) = if remainder {
+        (
+            Bitvector32Term::unsigned_remainder(left, right),
+            IntegerTerm::TruncatingRemainder(dividend.into(), divisor.into()),
+        )
+    } else {
+        (
+            Bitvector32Term::unsigned_divide(left, right),
+            IntegerTerm::TruncatingQuotient(dividend.into(), divisor.into()),
+        )
+    };
+    let conclusion = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+        true,
+    );
+    Theorem::new(Proposition::Implies(
+        native_nonzero.into(),
+        Proposition::Implies(integer_nonzero.into(), conclusion.into()).into(),
+    ))
+}
+
 /// An unsigned remainder is strictly below its nonzero divisor.
 /// No upper bound on the dividend is needed; zero division is excluded.
 pub fn prove_uint32_remainder_less_than_divisor(

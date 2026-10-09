@@ -32,7 +32,7 @@ and native Charon artifact to prove every lane of these original helpers:
 | --- | --- |
 | `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255; each unsigned Integer observation lies in `0..255` |
 | `AddAssign<Self>` | Each Integer lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand, with exact Integer sum and nonnegative observation |
-| `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor, is below the divisor, and has an Integer observation in `0..divisor-1` |
+| `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor, has the exact unsigned Integer remainder observation, and lies in `0..divisor-1` |
 | `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier, with exact Integer product and observation in `0..4294967295` |
 
 Mutating helpers require ownership of all four receiver lanes. Addition accepts
@@ -55,6 +55,16 @@ for all four lanes, along with nonnegative Integer observations. Its original
 the call to `MOD = 65521` yields the `0..65520` range needed to reset both
 lane ceilings before a new batch. The general computation proof checks this
 reset and preserves the ceilings over the original outer loop.
+
+The exact remainder observation uses checked `uint32_remainder_to_integer`
+bridges on the entry lanes. A source-proved lemma derives the Integer
+nonzero domain from the native nonzero divisor; callers supply no additional
+mathematical precondition. Division has the corresponding checked unsigned
+bridge. The common specification proves residue congruence with a signed
+quotient witness, so subtracting weighted lane reductions can preserve a
+checksum even when that witness is negative. These facts support connecting
+the optimized state to the specification; they do not establish the general
+checksum postcondition.
 
 The multiplication helper also exports the exact Integer product for each lane.
 `uint32_mul_to_integer` uses the original native quotient guard, including its
@@ -251,6 +261,11 @@ the input byte is preserved. The final field observations are checked in the
 original modulo form: `a = (1 + byte) % MOD` and
 `b = (6 * MOD + 1 + byte) % MOD`. For a byte in `0..=255`, these are the
 single-byte checksum values `a = b = 1 + byte`.
+The contract also proves that both fields equal the
+[shared specification](../../adler32-spec.click) on the entry byte snapshot.
+Checked unsigned remainder bridges and signed-witness congruence remove the
+`6 * MOD` offset. This connection covers one byte from the constructor state;
+the general checksum postcondition remains unproved.
 
 The proof follows the stored serial iterator, identifies its read with the
 original byte, bounds both additions, and checks the final modulo and `u16`
@@ -260,11 +275,12 @@ range bounds. No Rust source, extraction artifact, lock, or import profile chang
 
 This file is a contract fragment. Function-contract imports between Click
 sidecars are not admitted yet, so the fixture harness combines it with the
-canonical helper and constant-getter contracts from `helpers.click` and
-checks all seven bodies. This preserves the empty-input sidecar and avoids
+canonical helper and constant-getter contracts from `helpers.click`, the common
+specification, and checks their proofs. This preserves the empty-input sidecar and avoids
 duplicate helper interfaces. The full positive proof, false checksum and
-byte-preservation claims, and verify/profile/audit/expansion rechecks are
-nightly tests; missing length/view and empty-input rejections are ordinary tests.
+byte-preservation claims, missing length/view and empty-input rejections, and
+verify/profile/audit/expansion rechecks are nightly tests. The original-body
+checks exceed the ordinary per-test budget.
 
 ## Original two- and three-byte serial tails
 

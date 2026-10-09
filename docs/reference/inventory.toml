@@ -3469,3 +3469,15 @@ path = "reference/glossary.md#member"
 [[item]]
 id = "glossary.protected-resource"
 path = "reference/glossary.md#protected-resource"
+
+[[item]]
+id = "stdlib.theorem.uint32_nonzero_to_integer"
+path = "reference/library/index.md#uint32_nonzero_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint32_divide_to_integer"
+path = "reference/library/index.md#uint32_divide_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint32_remainder_to_integer"
+path = "reference/library/index.md#uint32_remainder_to_integer"

@@ -377,3 +377,45 @@ theorem adler_weighted_append_four(bytes: uint8[], n: int32) {
   arithmetic() using {};
  }
 }
+
+# A signed quotient difference can witness congruence even when either
+# representative is smaller. Both dividend interpretations remain nonnegative.
+theorem adler_residue_congruent(n: Integer, m: Integer, q: Integer) {
+ requires 0 <= n;
+ requires 0 <= m;
+ requires n == m + 65521 * q;
+ ensures truncating_remainder(n, 65521) == truncating_remainder(m, 65521) by {
+  apply(integer_truncation_identity(m, 65521)) using { 65521 != 0; }
+  apply(integer_nonnegative_dividend_remainder(m, 65521)) using { 65521 != 0; 0 <= m; }
+  apply(integer_positive_divisor_remainder_upper(m, 65521)) using { 65521 != 0; 0 < 65521; }
+  have n == (truncating_quotient(m, 65521) + q) * 65521 + truncating_remainder(m, 65521) by {
+   arithmetic() using { n == m + 65521 * q; m == truncating_quotient(m, 65521) * 65521 + truncating_remainder(m, 65521); }
+  }
+  apply(adler_residue_unique(n, truncating_quotient(m, 65521) + q, truncating_remainder(m, 65521))) using {
+   0 <= n;
+   n == (truncating_quotient(m, 65521) + q) * 65521 + truncating_remainder(m, 65521);
+   0 <= truncating_remainder(m, 65521);
+   truncating_remainder(m, 65521) <= 65520;
+  }
+  assumption();
+ }
+}
+
+theorem adler_spec_one(bytes: uint8[]) {
+ ensures adler_spec_a(bytes, 1, 1) == truncating_remainder(1 + to_integer((int32)bytes[0]), 65521) by {
+  apply(adler_sum_empty(bytes, 1));
+  apply(adler_sum_append(bytes, 1));
+  unfold(adler_spec_a(bytes, 1, 1));
+  rewrite(adler_byte_sum(bytes, 1) == adler_byte_sum(bytes, 0) + to_integer((int32)bytes[0]));
+  rewrite(adler_byte_sum(bytes, 0) == 0);
+  simp();
+ }
+ ensures adler_spec_b(bytes, 1, 1, 0) == truncating_remainder(1 + to_integer((int32)bytes[0]), 65521) by {
+  apply(adler_sum_empty(bytes, 1));
+  apply(adler_weighted_append(bytes, 1, 1));
+  unfold(adler_spec_b(bytes, 1, 1, 0));
+  rewrite(adler_weighted_sum(bytes, 1, 1) == adler_weighted_sum(bytes, 0, 1) + to_integer((int32)bytes[0]));
+  rewrite(adler_weighted_sum(bytes, 0, 1) == 0);
+  simp();
+ }
+}

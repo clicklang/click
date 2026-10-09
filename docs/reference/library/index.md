@@ -1169,6 +1169,59 @@ Unsigned subtraction agrees with Integer subtraction under the native unsigned n
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_nonzero_to_integer`
+
+```click
+theorem uint32_nonzero_to_integer(value: uint32) {
+ requires value != 0u32;
+ ensures to_integer(value) != 0 by {
+  apply(uint32_remainder_less_than_divisor(0u32, value)) using { value != 0u32; }
+  apply(uint32_less_than_to_integer(0u32 % value, value)) using { 0u32 % value < value; }
+  apply(uint32_to_integer_bounds(0u32 % value));
+  have 1 <= to_integer(value) by {
+   arithmetic() using { 0 <= to_integer(0u32 % value); to_integer(0u32 % value) < to_integer(value); }
+  }
+  arithmetic_certificate special {
+   premise 0: 1 <= to_integer(value) => 1 <= to_integer(value);
+   integer_bound_exclusion bounds [0] => to_integer(value) != 0;
+   conclusion 0;
+  }
+ }
+}
+```
+
+A checked source proof derives a nonzero Integer observation from a nonzero unsigned machine value. It introduces no additional kernel axiom.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint32_divide_to_integer`
+
+```click
+theorem uint32_divide_to_integer(left: uint32, right: uint32) {
+    requires right != 0u32;
+    requires to_integer(right) != 0;
+    ensures to_integer(left / right) == truncating_quotient(to_integer(left), to_integer(right));
+}
+```
+
+Unsigned division agrees with Integer truncating division when both evaluation domains exclude zero. No overflow bound on the dividend is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint32_remainder_to_integer`
+
+```click
+theorem uint32_remainder_to_integer(left: uint32, right: uint32) {
+    requires right != 0u32;
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+```
+
+Unsigned remainder agrees with Integer truncating remainder when both evaluation domains exclude zero. Combine this bridge with `uint32_nonzero_to_integer` when a caller supplies only the native guard.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_mul_to_integer`
 
 ```click

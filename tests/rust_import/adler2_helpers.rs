@@ -50,8 +50,13 @@ fn compute_proof(contract: &str) -> String {
     } else {
         ""
     };
+    let common_spec = if contract.contains("adler_spec_one(") {
+        COMMON_ADLER_SPEC
+    } else {
+        ""
+    };
     format!(
-        "{}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{contract}\n{getters}",
+        "{}\n{common_spec}\n{lemmas}\n{iterator_lemmas}\n{partition}\n{general_partition}\n{tail_bounds}\n{contract}\n{getters}",
         helper_library()
     )
 }
@@ -313,6 +318,22 @@ fn charon_adler2_helpers_rem_preservation_rejects_false_lane_2() {
 #[ignore = "nightly: 11s in the parallel gate"]
 fn charon_adler2_helpers_rem_preservation_rejects_false_lane_3() {
     reject_helper_reduction_preservation(3);
+}
+
+#[test]
+#[ignore = "nightly: unchanged reduction rejects false mathematical observations"]
+fn charon_adler2_helpers_rem_rejects_false_integer_residue_observations() {
+    let exact = "ensures to_integer(self->_0[3]) == truncating_remainder(to_integer(old(self->_0[3])), to_integer(quotient));";
+    reject_helper_contracts(
+        2,
+        &[
+            (
+                exact,
+                &exact.replace("old(self->_0[3])", "old(self->_0[2])"),
+            ),
+            (exact, &exact.replace("));", ")) + 1;")),
+        ],
+    );
 }
 
 fn reject_helper_reduction_preservation(lane: usize) {
@@ -1066,6 +1087,15 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
             &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
         );
     }
+    for (field, specification) in [
+        ("a", "adler_spec_a(bytes, 1, 1)"),
+        ("b", "adler_spec_b(bytes, 1, 1, 0)"),
+    ] {
+        reject_single_byte_compute(
+            &format!("ensures to_integer(self->{field}) == old({specification});"),
+            &format!("ensures to_integer(self->{field}) == old({specification}) + 1;"),
+        );
+    }
     reject_single_byte_compute(
         "ensures bytes[0] == old(bytes[0]);",
         "ensures bytes[0] == old(bytes[0]) + 1;",
@@ -1541,11 +1571,14 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         "adler_weighted_nonnegative.ensures_0",
         "adler_residue_unique.ensures_0",
         "adler_residue_add.ensures_0",
+        "adler_residue_congruent.ensures_0",
         "adler_spec_a_canonical.ensures_0",
         "adler_spec_b_canonical.ensures_0",
         "adler_spec_packing_bounds.ensures_0",
         "adler_spec_empty.ensures_0",
         "adler_spec_empty.ensures_1",
+        "adler_spec_one.ensures_0",
+        "adler_spec_one.ensures_1",
     ] {
         let expanded =
             click::surface::expand_c0_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
@@ -1560,6 +1593,10 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         (
             "+ 3 * to_integer((int32)bytes[n + 1]) + 2 * to_integer((int32)bytes[n + 2])",
             "+ 2 * to_integer((int32)bytes[n + 1]) + 3 * to_integer((int32)bytes[n + 2])",
+        ),
+        (
+            "requires n == m + 65521 * q;",
+            "requires n == m + 65520 * q;",
         ),
         ("requires n <= 2147483643;", "requires n <= 2147483644;"),
         ("<= 4293984240 by", "<= 4293984239 by"),
