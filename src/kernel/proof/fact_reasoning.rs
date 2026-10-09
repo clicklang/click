@@ -372,6 +372,16 @@ pub(crate) fn discharge_instantiated_guards(
     Ok((guards, current))
 }
 
+/// The binder sorts `instantiate` specializes: a signed 32-bit binder, and
+/// an unsigned 64-bit one, which is the type of a `size_t` or `usize` index.
+/// The caller supplies an argument of the binder's own type.
+pub(crate) fn instantiable_machine_sort(sort: &Sort) -> bool {
+    matches!(
+        sort,
+        Sort::CInt32 | Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64)
+    )
+}
+
 /// The guard conjuncts of `quantified` at `argument` that do not hold on
 /// their own: what an `instantiate` without a premise list must find as facts.
 pub(crate) fn instantiated_int32_guard_conjuncts(
@@ -381,7 +391,7 @@ pub(crate) fn instantiated_int32_guard_conjuncts(
     let Proposition::ForAll { var, sort, body } = quantified else {
         return Err(ForallInt32InstantiationError::RequiresUniversal);
     };
-    if *sort != Sort::CInt32 {
+    if !instantiable_machine_sort(sort) {
         return Err(ForallInt32InstantiationError::UnsupportedSort);
     }
     let instantiated = substitute_int32_variable_in_proposition(body, *var, argument);
@@ -409,7 +419,7 @@ pub(crate) fn check_forall_int32_instantiation(
     let Proposition::ForAll { var, sort, body } = quantified else {
         return Err(ForallInt32InstantiationError::RequiresUniversal);
     };
-    if *sort != Sort::CInt32 {
+    if !instantiable_machine_sort(sort) {
         return Err(ForallInt32InstantiationError::UnsupportedSort);
     }
 

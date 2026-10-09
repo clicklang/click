@@ -1423,6 +1423,25 @@ Proves the full unsigned observation range from native order. This theorem does 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint64_to_integer_bounds`
+
+```click
+theorem uint64_to_integer_bounds(value: uint64) {
+    ensures 0 <= to_integer(value) by {
+        have 0u64 <= value;
+        apply(uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; }
+    }
+    ensures to_integer(value) <= 18446744073709551615 by {
+        have value <= 18446744073709551615u64;
+        apply(uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; }
+    }
+}
+```
+
+Proves the full unsigned 64-bit observation range from native order. `arithmetic` applies it to each `uint64` variable it reads, so a sum bounded only by another `uint64` value is known not to wrap.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int32_add_to_integer`
 
 ```click
@@ -1945,6 +1964,21 @@ theorem uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
 ```
 
 Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` give `first <= last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint64_le_and_not_lt_implies_eq`
+
+```click
+theorem uint64_le_and_not_lt_implies_eq(left: uint64, right: uint64) {
+    requires left <= right;
+    requires not left < right;
+
+    ensures left == right;
+}
+```
+
+An unsigned 64-bit value at most another and not below it is equal to it. A loop proof uses it for the element a step just reached: `k <= i` and `not k < i` give `k == i`.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 

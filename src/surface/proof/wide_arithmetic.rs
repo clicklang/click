@@ -127,6 +127,26 @@ fn collect_operations(expression: &ContractExpression, operations: &mut Vec<Cont
     }
 }
 
+/// The operands of the sums and differences in `expression` that are not
+/// themselves one, and are not literals: the values whose type range the
+/// Integer claim may need.
+fn collect_atoms(expression: &ContractExpression, atoms: &mut Vec<ContractExpression>) {
+    match expression {
+        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+            collect_atoms(left, atoms);
+            collect_atoms(right, atoms);
+        }
+        ContractExpression::CFragment(CExpression::Value(
+            CValue::UInt64(value) | CValue::Int64(value),
+        )) if value.uint64_as_const().is_some() || value.int64_as_const().is_some() => {}
+        atom => {
+            if !atoms.contains(atom) {
+                atoms.push(atom.clone());
+            }
+        }
+    }
+}
+
 fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> ProofStep {
     ProofStep::Have {
         proposition,
@@ -196,6 +216,8 @@ impl<'a> Proof<'a> {
         }
         let mut pending = Vec::new();
         let mut operations = Vec::new();
+        let mut atoms = Vec::new();
+        let literal = |text: &str| ContractExpression::IntegerLiteral(text.to_string());
         for premise in surface_premises {
             let kernel = self
                 .lower_cited_surface_proposition(premise, "`arithmetic using` premise")
@@ -220,10 +242,35 @@ impl<'a> Proof<'a> {
             }
             collect_operations(&lower, &mut operations);
             collect_operations(&upper, &mut operations);
+            collect_atoms(&lower, &mut atoms);
+            collect_atoms(&upper, &mut atoms);
             pending.push(Pending::Premise(premise.clone(), lower, upper, strict));
         }
         collect_operations(&goal_lower, &mut operations);
         collect_operations(&goal_upper, &mut operations);
+        collect_atoms(&goal_lower, &mut atoms);
+        collect_atoms(&goal_upper, &mut atoms);
+        // An unsigned value's observation is in the type's range. A sum
+        // bounded only by another value, `i + 1` under `i < length`, is
+        // shown not to wrap from that, with no bound on `length` listed.
+        // One application per value written, and only where a sum or
+        // difference could need it.
+        if carrier == Carrier::UInt64 && !operations.is_empty() {
+            for atom in &atoms {
+                let lower = order(literal("0"), to_integer(atom), false);
+                let upper = order(to_integer(atom), literal(UINT64_MAX), false);
+                let bounds = apply("uint64_to_integer_bounds", vec![atom.clone()], Vec::new());
+                let Ok(next) = proof
+                    .apply_step(have(lower.clone(), vec![bounds.clone()]))
+                    .and_then(|proof| proof.apply_step(have(upper.clone(), vec![bounds])))
+                else {
+                    continue;
+                };
+                proof = next;
+                facts.push(lower);
+                facts.push(upper);
+            }
+        }
         pending.extend(operations.into_iter().map(Pending::Operation));
 
         // Each item is tried against the facts so far, and the passes repeat
@@ -231,7 +278,6 @@ impl<'a> Proof<'a> {
         // range, and a premise over a signed sum once that sum is defined.
         // At most one pass per item, so the attempts are quadratic in the
         // listed premises and the operations written in them.
-        let literal = |text: &str| ContractExpression::IntegerLiteral(text.to_string());
         let mut stuck = None;
         while !pending.is_empty() {
             let mut remaining = Vec::new();

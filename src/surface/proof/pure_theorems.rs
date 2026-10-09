@@ -2462,6 +2462,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_lt_transitive"
                 | "uint32_le_transitive"
                 | "uint64_lt_le_transitive"
+                | "uint64_le_and_not_lt_implies_eq"
                 | "uint64_le_lt_transitive"
                 | "uint64_lt_transitive"
                 | "uint64_le_transitive"
@@ -2572,6 +2573,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint32_lt_transitive"
         | "uint32_le_transitive" => (3, 2),
         name if crate::kernel::is_wide_order_transitivity_name(name) => (3, 2),
+        "uint64_le_and_not_lt_implies_eq" => (2, 2),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2639,6 +2641,8 @@ fn verify_kernel_standard_theorem_axiom(
                 parameter(2)?,
             )
             .expect("registered uint64 transitivity")
+        } else if theorem.name() == "uint64_le_and_not_lt_implies_eq" {
+            crate::kernel::prove_uint64_le_and_not_lt_implies_eq(parameter(0)?, parameter(1)?)
         } else {
             crate::kernel::prove_uint64_integer_bridge(theorem.name(), parameter(0)?, parameter(1)?)
                 .expect("registered uint64 observation bridge")
