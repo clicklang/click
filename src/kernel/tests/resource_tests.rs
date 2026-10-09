@@ -8598,3 +8598,41 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
         .assume_condition(ConditionTerm::equal(observer.clone(), other.clone()), true);
     assert!(!narrow.uint64_values_equal_for_range_resolution(&observer, &other));
 }
+
+/// Two readers that took a range's bounds as signed 32-bit indices met a
+/// range with unsigned 64-bit bounds and stopped the verifier: resource
+/// equality at a loop's back edge, and the byte renormalization a coverage
+/// question falls back to when the element widths differ. Both now answer.
+#[test]
+fn wide_ranges_are_compared_and_refused_without_a_32_bit_reading() {
+    let base = Pointer::symbolic(Variable(97_400));
+    let end = Bitvector32Term::Variable(Variable(97_401));
+    let other_end = Bitvector32Term::Variable(Variable(97_402));
+    let wide = |end: &Bitvector32Term, width| {
+        CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            end.clone(),
+            width,
+        )
+    };
+    let narrow = CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 1);
+    let equal = |left: &CMemoryRange, right: &CMemoryRange| {
+        crate::kernel::assumptions::resources_equal_ignoring_memories(
+            &CResource::Memory(left.clone()),
+            &CResource::Memory(right.clone()),
+        )
+    };
+    assert!(equal(&wide(&end, 1), &wide(&end, 1)));
+    assert!(!equal(&wide(&end, 1), &wide(&other_end, 1)));
+    assert!(!equal(&wide(&end, 1), &narrow));
+    assert!(!equal(&narrow, &wide(&end, 1)));
+
+    let facts = PureFactContext::new();
+    let covers = crate::kernel::primitives::memory_range_covers;
+    assert!(!covers(&wide(&end, 1), &wide(&end, 4), &facts));
+    assert!(!covers(&wide(&end, 4), &wide(&end, 1), &facts));
+    let words = CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 4);
+    assert!(!covers(&wide(&end, 1), &words, &facts));
+    assert!(!covers(&words, &wide(&end, 1), &facts));
+}

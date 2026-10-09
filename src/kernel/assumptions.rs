@@ -353,15 +353,20 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
     };
     match (left, right) {
         (CResource::Memory(left), CResource::Memory(right)) => {
+            // The bounds are compared as terms, so ranges of one kind are
+            // read alike; a wide range and an `Int32` one are not equal.
+            let (left_start, left_end) = left.bound_terms();
+            let (right_start, right_end) = right.bound_terms();
             left.element_width() == right.element_width()
+                && left.wide_bounds().is_some() == right.wide_bounds().is_some()
                 && terms_equal_with_load_atoms(
-                    left.start(),
-                    right.start(),
+                    left_start,
+                    right_start,
                     &load_atoms_equal_ignoring_memories,
                 )
                 && terms_equal_with_load_atoms(
-                    left.end(),
-                    right.end(),
+                    left_end,
+                    right_end,
                     &load_atoms_equal_ignoring_memories,
                 )
                 && pointers_equal_ignoring_memories(left.base(), right.base())
@@ -3464,6 +3469,57 @@ impl PureFactContext {
         base: &Pointer,
     ) -> Option<Pointer> {
         self.equality_graph.pointer_at_base(pointer, base)
+    }
+
+    /// Re-express a selected field only when the maintained affine classes
+    /// give a constant byte displacement. This does not expand producer
+    /// expressions or retry symbolic range-bound reasoning.
+    pub(in crate::kernel) fn pointer_at_known_constant_base(
+        &self,
+        pointer: &Pointer,
+        base: &Pointer,
+    ) -> Option<Pointer> {
+        fn constant_spine(pointer: &Pointer) -> Option<(Pointer, i64)> {
+            let mut offset = &pointer.offset;
+            let mut bytes = 0i64;
+            while let PointerOffsetTerm::Add(left, right) = offset {
+                crate::instrumentation::record_deterministic_work(1);
+                let (rest, extra) = match (left.as_ref(), right.as_ref()) {
+                    (rest, PointerOffsetTerm::Constant(extra))
+                    | (PointerOffsetTerm::Constant(extra), rest) => (rest, extra),
+                    _ => break,
+                };
+                bytes = bytes.checked_add(*extra)?;
+                offset = rest;
+            }
+            Some((
+                Pointer {
+                    block: pointer.block.clone(),
+                    offset: offset.clone(),
+                },
+                bytes,
+            ))
+        }
+        let (origin, displacement) = constant_spine(pointer)?;
+        let (base_origin, base_displacement) = constant_spine(base)?;
+        // For residual symbolic arithmetic, consult only recorded affine
+        // coordinates. Term registration here would revisit array-index
+        // dependencies after the direct membership check already failed.
+        if matches!(origin.offset, PointerOffsetTerm::Add(..))
+            || matches!(base_origin.offset, PointerOffsetTerm::Add(..))
+        {
+            return self.equality_graph.pointer_at_constant_base(pointer, base);
+        }
+        if self.equality_graph.are_equal(&origin, &base_origin) {
+            return Some(Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::add(
+                    base.offset.clone(),
+                    PointerOffsetTerm::Constant(displacement.checked_sub(base_displacement)?),
+                ),
+            });
+        }
+        self.equality_graph.pointer_at_constant_base(pointer, base)
     }
 
     /// The pointers an exact fact proves equal to this one, in the index's

@@ -7928,17 +7928,24 @@ fn memory_range_covers_with_separation(
         // system instead of refusing. Neither rewrite adds or drops a byte,
         // so both are sound; the re-spelling is tried first because it keeps
         // the bases and endpoints the equal-width paths reason about.
-        if memory_range_in_element_width(required, available.element_width()).is_some_and(
-            |required| {
-                memory_range_covers_with_separation(
-                    available,
-                    &required,
-                    assumptions,
-                    use_separation,
-                )
-            },
-        ) {
+        if required.wide_bounds().is_none()
+            && memory_range_in_element_width(required, available.element_width()).is_some_and(
+                |required| {
+                    memory_range_covers_with_separation(
+                        available,
+                        &required,
+                        assumptions,
+                        use_separation,
+                    )
+                },
+            )
+        {
             return true;
+        }
+        // A wide range has no 32-bit byte count to renormalize to, so a
+        // width mismatch the routes above do not settle is not covered.
+        if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
+            return false;
         }
         return memory_range_covers_with_separation(
             &byte_normalized_memory_range(available),

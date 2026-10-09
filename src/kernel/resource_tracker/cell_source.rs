@@ -181,6 +181,12 @@ pub(in crate::kernel) enum StoreSeparatedRangeOrientation {
 /// touches only this index and the named bound premises.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum PointerInRangeEvidence {
+    /// One spelling at the selected range's base, justified by the current
+    /// maintained graph. Checking never searches other aliases or history.
+    GraphAlias {
+        alias: Pointer,
+        membership: Box<PointerInRangeEvidence>,
+    },
     ExactAlias {
         alias: Pointer,
         condition: ConditionTerm,
@@ -903,6 +909,22 @@ impl PointerInRangeEvidence {
                         })
                     })
             })
+            .or_else(|| {
+                // A named-call read and its model identity can be joined
+                // through a third pointer. Ask the graph for one spelling;
+                // keep membership and full address equality as separate checks.
+                let alias = assumptions.pointer_at_known_constant_base(pointer, range.base())?;
+                let membership = Self::for_pointer_direct(&alias, range, assumptions)?;
+                if pointer.blocks_proven_distinct(&alias)
+                    || !assumptions.pointers_known_equal(pointer, &alias)
+                {
+                    return None;
+                }
+                Some(Self::GraphAlias {
+                    alias,
+                    membership: Box::new(membership),
+                })
+            })
     }
 
     fn for_pointer_direct(
@@ -940,6 +962,12 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Self::GraphAlias { alias, membership } = self {
+            return !pointer.blocks_proven_distinct(alias)
+                && assumptions.pointers_known_equal(pointer, alias)
+                && matches!(membership.as_ref(), Self::Shallow | Self::Indexed { .. })
+                && membership.checks(alias, range, assumptions);
+        }
         if let Self::ShiftedExactAlias {
             base,
             alias,
