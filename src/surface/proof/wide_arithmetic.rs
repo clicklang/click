@@ -104,6 +104,10 @@ impl<'a> Proof<'a> {
         &self,
         surface_premises: &[ClickProposition],
     ) -> Result<Self, Option<String>> {
+        // The caller wraps a refusal in the original arithmetic step's
+        // diagnostic. Quote bridge failures' raw summaries below: rendering
+        // their nested goals/premises here would embed a second diagnostic
+        // inside that summary (and violate ClickError's debug invariant).
         let unsigned_order = |proposition: &Proposition| {
             matches!(
                 proposition,
@@ -139,7 +143,7 @@ impl<'a> Proof<'a> {
         for premise in surface_premises {
             let kernel = self
                 .lower_cited_surface_proposition(premise, "`arithmetic using` premise")
-                .map_err(|error| Some(error.message().to_string()))?;
+                .map_err(|error| Some(error.raw_summary().to_string()))?;
             if !unsigned_order(&kernel) {
                 // An Integer premise is used as it is written.
                 facts.push(premise.clone());
@@ -167,7 +171,7 @@ impl<'a> Proof<'a> {
                         premise.clone(),
                     )],
                 ))
-                .map_err(|error| Some(error.message().to_string()))?;
+                .map_err(|error| Some(error.raw_summary().to_string()))?;
             facts.push(observed);
             collect_operations(&lower, &mut operations);
             collect_operations(&upper, &mut operations);
@@ -234,7 +238,7 @@ impl<'a> Proof<'a> {
                         guard,
                     )],
                 ))
-                .map_err(|error| Some(error.message().to_string()))?;
+                .map_err(|error| Some(error.raw_summary().to_string()))?;
             facts.push(equation);
         }
 
@@ -264,7 +268,7 @@ impl<'a> Proof<'a> {
                 vec![goal_lower, goal_upper],
                 observed_goal,
             ))
-            .map_err(|error| Some(error.message().to_string()))?;
+            .map_err(|error| Some(error.raw_summary().to_string()))?;
         if applied.is_complete() || applied.goal() != self.goal() {
             return Ok(applied);
         }
