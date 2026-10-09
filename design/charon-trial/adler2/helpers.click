@@ -1,5 +1,20 @@
 verifying "src/lib.rs";
 
+theorem adler_helper_byte_observation(value: uint8) {
+ ensures to_integer((uint32)value) == to_integer((int32)value) by {
+  have 0 <= (int32)value by { simp(); }
+  have (int32)value <= 255 by { simp(); }
+  apply(int32_less_equal_to_integer(0, (int32)value));
+  apply(int32_less_equal_to_integer((int32)value, 255));
+  arithmetic_certificate special {
+   premise 0: 0 <= to_integer((int32)value) => 0 <= to_integer((int32)value);
+   premise 1: to_integer((int32)value) <= 255 => to_integer((int32)value) <= 255;
+   integer_cast_identity bounds [0, 1] => to_integer((uint32)value) == to_integer((int32)value);
+   conclusion 0;
+  }
+ }
+}
+
 struct __rust_q_I6_adler2_I4_algo_I5_U32X4 __rust_q_I6_adler2_I4_algo_T35___rust_q_I6_adler2_I4_algo_I5_U32X4_I4_from(const uint8* bytes, uint64 bytes_len) {
     requires bytes_len >= 4u64;
     views bytes[0..4];
@@ -19,7 +34,15 @@ struct __rust_q_I6_adler2_I4_algo_I5_U32X4 __rust_q_I6_adler2_I4_algo_T35___rust
     ensures to_integer(result._0[2]) <= 255;
     ensures 0 <= to_integer(result._0[3]);
     ensures to_integer(result._0[3]) <= 255;
+    ensures to_integer(result._0[0]) == old(to_integer((int32)bytes[0]));
+    ensures to_integer(result._0[1]) == old(to_integer((int32)bytes[1]));
+    ensures to_integer(result._0[2]) == old(to_integer((int32)bytes[2]));
+    ensures to_integer(result._0[3]) == old(to_integer((int32)bytes[3]));
 } by {
+    apply(adler_helper_byte_observation(bytes[0]));
+    apply(adler_helper_byte_observation(bytes[1]));
+    apply(adler_helper_byte_observation(bytes[2]));
+    apply(adler_helper_byte_observation(bytes[3]));
     execute();
     apply(uint32_to_integer_bounds(result._0[0]));
     apply(uint32_less_equal_to_integer(result._0[0], 255u32));
@@ -29,6 +52,14 @@ struct __rust_q_I6_adler2_I4_algo_I5_U32X4 __rust_q_I6_adler2_I4_algo_T35___rust
     apply(uint32_less_equal_to_integer(result._0[2], 255u32));
     apply(uint32_to_integer_bounds(result._0[3]));
     apply(uint32_less_equal_to_integer(result._0[3], 255u32));
+    have result._0[0] == old((uint32)bytes[0]) by { simp(); }
+    have to_integer(result._0[0]) == old(to_integer((int32)bytes[0])) by { rewrite(result._0[0] == old((uint32)bytes[0])); assumption(); }
+    have result._0[1] == old((uint32)bytes[1]) by { simp(); }
+    have to_integer(result._0[1]) == old(to_integer((int32)bytes[1])) by { rewrite(result._0[1] == old((uint32)bytes[1])); assumption(); }
+    have result._0[2] == old((uint32)bytes[2]) by { simp(); }
+    have to_integer(result._0[2]) == old(to_integer((int32)bytes[2])) by { rewrite(result._0[2] == old((uint32)bytes[2])); assumption(); }
+    have result._0[3] == old((uint32)bytes[3]) by { simp(); }
+    have to_integer(result._0[3]) == old(to_integer((int32)bytes[3])) by { rewrite(result._0[3] == old((uint32)bytes[3])); assumption(); }
     simp();
 }
 

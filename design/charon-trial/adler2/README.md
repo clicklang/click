@@ -1,10 +1,11 @@
 # Unchanged adler2 crate adapter trial
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
-proves the four-lane helper bodies, zero through four constructor-state input
-bytes, and bounds for every length from zero through 2,147,483,647 bytes from canonical initial
-states (`a,b < 65521`). **The general Adler-32 checksum postcondition remains
-unproved.**
+proves the four-lane helper bodies and the native-count small-batch bounds proof.
+The general and four-byte sidecars still need explicit native-count updates after
+the adapter's full-width iterator change; their previously checked results do
+not currently reverify. See the [tracked regression](../../../bugs/adler-sidecars-use-retired-signed-iterator-counts.md).
+**The general Adler-32 checksum postcondition remains unproved.**
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
 `89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the
@@ -30,7 +31,7 @@ and native Charon artifact to prove every lane of these original helpers:
 
 | Body | Contract |
 | --- | --- |
-| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255; each unsigned Integer observation lies in `0..255` |
+| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255; each unsigned Integer observation equals its entry byte’s signed Integer widening and lies in `0..255` |
 | `AddAssign<Self>` | Each Integer lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand, with exact Integer sum and nonnegative observation |
 | `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor, has the exact unsigned Integer remainder observation, and lies in `0..divisor-1` |
 | `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier, with exact Integer product and observation in `0..4294967295` |
@@ -48,6 +49,18 @@ Its proof applies checked unsigned-order bridges to the actual returned
 fields, making the byte bounds usable by the Integer lane-step lemmas. The
 bridges retain the full u32 range; signed reinterpretation would be unsound
 for accumulated B lanes above the sign bit.
+
+[Lane-state lemmas](lane-state.click), assembled after the common specification,
+observe `a + sum(a_lanes)` and
+`b + 4 * sum(b_lanes) + 6 * MOD - a_lane_1 - 2 * a_lane_2 - 3 * a_lane_3`
+in Integer arithmetic. A checked four-byte step gives the ordered B weights
+`4,3,2,1`; reducing the lanes preserves both residues. The B reduction requires
+a nonnegative representative and permits a negative congruence witness.
+Checked one- and four-byte prefix lemmas connect the A residue recurrence to
+the common specification. These are mathematical lemmas, not a verified
+summary of the general computation: its nested-loop checksum induction remains
+incomplete. The helper’s exact entry-byte observations supply the correspondence
+needed at each original vector-construction call.
 
 The remainder helper exports the strict native and Integer divisor bounds
 for all four lanes, along with nonnegative Integer observations. Its original
@@ -397,7 +410,8 @@ by this contract.
 
 ## General whole-body induction
 
-The [general computation contract](general-compute.click) verifies the original
+The [general computation contract](general-compute.click), pending the native-count
+repair noted above, previously verified the original
 body for every length in `0..2147483647`, with canonical seeds `a,b < 65521`.
 The signed observation limit is explicit; full-width metadata is not truncated
 to admit larger inputs. The proof includes arbitrary numbers of full

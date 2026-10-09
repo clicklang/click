@@ -151,9 +151,9 @@ fn helper_library() -> &'static str {
 
 fn helper_proof(index: usize) -> String {
     let blocks: Vec<_> = helper_library().trim_end().split("\n\n").collect();
-    assert_eq!(blocks.len(), 5);
+    assert_eq!(blocks.len(), 6);
     assert!(index < 4);
-    format!("{}\n\n{}", blocks[0], blocks[index + 1])
+    format!("{}\n\n{}\n\n{}", blocks[0], blocks[1], blocks[index + 2])
 }
 
 fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {
@@ -1804,4 +1804,76 @@ fn charon_adler2_general_compute_rejects_false_iterator_state() {
     ] {
         reject_compute(GENERAL_COMPUTE, before, after);
     }
+}
+
+const LANE_STATE: &str = include_str!("../../design/charon-trial/adler2/lane-state.click");
+
+// Proves the lane recurrence and modular reductions without an imported
+// computation summary, including signed reduction quotient witnesses.
+#[test]
+fn adler_lane_state_recurrences_and_reductions_verify() {
+    let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}");
+    click::surface::verify_c0_sources(&source, &[]).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: lane-state expansion and mutation checks"]
+fn adler_lane_state_expands_and_rejects_false_relations() {
+    let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}");
+    for claim in [
+        "adler_four_lane_state_step.ensures_0",
+        "adler_four_lane_state_step.ensures_1",
+        "adler_lane_a_reduction.ensures_0",
+        "adler_lane_b_reduction.ensures_0",
+        "adler_prefix_a_step_four.ensures_0",
+        "adler_prefix_a_step_one.ensures_0",
+    ] {
+        let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+    for (before, after) in [
+        (
+            "+ 4 * v0 + 3 * v1 + 2 * v2 + v3 by",
+            "+ 4 * v0 + 2 * v1 + 3 * v2 + v3 by",
+        ),
+        (
+            "requires 0 <= adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3);",
+            "",
+        ),
+        ("requires n <= 2147483643;", "requires n <= 2147483644;"),
+        (
+            "adler_spec_a(bytes, n + 1, seed) by",
+            "adler_spec_a(bytes, n + 1, seed + 1) by",
+        ),
+    ] {
+        let changed = LANE_STATE.replacen(before, after, 1);
+        assert_ne!(changed, LANE_STATE, "missing mutation: {before}");
+        let error =
+            click::surface::verify_c0_sources(&format!("{COMMON_ADLER_SPEC}\n{changed}"), &[])
+                .expect_err("false lane-state relation accepted");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: exact byte-observation mutation checks"]
+fn charon_adler2_helpers_from_rejects_wrong_mathematical_bytes() {
+    reject_helper_contracts(
+        0,
+        &[
+            (
+                "old(to_integer((int32)bytes[3]))",
+                "old(to_integer((int32)bytes[2]))",
+            ),
+            (
+                "old(to_integer((int32)bytes[0]))",
+                "old(to_integer((int32)bytes[0])) + 1",
+            ),
+        ],
+    );
 }

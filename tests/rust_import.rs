@@ -1503,6 +1503,14 @@ fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
             "have lanes.lanes[3] == chunk[3]",
             "have lanes.lanes[3] == chunk[3] + 1u32",
         ),
+        (
+            "have to_integer(lanes.lanes[0]) == to_integer((int32)chunk[0])",
+            "have to_integer(lanes.lanes[0]) == to_integer((int32)chunk[1])",
+        ),
+        (
+            "have to_integer(lanes.lanes[3]) == to_integer((int32)chunk[3])",
+            "have to_integer(lanes.lanes[3]) == to_integer((int32)chunk[3]) + 1",
+        ),
         ("views bytes[0..16];", ""),
     ] {
         let invalid = CHUNK_LANE_PROOF.replace(before, after);
