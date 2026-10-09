@@ -81,11 +81,16 @@ restored assertion; restoring it may use a replacement resource instance and
 new field values. An old local value remains a fact about that local value,
 not evidence of the current protected memory after interference.
 
-The independently checked typed-use path currently requires an unconditional,
-field-bearing leaf resource with a memory footprint independent of changing
-model fields. It rejects recursive or matched bodies, named child resources,
-existential pointer witnesses, and resource-reference parameters. Flat abstract
-tokens, including symbolic quantities, can be ingredients of that resource.
+The independently checked typed-use path requires an unconditional,
+field-bearing resource. It may own named child resources and a footprint that
+depends on memory, because unlock forgets the footprint the worker held and
+lock changes no memory. It rejects recursive or matched bodies, existential
+pointer witnesses, and resource-reference parameters. Flat abstract tokens,
+including symbolic quantities, can be ingredients of that resource.
+Initialization consumes explicit ownership of the mutex storage, so a worker
+may write protected memory reached through a pointer without proving it
+separate from the storage. Acquiring/releasing helpers keep the leaf
+restriction.
 The conditional loop acquisition abstraction requires an empty mutex, locally
 owned lifetime authority, and no use hold.
 
@@ -166,16 +171,19 @@ remains.
 
 ### 2. Test protected-resource composition
 
-Authority nested inside an ordinary protected control resource is exercised by
-the prerequisite migration. Extend that support with an ordinary named child
-and a protected ownership footprint that changes, such as an allocated
-collection growing while locked. Freeze the C before adapting the verifier;
-do not flatten source or resources to fit a leaf restriction.
-
-Use these examples to determine needed support for recursive assertions,
-changing footprints, and payload-bearing conditional loop guards. Extend
-ordinary resource reasoning rather than adding a mutex-specific assertion
-language. Retain the parity loop and both forms of its guard contract.
+Complete. The unchanged [shared log C](../design/concurrency-composition/shared_log.c)
+verifies: two workers each push onto an allocated vector under a mutex, and
+the vector's allocation and data range change when a push grows it. The
+protected control owns the pointer cell, the vector as a named child, and a
+credit authority whose count bounds the remaining growth; the parent deposits
+it at initialization and receives it back at destruction. The vector proofs
+are the owned-vector example's, with one added growth bound. Its gaps were
+fixed in ordinary resource reasoning: named children inside an authority
+control, release-side forgetting of a memory-dependent footprint, and
+initialization consuming the mutex's storage ownership. Recursive assertions
+and payload-bearing conditional loop guards were not needed by this example
+and remain unsupported for protected resources. The parity loop and both forms
+of its guard contract are retained.
 
 ### 3. Review the contracts actually used
 

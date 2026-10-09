@@ -377,8 +377,13 @@ impl OpaqueMutexAcquisitions {
     ) -> bool {
         let bytes = crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
             .mutex_storage_bytes;
-        ledger_storage_write_refusal(&self.storage, &storage_range(mutex, bytes), assumptions)
-            .is_some()
+        ledger_storage_write_refusal(
+            &self.storage,
+            &storage_range(mutex, bytes),
+            assumptions,
+            false,
+        )
+        .is_some()
     }
 }
 
@@ -571,7 +576,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
 
 /// A fresh instance of the protected resource with arbitrary fields, as an
 /// acquisition hands it out. Memory is not changed here.
-fn mint_protected_instance(
+pub(super) fn mint_protected_instance(
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CCompositeResourceDefinition>,
     output: Option<crate::kernel::Variable>,

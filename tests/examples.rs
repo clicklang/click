@@ -58,6 +58,25 @@ fn frozen_mutex_parity_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 12s debug verify"]
+fn frozen_mutex_composition_verifies() {
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-composition");
+    run_example_in_thread(&project).unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn concurrency_mutex_composition_source_is_frozen() {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("design/concurrency-composition/shared_log.c");
+    let bytes = fs::read(&source).expect("the frozen shared log C source exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "6a112d82a1f1bf3cae25d03f0310bc78a14be039bb65c64f5a5ffdebbf0ebab9",
+        "the shared log proof must use the selected C source unchanged"
+    );
+}
+
+#[test]
 fn concurrency_mutex_parity_source_is_frozen() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("design/concurrency-probes/mutex_held_parity.c");

@@ -5174,8 +5174,30 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
+        self.owned_storage_access(pointer, bytes, assumptions)
+            .is_some()
+    }
+
+    /// Consumes the owned access [`Self::owns_storage_access`] finds, spelled
+    /// at the address of the fact that supplies it.
+    pub(in crate::kernel) fn without_owned_storage_access(
+        self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        let access = self.owned_storage_access(pointer, bytes, assumptions)?;
+        self.without_fact_delaying_normalization(&access, assumptions)
+    }
+
+    fn owned_storage_access(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<CResourceFact> {
         let Some(mut entries) = self.write_access_entries(pointer, bytes, assumptions) else {
-            return false;
+            return None;
         };
         while let Some(entry) = entries.next() {
             crate::instrumentation::record_deterministic_work(1);
@@ -5192,10 +5214,10 @@ impl ResourceContext {
                 1,
             ));
             if resource_fact_entails(self.fact(entry), &aligned, assumptions) {
-                return true;
+                return Some(aligned);
             }
         }
-        false
+        None
     }
 
     pub(in crate::kernel) fn memory_write_range(

@@ -1028,6 +1028,7 @@ fn freshen_shared_mutex_payload(
         state,
         mutex,
         definition,
+        &environment.modeled_mutex_definition_list,
         assumptions,
         budget,
     )
@@ -1193,6 +1194,15 @@ fn execute_modeled_pthread_mutex_paths(
                         .initialize_empty(mutex.pointer().clone(), binding.mutex_storage_bytes)
                         .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
                 };
+                let context = context.and_then(|context| {
+                    context
+                        .consume_initialized_storage(
+                            mutex.pointer(),
+                            binding.mutex_storage_bytes,
+                            &current,
+                        )
+                        .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
+                });
                 context.and_then(|context| {
                     let (next, evidence) = context.into_runtime_transition();
                     let Some(transport) = selected else {

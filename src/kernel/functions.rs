@@ -6024,6 +6024,7 @@ fn execute_verified_function_applications_with_suspension(
                     &post_state,
                     &usage.mutex,
                     definition,
+                    &environment.modeled_mutex_definition_list,
                     &effective_assumptions,
                     budget,
                 ) {
@@ -19820,6 +19821,40 @@ fn with_private_aggregate_parameter_owners(
 /// Prepares the resource transition of one contract application; see
 /// [`ResourceTransitionPurpose`] for the two routes.
 fn prepare_contract_resource_transfer(
+    caller_state: &CState,
+    callee_state: &CState,
+    interface_name: &str,
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+    preserve_explicit_representation: bool,
+    purpose: ResourceTransitionPurpose,
+) -> ExecutionResult<Result<CFunctionResourceTransfer, CRuntimeError>> {
+    let transfer = prepare_contract_resource_transfer_unexplained(
+        caller_state,
+        callee_state,
+        interface_name,
+        interface,
+        assumptions,
+        budget,
+        preserve_explicit_representation,
+        purpose,
+    )?;
+    // Memory a live mutex's initialization consumed is missing because the
+    // mutex holds it; name the mutex rather than the bytes.
+    Ok(transfer.map_err(|error| match &error {
+        CRuntimeError::MissingResource { resource } => match resource.as_ref() {
+            CResourceFact::Own(CResource::Memory(range), _) => {
+                super::mutexes::consumed_storage_refusal(caller_state, range, assumptions)
+                    .unwrap_or(error)
+            }
+            _ => error,
+        },
+        _ => error,
+    }))
+}
+
+fn prepare_contract_resource_transfer_unexplained(
     caller_state: &CState,
     callee_state: &CState,
     _interface_name: &str,

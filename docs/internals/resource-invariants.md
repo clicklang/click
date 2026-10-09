@@ -312,10 +312,13 @@ implicit storage ownership. Stable views do not authorize this operation, and
 active storage loans block it. The transition forgets the previous byte values
 of the footprint. Addressed opaque union fields can supply ordinary byte
 ownership with `owns holder->mu`. An indexed byte-span query selects constant
-owned storage without scanning unrelated fields. Initialized footprints are now
-reserved against ordinary stores, aggregate writes, call-result assignments,
-modular mutable footprints, and overlapping initializations. The ledger keeps
-this restriction independently of visible ownership and heldness until destroy.
+owned storage without scanning unrelated fields. Initialization consumes the
+explicit ownership of its footprint and destruction returns it, so ownership
+keeps ordinary stores, aggregate writes, call-result assignments, and modular
+mutable footprints off it. Automatic footprints have no explicit owner and are
+reserved against those writes and overlapping initializations instead. The
+ledger keeps that reservation independently of visible ownership and heldness
+until destroy.
 A dyadic interval index selects concrete same-object overlaps. Runtime transitions
 may change representation bytes and respect stable loans. Independent abstract
 inputs now carry immutable indexed reservation dependencies derived through the
@@ -324,7 +327,8 @@ transferring the visible atom cannot erase that dependency. The dependency grant
 no lifecycle or guard authority and does not relax the protocol transition freeze.
 Undecided arms contribute their union; recursive or unresolved dependencies remain
 conservatively unnamed. Known dependencies use ordinary separation checks for
-writes and allocation retirement.
+allocation retirement. They no longer refuse writes: the body can own no memory
+that reaches a live input mutex's storage.
 
 The lifecycle owner now lives in the same resource context as guards, as
 `CResource::MutexLive`. Initialization mints exactly one owned atom; destruction
