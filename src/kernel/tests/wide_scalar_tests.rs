@@ -731,3 +731,134 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
     );
     assert!(samples[2].1 <= samples[0].1 * 4 + 32, "{samples:?}");
 }
+
+// A named call drops the cache of a stored wide value behind a loaded pointer.
+// Its selected alias must recover all eight bytes, without consulting unrelated
+// cells or admitting a withdrawn alias, different read kind, or partial write.
+#[test]
+fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cells() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let read_pointer = Pointer::symbolic(Variable(78_100));
+    let owned_pointer = Pointer::symbolic(Variable(78_101));
+    let callee = Pointer::symbolic(Variable(78_102));
+    let alias = ConditionTerm::pointer_equal(read_pointer.clone(), owned_pointer.clone());
+    let selected = PureFactContext::new().assume_condition(alias, true);
+    let bits = Bitvector32Term::uint64_add(
+        Bitvector32Term::Variable(Variable(78_103)),
+        Bitvector32Term::UInt64Constant(0x1_0000_0001),
+    );
+    let kept = CallKeptOwnership::new(
+        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(memory_range(
+            owned_pointer,
+            0,
+            2,
+        ))),
+        CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+        &selected,
+    );
+    let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
+    let mut previous = None;
+    for count in [16, 64, 256, 1024] {
+        let mut memory = CMemory::new();
+        for index in 0..count {
+            memory = memory.store(
+                Pointer::symbolic(Variable(79_000 + index)),
+                CValue::UInt64(Bitvector32Term::UInt64Constant(index)),
+            );
+        }
+        memory = memory.store(read_pointer.clone(), CValue::UInt64(bits.clone()));
+        let after = memory.with_call_memory_havoc(
+            Variable(78_104),
+            &[memory_range(callee.clone(), 0, 2)],
+            &selected,
+            Some(&kept),
+        );
+        let load = Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(&after),
+            Box::new(read_pointer.clone()),
+            LoadKind::Bits64,
+        );
+        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        let (found, work) =
+            crate::instrumentation::measure_deterministic_work(|| matches(&load, &bits, &selected));
+        assert!(found, "{count} unrelated cells");
+        assert!(matches(&bits, &load, &selected));
+        if let Some(previous) = previous {
+            assert!(work <= previous + 64, "{count}: {work} after {previous}");
+        }
+        previous = Some(work);
+        assert!(!matches(&load, &bits, &PureFactContext::new()));
+        assert!(!matches(
+            &load,
+            &Bitvector32Term::UInt64Constant(1),
+            &selected
+        ));
+        let narrow = Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(&after),
+            Box::new(read_pointer.clone()),
+            LoadKind::Bits32,
+        );
+        assert!(!matches(&narrow, &bits, &selected));
+        let partial = read_pointer.offset_by_bytes(4);
+        let changed = after
+            .without_possible_aliasing_cells(&partial, 4, &selected)
+            .store(partial, CValue::Int32(Bitvector32Term::Constant(0)));
+        let changed = Bitvector32Term::MemoryLoad(
+            intern_c_memory(changed),
+            Box::new(read_pointer.clone()),
+            LoadKind::Bits64,
+        );
+        assert!(!matches(&changed, &bits, &selected));
+    }
+}
+
+// Read-value normalization is a bounded local rule, not a scan back through
+// an arbitrarily long sequence of calls. Missing a checkpoint must refuse
+// with fixed work as the unselected history grows.
+#[test]
+fn selected_wide_read_value_bounds_unselected_call_history() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(81_100));
+    let owner = Pointer::symbolic(Variable(81_101));
+    let callee = Pointer::symbolic(Variable(81_102));
+    let selected = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(pointer.clone(), owner.clone()),
+        true,
+    );
+    let kept = CallKeptOwnership::new(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(memory_range(owner, 0, 2))),
+        CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+        &selected,
+    );
+    let bits = Bitvector32Term::UInt64Constant(7);
+    let mut previous = None;
+    for count in [128, 256, 512] {
+        let mut memory = CMemory::new().store(pointer.clone(), CValue::UInt64(bits.clone()));
+        for index in 0..count {
+            memory = memory.with_call_memory_havoc(
+                Variable(82_000 + index),
+                &[memory_range(callee.clone(), 0, 2)],
+                &selected,
+                Some(&kept),
+            );
+        }
+        let load = Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory),
+            Box::new(pointer.clone()),
+            LoadKind::Bits64,
+        );
+        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::memory_provenance::wide_read_has_recorded_value(&load, &bits, &selected)
+        });
+        assert!(
+            !found,
+            "history of {count} calls needs an explicit checkpoint"
+        );
+        if let Some(previous) = previous {
+            assert!(work <= previous + 64, "{count}: {work} after {previous}");
+        }
+        previous = Some(work);
+    }
+}

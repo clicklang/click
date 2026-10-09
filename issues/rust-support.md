@@ -42,7 +42,13 @@ and actual vector and scalar iterator state through reductions, recombination,
 scalar sums, short tails, and final 16-bit stores.
 Both output fields remain below 65,521. Checked partition lemmas relate full-width
 lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
-Full outer batches and checksum correctness remain incomplete.
+General signed-range partition lemmas establish aligned full-batch remainders
+and decreasing actual outer-iterator remaining counts, without truncating usize
+metadata. Full outer-batch induction and checksum correctness remain incomplete.
+The shared mathematical specification has checked append and weight-shift
+recurrences, nonnegative sums, residue addition, output and packing bounds,
+and preservation of canonical seeds on empty input. It is not yet connected
+to either implementation’s general computation.
 
 Composition regressions cover record and scalar-array storage starts, shared
 chunk-view transport, and all four returned/copied vector lanes across local
@@ -76,7 +82,7 @@ Acceptance:
 
 ### 2. Verify Rust against the common checksum specification
 
-Define Adler-32 over a logical byte sequence once, following
+Use the [shared Adler-32 specification](../design/adler32-spec.click), following
 [the checksum assessment](../design/rust-checksum-assessment.md). Relate the
 original optimized lane state, reductions, and packed result to that definition.
 Prove arbitrary finite input correctness under the explicit supported memory

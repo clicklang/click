@@ -144,6 +144,23 @@ theorem use_uint64_less_than_of_to_integer(left: uint64, right: uint64) {
     ensures left < right by apply(uint64_less_than_of_to_integer(left, right));
 }
 
+theorem use_int64_add_defined_by_integer_bounds(left: int64, right: int64) {
+    requires to_integer(left) + to_integer(right) >= -9223372036854775808;
+    requires to_integer(left) + to_integer(right) <= 9223372036854775807;
+    ensures defined(left + right) by apply(int64_add_defined_by_integer_bounds(left, right));
+}
+
+theorem use_int64_subtract_defined_by_integer_bounds(left: int64, right: int64) {
+    requires to_integer(left) - to_integer(right) >= -9223372036854775808;
+    requires to_integer(left) - to_integer(right) <= 9223372036854775807;
+    ensures defined(left - right) by apply(int64_subtract_defined_by_integer_bounds(left, right));
+}
+
+theorem use_int64_less_than_of_to_integer(left: int64, right: int64) {
+    requires to_integer(left) < to_integer(right);
+    ensures left < right by apply(int64_less_than_of_to_integer(left, right));
+}
+
 theorem use_int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by apply(int64_less_than_to_integer(left, right));

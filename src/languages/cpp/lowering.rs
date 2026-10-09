@@ -1151,6 +1151,9 @@ impl LoweringContext<'_> {
             CppExpression::ObserverCall { .. } => Err(
                 "C++ expression observers are supported in normalized scalar values only".into(),
             ),
+            CppExpression::NullPointer { .. } => {
+                Ok(c_cast(CExpression::Value(int32(0)), CType::Int32Pointer))
+            }
             CppExpression::IntegerLiteral {
                 value, value_type, ..
             }

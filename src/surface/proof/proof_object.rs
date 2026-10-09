@@ -2,6 +2,7 @@ use super::pure_theorems::{
     PureInductionSetup, PureStructuralInductionBranchSetup, PureTheoremContext,
 };
 use super::*;
+use crate::kernel::CFunctionExecutionCandidate;
 use crate::kernel::proof::{
     BranchId, CheckedBranchSplit, CheckedCallOutcomeSplit, ExecutionUpdateError,
     FrontierObligation, FrontierSplitError, FunctionOutcomeObligation, OutcomeProofCore,
@@ -33,6 +34,7 @@ thread_local! {
     static CHOSEN_PROJECTION_WALK_WORK: std::cell::Cell<(usize, usize)> = const {
         std::cell::Cell::new((0, 0))
     };
+    static TERMINAL_PUBLICATION_VISITS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
     static CHECKED_HAVE_OPERATIONS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
@@ -539,7 +541,10 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// snapshots in one record makes their correspondence structural rather
     /// than an invariant across parallel vectors. The record is output-sized
     /// Proof provenance; its persistent roots do not copy semantic state.
-    outcome_provenance: Arc<Vec<OutcomeProvenance>>,
+    outcome_provenance: crate::kernel::proof::PersistentVector<OutcomeProvenance>,
+    outcome_fact_root: Option<Arc<ProofFacts>>,
+    pub(in crate::surface::proof) checked_leaf_facts:
+        Option<Arc<(CFunctionExecutionCandidate, ProofFacts)>>,
     /// Exact producer-issued bindings for load-defining equations.  The
     /// vector is output-sized and persistent across proof forks; conflicting
     /// observations for one variable are retained as an ambiguity tombstone.
@@ -661,7 +666,7 @@ impl ExecutionProofState {
         for (path, returned) in provenance.iter_mut().zip(returns) {
             path.loop_return = Some(returned.clone());
         }
-        self.presentation.outcome_provenance = Arc::new(provenance);
+        self.presentation.outcome_provenance = provenance.into();
         Ok(())
     }
 
@@ -671,6 +676,7 @@ impl ExecutionProofState {
             .get(path_index)
             .cloned()
             .unwrap_or_else(|| OutcomeProvenance {
+                checked_leaf_facts: self.presentation.checked_leaf_facts.clone(),
                 loop_return: self.loop_return_proof(path_index).cloned(),
                 call_routes: Vec::new(),
                 branch_decisions: self.presentation.branch_decisions.clone(),
@@ -732,7 +738,9 @@ impl ExecutionProofState {
                 branch_path,
                 branch_surface_facts: PersistentOrderedSet::default(),
                 branch_decisions: ExecutionBranchDecisions::default(),
-                outcome_provenance: Arc::new(Vec::new()),
+                outcome_provenance: Default::default(),
+                outcome_fact_root: None,
+                checked_leaf_facts: None,
                 generated_load_bindings: PersistentMap::default(),
                 generated_load_binding_events: PersistentSequence::default(),
                 generated_load_source_resolutions: PersistentMap::default(),
@@ -878,7 +886,7 @@ pub(super) struct ProofExecutionView<'p> {
     pub(super) context: &'p ExecutionProofContext<'p>,
     pub(super) unfolded_predicates: &'p SharedVec<String>,
     pub(super) branch_path: &'p PersistentSequence<String>,
-    outcome_provenance: &'p [OutcomeProvenance],
+    outcome_provenance: &'p crate::kernel::proof::PersistentVector<OutcomeProvenance>,
 }
 
 impl ProofExecutionView<'_> {
@@ -1023,6 +1031,7 @@ impl ProofExecutionView<'_> {
 
 #[derive(Clone)]
 struct OutcomeProvenance {
+    checked_leaf_facts: Option<Arc<(CFunctionExecutionCandidate, ProofFacts)>>,
     loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost
     /// `outcomes` first; `true` is `returned`. A surrounding branch can add
@@ -2895,4 +2904,12 @@ impl OutcomeProvenance {
         self.record_generated_load_source_events(&introduced);
         true
     }
+}
+
+#[cfg(test)]
+pub(in crate::surface) use outcomes_and_focus::take_outcome_fact_reads;
+
+#[cfg(test)]
+pub(in crate::surface) fn take_terminal_publication_visits() -> (usize, usize) {
+    TERMINAL_PUBLICATION_VISITS.with(|counts| counts.replace((0, 0)))
 }

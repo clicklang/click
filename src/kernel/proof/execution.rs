@@ -1840,9 +1840,7 @@ impl CheckedResourceRewrite {
                 .is_none_or(|definition| definition.reaches_population()),
             _ => true,
         };
-        if before_state.uses_population_authority_semantics()
-            && !matches!(selected.resource(), CResource::Instance(_))
-        {
+        if !matches!(selected.resource(), CResource::Instance(_)) {
             if let CResource::Composite { name, .. } = selected.resource()
                 && let Some(definition) = function.composite_resource_definition(name)
                 && definition.contains().iter().any(|spec| {
@@ -2221,8 +2219,7 @@ impl CheckedResourceRewrite {
             // through this path: those require ledger evidence. An exact owned
             // authority may move into or out of a control instance; the
             // creation-ledger equality below proves that no population changed.
-            if before_state.uses_population_authority_semantics() && definition.reaches_population()
-            {
+            if definition.reaches_population() {
                 let memory_only = |spec: &crate::kernel::CResourceSpec| {
                     matches!(
                         spec.term(),
@@ -3044,30 +3041,11 @@ impl CheckedAutomaticLifetimeEnd {
 #[derive(Clone)]
 pub(crate) struct CheckedIteratedStep {
     before_state: CState,
-    after_state: CState,
-    before_facts: ProofFacts,
-    step: crate::kernel::IteratedStep,
 }
 
 impl CheckedIteratedStep {
     pub(crate) fn before_state(&self) -> &CState {
         &self.before_state
-    }
-
-    fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<CState> {
-        if state != &self.before_state
-            || state.uses_population_authority_semantics()
-            || facts.introduced_since(&self.before_facts).is_none()
-        {
-            return None;
-        }
-        let after = crate::kernel::apply_iterated_step(
-            &self.before_state,
-            &self.step,
-            self.before_facts.assumptions(),
-        )
-        .ok()?;
-        (after == self.after_state).then(|| self.after_state.clone())
     }
 }
 
@@ -3111,7 +3089,7 @@ impl CheckedResourceObservation {
                 .is_ordinary_abstract_family(name),
             _ => true,
         };
-        if before_state.uses_population_authority_semantics() && counted {
+        if counted {
             let unchanged = before_state.memory.diagnostic_identity()
                 == after_state.memory.diagnostic_identity()
                 && before_state.shares_non_memory_storage_with(after_state)
@@ -3362,15 +3340,13 @@ impl CheckedResourceObservation {
         facts: &ProofFacts,
         call_events: &CheckedCallEvents,
     ) -> Option<ProofFacts> {
-        let same_state = if self.before_state.uses_population_authority_semantics() {
+        let same_state = {
             state.memory.diagnostic_identity() == self.before_state.memory.diagnostic_identity()
                 && state.shares_non_memory_storage_with(&self.before_state)
                 && Arc::ptr_eq(
                     &state.population_effects,
                     &self.before_state.population_effects,
                 )
-        } else {
-            state == &self.before_state
         };
         if !same_state
             || facts.introduced_since(&self.before_facts).is_none()
@@ -3486,7 +3462,7 @@ impl CheckedFunctionEntry {
             ));
         }
         let function = Arc::new(function.clone());
-        let boundary_transfer = if caller_state.uses_population_authority_semantics() {
+        let boundary_transfer = {
             Some(
                 crate::kernel::functions::capture_checked_boundary_resource_transfer(
                     caller_state,
@@ -3502,8 +3478,6 @@ impl CheckedFunctionEntry {
                     ))
                 })??,
             )
-        } else {
-            None
         };
         let mut entry = Self {
             caller_state: caller_state.clone(),
@@ -3566,18 +3540,11 @@ impl CheckedFunctionEntry {
         &self,
         assumptions: &PureFactContext,
     ) -> Option<PureFactContext> {
-        let (_, propositions) = if self.entry_state.uses_population_authority_semantics() {
+        let (_, propositions) = {
             crate::kernel::functions::expand_all_composite_resource_facts_and_propositions_at_state(
                 self.entry_state.resources(),
                 self.function.composite_resource_definitions(),
                 &self.entry_state,
-                assumptions,
-            )?
-        } else {
-            crate::kernel::functions::expand_all_composite_resource_facts_and_propositions(
-                self.entry_state.resources(),
-                self.function.composite_resource_definitions(),
-                self.entry_state.memory(),
                 assumptions,
             )?
         };
@@ -6199,7 +6166,8 @@ pub(crate) struct ExecutionProofCore {
     /// this frontier. Ordinary in-flight execution has one trace; a single C
     /// operation with several return outcomes can complete several traces at
     /// once. Forked proofs share every unchanged trace prefix.
-    pub(crate) execution_evidence: SharedVec<PersistentSequence<CheckedExecutionEvent>>,
+    pub(crate) execution_evidence:
+        super::PersistentVector<PersistentSequence<CheckedExecutionEvent>>,
     /// Returned paths of summarized loops, already proved while each loop's
     /// continuing successor keeps advancing. They are appended to the
     /// completed trace set only at the function boundary, so ordinary
@@ -7083,10 +7051,10 @@ fn check_evidence_events_with_call_events(
                 state = rewrite.after_state.clone();
                 continue;
             }
-            CheckedExecutionEvent::IteratedStep(step) => {
-                state = step.advance_checked(&state, &current_facts)?;
-                continue;
-            }
+            // A checked iterated step does not advance an existing trace: the
+            // authority ledger records its events, so the trace is checked
+            // again from the start.
+            CheckedExecutionEvent::IteratedStep(_) => return None,
             CheckedExecutionEvent::TacticApplication(application) => {
                 current_facts = application.advance_checked(&state, &current_facts)?;
                 state = application.after_state.clone();
@@ -8056,7 +8024,7 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let memory_effects = self.append_statement_effects(execution_facts);
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Statement(theorem.clone()));
             trace.push(CheckedExecutionEvent::Context(context.clone()));
             for call in &call_events {
@@ -8539,6 +8507,10 @@ impl ExecutionProofCore {
         self.publication_case_facts
             .push(ExecutionPureFact::new(fact.clone()));
         self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
+    }
+
+    pub(crate) fn publication_case_prefix(&self) -> ExecutionFacts {
+        self.publication_case_facts.clone()
     }
 
     /// Candidate publication retains the admitted case prefix and appends
@@ -9210,12 +9182,12 @@ impl ExecutionProofCore {
         if !states_match {
             return Err("evidence does not start from the running state".into());
         }
+        // Premise availability is a set question. Retain both ordered streams
+        // by their persistent roots; the premise checker deduplicates only if
+        // a theorem actually needs its fallback set. Do not rebuild the whole
+        // effect history before every statement's ordinary context check.
         let mut retained_execution_facts = execution_facts.persistent_facts();
-        for fact in self.effect_facts.iter() {
-            if !retained_execution_facts.contains(fact) {
-                retained_execution_facts.push(fact.clone());
-            }
-        }
+        retained_execution_facts.extend_shared(&self.effect_facts);
         let entry_relation_facts = self
             .function_entry
             .as_ref()
@@ -9273,7 +9245,7 @@ impl ExecutionProofCore {
             path_facts,
             obligations,
         )?;
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::Condition(theorem.clone()));
             trace.push(CheckedExecutionEvent::Context(context.clone()));
         }
@@ -9313,7 +9285,7 @@ impl ExecutionProofCore {
         if !arm.is_valid() {
             return false;
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ProofCase(arm.clone()));
         }
         true
@@ -9858,7 +9830,7 @@ impl ExecutionProofCore {
             names: names.to_vec(),
         };
         self.evidence_state = Some(after_state.clone());
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::AutomaticLifetimeEnd(end.clone()));
         }
         Ok(after_state)
@@ -9880,16 +9852,11 @@ impl ExecutionProofCore {
         let before_state = self.reached_state().clone();
         let after_state =
             crate::kernel::apply_iterated_step(&before_state, &step, before_facts.assumptions())?;
-        let checked = CheckedIteratedStep {
-            before_state,
-            after_state: after_state.clone(),
-            before_facts: before_facts.clone(),
-            step,
-        };
+        let checked = CheckedIteratedStep { before_state };
         if self.evidence_state.is_some() {
             self.evidence_state = Some(after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::IteratedStep(checked.clone()));
         }
         Ok(after_state)
@@ -9934,7 +9901,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(observation.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ResourceObservation(
                 observation.clone(),
             ));
@@ -10005,7 +9972,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
         }
         Ok(())
@@ -10067,7 +10034,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(application.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::TacticApplication(
                 application.clone(),
             ));
@@ -10123,7 +10090,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(
                 rewrite.clone(),
             ));
@@ -10195,7 +10162,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() || entry_successor.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::PopulationMemberRewrite(
                 rewrite.clone(),
             ));
@@ -10240,7 +10207,7 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
-        for trace in &mut *self.execution_evidence {
+        for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
         }
         Ok(())
@@ -10511,8 +10478,7 @@ impl ExecutionProofCore {
         // path, which still holds its body. Unfolding it again leaves the
         // retained path as it is: the exchange is checked above, and the
         // path never held the folded head it would remove.
-        if before_state.uses_population_authority_semantics()
-            && matches!(selected.resource(), CResource::Composite { name, .. }
+        if matches!(selected.resource(), CResource::Composite { name, .. }
                 if function
                     .composite_resource_definition(name)
                     .is_some_and(|definition| !definition.reaches_population()))
@@ -10952,7 +10918,7 @@ impl ExecutionProofCore {
                 } else {
                     candidates.state()
                 },
-                if has_checked_entry && candidates.state().uses_population_authority_semantics() {
+                if has_checked_entry {
                     self.function_entry
                         .as_ref()
                         .expect("checked entry exists")

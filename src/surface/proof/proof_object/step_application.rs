@@ -812,14 +812,14 @@ impl<'a> Proof<'a> {
         {
             return Ok(proof);
         }
-        // A 64-bit unsigned order is proved through its Integer
+        // A 64-bit order is proved through its Integer
         // observations, by the bridge steps a proof would write.
         if let ProofStep::ArithmeticUsing(premises) = &step {
             match self.try_wide_arithmetic_using(premises) {
                 Ok(proof) => return Ok(proof),
                 Err(Some(reason)) => {
                     return Err(self.step_error(format!(
-                        "`arithmetic` read the current goal as a uint64 order: {reason}"
+                        "`arithmetic` read the current goal as a 64-bit order: {reason}"
                     )));
                 }
                 Err(None) => {}
@@ -2361,7 +2361,18 @@ impl<'a> Proof<'a> {
                         self,
                         result,
                         "integer certificate trivial result",
-                        node_index != certificate.conclusion,
+                        node_index != certificate.conclusion
+                            // Peeling can retain an Integer order obligation
+                            // whose written constant comparison ordinarily
+                            // lowers to `true`. Keep its relation only when it
+                            // matches the actual kernel conclusion exactly.
+                            || lower_integer_constant_comparison(result)
+                                .as_ref()
+                                .and_then(integer_affine_claim)
+                                .is_some_and(|written| {
+                                    self.goal().and_then(integer_affine_claim)
+                                        == Some(written)
+                                }),
                     )?,
                 },
             };

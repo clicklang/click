@@ -16806,3 +16806,59 @@ fn peeled_empty_fold_differences_reject_nonzero_results() {
         error.message()
     );
 }
+
+fn empty_fold_order_source() -> &'static str {
+    r#"function marks(end: int32) -> Integer {
+ (0..end).fold(0, |acc, k| { acc + to_integer(k) })
+}
+theorem empty_order(end: int32) {
+ requires end <= 0;
+ ensures 0 <= marks(end) by {
+  peel(marks(end)) using { end <= 0; }
+  arithmetic() using { marks(end) == 0; }
+ }
+ ensures marks(end) <= 0 by {
+  peel(marks(end)) using { end <= 0; }
+  arithmetic() using { }
+ }
+}
+"#
+}
+
+// A constant order after peeling must retain its relation at the conclusion,
+// rather than print the generic equality certificate for Boolean truth.
+#[test]
+fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
+    let source = empty_fold_order_source();
+    verify_c0_sources(source, &[]).unwrap();
+    for claim in ["empty_order.ensures_0", "empty_order.ensures_1"] {
+        let expanded = expand_c0_claim_source_by_label(source, &[], claim).unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "nightly: empty-fold order and certificate mutations"]
+fn peeled_empty_fold_order_rejects_false_comparisons() {
+    let source = empty_fold_order_source();
+    for (before, after) in [
+        ("0 <= marks(end)", "1 <= marks(end)"),
+        ("marks(end) <= 0", "marks(end) <= -1"),
+    ] {
+        let invalid = source.replacen(before, after, 1);
+        assert_ne!(invalid, source);
+        let error = verify_c0_sources(&invalid, &[]).expect_err("false empty order accepted");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+    let expanded = expand_c0_claim_source_by_label(source, &[], "empty_order.ensures_0").unwrap();
+    let invalid = expanded.replacen("trivial => 0 <= 0", "trivial => 0 == 0", 1);
+    assert_ne!(invalid, expanded);
+    assert!(
+        verify_c0_sources(&invalid, &[]).is_err(),
+        "changed conclusion relation accepted"
+    );
+}

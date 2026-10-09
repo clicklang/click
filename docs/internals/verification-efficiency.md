@@ -317,61 +317,51 @@ charged to visible semantic output rather than hidden ambient state:
   a unit per unrelated allocation. Removing them needs the resource facts'
   and the path's memory-effect facts' contexts carried with the proof state.
 
-  Reading a checked path is still linear in that path's facts, and the
-  checked execution stores each path's facts whole. A function with `P`
-  early returns, each after the conditions of the returns before it, holds
-  about `P^2/2` path facts, so whatever reads every path's facts is
-  quadratic in `P`: post-execution `simp` and contract certification do
-  (`grouped_proof_finalization_reads_each_path_once` pins only the
-  finalization check that no longer needs them). Removing this needs path
-  facts shared across the paths that share a prefix. The same function is
-  quadratic in other per-path work that follows the path's length, not its
-  facts; `bugs/early-return-paths-store-facts-whole.md` lists each measured
-  source. The largest, simp offering its goal as a transport from every
-  program point the path recorded, is bounded
-  (`simp_snapshot_transport_search_is_linear_in_early_returns`). Constant-pinned
-  equality goals also select at most two indexed premises instead of every
-  preceding guard about the same variable; the selected premises still undergo
-  the ordinary atomic derivation check
-  (`indexed_simp_premises_reduce_whole_early_return_work`). Proof completions
-  without required entry resources retain their persistent body context.
-  Certification reuses it after entry checks when no entry-resource
-  propositions need merging, then adds only assumable obligations
-  (`completed_early_return_contexts_are_reused_for_certification`). Legacy
-  producers and paths with observable entry-resource facts retain the flat
-  rebuild. Decided C branches now build allocation-resolution assumptions
-  only while an allocation is pending; the same regression bounds that phase
-  in both proof forms. Logical frontier cases retain a kernel-owned persistent
-  local context. Explicit steps keep the existing premise-availability checks,
-  add their local resource observations after that shared prefix, and carry
-  the context to return preparation; duplicate or dropped cases keep the
-  ordered fold. The same regression now bounds whole-verification context
-  construction in both proof forms. Logical proof cases also retain their
-  ordered branch decision when the checked arm opens, using the frozen C
-  spelling for a source-successor split. Returned paths share that prefix,
-  and terminal joins keep the nested history instead of copying
-  and indexing it again. The same regression now bounds whole-verification
-  work in both proof forms through 64 returns. Completed candidate collections
-  also share their immutable source, input state, arguments, and path storage
-  across frontier clones. The candidate-fork regression varies path counts and
-  facts per path independently through 1,024, without a timing threshold.
-  Certification still checks these untrusted candidates against execution.
-  Individual paths now retain ordered persistent fact streams, including
-  guard prefixes and effect metadata. Exact merges keep accepted source fact
-  objects, and checked completion shares its context's ordered projection.
-  The same whole-verification regression bounds retained fact objects and
-  vector chunks at candidate publication and checked completion in both proof
-  forms. At 64 returns, 2,405 logical fact occurrences retain 197 distinct fact
-  objects and 328 vector chunks. The kernel storage regression and context
-  fork tests check order, arm isolation, metadata edits, and owner lifetime.
-  Terminal joins retain immutable candidate records, including their outcome
-  states and obligation payloads, and classify only newly introduced facts.
-  Candidate publication regressions vary record count and payload size
-  independently through 1,024; the terminal-branch regression checks retained
-  outcome identity beside up to 4,096 ambient facts. The joins still assemble
-  distinct flat outcome containers, and outcome processing still traverses
-  each logical fact stream; the bug report records those remaining costs and
-  the whole-work curves.
+  Completed early-return paths retain shared fact prefixes and immutable
+  candidate records. Terminal joins concatenate persistent candidate,
+  evidence, and provenance vectors instead of copying the returned paths at
+  every enclosing join. Balanced concatenation joins immutable child nodes
+  without copying either sibling's records. Exact execution-fact membership uses
+  a persistent hash index that includes certification and transport metadata.
+  Its regression counts actual fact-iterator reads and requires none for indexed
+  membership across 64 through 512 facts. Legacy traversal accounting described
+  above remains unchanged.
+
+  A checked single-outcome statement also retains its typed proof-fact
+  context. Outcome goals reuse it only for the identical candidate record
+  and a compatible entry-fact lineage. They compute the frontier's new
+  ambient suffix once, reject incompatible leaves, and import local effect
+  evidence rather than rereading every enclosing guard. A terminal join may
+  preserve this cache after checking an arm's introduction delta and
+  republishing that exact record. Statement premise checking shares the current
+  effect history instead of rebuilding a deduplicated stream eagerly. Post-execution case routing retains unchanged
+  records and extends each cached context with its checked case delta. Duplicate
+  statement premises retain their
+  original priority without being reported as new introductions. Statement
+  priority batches retain the identical checked case-prefix stream and store
+  only their local suffix, so cached leaf contexts do not introduce a new
+  flat array of guards per return. Statements selecting a different ordered
+  batch keep their exact input; the regression bounds total retained entries
+  and the number of materialized multi-fact batches.
+
+  `completed_early_return_contexts_are_reused_for_certification` measures both
+  grouped and explicit proofs at 4, 8, 16, 32, and 64 returns. It bounds whole
+  work, context construction, retained fact objects and chunks, terminal
+  publication visits, and logical outcome imports. At those sizes, imports
+  are 10, 18, 34, 66, and 130 in both forms; all returned leaves reuse their
+  checked contexts. The vector regression counts payload copies through
+  1,024 records in both concatenation directions, and bounds node work for
+  repeated 128-record sibling blocks. Indexed edits preserve other forks and
+  their cached slice views. Branch regressions check
+  opposite-arm isolation, added ambient premises, and cache invalidation by
+  candidate identity; false-final-path fixtures remain rejected.
+
+  Multi-outcome statement producers, summarized loop returns, incompatible
+  premise lineages, and legacy producers keep their ordered path import.
+  Entry-resource propositions still require the existing certification
+  merge when their precedence matters. Those fallback checks preserve
+  authority and ordering; shared storage does not grant a theorem or bypass
+  independent execution-trace and contract certification.
 
 ## Execution capacity follows selected syntax
 
@@ -525,7 +515,7 @@ explicit:
   memory load reasons under stays the caller's object so the load's alias
   queries keep an ambient memo identity. Both are pure-function memoizations
   over stable interned ids, not new proof authority.
-- **A smart closure asks each failed question once.** A `simp` attempt
+- **A transport attempt asks each failed question once.** A `simp` attempt
   can reach one goal through several strategies and candidates; the snapshot
   transport closure lowers the goal at every recorded snapshot, and every
   snapshot holding the goal's cells unchanged lowers it to the same source.
@@ -537,7 +527,13 @@ explicit:
   that met a cycle cut or a limit are not remembered and nothing outlives the
   attempt, so the memo changes a failing search's cost, never its outcome
   (`mdtests/simp_frame_failure_through_region_arena_is_prompt.md`, pinned
-  below the default budget by the mdtest harness).
+  below the default budget by the mdtest harness). An explicit `transport`
+  also opens this scope: its bridge, reachability, and quantified-frame routes
+  can repeat the same failed memory question even without smart search. Nested
+  checks share the enclosing scope; standalone checks discard it on return.
+  `explicit_transport_failure_is_prompt.md` pins the local refusal below the
+  repeated work, and `explicit_frame_refusal_scales_with_unrelated_facts`
+  grows independent scalar premises without granting the missing frame.
 - **Keep fallback candidates finite.** An indexed equality-rewrite candidate
   may unfold a function and descend through logical structure, but that descent
   cannot restart an equality-rewrite or function-unfold fallback already active

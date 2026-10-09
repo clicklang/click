@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 47;
+    artifact["schema"] = 49;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -2238,12 +2238,14 @@ private:
           llvm::dyn_cast<clang::VarDecl>(declaration->getDecl());
       const auto *parameter_reference = parameter == nullptr ? nullptr :
           parameter->getType()->getAs<clang::LValueReferenceType>();
-      if (parameter_reference == nullptr || parameter->getDeclContext() != function) {
-        fail(expression->getExprLoc(), "C++ references currently bind existing references or pointer dereferences");
+      const bool member = llvm::isa<clang::MemberExpr>(source);
+      if (!member && (parameter_reference == nullptr || parameter->getDeclContext() != function)) {
+        fail(expression->getExprLoc(), "C++ references currently bind existing references, int32 fields, or pointer dereferences");
         return std::nullopt;
       }
       auto place = lower_place_reference(source, function);
-      auto pointer_type = lower_type(context_.getPointerType(parameter_reference->getPointeeType()), source->getExprLoc());
+      const auto pointee = member ? source->getType() : parameter_reference->getPointeeType();
+      auto pointer_type = lower_type(context_.getPointerType(pointee), source->getExprLoc());
       if (!place || !pointer_type) return std::nullopt;
       llvm::json::Object value;
       value["kind"] = "address_of";
@@ -2542,6 +2544,33 @@ private:
       return boolean_constant(boolean->getValue(), boolean->getSourceRange(),
                               false);
     }
+    // Only literal null conversions are total, effect-free pointer values.
+    // A nullptr_t call or variable still has evaluation behavior and is not
+    // silently folded to a literal by this boundary.
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression);
+        cast != nullptr && cast->getCastKind() == clang::CK_NullToPointer) {
+      const auto *operand = cast->getSubExpr()->IgnoreParens();
+      const auto *integer = llvm::dyn_cast<clang::IntegerLiteral>(operand);
+      if (!llvm::isa<clang::CXXNullPtrLiteralExpr>(operand) &&
+          (integer == nullptr || !integer->getValue().isZero())) {
+        fail(cast->getExprLoc(), "C++ null pointer conversion requires a literal nullptr or zero");
+        return std::nullopt;
+      }
+      const auto *pointer = cast->getType()->getAs<clang::PointerType>();
+      if (pointer == nullptr || pointer->getPointeeType().hasQualifiers() ||
+          !context_.hasSameType(pointer->getPointeeType(), context_.IntTy)) {
+        fail(cast->getExprLoc(), "C++ null pointer literal requires a mutable int32 pointer");
+        return std::nullopt;
+      }
+      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      if (!value_type)
+        return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "null_pointer";
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
+    }
     // Closed compile-time operations are evaluated by the pinned Clang profile,
     // and retain their source span as distinct compiler_constant artifact
     // nodes. Runtime calls are not folded or skipped by this narrow allowlist.
@@ -2631,7 +2660,7 @@ private:
       if (cast->getCastKind() == clang::CK_NoOp &&
           context_.hasSameType(cast->getType(),
                                cast->getSubExpr()->getType()) &&
-          (cast->getType()->isBooleanType() ||
+          (cast->getType()->isBooleanType() || cast->getType()->isPointerType() ||
            (cast->getType()->isIntegerType() &&
             (context_.getTypeSize(cast->getType()) == 32 ||
              context_.getTypeSize(cast->getType()) == 64 ||
@@ -3589,15 +3618,21 @@ private:
   std::string method_name(const clang::CXXMethodDecl *method) {
     std::string name = method->getNameAsString();
     if (method->isOverloadedOperator()) {
-      if (method->getOverloadedOperator() != clang::OO_PlusEqual &&
-          method->getOverloadedOperator() != clang::OO_MinusEqual) {
+      switch (method->getOverloadedOperator()) {
+      case clang::OO_PlusEqual:
+        name = "operator_add_assign";
+        break;
+      case clang::OO_MinusEqual:
+        name = "operator_subtract_assign";
+        break;
+      case clang::OO_Subscript:
+        name = "operator_index";
+        break;
+      default:
         fail(method->getLocation(), "the supported C++ operator methods are "
-                                    "operator+= and operator-= only");
+                                    "operator+=, operator-= and operator[] only");
         return {};
       }
-      name = method->getOverloadedOperator() == clang::OO_PlusEqual
-                 ? "operator_add_assign"
-                 : "operator_subtract_assign";
     }
     return record_name(method->getParent()) + "_" + name +
            template_suffix(method);

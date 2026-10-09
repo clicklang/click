@@ -2100,6 +2100,11 @@ pub(super) fn ranking_nonnegative_proposition(value: &CRankingMeasureValue) -> P
             CRankingMeasureValue::Machine(term) => {
                 ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone())
             }
+            // A signed 64-bit reading owes its lower bound as an int32 does.
+            CRankingMeasureValue::Signed64(term) => ConditionTerm::int64_signed_less_equal(
+                Bitvector32Term::Int64Constant(0),
+                term.clone(),
+            ),
             CRankingMeasureValue::Unsigned32(_) | CRankingMeasureValue::Unsigned64(_) => {
                 ConditionTerm::Constant(true)
             }
@@ -2141,6 +2146,12 @@ pub(super) fn ranking_decrease_proposition(
             (CRankingMeasureValue::Unsigned64(post), CRankingMeasureValue::Unsigned64(pre)) => {
                 ConditionTerm::uint64_less_than(post.clone(), pre.clone())
             }
+            // Signed descent below a value that is at least zero: strict `<`
+            // on the nonnegative int64 values is well founded, and the
+            // bundle's `0 <= m` member keeps each reading among them.
+            (CRankingMeasureValue::Signed64(post), CRankingMeasureValue::Signed64(pre)) => {
+                ConditionTerm::int64_signed_less_than(post.clone(), pre.clone())
+            }
             (CRankingMeasureValue::Integer(post), CRankingMeasureValue::Integer(pre)) => {
                 ConditionTerm::integer_less_than(post.clone(), pre.clone())
             }
@@ -2165,6 +2176,9 @@ pub(super) fn ranking_tie_proposition(
             (CRankingMeasureValue::Unsigned64(post), CRankingMeasureValue::Unsigned64(pre)) => {
                 ConditionTerm::uint64_equal(post.clone(), pre.clone())
             }
+            (CRankingMeasureValue::Signed64(post), CRankingMeasureValue::Signed64(pre)) => {
+                ConditionTerm::int64_equal(post.clone(), pre.clone())
+            }
             (CRankingMeasureValue::Integer(post), CRankingMeasureValue::Integer(pre)) => {
                 ConditionTerm::integer_equal(post.clone(), pre.clone())
             }
@@ -2179,7 +2193,7 @@ pub(super) fn ranking_tie_proposition(
 fn mixed_ranking_carrier_message(component: &CRankingComponent) -> String {
     format!(
         "the `decreases` component `{}` read in different carriers at the two states (a machine \
-         int32, uint32, or uint64, or a mathematical Integer), so its two values cannot be ranked \
+         int32, uint32, int64, or uint64, or a mathematical Integer), so its two values cannot be ranked \
          against each other",
         c_ranking_measure_display(component)
     )
@@ -2268,16 +2282,17 @@ fn pure_ranking_measure_term(
 
 /// What a machine `decreases` component must be, for every refusal of an
 /// operand whose type is outside the ranked carriers.
-const RANKING_MEASURE_TYPE_MESSAGE: &str = "termination measures must be int32 or unsigned \
-     integer (uint8, uint16, uint32, uint64) expressions";
+const RANKING_MEASURE_TYPE_MESSAGE: &str = "termination measures must be int32, int64 or \
+     unsigned integer (uint8, uint16, uint32, uint64) expressions";
 
 /// The machine type C gives a measure subexpression after the integer
 /// promotions: every type narrower than `int` -- `_Bool`, `int8`, `int16`,
-/// `uint8`, `uint16` -- is an `int32`. `int64` is not a ranked carrier.
+/// `uint8`, `uint16` -- is an `int32`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RankingMachineType {
     Int32,
     UInt32,
+    Int64,
     UInt64,
 }
 
@@ -2302,11 +2317,11 @@ impl RankingMachineTerm {
             | CValue::UInt8(term)
             | CValue::UInt16(term) => (RankingMachineType::Int32, term),
             CValue::UInt32(term) => (RankingMachineType::UInt32, term),
+            CValue::Int64(term) => (RankingMachineType::Int64, term),
             CValue::UInt64(term) => (RankingMachineType::UInt64, term),
             CValue::Int128(_)
             | CValue::UInt128(_)
             | CValue::Void
-            | CValue::Int64(_)
             | CValue::Float32(_)
             | CValue::Float64(_)
             | CValue::Pointer(_) => return None,
@@ -2321,10 +2336,17 @@ impl RankingMachineTerm {
     fn convert(self, target: RankingMachineType) -> Bitvector32Term {
         use RankingMachineType::*;
         match (self.machine_type, target) {
-            (Int32 | UInt32, Int32 | UInt32) | (UInt64, UInt64) => self.term,
+            (Int32 | UInt32, Int32 | UInt32) | (UInt64, UInt64) | (Int64, Int64) => self.term,
             (Int32, UInt64) => Bitvector32Term::uint64_from_int32(self.term),
             (UInt32, UInt64) => Bitvector32Term::uint64_from_32(self.term),
-            (UInt64, Int32 | UInt32) => Bitvector32Term::uint32_from_64(self.term),
+            // Widening to the signed type keeps the value: a signed word is
+            // sign-extended and an unsigned one zero-extended.
+            (Int32, Int64) => Bitvector32Term::int64_from_32(self.term),
+            (UInt32, Int64) => Bitvector32Term::int64_from_uint32(self.term),
+            // Between the two 64-bit types C keeps the bits.
+            (Int64, UInt64) => Bitvector32Term::uint64_from_int64(self.term),
+            (UInt64, Int64) => Bitvector32Term::int64_from_uint64_bits(self.term),
+            (UInt64 | Int64, Int32 | UInt32) => Bitvector32Term::uint32_from_64(self.term),
         }
     }
 
@@ -2334,6 +2356,8 @@ impl RankingMachineTerm {
         use RankingMachineType::*;
         match (left.machine_type, right.machine_type) {
             (UInt64, _) | (_, UInt64) => UInt64,
+            // `long` holds every `int` and every `unsigned int`.
+            (Int64, _) | (_, Int64) => Int64,
             (UInt32, _) | (_, UInt32) => UInt32,
             (Int32, Int32) => Int32,
         }
@@ -2352,6 +2376,7 @@ impl RankingMachineTerm {
             RankingMachineType::UInt32 => {
                 CRankingMeasureValue::Unsigned32(canonical_ranking_term(&self.term))
             }
+            RankingMachineType::Int64 => CRankingMeasureValue::Signed64(self.term),
             RankingMachineType::UInt64 => CRankingMeasureValue::Unsigned64(self.term),
         }
     }
@@ -2406,7 +2431,7 @@ fn c_ranking_measure_term_unfolded(
         right: &CExpression,
         state: &CState,
         reader: &mut CRankingMeasureReader<'_>,
-        operations: (Operation, Operation, Operation),
+        operations: (Operation, Operation, Operation, Operation),
     ) -> Result<RankingMachineTerm, String> {
         let left = c_ranking_measure_term_unfolded(left, state, reader)?;
         let right = c_ranking_measure_term_unfolded(right, state, reader)?;
@@ -2415,6 +2440,7 @@ fn c_ranking_measure_term_unfolded(
             Int32 => operations.0,
             UInt32 => operations.1,
             UInt64 => operations.2,
+            Int64 => operations.3,
         };
         Ok(RankingMachineTerm {
             machine_type,
@@ -2435,7 +2461,9 @@ fn c_ranking_measure_term_unfolded(
         let operation = match left.machine_type {
             Int32 => operations.0,
             UInt32 => operations.1,
-            UInt64 => return Err("termination measures may not shift a uint64 value".into()),
+            UInt64 | Int64 => {
+                return Err("termination measures may not shift a 64-bit value".into());
+            }
         };
         let machine_type = left.machine_type;
         Ok(RankingMachineTerm {
@@ -2450,8 +2478,8 @@ fn c_ranking_measure_term_unfolded(
         Variable(name) => match state.locals().get(name) {
             Some(value) => RankingMachineTerm::from_value(value).ok_or_else(|| {
                 format!(
-                    "termination measure variable `{name}` does not hold an int32 or unsigned \
-                     integer value"
+                    "termination measure variable `{name}` does not hold an int32, int64 or \
+                     unsigned integer value"
                 )
             }),
             None => Err(format!(
@@ -2473,13 +2501,13 @@ fn c_ranking_measure_term_unfolded(
         }
         Cast {
             expression,
-            target_type: target @ (CType::UInt32 | CType::UInt64),
+            target_type: target @ (CType::UInt32 | CType::UInt64 | CType::Int64),
             ..
         } => {
-            let machine_type = if *target == CType::UInt32 {
-                UInt32
-            } else {
-                UInt64
+            let machine_type = match target {
+                CType::UInt32 => UInt32,
+                CType::Int64 => Int64,
+                _ => UInt64,
             };
             let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
             Ok(RankingMachineTerm {
@@ -2496,9 +2524,9 @@ fn c_ranking_measure_term_unfolded(
             let then_value = c_ranking_measure_term_unfolded(then_branch, state, reader)?;
             let else_value = c_ranking_measure_term_unfolded(else_branch, state, reader)?;
             let machine_type = RankingMachineTerm::common_type(&then_value, &else_value);
-            if machine_type == UInt64 {
+            if matches!(machine_type, UInt64 | Int64) {
                 return Err(
-                    "termination measures may not choose between uint64 values with `?:`".into(),
+                    "termination measures may not choose between 64-bit values with `?:`".into(),
                 );
             }
             let (then_term, else_term) = if value {
@@ -2530,6 +2558,7 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::add,
                 Bitvector32Term::add,
                 Bitvector32Term::uint64_add,
+                Bitvector32Term::int64_add,
             ),
         ),
         Subtract(left, right) => binary(
@@ -2541,6 +2570,7 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::subtract,
                 Bitvector32Term::subtract,
                 Bitvector32Term::uint64_subtract,
+                Bitvector32Term::int64_subtract,
             ),
         ),
         Multiply(left, right) => binary(
@@ -2552,6 +2582,7 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::multiply,
                 Bitvector32Term::multiply,
                 Bitvector32Term::uint64_multiply,
+                Bitvector32Term::int64_multiply,
             ),
         ),
         Divide(left, right) => binary(
@@ -2563,6 +2594,7 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::divide,
                 Bitvector32Term::unsigned_divide,
                 Bitvector32Term::uint64_divide,
+                Bitvector32Term::int64_divide,
             ),
         ),
         Remainder(left, right) => binary(
@@ -2574,6 +2606,7 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::remainder,
                 Bitvector32Term::unsigned_remainder,
                 Bitvector32Term::uint64_remainder,
+                Bitvector32Term::int64_remainder,
             ),
         ),
         ShiftLeft(left, right) => shift(
@@ -2602,6 +2635,7 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::bitwise_and,
                 Bitvector32Term::bitwise_and,
                 Bitvector32Term::uint64_bitwise_and,
+                Bitvector32Term::uint64_bitwise_and,
             ),
         ),
         BitwiseOr(left, right) => binary(
@@ -2612,6 +2646,7 @@ fn c_ranking_measure_term_unfolded(
             (
                 Bitvector32Term::bitwise_or,
                 Bitvector32Term::bitwise_or,
+                Bitvector32Term::uint64_bitwise_or,
                 Bitvector32Term::uint64_bitwise_or,
             ),
         ),
@@ -2624,12 +2659,13 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::bitwise_xor,
                 Bitvector32Term::bitwise_xor,
                 Bitvector32Term::uint64_bitwise_xor,
+                Bitvector32Term::uint64_bitwise_xor,
             ),
         ),
         BitwiseNot(value) => {
             let value = c_ranking_measure_term_unfolded(value, state, reader)?;
             let machine_type = value.machine_type;
-            let term = if machine_type == UInt64 {
+            let term = if matches!(machine_type, UInt64 | Int64) {
                 Bitvector32Term::uint64_bitwise_not(value.term)
             } else {
                 Bitvector32Term::bitwise_not(value.term)
@@ -2705,6 +2741,11 @@ fn c_ranking_measure_condition_term(
             (UInt64, Relation::Greater) => ConditionTerm::uint64_less_than(right, left),
             (UInt64, Relation::GreaterEqual) => ConditionTerm::uint64_less_equal(right, left),
             (UInt64, Relation::Equal) => ConditionTerm::uint64_equal(left, right),
+            (Int64, Relation::Less) => ConditionTerm::int64_signed_less_than(left, right),
+            (Int64, Relation::LessEqual) => ConditionTerm::int64_signed_less_equal(left, right),
+            (Int64, Relation::Greater) => ConditionTerm::int64_signed_less_than(right, left),
+            (Int64, Relation::GreaterEqual) => ConditionTerm::int64_signed_less_equal(right, left),
+            (Int64, Relation::Equal) => ConditionTerm::int64_equal(left, right),
         })
     }
     match expression {
@@ -2733,7 +2774,7 @@ fn c_ranking_measure_condition_term(
         _ => {
             let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
             Ok((
-                if value.machine_type == UInt64 {
+                if matches!(value.machine_type, UInt64 | Int64) {
                     ConditionTerm::uint64_equal(value.term, Bitvector32Term::UInt64Constant(0))
                 } else {
                     ConditionTerm::equal(value.term, Bitvector32Term::Constant(0))
@@ -5501,17 +5542,30 @@ mod ranking_member_tests {
         );
     }
 
-    /// `int64` is not a ranked carrier, and the refusal names what is.
+    /// An `int64` component ranks by signed 64-bit order and owes its lower
+    /// bound, as an int32 one does: a negative reading fails the `0 <= m`
+    /// member, and a reading that grows fails the decrease.
     #[test]
-    fn an_int64_component_is_refused() {
-        let state = typed_state(
-            "x",
-            CValue::Int64(Bitvector32Term::Int64Constant(3)),
-            CType::Int64,
-        );
-        let error = ranking_members(&state, &state, CExpression::Variable("x".to_string()))
-            .expect_err("int64 is not a ranked carrier");
-        assert!(error.contains("int32 or unsigned integer"), "{error}");
+    fn an_int64_component_ranks_by_signed_order_and_owes_its_lower_bound() {
+        let state = |value: i64| {
+            typed_state(
+                "x",
+                CValue::Int64(Bitvector32Term::Int64Constant(value)),
+                CType::Int64,
+            )
+        };
+        let x = || CExpression::Variable("x".to_string());
+        let holds = |value| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
+        let down = ranking_members(&state(4), &state(5), x()).expect("int64 measure");
+        assert_eq!(down, vec![holds(true), holds(true)]);
+        let negative = ranking_members(&state(-1), &state(5), x()).expect("int64 measure");
+        assert_eq!(negative, vec![holds(false), holds(true)]);
+        let up = ranking_members(&state(6), &state(5), x()).expect("int64 measure");
+        assert_eq!(up[1], holds(false));
+        // Below zero the unsigned reading of the same bits would be huge;
+        // the signed one is what is compared.
+        let past_zero = ranking_members(&state(-1), &state(0), x()).expect("int64 measure");
+        assert_eq!(past_zero, vec![holds(false), holds(true)]);
     }
 
     /// The structural-path helper has no proof site to emit an undischarged

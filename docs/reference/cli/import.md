@@ -466,8 +466,25 @@ qualification inherited from the root object and does not read the field or
 grant permission to dereference the resulting pointer. Constructor initializers
 can therefore store a pointer to a field of the destination object. This differs
 from copying an existing descriptor, which preserves pointer values rather than
-rebasing them to a new object. Artifact schema 47 requires refreshing earlier
+rebasing them to a new object. Artifact schema 49 requires refreshing earlier
 locks. Returned construction destinations remain the next shared-model work.
+
+Native int32 reference results and locals can also bind supported record fields
+through that same checked field-address path. Const qualification is preserved;
+a returned alias grants no backing authority. An external backing reference
+can remain readable and writable after a descriptor's destructor clears its
+pointer field, when the caller retains the corresponding backing authority.
+A reference into a destroyed automatic object's own field cannot be read.
+These lifetime regressions use synthetic descriptors, rather than claiming
+support for construction of pinned `std::span` descriptors.
+
+Literal `nullptr` and integer zero converted to mutable `int*`, implicitly or
+through an explicit cast, lower to the shared C null pointer value. Returning
+or storing that value needs no pointee authority and grants none. Dereferencing
+it remains subject to the shared live-storage and access checks. Same-type
+explicit pointer casts preserve identity. Other pointee types, nonliteral
+`nullptr_t` expressions, and nonzero integer-to-pointer casts remain refused.
+These nodes use artifact schema 49; refresh earlier locks.
 
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
@@ -497,6 +514,12 @@ them `FeeFrac_IsEmpty`, `FeeFrac_operator_add_assign`, and
 parameter `this`. Const methods use `const struct FeeFrac* this`; const record
 reference parameters retain the same qualification. This restricts writes
 through that parameter without forbidding an alias through a mutable parameter.
+Direct nonvirtual `operator[]` methods also use this method-call path, with
+`Class::operator[]` as the selector and `Class_operator_index` as the proof
+name. The receiver must be a live record lvalue; argument and result types,
+const qualification and reference authority follow the ordinary method rules.
+This does not admit other overloaded operators or temporary receivers.
+
 Unused member functions, constructors, templates, and nested declarations are
 not imported into the execution graph. Reachable definitions and the record's
 complete supported field layout are still checked. Overloaded proof names and
@@ -1086,9 +1109,9 @@ Copy construction and moves, default or partial aggregate initialization, multip
 non-destructible aggregate locals, broader nested lifetime combinations,
 virtual dispatch, general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
-Uninitialized or nested scalar locals, references to local objects, shadowing,
+Uninitialized or nested scalar locals, references to scalar locals, shadowing,
 broader address-taking, pointer locals, pointer arithmetic outside the supported
-indexed `int*` slice, null pointers, multiple
+indexed `int*` slice, nonliteral null-pointer conversions, multiple
 indirection, call results outside the supported initializer, return-call and direct Boolean
 condition slices,
 indirect calls, loops,

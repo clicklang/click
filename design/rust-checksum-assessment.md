@@ -7,6 +7,14 @@ selection, and the [Adler trial](charon-trial/adler2/README.md) records its curr
 checked computation bounds. Complete checksum correctness and C/Rust result
 equality remain unproved. Extend the proofs over the reachable original code.
 
+The checked [common specification](adler32-spec.click) defines the unweighted
+byte sum, the byte-order-sensitive weighted sum, both canonical residues, and
+the packed checksum over a logical byte snapshot. Its lemmas prove the appended
+byte recurrence, weight shifts, nonnegative sums, residue uniqueness and
+addition, canonical output ranges, packing bounds, and empty-input seed
+preservation. Connecting the original implementation states to these sums
+remains a separate obligation; these lemmas assume no checksum body summary.
+
 ## Immutable inputs and configuration
 
 The companion [source manifest](rust-checksum-sources.json) records revisions
@@ -89,8 +97,9 @@ than pretend the implementation is the textbook serial loop.
 
 Native Charon imports this unchanged crate with its modules, derives, resolved
 methods, and concrete operators. The helper bodies, arithmetic lemmas, and
-small-batch computation bounds have checked sidecars. Full outer batches, short
-tails, and the checksum identity remain proof work; successful extraction alone
+small-batch computation and scalar-tail bounds have checked sidecars. General
+full-width partition and outer-iterator progress lemmas also verify. Full outer
+batch induction and the checksum identity remain proof work; successful extraction alone
 establishes none of those claims.
 
 Support the reachable concrete instantiations rather than promising arbitrary

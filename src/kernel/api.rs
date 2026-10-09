@@ -5694,7 +5694,7 @@ mod proof_case_evidence_tests {
         assert_eq!(core.execution_evidence[1].len(), 3);
         assert_eq!(core.execution_evidence[2].len(), 3);
         assert!(proof_case_partitions_are_exhaustive(
-            &core.execution_evidence.to_vec()
+            core.execution_evidence.as_slice()
         ));
         // The forked traces share the original's prefix.
         assert!(
@@ -5894,7 +5894,7 @@ pub fn checked_owned_resource_count_lower_bound(
         | CResource::Iterated(_) => return None,
     };
     let mut checked_facts = assumptions.clone();
-    let count = if state.uses_population_authority_semantics() {
+    let count = {
         let arguments = arguments
             .iter()
             .map(|argument| match argument {
@@ -5929,34 +5929,12 @@ pub fn checked_owned_resource_count_lower_bound(
             return None;
         };
         value.clone()
-    } else {
-        match state.counted_population(name, arguments) {
-            Some(count) => count.clone(),
-            None => {
-                let zero = Bitvector32Term::Constant(0);
-                let quantity_is_zero = quantity == zero
-                    || crate::kernel::PureFactContext::settles_exactly(
-                        assumptions,
-                        &Proposition::ConditionIs(
-                            ConditionTerm::Bitvector32Equal(
-                                Box::new(quantity.clone()),
-                                Box::new(zero.clone()),
-                            ),
-                            true,
-                        ),
-                    );
-                if !quantity_is_zero {
-                    return None;
-                }
-                zero
-            }
-        }
     };
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
         true,
     );
-    if state.uses_population_authority_semantics() {
+    {
         let reversed =
             Proposition::ConditionIs(ConditionTerm::signed_greater_equal(count, quantity), true);
         if !PureFactContext::settles_exactly(&checked_facts, &conclusion)
@@ -6540,18 +6518,11 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                 "contract certification",
                 "contract entry resource expansion",
                 || {
-                    if entry_state.uses_population_authority_semantics() {
+                    {
                         super::functions::expand_all_composite_resource_facts_at_state(
                             entry_state.resources(),
                             function.composite_resource_definitions(),
                             &entry_state,
-                            &assumptions,
-                        )
-                    } else {
-                        expand_all_composite_resource_facts(
-                            entry_state.resources(),
-                            function.composite_resource_definitions(),
-                            entry_state.memory(),
                             &assumptions,
                         )
                     }
@@ -6697,15 +6668,14 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             entry_state.resources(),
                             premise,
                             &reuse_assumptions,
-                        ) || entry_state.uses_population_authority_semantics()
-                            && opened_entry_levels().iter().any(|resources| {
-                                resources_certify_loadability(
-                                    &entry_state,
-                                    resources,
-                                    premise,
-                                    &reuse_assumptions,
-                                )
-                            }))
+                        ) || opened_entry_levels().iter().any(|resources| {
+                            resources_certify_loadability(
+                                &entry_state,
+                                resources,
+                                premise,
+                                &reuse_assumptions,
+                            )
+                        }))
             };
         let authorized = |checked: &CCheckedFunctionExecution| {
             checked
@@ -8827,9 +8797,43 @@ fn prove_int32_operation_defined_by_integer_bounds(
     right: Bitvector32Term,
     subtract: bool,
 ) -> Theorem {
+    prove_signed_operation_defined_by_integer_bounds(
+        MachineIntegerType::Int32,
+        left,
+        right,
+        subtract,
+    )
+}
+
+/// Mathematical bounds on the exact sum establish signed 64-bit C addition
+/// safety.
+pub fn prove_int64_add_defined_by_integer_bounds(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int64, left, right, false)
+}
+
+/// Mathematical bounds on the exact difference establish signed 64-bit C
+/// subtraction safety.
+pub fn prove_int64_subtract_defined_by_integer_bounds(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int64, left, right, true)
+}
+
+/// A signed sum or difference is defined when its exact mathematical value
+/// lies in the type's range: overflow is exactly leaving that range.
+fn prove_signed_operation_defined_by_integer_bounds(
+    ty: MachineIntegerType,
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+    subtract: bool,
+) -> Theorem {
     let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
-            .expect("every int32 bit pattern has a mathematical interpretation")
+        IntegerTerm::from_machine(ty, value)
+            .expect("every signed bit pattern has a mathematical interpretation")
     };
     let (observed_left, observed_right) =
         (observe(left.clone()).into(), observe(right.clone()).into());
@@ -8838,28 +8842,66 @@ fn prove_int32_operation_defined_by_integer_bounds(
     } else {
         IntegerTerm::Add(observed_left, observed_right).into()
     };
-    let overflows = if subtract {
-        ConditionTerm::signed_subtract_overflows(left, right)
-    } else {
-        ConditionTerm::signed_add_overflows(left, right)
+    let (overflows, minimum, maximum) = match (ty, subtract) {
+        (MachineIntegerType::Int32, false) => (
+            ConditionTerm::signed_add_overflows(left, right),
+            i64::from(i32::MIN),
+            i64::from(i32::MAX),
+        ),
+        (MachineIntegerType::Int32, true) => (
+            ConditionTerm::signed_subtract_overflows(left, right),
+            i64::from(i32::MIN),
+            i64::from(i32::MAX),
+        ),
+        (MachineIntegerType::Int64, false) => (
+            ConditionTerm::int64_signed_add_overflows(left, right),
+            i64::MIN,
+            i64::MAX,
+        ),
+        (MachineIntegerType::Int64, true) => (
+            ConditionTerm::int64_signed_subtract_overflows(left, right),
+            i64::MIN,
+            i64::MAX,
+        ),
+        _ => unreachable!("definedness by Integer bounds admits only int32 and int64"),
     };
     Theorem::new(Proposition::Implies(
         Box::new(Proposition::ConditionIs(
             ConditionTerm::IntegerGreaterEqual(
                 exact.clone(),
-                IntegerTerm::constant_i64(i64::from(i32::MIN)).into(),
+                IntegerTerm::constant_i64(minimum).into(),
             ),
             true,
         )),
         Box::new(Proposition::Implies(
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::IntegerLessEqual(
-                    exact,
-                    IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
-                ),
+                ConditionTerm::IntegerLessEqual(exact, IntegerTerm::constant_i64(maximum).into()),
                 true,
             )),
             Box::new(Proposition::ConditionIs(overflows, false)),
+        )),
+    ))
+}
+
+/// Strict order of the exact Integer observations implies strict native
+/// signed int64 order: the observation is injective and monotone.
+pub fn prove_int64_less_than_of_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    let integer = ConditionTerm::IntegerLessThan(
+        IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
+            .unwrap()
+            .into(),
+        IntegerTerm::from_machine(MachineIntegerType::Int64, right.clone())
+            .unwrap()
+            .into(),
+    );
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(integer, true)),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::int64_signed_less_than(left, right),
+            true,
         )),
     ))
 }

@@ -15,6 +15,9 @@ use std::sync::Arc;
 #[cfg(test)]
 thread_local! {
     static INDEXED_FACT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static STATEMENT_PRIORITY_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static STATEMENT_PRIORITY_MAX_SUFFIX: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static STATEMENT_PRIORITY_NONLOCAL_BATCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static MATERIALIZED_FACT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -23,6 +26,15 @@ pub(crate) fn take_fact_entry_counts() -> (usize, usize) {
     (
         INDEXED_FACT_ENTRIES.with(|count| count.replace(0)),
         MATERIALIZED_FACT_ENTRIES.with(|count| count.replace(0)),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn take_statement_priority_entries() -> (usize, usize, usize) {
+    (
+        STATEMENT_PRIORITY_ENTRIES.with(|count| count.replace(0)),
+        STATEMENT_PRIORITY_MAX_SUFFIX.with(|count| count.replace(0)),
+        STATEMENT_PRIORITY_NONLOCAL_BATCHES.with(|count| count.replace(0)),
     )
 }
 
@@ -99,7 +111,21 @@ pub(crate) struct ProofFacts {
 /// batches preserve that semantic order without copying the ambient sequence.
 struct PrioritizedProofFacts {
     parent: Option<Arc<PrioritizedProofFacts>>,
-    facts: Arc<Vec<Proposition>>,
+    facts: PrioritizedStatementFacts,
+    introduced: Arc<Vec<Proposition>>,
+}
+
+struct PrioritizedStatementFacts {
+    prefix: ExecutionFacts,
+    suffix: Arc<Vec<Proposition>>,
+}
+impl PrioritizedStatementFacts {
+    fn iter(&self) -> impl Iterator<Item = &Proposition> {
+        self.prefix
+            .iter()
+            .map(ExecutionPureFact::proposition)
+            .chain(self.suffix.iter())
+    }
 }
 
 /// One indexed prefix of an available implication chain. The consequent key
@@ -861,17 +887,58 @@ impl ProofFacts {
     /// Adds one statement's selected successor context while retaining the
     /// old ambient order by shared prefix. The statement delta is explicit,
     /// so insertion work is proportional only to that delta and index height.
+    #[cfg(test)]
     pub(crate) fn with_statement_facts(&self, facts: Vec<Proposition>) -> Self {
+        self.with_statement_facts_retaining_prefix(facts, &ExecutionFacts::new())
+    }
+
+    /// Retain the checked ordered case prefix only when it is literally the
+    /// prefix of this statement's selected fact list. Other selections keep
+    /// the original batch; semantic priority and admission remain unchanged.
+    pub(crate) fn with_statement_facts_retaining_prefix(
+        &self,
+        mut facts: Vec<Proposition>,
+        prefix: &ExecutionFacts,
+    ) -> Self {
         let ordered = self.ordered.clone();
         let parent = self.prioritized.clone();
         let mut successor = self.clone();
+        let mut introduced = Vec::new();
         for fact in &facts {
+            let before = successor.fact_count();
             successor = successor.with_fact(fact.clone());
+            if successor.fact_count() != before {
+                introduced.push(fact.clone());
+            }
         }
         successor.ordered = ordered;
+        let retained_prefix = if facts.len() >= prefix.len()
+            && facts
+                .iter()
+                .zip(prefix)
+                .all(|(fact, retained)| fact == retained.proposition())
+        {
+            let suffix = facts.split_off(prefix.len());
+            facts = suffix;
+            prefix.clone()
+        } else {
+            ExecutionFacts::new()
+        };
+        #[cfg(test)]
+        {
+            STATEMENT_PRIORITY_ENTRIES.with(|count| count.set(count.get() + facts.len()));
+            STATEMENT_PRIORITY_MAX_SUFFIX.with(|count| count.set(count.get().max(facts.len())));
+            if facts.len() > 1 {
+                STATEMENT_PRIORITY_NONLOCAL_BATCHES.with(|count| count.set(count.get() + 1));
+            }
+        }
         successor.prioritized = Some(Arc::new(PrioritizedProofFacts {
             parent,
-            facts: Arc::new(facts),
+            facts: PrioritizedStatementFacts {
+                prefix: retained_prefix,
+                suffix: Arc::new(facts),
+            },
+            introduced: Arc::new(introduced),
         }));
         successor
     }
@@ -1316,7 +1383,7 @@ impl ProofFacts {
                 (Some(node), Some(ancestor_head)) if Arc::ptr_eq(node, ancestor_head) => break,
                 (None, None) => break,
                 (Some(node), _) => {
-                    new_batches.push(node.facts.clone());
+                    new_batches.push(node.introduced.clone());
                     current = node.parent.clone();
                 }
                 (None, Some(_)) => return None,
@@ -3550,6 +3617,68 @@ mod retained_root_context_tests {
             );
             assert!(retained.contains(inputs.last().unwrap()));
             assert_eq!(retained.fact_count(), size as usize);
+        }
+    }
+}
+
+#[cfg(test)]
+mod statement_publication_delta_tests {
+    use super::*;
+    // Repeated statement premises keep their priority but must not become a new introduction delta.
+    #[test]
+    fn prioritized_statement_batches_publish_only_new_facts_and_preserve_order() {
+        let fact = |index| Proposition::Predicate {
+            name: format!("priority_{index}"),
+            arguments: vec![],
+        };
+        for size in [16, 64, 256, 1024] {
+            let prefix = (0..size).map(fact).collect::<Vec<_>>();
+            let root = ProofFacts::from_ordered(&prefix);
+            let fresh = fact(size);
+            let successor =
+                root.with_statement_facts(vec![prefix[size - 1].clone(), fresh.clone()]);
+            assert_eq!(successor.introduced_since(&root), Some(vec![fresh.clone()]));
+            assert_eq!(
+                successor.to_vec()[..2],
+                [prefix[size - 1].clone(), fresh.clone()]
+            );
+            assert_eq!(root.to_vec(), prefix);
+            let repeated = successor.with_statement_facts(vec![prefix[0].clone(), fresh]);
+            assert_eq!(repeated.introduced_since(&successor), Some(vec![]));
+            assert_eq!(repeated.to_vec()[0], prefix[0]);
+        }
+    }
+    // Borrowing a case prefix must preserve the exact selected order, including reordered fallbacks.
+    #[test]
+    fn statement_priority_retains_only_an_identical_checked_prefix() {
+        let fact = |index| Proposition::Predicate {
+            name: format!("case_{index}"),
+            arguments: vec![],
+        };
+        for size in [16, 64, 256, 1024] {
+            let prefix_facts = (0..size).map(fact).collect::<Vec<_>>();
+            let prefix: ExecutionFacts = prefix_facts
+                .iter()
+                .cloned()
+                .map(ExecutionPureFact::new)
+                .collect();
+            let root = ProofFacts::from_ordered(&prefix_facts);
+            let fresh = fact(size);
+            let mut selected = prefix_facts.clone();
+            selected.push(fresh.clone());
+            let successor = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
+            let batch = &successor.prioritized.as_ref().unwrap().facts;
+            assert!(batch.prefix.shares_storage_with(&prefix));
+            assert_eq!(batch.suffix.as_ref(), std::slice::from_ref(&fresh));
+            assert_eq!(successor.to_vec(), selected);
+            assert_eq!(successor.introduced_since(&root), Some(vec![fresh]));
+            selected.swap(0, 1);
+            let reordered = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
+            let batch = &reordered.prioritized.as_ref().unwrap().facts;
+            assert!(batch.prefix.is_empty());
+            assert_eq!(batch.suffix.as_ref(), &selected);
+            assert_eq!(reordered.to_vec(), selected);
+            assert_eq!(root.to_vec(), prefix_facts);
         }
     }
 }

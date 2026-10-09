@@ -1571,18 +1571,11 @@ fn c_function_contract_entry_facts(
             fact.proposition,
         );
     }
-    let expanded_required_resources = (if entry_state.uses_population_authority_semantics() {
+    let expanded_required_resources = ({
         super::super::functions::expand_all_composite_resource_facts_at_state(
             &required_resources,
             function.composite_resource_definitions(),
             &entry_state,
-            &assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts(
-            &required_resources,
-            function.composite_resource_definitions(),
-            entry_state.memory(),
             &assumptions,
         )
     })
@@ -1590,7 +1583,7 @@ fn c_function_contract_entry_facts(
         "could not expand the composite resource ownership required at the contract entry"
             .to_string()
     })?;
-    let mut entry_resources = if entry_state.uses_population_authority_semantics() {
+    let mut entry_resources = {
         super::super::functions::expand_all_composite_resource_facts_at_state(
             entry_state.resources(),
             function.composite_resource_definitions(),
@@ -1598,8 +1591,6 @@ fn c_function_contract_entry_facts(
             &assumptions,
         )
         .ok_or("could not project the checked authority control at contract entry")?
-    } else {
-        entry_state.resources().clone()
     }
     .normalized(&assumptions);
     let mut missing = Vec::new();
@@ -1633,7 +1624,6 @@ fn c_function_contract_entry_facts(
             // A view is duplicable, so the unexpanded entry still holding
             // it satisfies the requirement and consumes nothing.
             (required.is_view()
-                && entry_state.uses_population_authority_semantics()
                 && entry_state
                     .resources()
                     .satisfies_fact(required, &assumptions))
@@ -1683,14 +1673,14 @@ fn c_function_contract_entry_facts(
         }
         return Err(detail);
     }
-    // Owned declared-resource requirements are a kernel witness that the
-    // tracked population contains at least the transferred quantity. Expose
-    // that exact arithmetic fact to independent contract certification; the
-    // surface `observe` tactic names the same invariant for proof scripts.
+    // An owned declared-resource requirement witnesses its population's
+    // count. Expose the count facts the checked ledger derives for it to
+    // independent contract certification; the surface `observe` tactic names
+    // the same invariant for proof scripts.
     for required in required_resources.facts() {
-        let Some(quantity) = required.owned_quantity_term() else {
+        if required.owned_quantity_term().is_none() {
             continue;
-        };
+        }
         let (name, arguments) = match required.resource() {
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 (name, arguments)
@@ -1703,74 +1693,60 @@ fn c_function_contract_entry_facts(
             | CResource::MutexUse(_)
             | CResource::Iterated(_) => continue,
         };
-        if entry_state.uses_population_authority_semantics() {
-            // Retain the same authenticated population facts as a written
-            // count requirement. Owning a member entails its lower bound even
-            // when the contract first mentions count in a postcondition.
-            let Some(arguments) = arguments
-                .iter()
-                .map(|argument| {
-                    let AlgebraicValue::C(value) = argument else {
-                        return None;
-                    };
-                    Some(Some(SpecExpression::Value(value.clone())))
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
-            // A concrete member also witnesses the anchored wildcard total.
-            // Evaluate both observations through the checked ledger rather than
-            // equating either total to the helper's locally owned quantity.
-            let mut observations = vec![arguments.clone()];
-            if arguments.len() > 1 {
-                let mut wildcard = vec![None; arguments.len()];
-                wildcard[0] = arguments[0].clone();
-                observations.push(wildcard);
-            }
-            for arguments in observations {
-                let expression = SpecExpression::CountedResourceCount {
-                    name: name.clone(),
-                    arguments,
+        // Retain the same authenticated population facts as a written
+        // count requirement. Owning a member entails its lower bound even
+        // when the contract first mentions count in a postcondition.
+        let Some(arguments) = arguments
+            .iter()
+            .map(|argument| {
+                let AlgebraicValue::C(value) = argument else {
+                    return None;
                 };
-                let Ok(paths) = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
-                    &entry_state,
-                    &expression,
-                    &assumptions,
-                    &BTreeMap::new(),
-                    &mut budget,
-                ) else {
-                    continue;
-                };
-                let [path] = paths.as_slice() else {
-                    continue;
-                };
-                if !path.obligations.iter().all(|obligation| {
-                    PureFactContext::settles_exactly(&assumptions, obligation.proposition())
-                }) {
-                    continue;
-                }
-                for fact in &path.facts {
-                    assumptions = entry_facts.assume(
-                        assumptions,
-                        CContractEntryFactOrigin::PopulationCount,
-                        fact.proposition().clone(),
-                    );
-                }
-            }
-            continue;
-        }
-        let Some(count) = entry_state.counted_population(name, arguments) else {
+                Some(Some(SpecExpression::Value(value.clone())))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
         };
-        assumptions = entry_facts.assume(
-            assumptions,
-            CContractEntryFactOrigin::PopulationCount,
-            Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
-                true,
-            ),
-        );
+        // A concrete member also witnesses the anchored wildcard total.
+        // Evaluate both observations through the checked ledger rather than
+        // equating either total to the helper's locally owned quantity.
+        let mut observations = vec![arguments.clone()];
+        if arguments.len() > 1 {
+            let mut wildcard = vec![None; arguments.len()];
+            wildcard[0] = arguments[0].clone();
+            observations.push(wildcard);
+        }
+        for arguments in observations {
+            let expression = SpecExpression::CountedResourceCount {
+                name: name.clone(),
+                arguments,
+            };
+            let Ok(paths) = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                &entry_state,
+                &expression,
+                &assumptions,
+                &BTreeMap::new(),
+                &mut budget,
+            ) else {
+                continue;
+            };
+            let [path] = paths.as_slice() else {
+                continue;
+            };
+            if !path.obligations.iter().all(|obligation| {
+                PureFactContext::settles_exactly(&assumptions, obligation.proposition())
+            }) {
+                continue;
+            }
+            for fact in &path.facts {
+                assumptions = entry_facts.assume(
+                    assumptions,
+                    CContractEntryFactOrigin::PopulationCount,
+                    fact.proposition().clone(),
+                );
+            }
+        }
     }
     if !requirement_obligations.iter().all(|obligation| {
         // Definedness travels with the assumption. A heap-dependent
@@ -2102,9 +2078,30 @@ pub(crate) fn c_function_execution_candidates_from_retained_paths(
     CFunctionExecutionCandidates {
         data: std::sync::Arc::new(CFunctionExecutionCandidatesData {
             state,
-            function,
-            arguments,
+            function: Arc::new(function),
+            arguments: Arc::new(arguments),
+            common_facts: (paths.len() == 1).then(|| paths[0].facts().clone()),
+            paths: paths.into(),
+        }),
+    }
+}
+
+/// Retain disjoint, checked arm publications as vector subtrees. This is
+/// still untrusted candidate data; trace completion certifies every outcome.
+pub(crate) fn concat_retained_function_candidates(
+    state: CState,
+    arms: [&CFunctionExecutionCandidates; 2],
+    common_facts: ExecutionFacts,
+) -> CFunctionExecutionCandidates {
+    let mut paths = arms[0].data.paths.clone();
+    paths.append_shared(&arms[1].data.paths);
+    CFunctionExecutionCandidates {
+        data: Arc::new(CFunctionExecutionCandidatesData {
+            state,
+            function: arms[0].data.function.clone(),
+            arguments: arms[0].data.arguments.clone(),
             paths,
+            common_facts: Some(common_facts),
         }),
     }
 }

@@ -10449,16 +10449,56 @@ impl Parser {
             self.expect(Token::LParen)?;
             self.expect(Token::LParen)?;
             let attribute = self.expect_ident("GNU typedef attribute")?;
-            if attribute != "aligned" && attribute != "__aligned__" {
-                return Err(self.error_at_previous(format!(
-                    "unsupported GNU typedef attribute `{attribute}`"
-                )));
+            match attribute.as_str() {
+                "aligned" | "__aligned__" => {
+                    // The argument-free spelling requests the target's maximum
+                    // useful alignment. Do not guess its host ABI value.
+                    parsed_type.aligned_typedef = true;
+                }
+                "mode" | "__mode__" => {
+                    self.expect(Token::LParen)?;
+                    let mode = self.expect_ident("GNU integer mode")?;
+                    if mode != "word" && mode != "__word__" {
+                        return Err(self
+                            .error_at_previous(format!("unsupported GNU integer mode `{mode}`")));
+                    }
+                    self.expect(Token::RParen)?;
+                    if parsed_type.enum_name.is_some()
+                        || parsed_type.struct_name.is_some()
+                        || parsed_type.union_name.is_some()
+                    {
+                        return Err(self.error_at_previous(
+                            "GNU word mode requires an ordinary integer typedef",
+                        ));
+                    }
+                    // Both supported x86-64 targets have a 64-bit machine word.
+                    // This changes width, not signedness or object qualifiers.
+                    parsed_type.c_type = match parsed_type.c_type {
+                        C0Type::Int8
+                        | C0Type::Int16
+                        | C0Type::Int32
+                        | C0Type::Int64
+                        | C0Type::Int128 => C0Type::Int64,
+                        C0Type::UInt8
+                        | C0Type::UInt16
+                        | C0Type::UInt32
+                        | C0Type::UInt64
+                        | C0Type::UInt128 => C0Type::UInt64,
+                        _ => {
+                            return Err(self.error_at_previous(
+                                "GNU word mode requires an ordinary integer typedef",
+                            ));
+                        }
+                    };
+                }
+                _ => {
+                    return Err(self.error_at_previous(format!(
+                        "unsupported GNU typedef attribute `{attribute}`"
+                    )));
+                }
             }
-            // The argument-free spelling requests the target's maximum useful
-            // alignment. Do not guess its numeric value from the host ABI.
             self.expect(Token::RParen)?;
             self.expect(Token::RParen)?;
-            parsed_type.aligned_typedef = true;
         }
         self.expect(Token::Semicolon)?;
         if self.typedefs.insert(alias.clone(), parsed_type).is_some() {

@@ -42,16 +42,17 @@ function's reference parameters, and the printer of a kernel term consults
 them (`describe_read_through_reference` in `src/surface/diagnostics.rs`).
 `click expand` does the same from the sidecar's function block
 (`ParameterPlaceScope`): a read through a scalar reference is `value`, and
-a read at a scalar field of a struct is the field place, `c.second` through
-`struct cell& c` and `p->second` through a struct pointer, parameter or
-local.
+a read at a field of a struct is the field place, through a parameter or a
+local: `c.second` through `struct cell& c`, `p->second`, a pointer field
+`p->next`, and a field of a struct nested by value, `p->in.y`.
 
-One gap remains: a field of a struct nested in another (`p->inner.x`) is
-still expanded in kernel spelling, `load_int32(byte_offset(p, 4))`, because
-the printer matches scalar fields of the outer struct only. It parses back
-and verifies.
+One gap remains: a field read through a pointer that was itself loaded,
+`p->next->second`, is expanded as
+`load_int32(byte_offset(p->next, 4))`. The printer names fields of the
+function's own parameters and locals, and the type of a loaded pointer is
+not among them. It parses back and verifies.
 
-Regression: `click expand` on a branch over `p->inner.x` writes the
+Regression: `click expand` on a branch over `p->next->second` writes the
 condition with the field place.
 
 Done when: no expansion prints `load_...` for a field of a struct.
@@ -127,16 +128,14 @@ Remaining:
   `uint64` and `int64` are in the standard library. Two things are left.
   `simp` does not search for a 64-bit chain as it does for `int32`; that
   is smart-tactic reach, and the explicit theorems cover the need.
-  `arithmetic() using` proves a linear `uint64` order goal (Lacker said to
-  build it on 2026-10-08): it bridges the listed premises and the goal to
-  Integer order, shows each sum and difference stays in range, and
-  expands to those `apply` steps. Left: `int64` goals, which lack two
-  bridges (`int64_less_than_of_to_integer`, definedness of a sum from
-  Integer bounds); equality goals and premises at either width; and a goal
-  that needs three order premises at once, since the Integer step
-  underneath combines two. Regression for the first: the `uint64` loop of
-  `mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md` with
-  a `long` index.
+  `arithmetic() using` proves a linear `uint64` or `int64` order goal
+  (Lacker said to build it on 2026-10-08): it bridges the listed premises
+  and the goal to Integer order, shows each sum and difference stays in
+  range, and expands to those `apply` steps. Left: equality goals and
+  premises at either width; and a goal that needs three order premises
+  at once, since the Integer step underneath combines two. A `long` loop
+  is ranked by an `int64` measure
+  (`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`).
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
   regressions. Lacker said to go ahead on 2026-10-08.

@@ -38,7 +38,9 @@ fn assert_heap_loan_write_rejected(outcome: &CStatementOutcome) {
 }
 
 fn heap_allocation_paths() -> Vec<CStatementExecutionPath> {
-    let state = CState::new().with_local("p", CValue::pointer(Pointer::null()));
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_local("p", CValue::pointer(Pointer::null()));
     execute_c_statement_paths(
         &state,
         &c_heap_allocate("p", 16),
@@ -1478,8 +1480,9 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         });
 
     let null = CValue::pointer(Pointer::null());
-    let null_state =
-        CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+    let null_state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_composite("owned_item".to_string(), vec![null]),
         ));
     let null_paths = execute_c_statement_paths(
@@ -1503,12 +1506,14 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let nonnull_state = CState::new().with_resource_context(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
-            "owned_item".to_string(),
-            vec![CValue::pointer(nonnull.clone())],
-        )),
-    );
+    let nonnull_state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            CResourceFact::own_composite(
+                "owned_item".to_string(),
+                vec![CValue::pointer(nonnull.clone())],
+            ),
+        ));
     let nonnull_paths = execute_c_statement_paths(
         &nonnull_state,
         &c_call_assign("result", "item_destroy", vec![c_pointer_value(nonnull)]),

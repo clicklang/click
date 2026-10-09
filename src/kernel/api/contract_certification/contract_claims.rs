@@ -971,7 +971,7 @@ fn prepare_function_claim_path(
                 .into());
             }
         };
-    let expanded_required = if entry_state.uses_population_authority_semantics() {
+    let expanded_required = {
         let required_state = entry_state
             .clone()
             .with_resource_context(required_resources.clone());
@@ -979,13 +979,6 @@ fn prepare_function_claim_path(
             &required_resources,
             function.composite_resource_definitions(),
             &required_state,
-            &assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts_and_propositions(
-            &required_resources,
-            function.composite_resource_definitions(),
-            entry_state.memory(),
             &assumptions,
         )
     };
@@ -1018,7 +1011,7 @@ fn prepare_function_claim_path(
                 // Preserve every checked output and replace only identical
                 // representations left in the body outcome.
                 let mut body_resources = state.resources().clone();
-                if state.uses_population_authority_semantics() {
+                {
                     for fact in checked_returned_resources.facts() {
                         if let Some(without) =
                             body_resources.clone().without_exact_representation(fact)
@@ -1192,7 +1185,7 @@ fn prepare_function_claim_path(
         _ => return Err(format!("the certified path is not safe: {outcome:?}").into()),
     };
     if !exceptional {
-        if entry_state.uses_population_authority_semantics() {
+        {
             match crate::kernel::functions::check_acquired_control_member_effects(
                 &entry_state,
                 raw_exit_state,

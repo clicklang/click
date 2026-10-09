@@ -18,9 +18,19 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
         )
         .unwrap()
     };
+    // `marker` is an ordinary resource: declaring it lets the kernel see that
+    // this assumed contract reaches no population.
     let function = c_function(CType::Void, "touch", vec![], CStatement::Skip)
         .with_contract(vec![], vec![], vec![], vec![], true)
-        .with_resource_summary(vec![parameter(0)], vec![parameter(0)]);
+        .with_resource_summary(vec![parameter(0)], vec![parameter(0)])
+        .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+            "marker",
+            vec![],
+            None,
+            false,
+            vec![],
+            vec![],
+        )]);
     let contract = CFunctionContract::new("Touch", function)
         .unwrap()
         .with_proof_parameters(vec![parameter(0)]);
@@ -38,10 +48,12 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
         .into(),
     )
     .unwrap();
-    let state = CState::new().with_resource_context(
-        ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(before.clone()))),
-    );
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own(CResource::Instance(before.clone()))),
+        );
     let environment = CExecutionEnvironment::new()
         .with_selected_call_contract("Touch")
         .with_selected_call_resource_arguments(vec![Variable(10)]);
@@ -65,7 +77,11 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     let returned = after.owned_resource_instance(Variable(10)).unwrap();
     assert_ne!(returned.fields(), before.fields());
     for (state, contract, environment) in [
-        (CState::new(), contract.clone(), environment.clone()),
+        (
+            CState::new().with_population_creation_tracking(),
+            contract.clone(),
+            environment.clone(),
+        ),
         (
             state.clone(),
             contract.clone(),
@@ -532,9 +548,11 @@ fn named_contract_application_discards_template_body_and_storage() {
         },
         CType::UInt8Pointer,
     ));
+    // One caller state, so both applications start from one creation ledger.
+    let caller = CState::new().with_population_creation_tracking();
     let run = |contract: &CFunctionContract| {
         execute_c_function_contracts_paths(
-            &CState::new(),
+            &caller,
             &[contract],
             std::slice::from_ref(&argument),
             &PureFactContext::new(),
@@ -567,9 +585,11 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
         c_return(c_void_value()),
     )
     .with_resource_constructors(vec![constructor]);
+    // Generic construction would create members without population
+    // authority, so it is refused; a member is created by folding it.
     let constructed = CResourceFact::own_token("constructed_token".into(), vec![int32(7)]);
-    let state = construct_c_function_resource(
-        &CState::new(),
+    let refusal = construct_c_function_resource(
+        &CState::new().with_population_creation_tracking(),
         &function,
         &[],
         &CValue::Void,
@@ -577,11 +597,12 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
         &PureFactContext::new(),
     )
     .unwrap()
-    .unwrap();
-    assert!(
-        state
-            .resources()
-            .satisfies_fact(&constructed, &PureFactContext::new())
+    .unwrap_err();
+    assert_eq!(
+        refusal,
+        CRuntimeError::FunctionContract(
+            "generic resource construction cannot create members in authority mode".into()
+        )
     );
 
     // Named callback contracts cannot expose a zero-source transition that
@@ -649,7 +670,10 @@ fn direct_and_callback_resource_transition(
         state: callback_state,
     } = &paths[0].outcome
     else {
-        panic!("callback resource transition did not return");
+        panic!(
+            "callback resource transition did not return: {:?}",
+            paths[0].outcome
+        );
     };
     assert_eq!(callback_value, &CValue::Void);
     assert_eq!(direct_state.memory(), callback_state.memory());
@@ -674,6 +698,7 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
     let memory_function = c_function(CType::Void, "parity_memory", vec![], CStatement::Skip)
         .with_resource_summary(vec![memory_spec.clone()], vec![memory_spec]);
     let memory_state = CState::new()
+        .with_population_creation_tracking()
         .with_memory(CMemory::new().with_block(memory_pointer.block.clone(), 4))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(
@@ -698,9 +723,11 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         vec![CType::Int32],
     );
     let token_function = c_function(CType::Void, "parity_token", vec![], CStatement::Skip)
-        .with_resource_summary(vec![token_spec.clone()], vec![token_spec]);
-    let token_state =
-        CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+        .with_resource_summary(vec![token_spec.clone()], vec![token_spec])
+        .with_ordinary_abstract_families(vec!["parity_token".into()]);
+    let token_state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_token("parity_token".into(), vec![int32(7)]),
         ));
     let token_contract = CFunctionContract::new("ParityToken", token_function.clone()).unwrap();
@@ -728,8 +755,9 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
             vec![],
             vec![],
         )]);
-    let composite_state =
-        CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+    let composite_state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_composite("parity_composite".into(), vec![int32(11)]),
         ));
     let composite_contract =
@@ -770,11 +798,21 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
     )
     .unwrap();
     let instance_function = c_function(CType::Void, "parity_instance", vec![], CStatement::Skip)
-        .with_resource_summary(vec![instance_spec.clone()], vec![instance_spec.clone()]);
-    let instance_state = CState::new().with_resource_context(
-        ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance))),
-    );
+        .with_resource_summary(vec![instance_spec.clone()], vec![instance_spec.clone()])
+        .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+            "parity_instance",
+            vec![c_parameter("value", CType::Int32)],
+            None,
+            false,
+            vec![],
+            vec![],
+        )]);
+    let instance_state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance))),
+        );
     let instance_contract = CFunctionContract::new("ParityInstance", instance_function.clone())
         .unwrap()
         .with_proof_parameters(vec![instance_spec]);
@@ -1553,8 +1591,12 @@ fn unresolved_call_requirements_retain_selected_source_site_identity() {
     );
     let contract = CFunctionContract::new("RequiresPositive", function).unwrap();
     let arguments = vec![c_int32_literal(0)];
-    let first_state = CState::new().with_memory(CMemory::new().with_block("first", 4));
-    let second_state = CState::new().with_memory(CMemory::new().with_block("second", 4));
+    let first_state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(CMemory::new().with_block("first", 4));
+    let second_state = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(CMemory::new().with_block("second", 4));
     let run = |state: &CState| {
         execute_c_function_contracts_paths(
             state,
@@ -1713,7 +1755,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
     .with_contract_requirement_sources(vec![Some(0), Some(1)]);
     let contract = CFunctionContract::new("CapabilitySource", function).unwrap();
     let paths = execute_c_function_contracts_paths(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         &[&contract],
         &[
             c_typed_pointer_value(Pointer::symbolic(Variable(901)), CType::Int32Pointer),
@@ -1778,7 +1820,7 @@ fn calls_without_unresolved_requirements_do_not_construct_call_site_metadata() {
 
     CallRequirementSite::reset_test_construction_count();
     let paths = execute_c_function_contracts_paths(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         &[&contract],
         &[c_int32_literal(7)],
         &PureFactContext::new(),
@@ -1897,7 +1939,7 @@ fn empty_requirement_lowering_retains_selected_call_source() {
     );
     let contract = CFunctionContract::new("EmptyRequirement", function).unwrap();
     let paths = execute_c_function_contracts_paths(
-        &CState::new(),
+        &CState::new().with_population_creation_tracking(),
         &[&contract],
         &[],
         &PureFactContext::new(),
@@ -1979,7 +2021,7 @@ fn check_callback_interface_scaling(select: bool) {
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_c_function_contracts_paths(
-                &CState::new(),
+                &CState::new().with_population_creation_tracking(),
                 &contracts,
                 &[c_int32_literal(7)],
                 &PureFactContext::new(),
@@ -2115,7 +2157,7 @@ fn check_unrelated_functions(select: bool) {
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_c_function_contracts_paths(
-                &CState::new(),
+                &CState::new().with_population_creation_tracking(),
                 &contracts,
                 &[c_int32_literal(7)],
                 &PureFactContext::new(),

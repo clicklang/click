@@ -3841,6 +3841,9 @@ pub enum CRankingMeasureValue {
     /// A machine uint64 quantity, ranked by unsigned 64-bit comparison of the
     /// value C computes, wraparound included; nonnegative by construction.
     Unsigned64(Bitvector32Term),
+    /// A machine int64 quantity, ranked by signed 64-bit comparison. Like an
+    /// int32 it owes `0 <= m`.
+    Signed64(Bitvector32Term),
     /// A mathematical Integer quantity, ranked by Integer comparison.
     Integer(IntegerTerm),
 }
@@ -10155,13 +10158,23 @@ pub struct CFunctionExecutionCandidates {
 
 /// Immutable publication of one complete outcome frontier. Proof forks retain
 /// this collection, rather than copying every sibling path and the source body.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub(super) struct CFunctionExecutionCandidatesData {
     pub(super) state: CState,
-    pub(super) function: CFunction,
-    pub(super) arguments: Vec<CExpression>,
-    pub(super) paths: Vec<CFunctionExecutionCandidate>,
+    pub(super) function: Arc<CFunction>,
+    pub(super) arguments: Arc<Vec<CExpression>>,
+    pub(super) paths: super::proof::PersistentVector<CFunctionExecutionCandidate>,
+    pub(super) common_facts: Option<ExecutionFacts>,
 }
+impl PartialEq for CFunctionExecutionCandidatesData {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+            && self.function == other.function
+            && self.arguments == other.arguments
+            && self.paths == other.paths
+    }
+}
+impl Eq for CFunctionExecutionCandidatesData {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CFunctionExecutionCandidate {

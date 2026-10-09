@@ -6369,10 +6369,6 @@ impl CState {
         renamed == *other
     }
 
-    pub(crate) fn uses_population_authority_semantics(&self) -> bool {
-        self.population_effects.creation.is_some()
-    }
-
     /// Admit exactly one explicitly owned helper input as an opaque existing
     /// population. Its observable entry total is arbitrary, with no creator right.
     pub(crate) fn import_opaque_population(
@@ -6798,14 +6794,12 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<Self, String> {
-        if !self.uses_population_authority_semantics()
-            || !definition.contains().iter().any(|spec| {
-                matches!(
-                    spec.term(),
-                    super::super::CResourceTerm::PopulationAuthority { .. }
-                )
-            })
-        {
+        if !definition.contains().iter().any(|spec| {
+            matches!(
+                spec.term(),
+                super::super::CResourceTerm::PopulationAuthority { .. }
+            )
+        }) {
             return Ok(self.clone());
         }
         let evaluation =
@@ -8202,48 +8196,22 @@ impl CState {
     /// an unrelated C step from changing the identity of a predicate merely
     /// because the predicate language can also observe resource counts.
     pub fn resource_state_snapshot(&self) -> Self {
-        if self.uses_population_authority_semantics() {
-            return Self {
-                population_effects: Arc::new(PopulationEffects {
-                    // Nested predicates recapture the same logical model.
-                    // Their execution resource context is intentionally empty;
-                    // keep the original count-only witness instead of using it.
-                    predicate_count_permissions: Some(
-                        self.population_effects
-                            .predicate_count_permissions
-                            .clone()
-                            .unwrap_or_else(|| {
-                                PredicateCountPermissions(Arc::new(self.resources.clone()))
-                            }),
-                    ),
-                    creation: self.population_effects.creation.clone(),
-                    ..PopulationEffects::default()
-                }),
-                ..Self::new()
-            };
-        }
-        let observed_families = self
-            .counted_populations
-            .iter()
-            .filter(|population| population.family_observation_marker)
-            .map(|population| population.name.as_str())
-            .collect::<BTreeSet<_>>();
-        let counted_populations = self
-            .counted_populations
-            .iter()
-            .filter(|population| {
-                population.family_observation_marker
-                    || observed_families.contains(population.name.as_str())
-            })
-            .cloned()
-            .collect();
         Self {
-            counted_populations,
             population_effects: Arc::new(PopulationEffects {
-                pending_counts: self.population_effects.pending_counts.clone(),
+                // Nested predicates recapture the same logical model.
+                // Their execution resource context is intentionally empty;
+                // keep the original count-only witness instead of using it.
+                predicate_count_permissions: Some(
+                    self.population_effects
+                        .predicate_count_permissions
+                        .clone()
+                        .unwrap_or_else(|| {
+                            PredicateCountPermissions(Arc::new(self.resources.clone()))
+                        }),
+                ),
+                creation: self.population_effects.creation.clone(),
                 ..PopulationEffects::default()
             }),
-            pending_thread_create: self.pending_thread_create.clone(),
             ..Self::new()
         }
     }

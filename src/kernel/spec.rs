@@ -6190,11 +6190,6 @@ fn evaluate_resource_count_paths(
             observed
         });
     let state = predicate_state.as_ref().unwrap_or(state);
-    let authority_mode = state.uses_population_authority_semantics();
-    let observed_state = (!authority_mode).then(|| state.count_observation_state(assumptions));
-    let state = observed_state
-        .as_ref()
-        .map_or(state, |observed| observed.as_ref());
     let mut argument_paths = vec![(
         Vec::<Option<AlgebraicValue>>::new(),
         ExecutionFacts::new(),
@@ -6240,7 +6235,7 @@ fn evaluate_resource_count_paths(
         .into_iter()
         .map(|(arguments, mut facts, mut obligations)| {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
-            if authority_mode {
+            {
                 let Some(Some(AlgebraicValue::C(CValue::Pointer(_)))) = arguments.first() else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
@@ -6487,64 +6482,12 @@ fn evaluate_resource_count_paths(
                         false,
                     )));
                 }
-                return Ok(SpecExpressionPath {
+                Ok(SpecExpressionPath {
                     value: CValue::Int32(count),
                     facts,
                     obligations,
-                });
+                })
             }
-            let mut total: Option<Bitvector32Term> = None;
-            // A total is a count only when every other entry of the family
-            // is proven different from the pattern: `R(q)` may be `R(p)`.
-            // Refuse the observation otherwise, as for a pending worker.
-            let Ok(matching) =
-                state.counted_population_pattern_matches(name, &arguments, &path_assumptions)
-            else {
-                return Err(ExecutionLimit::ResourceCountPossiblyAliased);
-            };
-            for population in matching {
-                if state
-                    .population_effects
-                    .pending_counts
-                    .get(&population.name, &population.arguments, false)
-                    .is_some()
-                {
-                    // There is no current Count observation while the
-                    // worker may be changing this population. Refuse
-                    // evaluation, including tautologies about Count.
-                    return Err(ExecutionLimit::ResourceCountPendingWorker);
-                }
-                total = Some(if let Some(current) = total {
-                    let overflow = ConditionTerm::signed_add_overflows(
-                        current.clone(),
-                        population.count.clone(),
-                    );
-                    // A bare condition: the exact fact index, the
-                    // intrinsic rule, and the frozen condition checker
-                    // may still discharge it. Nothing else does; the
-                    // remainder becomes an explicit obligation.
-                    let discharged = path_assumptions
-                        .proves_exact(&Proposition::ConditionIs(overflow.clone(), false))
-                        || PureFactContext::decide_intrinsically(&overflow) == Some(false)
-                        || !path_assumptions.should_defer_non_exact_condition_reasoning()
-                            && path_assumptions.decide(&overflow) == Some(false);
-                    let no_overflow = Proposition::ConditionIs(overflow, false);
-                    if !discharged {
-                        obligations.push(
-                            ProofObligation::verification_condition(no_overflow)
-                                .with_context("resource pattern count fits in int32"),
-                        );
-                    }
-                    Bitvector32Term::add(current, population.count.clone())
-                } else {
-                    population.count.clone()
-                });
-            }
-            Ok(SpecExpressionPath {
-                value: CValue::Int32(total.unwrap_or(Bitvector32Term::Constant(0))),
-                facts,
-                obligations,
-            })
         })
         .collect::<ExecutionResult<Vec<_>>>()
 }

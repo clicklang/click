@@ -288,16 +288,21 @@ mod pointee_const_return_tests {
         let value = CValue::typed_pointer(pointer.clone(), qualified);
         let assumptions = PureFactContext::new().assume_proposition(Proposition::Predicate {
             name: contract.predicate_name(),
-            arguments: vec![Term::CState(Box::new(CState::new())), Term::CValue(value)],
+            arguments: vec![
+                Term::CState(Box::new(CState::new().with_population_creation_tracking())),
+                Term::CValue(value),
+            ],
         });
         let environment = CExecutionEnvironment::new().with_function_contract(contract);
         for (signature, mutable_destination) in
             [(qualified, false), (qualified, true), (unqualified, false)]
         {
-            let mut state = CState::new().with_local(
-                "callback",
-                CValue::typed_pointer(pointer.clone(), signature),
-            );
+            let mut state = CState::new()
+                .with_population_creation_tracking()
+                .with_local(
+                    "callback",
+                    CValue::typed_pointer(pointer.clone(), signature),
+                );
             if mutable_destination {
                 state = state.with_local(
                     "temporary",
@@ -455,8 +460,7 @@ pub(super) fn execute_c_call_assign_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if state.uses_population_authority_semantics()
-        && !is_modeled_pthread_call(function_name, environment)
+    if !is_modeled_pthread_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))
@@ -809,8 +813,7 @@ pub(super) fn execute_c_call_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if state.uses_population_authority_semantics()
-        && !is_modeled_pthread_call(function_name, environment)
+    if !is_modeled_pthread_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))

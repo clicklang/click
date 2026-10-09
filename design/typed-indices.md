@@ -133,11 +133,90 @@ of stage 3, and it is the first thing a real `size_t` loop will hit.
 ### Stage 2. The extent is `isize::MAX`
 
 The byte count becomes 64-bit with the limit `isize::MAX / width`, and the
-contracts drop the bound. This cannot be done piece by piece: the `u32`
-count is itself a range bound and is read by overlap, loans and
-cross-width covering together. It also needs the exact form of the
-base-delta addition in the overlap check and loop containment, which adds
-modulo 2^32 today.
+contracts drop the bound. Lacker said to go ahead on 2026-10-08. A survey
+of the kernel the same day gave the plan below; its site counts are text
+searches.
+
+Keeping 32-bit ranges and letting the memory model discharge the bound is
+a dead end: the object limit gives `length <= isize::MAX / width`, far
+above `INT_MAX`, so `(int32)length` is still inexact.
+
+**The representation.** `CMemoryRange` (`src/kernel/primitives.rs`) gets a
+last field, `kind: RangeIndexKind { Int32, UInt64 }`, part of its `Hash`,
+`Eq` and `Ord`, since `p[0..n]` in two kinds can share one untyped term.
+`Bitvector32Term::Variable` carries no width, so a reader that puts a
+64-bit bound in a signed 32-bit comparison is accepted silently today.
+To fence that off the fields become private, `start()` and `end()` assert
+`kind == Int32`, and a wide reader calls `wide_bounds()`. A reader that
+was not audited then stops at once on a wide range instead of answering.
+Signed 64-bit bounds keep the stage 1 cast for now.
+
+**Wide membership.** `pointer_access_in_range`
+(`src/kernel/assumptions/memory_reasoning.rs`) dispatches a wide range to
+a new arm and leaves the `Int32` body alone. An access is in
+`p[lo..hi]` of width `w` when
+
+1. its exact offset from the base is `Int64Scaled { value: i, byte_width:
+   w, unsigned: true }`, or a nonnegative constant divisible by `w`;
+2. the access width is `w`;
+3. `lo <= i` and `i < hi` are decided as 64-bit unsigned comparisons;
+4. `hi <= i64::MAX / w` is decided: the extent fact.
+
+Condition 4 makes `i * w` fit `i64`, so the offset is the mathematical
+one; that answers the `uint64` above `i64::MAX` risk at the rule. The
+extent fact is assumed only for a range a contract holds on entry, where
+it is the object-size limit, and proved everywhere else. A question
+across kinds answers conservatively unless both sides are exact constant
+offsets. The constant readers return nothing for a wide range.
+
+**Order of work.** Each step lands with a regression and the scaling test
+named.
+
+0. The refactor alone: private fields, the kind, asserting accessors.
+   Nothing builds a wide range, so no work count may move.
+1. A read through `views bytes[0..length]` with no bound on `length`.
+   Lowering builds a wide range when a contract clause starts at constant
+   zero and ends at a `uint64`; under it an index is not cast. Scaling:
+   wide copies of `symbolic_range_membership_ignores_unrelated_index_bounds`
+   and `unsigned_order_walk_ignores_unsigned_bounds_of_other_indices`
+   (`src/kernel/tests/memory_scaling_tests.rs`).
+2. Calls: a wide range covered by a wide range, and by a constant `Int32`
+   one (`uint8 buf[16]; read(buf, 16, 3)`).
+3. Writes through `owns`. Scaling:
+   `stores_beside_many_owned_ranges_scale_near_linearly`,
+   `stores_to_bounded_unordered_indices_are_near_linear`
+   (`src/surface/tests/scaling_tests.rs`) with `size_t`.
+4. Loops: `evaluate_loop_effect_segment` and
+   `loop_effect_segment_contains_range` in `src/kernel/loops.rs` carry the
+   kind and compare without a modular add.
+5. A nonzero start, and `index + c`.
+6. Two ranges on one block: splitting, overlap, loans.
+7. `forall k` over a wide range in `ensures`.
+8. Rust slices, and the bound out of the Rust examples.
+9. Every clause shape, and the stage 1 cast for unsigned bounds deleted.
+
+**Decided 2026-10-09 (Lacker).** Wide ranges land as one series: the work
+is done behind a switch until every test passes with it on, then wide is
+the rule. Making a range wide only where its bound is not proved to fit 32
+bits would let it land in steps, but then a range's kind would depend on
+what a contract happens to prove. And a 64-bit index is never narrowed:
+the kernel stops rewriting a `size_t` index to a 32-bit one where it is
+proved to fit, and the Rust lowering stops converting a fixed array's
+`usize` index, so a body's access and a contract's place name one address
+in one form. This changes how existing `size_t` addresses are spelled,
+diagnostics included.
+
+**To keep.** The `Int32` body of `pointer_access_in_range`; ranges indexed
+by the root of their base, with a wide range at the same root and out of
+the int32-coordinate interval index; the order of `S + c`; and the
+eighteen mdtests and examples that state `2147483647u64`, which must pass
+with the bound redundant. `mdtests/a_64_bit_bound_must_be_shown_to_fit_a_32_bit_index.md`
+pins the refusal and changes with steps 1 and 3.
+
+**Not known yet.** Whether the body's wide read and the contract's place
+name the same pointer with no 32-bit bridge between them, which step 1
+rests on and is the first thing to try; and whether the extent guards are
+assumed at entry or proved at calls.
 
 ### Stage 3. Order reasoning for 64-bit terms
 

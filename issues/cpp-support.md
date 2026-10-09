@@ -18,6 +18,11 @@ cast certificates. Named captures make modular observer bounds available to
 those certificates; no new kernel rule or automatic range inference is needed.
 These were the selected implementation steps that required no new design.
 
+The independent bounded span observers, reference writes, sibling frames and
+backing-lifetime prerequisites are also delivered under the accepted profile
+below. The selected `SpanPopBack` target still requires destination-aware
+construction and temporary retirement from the shared construction work.
+
 The remaining work needs a concrete source/contract selection or a semantic
 profile decision before implementation:
 
@@ -53,7 +58,7 @@ profile decision before implementation:
   verification, full exception semantics, concurrency, and cross-target coverage
   remain deferred until a selected proof needs them.
 
-## Proposed next slice: SpanPopBack
+## Selected target: SpanPopBack
 
 Select the unchanged `SpanPopBack<int>` in Bitcoin v31.1
 `src/span.h:75`, commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`.
@@ -260,7 +265,7 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    [aggregate-construction-design.md](aggregate-construction-design.md).
    C++ returned construction, destination forwarding and temporary retirement
    depend on that work. The int32 field-address and constructor/copy identity
-   prerequisites are implemented; artifact schema 47 requires refreshing earlier
+   prerequisites are implemented; artifact schema 49 requires refreshing earlier
    locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
    above as the concrete C++ acceptance target.
 
@@ -278,10 +283,39 @@ extent and four-byte element size. Empty, bounded and wrapping extents retain
 that meaning. Expanded/retained verification and missing-authority/false-product
 refusals are covered.
 
-The next independent target is unchanged pinned indexed access: `operator[]`
-with a native unsigned index smaller than the bounded extent, returning the
-corresponding backing reference. It needs direct operator-method naming and
-selection, but no by-value result, constructor or temporary materialization.
+Unchanged pinned `operator[]` now has a bounded native-index reference proof:
+`index < N` and the same nonempty extent bound identify the corresponding backing
+element and its old value. Direct `Class::operator[]` selection maps to
+`Class_operator_index`. A shared strict uint64-to-Integer comparison bridge and
+checked normalization from explicit full-width index bounds supply the address
+projection; a low-word bound alone remains insufficient. Ordinary, expanded and
+retained verification cover the method and modular caller, with missing bounds,
+authority and false reference claims refused.
+
+Write-through callers of `front()`, `back()` and `operator[]` now verify with
+ownership of the backing segment and views of the descriptor. They preserve
+descriptor fields, set the selected element to the input value, and prove a
+quantified frame for every other backing element. The back caller states the
+native/signed last-index address bridge explicitly. Shared address alignment
+supports a captured interior pointer without treating unrelated pointer-read
+tokens as offsets or granting new authority. Ordinary, expanded and retained
+checks reject views-only writes and false unchanged-element claims. The indexed
+caller also rejects a false frame that includes the element it writes.
+
+The independent lifetime prerequisite is covered by synthetic descriptors with
+an explicit constructor and a nontrivial destructor that clears the pointer
+field. A native reference into external backing remains readable and writable
+after descriptor destruction under caller-held backing authority. A reference
+into a destroyed local object's own field cannot be read; returning its address
+alone grants no live storage or read authority. These fixtures do not claim
+that pinned `std::span` automatic construction is supported.
+
+Native reference binding now reuses the existing checked int32 field-address
+path, retaining const qualification and requiring caller-held authority for
+loads and writes. Literal `nullptr` and zero conversions to mutable `int*` reuse
+the shared C null pointer value, without grants of storage authority. Nonliteral
+`nullptr_t` conversions, other pointee types and nonzero integer casts remain
+outside this profile. Artifact schema 49 requires refreshing earlier locks.
 
 `first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
 behind the shared construction dependency. Other scalar/import work still needs

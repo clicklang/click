@@ -934,8 +934,25 @@ impl EqualityGraph {
                     }
                 }
             }
+            // Keep an explicit additive query in its original coordinates when
+            // neither operand is the supplier base. Reassociating a shifted
+            // range here would hide the source index from its checked bounds.
+            return self.pointer_in_block(pointer, &base.block);
         }
-        self.pointer_in_block(pointer, &base.block)
+        let state = self.state.lock().expect("equality graph");
+        let point = state.canonical(pointer)?;
+        let origin = state.canonical(base)?;
+        if point.representative != origin.representative {
+            return None;
+        }
+        // A captured pointer may have no additive spine. Cancel the trusted
+        // coordinates and retain the supplier base instead of flattening it
+        // into unrelated opaque pointer-read tokens in the containing block.
+        let displacement = point.offset.checked_sub(&origin.offset)?.to_offset_term()?;
+        Some(Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::add(base.offset.clone(), displacement),
+        })
     }
 
     /// The initial pairing boundary applies this graph's merge deltas once.

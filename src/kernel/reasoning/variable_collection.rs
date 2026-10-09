@@ -2000,9 +2000,8 @@ fn collect_execution_environment_variables_uncached(
         match anchor.measure() {
             CRankingMeasureValue::Machine(term)
             | CRankingMeasureValue::Unsigned32(term)
-            | CRankingMeasureValue::Unsigned64(term) => {
-                collect_bitvector_variables(term, variables)
-            }
+            | CRankingMeasureValue::Unsigned64(term)
+            | CRankingMeasureValue::Signed64(term) => collect_bitvector_variables(term, variables),
             // An Integer measure's reserved names are the C carriers it reads
             // plus its own Integer binders; both are named by later call steps.
             CRankingMeasureValue::Integer(term) => {

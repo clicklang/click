@@ -253,6 +253,19 @@ pub(crate) fn normalize_using_conditions(
             }
         }
     }
+    if let Some((ConditionTerm::Bitvector64Equal(left, right), true)) =
+        crate::kernel::spec::proposition_as_single_condition(goal)
+    {
+        let mut selected = PureFactContext::new();
+        for (condition, value) in &conditions {
+            crate::instrumentation::record_deterministic_work(1);
+            selected = selected.assume_condition(condition.clone(), *value);
+        }
+        if crate::kernel::memory_provenance::wide_read_has_recorded_value(&left, &right, &selected)
+        {
+            return Ok(());
+        }
+    }
     let reduced = super::term_rewrite::TermRewrite::for_conditions_with_graph(
         &conditions,
         &facts.assumptions().equality_graph,

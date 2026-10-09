@@ -248,10 +248,8 @@ impl PureTheoremContext {
                                 operator: ComparisonOperator::Equal,
                                 right: ContractExpression::IntegerLiteral("0".into()),
                             }, BTreeMap::new(), BTreeMap::new(), &state, BTreeMap::new(), BTreeMap::new(),
-                            BTreeMap::new(), &integer_values, None, &RecordedSnapshots::new(),
-                            &PureFactContext::new(), predicate_environment, click_function_environment,
-                            BTreeSet::new(), BTreeMap::new(),
-                        ).map_err(ClickError::new)?;
+                            BTreeMap::new(), &integer_values, None, &RecordedSnapshots::new(), predicate_environment, click_function_environment,
+                            BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
                         let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec
                         else {
                             // An unannotated machine conversion can reference
@@ -873,7 +871,6 @@ fn check_pure_structural_induction(
     let state = CState::new().with_memory(context.memory.clone());
     let parameter_value = capture_fixed_state_algebraic_expression(
         &parameter_expression,
-        &PureFactContext::new(),
         &context.values,
         &context.array_refs,
         &state,
@@ -1005,7 +1002,6 @@ fn check_pure_structural_induction(
                     };
                     let captured = capture_fixed_state_algebraic_expression(
                         &symbolic,
-                        &PureFactContext::new(),
                         &branch_context.values,
                         &branch_context.array_refs,
                         &state,
@@ -2381,6 +2377,9 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
             name,
             "int32_add_defined_by_integer_bounds"
                 | "int32_subtract_defined_by_integer_bounds"
+                | "int64_add_defined_by_integer_bounds"
+                | "int64_subtract_defined_by_integer_bounds"
+                | "int64_less_than_of_to_integer"
                 | "int32_equal_of_to_integer"
                 | "int32_add_to_integer"
                 | "int32_remainder_to_integer"
@@ -2489,15 +2488,17 @@ fn verify_kernel_standard_theorem_axiom(
             2,
             crate::kernel::integer_truncation_law_requirements(name).unwrap(),
         ),
-        "int32_add_defined_by_integer_bounds" | "int32_subtract_defined_by_integer_bounds" => {
-            (2, 2)
-        }
+        "int32_add_defined_by_integer_bounds"
+        | "int32_subtract_defined_by_integer_bounds"
+        | "int64_add_defined_by_integer_bounds"
+        | "int64_subtract_defined_by_integer_bounds" => (2, 2),
         "int32_add_to_integer"
         | "int32_less_equal_of_to_integer"
         | "int64_less_equal_to_integer"
         | "int64_less_than_to_integer"
         | "int64_greater_equal_to_integer"
         | "int64_less_equal_of_to_integer"
+        | "int64_less_than_of_to_integer"
         | "int64_add_to_integer"
         | "int64_subtract_to_integer"
         | "int64_equal_of_to_integer"
@@ -2657,6 +2658,15 @@ fn verify_kernel_standard_theorem_axiom(
             name if crate::kernel::is_wide_order_transitivity_name(name) => {
                 crate::kernel::prove_wide_order_transitive(name, left, right, parameter(2)?)
                     .expect("registered int64 transitivity")
+            }
+            "int64_add_defined_by_integer_bounds" => {
+                crate::kernel::prove_int64_add_defined_by_integer_bounds(left, right)
+            }
+            "int64_subtract_defined_by_integer_bounds" => {
+                crate::kernel::prove_int64_subtract_defined_by_integer_bounds(left, right)
+            }
+            "int64_less_than_of_to_integer" => {
+                crate::kernel::prove_int64_less_than_of_to_integer(left, right)
             }
             "int64_less_equal_to_integer" => {
                 crate::kernel::prove_int64_less_equal_to_integer(left, right)
@@ -4209,6 +4219,7 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                         "left != 0u64",
                     )
                     .replace("requires left <= right", "requires left >= right")
+                    .replace("requires left < right", "requires left <= right")
                     .replace(
                         "requires to_integer(right) <= to_integer(left)",
                         "requires to_integer(left) <= to_integer(right)",
@@ -4267,6 +4278,12 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 "left <= right",
             ),
             (
+                "int64_less_than_of_to_integer",
+                "int64",
+                "to_integer(left) < to_integer(right)",
+                "left < right",
+            ),
+            (
                 "int64_equal_of_to_integer",
                 "int64",
                 "to_integer(left) == to_integer(right)",
@@ -4288,6 +4305,46 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 ),
                 source.replace("; ensures", "; requires left == right; ensures"),
             ] {
+                assert!(
+                    verify_standard_declaration(&invalid).is_err(),
+                    "forged declaration: {invalid}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn int64_definedness_by_integer_bounds_declarations_reject_weaker_bounds_and_widths() {
+        for (name, op, other) in [
+            ("int64_add_defined_by_integer_bounds", "+", "-"),
+            ("int64_subtract_defined_by_integer_bounds", "-", "+"),
+        ] {
+            let lower = format!("to_integer(left) {op} to_integer(right) >= -9223372036854775808");
+            let upper = format!("to_integer(left) {op} to_integer(right) <= 9223372036854775807");
+            let source = format!(
+                "theorem {name}(left: int64, right: int64) {{ requires {lower}; requires {upper}; ensures defined(left {op} right); }}"
+            );
+            verify_standard_declaration(&source)
+                .unwrap_or_else(|error| panic!("{name}: {}", error.message()));
+            for invalid in [
+                // Either bound alone does not exclude overflow.
+                source.replace(&format!("requires {lower}; "), ""),
+                source.replace(&format!("requires {upper}; "), ""),
+                // A bound one past the range admits the overflowing value.
+                source.replace("9223372036854775807", "9223372036854775808"),
+                source.replace("-9223372036854775808", "-9223372036854775809"),
+                // The other operation's bounds, and the other widths.
+                source.replace(
+                    &format!("to_integer(left) {op} to_integer(right)"),
+                    &format!("to_integer(left) {other} to_integer(right)"),
+                ),
+                source.replace(": int64", ": int32"),
+                source.replace(": int64", ": uint64"),
+                source.replace(
+                    &format!("defined(left {op} right)"),
+                    &format!("defined(left {other} right)"),
+                ),
+            ] {
+                assert_ne!(invalid, source);
                 assert!(
                     verify_standard_declaration(&invalid).is_err(),
                     "forged declaration: {invalid}"

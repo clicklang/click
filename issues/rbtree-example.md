@@ -81,6 +81,22 @@ uses that same checked naming context, while pure body facts keep their model
 bindings. Reduced refolds after unrelated stores and a call pass; stale-pointer
 and unproved-fold-alias variants are rejected. Existing exact scalar and
 nonnull body-fact proofs retain their original spellings.
+Explicit `transport` now shares its existing context-keyed failure memo across
+its proof routes. The frozen non-root pointer frame returns a local refusal
+instead of exhausting the simple budget. A reduced frame refusal is pinned
+below 250,000 units, with a separate check that grows unrelated premises. The
+non-root splice proof still needs explicit frame and packed-parent facts.
+The packed-parent reduction exposed a certificate gap when reading low tag
+bits back from an aligned pointer word. Explicit arithmetic now checks that
+projection using only the selected alignment and word syntax, including
+masked tags and unsigned addition. Negative checks reject insufficient or
+foreign alignment and changed tag bits; deterministic work checks cover
+growing words within the certificate's existing payload bound.
+A smaller named-call reduction also exposed a missing explicit read-value
+normalization route. `normalize() using { child == identity; }` can follow
+the typed memory history to a wide stored value using the cited alias and
+the call’s recorded caller-owned ranges. The original `normalize()` remains
+context-free; partial overwrites and withdrawn aliases do not recover a value.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
@@ -1152,7 +1168,8 @@ exact remaining models, whole-tree balance, parent consistency, in-order
 contents, and null fixup. Black-leaf cases retain the exact one-black-level
 deficit and return the correct fixup parent for chunk 12.
 
-Deeper black-leaf successors and non-root deeper successors remain. The model
+Root deletion with a deeper black-leaf successor also verifies in
+`rbtree_erase_black_spine.click`. Non-root deeper successors remain. The model
 selectors, reconstruction equations, and nonempty-child blackening connection
 already cover arbitrary depth through `rb_min_parent`,
 `rb_min_context_cut_child`, and `rb_erase_nonempty_successor_splice`.

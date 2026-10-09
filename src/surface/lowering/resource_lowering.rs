@@ -3224,11 +3224,7 @@ fn requirement_proposition_and_facts_with_assumptions(
     // obligation was checked above. Its auxiliary facts include the checked
     // population lower bound; retaining them avoids losing ownership-derived
     // facts when the written requirement observes a count.
-    let facts = if state.uses_population_authority_semantics() {
-        facts
-    } else {
-        Vec::new()
-    };
+    let facts = { facts };
     Ok((lowered, facts))
 }
 
