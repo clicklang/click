@@ -2613,3 +2613,57 @@ fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
         verify_c0_sources(&expanded, &sources).unwrap();
     }
 }
+
+// Distinct-block view rewrites already work. Frontend byte pointers use a
+// shared external block, so this catches the offset-equality representation.
+#[test]
+fn byte_pointer_view_aliases_rewrite_readable_addresses() {
+    let (click, sources) = loop_fixture("byte_pointer_view_alias_rewrite");
+    verify_c0_sources(&click, &borrowed_sources(&sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: readable pointer alias mutations and expansion"]
+fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
+    let (click, sources) = loop_fixture("byte_pointer_view_alias_rewrite");
+    let sources = borrowed_sources(&sources);
+    for forged in [
+        click.replace("requires cursor == bytes;", ""),
+        click.replace("views bytes[0..4];", ""),
+        click.replacen("viewable(cursor[0..4])", "viewable(cursor[0..8])", 1),
+    ] {
+        assert!(verify_c0_sources(&forged, &sources).is_err());
+    }
+    for function in ["f", "shifted"] {
+        let expanded =
+            expand_c0_claim_source(&click, &sources, function, CProofClaim::Grouped).unwrap();
+        verify_c0_sources(&expanded, &sources).unwrap();
+    }
+}
+
+// Loop resource selection must use the same checked pointer-alias graph as
+// calls; an abstract outer cursor is not the input's syntactic block.
+#[test]
+fn nested_loop_cursor_alias_retains_enclosing_input_view() {
+    let (click, sources) = loop_fixture("nested_loop_cursor_view_authority");
+    verify_c0_sources(&click, &borrowed_sources(&sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: nested cursor authority mutations and expansion"]
+fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
+    let (click, sources) = loop_fixture("nested_loop_cursor_view_authority");
+    let sources = borrowed_sources(&sources);
+    for forged in [
+        click.replacen("views bytes[0..8];", "", 1),
+        click.replace("views chunk[0..4];", "views chunk[0..8];"),
+        click.replace(
+            "invariant cursor == bytes + (4 * outer);",
+            "invariant cursor == bytes + (4 * outer + 1);",
+        ),
+    ] {
+        assert!(verify_c0_sources(&forged, &sources).is_err());
+    }
+    let expanded = expand_c0_claim_source(&click, &sources, "f", CProofClaim::Grouped).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+}

@@ -66,6 +66,12 @@ requires viewable(p[0..n]);
 This covers indices `0` through `n - 1`. For `int32 p[]`, each element is a
 four-byte access. For `uint8 p[]`, each element is a one-byte access.
 
+An exact available pointer equality can rewrite the address of a viewability
+goal: `rewrite(cursor == bytes);` turns `viewable(cursor[0..4])` into the
+same range over `bytes`. This also works when byte pointers are represented
+as offsets in the same address block. The rewrite preserves the memory
+snapshot and byte extent; the resulting range still needs a readable view.
+
 ## What a range fact means
 
 `viewable(p[a..b])` says two things together:
