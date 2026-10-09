@@ -3131,7 +3131,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 ));
             }
         };
-    let tracks_population_in_body = composite_body
+    let body_reads_counts = composite_body
         .facts()
         .iter()
         .any(proposition_contains_resource_count);
@@ -3165,9 +3165,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     } else {
         None
     };
-    if authority_projection.is_none() && tracks_population_in_body {
+    // A count read in the body is the authority's count, so a body that
+    // reads one without owning an authority has nothing to read it from.
+    if authority_projection.is_none() && body_reads_counts {
         return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `unfold({})` requires an active resource population",
+            "`{claim_label}` tactic {tactic_index}: `unfold({})` reads a population count its body owns no authority for",
             describe_resource_clause(resource)
         )));
     }
@@ -3528,7 +3530,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             // Population cleanup and authority-mode private body opening
             // are certified as exact exchanges. Preserve adjacent framed
             // ranges so nested opens have the same delta as the kernel law.
-            let resources = if tracks_population_in_body || (access == ResourceBodyAccess::Open) {
+            let resources = if body_reads_counts || (access == ResourceBodyAccess::Open) {
                 state
                     .resources()
                     .clone()

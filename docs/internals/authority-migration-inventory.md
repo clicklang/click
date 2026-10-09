@@ -1769,3 +1769,31 @@ Some consumers of the count-in-body classification could no longer fire.
 
 The live consumers stay for a later step, which replaces the classification
 with explicit criteria.
+
+#### Chunk 2f: count-in-body classification
+
+The counted-population flag and its constructor are deleted. Every family is
+built by the ordinary constructor, which keeps the family's own `recursive`
+answer. Each live consumer now asks the question it meant:
+
+- **Whether a body fact reads a count** (`facts_read_counts`, set by the
+  surface). A count can change while a head is lent, so such facts are not
+  loan stable. This affects stable composite loans and view adapters.
+- **Whether the body owns a population authority** (`owns_population_authority`,
+  so the family is an authority control):
+  - A call frame does not expand the control.
+  - A view adapter neither requires nor lends from it.
+  - Returns of functions whose interface has one take the resource-transfer
+    exit.
+  - It is confined to its creating thread. This is computed at construction so
+    the surface and kernel copies of a definition agree. Controls that own an
+    authority without reading a count, such as `pool_storage` in
+    `examples/bounded-pool`, are now confined too.
+- **Nothing.** The produced-composite frontier check and the produced
+  borrowing-piece collection no longer exempt counted families. A produced
+  control's body is checked against the caller's context like any other
+  composite. Observed families and quantities other than one keep their
+  observation reading.
+
+The surface's unfold check that a body reading a count owns an authority now
+says so, instead of asking for an active population.

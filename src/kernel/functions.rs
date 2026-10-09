@@ -10514,7 +10514,9 @@ fn expand_composites_for_frame(
             })
             .ok()?;
         let definition = &definitions[index];
-        if definition.is_counted_population()
+        // An authority control's body holds the authority and the control's
+        // private cells; a call frame never exposes them.
+        if definition.owns_population_authority()
             || active.contains(name)
             || !expanded.contains_exact_representation(&head)
         {
@@ -10577,7 +10579,7 @@ mod counted_membership_framing_tests {
             )
         };
         let population = || {
-            CCompositeResourceDefinition::counted_population(
+            CCompositeResourceDefinition::authority_control(
                 "z-count",
                 vec![c_parameter("p", CType::Int32Pointer)],
                 None,
@@ -10679,7 +10681,7 @@ mod counted_membership_framing_tests {
                     c_int32_literal(1),
                 ))
             };
-            let population = CCompositeResourceDefinition::counted_population(
+            let population = CCompositeResourceDefinition::authority_control(
                 "remaining",
                 vec![c_parameter("p", CType::Int32Pointer)],
                 None,
@@ -19467,7 +19469,7 @@ fn candidate_composite_view_adapter(
     else {
         return Ok(None);
     };
-    if definition.is_counted_population()
+    if definition.owns_population_authority()
         || definition.is_recursive()
         || !definition.facts_are_loan_stable()
     {
@@ -19529,9 +19531,9 @@ fn candidate_composite_view_adapter(
         else {
             continue;
         };
-        // A counted population's body is population-wide, so one unit's head
-        // is not the restoration recipe a lend needs (step 5).
-        if owner_definition.is_counted_population()
+        // An authority control's head is not the restoration recipe a lend
+        // needs: restoring it must restore the authority's ledger state too.
+        if owner_definition.owns_population_authority()
             || owner_definition.is_recursive()
             || !owner_definition.facts_are_loan_stable()
         {
@@ -21779,22 +21781,14 @@ fn evaluate_contract_return_resources(
     for (support, source_occurrence, expansion, projected) in projected_cores_by_support {
         // Only the one-level frontier names the borrows this composite
         // packages; a nested composite's own body is that composite's
-        // business (the 4b rule). A counted population is not a struct
-        // holding a borrow: its body is population-wide, folded into the
-        // family by whoever produces a unit (a verified producer cannot mint
-        // one without the body), so its viewed pieces keep the observation
+        // business (the 4b rule). The viewed pieces of an observed
+        // population family, or of more than one unit, keep the observation
         // reading rather than an escaping loan.
         let is_population = match support.resource() {
             CResource::Composite { name, .. } => {
                 support.owned_quantity_term() != Some(&Bitvector32Term::Constant(1))
                     || post_state.observes_population_family(name)
                     || entry_state.observes_population_family(name)
-                    || interface
-                        .composite_resource_definitions()
-                        .iter()
-                        .any(|definition| {
-                            definition.name() == name && definition.is_counted_population()
-                        })
             }
             _ => false,
         };
@@ -21882,22 +21876,6 @@ fn produced_composite_frontier_conflict(
             continue;
         };
         if !produced.is_own() {
-            continue;
-        }
-        // A counted population's body is population-wide, not per unit. Its
-        // units carry nothing of their own, and the ensured context adds the
-        // units a contract returns as a borrow to the ones it produces, so a
-        // quantity above one is ordinary here. The body cannot collide with
-        // what the caller holds: a unit is produced only by a fold that
-        // consumes the body out of the producer's context (a verified
-        // producer cannot mint one without it, see
-        // `mdtests/population_unit_needs_its_body.md`), and a caller reaches
-        // the body afterwards only as an observation. An extern contract that
-        // claims otherwise is its own trust assumption.
-        if definitions
-            .iter()
-            .any(|definition| definition.name() == name && definition.is_counted_population())
-        {
             continue;
         }
         let singleton =
@@ -32774,7 +32752,7 @@ mod stable_view_call_tests {
         let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
         let counted = composite_reader_with_definition(
             "candidate_counted_fact_reader",
-            CCompositeResourceDefinition::counted_population(
+            CCompositeResourceDefinition::authority_control(
                 "cell",
                 vec![c_parameter("p", CType::Int32Pointer)],
                 None,
@@ -34873,13 +34851,15 @@ mod stable_view_call_tests {
             Vec::new(),
         )
         .with_composite_resource_definitions(vec![
-            CCompositeResourceDefinition::counted_population(
+            CCompositeResourceDefinition::new(
                 population,
                 vec![c_parameter("p", CType::Int32Pointer)],
                 None,
+                false,
                 Vec::new(),
                 Vec::new(),
-            ),
+            )
+            .with_authorized(true),
         ])
     }
 
