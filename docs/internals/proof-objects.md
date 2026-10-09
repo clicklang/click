@@ -100,6 +100,13 @@ expand to sequential checked `have` leaves followed by `assumption`; every
 reified leaf must lower to the exact kernel proposition. Neither representation
 raises the parser depth limit or skips an invariant obligation.
 
+Simple invariant-bundle preparation retains the already checked path context
+between declarations and extends it with each canonical merge's changed facts
+and obligations. Replacements preserve the complete source tuple, including
+introductions and call-site identity; unresolved mandatory conditions never
+become assumptions. Collected goals receive only the changed members, while
+entry judgments retain every declaration position, including duplicates.
+
 When loop preservation produces two feasible proof-level `if` arms, the kernel
 also allocates the sibling identities and records their split topology around
 the two checked frontier results.

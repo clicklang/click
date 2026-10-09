@@ -17,8 +17,8 @@ pub(super) use order_reasoning::*;
 pub(super) use path_facts::{ExactElementDelta, exact_element_delta_from_offset};
 pub use path_facts::{LoweringIntroduction, LoweringIntroductions};
 pub(super) use path_facts::{
-    add_condition_path_fact, add_internal_condition_path_fact, add_path_fact,
-    add_pointer_offset_equality_execution_pure_facts, add_proof_obligation,
+    PreparedExecutionPath, add_condition_path_fact, add_internal_condition_path_fact,
+    add_path_fact, add_pointer_offset_equality_execution_pure_facts, add_proof_obligation,
     add_proof_obligation_with_context, add_required_proof_obligation_with_context,
     add_required_proof_obligation_without_search, append_required_proof_obligations,
     append_required_proof_obligations_under_path_context,
@@ -29,7 +29,7 @@ pub(super) use path_facts::{
     forall_int32, guard_quantified_witness, int32_element_count_from_bytes,
     int32_element_index_from_offset, memory_effect_execution_facts, memory_range_still_available,
     merge_execution_pure_facts_and_obligations, merge_facts, merge_obligations,
-    pointer_byte_offset_from_base, public_execution_pure_facts,
+    merge_prepared_execution_path, pointer_byte_offset_from_base, public_execution_pure_facts,
     required_obligation_is_exactly_discharged, signed_const_add,
     single_scaled_index_equal_to_constant, solve_builtin_prop, wrap_path_context,
     wrap_path_context_with_introductions, wrap_proof_facts,

@@ -2244,6 +2244,65 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
     assert!(refusal.contains("stable-view loan authority"), "{refusal}");
 }
 
+// The back-edge closer must extend its checked assumptions once per member,
+// rather than rebuilding the growing guard prefix for every declaration.
+#[test]
+fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts() {
+    let state = CState::new().with_local("i", int32(Bitvector32Term::Variable(Variable(912_346))));
+    let mut samples = Vec::new();
+    for size in [8usize, 16, 32] {
+        let checks = (0..size)
+            .map(|index| {
+                CLoopInvariantCheck::new(
+                    SpecProposition::Comparison {
+                        left: SpecExpression::CExpression(c_variable("i")),
+                        operator: CComparisonOperator::LessEqual,
+                        right: SpecExpression::Value(int32(1000 + index as u32)),
+                    },
+                    None,
+                    Some(format!("member {index}")),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut ambient_samples = Vec::new();
+        for ambient in [0usize, 128, 512] {
+            let mut assumptions = PureFactContext::new();
+            for index in 0..ambient {
+                assumptions = assumptions.assume_proposition(Proposition::Predicate {
+                    name: format!("unrelated_{index}"),
+                    arguments: vec![],
+                });
+            }
+            let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+            let (goals, work) = crate::instrumentation::measure_deterministic_work(|| {
+                c_loop_invariant_obligations_at_back_edge(&state, &state, &checks, &assumptions)
+                    .expect("all explicit members lower")
+            });
+            let entries = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
+            assert_eq!(goals.len(), size);
+            assert!(
+                entries <= 4 * size,
+                "{size} members rebuilt {entries} entries"
+            );
+            assert!(goals.iter().enumerate().all(|(index, goal)| goal.context()
+                == Some(format!("member {index}").as_str())
+                && goal.introductions().is_some()));
+            ambient_samples.push((entries, work));
+        }
+        assert!(
+            ambient_samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "ambient facts changed closer work: {ambient_samples:?}"
+        );
+        samples.push(ambient_samples[0]);
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].0 <= 2 * pair[0].0 + 8, "{samples:?}");
+        // The generated certificate explicitly contains its guard prefixes;
+        // context insertion itself stays linear in the declared members.
+        assert!(pair[1].1 <= 5 * pair[0].1 + 64, "{samples:?}");
+    }
+}
+
 #[test]
 fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
     let state = CState::new().with_local("i", int32(0));
