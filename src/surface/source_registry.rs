@@ -553,6 +553,7 @@ mod tests {
             },
             external: true,
             parameter_struct_casts: BTreeMap::new(),
+            parameter_field_places: BTreeMap::new(),
             one_call_proof: false,
             tactic_procedure: false,
             requires,

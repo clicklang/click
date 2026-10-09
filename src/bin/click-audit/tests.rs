@@ -1113,7 +1113,7 @@ uint32 count_live(struct cell* node) {
     let expanded = expand_location(&format_location(&site_location(site)))
         .expect("the arm's execute should expand");
     assert!(
-        expanded.contains("if at(statement(5).entry, (load_uint64(byte_offset(node, 8)) & 1))"),
+        expanded.contains("if at(statement(5).entry, (node->word & 1))"),
         "the undecided C guard should expand to an anchored proof `if`: {expanded}"
     );
     let source = load_audit_source_from_text(&click_path, expanded.clone()).unwrap();

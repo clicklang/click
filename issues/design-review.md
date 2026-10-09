@@ -36,27 +36,25 @@ A fact or a failed goal about a referent prints it as the sidecar writes
 it: `value`, `owns value`, and `box.first` for a read at the start of a
 struct referent.
 
-The "C operation" line of a failure prints a read through a scalar
-reference as `value`: a step records the stepped function's reference
-parameters, and the printer of a kernel term consults them
-(`describe_read_through_reference` in `src/surface/diagnostics.rs`).
+The "C operation" line of a failure prints a read through a reference as
+the sidecar writes it, `value` or `c.first`: a step records the stepped
+function's reference parameters, and the printer of a kernel term consults
+them (`describe_read_through_reference` in `src/surface/diagnostics.rs`).
+`click expand` does the same from the sidecar's function block
+(`ParameterPlaceScope`): a read through a scalar reference is `value`, and
+a read at a scalar field of a struct is the field place, `c.second` through
+`struct cell& c` and `p->second` through a struct pointer, parameter or
+local.
 
-Two gaps remain, where the same read still prints `load_int32(&name)`. That
-parses back correctly, but it is not what a sidecar writes.
+One gap remains: a field of a struct nested in another (`p->inner.x`) is
+still expanded in kernel spelling, `load_int32(byte_offset(p, 4))`, because
+the printer matches scalar fields of the outer struct only. It parses back
+and verifies.
 
-- A struct reference. `load_int32(&c)` is the field at the start of the
-  struct, `c.first`, and the printer needs the struct's layout to name it.
-  The parameter of an imported C++ function does not carry one the step
-  scope can reach.
-- A condition `click expand` writes from a lowered C expression, which is
-  printed outside any step.
+Regression: `click expand` on a branch over `p->inner.x` writes the
+condition with the field place.
 
-Regression: a failing read of `c.first` through `struct cell& c` prints
-`c.first` in its C operation; `click expand` on a branch over a scalar
-reference writes the condition with the bare name.
-
-Done when: no diagnostic or expansion prints `load_...(&name)` for a
-reference parameter.
+Done when: no expansion prints `load_...` for a field of a struct.
 
 ### A4. Rust sidecars in Rust syntax: respelling and the refusals
 

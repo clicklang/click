@@ -274,12 +274,20 @@ fn function_interface(
                         source.declaration_id, parameter.name
                     ));
                 };
-                Ok(syntax::C0Parameter::new(
+                let carrier = syntax::C0Parameter::new(
                     C0Type::Int32Pointer,
                     carried_name.clone(),
                     Some(name.clone()),
-                ).with_pointee_constant(*is_const)
-                .with_reference(is_reference))
+                );
+                // The record's layout is what lets a diagnostic name a field
+                // of the referent, `c.first`, where it would print a cell.
+                let carrier = match layouts.get(name) {
+                    Some(layout) => carrier.with_pointee_struct_layout(name.clone(), layout.clone()),
+                    None => carrier,
+                };
+                Ok(carrier
+                    .with_pointee_constant(*is_const)
+                    .with_reference(is_reference))
             }
             CppType::Pointer { pointee } if Scalar::is(pointee, ScalarKind::Int32, false) =>
             {

@@ -1690,6 +1690,47 @@ int32 compare_swap2(int32 p[2]) {
         .expect("branch certificate should check against the state where it branched");
 }
 
+/// A branch over a field read through a struct pointer expands to a
+/// condition that names the field, as a sidecar writes it.
+#[test]
+fn expanded_branch_condition_names_a_struct_pointer_field() {
+    let c_source = "struct cell { int first; int second; };\nint pick(struct cell *p) { if (p->second > 0) { return 1; } return 0; }";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct cell* p) { views p->second; ensures result >= 0; } by { execute(); simp(); }\n";
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &[("pick.c", c_source)],
+        "pick",
+        CProofClaim::Grouped,
+        0,
+    )
+    .expect("a branch over a field should expand");
+    assert!(
+        expanded.contains("if at(statement(0).entry, p->second) > at(statement(0).entry, 0) {"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+        .expect("the expansion naming the field should verify");
+}
+
+/// The same through a local struct pointer.
+#[test]
+fn expanded_branch_condition_names_a_local_struct_pointer_field() {
+    let c_source = "struct cell { int first; int second; };\nint pick(struct cell *p) { struct cell *q = p; if (q->second > 0) { return 1; } return 0; }";
+    let click_source = "verifying \"pick.c\";\nint32 pick(struct cell* p) { views p->second; ensures result >= 0; } by { execute(); simp(); }\n";
+    let expanded = expand_top_level_tactic_for_test(
+        click_source,
+        &[("pick.c", c_source)],
+        "pick",
+        CProofClaim::Grouped,
+        0,
+    )
+    .expect("a branch over a field should expand");
+    assert!(!expanded.contains("load_int32("), "{expanded}");
+    assert!(expanded.contains("->second) > "), "{expanded}");
+    verify_c0_sources(&expanded, &[("pick.c", c_source)])
+        .expect("the expansion naming the field should verify");
+}
+
 #[test]
 fn expanded_contract_let_facts_remain_source_indexable() {
     let c_source = "int32 increment(int32 x) { return x + 1; }";

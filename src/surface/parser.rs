@@ -3218,6 +3218,34 @@ impl Parser {
                 .map(Requirement::Proposition),
         );
 
+        let mut parameter_field_places: BTreeMap<_, _> = signature
+            .parameters()
+            .iter()
+            .filter_map(|parameter| {
+                let layout = self.struct_layouts.get(parameter.struct_name()?)?;
+                Some((
+                    parameter.name().to_string(),
+                    super::scalar_field_places(layout),
+                ))
+            })
+            .collect();
+        // A local of struct-pointer type is printed as a parameter is. The
+        // signature wins a shared spelling.
+        for (name, struct_name) in self
+            .local_struct_pointers_by_function
+            .get(signature.name())
+            .into_iter()
+            .flat_map(|locals| &locals.struct_pointers)
+        {
+            if signature
+                .parameters()
+                .iter()
+                .all(|parameter| parameter.name() != name)
+                && let Some(layout) = self.struct_layouts.get(struct_name)
+            {
+                parameter_field_places.insert(name.clone(), super::scalar_field_places(layout));
+            }
+        }
         Ok(FunctionBlock {
             signature,
             external,
@@ -3233,6 +3261,7 @@ impl Parser {
             ensure_source_clauses,
             grouped_proof,
             parameter_struct_casts,
+            parameter_field_places,
         })
     }
 

@@ -1106,6 +1106,10 @@ fn expand_c0_tactic_source_at_context(
             expand_c0_claim_source(click_source, c_sources, function_name, *claim)
         };
     }
+    let _parameter_places = selected
+        .function_block
+        .as_ref()
+        .map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
@@ -1344,15 +1348,11 @@ fn expand_program_prepared_tactic_source_at_context(
             *claim,
         );
     }
-    let reference_result = match &selected.site {
-        ProofSite::FunctionClaim { function_name, .. }
-        | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(&file)
-            .find(|block| block.signature().name() == function_name)
-            .is_some_and(|block| block.signature().returns_reference()),
-        ProofSite::TheoremEnsure { .. } => false,
-    };
-    let _reference_result_source =
-        super::diagnostics::ReferenceResultSourceScope::enter(reference_result);
+    let block = selected.function_block.as_ref();
+    let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
+        block.is_some_and(|block| block.signature().returns_reference()),
+    );
+    let _parameter_places = block.map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
@@ -1487,6 +1487,10 @@ fn expand_c0_prepared_tactic_source_at_context(
             expand_c0_prepared_claim_source(click_source, imports, function_name, *claim)
         };
     }
+    let _parameter_places = selected
+        .function_block
+        .as_ref()
+        .map(super::diagnostics::ParameterPlaceScope::enter);
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
@@ -1686,6 +1690,8 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
     let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
         theorem.function_block.signature().returns_reference(),
     );
+    let _reference_carriers =
+        super::diagnostics::ParameterPlaceScope::enter(&theorem.function_block);
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
         return Ok(super::printing::format_proof_certificate(&certificate));
@@ -2569,6 +2575,9 @@ struct LocatedSourceTactic {
     /// source index: an expansion that stands for a run of tactics ending at
     /// the selected one replaces from an earlier one of these.
     sibling_starts: Vec<(usize, usize)>,
+    /// The function block the selected site belongs to, for printing its
+    /// parameters' places. Filled for the one tactic an expansion selects.
+    function_block: Option<FunctionBlock>,
 }
 
 thread_local! {
@@ -2956,6 +2965,13 @@ fn locate_source_tactic_file(
                     _ => None,
                 })
                 .collect();
+            located.function_block = match &located.site {
+                ProofSite::FunctionClaim { function_name, .. }
+                | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(file)
+                    .find(|block| block.signature().name() == function_name)
+                    .cloned(),
+                ProofSite::TheoremEnsure { .. } => None,
+            };
             Ok(located)
         }
         EntrySelection::Unaddressable(reason) => Err(ClickError::new(reason.clone())),
@@ -3207,6 +3223,7 @@ fn proof_tactic_entries(
             nested: Vec::new(),
             edit: TacticSourceEdit::WholeProof(edit.clone()),
             sibling_starts: Vec::new(),
+            function_block: None,
         }),
     };
     let omitted_proof_span = || match edit {
@@ -3262,6 +3279,7 @@ fn proof_tactic_entries(
                         nested: Vec::new(),
                         edit,
                         sibling_starts: Vec::new(),
+                        function_block: None,
                     }),
                 };
                 entries.push(entry.clone());
@@ -3420,6 +3438,7 @@ fn block_tactic_entries(
                 nested: path.clone(),
                 edit: TacticSourceEdit::Partial(span.clone()),
                 sibling_starts: Vec::new(),
+                function_block: None,
             }),
         };
         entries.push(entry.clone());
