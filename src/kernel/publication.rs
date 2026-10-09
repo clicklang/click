@@ -487,3 +487,153 @@ pub(crate) fn resolve_observed_publications(
     }
     next
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::{ResourceDescription, ResourceFieldSchema};
+
+    fn flag(index: usize) -> Pointer {
+        Pointer {
+            block: format!("publication-flag-{index}").into(),
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    fn payload(index: usize) -> ResourceDescription {
+        ResourceDescription::new(
+            "ready_payload".to_string(),
+            vec![CValue::pointer(flag(index)).into()].into(),
+            ResourceFieldSchema::new(vec![]).expect("empty schema"),
+        )
+    }
+
+    fn right(side: PublicationSide, index: usize) -> CResourceFact {
+        CResourceFact::own(CResource::Publication(PublicationRight::new(
+            side,
+            flag(index),
+            payload(index),
+        )))
+    }
+
+    /// Subscriber rights for flags `0..subscribers`, beside `unrelated`
+    /// other flags' publisher rights and as many owned cells.
+    fn state(subscribers: usize, unrelated: usize) -> CState {
+        let mut memory = CMemory::new();
+        let mut resources = ResourceContext::new();
+        for index in 0..subscribers {
+            resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));
+        }
+        for index in subscribers..subscribers + unrelated {
+            let cell = Pointer {
+                block: format!("unrelated-cell-{index}").into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            memory = memory
+                .with_block(cell.block.clone(), 4)
+                .store(cell.clone(), int32(0));
+            resources = resources
+                .unchecked_with_fact(right(PublicationSide::Publisher, index))
+                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    cell,
+                    0.into(),
+                    1.into(),
+                )));
+        }
+        CState::new()
+            .with_memory(memory)
+            .with_resource_context(resources)
+    }
+
+    /// Acquire-loads every subscriber flag, then settles them all as
+    /// published, returning the deterministic work of each phase.
+    fn acquire_and_settle(subscribers: usize, unrelated: usize) -> (usize, usize) {
+        let state = state(subscribers, unrelated);
+        let empty = PureFactContext::new();
+        let mut budget = ExecutionBudget::new();
+        let mut values = Vec::new();
+        let (observed, load_work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut current = state.clone();
+            for index in 0..subscribers {
+                let (next, value) =
+                    acquire_load(&current, &flag(index), &int32(2), &empty, &mut budget)
+                        .unwrap()
+                        .unwrap();
+                values.push(value);
+                current = next;
+            }
+            current
+        });
+        let published = values
+            .into_iter()
+            .fold(PureFactContext::new(), |facts, value| {
+                let CValue::Int32(term) = value else {
+                    unreachable!()
+                };
+                facts.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(term),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                    false,
+                ))
+            });
+        assert_eq!(
+            observed.resources.observed_publication_rights().len(),
+            subscribers
+        );
+        let (settled, settle_work) = crate::instrumentation::measure_deterministic_work(|| {
+            resolve_observed_publications(&observed, &published)
+        });
+        assert!(!settled.resources.has_observed_publication_rights());
+        for index in 0..subscribers {
+            assert!(
+                settled
+                    .resources
+                    .publication_right_at(PublicationSide::Subscriber, &flag(index))
+                    .is_none()
+            );
+            assert!(settled.resources.satisfies_fact(
+                &payload_fact(&PublicationRight::new(
+                    PublicationSide::Subscriber,
+                    flag(index),
+                    payload(index)
+                )),
+                &empty,
+            ));
+        }
+        assert!(load_work > 0 && settle_work > 0);
+        (load_work, settle_work)
+    }
+
+    #[test]
+    fn one_acquire_and_settle_ignore_unrelated_flags_and_resources() {
+        let samples = [8usize, 16, 32, 64]
+            .into_iter()
+            .map(|unrelated| (unrelated, acquire_and_settle(1, unrelated)))
+            .collect::<Vec<_>>();
+        let (_, (first_load, first_settle)) = samples[0];
+        let (_, (last_load, last_settle)) = samples[samples.len() - 1];
+        // Eight times the unrelated context may cost an indexed lookup's
+        // logarithmic factor, never a pass over the context.
+        assert!(
+            last_load <= first_load * 2 && last_settle <= first_settle * 2,
+            "publication work grew with unrelated resources: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn settling_reads_scales_with_the_reads_settled() {
+        let samples = [8usize, 16, 32, 64]
+            .into_iter()
+            .map(|subscribers| (subscribers, acquire_and_settle(subscribers, 8)))
+            .collect::<Vec<_>>();
+        for pair in samples.windows(2) {
+            let ((_, (load, settle)), (_, (next_load, next_settle))) = (pair[0], pair[1]);
+            assert!(
+                next_load <= load * 3 && next_settle <= settle * 3,
+                "publication work grew faster than the reads: {samples:?}"
+            );
+        }
+    }
+}

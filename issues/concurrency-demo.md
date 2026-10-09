@@ -36,7 +36,7 @@ historical checkpoints.
 | [Disjoint fork/join](../examples/concurrency-fork-join/fork_join.click) | Exact outputs, ownership transfer, stable input loans, matching joins, and create-failure cleanup | Native runtime validation and broader threading APIs |
 | [Even/odd locking](../design/concurrency-probes/mutex_held_parity.click) | Conditional acquisition across loop iterations, final unlock, and destruction | The conditional acquisition abstraction with protected payloads or use-loan-backed guards |
 | [Shared-worker counter](../design/concurrency-probes/mutex_counter.click) | Worker and parent safety, shared typed use permissions, create-failure cleanup, final destruction, and the exact final value of two | Nothing for the frozen C |
-| [One-shot publication](../design/concurrency-publication/publication.click) | The consumer reads the producer's value through a spin loop that need not terminate; the payload moves once from producer to consumer, and reads before publication, producer writes after it, other orders, and a second store or consumer are refused | Scaling regressions |
+| [One-shot publication](../design/concurrency-publication/publication.click) | The consumer reads the producer's value through a spin loop that need not terminate; the payload moves once from producer to consumer, and reads before publication, producer writes after it, other orders, and a second store or consumer are refused | Native runtime validation |
 
 The parity loop works both through an ordinary conditional guard resource and
 [direct conditional ownership in its loop contract](../design/concurrency-probes/mutex_held_parity_direct.click).
@@ -250,17 +250,12 @@ before acquisition, a producer write after release, relaxed and
 `seq_cst` orders, a zero store, a second store, a load whose value no branch
 tests, the zero branch, a load without the right, a nonzero initial value,
 and a plain write to the flag. The flag storage stays consumed, because C has
-no atomic destroy. The rules are in the
+no atomic destroy. Deterministic regressions in `src/kernel/publication.rs`
+pin that one acquire and its settlement cost the same amid 8 to 64 unrelated
+flags and resources, and that settling grows linearly with the reads settled. The rules are in the
 [modeled pthread specification](../src/languages/c/modeled_pthread_spec.md).
 
 ## Remaining launch obligations
-
-### Publication scaling
-
-Add deterministic scaling regressions for publication amid many unrelated
-resources and flags. Settling a read is indexed by the rights that are
-awaiting a branch, so it is not a scan of the context. A regression should
-pin that.
 
 ### Native pthread binding
 
