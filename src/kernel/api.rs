@@ -3996,7 +3996,7 @@ pub fn forall_instantiation_candidate_values(
     {
         crate::instrumentation::record_deterministic_work(width);
         for value in range.lower..=range.upper {
-            candidates.insert(signed_i64_bitvector_constant(value));
+            candidates.insert(range.constant(value));
         }
     }
     candidates.into_iter().collect()
@@ -9829,6 +9829,30 @@ pub fn prove_wide_order_transitive(
             Box::new(order(first, last, first_strict || second_strict)),
         )),
     )))
+}
+
+/// An unsigned 64-bit value at most another is equal to it when it is not
+/// strictly smaller.
+pub fn prove_uint64_le_and_not_lt_implies_eq(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
+            true,
+        )),
+        Box::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::uint64_less_than(left.clone(), right.clone()),
+                false,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::Bitvector64Equal(Box::new(left), Box::new(right)),
+                true,
+            )),
+        )),
+    ))
 }
 
 /// Signed non-strict order followed by strict order is strict order.

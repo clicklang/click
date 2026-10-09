@@ -209,11 +209,11 @@ impl PureFactContext {
     ) {
         if values.len() == variables.len() {
             let mut instantiated = body.clone();
-            for (variable, value) in variables.iter().zip(values.iter()) {
+            for ((variable, value), range) in variables.iter().zip(values.iter()).zip(ranges) {
                 instantiated = substitute_bitvector_variable_in_proposition(
                     &instantiated,
                     *variable,
-                    &signed_i64_bitvector_constant(*value),
+                    &range.constant(*value),
                 );
             }
             self.collect_derived_order_facts_from_proposition(&instantiated, order_facts);

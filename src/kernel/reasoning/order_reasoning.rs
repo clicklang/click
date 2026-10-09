@@ -139,6 +139,20 @@ pub(in crate::kernel) fn condition_as_int64_order_fact(
 pub(crate) struct FiniteForAllRange {
     pub(crate) lower: i64,
     pub(crate) upper: i64,
+    /// Whether the variable is an unsigned 64-bit one, bounded by 64-bit
+    /// unsigned comparisons. Its values are then 64-bit constants.
+    pub(crate) unsigned64: bool,
+}
+
+impl FiniteForAllRange {
+    /// One value of the range as the constant its variable takes.
+    pub(crate) fn constant(&self, value: i64) -> Bitvector32Term {
+        if self.unsigned64 {
+            Bitvector32Term::UInt64Constant(value as u64)
+        } else {
+            signed_i64_bitvector_constant(value)
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -153,9 +167,11 @@ pub(crate) fn collect_forall_chain<'a>(
     variables: &mut Vec<Variable>,
 ) -> &'a Proposition {
     match proposition {
+        // An unsigned 64-bit binder is ranged by its own 64-bit bounds
+        // (`uint64_antecedent_ranges`); the finite tables read both.
         Proposition::ForAll {
             var,
-            sort: Sort::CInt32,
+            sort: Sort::CInt32 | Sort::CMachineInteger(MachineIntegerType::UInt64),
             body,
         } => {
             variables.push(*var);
@@ -214,11 +230,27 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         return None;
     }
     let mut hull = BTreeMap::<Variable, (i64, i64)>::new();
+    let mut unsigned64 = BTreeSet::new();
     // The quantified variables each leaf mentions. A leaf that mentions none
     // is the same proposition at every point of the domain, so it is not
     // vacuous anywhere and a zero-member table would never check it.
     let mut leaf_variables = Vec::new();
     for (antecedent, leaf) in leaves {
+        // A guard that is the constant `false` is what an unsatisfiable
+        // unsigned bound folds to: `k < 0u64` has no member. The leaf is
+        // vacuous at every point, as under an empty range of every binder,
+        // and a binder no other leaf ranges is given that empty range.
+        if matches!(
+            antecedent,
+            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+                | Proposition::ConditionIs(ConditionTerm::Constant(true), false)
+        ) {
+            for variable in variables {
+                hull.entry(*variable).or_insert((0, -1));
+            }
+            leaf_variables.push(variables.to_vec());
+            continue;
+        }
         let mut mentioned = BTreeSet::new();
         collect_proposition_bitvector_variables(leaf, &mut mentioned);
         let bounded = mentioned
@@ -233,7 +265,20 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         leaf_variables.push(bounded.clone());
         let mut order_facts = Vec::new();
         collect_order_facts_from_assumed_proposition(antecedent, &mut order_facts);
-        let ranges = antecedent_ranges(&variable_set, &order_facts)?;
+        let mut ranges = antecedent_ranges(&variable_set, &order_facts)?;
+        // A variable the antecedent bounds by unsigned 64-bit comparisons
+        // with constants ranges over those values, from zero where it
+        // states no lower bound.
+        for (variable, (lower, upper)) in uint64_antecedent_ranges(&variable_set, antecedent) {
+            let range = ranges.get_mut(&variable)?;
+            if range.lower.is_some() || range.upper.is_some() {
+                // One variable read at both widths has no single range.
+                return None;
+            }
+            range.lower = Some(lower);
+            range.upper = upper;
+            unsigned64.insert(variable);
+        }
         for variable in bounded {
             let range = ranges.get(&variable)?;
             let (Some(lower), Some(upper)) = (range.lower, range.upper) else {
@@ -274,9 +319,87 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         .iter()
         .map(|variable| {
             let (lower, upper) = *hull.get(variable)?;
-            Some(FiniteForAllRange { lower, upper })
+            Some(FiniteForAllRange {
+                lower,
+                upper,
+                unsigned64: unsigned64.contains(variable),
+            })
         })
         .collect()
+}
+
+/// The ranges an antecedent's unsigned 64-bit comparisons with constants
+/// impose on the quantified variables: `(lower, upper)`, with the lower
+/// bound zero where none is stated and no upper bound where none is. Only
+/// a conjunction's own comparisons are read, and only constants that fit
+/// the signed 64-bit range table.
+fn uint64_antecedent_ranges(
+    variable_set: &BTreeSet<Variable>,
+    antecedent: &Proposition,
+) -> BTreeMap<Variable, (i64, Option<i64>)> {
+    fn collect(
+        proposition: &Proposition,
+        facts: &mut Vec<(Bitvector32Term, Bitvector32Term, bool)>,
+    ) {
+        match proposition {
+            // `(lower, upper, strict)` for a held comparison; a comparison
+            // held false is the reversed one with the other strictness.
+            Proposition::ConditionIs(condition, value) => {
+                let (left, right, lower_first, strict) = match condition {
+                    ConditionTerm::Bitvector64UnsignedLessThan(a, b) => (a, b, true, true),
+                    ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => (a, b, true, false),
+                    ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => (a, b, false, true),
+                    ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => (a, b, false, false),
+                    _ => return,
+                };
+                let (lower, upper) = if lower_first {
+                    (left, right)
+                } else {
+                    (right, left)
+                };
+                facts.push(if *value {
+                    (lower.as_ref().clone(), upper.as_ref().clone(), strict)
+                } else {
+                    (upper.as_ref().clone(), lower.as_ref().clone(), !strict)
+                });
+            }
+            Proposition::And(left, right) => {
+                collect(left, facts);
+                collect(right, facts);
+            }
+            _ => {}
+        }
+    }
+    let mut facts = Vec::new();
+    collect(antecedent, &mut facts);
+    let mut ranges = BTreeMap::<Variable, (i64, Option<i64>)>::new();
+    let constant = |term: &Bitvector32Term| {
+        term.uint64_as_const()
+            .and_then(|value| i64::try_from(value).ok())
+    };
+    for (lower, upper, strict) in facts {
+        if let (Some(variable), Some(bound)) = (bitvector_variable(&lower), constant(&upper))
+            && variable_set.contains(&variable)
+        {
+            // `k < 0` has no member: its upper bound is below zero.
+            let bound = if strict { bound - 1 } else { bound };
+            let range = ranges.entry(variable).or_insert((0, None));
+            range.1 = Some(range.1.map_or(bound, |current| current.min(bound)));
+        } else if let (Some(bound), Some(variable)) = (constant(&lower), bitvector_variable(&upper))
+            && variable_set.contains(&variable)
+        {
+            let Some(bound) = (if strict {
+                bound.checked_add(1)
+            } else {
+                Some(bound)
+            }) else {
+                continue;
+            };
+            let range = ranges.entry(variable).or_insert((0, None));
+            range.0 = range.0.max(bound);
+        }
+    }
+    ranges
 }
 
 /// Collects `(antecedent, leaf)` for every implication leaf of the body's

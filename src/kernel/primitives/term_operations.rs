@@ -2275,7 +2275,7 @@ impl ConditionTerm {
         // unsigned bounds check `x >= 0 && x < n` negates.
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left < right),
-            (_, Some(0)) => Self::Constant(false),
+            (_, Some(0)) | (Some(u64::MAX), _) => Self::Constant(false),
             _ => Self::Bitvector64UnsignedLessThan(Box::new(left), Box::new(right)),
         }
     }
@@ -2283,7 +2283,9 @@ impl ConditionTerm {
     pub(crate) fn uint64_less_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left <= right),
-            (Some(0), _) => Self::Constant(true),
+            // Zero is the least unsigned 64-bit value and `u64::MAX` the
+            // greatest.
+            (Some(0), _) | (_, Some(u64::MAX)) => Self::Constant(true),
             _ => Self::Bitvector64UnsignedLessEqual(Box::new(left), Box::new(right)),
         }
     }
@@ -2291,7 +2293,7 @@ impl ConditionTerm {
     pub(crate) fn uint64_greater_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left > right),
-            (Some(0), _) => Self::Constant(false),
+            (Some(0), _) | (_, Some(u64::MAX)) => Self::Constant(false),
             _ => Self::Bitvector64UnsignedGreaterThan(Box::new(left), Box::new(right)),
         }
     }
@@ -2299,7 +2301,7 @@ impl ConditionTerm {
     pub(crate) fn uint64_greater_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left >= right),
-            (_, Some(0)) => Self::Constant(true),
+            (_, Some(0)) | (Some(u64::MAX), _) => Self::Constant(true),
             _ => Self::Bitvector64UnsignedGreaterEqual(Box::new(left), Box::new(right)),
         }
     }

@@ -641,6 +641,13 @@ theorem uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
     ensures first <= last;
 }
 
+theorem uint64_le_and_not_lt_implies_eq(left: uint64, right: uint64) {
+    requires left <= right;
+    requires not left < right;
+
+    ensures left == right;
+}
+
 theorem int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
     requires first < middle;
     requires middle <= last;
@@ -1118,6 +1125,17 @@ theorem uint32_to_integer_bounds(value: uint32) {
     ensures to_integer(value) <= 4294967295 by {
         have value <= 4294967295u32;
         apply(uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; }
+    }
+}
+
+theorem uint64_to_integer_bounds(value: uint64) {
+    ensures 0 <= to_integer(value) by {
+        have 0u64 <= value;
+        apply(uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; }
+    }
+    ensures to_integer(value) <= 18446744073709551615 by {
+        have value <= 18446744073709551615u64;
+        apply(uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; }
     }
 }
 

@@ -2120,6 +2120,7 @@ impl<'a> Proof<'a> {
     fn capture_instantiate_argument(
         &self,
         argument: &ContractExpression,
+        binder: &Sort,
     ) -> Result<Bitvector32Term, ClickError> {
         let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
@@ -2245,10 +2246,15 @@ impl<'a> Proof<'a> {
                 "could not evaluate `instantiate` argument: {message}"
             ))
         })?;
-        let CValue::Int32(argument) = value else {
-            return Err(self.step_error("`instantiate` argument did not evaluate to int32"));
-        };
-        Ok(argument)
+        let uint64 = Sort::CMachineInteger(crate::kernel::MachineIntegerType::UInt64);
+        match (binder, value) {
+            (Sort::CInt32, CValue::Int32(argument)) => Ok(argument),
+            (binder, CValue::UInt64(argument)) if *binder == uint64 => Ok(argument),
+            (binder, _) if *binder == uint64 => {
+                Err(self.step_error("`instantiate` argument did not evaluate to uint64"))
+            }
+            _ => Err(self.step_error("`instantiate` argument did not evaluate to int32")),
+        }
     }
 
     pub(super) fn apply_fixed_state_instantiate_using(
@@ -2275,7 +2281,13 @@ impl<'a> Proof<'a> {
             &surface_quantified,
             "`instantiate` quantified fact",
         )?;
-        let argument = self.capture_instantiate_argument(argument)?;
+        // The argument has the binder's type. A fact that is not a universal
+        // is refused by the kernel below; it is read as `int32` here.
+        let binder = match &lowered_quantified {
+            Proposition::ForAll { sort, .. } => sort.clone(),
+            _ => Sort::CInt32,
+        };
+        let argument = self.capture_instantiate_argument(argument, &binder)?;
 
         self.state
             .apply_instantiate(lowered_quantified, argument, explicit_premises.as_deref())
