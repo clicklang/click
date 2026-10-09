@@ -1408,7 +1408,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 50);
+    assert_eq!(prepared.export().schema, 51);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -2645,7 +2645,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -2762,7 +2762,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -2873,7 +2873,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2934,7 +2934,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2980,7 +2980,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -3613,7 +3613,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3691,7 +3691,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -3809,7 +3809,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3947,7 +3947,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -4049,7 +4049,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -4149,7 +4149,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -4296,7 +4296,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -4447,7 +4447,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let destructor = import
         .export()
         .reachable_functions
@@ -4635,7 +4635,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -4739,7 +4739,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 50);
+    assert_eq!(import.export().schema, 51);
     let destructor = import
         .export()
         .reachable_functions
@@ -10345,7 +10345,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 50);
+        assert_eq!(import.export().schema, 51);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -10529,7 +10529,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 50);
+            assert_eq!(import.export().schema, 51);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -16100,4 +16100,158 @@ uint64 probe(int32* backing, uint64 count) {
         load_import(&project.config()).is_err(),
         "changed constructor dependency must invalidate the lock"
     );
+}
+
+// Native result contracts use the same hidden storage through two factories;
+// no parameter, slot clause or constructor inlining appears in the sidecar.
+#[test]
+fn construction_return_descriptor_factories_verify_offline() {
+    check_construction_return_descriptor_factories(false);
+}
+
+#[test]
+#[ignore = "nightly: 2.6s ordinary, expanded and retained in the parallel gate"]
+fn construction_return_descriptor_factories_expand_and_retain_offline() {
+    check_construction_return_descriptor_factories(true);
+}
+
+fn check_construction_return_descriptor_factories(expand_and_retain: bool) {
+    let project = Project::with_fixture(
+        "construct-return.cpp",
+        "probe",
+        "int* identity(int* p) noexcept { return p; }\nint* address(int* p) noexcept { return identity(p); }\nstruct Extent { unsigned long size; explicit Extent(unsigned long n) noexcept : size(n) {} };\nstruct View { int* data; Extent extent; View(int* p, unsigned long n) noexcept : data(address(p)), extent(n) {} };\nView make(int* p, unsigned long n) noexcept { return {p, n}; }\nView forward(int* p, unsigned long n) noexcept { return make(p, n); }\nView relay(int* p, unsigned long n) noexcept { return forward(p, n); }\nunsigned long probe(int* p, unsigned long n) noexcept { View view = relay(p, n); return view.extent.size; }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[0],
+        CppStatement::Declare {
+            initializer: CppInitializer::ConstructionCall { .. },
+            ..
+        }
+    ));
+    let lowered = lower_import(&import).unwrap();
+    assert_eq!(
+        lowered
+            .reachable_kernel_functions()
+            .iter()
+            .find(|function| function.name() == "relay")
+            .unwrap()
+            .contract_interface()
+            .aggregate_return_mode(),
+        click::kernel::CAggregateReturnMode::Construction
+    );
+    let proof = r#"verifying "construct-return.cpp";
+int32* identity(int32* p) { ensures result == p; } by { execute(); simp(); }
+int32* address(int32* p) { ensures result == p; } by { execute(); simp(); }
+void Extent_constructor(struct Extent* this, uint64 n) {
+ owns this->size;
+ ensures this->size == n;
+} by { execute(); simp(); }
+void View_constructor(struct View* this, int32* p, uint64 n) {
+ owns this->data;
+ owns this->extent.size;
+ ensures this->data == p;
+ ensures this->extent.size == n;
+} by { execute(); simp(); }
+struct View make(int32* p, uint64 n) {
+ ensures result.data == p;
+ ensures result.extent.size == n;
+} by { execute(); simp(); }
+struct View forward(int32* p, uint64 n) {
+ ensures result.data == p;
+ ensures result.extent.size == n;
+} by { execute(); simp(); }
+struct View relay(int32* p, uint64 n) {
+ ensures result.data == p;
+ ensures result.extent.size == n;
+} by { execute(); simp(); }
+uint64 probe(int32* p, uint64 n) {
+ views p[0..1];
+ ensures result == n;
+ ensures p[0] == old(p[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, proof);
+    if !expand_and_retain {
+        return;
+    }
+    let whole = read_click_project(&project.directory.join("arithmetic.click"), proof).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&whole, &import, "probe.contract")
+            .unwrap();
+    verify_program_prepared_project(&whole.with_entry_source(expanded), &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&whole, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&whole, &import, "probe.ensures_0", 0)
+            .unwrap();
+    session
+        .verify_at_project(proof, position.line, position.column)
+        .unwrap();
+}
+
+// Trivial copying alone does not justify erasing construction storage identity
+// or moving a constructor's aliasable memory observations to another object.
+#[test]
+fn construction_return_refuses_address_and_memory_sensitive_constructors_offline() {
+    let valid = Project::with_fixture(
+        "construct-return.cpp",
+        "make",
+        "struct View { int* data; View(int* p) noexcept : data(p) {} }; View make(int* p) noexcept { return View(p); }",
+    );
+    refresh_import(&valid.config()).expect("parenthesized prvalue construction remains admitted");
+    use sha2::{Digest, Sha256};
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(valid.artifact()).unwrap()).unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(&fs::read(valid.lock()).unwrap()).unwrap();
+    for mutation in 0..4 {
+        let mut forged = artifact.clone();
+        match mutation {
+            0 => forged["function"]["body"][0]["value_type"]["name"] = "Other".into(),
+            1 => forged["function"]["body"][0]["callee"]["declaration_id"] = "missing".into(),
+            2 => forged["function"]["body"][0]["arguments"] = serde_json::json!([]),
+            3 => {
+                forged["function"]["body"][0]["cleanups"] = serde_json::json!([{
+                    "kind": "destructor",
+                "object": {"declaration_id":artifact["function"]["parameters"][0]["declaration_id"],
+                           "name":artifact["function"]["parameters"][0]["name"],
+                           "span":artifact["function"]["parameters"][0]["span"]},
+                "callee":artifact["function"]["body"][0]["callee"],
+                "span":artifact["function"]["body"][0]["span"]
+                }])
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec_pretty(&forged).unwrap();
+        let mut forged_lock = lock.clone();
+        forged_lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        forged_lock["artifact_bytes"] = bytes.len().into();
+        fs::write(valid.artifact(), bytes).unwrap();
+        fs::write(
+            valid.lock(),
+            serde_json::to_vec_pretty(&forged_lock).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            load_import(&valid.config()).is_err(),
+            "accepted returned-construction metadata mutation {mutation}"
+        );
+    }
+
+    for source in [
+        "struct Node { int* self; int value; Node(int n) noexcept : self(&value), value(n) {} }; Node make(int n) noexcept { return Node(n); }",
+        "struct View { int value; View(int* p) noexcept : value(*p) {} }; View make(int* p) noexcept { return View(p); }",
+        "int observe(int* p) noexcept { return *p; } struct View { int value; View(int* p) noexcept : value(observe(p)) {} }; View make(int* p) noexcept { return View(p); }",
+        "struct View { int value; View(int* p) noexcept : value(7) { *p = 8; } }; View make(int* p) noexcept { return View(p); }",
+    ] {
+        let project = Project::with_fixture("construct-return.cpp", "make", source);
+        let error = refresh_import(&project.config())
+            .expect_err("storage-sensitive returned construction must remain outside the profile");
+        assert!(
+            error.contains("returned constructor"),
+            "unexpected refusal: {error}"
+        );
+    }
 }

@@ -1313,3 +1313,134 @@ fn raw_object_footprint_does_not_resize_or_initialize_parent_storage() {
     assert!(!memory.may_read_uninitialized_object(&at.offset_by_bytes(16), 8));
     assert!(!memory.has_initialized_bytes_at(&at.offset_by_bytes(8), 8));
 }
+
+// The admitted value-only constructor profile must yield the same observable
+// descriptor after zero, one or several explicit trivial result copies.
+#[test]
+fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
+    let layout = CAggregateLayout::new(
+        16,
+        8,
+        vec![
+            CAggregateField::new("data", 0, CType::Int32Pointer),
+            CAggregateField::new("extent", 8, CType::UInt64),
+        ],
+    );
+    let destination = c_variable("destination");
+    let owner = CResourceSpec::owned_memory(
+        CMemorySegment::new(destination.clone(), c_int32_literal(0), c_int32_literal(16))
+            .with_element_width(1),
+    );
+    let constructor = c_function(
+        CType::Void,
+        "construct_descriptor",
+        vec![
+            c_parameter("destination", CType::Int32Pointer),
+            c_parameter("backing", CType::Int32Pointer),
+            c_parameter("extent", CType::UInt64),
+        ],
+        c_seq(
+            c_typed_store(
+                destination.clone(),
+                c_variable("backing"),
+                CType::Int32Pointer,
+            ),
+            c_seq(
+                c_typed_store(
+                    c_pointer_offset_bytes(destination, 8),
+                    c_variable("extent"),
+                    CType::UInt64,
+                ),
+                c_return(c_void_value()),
+            ),
+        ),
+    )
+    .with_construction_parameter(0, layout.clone())
+    .with_resource_summary(vec![owner.clone()], vec![owner]);
+    let environment = CExecutionEnvironment::new().with_function(constructor);
+    for copies in [0, 1, 3] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut statements = vec![
+            c_declare("backing", CType::Int32),
+            c_assign("backing", c_int32_literal(23)),
+            c_allocate_aggregate_destination("result", layout.clone()),
+        ];
+        let names = (0..copies)
+            .map(|index| format!("temporary_{index}"))
+            .collect::<Vec<_>>();
+        for name in &names {
+            statements.push(c_allocate_aggregate_destination(name, layout.clone()));
+        }
+        let first = names.first().map_or("result", String::as_str);
+        statements.push(c_call(
+            "construct_descriptor",
+            vec![
+                c_cast(c_variable(first), CType::Int32Pointer),
+                c_addr_of("backing"),
+                c_uint64_literal(37),
+            ],
+        ));
+        for (index, name) in names.iter().enumerate() {
+            let target = names.get(index + 1).map_or("result", String::as_str);
+            statements.push(c_copy_aggregate(
+                c_variable(target),
+                c_variable(name),
+                layout.clone(),
+            ));
+        }
+        if !names.is_empty() {
+            statements.push(c_end_automatic_lifetimes(
+                names.iter().rev().cloned().collect(),
+            ));
+        }
+        // Ordinary local storage has implicit authority rather than a range fact.
+        // Writing through the saved backing pointer checks that retirement kept it.
+        statements.push(c_typed_store(
+            c_addr_of("backing"),
+            c_int32_literal(24),
+            CType::Int32,
+        ));
+        let statement = statements.into_iter().reduce(c_seq).unwrap();
+        let checked = prove_symbolic_c_execution_paths_with_environment(
+            CState::new().with_population_creation_tracking(),
+            statement,
+            PureFactContext::new(),
+            environment.clone(),
+            CExecutionSemantics::EXECUTE_BODIES,
+        );
+        let [path] = checked.paths() else {
+            panic!("one descriptor construction path");
+        };
+        let state = match crate::kernel::api::proof_evidence_conclusion(path.theorem()) {
+            Proposition::CStatementExecutes {
+                outcome: CStatementOutcome::Normal(state),
+                ..
+            }
+            | Proposition::CStatementVerifies {
+                outcome: CStatementOutcome::Normal(state),
+                ..
+            } => state,
+            _ => panic!("descriptor construction and copies must complete"),
+        };
+        let result = state.locals.aggregate_object_pointer("result").unwrap();
+        let backing = state.locals.slot("backing").unwrap();
+        assert_eq!(
+            pointer(&state.memory.known_value(result).unwrap()),
+            *backing
+        );
+        assert_eq!(
+            state.memory.known_value(&result.offset_by_bytes(8)),
+            Some(CValue::UInt64(Bitvector32Term::UInt64Constant(37)))
+        );
+        assert_eq!(state.memory.known_value(backing), Some(int32(24)));
+        assert!(
+            state
+                .resources
+                .memory_write_range(result, 16, &PureFactContext::new())
+                .is_some()
+        );
+        for name in &names {
+            assert!(state.locals.aggregate_object_pointer(name).is_none());
+        }
+    }
+}

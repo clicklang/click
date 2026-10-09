@@ -3,8 +3,10 @@
 This is the implementation contract for
 [shared aggregate construction](../issues/aggregate-construction-design.md).
 The shared kernel supports a bounded complete-object construction return mode.
-Existing C aggregate returns remain field copies; C++ returned construction
-remains refused until source lowering and compiler evidence are connected.
+Existing C aggregate returns remain field copies. C++ now admits bounded
+returned construction and forwarding under a body-validated copy-equivalence
+restriction; assignment temporaries and the pinned end-to-end target remain
+pending.
 
 The copy-return implementation now checks source initialization inside the
 materialization transition, before allocating or copying a result. Kernel tests
@@ -212,6 +214,38 @@ the language rule and compiler/ABI evidence that justify its transitions. If
 multiple executions are admitted, prove the claim for each, or prove that their
 observable behavior agrees for the selected claim. Keep the shape refused when
 that evidence is missing. Do not infer address independence from trivial copying.
+
+The first admitted returned-construction profile validates the resolved constructor
+and its reachable value helpers from their typed bodies. Initializers may depend
+on evaluated scalar/pointer arguments and constants, with embedded construction
+checked recursively. They cannot read aliasable memory, expose their receiver or
+local storage, or perform other runtime effects. Helpers remain ordinary
+body-checked modular calls; read-only contracts alone do not establish this
+restriction. Direct local constructors retain their broader existing profile.
+
+C++20 `[stmt.return]` and `[dcl.init]` select the prvalue result object;
+`[class.temporary]` permits additional qualifying trivial class result objects,
+and `[class.copy.elision]` governs optional named returns. This frontend uses
+field-value equivalence across permitted trivial copies for the bounded profile,
+not an ABI-specific no-copy claim. Given the same evaluated argument values,
+the admitted constructor writes the same modeled field values into either
+object, and trivial copies preserve those values. No pointer derived from the
+intermediate object's storage is exposed, so its retirement preserves the
+contract. Padding and object representation are outside the admitted observation
+profile. A shared checked regression constructs directly or through one/several
+explicit copies and retirement, preserving the descriptor and external backing.
+
+Artifact schema 51 distinguishes resolved returned construction, aggregate-call
+forwarding and initialization of a new object from a construction call. The
+importer recomputes eligibility; no serialized eligibility flag grants access.
+Source and signature validation still checks declaration identities, exact
+nominal types, arguments, field order and cleanup. Named return candidates,
+moves, user-defined copies, nontrivial destruction, mixed copy/construction
+return branches and storage-sensitive returned constructors remain refused.
+Construction-return functions require `noexcept` and no exit cleanup in this
+slice. Existing `ReturnRecord` copy-only functions retain the copy result mode.
+Assignment from a returned aggregate remains refused until a distinct RHS
+object and its full-expression lifetime are represented.
 
 The identity-sensitive `Node` is the shared-kernel test oracle. It is not a
 universal source claim about trivially copyable C++ returns. The first real

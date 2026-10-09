@@ -277,7 +277,12 @@ impl Metadata<'_> {
                 self.conversions(conversions)?;
                 Ok(())
             }
-            CppInitializer::Constructor {
+            CppInitializer::ConstructionCall {
+                callee,
+                arguments,
+                span,
+            }
+            | CppInitializer::Constructor {
                 callee,
                 arguments,
                 span,
@@ -379,6 +384,26 @@ impl Metadata<'_> {
                     self.reference(object)?;
                     self.field(field)?;
                     self.expression(value)?;
+                    span
+                }
+                CppStatement::ReturnConstruct {
+                    callee,
+                    arguments,
+                    value_type,
+                    cleanups,
+                    span,
+                }
+                | CppStatement::ReturnAggregateCall {
+                    callee,
+                    arguments,
+                    value_type,
+                    cleanups,
+                    span,
+                } => {
+                    self.callee(callee)?;
+                    self.arguments(arguments)?;
+                    value_type.validate_aliases_in(self.alias_sources)?;
+                    self.cleanups(cleanups)?;
                     span
                 }
                 CppStatement::ReturnRecord {

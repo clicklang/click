@@ -236,7 +236,11 @@ fn lower_function(
         function = function.with_construction_parameter(0, context.record_layout(record_name)?);
     }
     if let CppType::Record { name, .. } = &source.return_type {
-        function = function.with_return_aggregate_layout(context.record_layout(name)?);
+        function = if super::construction::is_construction_return(source) {
+            function.with_construction_return(context.record_layout(name)?)
+        } else {
+            function.with_return_aggregate_layout(context.record_layout(name)?)
+        };
     }
     Ok(function)
 }
@@ -438,6 +442,26 @@ impl LoweringContext<'_> {
                     ))
                 }
                 (
+                    CppType::Record { name, .. },
+                    CppInitializer::ConstructionCall {
+                        callee, arguments, ..
+                    },
+                ) => {
+                    let layout = self.record_layout(name)?;
+                    let (prefix, actual) = self.normalize_arguments(arguments)?;
+                    Ok(evaluate_then(
+                        prefix,
+                        c_seq(
+                            c_allocate_aggregate_destination(local.name.clone(), layout),
+                            c_call_assign(
+                                local.name.clone(),
+                                self.names.require(&callee.declaration_id)?.to_owned(),
+                                actual,
+                            ),
+                        ),
+                    ))
+                }
+                (
                     CppType::Record {
                         declaration_id,
                         name,
@@ -614,7 +638,9 @@ impl LoweringContext<'_> {
                     span.start_column
                 ),
             )),
-            CppStatement::ReturnRecord { .. }
+            CppStatement::ReturnConstruct { .. }
+            | CppStatement::ReturnAggregateCall { .. }
+            | CppStatement::ReturnRecord { .. }
             | CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
@@ -695,6 +721,42 @@ impl LoweringContext<'_> {
         unwind_base: usize,
     ) -> Result<CStatement, String> {
         match statement {
+            CppStatement::ReturnConstruct {
+                callee, arguments, ..
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let mut actual = vec![c_cast(
+                    c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
+                    CType::Int32Pointer,
+                )];
+                actual.extend(arguments);
+                Ok(evaluate_then(
+                    prefix,
+                    c_seq(
+                        c_call(
+                            self.names.require(&callee.declaration_id)?.to_owned(),
+                            actual,
+                        ),
+                        c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
+                    ),
+                ))
+            }
+            CppStatement::ReturnAggregateCall {
+                callee, arguments, ..
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                Ok(evaluate_then(
+                    prefix,
+                    c_seq(
+                        c_call_assign(
+                            crate::kernel::C_CONTRACT_RESULT_NAME,
+                            self.names.require(&callee.declaration_id)?.to_owned(),
+                            arguments,
+                        ),
+                        c_return(c_variable(crate::kernel::C_CONTRACT_RESULT_NAME)),
+                    ),
+                ))
+            }
             CppStatement::ReturnRecord {
                 source, value_type, ..
             } => {

@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 50;
+pub(crate) const EXPORT_SCHEMA: u32 = 51;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -810,6 +810,12 @@ fn validate_scalar_conversions(
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppInitializer {
+    /// Initialize a new object from an admitted construction-return call.
+    ConstructionCall {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        span: CppSpan,
+    },
     Value {
         value: CppExpression,
     },
@@ -868,6 +874,22 @@ pub enum CppStatement {
         field: CppFieldReference,
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
+        span: CppSpan,
+    },
+    /// A resolved prvalue constructor whose body satisfies copy equivalence.
+    ReturnConstruct {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
+        cleanups: Vec<CppCleanup>,
+        span: CppSpan,
+    },
+    /// Forward the selected result destination through a resolved aggregate call.
+    ReturnAggregateCall {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
+        cleanups: Vec<CppCleanup>,
         span: CppSpan,
     },
     /// A Clang-resolved trivial copy construction from a live record lvalue.
@@ -1198,6 +1220,7 @@ impl CppExport {
             &mut visited,
         )?;
         validate_reachable_records(&functions, &records)?;
+        super::construction::validate_returns(&functions, &records)?;
         if visited.len() != functions.len() {
             return Err(
                 "C++ export contains a function outside the selected function's reachable graph"
@@ -2020,7 +2043,11 @@ impl CppFunction {
                             ));
                         }
                         let record = validate_record_reference(records, declaration_id, name)?;
-                        if matches!(initializer, CppInitializer::Constructor { .. }) {
+                        if matches!(
+                            initializer,
+                            CppInitializer::Constructor { .. }
+                                | CppInitializer::ConstructionCall { .. }
+                        ) {
                             record.require_constructor_local_layout()?;
                         } else {
                             record.require_flat_local_layout()?;
@@ -2386,7 +2413,9 @@ impl CppFunction {
         }
         if destructible_locals != 0 {
             let Some(
-                CppStatement::ReturnRecord { .. }
+                CppStatement::ReturnConstruct { .. }
+                | CppStatement::ReturnAggregateCall { .. }
+                | CppStatement::ReturnRecord { .. }
                 | CppStatement::Return { .. }
                 | CppStatement::ReturnCall { .. },
             ) = self.body.last()
@@ -2550,6 +2579,14 @@ impl CppStatement {
                     ));
                 }
                 Ok(())
+            }
+            Self::ReturnConstruct { callee, arguments, value_type, cleanups, span }
+            | Self::ReturnAggregateCall { callee, arguments, value_type, cleanups, span } => {
+                validate_call(callee, arguments, span, places, records, logical_source)?;
+                if !matches!(value_type, CppType::Record { is_const: false, .. }) || !cleanups.is_empty() {
+                    return Err("C++ construction returns require a mutable record result and no exit cleanup".into());
+                }
+                require_function_return_type(value_type, records, "construction return value")
             }
             Self::ReturnRecord {
                 source,
@@ -2730,6 +2767,21 @@ impl CppInitializer {
             _ => {}
         }
         match (self, local_type) {
+            (
+                Self::ConstructionCall {
+                    callee,
+                    arguments,
+                    span,
+                },
+                CppType::Record {
+                    declaration_id,
+                    name,
+                    is_const: false,
+                },
+            ) => {
+                validate_trivial_record_value(records, declaration_id, name)?;
+                validate_call(callee, arguments, span, places, records, logical_source)
+            }
             (Self::Value { value }, CppType::LvalueReference { .. }) => {
                 value.validate(places, records, logical_source)?;
                 if !same_scalar_type(local_type, value.value_type()) {
@@ -2995,7 +3047,9 @@ impl CppCallArgument {
                 value_type,
                 span,
             } => {
-                if require_scalar_integer(value_type, "nested-call value").is_err() {
+                if require_scalar_integer(value_type, "nested-call value").is_err()
+                    && require_mutable_int32_pointer(value_type, "nested-call value").is_err()
+                {
                     require_bool(value_type, false, "nested-call value")?;
                 }
                 validate_call(callee, arguments, span, places, records, logical_source)
@@ -3610,7 +3664,9 @@ fn sequence_always_returns(statements: &[CppStatement]) -> bool {
 
 fn sequence_contains_return(statements: &[CppStatement]) -> bool {
     statements.iter().any(|statement| match statement {
-        CppStatement::ReturnRecord { .. }
+        CppStatement::ReturnConstruct { .. }
+        | CppStatement::ReturnAggregateCall { .. }
+        | CppStatement::ReturnRecord { .. }
         | CppStatement::Return { .. }
         | CppStatement::ReturnCall { .. } => true,
         CppStatement::If {
@@ -3645,7 +3701,9 @@ fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
 impl CppStatement {
     fn always_returns(&self) -> bool {
         match self {
-            Self::ReturnRecord { .. }
+            Self::ReturnConstruct { .. }
+            | Self::ReturnAggregateCall { .. }
+            | Self::ReturnRecord { .. }
             | Self::Return { .. }
             | Self::ReturnCall { .. }
             | Self::Throw { .. }
@@ -3731,6 +3789,9 @@ fn validate_reachable_calls(
             | CollectedCall::Constructor {
                 callee, arguments, ..
             }
+            | CollectedCall::ReturnedConstructor {
+                callee, arguments, ..
+            }
             | CollectedCall::MemberConstructor {
                 callee, arguments, ..
             } => (*callee, *arguments),
@@ -3758,7 +3819,9 @@ fn validate_reachable_calls(
                 if observer && !target.declared_noexcept {
                     return Err("C++ expression observers require nonthrowing callees".into());
                 }
-                if destination.is_some_and(|value| !same_scalar_type(value, &target.return_type)) {
+                if destination.is_some_and(|value| {
+                    value != &target.return_type && !same_scalar_type(value, &target.return_type)
+                }) {
                     return Err("C++ call result does not match its capture or return type".into());
                 }
                 if !matches!(
@@ -3810,6 +3873,32 @@ fn validate_reachable_calls(
                 validate_call_arguments(
                     &places,
                     target.name.as_str(),
+                    explicit_parameters,
+                    arguments,
+                    records,
+                )?;
+            }
+            CollectedCall::ReturnedConstructor { value_type, .. } => {
+                let CppFunctionKind::Constructor {
+                    record_declaration_id,
+                    record_name,
+                } = &target.function_kind
+                else {
+                    return Err("C++ returned construction refers to a non-constructor".into());
+                };
+                if !matches!(value_type, CppType::Record { declaration_id, name, is_const: false }
+                    if declaration_id == record_declaration_id && name == record_name)
+                {
+                    return Err(
+                        "C++ returned constructor does not match its nominal result type".into(),
+                    );
+                }
+                let Some((_, explicit_parameters)) = target.parameters.split_first() else {
+                    return Err("C++ returned constructor is missing its object parameter".into());
+                };
+                validate_call_arguments(
+                    &places,
+                    &target.name,
                     explicit_parameters,
                     arguments,
                     records,
@@ -3909,6 +3998,11 @@ enum CollectedCall<'a> {
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
     },
+    ReturnedConstructor {
+        value_type: &'a CppType,
+        callee: &'a CppFunctionReference,
+        arguments: &'a [CppCallArgument],
+    },
     MemberConstructor {
         object: &'a CppPlaceReference,
         field: &'a CppFieldReference,
@@ -3925,6 +4019,27 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
     for statement in statements {
         collect_statement_expression_calls(statement, calls);
         match statement {
+            CppStatement::ReturnConstruct {
+                callee,
+                arguments,
+                value_type,
+                ..
+            } => {
+                calls.push(CollectedCall::ReturnedConstructor {
+                    value_type,
+                    callee,
+                    arguments,
+                });
+                collect_nested_calls(arguments, calls);
+            }
+            CppStatement::ReturnAggregateCall {
+                callee,
+                arguments,
+                value_type,
+                ..
+            } => {
+                collect_scalar_call(callee, arguments, Some(value_type), calls);
+            }
             CppStatement::MemberConstruct {
                 object,
                 field,
@@ -3939,6 +4054,16 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                     arguments,
                 });
                 collect_nested_calls(arguments, calls);
+            }
+            CppStatement::Declare {
+                local,
+                initializer:
+                    CppInitializer::ConstructionCall {
+                        callee, arguments, ..
+                    },
+                ..
+            } => {
+                collect_scalar_call(callee, arguments, Some(&local.value_type), calls);
             }
             CppStatement::Declare {
                 local,
@@ -4564,7 +4689,9 @@ fn validate_statement_constant_references(
                     referenced_constants,
                 )?;
             }
-            CppStatement::Call { arguments, .. }
+            CppStatement::ReturnConstruct { arguments, .. }
+            | CppStatement::ReturnAggregateCall { arguments, .. }
+            | CppStatement::Call { arguments, .. }
             | CppStatement::ReturnCall { arguments, .. }
             | CppStatement::MemberConstruct { arguments, .. } => {
                 for argument in arguments {
@@ -4591,7 +4718,9 @@ impl CppInitializer {
             Self::Value { value } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
-            Self::Call { arguments, .. } | Self::Constructor { arguments, .. } => {
+            Self::ConstructionCall { arguments, .. }
+            | Self::Call { arguments, .. }
+            | Self::Constructor { arguments, .. } => {
                 for argument in arguments {
                     argument.validate_constant_references(
                         logical_source,
@@ -4894,7 +5023,11 @@ fn require_const_signed_int64(value: &CppType, label: &str) -> Result<(), String
 fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> Result<(), String> {
     for statement in statements {
         match statement {
-            CppStatement::ReturnRecord { value_type, .. } if value_type != return_type => {
+            CppStatement::ReturnConstruct { value_type, .. }
+            | CppStatement::ReturnAggregateCall { value_type, .. }
+            | CppStatement::ReturnRecord { value_type, .. }
+                if value_type != return_type =>
+            {
                 return Err("C++ record return does not match the function return type".into());
             }
             CppStatement::Return { value, .. }

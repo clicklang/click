@@ -110,16 +110,19 @@ The hidden result binding grants no storage or ownership; actual writes must
 initialize the modeled value fields. Surface contracts now supply and certify the
 implicit result-storage resource while preserving native signatures and field
 addresses. Typed-frontend regressions cover forwarding, expansion, retained
-verification and required initialization; this does not yet admit C++ returned
-construction source. Existing C/Rust copy returns are unchanged.
+verification and required initialization. Existing C/Rust copy returns are
+unchanged.
 Ordinary void constructors now bind an explicit destination parameter and
 complete its initialized fields through body-certified summaries, including
 aligned subobjects without resizing their parent allocation. Constructor proof
 entries describe an unwritten footprint without fixing the parent's extent.
 C++ local construction uses raw storage and explicit embedded constructor calls,
 while the shared lifetime-end statement covers
-temporary retirement. Returned-construction source admission and expression
-lifetime lowering remain to be connected.
+temporary retirement. Bounded C++ returned construction, forwarding and new-object
+initialization now select the shared construction mode. Their typed constructors
+and value helpers must satisfy the copy-equivalence restriction below; direct
+local constructors retain the existing address-sensitive profile. Assignment
+materialization and expression lifetime lowering remain to be connected.
 The precise compiler/ABI evidence is an admission gate for each new C++ return
 shape; the design does not treat a Clang expression category as sufficient
 evidence of copy elision.

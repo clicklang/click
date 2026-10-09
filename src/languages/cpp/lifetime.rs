@@ -100,7 +100,9 @@ impl LifetimePlan {
         for statement in body {
             crate::instrumentation::record_deterministic_work(1);
             match statement {
-                CppStatement::ReturnRecord { cleanups, .. }
+                CppStatement::ReturnConstruct { cleanups, .. }
+                | CppStatement::ReturnAggregateCall { cleanups, .. }
+                | CppStatement::ReturnRecord { cleanups, .. }
                 | CppStatement::Return { cleanups, .. }
                 | CppStatement::ReturnCall { cleanups, .. } => {
                     if !state.matches_exit(cleanups, 0) {
