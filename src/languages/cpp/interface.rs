@@ -12,7 +12,7 @@ pub(super) fn prepare(
     reachable: &[CFunction],
     layouts: BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<PreparedExecution, String> {
-    let functions = prepare_functions(import, function, reachable)?;
+    let functions = prepare_functions(import, function, reachable, &layouts)?;
     Ok(PreparedExecution { functions, layouts })
 }
 
@@ -133,6 +133,7 @@ fn prepare_functions(
     import: &PreparedCppImport,
     function: &CFunction,
     reachable: &[CFunction],
+    layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<Vec<syntax::C0Function>, String> {
     let observers = super::schema::observer_callees(import);
     std::iter::once(&import.export().function)
@@ -186,7 +187,7 @@ fn prepare_functions(
             for name in ambiguous {
                 locals.remove(&name);
             }
-            Ok(function_interface(source, kernel)?
+            Ok(function_interface(source, kernel, layouts)?
                 .with_read_only_contract(observers.contains(&source.declaration_id))
                 .with_local_struct_values(locals)
                 .with_local_references(references.difference(&objects).cloned().collect()))
@@ -200,12 +201,14 @@ fn prepare_functions(
 fn function_interface(
     source: &super::CppFunction,
     lowered: &crate::kernel::CFunction,
+    layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<syntax::C0Function, String> {
     let return_reference = matches!(source.return_type, CppType::LvalueReference { .. });
     let return_constant = matches!(&source.return_type, CppType::LvalueReference { pointee } if Scalar::is(pointee, ScalarKind::Int32, true));
     let return_type = if source.return_type == CppType::Void {
         C0Type::Void
-    } else if return_reference
+    } else if matches!(source.return_type, CppType::Record { .. })
+        || return_reference
         || matches!(&source.return_type, CppType::Pointer { pointee }
         if Scalar::is(pointee, ScalarKind::Int32, false))
     {
@@ -293,10 +296,16 @@ fn function_interface(
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(
+    let mut interface =
         syntax::C0Function::external(return_type, lowered.name().to_owned(), parameters)
             .with_return_reference(return_reference)
             .with_return_pointee_constant(return_constant)
-            .with_prelowered_kernel_function(lowered.clone()),
-    )
+            .with_prelowered_kernel_function(lowered.clone());
+    if let CppType::Record { name, .. } = &source.return_type {
+        let layout = layouts
+            .get(name)
+            .ok_or("C++ record return has no checked layout")?;
+        interface = interface.with_struct_return(name.clone(), layout.clone());
+    }
+    Ok(interface)
 }

@@ -450,6 +450,16 @@ The proof interface spells that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
 
+C++ record returns from live record lvalues admit Clang-resolved trivial copy
+construction with trivial destruction and no base subobjects. Sidecars retain
+`struct View` result types and `result.field` contracts, including embedded scalar
+leaves, through the shared aggregate return model and checked nominal layouts.
+Each copied leaf needs initialized read authority. Copying a pointer field does
+not transfer ownership of its pointees or grant permission to read them. Copies
+complete before automatic cleanup. User-defined copies, moves, returns of whole
+automatic records, prvalue record construction and aggregate-return calls remain outside this slice. Artifact
+schema 46 requires an explicit refresh of earlier locks.
+
 Static scalar methods use a distinct `static_method` artifact kind with their
 class and declaration identities, without an implicit receiver or object-layout
 requirement. Select an ordinary declaration with `Class::helper`; reachable

@@ -221,16 +221,21 @@ fn lower_function(
     let return_type = match &source.function_kind {
         CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => CType::Void,
         _ if source.return_type == CppType::Void => CType::Void,
+        _ if matches!(source.return_type, CppType::Record { .. }) => CType::Int32Pointer,
         _ => cpp_return_scalar_type(&source.return_type)?,
     };
     let return_constant = matches!(&source.return_type, CppType::LvalueReference { pointee } if is_const_int32(pointee));
-    Ok(c_function(
+    let mut function = c_function(
         return_type,
         names.require(&source.declaration_id)?.to_owned(),
         parameters,
         body,
     )
-    .with_return_pointee_constant(return_constant))
+    .with_return_pointee_constant(return_constant);
+    if let CppType::Record { name, .. } = &source.return_type {
+        function = function.with_return_aggregate_layout(context.record_layout(name)?);
+    }
+    Ok(function)
 }
 
 pub(super) use crate::languages::c::syntax::reference_carrier_name;
@@ -579,7 +584,8 @@ impl LoweringContext<'_> {
                     span.start_column
                 ),
             )),
-            CppStatement::Return { .. }
+            CppStatement::ReturnRecord { .. }
+            | CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }
             | CppStatement::TryCatchInt32 { .. }
@@ -659,6 +665,27 @@ impl LoweringContext<'_> {
         unwind_base: usize,
     ) -> Result<CStatement, String> {
         match statement {
+            CppStatement::ReturnRecord {
+                source, value_type, ..
+            } => {
+                let CppType::Record { name, .. } = value_type else {
+                    return Err("C++ record return has no nominal record type".into());
+                };
+                let layout = self.record_layout(name)?;
+                let capture = self.return_capture_name.clone();
+                let mut result = c_seq(
+                    c_declare_aggregate(capture.clone(), layout.clone()),
+                    c_copy_aggregate(
+                        c_variable(capture.clone()),
+                        self.lower_place(source)?,
+                        layout,
+                    ),
+                );
+                for cleanup in state.exit(0) {
+                    result = c_seq(result, self.lower_cleanup(cleanup)?);
+                }
+                Ok(c_seq(result, c_return(c_variable(capture))))
+            }
             CppStatement::Return { value, .. } => {
                 let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
                 self.lower_scalar_return(evaluation, &state.exit(0).collect::<Vec<_>>(), &[])

@@ -273,7 +273,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 45;
+    artifact["schema"] = 46;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1157,42 +1157,63 @@ private:
       }
       llvm::json::Object result;
       const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
-      auto scalar_call = lower_scalar_call_source(returned->getRetValue());
-      if (!scalar_call) return std::nullopt;
-      const auto *call = scalar_call->call;
-      if (call != nullptr) {
-        const auto *callee = call->getDirectCallee();
-        if (callee == nullptr ||
-            !(reference_return != nullptr
-                ? context_.hasSameType(callee->getReturnType(), function->getReturnType()) &&
-                  returned->getRetValue()->isLValue() && scalar_call->conversions.empty()
-                : context_.hasSameType(returned->getRetValue()->getType(), function->getReturnType()))) {
-          fail(call->getExprLoc(), "C++ return call requires matching final value "
-                                   "and caller return types");
+      if (function->getReturnType()->isRecordType()) {
+        const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(
+            returned->getRetValue()->IgnoreParenImpCasts());
+        const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
+        if (returned->getNRVOCandidate() != nullptr ||
+            constructor == nullptr || !constructor->isCopyConstructor() ||
+            !constructor->isTrivial() || constructor->isDeleted() ||
+            !constructor->getParent()->hasTrivialDestructor() ||
+            construction->getNumArgs() != 1 || !construction->getArg(0)->isLValue() ||
+            !context_.hasSameUnqualifiedType(construction->getType(), function->getReturnType())) {
+          fail(returned->getReturnLoc(), "C++ record return requires a resolved trivial copy constructor from a live record lvalue with trivial destruction");
           return std::nullopt;
         }
-        auto lowered = lower_call_operation(call, function, true);
-        auto value_type = lower_type(reference_return != nullptr ? function->getReturnType() : returned->getRetValue()->getType(),
-                                     returned->getRetValue()->getExprLoc(),
-                                     direct_source_alias(function->getTypeSourceInfo()));
-        if (!lowered || !value_type) {
-          return std::nullopt;
-        }
-        result["kind"] = "return_call";
-        if (!scalar_call->conversions.empty())
-          result["conversions"] = std::move(scalar_call->conversions);
-        result["callee"] = std::move(lowered->callee);
-        result["arguments"] = std::move(lowered->arguments);
+        auto source = lower_place_reference(construction->getArg(0)->IgnoreParenImpCasts(), function);
+        auto value_type = lower_type(function->getReturnType(), returned->getReturnLoc());
+        if (!source || !value_type) return std::nullopt;
+        result["kind"] = "return_record";
+        result["source"] = std::move(*source);
         result["value_type"] = std::move(*value_type);
       } else {
-        auto value = reference_return != nullptr
-            ? lower_reference_binding(returned->getRetValue(), function->getReturnType(), function)
-            : lower_expression(returned->getRetValue(), function);
-        if (!value) {
-          return std::nullopt;
+        auto scalar_call = lower_scalar_call_source(returned->getRetValue());
+        if (!scalar_call) return std::nullopt;
+        const auto *call = scalar_call->call;
+        if (call != nullptr) {
+          const auto *callee = call->getDirectCallee();
+          if (callee == nullptr ||
+              !(reference_return != nullptr
+                  ? context_.hasSameType(callee->getReturnType(), function->getReturnType()) &&
+                    returned->getRetValue()->isLValue() && scalar_call->conversions.empty()
+                  : context_.hasSameType(returned->getRetValue()->getType(), function->getReturnType()))) {
+            fail(call->getExprLoc(), "C++ return call requires matching final value "
+                                     "and caller return types");
+            return std::nullopt;
+          }
+          auto lowered = lower_call_operation(call, function, true);
+          auto value_type = lower_type(reference_return != nullptr ? function->getReturnType() : returned->getRetValue()->getType(),
+                                       returned->getRetValue()->getExprLoc(),
+                                       direct_source_alias(function->getTypeSourceInfo()));
+          if (!lowered || !value_type) {
+            return std::nullopt;
+          }
+          result["kind"] = "return_call";
+          if (!scalar_call->conversions.empty())
+            result["conversions"] = std::move(scalar_call->conversions);
+          result["callee"] = std::move(lowered->callee);
+          result["arguments"] = std::move(lowered->arguments);
+          result["value_type"] = std::move(*value_type);
+        } else {
+          auto value = reference_return != nullptr
+              ? lower_reference_binding(returned->getRetValue(), function->getReturnType(), function)
+              : lower_expression(returned->getRetValue(), function);
+          if (!value) {
+            return std::nullopt;
+          }
+          result["kind"] = "return";
+          result["value"] = std::move(*value);
         }
-        result["kind"] = "return";
-        result["value"] = std::move(*value);
       }
       llvm::json::Array cleanups;
       const auto cleanup = cleanup_locals_.find(function->getCanonicalDecl());
