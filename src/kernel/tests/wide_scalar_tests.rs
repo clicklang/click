@@ -862,3 +862,101 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
         previous = Some(work);
     }
 }
+
+// A named-call cache may give two aliases different recorded read snapshots.
+// Congruence must retain all eight bytes, reject overwritten histories, and
+// avoid visiting unrelated cells or selected facts.
+#[test]
+fn selected_wide_read_congruence_preserves_history_width_and_scales() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let read_pointer = Pointer::symbolic(Variable(81_100));
+    let owned_pointer = Pointer::symbolic(Variable(81_103));
+    let callee = Pointer::symbolic(Variable(81_104));
+    let alias = ConditionTerm::pointer_equal(read_pointer.clone(), owned_pointer.clone());
+    let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
+    let mut previous_work = None;
+    for count in [16u32, 64, 256, 1024] {
+        let mut selected = PureFactContext::new().assume_condition(alias.clone(), true);
+        let mut memory = CMemory::new();
+        for index in 0..count {
+            memory = memory.store(
+                owned_pointer.offset_by_bytes((index + 1) * 8),
+                CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(index))),
+            );
+            selected = selected.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(82_000 + u64::from(index))),
+                    Bitvector32Term::Constant(index),
+                ),
+                true,
+            );
+        }
+        memory = memory.store(
+            owned_pointer.clone(),
+            CValue::UInt64(Bitvector32Term::Variable(Variable(
+                90_000 + u64::from(count),
+            ))),
+        );
+        let kept =
+            CallKeptOwnership::new(
+                ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+                    memory_range(owned_pointer.clone(), 0, 2),
+                )),
+                CallKeptRanges::new(ResourceContext::new(), Vec::new()),
+                &selected,
+            );
+        let after = memory.clone().with_call_memory_havoc(
+            Variable(91_000 + u64::from(count)),
+            &[memory_range(callee.clone(), 0, 2)],
+            &selected,
+            Some(&kept),
+        );
+        let read = |snapshot: &CMemory, pointer: &Pointer, kind| {
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory_ref(snapshot),
+                Box::new(pointer.clone()),
+                kind,
+            )
+        };
+        let current = read(&after, &read_pointer, LoadKind::Bits64);
+        let same_snapshot = read(&after, &owned_pointer, LoadKind::Bits64);
+        let earlier = read(&memory, &owned_pointer, LoadKind::Bits64);
+        crate::kernel::memory_provenance::clear_canonical_form_caches();
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            matches(&current, &same_snapshot, &selected) && matches(&current, &earlier, &selected)
+        });
+        assert!(found, "{count} unrelated cells and facts");
+        if let Some(previous) = previous_work {
+            assert!(work <= previous + 64, "{count}: {work} after {previous}");
+        }
+        previous_work = Some(work);
+        assert!(matches(&earlier, &current, &selected));
+        assert!(!matches(&current, &same_snapshot, &PureFactContext::new()));
+        assert!(!matches(
+            &current,
+            &read(&after, &callee, LoadKind::Bits64),
+            &selected,
+        ));
+        assert!(!matches(
+            &current,
+            &read(&after, &owned_pointer, LoadKind::Bits32),
+            &selected,
+        ));
+        for (offset, value) in [
+            (0, CValue::UInt64(Bitvector32Term::UInt64Constant(1 << 32))),
+            (4, CValue::Int32(Bitvector32Term::Constant(1))),
+        ] {
+            let address = owned_pointer.offset_by_bytes(offset);
+            let changed = after
+                .without_possible_aliasing_cells(&address, value.byte_width(), &selected)
+                .store(address, value);
+            let changed_read = read(&changed, &read_pointer, LoadKind::Bits64);
+            assert!(!matches(&changed_read, &earlier, &selected));
+            assert!(matches(
+                &changed_read,
+                &read(&changed, &owned_pointer, LoadKind::Bits64),
+                &selected,
+            ));
+        }
+    }
+}
