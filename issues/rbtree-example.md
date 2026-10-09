@@ -104,6 +104,12 @@ passes with the same checked load-history rule used for 32-bit equality. The
 black-leaf sidecar now verifies through its final augmentation callback for
 root, left-child, and right-child transplants, retaining the original outer
 context. The callback resource stays folded across the parent-link helper call.
+The remaining red-leaf/nonempty-child continuation exposed a join-lowering
+bug: a comparison mentioning a mark was treated as wholly historical even
+when its other side read current memory. Every exported interface fact now
+gets checked state-parametric lowering with the snapshots shared by both
+arms; the marked expression stays fixed while the current read is checked at
+each frontier. A loaded-pointer reduction pins the former kernel refusal.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
