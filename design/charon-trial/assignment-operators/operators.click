@@ -12,7 +12,7 @@ void U32X4_mul_assign_u32(struct U32X4* self, uint32 rhs) {
     ensures self->_0[3] == old(self->_0[3]) * rhs;
 } by { execute(); simp(); }
 
-void scaled(struct U32X4* words, uint32 factor) {
+fn scaled(words: &mut U32X4, factor: u32) {
     requires factor == 0u32 or words->_0[0] <= 4294967295u32 / factor;
     requires factor == 0u32 or words->_0[1] <= 4294967295u32 / factor;
     requires factor == 0u32 or words->_0[2] <= 4294967295u32 / factor;
@@ -33,7 +33,7 @@ void U32X4_rem_assign_u32(struct U32X4* self, uint32 quotient) {
     ensures self->_0[3] == old(self->_0[3]) % quotient;
 } by { execute(); simp(); }
 
-void reduced(struct U32X4* words, uint32 divisor) {
+fn reduced(words: &mut U32X4, divisor: u32) {
     requires divisor != 0u32;
     owns words->_0[0..4];
     ensures words->_0[0] == old(words->_0[0]) % divisor;
@@ -64,7 +64,7 @@ void U32X4_add_assign_ref_U32X4(struct U32X4* self, const struct U32X4* other) {
     ensures other->_0[3] == old(other->_0[3]);
 } by { execute(); simp(); }
 
-void added(struct U32X4* words, const struct U32X4* other) {
+fn added(words: &mut U32X4, other: &U32X4) {
     requires separate(memory(words->_0[0..4]), memory(other->_0[0..4]));
     views other->_0[0..4];
     requires words->_0[0] <= 1000u32;
@@ -86,4 +86,4 @@ void added(struct U32X4* words, const struct U32X4* other) {
     ensures other->_0[3] == old(other->_0[3]);
 } by { execute(); simp(); }
 
-uint32 local(uint32 a, uint32 b) { requires a <= 1000u32; requires b <= 1000u32; ensures result == ((a * 2u32 % 7u32) ^ (b * 2u32 % 7u32)); } by { execute(); simp(); }
+fn local(a: u32, b: u32) -> u32 { requires a <= 1000u32; requires b <= 1000u32; ensures result == ((a * 2u32 % 7u32) ^ (b * 2u32 % 7u32)); } by { execute(); simp(); }

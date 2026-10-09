@@ -1,6 +1,6 @@
 verifying "loops.rs";
 
-int32 count(int32 n) {
+fn count(n: i32) -> i32 {
     requires n >= 0;
     ensures result == n;
 } by {
@@ -12,7 +12,7 @@ int32 count(int32 n) {
     execute(); simp();
 }
 
-int32 accumulate(int32 n, int32 value) {
+fn accumulate(n: i32, value: i32) -> i32 {
     requires n >= 0;
     requires value == 1;
     ensures result == n;
@@ -26,15 +26,15 @@ int32 accumulate(int32 n, int32 value) {
     execute(); simp();
 }
 
-uint64 walk(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len <= 2147483647u64;
-    views bytes[0..(int32)bytes_len];
-    ensures result == bytes_len;
+fn walk(bytes: &[u8]) -> usize {
+    requires bytes.len() <= 2147483647u64;
+    views bytes[0..bytes.len()];
+    ensures result == bytes.len();
 } by {
     execute_until(loop(0));
     loop {
-        decreases bytes_len - i;
-        invariant i <= bytes_len;
+        decreases bytes.len() - i;
+        invariant i <= bytes.len();
     }
     execute(); simp();
 }

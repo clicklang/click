@@ -12,7 +12,7 @@ void Guard_drop(struct Guard* self) {
     execute(); simp();
 }
 
-int32 guarded_walk(int32* value, int32 n) {
+fn guarded_walk(value: &mut i32, n: i32) -> i32 {
     requires n >= 0;
     owns value[0..1];
     ensures result == n;
@@ -33,7 +33,7 @@ int32 guarded_walk(int32* value, int32 n) {
     execute(); simp();
 }
 
-int32 final_header(int32 n) {
+fn final_header(n: i32) -> i32 {
     requires n >= 0;
     ensures result == n;
 } by {

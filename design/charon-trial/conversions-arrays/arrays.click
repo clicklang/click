@@ -10,34 +10,34 @@ void Guard_drop(struct Guard* self) {
     ensures self->slot[0] == old(self->saved);
 } by { execute(); simp(); }
 
-uint32 guarded_array(int32* value, uint16 x) {
+fn guarded_array(value: &mut i32, x: u16) -> u32 {
     owns value[0..1];
     ensures result == x;
     ensures value[0] == old(value[0]);
 } by { execute(); simp(); }
 
-uint8 large_array() {
+fn large_array() -> u8 {
     ensures result == 7;
 } by { execute(); simp(); }
 
-uint8 increment(int32* value) {
+fn increment(value: &mut i32) -> u8 {
     requires value[0] < 2147483647;
     owns value[0..1];
     ensures result == 7;
     ensures value[0] == old(value[0]) + 1;
 } by { execute(); simp(); }
 
-void empty_array(int32* value) {
+fn empty_array(value: &mut i32) {
     requires value[0] < 2147483647;
     owns value[0..1];
     ensures value[0] == old(value[0]) + 1;
 } by { execute(); simp(); }
 
-uint32 explicit_array() {
+fn explicit_array() -> u32 {
     ensures result == 9;
 } by { execute(); simp(); }
 
-uint8 cast_array(uint32 x) {
+fn cast_array(x: u32) -> u8 {
     requires x == 257;
     ensures result == 1;
 } by { execute(); simp(); }

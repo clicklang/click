@@ -1,11 +1,11 @@
 verifying "loop.rs";
-uint8 first(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 4u64;
+fn first(bytes: &[u8]) -> u8 {
+    requires bytes.len() == 4u64;
     views bytes[0..4];
     ensures result == bytes[0];
 } by { execute(); simp(); }
-uint32 walk(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len == 16u64;
+fn walk(bytes: &[u8]) -> u32 {
+    requires bytes.len() == 16u64;
     views bytes[0..16];
     ensures result == 0u32;
 } by {
@@ -18,7 +18,7 @@ uint32 walk(const uint8* bytes, uint64 bytes_len) {
     loop {
         decreases __rust_mir_6_remaining;
         views bytes[0..16];
-        invariant bytes_len == 16u64;
+        invariant bytes.len() == 16u64;
         invariant viewable(bytes[0..16]);
         invariant __rust_mir_6_size == 4u64;
         invariant 0 <= __rust_mir_6_remaining and __rust_mir_6_remaining <= 16;

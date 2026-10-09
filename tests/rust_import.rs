@@ -601,8 +601,7 @@ fn charon_fields_project() -> Project {
 fn charon_shared_reference_signature_mismatch_displays_constness() {
     let p = charon_fields_project();
     let prepared = load_import(&p.config()).unwrap();
-    let missing_const =
-        CHARON_FIELDS_SIDECAR.replacen("const struct Lanes* state", "struct Lanes* state", 1);
+    let missing_const = CHARON_FIELDS_SIDECAR.replacen("state: &Lanes", "state: &mut Lanes", 1);
     let error = match C0VerificationSession::new_program_prepared(&missing_const, &prepared) {
         Ok(_) => panic!("a Rust shared reference requires a const pointer"),
         Err(error) => error,
@@ -627,12 +626,12 @@ fn charon_array_fields_check_bounds_authority_and_frames() {
         CHARON_FIELDS_SIDECAR.replace("views state->values[0..4];", ""),
         CHARON_FIELDS_SIDECAR.replace("owns state->values[0..4];", "views state->values[0..4];"),
         CHARON_FIELDS_SIDECAR.replace(
-            "ensures state->values[(int32)(uint32)index] == value;",
-            "ensures state->values[(int32)(uint32)index] != value;",
+            "ensures state->values[index] == value;",
+            "ensures state->values[index] != value;",
         ),
         CHARON_FIELDS_SIDECAR.replace(
-            "result == old(state->_0[(int32)(uint32)index])",
-            "result != old(state->_0[(int32)(uint32)index])",
+            "result == old(state->_0[index])",
+            "result != old(state->_0[index])",
         ),
     ] {
         assert_ne!(invalid, CHARON_FIELDS_SIDECAR);
@@ -990,12 +989,15 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
     for invalid in [
         CHARON_CHUNK_SIDECAR.replace("requires size != 0u64;", "requires size == 0u64;"),
         CHARON_CHUNK_SIDECAR.replace(
-            "ensures result == bytes_len % size;",
-            "ensures result == bytes_len;",
+            "ensures result == bytes.len() % size;",
+            "ensures result == bytes.len();",
         ),
-        CHARON_CHUNK_SIDECAR.replace("    requires bytes_len <= 2147483647u64;\n", ""),
-        CHARON_CHUNK_SIDECAR.replace("    views bytes[0..(int32)(uint32)bytes_len];\n", ""),
-        CHARON_CHUNK_SIDECAR.replace("requires bytes_len == 7u64;", "requires bytes_len == 8u64;"),
+        CHARON_CHUNK_SIDECAR.replace("    requires bytes.len() <= 2147483647u64;\n", ""),
+        CHARON_CHUNK_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
+        CHARON_CHUNK_SIDECAR.replace(
+            "requires bytes.len() == 7u64;",
+            "requires bytes.len() == 8u64;",
+        ),
         CHARON_CHUNK_SIDECAR.replace("ensures result == old(bytes[4]);", "ensures result == 7;"),
     ] {
         assert_ne!(invalid, CHARON_CHUNK_SIDECAR);
@@ -1098,24 +1100,24 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(CHARON_SLICE_SIDECAR, &prepared).unwrap();
     for invalid in [
-        CHARON_SLICE_SIDECAR.replace("ensures result == bytes_len;", "ensures result == 0;"),
+        CHARON_SLICE_SIDECAR.replace("ensures result == bytes.len();", "ensures result == 0;"),
         CHARON_SLICE_SIDECAR.replace("ensures result == value;", "ensures result == value + 1;"),
         CHARON_SLICE_SIDECAR.replace(
             "ensures value[0] == old(value[0]);",
             "ensures value[0] == 7;",
         ),
-        CHARON_SLICE_SIDECAR.replace("    requires index < bytes_len;\n", ""),
+        CHARON_SLICE_SIDECAR.replace("    requires index < bytes.len();\n", ""),
         CHARON_SLICE_SIDECAR.replace(
-            "    requires index < bytes_len;",
-            "    requires index == bytes_len;",
+            "    requires index < bytes.len();",
+            "    requires index == bytes.len();",
         ),
         CHARON_SLICE_SIDECAR.replace(
-            "    requires index < bytes_len;",
+            "    requires index < bytes.len();",
             "    requires index == 4294967296u64;",
         ),
-        CHARON_SLICE_SIDECAR.replace("    requires bytes_len <= 2147483647u64;\n", ""),
-        CHARON_SLICE_SIDECAR.replace("    views bytes[0..(int32)(uint32)bytes_len];\n", ""),
-        CHARON_SLICE_SIDECAR.replace("    owns bytes[0..(int32)(uint32)bytes_len];\n", ""),
+        CHARON_SLICE_SIDECAR.replace("    requires bytes.len() <= 2147483647u64;\n", ""),
+        CHARON_SLICE_SIDECAR.replace("    views bytes[0..bytes.len()];\n", ""),
+        CHARON_SLICE_SIDECAR.replace("    owns bytes[0..bytes.len()];\n", ""),
     ] {
         assert!(
             C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
@@ -1124,7 +1126,7 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
     }
     // Contract owns/views composition already establishes byte separation.
     let composed = CHARON_SLICE_SIDECAR.replace(
-        "    requires separate(memory(value[0..1]), memory(bytes[0..(int32)(uint32)bytes_len]));\n",
+        "    requires separate(memory(value[0..1]), memory(bytes[0..bytes.len()]));\n",
         "",
     );
     C0VerificationSession::new_program_prepared(&composed, &prepared).unwrap();
@@ -1141,7 +1143,7 @@ fn charon_slice_failure_does_not_suggest_unsupported_trace() {
     let p = charon_slice_project();
     fs::write(
         p.root.join("borrow.click"),
-        CHARON_SLICE_SIDECAR.replace("ensures result == bytes_len;", "ensures result == 0;"),
+        CHARON_SLICE_SIDECAR.replace("ensures result == bytes.len();", "ensures result == 0;"),
     )
     .unwrap();
     let output = p.cli(&["verify"]);
@@ -1757,8 +1759,8 @@ fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
         CHARON_SIDECAR.replace("result == x + 1", "result == x + 2"),
         CHARON_SIDECAR.replace("    requires x < 65535;\n", ""),
         CHARON_SIDECAR.replace(
-            "uint16 guarded_increment(uint16 x, int32* value, bool early) {\n    requires x < 65535;",
-            "uint16 guarded_increment(uint16 x, int32* value, bool early) {",
+            "fn guarded_increment(x: u16, value: &mut i32, early: bool) -> u16 {\n    requires x < 65535;",
+            "fn guarded_increment(x: u16, value: &mut i32, early: bool) -> u16 {",
         ),
         CHARON_SIDECAR.replace("value[0] == old(value[0])", "value[0] == 7"),
         CHARON_SIDECAR.replace("    owns value[0..1];\n", ""),
