@@ -525,7 +525,7 @@ explicit:
   memory load reasons under stays the caller's object so the load's alias
   queries keep an ambient memo identity. Both are pure-function memoizations
   over stable interned ids, not new proof authority.
-- **A smart closure asks each failed question once.** A `simp` attempt
+- **A transport attempt asks each failed question once.** A `simp` attempt
   can reach one goal through several strategies and candidates; the snapshot
   transport closure lowers the goal at every recorded snapshot, and every
   snapshot holding the goal's cells unchanged lowers it to the same source.
@@ -537,7 +537,13 @@ explicit:
   that met a cycle cut or a limit are not remembered and nothing outlives the
   attempt, so the memo changes a failing search's cost, never its outcome
   (`mdtests/simp_frame_failure_through_region_arena_is_prompt.md`, pinned
-  below the default budget by the mdtest harness).
+  below the default budget by the mdtest harness). An explicit `transport`
+  also opens this scope: its bridge, reachability, and quantified-frame routes
+  can repeat the same failed memory question even without smart search. Nested
+  checks share the enclosing scope; standalone checks discard it on return.
+  `explicit_transport_failure_is_prompt.md` pins the local refusal below the
+  repeated work, and `explicit_frame_refusal_scales_with_unrelated_facts`
+  grows independent scalar premises without granting the missing frame.
 - **Keep fallback candidates finite.** An indexed equality-rewrite candidate
   may unfold a function and descend through logical structure, but that descent
   cannot restart an equality-rewrite or function-unfold fallback already active

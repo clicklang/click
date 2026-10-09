@@ -218,6 +218,50 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<CheckedFixedStateFactTransport, ClickError> {
+    // One explicit transport can ask the same failed alias/frame question
+    // through several proof routes. Share their existing, fully keyed failure
+    // memo within this check, just as the smart closure does.
+    crate::kernel::with_closure_failure_memo(|| {
+        check_fixed_state_fact_transport_using_facts_inner(
+            surface_source,
+            surface_target,
+            surface_premises,
+            claim_label,
+            tactic_index,
+            available,
+            effect_facts,
+            parameters,
+            arguments,
+            pre_state,
+            state,
+            result,
+            recorded_snapshots,
+            surface_propositions,
+            predicate_environment,
+            click_function_environment,
+        )
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_fixed_state_fact_transport_using_facts_inner(
+    surface_source: &ClickProposition,
+    surface_target: &ClickProposition,
+    surface_premises: &[ClickProposition],
+    claim_label: &str,
+    tactic_index: usize,
+    available: &ProofFacts,
+    effect_facts: &(impl ExecutionFactSource + ?Sized),
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    pre_state: &CState,
+    state: &CState,
+    result: Option<&CValue>,
+    recorded_snapshots: &RecordedSnapshots,
+    surface_propositions: &SurfacePropositionMap,
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+) -> Result<CheckedFixedStateFactTransport, ClickError> {
     // Resource compositions keep separation compact. Materialize only a
     // listed separation premise on the local checked snapshot so explicit
     // `transport using` retains its exact-premise contract without publishing
