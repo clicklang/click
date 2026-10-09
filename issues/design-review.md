@@ -85,10 +85,11 @@ Remaining:
   methods are `impl` blocks, operator traits included
   (`impl MulAssign<u32> for U32X4`). An item in a module is named by its
   path, `fn quad::walk(...)` and `quad::Quad` (decided 2026-10-08), and the
-  four small crate sidecars use it. Still C-shaped: the Adler sidecars,
+  four small crate sidecars use it. An inherent method whose `impl` block
+  is in another module than its type (`Adler32::compute`) is found in the
+  import by its type and name. Still C-shaped: the Adler sidecars,
   whose tests cut `helpers.click` apart by its text and have to change
-  with it; one inherent method whose `impl` block is in another module
-  than its type (`Adler32::compute`), which has no spelling; the five
+  with it; the five
   frozen originals, which are hash-pinned and stay; and about 90 sidecars
   written inline in the tests. A claim label and a diagnostic still print
   the importer's name (`__rust_q_I4_quad_I4_walk.contract`). Convert
