@@ -86,6 +86,12 @@ its proof routes. The frozen non-root pointer frame returns a local refusal
 instead of exhausting the simple budget. A reduced frame refusal is pinned
 below 250,000 units, with a separate check that grows unrelated premises. The
 non-root splice proof still needs explicit frame and packed-parent facts.
+The packed-parent reduction exposed a certificate gap when reading low tag
+bits back from an aligned pointer word. Explicit arithmetic now checks that
+projection using only the selected alignment and word syntax, including
+masked tags and unsigned addition. Negative checks reject insufficient or
+foreign alignment and changed tag bits; deterministic work checks cover
+growing words within the certificate's existing payload bound.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
