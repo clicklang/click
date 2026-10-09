@@ -36,13 +36,13 @@ parameters, and selected resolved operators execute verified imported bodies.
 The unchanged pinned adler2 2.0.1 selection imports successfully. Constructors,
 constants, lane helper bodies, numeric ceilings, and lane preservation verify.
 The original computation has a terminating whole-body bounds proof for every
-multiple-of-four length up to 22,204 bytes from any canonical initial state.
-It carries all eight lane ceilings, the shared input view, and actual iterator
-state through reductions, recombination, scalar sums, and final 16-bit stores.
+length from zero through 22,207 bytes from any canonical initial state.
+It carries all eight lane ceilings, scalar-tail ceilings, the shared input view,
+and actual vector and scalar iterator state through reductions, recombination,
+scalar sums, short tails, and final 16-bit stores.
 Both output fields remain below 65,521. Checked partition lemmas relate full-width
 lengths, signed indices, four-byte prefixes, and zero-to-three-byte tails.
-Full outer batches, short-tail loop induction, and checksum correctness remain
-incomplete.
+Full outer batches and checksum correctness remain incomplete.
 
 Composition regressions cover record and scalar-array storage starts, shared
 chunk-view transport, and all four returned/copied vector lanes across local

@@ -2,7 +2,7 @@
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
 proves the four-lane helper bodies, zero through four constructor-state input
-bytes, and arbitrary multiples of four up to 22,204 bytes from canonical initial
+bytes, and bounds for every length from zero through 22,207 bytes from canonical initial
 states (`a,b < 65521`). **The general Adler-32 checksum postcondition remains
 unproved.**
 
@@ -308,46 +308,18 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-The first nonempty vector path also exercises a by-value copy of `a_vec` after
-its checked addition helper. Initialized local arrays now copy from the current
-memory snapshot when that helper has discarded cached lane values. The reduced
-[copy-after-call regression](../copy-after-call/README.md) checks this prerequisite
-and independence from subsequent source writes.
+Extend the whole-body bounds proof below over full 22,208-byte outer batches,
+including lane reduction/reset and the subsequent vector remainder. Preserve
+byte order and shared input authority while ranking the original iterators by
+their actual remaining lengths. The signed-word memory range must stay explicit
+when admitting larger full-width Rust lengths.
 
-The [four-byte computation contract](four-byte-compute.click) now checks the
-original constructor-state vector path through all three weighted lane updates,
-both ordered lane summation loops, the empty serial tail, and the final modulo
-and u16 stores. It preserves all four input bytes and gives exact native checksum
-expressions modulo 65521, retaining the original MOD offsets in B. The helper
-and recombination lemma bodies are checked alongside this contract. No original
-Rust, Charon artifact, import configuration, or lock changes are needed.
-
-The proof tracks the stored iterator cursors and remaining lengths. Checked
-native-to-Integer additions establish final scalar ceilings of 1021 and 397210;
-the output casts are justified by the modulo range. Nightly regressions check
-false outputs, byte ordering, repeated reads, and agreement between verification,
-profiling, audit, expansion, and verification of the expanded contract.
-
-The vector-step proof also retains the entry A/B lanes at a named snapshot,
-uses the general iterator addition contracts for the B call's guards, and
-applies native preservation to all eight actual helper results. The resulting
-ceilings use the real decremented remaining length. Explicit observations
-bridge the two call snapshots; they do not substitute the constructor's zero
-lanes into the preservation argument. Nightly mutations reject false bounds
-on the first and last lanes, a too-small B sum guard, and a stale remaining
-count. Symbolic-loop mutations also reject a reversed ranking measure, a false
-divisibility invariant, swapped terminal lanes, and a too-small invariant lane
-bound. This checks induction at the four-byte caller boundary; it does not
-yet establish induction over arbitrary batches.
-
-With constructor-state inputs of lengths zero through four checked, next
-establish and preserve the lane
-invariants over the original chunks/remainder
-iterator states using the derived index, checked A/B recurrences, and native
-u32 observation bridges. Then use the helper contracts and byte accounting
-to connect the original computation to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).
-Successful import and helper proofs alone do not establish checksum correctness
-or whole-loop panic freedom.
+Then connect the optimized lane recurrences and packed result to the shared
+mathematical checksum specification in the [checksum assessment](../../rust-checksum-assessment.md).
+The constructor-state contracts for zero through four bytes provide exact
+result and byte-order checks; the arbitrary small-batch contract supplies
+induction and bounds rather than a checksum postcondition. All helper bodies
+must remain checked alongside the computation.
 
 ## Historical trial
 
@@ -362,24 +334,26 @@ their single-file interpretation.
 ## Arbitrary small-batch induction
 
 The [small-batch contract](small-batch-compute.click) verifies the unchanged
-`Adler32::compute` body for every length divisible by four in `0..22204`,
-starting from any canonical state with `a,b < 65521`. Both unsigned length and
-signed index remainder conditions are explicit. The proof uses the original stored iterator
-remaining value and cursor, carries all eight lane ceilings and the shared
-input view, and proves termination. It then checks the original reductions,
-weighted recombination, both four-lane scalar sums, and final 16-bit stores.
-The checked postcondition bounds both output fields below 65,521.
+`Adler32::compute` body for every length in `0..22207`, starting from any
+canonical state with `a,b < 65521`. It uses the original stored vector and
+scalar iterator remaining values and cursors, carries all eight lane ceilings
+and the shared input view, and proves termination. It checks the original
+reductions, weighted recombination, both four-lane scalar sums, the zero-to-three
+byte scalar tail, and final 16-bit stores. Both output fields remain below
+65,521. No generated processed count supplies the induction or ranking.
 
 The fixture is assembled with the existing helper bodies, recombination
-lemmas, and iterator bounds by the Rust import tests. The whole verification
-unit passes; normal tests reject a missing input view, an admitted full outer
-batch, and either missing canonical seed bound. Whole-proof verification and late false-bound checks run nightly.
-Outer batches, lengths with a short byte tail, and the mathematical checksum
-postcondition remain unproved by this contract.
+lemmas, iterator bounds, [partition lemmas](partition.click), and
+[scalar-tail bounds](tail-bounds.click) by the Rust import tests. The partition
+lemmas relate full-width lengths, signed indices, rounded four-byte prefixes,
+and the original nested subtraction for the remainder. Tail lemmas justify
+both nonwrapping scalar updates and the actual iterator's progress.
 
-The [partition lemmas](partition.click) independently prove the metadata split
-for lengths through 22,207: the rounded prefix fits the signed index type and
-is divisible by four, while the original nested subtraction gives exactly the
-zero-to-three-byte remainder. Verification and expanded-proof checks pass;
-false prefix ceilings, tail bounds, divisibility, and byte accounting fail.
-These arithmetic lemmas do not yet establish the original short-tail loop.
+Normal tests verify the partition and scalar-tail arithmetic libraries.
+Nightly tests expand their claims and reject false ceilings, byte accounting,
+divisibility, and progress. Original-body mutations reject missing input
+authority, an admitted full outer batch, and either missing canonical seed
+bound. Whole-proof verification, tool agreement, and cursor, ranking,
+induction, and final-bound rejections also run nightly.
+Full outer batches and the mathematical checksum postcondition remain unproved
+by this contract.

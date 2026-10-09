@@ -2168,9 +2168,37 @@ impl CellStore {
         mut map: impl FnMut(&Pointer, &CValue) -> (Pointer, CValue),
         mut singled_out: impl FnMut(&CellRun) -> Option<u32>,
     ) -> Self {
+        self.map_cells_preserving_runs(&mut map, &mut singled_out, |_| false)
+    }
+
+    /// The same map with a caller's structural whole-run identity argument.
+    /// `unchanged` must establish that `map` leaves every live pointer and
+    /// value unchanged, without sampling a run whose source is nonuniform.
+    /// Small runs audit that argument against every represented slot.
+    pub(crate) fn map_cells_preserving_runs(
+        &self,
+        mut map: impl FnMut(&Pointer, &CValue) -> (Pointer, CValue),
+        mut singled_out: impl FnMut(&CellRun) -> Option<u32>,
+        mut unchanged: impl FnMut(&CellRun) -> bool,
+    ) -> Self {
         let mut result = Self::default();
         let mut rewritten = Vec::new();
         for (key, run) in self.runs.iter() {
+            if unchanged(run) {
+                crate::instrumentation::record_deterministic_work(1);
+                #[cfg(debug_assertions)]
+                if run.count() <= CHECKED_RUN_SLOTS {
+                    crate::instrumentation::uncharged_debug_check(|| {
+                        for index in run.live_indexes() {
+                            let pointer = run.slot_pointer(index);
+                            let value = run.value(index);
+                            assert_eq!(map(&pointer, &value), (pointer, value));
+                        }
+                    });
+                }
+                result.set_run(key, Some(run.clone()));
+                continue;
+            }
             // The singled-out slot is set aside before the rest is asked as a
             // whole: its change is the one the representatives cannot see.
             match singled_out(run).filter(|index| !run.holes.contains(*index)) {
