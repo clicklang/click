@@ -206,6 +206,26 @@ proved to fit, and the Rust lowering stops converting a fixed array's
 in one form. This changes how existing `size_t` addresses are spelled,
 diagnostics included.
 
+Four more, the same day:
+
+- `viewable(...)` gets a 64-bit size. A held `Int32` range also states that
+  its memory is live, as a fact whose size is a 32-bit byte count, and
+  proofs cite it, for instance to carry a read across a loop. A wide range
+  states the same fact with a 64-bit size, so those proofs keep their
+  shape. Until it does, a held wide range is itself the evidence, which is
+  enough for a read, a write and a reference binding.
+- An index in a model function has the type the code has:
+  `prefix(bytes, end: usize)`, not `int32` and not `Integer`. Folds and
+  `forall` range over 64-bit values for that.
+- A cast written inside a place, `bytes[(int32)index]`, stays legal and
+  means what it says, the element at the truncated index. With an index
+  never narrowed it names another address than the body's `bytes[index]`
+  unless the index is known to fit, and the two are not equated
+  automatically. The mismatch says to drop the cast.
+- A signed 64-bit bound, `views a[0..n]` with `long n`, keeps the stage 1
+  cast until the unsigned series has landed. A signed wide kind follows it
+  by the same mechanism.
+
 **To keep.** The `Int32` body of `pointer_access_in_range`; ranges indexed
 by the root of their base, with a wide range at the same root and out of
 the int32-coordinate interval index; the order of `S + c`; and the
