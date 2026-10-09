@@ -1244,6 +1244,23 @@ theorem integer_to_uint64_round_trip(z: Integer) {
     ensures to_integer(to_uint64(z)) == z;
 }
 
+theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
+    requires to_integer(left) + to_integer(right) >= -9223372036854775808;
+    requires to_integer(left) + to_integer(right) <= 9223372036854775807;
+    ensures defined(left + right);
+}
+
+theorem int64_subtract_defined_by_integer_bounds(left: int64, right: int64) {
+    requires to_integer(left) - to_integer(right) >= -9223372036854775808;
+    requires to_integer(left) - to_integer(right) <= 9223372036854775807;
+    ensures defined(left - right);
+}
+
+theorem int64_less_than_of_to_integer(left: int64, right: int64) {
+    requires to_integer(left) < to_integer(right);
+    ensures left < right;
+}
+
 theorem int64_add_to_integer(left: int64, right: int64) {
     requires defined(left + right);
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);
