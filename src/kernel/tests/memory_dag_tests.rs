@@ -4153,3 +4153,65 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         assert_eq!(stop, CellWalkStop::Affected);
     }
 }
+
+/// A base-pointer alias applies to the same field offset. The exact-store
+/// predicate must use that indexed equality without scanning unrelated facts
+/// or accepting a different field, partial store, or an unproved alias.
+#[test]
+fn stored_field_value_uses_indexed_base_aliases() {
+    use crate::kernel::resource_tracker::cell_source::write_supplies_read;
+    use crate::kernel::resource_tracker::step_effect::write_is_at_read_address;
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = Pointer::loaded(
+        PointerBlock::ExternalArgument,
+        Bitvector32Term::Variable(Variable(105_001)),
+        4,
+    );
+    let right = Pointer::loaded(
+        PointerBlock::ExternalArgument,
+        Bitvector32Term::Variable(Variable(105_002)),
+        4,
+    );
+    let write = left.offset_by_bytes(16);
+    let read = right.offset_by_bytes(16);
+    let stored = CValue::typed_pointer(Pointer::symbolic(Variable(105_003)), CType::Int32Pointer);
+    let bare = PureFactContext::new();
+    assert!(!write_is_at_read_address(&write, &read, &bare));
+    let mut samples = Vec::new();
+    for count in [16u64, 256, 4096] {
+        let mut context = PureFactContext::new();
+        for index in 0..count {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(110_000 + index * 2)),
+                    Pointer::symbolic(Variable(110_001 + index * 2)),
+                ),
+                true,
+            );
+        }
+        context = context.assume_condition(
+            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            true,
+        );
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            write_is_at_read_address(&write, &read, &context)
+        });
+        assert!(equal);
+        samples.push(work);
+        assert!(write_supplies_read(&write, &stored, &read, 8, &context));
+        assert!(!write_is_at_read_address(
+            &write,
+            &read.offset_by_bytes(4),
+            &context
+        ));
+        assert!(!write_supplies_read(&write, &stored, &read, 4, &context));
+        assert!(!write_supplies_read(
+            &write,
+            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &read,
+            8,
+            &context
+        ));
+    }
+    assert!(samples[2] <= samples[0] * 4 + 32, "{samples:?}");
+}

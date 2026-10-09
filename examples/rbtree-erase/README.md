@@ -134,6 +134,26 @@ word to the new root, reparents and recolors the old root, and preserves the
 exact outer context. All 35 expansion-audit sites pass. This supplies the
 shared parent-update step for the remaining rotations.
 
+`rbtree_set_parent.click` verifies the parent update for a nonempty subtree
+of either color, preserving both child models. All 11 audit sites pass;
+two mutations reject a lost color bit and an incorrect parent.
+
+`rbtree_erase_color_outer_left.click` and `rbtree_erase_color_outer_right.click`
+verify the mirrored case-4 rotations for an empty deficit, an empty near child,
+and a red far leaf. The parent may have either color under any outer context.
+The unchanged C rotates the links, blackens the old parent and far child, and
+gives the sibling the old parent's color. Both contracts return the exact
+balanced root, consistent parent links, and unchanged in-order contents.
+Both expansion audits pass all 97 sites. Eight mutation checks reject incorrect
+parent/sibling child links and missing old-parent or far-child blackening.
+`rbtree_erase_color_outer_nonempty_left.click` and its mirrored right sidecar
+cover the nonempty near-child case. The near subtree is reparented with its
+color and children preserved; both proofs return the exact balanced root,
+consistent parent links, and unchanged inorder contents. Each passes all
+111 audit sites. Four mutations reject a wrong near-child parent or attachment.
+Inner-child and red-sibling rotations, and rotations after deficit propagation,
+remain.
+
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
 separated from fields the C may write. Metadata-carrying callbacks remain

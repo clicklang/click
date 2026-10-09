@@ -642,6 +642,9 @@ pub(in crate::kernel) fn write_is_at_read_address(
     assumptions: &PureFactContext,
 ) -> bool {
     write == pointer
+        // The maintained graph already knows congruence under field offsets.
+        // A base alias need not have been restated as an exact field equality.
+        || assumptions.pointers_known_equal(write, pointer)
         || explicit_dag_check_active()
             && write.block == pointer.block
             && pointer_offsets_match_from_memory_derivations(
