@@ -873,7 +873,7 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     state: CState,
     instance: &ResourceInstance,
     assumptions: &PureFactContext,
-    entry_assumptions: &PureFactContext,
+    naming_assumptions: &PureFactContext,
 ) -> CState {
     // An unfold consumes the instance and exposes its body, so an unmatched
     // body is the one it exposes. Its cells are named here exactly as a
@@ -896,15 +896,15 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
         return state;
     };
     // Select the arm from the facts the rewrite published, but choose its
-    // pointer spellings from the same entry context as the kernel rewrite.
-    // A new body equality must not rename an already published scalar load.
+    // pointer spellings from the exact opening context used by the kernel.
+    // Facts introduced later must not rename an already published scalar load.
     project_selected_instance_arm_cells(
         &selected,
         instance,
         parameters,
         arguments,
         state,
-        entry_assumptions,
+        naming_assumptions,
         false,
         None,
     )

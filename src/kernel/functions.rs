@@ -23772,6 +23772,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
     pub(crate) state: CState,
     pub(crate) semantic_facts: Vec<Proposition>,
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
+    /// The checked opening delta used to choose the body's pointer spellings.
+    pub(crate) naming_facts: Vec<Proposition>,
 }
 
 /// Whether an undischarged proposition only says that an arithmetic
@@ -24420,8 +24422,8 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     // memory bounds. A proposed fold has no such authority: its quantities
     // must be proved nonnegative and actually consumed below.
     let entry_assumptions = assumptions;
-    let mut quantity_assumptions = assumptions.clone();
-    let mut quantity_facts = Vec::new();
+    let mut opening_assumptions = assumptions.clone();
+    let mut opening_facts = Vec::new();
     if unfold {
         for resource in body_specs {
             let CResourceQuantity::Count(quantity) = resource.quantity() else {
@@ -24434,7 +24436,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 &evaluation,
                 &evaluation,
                 resource,
-                &quantity_assumptions,
+                &opening_assumptions,
                 &mut budget,
             )
             .map_err(|_| "instance quantity guard evaluation exceeded its budget")?
@@ -24445,7 +24447,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             let value = evaluate_loop_effect_segment_value(
                 &evaluation,
                 quantity,
-                &quantity_assumptions,
+                &opening_assumptions,
                 "instance body quantity",
                 &mut budget,
             )
@@ -24461,11 +24463,64 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 ),
                 true,
             );
-            quantity_assumptions = quantity_assumptions.assume_proposition(fact.clone());
-            quantity_facts.push(fact);
+            opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
+            opening_facts.push(fact);
         }
     }
-    let assumptions = &quantity_assumptions;
+    // The exclusively owned parent already establishes these direct pointer
+    // aliases. Retain them before choosing the spelling of its memory body
+    // and child arguments, so opening and later closing the same arm agree.
+    // Restrict this early phase to bare pointer locals: it neither reads a
+    // child nor acquires any extra memory authority. A fold must prove its
+    // proposed body facts and must never assume them here.
+    if unfold && active && !body_children.is_empty() {
+        let early = selected
+            .map_or(&definition.facts, |arm| &arm.facts)
+            .iter()
+            .filter(|fact| match fact {
+                SpecProposition::Comparison {
+                    left: SpecExpression::CExpression(CExpression::Variable(left)),
+                    operator: CComparisonOperator::Equal,
+                    right: SpecExpression::CExpression(CExpression::Variable(right)),
+                } => {
+                    matches!(evaluation.locals.get(left), Some(CValue::Pointer(_)))
+                        && matches!(evaluation.locals.get(right), Some(CValue::Pointer(_)))
+                }
+                _ => false,
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let (clauses, conditions) = lower_selected_resource_body_clauses(
+            &evaluation,
+            &early,
+            selected.map(|arm| arm.variant.as_str()),
+            &integer_bindings,
+            &algebraic_bindings,
+            &opening_assumptions,
+            None,
+            &mut budget,
+        )?;
+        for fact in clauses
+            .into_iter()
+            .map(|clause| clause.proposition)
+            .chain(conditions)
+        {
+            opening_assumptions = opening_assumptions.assume_proposition(fact.clone());
+            opening_facts.push(fact);
+        }
+        if let Some(arm) = selected {
+            for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
+                if let AlgebraicValue::C(value) = value
+                    && let Some(spelling) =
+                        arm_binding_program_spelling(value, &opening_assumptions)
+                {
+                    let ty = spelling.c_type();
+                    evaluation.locals.set_typed(name.clone(), spelling, ty);
+                }
+            }
+        }
+    }
+    let assumptions = &opening_assumptions;
     // A contained authority is exclusive custody, not a readable footprint.
     // Name it from its declared type; the fold below consumes the caller's
     // actual authority, and an unfold returns the one this instance holds.
@@ -24713,6 +24768,23 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             .try_compose_into_valid_context_delaying_normalization([folded.clone()], assumptions)
             .map_err(|_| "fold would duplicate instance ownership")?;
     }
+    // Body propositions retain their source bindings, including exact facts
+    // about model pointers. Only memory/child placement uses the early alias
+    // spelling; lowering reads still has that checked equality available.
+    if unfold
+        && active
+        && !body_children.is_empty()
+        && let Some(arm) = selected
+    {
+        for (name, value) in arm.bindings.iter().zip(&constructor_fields) {
+            if let AlgebraicValue::C(value) = value {
+                let spelling = arm_binding_program_spelling(value, entry_assumptions)
+                    .unwrap_or_else(|| value.clone());
+                let ty = spelling.c_type();
+                evaluation.locals.set_typed(name.clone(), spelling, ty);
+            }
+        }
+    }
     evaluation.resources = if unfold {
         next.resources.clone()
     } else {
@@ -24720,7 +24792,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     };
     evaluation.resource_bindings = Some(std::sync::Arc::new(resource_bindings));
     let mut facts = body.observable_facts_assuming_valid(assumptions);
-    facts.extend(quantity_facts);
+    facts.extend(opening_facts.iter().cloned());
     for fact in body.facts() {
         let Some(range) = fact.memory_range() else {
             continue;
@@ -24874,6 +24946,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         state: next,
         semantic_facts,
         body_clauses,
+        naming_facts: opening_facts,
     })
 }
 
