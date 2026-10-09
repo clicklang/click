@@ -353,15 +353,20 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
     };
     match (left, right) {
         (CResource::Memory(left), CResource::Memory(right)) => {
+            // The bounds are compared as terms, so ranges of one kind are
+            // read alike; a wide range and an `Int32` one are not equal.
+            let (left_start, left_end) = left.bound_terms();
+            let (right_start, right_end) = right.bound_terms();
             left.element_width() == right.element_width()
+                && left.wide_bounds().is_some() == right.wide_bounds().is_some()
                 && terms_equal_with_load_atoms(
-                    left.start(),
-                    right.start(),
+                    left_start,
+                    right_start,
                     &load_atoms_equal_ignoring_memories,
                 )
                 && terms_equal_with_load_atoms(
-                    left.end(),
-                    right.end(),
+                    left_end,
+                    right_end,
                     &load_atoms_equal_ignoring_memories,
                 )
                 && pointers_equal_ignoring_memories(left.base(), right.base())
