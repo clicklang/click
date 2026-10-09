@@ -146,7 +146,13 @@ gives the sibling the old parent's color. Both contracts return the exact
 balanced root, consistent parent links, and unchanged in-order contents.
 Both expansion audits pass all 97 sites. Eight mutation checks reject incorrect
 parent/sibling child links and missing old-parent or far-child blackening.
-Other rotation shapes and rotations after deficit propagation remain.
+`rbtree_erase_color_outer_nonempty_left.click` and its mirrored right sidecar
+cover the nonempty near-child case. The near subtree is reparented with its
+color and children preserved; both proofs return the exact balanced root,
+consistent parent links, and unchanged inorder contents. Each passes all
+111 audit sites. Four mutations reject a wrong near-child parent or attachment.
+Inner-child and red-sibling rotations, and rotations after deficit propagation,
+remain.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
