@@ -1320,6 +1320,24 @@ owned memory resource. Resource ranges use the element width of the pointer expr
 so `int32 p[]` ranges count four-byte cells and `uint8 bytes[]` ranges count
 bytes. Local stack accesses do not require resources. A function with no
 resource context has no permission to access external memory.
+
+An index or a range bound keeps the integer type the source gives it. A place
+takes a 32-bit index, so a 64-bit one is converted as the cast `(int32)n`
+converts it, and the contract states the bound that makes the conversion
+exact. A range bound of any form is converted; an indexed read converts a
+64-bit parameter written alone, and any other 64-bit index expression takes
+the cast, `bytes[(int32)(index + 1)]`. A contract that leaves the bound out is
+refused when it is set up, with the requirement to state.
+
+<!-- verified-example: mdtests/a_64_bit_index_and_bound_need_no_cast.md -->
+```click
+uint8 read(const uint8* bytes, uint64 length, uint64 index) {
+    requires length <= 2147483647u64;
+    requires index < length;
+    views bytes[0..length];
+    ensures result == bytes[index];
+} by { execute(); simp(); }
+```
 Top-level verification gets its resource context from the function's resource
 verbs, while function calls apply the callee's verified contract as one opaque
 execution step.

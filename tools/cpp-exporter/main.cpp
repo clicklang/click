@@ -1041,6 +1041,16 @@ private:
           return lower_library_assertion(call, callee, function, contract->second);
         }
       }
+      if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_unreachable) {
+        if (call->getNumArgs() != 0) {
+          fail(call->getExprLoc(), "C++ __builtin_unreachable requires no arguments");
+          return std::nullopt;
+        }
+        llvm::json::Object result;
+        result["kind"] = "unreachable";
+        result["span"] = span(call->getSourceRange());
+        return Json(std::move(result));
+      }
       if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_assume) {
         if (call->getNumArgs() != 1 || !checked_boolean_condition(call->getArg(0), function, false)) {
           fail(call->getExprLoc(), "C++ __builtin_assume requires a total scalar condition without memory reads or side effects");
@@ -1433,7 +1443,10 @@ private:
       call_candidate = cast->getSubExpr()->IgnoreParens();
     }
     const auto *call = llvm::dyn_cast<clang::CallExpr>(call_candidate);
-    if (call != nullptr && !is_numeric_limits_max_call(call)) {
+    const bool ordinary_call = call != nullptr && !is_numeric_limits_max_call(call) &&
+        !(call->getDirectCallee() != nullptr &&
+          call->getDirectCallee()->getBuiltinID() == clang::Builtin::BI__builtin_is_constant_evaluated);
+    if (ordinary_call) {
       if (casts.size() > kMaxScalarConversions) {
         fail(expression->getExprLoc(),
              "C++ artifact budget exhausted: scalar call-result conversions (limit " +
@@ -1481,7 +1494,7 @@ private:
       }
     }
     return ScalarCallSource{
-        call != nullptr && !is_numeric_limits_max_call(call) ? call : nullptr,
+        ordinary_call ? call : nullptr,
         std::move(call_conversions)};
   }
 
@@ -1973,6 +1986,9 @@ private:
       const auto *value = scalar_list_initializer(list);
       return value != nullptr && checked_boolean_condition(value, caller, field_reads);
     }
+    if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_LNot)
+      return checked_boolean_condition(unary->getSubExpr(), caller, field_reads);
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() == clang::BO_LAnd)
         return checked_boolean_condition(binary->getLHS(), caller, field_reads) &&
@@ -1991,7 +2007,8 @@ private:
   std::optional<Json> lower_if_condition(const clang::Expr *expression,
                                         const clang::FunctionDecl *function) {
     const auto *call = llvm::dyn_cast<clang::CallExpr>(expression->IgnoreParens());
-    if (call == nullptr)
+    if (call == nullptr || (call->getDirectCallee() != nullptr &&
+        call->getDirectCallee()->getBuiltinID() == clang::Builtin::BI__builtin_is_constant_evaluated))
       return lower_expression(expression, function);
     if (!call->getType()->isBooleanType()) {
       fail(call->getExprLoc(), "C++ condition calls require a Boolean result");
@@ -2547,6 +2564,19 @@ private:
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(expression)) {
       const auto *callee = call->getDirectCallee();
+      if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_is_constant_evaluated) {
+        if (call->getNumArgs() != 0 || !call->getType()->isBooleanType()) {
+          fail(call->getExprLoc(), "unsupported C++ runtime constant-evaluation primitive signature");
+          return std::nullopt;
+        }
+        auto value_type = lower_type(call->getType(), call->getExprLoc());
+        if (!value_type) return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "runtime_constant_evaluation";
+        result["value_type"] = std::move(*value_type);
+        result["span"] = span(call->getSourceRange());
+        return Json(std::move(result));
+      }
       if (callee == nullptr || callee->getBuiltinID() != 0 ||
           callee->getReturnType()->isReferenceType() || callee->getReturnType()->isVoidType()) {
         fail(call->getExprLoc(), "C++ expression observers require a direct scalar value call; compiler builtins and reference results remain unsupported");
@@ -2602,6 +2632,21 @@ private:
       result["value"] = std::move(*value);
       result["value_type"] = std::move(*value_type);
       result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
+    }
+    if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_LNot) {
+      auto value = lower_expression(unary->getSubExpr(), function);
+      auto value_type = lower_type(unary->getType(), unary->getExprLoc());
+      if (!value || !value_type || !unary->getSubExpr()->getType()->isIntegerType()) {
+        fail(unary->getExprLoc(), "C++ logical negation requires a supported integral operand");
+        return std::nullopt;
+      }
+      llvm::json::Object result;
+      result["kind"] = "logical_not";
+      result["value"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(unary->getSourceRange());
       return Json(std::move(result));
     }
     if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
@@ -3559,6 +3604,21 @@ private:
     clang::SourceLocation begin =
         source_manager_.getSpellingLoc(range.getBegin());
     clang::SourceLocation end = source_manager_.getSpellingLoc(range.getEnd());
+    if (begin.isValid() && end.isValid() &&
+        (executable_source(begin) != source || executable_source(end) != source) &&
+        (range.getBegin().isMacroID() || range.getEnd().isMacroID())) {
+      // Macro bodies can be spelled in another explicitly selected dependency.
+      // Keep their definitions in the locked source inventory and label the
+      // executable operation at Clang's expansion site in this function.
+      const auto begin_source = executable_source(begin);
+      const auto end_source = executable_source(end);
+      if (begin_source && end_source) {
+        if (*begin_source != logical_source_) dependency_sources_.insert(*begin_source);
+        if (*end_source != logical_source_) dependency_sources_.insert(*end_source);
+        begin = source_manager_.getExpansionLoc(range.getBegin());
+        end = source_manager_.getExpansionLoc(range.getEnd());
+      }
+    }
     if (!begin.isValid() || !end.isValid() || executable_source(begin) != source ||
         executable_source(end) != source) {
       fail(

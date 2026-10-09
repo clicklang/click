@@ -145,6 +145,11 @@ pub(super) fn same_unqualified_integer_type(left: &CppType, right: &CppType) -> 
 
 pub(super) fn same_scalar_type(left: &CppType, right: &CppType) -> bool {
     match (left, right) {
+        (CppType::Pointer { pointee: left }, CppType::Pointer { pointee: right })
+        | (
+            CppType::LvalueReference { pointee: left },
+            CppType::LvalueReference { pointee: right },
+        ) => same_scalar_type(left, right),
         (
             CppType::Integer {
                 bits: left_bits,

@@ -9471,6 +9471,7 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
     }
     fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
         match term {
+            IntegerTerm::Constant(value) => value.clone(),
             IntegerTerm::Machine(value) => {
                 assert_eq!(value.ty(), MachineIntegerType::UInt32);
                 machine(value.value(), a, b).into()
@@ -9493,6 +9494,9 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
                 integer(left, a, b) == integer(right, a, b)
             }
+            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
+                integer(left, a, b) <= integer(right, a, b)
+            }
             _ => panic!("unexpected multiplication bridge proposition {p:?}"),
         }
     }
@@ -9502,6 +9506,13 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
     );
     let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
         panic!("missing no-wrap guard")
+    };
+    let guard_theorem = prove_uint32_mul_guard_by_integer_bound(
+        Bitvector32Term::Variable(Variable(910)),
+        Bitvector32Term::Variable(Variable(911)),
+    );
+    let Proposition::Implies(product_bound, native_guard) = guard_theorem.proposition() else {
+        panic!("missing mathematical product bound")
     };
     let samples = [
         0,
@@ -9522,6 +9533,12 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             let safe = u64::from(a) * u64::from(b) <= u64::from(u32::MAX);
             assert_eq!(holds(premise, a, b), safe, "guard for {a} * {b}");
             assert_eq!(holds(conclusion, a, b), safe, "observation for {a} * {b}");
+            assert_eq!(holds(product_bound, a, b), safe, "bound for {a} * {b}");
+            assert_eq!(
+                holds(native_guard, a, b),
+                safe,
+                "derived guard for {a} * {b}"
+            );
         }
     }
     for b in samples.into_iter().filter(|b| *b > 1) {
@@ -9530,6 +9547,12 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             let safe = a == last_safe;
             assert_eq!(holds(premise, a, b), safe, "quotient boundary {a} * {b}");
             assert_eq!(holds(conclusion, a, b), safe, "product boundary {a} * {b}");
+            assert_eq!(holds(product_bound, a, b), safe, "bound boundary {a} * {b}");
+            assert_eq!(
+                holds(native_guard, a, b),
+                safe,
+                "derived boundary {a} * {b}"
+            );
         }
     }
 }

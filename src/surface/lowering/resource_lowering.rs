@@ -2481,26 +2481,38 @@ fn lower_resource_segment_with_values(
         )));
     };
     let base = base.into_pointer();
-    let start = evaluate(&segment.start, surface_start).map_err(|message| {
-        ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message}"
-        ))
-    })?;
-    let CValue::Int32(start) = start else {
-        return Err(ClickError::new(format!(
-            "could not lower `{resource_name}` resource: segment start did not evaluate to int32"
-        )));
+    // A bound keeps its own integer type in the contract. A place takes a
+    // 32-bit index today, so a 64-bit bound is converted here exactly as the
+    // cast `(int32)bound` converts it; function setup refuses a contract
+    // whose requirements do not show the bound fits
+    // (`design/typed-indices.md`, stage 1).
+    let bound = |expression: &CExpression, original: Option<&ContractExpression>, which: &str| {
+        let value = evaluate(expression, original).map_err(|message| {
+            ClickError::new(format!(
+                "could not lower `{resource_name}` resource: {message}"
+            ))
+        })?;
+        let value = match value {
+            CValue::Int64(_) | CValue::UInt64(_) => evaluate(
+                &crate::kernel::place_index_from_wide(expression.clone()),
+                None,
+            )
+            .map_err(|message| {
+                ClickError::new(format!(
+                    "could not lower `{resource_name}` resource: {message}"
+                ))
+            })?,
+            value => value,
+        };
+        match value {
+            CValue::Int32(term) => Ok(term),
+            _ => Err(ClickError::new(format!(
+                "could not lower `{resource_name}` resource: segment {which} did not evaluate to an integer index"
+            ))),
+        }
     };
-    let end = evaluate(&segment.end, surface_end).map_err(|message| {
-        ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message}"
-        ))
-    })?;
-    let CValue::Int32(end) = end else {
-        return Err(ClickError::new(format!(
-            "could not lower `{resource_name}` resource: segment end did not evaluate to int32"
-        )));
-    };
+    let start = bound(&segment.start, surface_start, "start")?;
+    let end = bound(&segment.end, surface_end, "end")?;
     if let (Bitvector32Term::Constant(start), Bitvector32Term::Constant(end)) = (&start, &end)
         && end < start
     {

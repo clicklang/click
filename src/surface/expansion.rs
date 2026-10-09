@@ -1344,6 +1344,15 @@ fn expand_program_prepared_tactic_source_at_context(
             *claim,
         );
     }
+    let reference_result = match &selected.site {
+        ProofSite::FunctionClaim { function_name, .. }
+        | ProofSite::LoopPhase { function_name, .. } => proof_function_blocks(&file)
+            .find(|block| block.signature().name() == function_name)
+            .is_some_and(|block| block.signature().returns_reference()),
+        ProofSite::TheoremEnsure { .. } => false,
+    };
+    let _reference_result_source =
+        super::diagnostics::ReferenceResultSourceScope::enter(reference_result);
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
@@ -1674,6 +1683,9 @@ fn rewrite_verified_pure_theorem(
 /// Written nesting is not a driver bound: terminal cases can be processed
 /// iteratively. As with tactic expansion, the caller verifies the rewrite.
 fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickError> {
+    let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
+        theorem.function_block.signature().returns_reference(),
+    );
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
         return Ok(super::printing::format_proof_certificate(&certificate));
