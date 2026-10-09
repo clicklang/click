@@ -12,6 +12,13 @@ including its self-pointer and ownership transfer. These are prerequisites:
 they do not yet admit by-value construction returns or certify a modular
 construction summary.
 
+The shared memory model can also describe initially unwritten symbolic
+storage without claiming that it is fresh or separate from arguments. Actual
+writes establish initialization; resource naming does not. Initialization
+survives value forgetting, intersects across branches, and follows checked
+pointer equalities. This proof-entry building block is not yet connected to
+construction-return contracts or source admission.
+
 ## Surface and source boundary
 
 Keep native result signatures, `result` field projections, and existing

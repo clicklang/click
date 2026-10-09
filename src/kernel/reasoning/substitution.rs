@@ -1478,6 +1478,14 @@ fn collect_pointer_bound_variables(pointer: &Pointer, variables: &mut BTreeSet<V
 }
 
 fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Variable>) {
+    for pointer in memory
+        .heap
+        .uninitialized_objects
+        .keys()
+        .chain(memory.heap.initialized.as_map().keys())
+    {
+        collect_pointer_bound_variables(pointer, variables);
+    }
     for contents in memory.blocks.values() {
         collect_bitvector_bound_variables(contents.size(), variables);
     }
@@ -5505,6 +5513,17 @@ fn substitute_bitvector_variable_in_memory_contents(
                     )
                 })
                 .collect(),
+            uninitialized_objects: memory
+                .heap
+                .uninitialized_objects
+                .iter()
+                .map(|(base, bytes)| {
+                    (
+                        substitute_bitvector_variable_in_pointer(base, from, to),
+                        *bytes,
+                    )
+                })
+                .collect(),
             uninitialized_allocations: memory
                 .heap
                 .uninitialized_allocations
@@ -7023,6 +7042,17 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                     (
                         substitute_pointer_variable_in_pointer(base, from, to),
                         bytes.clone(),
+                    )
+                })
+                .collect(),
+            uninitialized_objects: memory
+                .heap
+                .uninitialized_objects
+                .iter()
+                .map(|(base, bytes)| {
+                    (
+                        substitute_pointer_variable_in_pointer(base, from, to),
+                        *bytes,
                     )
                 })
                 .collect(),

@@ -5520,7 +5520,11 @@ fn shared_memory_variable_counts(memory: &SharedCMemory, whole: WholeCount) -> V
 }
 
 fn memory_entry_count(memory: &CMemory) -> usize {
-    memory.blocks.len() + memory.cells.representation_len() + memory.union_cells.len()
+    memory.blocks.len()
+        + memory.cells.representation_len()
+        + memory.union_cells.len()
+        + memory.heap.uninitialized_objects.len()
+        + memory.heap.initialized.as_map().len()
 }
 
 fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: i64) {
@@ -5582,6 +5586,12 @@ fn block_variables(block: &PointerBlock, contents: &CBlock) -> BTreeSet<Variable
         }
     }
     collect_bitvector_variables(contents.size(), &mut variables);
+    variables
+}
+
+fn object_address_variables(pointer: &Pointer) -> BTreeSet<Variable> {
+    let mut variables = BTreeSet::new();
+    collect_pointer_bitvector_variables(pointer, &mut variables);
     variables
 }
 
@@ -5658,6 +5668,14 @@ fn counts_whole(memory: &CMemory, whole: WholeCount) -> VariableCounts {
     for (block, contents) in memory.blocks.iter() {
         add_counts(&mut counts, block_variables(block, contents), 1);
     }
+    for pointer in memory
+        .heap
+        .uninitialized_objects
+        .keys()
+        .chain(memory.heap.initialized.as_map().keys())
+    {
+        add_counts(&mut counts, object_address_variables(pointer), 1);
+    }
     for (pointer, value) in memory.cells.concrete().iter() {
         add_counts(&mut counts, cell_variables(pointer, value), 1);
     }
@@ -5685,6 +5703,26 @@ fn counts_from_base(
         }
         if let Some(contents) = memory.blocks.get(block) {
             add_counts(&mut counts, block_variables(block, contents), 1);
+        }
+    }
+    for (before, after) in [
+        (
+            &base.heap.uninitialized_objects,
+            &memory.heap.uninitialized_objects,
+        ),
+        (
+            base.heap.initialized.as_map(),
+            memory.heap.initialized.as_map(),
+        ),
+    ] {
+        for change in before.diff(after) {
+            let pointer = change.key();
+            if before.contains_key(pointer) {
+                add_counts(&mut counts, object_address_variables(pointer), -1);
+            }
+            if after.contains_key(pointer) {
+                add_counts(&mut counts, object_address_variables(pointer), 1);
+            }
         }
     }
     for change in base.cells.concrete().diff(memory.cells.concrete()) {
@@ -5808,6 +5846,14 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             }
         }
         collect_bitvector_variables(contents.size(), variables);
+    }
+    for pointer in memory
+        .heap
+        .uninitialized_objects
+        .keys()
+        .chain(memory.heap.initialized.as_map().keys())
+    {
+        collect_pointer_bitvector_variables(pointer, variables);
     }
     for (pointer, value) in memory.cells.concrete().iter() {
         #[cfg(test)]

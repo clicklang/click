@@ -18868,7 +18868,12 @@ fn aggregate_copy_reads_uninitialized(
             {
                 continue;
             }
-            if memory.is_uninitialized_heap_address(&source_field, bytes, &PureFactContext::new())
+            if memory.may_read_uninitialized_object(&source_field, bytes)
+                || memory.is_uninitialized_heap_address(
+                    &source_field,
+                    bytes,
+                    &PureFactContext::new(),
+                )
                 || (source_field.block.starts_with("local:")
                     && memory.access_in_bounds(&source_field, bytes))
             {
@@ -18977,12 +18982,14 @@ fn uninitialized_aggregate_copy_source_cell(
     ) {
         return false;
     }
-    memory.is_uninitialized_heap_address(
-        source_field,
-        element_type.byte_width(),
-        &PureFactContext::new(),
-    ) || (source_field.block.starts_with("local:")
-        && memory.access_in_bounds(source_field, element_type.byte_width()))
+    memory.may_read_uninitialized_object(source_field, element_type.byte_width())
+        || memory.is_uninitialized_heap_address(
+            source_field,
+            element_type.byte_width(),
+            &PureFactContext::new(),
+        )
+        || (source_field.block.starts_with("local:")
+            && memory.access_in_bounds(source_field, element_type.byte_width()))
 }
 
 /// Whether a copy's source field is storage of this memory that holds no

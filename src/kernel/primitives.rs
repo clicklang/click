@@ -4939,6 +4939,9 @@ pub(super) struct CHeapMemory {
     /// Successful malloc storage remains uninitialized until individual
     /// cells are written. Contract-imported allocations are not placed here.
     pub(super) uninitialized_allocations: SnapshotSet<Pointer>,
+    /// Explicit proof-entry objects whose bytes start unwritten. Unlike heap
+    /// allocations these carry neither freshness nor deallocation authority.
+    pub(super) uninitialized_objects: SnapshotMap<Pointer, u32>,
     /// Bytes of storage with an initialization history — fresh heap
     /// allocations and automatic (`local:`) objects — that a C store has
     /// initialized, whether or not their cached value survives. A store the
@@ -4983,6 +4986,9 @@ impl CHeapMemory {
                 &base.uninitialized_allocations,
             )
             && self
+                .uninitialized_objects
+                .eq_relative_to(&other.uninitialized_objects, &base.uninitialized_objects)
+            && self
                 .initialized
                 .eq_relative_to(&other.initialized, &base.initialized)
             && self
@@ -5013,6 +5019,7 @@ impl CHeapMemory {
             && self.deallocated_allocations == other.deallocated_allocations
             && self.pending_allocations == other.pending_allocations
             && self.uninitialized_allocations == other.uninitialized_allocations
+            && self.uninitialized_objects == other.uninitialized_objects
             && self.zeroed_allocations == other.zeroed_allocations
             && self.zeroed_prefix_allocations == other.zeroed_prefix_allocations
             && self.zeroed_pending_allocations == other.zeroed_pending_allocations

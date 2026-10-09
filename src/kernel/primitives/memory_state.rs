@@ -2480,6 +2480,57 @@ impl CMemory {
         self
     }
 
+    /// Describe initially unwritten complete-object storage. This builds a
+    /// proof-entry snapshot, not an allocation transition or lifetime reset:
+    /// existing writes remain recorded, a symbolic identity can still alias
+    /// arguments, and no memory-DAG transport edge is granted.
+    pub fn with_uninitialized_block(mut self, block: impl Into<PointerBlock>, size: u32) -> Self {
+        let block = block.into();
+        std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), CBlock::new(size));
+        std::sync::Arc::make_mut(&mut self.heap)
+            .uninitialized_objects
+            .insert(
+                Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                size,
+            );
+        self
+    }
+
+    /// A conservative overlap query over only potentially aliasing tracked
+    /// objects. Different symbolic spellings do not establish separation.
+    pub(in crate::kernel) fn may_read_uninitialized_object(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> bool {
+        if bytes == 0 {
+            return false;
+        }
+        AliasCandidates::of_block(&pointer.block).any_entry(
+            &self.heap.uninitialized_objects,
+            |base, size| {
+                crate::instrumentation::record_deterministic_work(1);
+                if *size == 0 {
+                    return false;
+                }
+                if base.block == pointer.block
+                    && let (Some(start), Some(at)) =
+                        (base.offset.as_const(), pointer.offset.as_const())
+                    && let (Some(end), Some(read_end)) = (
+                        start.checked_add(i64::from(*size)),
+                        at.checked_add(i64::from(bytes)),
+                    )
+                {
+                    return at < end && start < read_end;
+                }
+                true
+            },
+        )
+    }
+
     pub(in crate::kernel) fn with_block_or_read_only(
         self,
         block: impl Into<PointerBlock>,
@@ -3429,6 +3480,16 @@ impl CMemory {
             return Err("interface arms disagree on pending heap reallocations".to_string());
         }
 
+        let uninitialized_objects = union_of_arm_maps(
+            &first.heap.uninitialized_objects,
+            others
+                .iter()
+                .map(|memory| &memory.heap.uninitialized_objects),
+        )
+        .map_err(|base| {
+            format!("interface arms disagree on unwritten object extent at {base:?}")
+        })?;
+
         let uninitialized_allocations = union_of_arm_sets(
             &first.heap.uninitialized_allocations,
             others
@@ -3632,6 +3693,7 @@ impl CMemory {
             deallocated_allocations,
             pending_allocations,
             uninitialized_allocations,
+            uninitialized_objects,
             initialized,
             zeroed_allocations,
             zeroed_prefix_allocations,
@@ -4649,7 +4711,8 @@ impl CMemory {
     /// else to do: no typed union view to displace, and no live allocation
     /// the base may lie in to mark initialized.
     fn run_can_stand_for_cells_at(&self, base: &Pointer) -> bool {
-        self.union_cells.is_empty()
+        self.heap.uninitialized_objects.is_empty()
+            && self.union_cells.is_empty()
             && !AliasCandidates::of_block(&base.block)
                 .any_entry(&self.heap.live_allocations, |_, _| true)
     }
@@ -4729,6 +4792,11 @@ impl CMemory {
         if self.cells.contains_key(&pointer) {
             return self;
         }
+        if self.may_read_uninitialized_object(&pointer, value.byte_width())
+            && !self.has_initialized_bytes_at(&pointer, value.byte_width())
+        {
+            return self;
+        }
         // A logical name does not initialize an automatic object either.
         // A real local store has already materialized its cell above.
         if pointer.block.starts_with("local:") && self.has_block(&pointer.block) {
@@ -4780,7 +4848,8 @@ impl CMemory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
-        if self.is_live_heap_address(&pointer, context)
+        if (self.is_live_heap_address(&pointer, context)
+            || !self.heap.uninitialized_objects.is_empty())
             && !self.heap.initialized.covers(&pointer, value.byte_width())
         {
             std::sync::Arc::make_mut(&mut self.heap)
@@ -4988,6 +5057,28 @@ impl CMemory {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
+        if self.has_initialized_bytes_at_spelling_under(pointer, byte_width, assumptions) {
+            return true;
+        }
+        // Constructor storage retains its identity under argument aliases.
+        // Query only this pointer's indexed equality class, never all facts.
+        !self.heap.uninitialized_objects.is_empty()
+            && assumptions
+                .equality_graph
+                .pointer_spellings(pointer)
+                .iter()
+                .any(|alias| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    self.has_initialized_bytes_at_spelling_under(alias, byte_width, assumptions)
+                })
+    }
+
+    fn has_initialized_bytes_at_spelling_under(
+        &self,
+        pointer: &Pointer,
+        byte_width: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
         if self.has_initialized_bytes_at(pointer, byte_width) {
             return true;
         }
@@ -5082,7 +5173,8 @@ impl CMemory {
         for (pointer, value_type, value) in views {
             std::sync::Arc::make_mut(&mut memory.union_cells)
                 .insert((pointer.clone(), value_type), value);
-            if memory.is_live_heap_address(&pointer, &PureFactContext::new())
+            if (memory.is_live_heap_address(&pointer, &PureFactContext::new())
+                || !memory.heap.uninitialized_objects.is_empty())
                 && !memory.has_initialized_bytes_at(&pointer, value_type.byte_width())
             {
                 initialized.push((pointer, value_type.byte_width()));
