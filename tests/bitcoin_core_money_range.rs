@@ -1186,6 +1186,14 @@ uint64 probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
 }
 
 fn pinned_span_fixture(name: &str, harness: &str) -> (PathBuf, PreparedCppImport) {
+    pinned_span_fixture_with_dependencies(name, harness, &[])
+}
+
+fn pinned_span_fixture_with_dependencies(
+    name: &str,
+    harness: &str,
+    additional_dependencies: &[&str],
+) -> (PathBuf, PreparedCppImport) {
     assert_eq!(
         sha256(ARCHIVE),
         "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
@@ -1231,7 +1239,7 @@ fn pinned_span_fixture(name: &str, harness: &str) -> (PathBuf, PreparedCppImport
     fs::write(root.join("compile_commands.json"), database).unwrap();
     let exporter = root.join("click-cpp-exporter");
     fs::copy(std::env::var("CLICK_CPP_EXPORTER").unwrap(), &exporter).unwrap();
-    let config = serde_json::json!({
+    let mut config = serde_json::json!({
         "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
         "exceptions": true, "rtti": true, "exporter": exporter,
         "compilation_database": "compile_commands.json", "working_directory": ".",
@@ -1239,6 +1247,9 @@ fn pinned_span_fixture(name: &str, harness: &str) -> (PathBuf, PreparedCppImport
         "dependencies": ["sysroot/usr/include/c++/12/span", "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"],
         "function": "probe", "artifact": "span.click-cpp.json"
     });
+    let dependencies = config["dependencies"].as_array_mut().unwrap();
+    dependencies.extend(additional_dependencies.iter().map(|path| (*path).into()));
+    dependencies.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
     let config_path = root.join("span.click.import.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     refresh_import(&config_path).unwrap();
@@ -4119,4 +4130,120 @@ fn pinned_std_span_back_reference_write_retained_offline() {
 #[test]
 fn pinned_std_span_back_reference_write_refuses_missing_ownership_and_unchanged_claim_offline() {
     check_pinned_std_span_back_symbolic_bounded_range(SpanBackPhase::RejectWriteCaller);
+}
+
+// The unchanged pinned library constructs both descriptor fields through
+// checked calls; backing range authority remains a caller-owned view.
+#[test]
+fn pinned_std_span_local_constructor_verifies_native_extent_offline() {
+    check_pinned_std_span_local_constructor(SpanConstructionPhase::VerifyAndExpand);
+}
+
+#[test]
+fn pinned_std_span_local_constructor_retained_offline() {
+    check_pinned_std_span_local_constructor(SpanConstructionPhase::Retain);
+}
+
+#[test]
+fn pinned_std_span_local_constructor_requires_backing_view_offline() {
+    check_pinned_std_span_local_constructor(SpanConstructionPhase::RejectBacking);
+}
+
+enum SpanConstructionPhase {
+    VerifyAndExpand,
+    Retain,
+    RejectBacking,
+}
+
+fn check_pinned_std_span_local_constructor(phase: SpanConstructionPhase) {
+    let (root, import) = pinned_span_fixture_with_dependencies(
+        "local-constructor",
+        "#include <span.h>\nunsigned long probe(int* backing, unsigned long count) { std::span<int> span(backing, count); return span.size(); }\n",
+        &["sysroot/usr/include/c++/12/bits/ptr_traits.h"],
+    );
+    let names = import
+        .export()
+        .reachable_functions
+        .iter()
+        .map(|function| function.name.as_str())
+        .collect::<Vec<_>>();
+    let address = names
+        .iter()
+        .find(|name| name.starts_with("std_to_address"))
+        .unwrap();
+    let inner_address = names
+        .iter()
+        .find(|name| name.starts_with("std___to_address"))
+        .unwrap();
+    let source = r#"verifying "span-probe.cpp";
+int32* TO_ADDRESS(int32* __ptr) { ensures result == __ptr; } by { execute(); simp(); }
+int32* INNER_ADDRESS(int32* __ptr) { ensures result == __ptr; } by { execute(); simp(); }
+void __extent_storage__value_unsigned_long_18446744073709551615_constructor(struct __extent_storage__value_unsigned_long_18446744073709551615* this, uint64 __extent) {
+ owns this->_M_extent_value;
+ ensures this->_M_extent_value == __extent;
+} by { execute(); simp(); }
+void span__int__value_unsigned_long_18446744073709551615_constructor(struct span__int__value_unsigned_long_18446744073709551615* this, int32* __first, uint64 __count) {
+ owns this->_M_ptr;
+ owns this->_M_extent._M_extent_value;
+ views __first[0..(int32)__count];
+ requires 1u64 <= __count;
+ requires __count <= 1073741823u64;
+ ensures this->_M_ptr == __first;
+ ensures this->_M_extent._M_extent_value == __count;
+} by { execute(); simp(); }
+uint64 __extent_storage__value_unsigned_long_18446744073709551615__M_extent(const struct __extent_storage__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_extent_value;
+ ensures result == this->_M_extent_value;
+} by { execute(); simp(); }
+uint64 span__int__value_unsigned_long_18446744073709551615_size(const struct span__int__value_unsigned_long_18446744073709551615* this) {
+ views this->_M_extent._M_extent_value;
+ ensures result == this->_M_extent._M_extent_value;
+} by { execute(); simp(); }
+uint64 probe(int32* backing, uint64 count) {
+ views backing[0..(int32)count];
+ requires 1u64 <= count;
+ requires count <= 1073741823u64;
+ ensures result == count;
+} by { execute(); simp(); }
+"#.replace("TO_ADDRESS", address).replace("INNER_ADDRESS", inner_address);
+    let path = root.join("span.click");
+    fs::write(&path, &source).unwrap();
+    let project = read_click_project(&path, &source).unwrap();
+    match phase {
+        SpanConstructionPhase::VerifyAndExpand => {
+            verify_program_prepared_project(&project, &import).unwrap();
+            let expanded = expand_program_prepared_project_claim_source_by_label(
+                &project,
+                &import,
+                "probe.contract",
+            )
+            .unwrap();
+            verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+        }
+        SpanConstructionPhase::Retain => {
+            let (session, _) =
+                C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+            let position = program_prepared_project_tactic_source_position(
+                &project,
+                &import,
+                "probe.contract",
+                0,
+            )
+            .unwrap();
+            session
+                .verify_at_project(&source, position.line, position.column)
+                .unwrap();
+        }
+        SpanConstructionPhase::RejectBacking => {
+            let missing = source.replace(" views backing[0..(int32)count];", "");
+            assert!(
+                verify_program_prepared_project(
+                    &read_click_project(&path, &missing).unwrap(),
+                    &import
+                )
+                .is_err()
+            );
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
 }

@@ -315,6 +315,20 @@ private:
     Json field;
   };
 
+  // These statements have no runtime operation. A concrete successful
+  // static_assert was checked by pinned Clang; never erase a dependent or
+  // failed assertion. Its source remains covered by the import closure.
+  static bool is_checked_runtime_noop(const clang::Stmt *statement) {
+    if (llvm::isa_and_nonnull<clang::NullStmt>(statement)) return true;
+    const auto *declaration = llvm::dyn_cast_or_null<clang::DeclStmt>(statement);
+    const auto *assertion = declaration != nullptr && declaration->isSingleDecl()
+        ? llvm::dyn_cast<clang::StaticAssertDecl>(declaration->getSingleDecl())
+        : nullptr;
+    return assertion != nullptr && !assertion->isFailed() &&
+           !assertion->getAssertExpr()->isValueDependent() &&
+           !assertion->getAssertExpr()->isTypeDependent();
+  }
+
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
     auto source = executable_source(declaration->getLocation());
     if (!source) {
@@ -515,6 +529,7 @@ private:
       }
     }
     for (const clang::Stmt *statement : body->body()) {
+      if (is_checked_runtime_noop(statement)) continue;
       auto lowered = lower_statement(statement, declaration, true, true);
       if (!lowered) {
         return std::nullopt;
@@ -1840,6 +1855,7 @@ private:
     unsigned local_count = 0;
     llvm::json::Array body;
     for (const clang::Stmt *statement : scope->body()) {
+      if (is_checked_runtime_noop(statement)) continue;
       if (llvm::isa<clang::DeclStmt>(statement)) {
         ++local_count;
       }
@@ -2335,7 +2351,7 @@ private:
                const clang::FunctionDecl *function,
                CleanupScopeKind cleanup_scope) {
     llvm::json::Array result;
-    if (statement == nullptr) {
+    if (statement == nullptr || is_checked_runtime_noop(statement)) {
       return result;
     }
     statement = without_branch_weights(statement);
@@ -2372,6 +2388,7 @@ private:
         return result;
       }
       for (const clang::Stmt *member : compound->body()) {
+        if (is_checked_runtime_noop(member)) continue;
         auto lowered = lower_statement(member, function, false, false);
         if (!lowered) {
           return std::nullopt;

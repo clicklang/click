@@ -330,8 +330,14 @@ with unwritten destination footprints, native contracts and sibling/backing
 frames. Scalar member initializers can invoke checked nonthrowing read-only
 observers. Trivial destruction permits these local objects in the normal-only
 exception-enabled profile. Prvalue aggregate returns, copy initialization and
-the remaining pinned library body forms still need frontend admission; they do not justify a separate
-C++ memory model.
+temporary lifetimes still need frontend admission; they do not justify a separate
+C++ memory model. The unchanged pinned libstdc++ pointer/count constructor is now
+verified offline through ordinary contracts for both `to_address` helpers,
+`__extent_storage`, and `span`. Successful concrete compile-time assertions
+produce no runtime operation. The caller retains its backing-range view under
+the accepted native uint64 count bound; ordinary, expanded and retained checks
+pass, and omitting the backing view is rejected. This is local construction,
+not returned construction or the completed `SpanPopBack` target.
 
 Acceptance should include the unchanged helper, a modular caller that reads
 the returned last element, and a caller that mutates it under existing write

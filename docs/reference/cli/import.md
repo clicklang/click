@@ -932,6 +932,10 @@ Boolean conversion. Discarded code contributes no runtime calls, accesses,
 or cleanup. A selected unsupported arm fails import. Ordinary `if` statements
 continue to import both arms. Return validation checks the reachable arm of a
 closed constant Boolean condition and both arms of an unknown condition.
+Empty statements and successful nondependent `static_assert` declarations
+contribute no runtime operations. Pinned Clang checks the assertions, and their
+source remains in the locked import closure; dependent or failed assertions
+are never discarded by this rule.
 
 The `template-instances` fixture checks modular callers, receiver authority,
 framing, false contracts, same-width type identities, Boolean substitution,
@@ -1013,6 +1017,13 @@ read-only contracts; lowering captures the call result before storing the
 field. Exception-enabled normal-only imports permit these local objects when
 destruction is trivial. Throwing construction, header destructor bodies, and
 nested calls in constructor arguments remain outside this slice.
+
+The unchanged pinned libstdc++ `std::span<int>` pointer/count constructor now
+verifies through these ordinary contracts, including `std::to_address`, its
+compile-time assertion, and the embedded dynamic extent constructor. Offline
+ordinary, expanded and retained checks keep the native uint64 count and the
+accepted `1 <= count <= 1,073,741,823` backing-range profile. Returned
+construction and full-expression temporary lowering remain separate work.
 
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact
