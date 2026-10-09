@@ -254,47 +254,29 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
    nonempty subtraction and pointer formation from the actual backing range.
-4. **Construction destination and copy elision (accepted direction).**
-   Prioritize the shared construction-destination foundation over an
-   address-independent constructor restriction. The shared C aggregate return
-   path copies fields into caller-visible storage; C++ can construct a returned
-   value directly in its destination. Constructors observing or exposing their
-   object's address distinguish these behaviors, even for trivially copyable
-   classes. Keep explicit copies and assignment as field copies, and use direct
-   construction only where the imported language semantics requires it. Existing
-   C and Rust value semantics must not change implicitly.
+4. **Shared construction destination design (dependency).**
+   The accepted direction, kernel/interface design work, identity regressions and
+   cross-language compatibility criteria now live in
+   [aggregate-construction-design.md](aggregate-construction-design.md).
+   C++ returned construction, destination forwarding and temporary retirement
+   depend on that work. The int32 field-address and constructor/copy identity
+   prerequisites are implemented; artifact schema 47 requires refreshing earlier
+   locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
+   above as the concrete C++ acceptance target.
 
-   The existing shared constructor calls already construct into an explicit
-   destination using checked layouts and ordinary allocation/resource authority.
-   Extend this path through function returns, forwarding calls and materialized
-   temporaries rather than introducing a C++ allocation model. In particular:
-   - Preserve Clang's expression category and distinguish required prvalue
-     construction from optional named return elision; account for permitted
-     trivial-class parameter/result temporaries under the locked compiler/ABI
-     profile. Do not infer a universal result-address guarantee from a prvalue
-     alone. Keep additional cases refused until all admitted behavior is modeled.
-   - Establish the destination before initialization and preserve its identity
-     across forwarding. A caller-provided destination must not gain invented
-     distinctness from the call's arguments or caller storage.
-   - Prove complete initialized fields with existing construction resources;
-     exposing an address grants no extra read, write or lifetime authority.
-   - Track the result object's storage and temporary lifetime explicitly,
-     including retirement at the end of a full expression. Copying a descriptor
-     must not retire its independently live backing allocation.
-   - Exercise constructors storing pointers to their own fields, explicit copy
-     behavior, missing initialization/authority, aliasing and expired temporary
-     storage under ordinary, expanded and retained verification.
-   Existing-object lvalue copies remain available independently of this work.
+### Work independent of returned construction
 
-   The first identity prerequisite is implemented: native int32 field addresses
-   follow checked nominal projections and preserve effective const qualification.
-   A constructor can store the address of its own field before that field is
-   initialized, without reading it; ordinary field reads in initializers remain
-   refused. Offline source proofs distinguish direct construction from trivial
-   copies retaining the original self-pointer, and check missing write authority,
-   false address/value claims and forged const qualification. Artifact schema 47
-   requires a refresh. Destination propagation through returned-value calls and
-   temporary retirement are still open.
+The accepted bounded span/reference profile can support further unchanged
+observer proofs while the shared design is resolved. The next selected target
+is pinned `std::span<int>::front()` with `1 <= N <= 1,073,741,823`: prove a native
+reference to the first backing element and its old value using descriptor and
+backing views. Include a modular caller, empty/missing-authority and false
+alias/value refusals, plus expanded and retained verification. This needs no
+by-value result, constructor admission or temporary materialization.
+
+`first`, `last`, `subspan` and the descriptor update in `SpanPopBack` remain
+behind the shared construction dependency. Other scalar/import work still needs
+an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation
 identity, and field layouts provide the foundation. Pointer fields to int32
