@@ -1207,11 +1207,13 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
 /// proposition. Unlike fixed-state proof lowering, this keeps C bindings as
 /// expressions so the kernel can check the same interface against both
 /// concrete arm states and the abstract successor state.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn lower_branch_interface_fact(
     proposition: &ClickProposition,
     parsed_function: &syntax::C0Function,
     entry_state: &CState,
     branch_join_target: &ProgramPointRef,
+    snapshots: &RecordedSnapshots,
     arguments: &[CExpression],
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
@@ -1257,7 +1259,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         statement_index: 0,
         next_quantifier_variable: 3_300_000,
         branch_join_target: Some(branch_join_target),
-        snapshots: None,
+        snapshots: Some(snapshots),
     };
     lowerer
         .click_proposition_to_spec_proposition(proposition, &SpecElaborationContext::default())

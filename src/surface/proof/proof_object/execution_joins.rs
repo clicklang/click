@@ -851,33 +851,6 @@ impl<'a> Proof<'a> {
             }),
             kind: ProgramPointKind::Entry,
         };
-        let interface_specs = assertions
-            .iter()
-            .filter_map(|assertion| match assertion {
-                // A proof mark denotes a shared historical fact. It is
-                // admitted at the join only when the kernel finds the exact
-                // lowered fact in both arms; it is not a state-parametric
-                // assertion about the abstract successor.
-                ProofAssertion::Fact(fact)
-                    if matches!(
-                        surface_snapshot_selector(fact),
-                        Some(SnapshotSelector::Mark(_))
-                    ) =>
-                {
-                    None
-                }
-                ProofAssertion::Fact(fact) => Some(lower_branch_interface_fact(
-                    fact,
-                    context.parsed_function,
-                    &interface_reference_state,
-                    &target,
-                    context.arguments,
-                    context.predicate_environment,
-                    context.click_function_environment,
-                )),
-                ProofAssertion::Resource(_) => None,
-            })
-            .collect::<Result<Vec<_>, _>>()?;
         let interface_resource_specs = assertions
             .iter()
             .filter_map(|assertion| match assertion {
@@ -914,6 +887,26 @@ impl<'a> Proof<'a> {
                     "`branch ensuring` arms do not descend from the root recorded snapshots",
                 )
             })?;
+        // A mark freezes only the expressions inside `at(...)`. Mixed facts
+        // still read the current arm/successor and need the same checked
+        // interface lowering as unmarked facts. Resolve frozen expressions
+        // from snapshots shared by both arms, never an arm-private mark.
+        let interface_specs = assertions
+            .iter()
+            .filter_map(|assertion| match assertion {
+                ProofAssertion::Fact(fact) => Some(lower_branch_interface_fact(
+                    fact,
+                    context.parsed_function,
+                    &interface_reference_state,
+                    &target,
+                    &common_snapshots,
+                    context.arguments,
+                    context.predicate_environment,
+                    context.click_function_environment,
+                )),
+                ProofAssertion::Resource(_) => None,
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let joined_loan_evidence = join_arm_loan_evidence(
             parent_execution,
             [arms[0].execution, arms[1].execution],
