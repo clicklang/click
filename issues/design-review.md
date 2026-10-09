@@ -87,17 +87,26 @@ prints a C-shaped place.
 
 ### A5. An index keeps its type until it is an offset
 
-Direction accepted 2026-10-08; design, kernel survey and order of work in
-`design/typed-indices.md`. Not started.
+Design, kernel survey and order of work: `design/typed-indices.md`.
 
-An index or range bound of any integer type is accepted and converted to an
-offset in its own way: `int32` by sign extension, `uint64` and `usize` by
-value. Stage 1 keeps the 32-bit cap on a range's extent and removes the
-casts from C and Rust contracts. Stage 2 widens the extent to `isize::MAX`
-and removes `requires n <= 2147483647`. Stage 3 brings order reasoning over
-64-bit terms up to the 32-bit level.
+Stage 1 is built: a 64-bit range bound of any form, and a 64-bit parameter
+written alone as an index, need no cast. The contract still states
+`requires n <= 2147483647`, and one that does not is refused at setup with
+the requirement to state.
 
-Start stage 1 after the Rust sidecar work in A4 has landed.
+Remaining:
+
+- **Stage 3, order reasoning over 64-bit terms.** It is the next thing to
+  do, ahead of stage 2: a C function that reads `bytes[index + 1]` with a
+  `size_t` index cannot be verified today whatever its contract says. The
+  body's read is refused with "missing resource fact
+  `views bytes[(truncate32(index) + 1)]`" under `requires index + 1 <
+  length`. Regression: that function verifying.
+- **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
+  2147483647`. It cannot be done piece by piece and needs scaling
+  regressions. Check with Lacker before starting it.
+- A 64-bit index expression that is not a lone parameter still takes the
+  cast in a contract. It follows stage 3.
 
 Done when: no contract casts an index, and a slice contract states no bound
 on its length.

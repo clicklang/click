@@ -111,9 +111,23 @@ The kernel's cast already owes an "int32 narrowing upper bound" obligation,
 so a contract whose requirements do not show the bound fits is refused at
 setup; the refusal now says which requirement to state.
 
-Left for this stage: a 64-bit index expression that is not a lone parameter,
-which needs the conversion made where a specification's indexed read is
-evaluated. The `kind` field is what stage 2 needs.
+What looked like a gap in this stage belongs to stage 3. A 64-bit index
+expression that is not a lone parameter, `bytes[index + 1]`, still takes the
+cast in a contract. Converting it in the parser was tried on 2026-10-08 and
+dropped, because the C is the obstacle and not the contract: for
+
+```c
+unsigned char next(const unsigned char *bytes, unsigned long length, unsigned long index) {
+    return bytes[index + 1];
+}
+```
+
+with `requires length <= 2147483647; requires index + 1 < length; views
+bytes[0..length];`, the body's own read is refused, "missing resource fact
+`views bytes[(truncate32(index) + 1)]`", whatever the contract's
+postcondition says. The kernel does not carry `index + 1 < length` over
+64-bit terms to the 32-bit index of the range. That is the order reasoning
+of stage 3, and it is the first thing a real `size_t` loop will hit.
 
 ### Stage 2. The extent is `isize::MAX`
 
