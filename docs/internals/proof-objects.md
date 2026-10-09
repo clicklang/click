@@ -261,8 +261,12 @@ changing memory snapshots or transferring ownership. Selection reads only the
 constructor's requested field, with no search through unrelated premises. Ordinary
 resource fold/unfold arguments use these same proof-local bindings, including
 when a match binding shadows a C parameter. The dispatcher substitutes only
-names in the written arguments before selecting execution or outcome checking;
-the resource definition and ownership checks remain unchanged. Named-instance
+names in the written arguments and then captures the referenced C locals at
+the current frontier before selecting execution or outcome checking. Thus after
+`p = q`, both `fold(tag_at(p))` and `unfold(tag_at(p))` name the resource
+at `q`; ownership at the entry value of `p` does not suffice. Capture uses indexed
+lookups for the written names, without scanning unrelated locals. The resource
+definition, read obligations, and ownership checks remain unchanged. Named-instance
 folds continue to resolve their arguments when constructing the instance.
 
 A proof `if` or `match` interface may rejoin before the first C statement.
