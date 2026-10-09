@@ -543,7 +543,8 @@ impl<'a> ProofScope<'a> {
         };
         // At an outcome or in a pure proof a bare assumption may cite an ambient
         // fact the certificate cannot spell, so a derivation from spelled
-        // premises is preferred. Mid-execution, an available fact is its own spelling:
+        // premises is preferred. Mid-execution and at loop entry, an available
+        // fact is its own spelling:
         // `assumption();` checks by re-checking the judgment, and the
         // frontier derivation exists for what the direct closer cannot
         // prove, not to replace what it can.
@@ -552,6 +553,7 @@ impl<'a> ProofScope<'a> {
         if body.node.depth == 1
             && matches!(body.node.step.as_deref(), Some(ProofStep::Assumption))
             && !mid_execution
+            && self.loop_entry_goal.is_none()
             && let Some(checkable) = self.body.try_simp_closure_after_direct(true)?
         {
             body = checkable;

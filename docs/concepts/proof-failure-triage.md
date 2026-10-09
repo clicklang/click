@@ -37,6 +37,10 @@ facts and snapshot identities for debugging.
 
 ## Explain the program requirement first
 
+Tactic source excerpts retain their location and show at most ten source lines,
+with an explicit omission marker for longer bodies. Individual quoted lines
+are limited to 160 characters; the failure reason remains outside the excerpt.
+
 When adding or repairing a diagnostic, lead with the C operation or contract
 clause being checked and `Requires` followed by the exact Click proposition or
 resource clause that is not yet established. Use the user's source expressions
