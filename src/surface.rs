@@ -2325,6 +2325,9 @@ pub enum ContractExpression {
     /// A C0 expression fragment appearing inside Surface Click.
     CFragment(CExpression),
     /// A C unary operation whose operand retains explicit binding syntax.
+    /// Scalar casts may also wrap a pure expression. `operand` is authoritative;
+    /// in that case `lowered` retains the cast metadata with a placeholder, and
+    /// conversion back to a C fragment must rebuild from `operand` or refuse.
     CUnary {
         operand: Box<ContractExpression>,
         lowered: CExpression,

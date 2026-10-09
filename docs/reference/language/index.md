@@ -2286,7 +2286,10 @@ let { root: node } = step(init(p, left, right, value), { l: a, r: b });
 
 The introduced name is an ordinary owned instance afterwards: it can be folded
 into a parent as a child, or returned by the caller's own `produces` clause.
-Multiple named outputs use a destructuring pattern:
+A non-mutex output may reuse the name of an instance consumed by the call.
+Its current arguments and fields come from the produced contract; `old(...)`
+still observes the caller's entry instance. Reuse does not let a call overwrite
+another live instance. Multiple named outputs use a destructuring pattern:
 
 <!-- verified-example: mdtests/c_call_binder_transport_multiple_produces.md -->
 ```click
@@ -2488,7 +2491,8 @@ Wide examples are in
 
 Contract expressions accept the unsigned narrowing cast `(uint32)x`, including
 `old((uint32)p->value)`. The operand must be
-a current C expression; put `old(...)` or `at(...)` around the whole cast to
+a current scalar expression, including a pure-function call; put `old(...)`
+or `at(...)` around the whole cast to
 select another snapshot. A 64-to-`uint32` cast retains the low 32 bits, rather
 than requiring the source value to fit. Casts retain their selected memory
 snapshot even when the underlying field is subsequently updated.

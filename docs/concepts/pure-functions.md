@@ -2,6 +2,11 @@
 
 Pure Click functions compute specification values. They do not run as C code.
 
+Machine scalar arguments use the declared parameter type. A call and its
+unfolded body apply the same native conversion, including any narrowing
+bounds. Thus an unsuffixed `0` passed to a `uint64` parameter denotes the same
+argument as a `uint64` value proved equal to zero.
+
 For example, the standard library defines `count`:
 
 <!-- verified-example: mdtests/pure_click_functions.md -->

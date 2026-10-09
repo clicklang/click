@@ -6054,11 +6054,11 @@ fn execute_verified_function_applications_with_suspension(
             let Some(schema) = resource.instance_schema() else {
                 continue;
             };
-            if resource.role() == CResourceTransferRole::Borrow
-                || entry_contract_state
-                    .owned_resource_instance(identity)
-                    .is_some()
-            {
+            // A produced binder is fresh at the callee boundary even when
+            // its caller-facing name reuses a consumed input's identity.
+            // Looking it up through the entry binding map would find that
+            // input and incorrectly retain its old resource arguments.
+            if resource.role() == CResourceTransferRole::Borrow {
                 continue;
             }
             let Some(produced) = selected_bindings
