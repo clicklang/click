@@ -172,8 +172,22 @@ and a red far leaf. Both rotations retain the original opaque far subtree and
 return the exact balanced root, consistent parents, and unchanged in-order
 contents under any outer context. Each passes all 121 expansion-audit sites.
 Six mutations reject incorrect first- or second-rotation parent links and an
-incorrect far-child parent. Other red-sibling continuations and rotations
-after deficit propagation remain.
+incorrect far-child parent.
+`rbtree_erase_color_red_sibling_inner_left.click` and its mirrored right sidecar
+cover cases 1, 3, and 4: the red sibling's black near child has a red inner leaf
+and an empty far child. The three rotations preserve the original opaque far
+subtree and return the exact balanced root, consistent parents, and unchanged
+in-order contents under any outer context. Each passes all 127 expansion-audit
+sites. Six mutations reject incorrect inner-child detachment, old-sibling
+attachment, or old-sibling parent updates.
+`rbtree_erase_color_red_sibling_outer_nonempty_left.click` and its mirrored
+right sidecar cover cases 1 and 4 with a nonempty near subtree after the first
+rotation. The parent-update helper preserves that subtree's color and children;
+the two rotations retain the opaque outer far subtree. Both proofs return the
+exact balanced root, consistent parents, and unchanged in-order contents under
+any outer context. Each passes all 136 audit sites; four mutations reject an
+incorrect near-child parent or attachment. Rotations after deficit propagation
+and the complete `rb_erase` wrapper remain.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is

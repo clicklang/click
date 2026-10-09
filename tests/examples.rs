@@ -555,6 +555,9 @@ fn erase_source_refuses_replacement(
                 && (error.message().contains("could not establish")
                     || error.message().contains(
                         "`normalize using` goal did not normalize to true using the listed conditions",
+                    )
+                    || error.message().contains(
+                        "`assumption` requires the current goal as an available semantic fact",
                     )))
             || error
                 .message()
@@ -2279,5 +2282,113 @@ fn rbtree_erase_color_red_sibling_outer_right_requires_far_child_parent() {
         "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
         2,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_inner_left_requires_detached_inner_child() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_inner_left.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_left, tmp1);",
+        "WRITE_ONCE(sibling->rb_left, tmp2);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_inner_left_requires_attached_old_sibling() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_inner_left.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(tmp2->rb_right, sibling);",
+        "WRITE_ONCE(tmp2->rb_right, NULL);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_inner_left_requires_old_sibling_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_sibling_inner_left.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, parent, RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_inner_right_requires_detached_inner_child() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_inner_right.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(sibling->rb_right, tmp1);",
+        "WRITE_ONCE(sibling->rb_right, tmp2);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_inner_right_requires_attached_old_sibling() {
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_sibling_inner_right.click",
+        "rb_erase_color.c",
+        "WRITE_ONCE(tmp2->rb_left, sibling);",
+        "WRITE_ONCE(tmp2->rb_left, NULL);",
+        1,
+    );
+}
+
+#[test]
+#[ignore = "nightly: red-sibling inner rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_inner_right_requires_old_sibling_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_sibling_inner_right.click",
+        "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
+        "rb_set_parent_color(tmp1, parent, RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: nonempty-near rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_outer_nonempty_left_requires_near_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_sibling_outer_nonempty_left.click",
+        "rb_set_parent(tmp2, parent);",
+        "rb_set_parent(tmp2, sibling);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: nonempty-near rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_outer_nonempty_left_requires_near_link() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_sibling_outer_nonempty_left.click",
+        "WRITE_ONCE(parent->rb_right, tmp2);",
+        "WRITE_ONCE(parent->rb_right, NULL);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: nonempty-near rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_outer_nonempty_right_requires_near_parent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_sibling_outer_nonempty_right.click",
+        "rb_set_parent(tmp2, parent);",
+        "rb_set_parent(tmp2, sibling);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: nonempty-near rotation verifies a whole sidecar"]
+fn rbtree_erase_color_red_sibling_outer_nonempty_right_requires_near_link() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_red_sibling_outer_nonempty_right.click",
+        "WRITE_ONCE(parent->rb_left, tmp2);",
+        "WRITE_ONCE(parent->rb_left, NULL);",
     );
 }

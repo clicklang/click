@@ -181,7 +181,10 @@ sum-of-products declarations as first-class Click types. A
 constructor is fully type-applied at its use site. Pure functions, predicates,
 and theorems may receive arbitrary algebraic values, pure functions may return
 them, and an exhaustive `match` may inspect an unknown variant and return a
-common C or algebraic type:
+common C or algebraic type. Algebraic-valued `if` expressions are not supported;
+select an algebraic result with an exhaustive `match` instead. Declaration
+validation rejects unsupported conditionals even when their branches are pure
+function calls:
 
 Pure functions, predicates, and theorems may declare Rust-like type parameters
 after their name. Calls and theorem applications infer each type argument from
