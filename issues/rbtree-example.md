@@ -17,7 +17,7 @@ correctness property is preservation of node identity and in-order order
 while links and colors change; a contract that consumes one well-formed
 tree and produces another cannot state that without an abstract model.
 
-## State, 2026-10-08: handoff
+## State, 2026-10-09: handoff
 
 Insert is finished. The black-successor splice's deficit-start model proof
 in [chunk 10](#erase-d3-d4-d10) covers immediate and deep successors.
@@ -56,6 +56,11 @@ this verified call instead of duplicating the parent-link cases.
 The next proof exposed a missing 64-bit equality case in explicit pointer-offset
 rewriting. Field facts now rewrite through a loaded pointer alias at both
 32- and 64-bit widths; positive and false-conclusion fixtures cover the fix.
+The non-root continuation also exposed missing 64-bit cached-read normalization
+after a store followed by a named-resource call. Signed and unsigned wide reads
+now reuse their exact cached value, preserving read kind and recorded history;
+explicit `normalize` establishes the framed equality. Regressions reject changed
+and partially overwritten values and check scaling with unrelated cached cells.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node

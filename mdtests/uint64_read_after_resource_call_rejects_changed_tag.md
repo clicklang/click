@@ -1,0 +1,53 @@
+# A changed wide tag cannot reuse its framed snapshot
+
+```c filename=store_before_resource_call.c
+struct Node { unsigned long tag; struct Node *next; };
+struct Root { struct Node *node; };
+void helper(struct Node *p, struct Node *q, struct Root *root) { root->node = q; }
+void caller(struct Node *p, struct Node *q, struct Root *root) {
+    p->next = q;
+    helper(p, q, root);
+    q->tag = 0;
+}
+```
+```click
+verifying "store_before_resource_call.c";
+spec enum Tag { Here, }
+resource link(p: struct Node*, root: struct Root*) {
+    field model: Tag;
+    owns root->node;
+    fact model == Tag::Here;
+    fact root->node == p;
+}
+void helper(struct Node* p, struct Node* q, struct Root* root) {
+    consumes before: link(p, root);
+    owns p->tag;
+    produces after: link(q, root);
+    ensures p->tag == old(p->tag);
+} by {
+    unfold(before); execute();
+    let after = fold(link(q, root), { model: Tag::Here }); simp();
+}
+void caller(struct Node* p, struct Node* q, struct Root* root) {
+    consumes before: link(p, root);
+    owns p->tag;
+    owns p->next;
+    owns q->tag;
+    requires (q->tag & 1) == 1;
+    produces after: link(q, root);
+    ensures (q->tag & 1) == 1;
+} by {
+    step();
+    have (q->tag & 1) == 1 by { simp(); }
+    mark call_entry;
+    let {after: after} = step(helper(p, q, root), {before: before});
+    step();
+    have q->tag == at(call_entry, q->tag) by { normalize(); }
+    have (q->tag & 1) == 1 by { simp(); }
+    execute(); simp();
+}
+```
+
+```expect
+fail: normalize
+```
