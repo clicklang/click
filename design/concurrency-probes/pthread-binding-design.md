@@ -2,8 +2,10 @@
 
 The modeled binding and [frozen parent proof](../../examples/concurrency-fork-join/)
 are implemented. This record explains the checked create/join rule and its
-trust boundary; native runtime validation remains open in the
-[concurrency milestone](../../issues/concurrency-demo.md#native-pthread-binding).
+trust boundary. Proofs are stated against Click's own `<pthread.h>` interface;
+the native-validation plan below is superseded by the
+[import cleanup](../../issues/import-cleanup.md), which removes the
+glibc-header path.
 
 The [probe record](README.md#compiler-import-checkpoint) tracks the selected
 source and real-header import boundary. The modeled binding can verify clients

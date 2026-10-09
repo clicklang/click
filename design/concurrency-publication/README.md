@@ -1,7 +1,7 @@
 # One-shot release/acquire publication
 
 `publication.c` is the frozen C11 example for the one-shot publication
-milestone of the [concurrency demo](../../issues/concurrency-demo.md). The
+milestone of the completed concurrency demo. The
 producer initializes an ordinary payload and release-stores a ready flag; the
 consumer acquire-loads the flag until it is set and then reads the payload,
 before the parent joins the producer. The intended proof shows that the
