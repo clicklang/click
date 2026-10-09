@@ -80,18 +80,60 @@ fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, Referen
             let shape = match parameter.struct_name() {
                 None => ReferentShape::Scalar,
                 Some(struct_name) => ReferentShape::Struct {
-                    first_field: function.structs().get(struct_name).and_then(|layout| {
-                        layout
-                            .fields()
-                            .iter()
-                            .find(|(_, field)| field.offset_bytes() == 0)
-                            .map(|(name, _)| name.clone())
-                    }),
+                    first_field: parameter
+                        .pointee_struct_layout()
+                        .or_else(|| function.structs().get(struct_name))
+                        .and_then(|layout| {
+                            layout
+                                .fields()
+                                .iter()
+                                .find(|(_, field)| field.offset_bytes() == 0)
+                                .map(|(name, _)| name.clone())
+                        }),
                 },
             };
             (parameter.name().to_string(), shape)
         })
         .collect()
+}
+
+/// While alive, names the reference parameters of the function whose proof
+/// text is being written, so `click expand` spells a read through one as the
+/// sidecar does. A struct referent's fields need its layout, which a
+/// signature does not carry; those reads keep their kernel spelling.
+#[must_use]
+pub(in crate::surface) struct ReferenceCarrierScope(());
+
+impl ReferenceCarrierScope {
+    pub(in crate::surface) fn enter(signature: &crate::surface::FunctionSignature) -> Self {
+        let carriers = signature
+            .parameters()
+            .iter()
+            .filter(|parameter| parameter.is_reference())
+            .map(|parameter| {
+                let name = parameter.name();
+                let carrier = match syntax::referent_of_carrier(name) {
+                    Some(_) => name.to_string(),
+                    None => syntax::reference_carrier_name(name),
+                };
+                let shape = match parameter.struct_name() {
+                    None => ReferentShape::Scalar,
+                    Some(_) => ReferentShape::Struct { first_field: None },
+                };
+                (carrier, shape)
+            })
+            .collect();
+        REFERENCE_CARRIERS.with(|scopes| scopes.borrow_mut().push(carriers));
+        Self(())
+    }
+}
+
+impl Drop for ReferenceCarrierScope {
+    fn drop(&mut self) {
+        REFERENCE_CARRIERS.with(|scopes| {
+            scopes.borrow_mut().pop();
+        });
+    }
 }
 
 /// A typed read through `pointer`, as a sidecar writes it, when `pointer` is

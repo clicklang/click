@@ -36,27 +36,27 @@ A fact or a failed goal about a referent prints it as the sidecar writes
 it: `value`, `owns value`, and `box.first` for a read at the start of a
 struct referent.
 
-The "C operation" line of a failure prints a read through a scalar
-reference as `value`: a step records the stepped function's reference
-parameters, and the printer of a kernel term consults them
-(`describe_read_through_reference` in `src/surface/diagnostics.rs`).
+The "C operation" line of a failure prints a read through a reference as
+the sidecar writes it, `value` or `c.first`: a step records the stepped
+function's reference parameters, and the printer of a kernel term consults
+them (`describe_read_through_reference` in `src/surface/diagnostics.rs`).
+`click expand` does the same for a scalar reference from the sidecar's
+signature (`ReferenceCarrierScope`).
 
-Two gaps remain, where the same read still prints `load_int32(&name)`. That
-parses back correctly, but it is not what a sidecar writes.
+One gap remains, and it is not particular to references. A condition
+`click expand` writes over a struct field is in kernel spelling:
+`load_int32(byte_offset(&c, 4))` for `c.second` through `struct cell& c`,
+and `load_int32(byte_offset(p, 4))` for `p->second` through a C struct
+pointer. Both parse back and verify
+(`cpp_expansion_over_a_struct_reference_field_verifies_offline`). Writing
+the field needs the struct's layout where the proof text is printed, which
+has only the sidecar's signature today.
 
-- A struct reference. `load_int32(&c)` is the field at the start of the
-  struct, `c.first`, and the printer needs the struct's layout to name it.
-  The parameter of an imported C++ function does not carry one the step
-  scope can reach.
-- A condition `click expand` writes from a lowered C expression, which is
-  printed outside any step.
+Regression: `click expand` on a branch over `c.second` through
+`struct cell& c`, and over `p->second` through `struct cell* p` in C,
+writes the condition with the field place.
 
-Regression: a failing read of `c.first` through `struct cell& c` prints
-`c.first` in its C operation; `click expand` on a branch over a scalar
-reference writes the condition with the bare name.
-
-Done when: no diagnostic or expansion prints `load_...(&name)` for a
-reference parameter.
+Done when: no expansion prints `load_...` for a field of a struct parameter.
 
 ### A4. Rust sidecars in Rust syntax: respelling and the refusals
 

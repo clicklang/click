@@ -15065,6 +15065,116 @@ fn cpp_scalar_reference_reads_print_as_referents_in_a_c_operation_offline() {
     );
 }
 
+/// A read at the start of a struct referent prints as the field it is,
+/// `c.first`, and the refusal names the referent's fields, because the
+/// parameter carries its record's layout for presentation.
+#[test]
+fn cpp_struct_reference_reads_print_as_fields_in_a_c_operation_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "get",
+        "struct cell { int first; int second; };\nint get(cell& c) noexcept { return c.first; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 get(struct cell& c) { views c.second; ensures result == result; } by { execute(); simp(); }\n";
+    let path = project.directory.join("bad.click");
+    fs::write(&path, text).unwrap();
+    let error = verify_program_prepared_project(&read_click_project(&path, text).unwrap(), &import)
+        .expect_err("the contract views another field than the one the function reads");
+    assert!(
+        error.message().contains("C operation: return c.first"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        !error.message().contains("load_int32(&"),
+        "{}",
+        error.message()
+    );
+}
+
+/// `click expand` writes a branch condition over a scalar reference with the
+/// bare name the sidecar uses, and the expansion verifies.
+#[test]
+fn cpp_expansion_writes_a_branch_over_a_reference_by_its_referent_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "pick",
+        "int pick(int& value) noexcept { if (value > 0) { return 1; } return 0; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 pick(int32& value) { views value; ensures result >= 0; } by { execute(); simp(); }\n";
+    let path = project.directory.join("pick.click");
+    fs::write(&path, text).unwrap();
+    let parsed = read_click_project(&path, text).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let first = sites.first().unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        &import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    assert!(!expanded.contains("load_int32(&"), "{expanded}");
+    verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+/// `click expand` writes a branch condition over a field of a struct
+/// reference, and the expansion verifies. The field is still written in its
+/// kernel spelling, as a field through a C struct pointer is.
+#[test]
+fn cpp_expansion_over_a_struct_reference_field_verifies_offline() {
+    let project = Project::with_fixture(
+        "local.cpp",
+        "pick",
+        "struct cell { int first; int second; };\nint pick(cell& c) noexcept { if (c.second > 0) { return 1; } return 0; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = "verifying \"local.cpp\";\nint32 pick(struct cell& c) { views c.second; ensures result >= 0; } by { execute(); simp(); }\n";
+    let path = project.directory.join("pick.click");
+    fs::write(&path, text).unwrap();
+    let parsed = read_click_project(&path, text).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+    let first = sites.first().unwrap();
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        &import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        &import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    assert!(
+        expanded.contains("if at(statement(0).entry, "),
+        "{expanded}"
+    );
+    verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 #[test]
 fn cpp_const_reference_locals_bind_pointer_storage_without_loading_offline() {
     let project = Project::with_fixture(

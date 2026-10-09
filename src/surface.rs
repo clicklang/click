@@ -7587,6 +7587,8 @@ impl VerifiedCTheorem {
         let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
             self.function_block.signature().returns_reference(),
         );
+        let _reference_carriers =
+            diagnostics::ReferenceCarrierScope::enter(self.function_block.signature());
         Ok(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))
