@@ -2078,12 +2078,39 @@ fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, C
     }
     // A Rust path, or a method of an `impl` block for one, is named as the
     // parser names it; the declaration index reads those spellings.
-    if let Some(found) = declaration_source_index(tokens)?.remove(name) {
+    let mut declarations = declaration_source_index(tokens)?;
+    if let Some(found) = declarations
+        .remove(name)
+        .or_else(|| declarations.remove(&rust_inherent_method_in_its_type_module(name)?))
+    {
         return Ok(found);
     }
     Err(ClickError::new(format!(
         "could not locate Click function block `{name}`"
     )))
+}
+
+/// An imported inherent method's name as the source index spells it. The
+/// importer names the method by the module its `impl` block is in; a
+/// sidecar writes `impl path::Type { fn method }` with no module, and the
+/// index, which reads tokens alone, takes the block to be in its type's
+/// module. This rewrites `<module>_T<n>_<Type>_I<m>_<method>` to that
+/// spelling, or answers nothing for any other name.
+fn rust_inherent_method_in_its_type_module(name: &str) -> Option<String> {
+    let at = name.find("_T")?;
+    if !name.starts_with("__rust_q") {
+        return None;
+    }
+    let rest = &name[at + 2..];
+    let digits = rest.find('_')?;
+    let length: usize = rest[..digits].parse().ok()?;
+    let impl_type = rest.get(digits + 1..digits + 1 + length)?;
+    let method = &rest[digits + 1 + length..];
+    // The type's module is its qualified name less its last segment,
+    // `_I<n>_<Name>`.
+    let last = impl_type.rfind("_I")?;
+    let module = &impl_type[..last];
+    Some(format!("{module}_T{length}_{impl_type}{method}"))
 }
 
 /// The segments of the Rust path that ends at token `end`, `a::b::name`.
@@ -3628,11 +3655,7 @@ fn declaration_source_index(
                         let path = rust_path_ending_at(tokens, before);
                         match &impl_block {
                             // A method's own name, and an item inside it.
-                            Some(_) => {
-                                path[1..].iter().fold(path[0].to_string(), |name, segment| {
-                                    format!("{name}_I{}_{segment}", segment.len())
-                                })
-                            }
+                            Some(_) => super::parser::rust_method_path_name(&path),
                             None => super::parser::rust_path_name(&path),
                         }
                     });
@@ -3725,11 +3748,15 @@ fn source_tactic_entries(
             continue;
         }
         let function_name = function_block.signature().name();
-        let function = declarations.get(function_name).copied().ok_or_else(|| {
-            ClickError::new(format!(
-                "could not locate Click function block `{function_name}`"
-            ))
-        })?;
+        let function = declarations
+            .get(function_name)
+            .or_else(|| declarations.get(&rust_inherent_method_in_its_type_module(function_name)?))
+            .copied()
+            .ok_or_else(|| {
+                ClickError::new(format!(
+                    "could not locate Click function block `{function_name}`"
+                ))
+            })?;
         for clause in function_block.structural_clauses() {
             if let CodeRegion::Loop(loop_index) = clause.region() {
                 for (phase, proof) in [

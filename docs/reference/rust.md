@@ -279,9 +279,9 @@ An item of a crate import is named by its path from the crate:
 `fn quad::walk(bytes: &[u8]) -> u32`, a type `quad::Quad`, and
 `impl adler2::algo::U32X4 { ... }`. The path stands for the name the
 importer gives the item (`__rust_q_I4_quad_I4_walk`), which is what a claim
-label and a diagnostic still print. An inherent `impl` block is taken to be
-in its type's own module; a method whose block is in another module keeps
-the importer's name.
+label and a diagnostic still print. The importer names an inherent method by the
+module its `impl` block is in, which Rust does not write: the method is
+found in the import by its type and name, of which Rust allows one.
 
 <!-- verified-example: tests/fixtures/rust-verification/impl_blocks.click -->
 ```click

@@ -244,14 +244,28 @@ pub(in crate::surface) fn rust_inherent_method_name(
     impl_type: &str,
     method: &str,
 ) -> String {
+    // An item inside the method, `compute::LIMIT`, arrives with its path
+    // segments already written after the method's own name
+    // ([`rust_method_path_name`]); the length the importer writes is the
+    // method's alone.
+    let (own, inside) = method.split_at(method.find("_I").unwrap_or(method.len()));
     match impl_module {
         Some(module) => format!(
-            "{module}_T{}_{impl_type}_I{}_{method}",
+            "{module}_T{}_{impl_type}_I{}_{own}{inside}",
             impl_type.len(),
-            method.len()
+            own.len()
         ),
         None => format!("{impl_type}_{method}"),
     }
+}
+
+/// A method's name as written in an `impl` block, `compute` or
+/// `compute::LIMIT`: the method's own name, then each further segment as
+/// the importer writes a path segment.
+pub(in crate::surface) fn rust_method_path_name(path: &[&str]) -> String {
+    path[1..].iter().fold(path[0].to_string(), |name, segment| {
+        format!("{name}_I{}_{segment}", segment.len())
+    })
 }
 
 /// The C0 type a Rust scalar type name denotes.
@@ -3506,9 +3520,7 @@ impl Parser {
         let name = if self.rust_impl_type.is_some() {
             // A method's own name; an item inside it, `compute::LIMIT`,
             // follows as the importer writes path segments.
-            path[1..].iter().fold(path[0].clone(), |name, segment| {
-                format!("{name}_I{}_{segment}", segment.len())
-            })
+            rust_method_path_name(&path.iter().map(String::as_str).collect::<Vec<_>>())
         } else {
             rust_path_name(&path.iter().map(String::as_str).collect::<Vec<_>>())
         };
@@ -3531,11 +3543,7 @@ impl Parser {
                 }
                 match &self.rust_impl_method_suffix {
                     Some(suffix) => format!("{impl_type}_{name}_{suffix}"),
-                    None => rust_inherent_method_name(
-                        self.rust_impl_module.as_deref(),
-                        &impl_type,
-                        &name,
-                    ),
+                    None => self.rust_inherent_method(&impl_type, &name)?,
                 }
             }
             None => name,
@@ -3696,6 +3704,32 @@ impl Parser {
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
+    }
+
+    /// The imported function an inherent method of a type named by a path
+    /// is. The importer names it by the module its `impl` block is in,
+    /// which Rust does not write, so the one imported function that is this
+    /// method of this type is found by the rest of its name. Rust allows a
+    /// type one inherent method of a name, so there is at most one. With
+    /// no import to consult, or none found, the block is taken to be in its
+    /// type's module.
+    #[inline(never)]
+    fn rust_inherent_method(&self, impl_type: &str, method: &str) -> Result<String, ClickError> {
+        let Some(module) = self.rust_impl_module.as_deref() else {
+            return Ok(rust_inherent_method_name(None, impl_type, method));
+        };
+        let suffix = rust_inherent_method_name(Some(""), impl_type, method);
+        let mut found = self
+            .local_struct_pointers_by_function
+            .keys()
+            .filter(|name| name.starts_with("__rust_q") && name.ends_with(&suffix));
+        match (found.next(), found.next()) {
+            (Some(name), None) => Ok(name.clone()),
+            (Some(_), Some(_)) => Err(self.error(format!(
+                "the import has more than one method `{method}` of this type"
+            ))),
+            (None, _) => Ok(rust_inherent_method_name(Some(module), impl_type, method)),
+        }
     }
 
     /// A Rust path, `name` or `crate_name::module::name`, as its segments.

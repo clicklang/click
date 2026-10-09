@@ -4691,6 +4691,12 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "uint32 __rust_q_I4_demo_T25___rust_q_I4_demo_I5_Value_I3_new(uint32 seed) \
              { ensures result == seed; }",
         ),
+        // An item inside a method follows the method's own name.
+        (
+            "impl demo::Value { fn new::LIMIT() -> u32 { ensures result == 7u32; } @ }",
+            "uint32 __rust_q_I4_demo_T25___rust_q_I4_demo_I5_Value_I3_new_I5_LIMIT() \
+             { ensures result == 7u32; }",
+        ),
         (
             "impl Drop for demo::Token { fn drop(&mut self) { ensures 0 == 0; } @ }",
             "void __rust_q_I4_demo_I5_Token_drop(struct __rust_q_I4_demo_I5_Token* self) \
@@ -4715,6 +4721,52 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             "{rust}"
         );
     }
+    // The importer names an inherent method by the module its `impl`
+    // block is in, which a sidecar does not write. With the import's
+    // functions at hand the method is found by its type and name; without
+    // them the block is taken to be in its type's module.
+    let method = "impl adler2::Adler32 { fn compute(&mut self, seed: u32) { ensures 0 == 0; } \
+                  by { execute(); simp(); } }";
+    let source = format!("verifying \"lib.rs\"; {method}");
+    let elsewhere = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
+    let beside = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
+    let parse_with_functions = |functions: &[&str]| {
+        parser::parse_with_layouts_and_aggregate_objects(
+            &source,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            functions
+                .iter()
+                .map(|name| ((*name).to_string(), parser::FunctionLocals::default()))
+                .collect(),
+        )
+    };
+    let named = |file: ClickFile| file.function_blocks()[0].signature().name().to_string();
+    assert_eq!(named(parse_with_functions(&[]).unwrap()), beside);
+    assert_eq!(
+        named(parse_with_functions(&[elsewhere, "__rust_q_I6_adler2_I4_algo_I4_load"]).unwrap()),
+        elsewhere
+    );
+    // Another type's method of the same name is not this one.
+    assert_eq!(
+        named(
+            parse_with_functions(&[
+                "__rust_q_I6_adler2_I4_algo_T27___rust_q_I6_adler2_I5_Other_I7_compute"
+            ])
+            .unwrap()
+        ),
+        beside
+    );
+    assert!(
+        parse_with_functions(&[elsewhere, beside])
+            .expect_err("two imported methods of one name are ambiguous")
+            .message
+            .contains("more than one method `compute`")
+    );
     // An `impl` block holds `fn` contracts and nothing else, and is Rust.
     for (source, expected) in [
         (

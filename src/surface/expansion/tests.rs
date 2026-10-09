@@ -1790,6 +1790,32 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     );
 }
 
+/// A sidecar writes an inherent method without the module its `impl` block
+/// is in, and the proof tools are asked for it by the importer's name,
+/// which has that module. The method is found by the spelling the source
+/// index reads.
+#[test]
+fn an_inherent_method_in_another_module_is_located_by_its_type() {
+    let source = "verifying \"lib.rs\";\nimpl adler2::Adler32 {\n    fn compute(&mut self, seed: u32) {\n        ensures 0 == 0;\n    } by { execute(); simp(); }\n}\n";
+    let tokens = scan_source_tokens(source).unwrap();
+    let beside = "__rust_q_I6_adler2_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
+    let elsewhere = "__rust_q_I6_adler2_I4_algo_T29___rust_q_I6_adler2_I7_Adler32_I7_compute";
+    let body = find_function(&tokens, beside).expect("the source spelling is indexed");
+    assert_eq!(
+        find_function(&tokens, elsewhere)
+            .expect("the importer's name is located")
+            .body_open,
+        body.body_open
+    );
+    // A function that is not that method is not found by this route.
+    assert!(find_function(&tokens, "__rust_q_I6_adler2_I4_algo_I7_compute").is_err());
+    assert_eq!(
+        rust_inherent_method_in_its_type_module(elsewhere).as_deref(),
+        Some(beside)
+    );
+    assert_eq!(rust_inherent_method_in_its_type_module("compute"), None);
+}
+
 #[test]
 fn expanded_contract_let_facts_remain_source_indexable() {
     let c_source = "int32 increment(int32 x) { return x + 1; }";
