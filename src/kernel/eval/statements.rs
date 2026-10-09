@@ -605,12 +605,16 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
                 .flatten()
                 .cloned();
             let has_external_write_resource = is_external && authorized_range.is_some();
-            // Keep the checked owner's base when recording an external store.
+            // Keep the checked owner's base for a captured external address
+            // without an explicit additive spine. Ordinary source addresses
+            // retain their typed field/index coordinates, which subsequent
+            // loads use to find the stored cell.
             // The graph supplies an equal address, while the owner and exact
             // byte coverage above remain the authorization. This spelling
             // lets subsequent frame checks identify the same backing member.
             let pointer = authorized_range
                 .as_ref()
+                .filter(|_| !matches!(pointer.offset, PointerOffsetTerm::Add(_, _)))
                 .and_then(|range| {
                     effective_assumptions
                         .equality_graph
