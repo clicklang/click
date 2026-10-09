@@ -1636,10 +1636,7 @@ int32 last(int32* data, uint64 length) {
     let error = verify_c0_sources(sidecar, &[("last.c", source)]).unwrap_err();
     let message = error.message();
     assert!(message.contains("index/address"), "{message}");
-    assert!(
-        message.contains("range contents were recorded"),
-        "{message}"
-    );
+    assert!(message.contains("same recorded memory"), "{message}");
     assert!(!message.contains("the store to"), "{message}");
     assert!(
         !message.contains("state `(length - 1u64) != 0`"),

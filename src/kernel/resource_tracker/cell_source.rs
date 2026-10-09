@@ -136,6 +136,8 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     /// A `CellsSeeded` edge crossed because its run's block is proven
     /// distinct from the cell's: every one of its stores is.
     SeededStoresDistinctBlock,
+    /// The run caches byte-preserving scalar loads of its immediate base.
+    SeededLoadsOfBase,
     /// A `CellsSeeded` edge crossed because the cell has the run base's atoms
     /// and a constant shift whose bytes meet no store of the run: each store
     /// is at an unequal constant shift with a gap its bytes clear.
@@ -485,6 +487,7 @@ impl MemoryDagHopJustification {
                         evidence.checks(range, pointer, bytes, assumptions)
                     })
             }
+            Self::SeededLoadsOfBase => super::step_effect::seeded_loads_preserve_base(derivation),
             Self::SeededStoresDistinctBlock => matches!(
                 derivation,
                 CMemoryDerivation::CellsSeeded { run, .. }

@@ -2709,6 +2709,30 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
     ))
 }
 
+/// Reads at different addresses in one snapshot need an address or value
+/// equality, not a framing condition. Materialization may expose this directly
+/// by giving both reads their original memory identity.
+pub(super) fn describe_read_address_mismatch(
+    left: &CValue,
+    right: &CValue,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let (left_memory, left_load) = unresolved_load(left)?;
+    let (right_memory, right_load) = unresolved_load(right)?;
+    if left_load == right_load || left_memory.read_identity() != right_memory.read_identity() {
+        return None;
+    }
+    let left = describe_source_cell(&left_load, parameters, arguments)?;
+    let right = describe_source_cell(&right_load, parameters, arguments)?;
+    Some(format!(
+        "`{}` and `{}` read the same recorded memory using different address expressions. \
+         Establish the index/address relation or the equality of those values.",
+        left.text(),
+        right.text(),
+    ))
+}
+
 /// The explanation for two evaluated sides that read one address at two
 /// program points.
 pub(super) fn describe_two_sided_version_mismatch(

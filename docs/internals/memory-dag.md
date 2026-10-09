@@ -159,6 +159,16 @@ loop head: the walk is assumption-free and stops at the head's havoc, while
 the head's copy-back has already kept the cell's value because the checked
 footprint is disjoint from it.
 
+A scalar seeded run that caches loads from the same producer-maintained read
+identity as its base does not change bytes. When ordinary cell lookup cannot
+prove separation, `SeededLoadsOfBase` carries that local fact across the edge.
+Checking compares the source identity, load mode and exact scalar stride; it
+never enumerates the run or assumes a caller's separation facts. Boolean and
+pointer representations remain under their existing rules. Constant runs,
+copies from another address, and loads from an older changed snapshot cannot
+use this witness. Thus opening a returned resource preserves unrelated caller
+cells without hiding the call's preceding havoc.
+
 Seeded runs keep their source snapshots, but do not retain named slot values.
 Reading a slot goes through the load-naming cache scoped to the current
 load-origin epoch. A reusable verification session retains the arena and its

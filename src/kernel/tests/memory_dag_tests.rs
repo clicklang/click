@@ -3985,3 +3985,107 @@ fn initialized_array_copy_preserves_source_history_with_constant_work() {
         "{samples:?}"
     );
 }
+
+/// A materialized run writes back its own source loads. Framing an unknown
+/// address across it must not enumerate the run or require a disjointness fact.
+#[test]
+fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
+    let anchor = Pointer::symbolic(Variable(98_470));
+    let other = Pointer::symbolic(Variable(98_471));
+    let assumptions = PureFactContext::new();
+    let mut previous_work = None;
+    for size in [16, 256, 4096, 65536] {
+        let original = intern_c_memory(CMemory::new());
+        let first = original.memory().clone().with_seeded_cells(
+            anchor.clone(),
+            4,
+            CType::Int32,
+            0,
+            size,
+            original.clone(),
+        );
+        let current = intern_c_memory(first.with_seeded_cells(
+            anchor.offset_by_bytes(size * 4),
+            4,
+            CType::Int32,
+            0,
+            size,
+            original.clone(),
+        ));
+        let (cell, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory_dag_cell_source(&current, &other, 4, &assumptions, false).unwrap()
+        });
+        let MemoryDagCell::Unwritten { node, path } = cell else {
+            panic!("naming must not invent a stored value for the other address");
+        };
+        assert_eq!(node, original);
+        assert_eq!(path.len(), 2);
+        for hop in path {
+            assert_eq!(
+                hop.justification,
+                MemoryDagHopJustification::SeededLoadsOfBase
+            );
+            assert!(
+                hop.justification
+                    .checks(&hop.derivation, &other, 4, &assumptions)
+            );
+        }
+        assert!(work < 100, "size={size}, work={work}");
+        if let Some(previous) = previous_work {
+            assert_eq!(work, previous, "framing work must not grow with the run");
+        }
+        previous_work = Some(work);
+    }
+}
+
+/// A retained no-write witness must reject another source, constant writes,
+/// copied cells, normalized bools and overlapping representations.
+#[test]
+fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
+    use crate::kernel::primitives::{IndexIntervals, RunValueMode};
+    let anchor = Pointer::symbolic(Variable(98_480));
+    let other = Pointer::symbolic(Variable(98_481));
+    let original = intern_c_memory(CMemory::new());
+    let changed = intern_c_memory(original.memory().clone().store(anchor.clone(), int32(7)));
+    let assumptions = PureFactContext::new();
+    let witness = MemoryDagHopJustification::SeededLoadsOfBase;
+    for (source, mode, ty, width) in [
+        (changed, RunValueMode::Load, CType::Int32, 4),
+        (
+            original.clone(),
+            RunValueMode::Constant(int32(7)),
+            CType::Int32,
+            4,
+        ),
+        (
+            original.clone(),
+            RunValueMode::Copy {
+                source_base: other.clone(),
+            },
+            CType::Int32,
+            4,
+        ),
+        (original.clone(), RunValueMode::Load, CType::Bool, 1),
+        (original.clone(), RunValueMode::Load, CType::Int32, 1),
+    ] {
+        let edge = CMemoryDerivation::CellsSeeded {
+            base: original.clone(),
+            run: std::sync::Arc::new(CellRun::new_with_mode(
+                anchor.clone(),
+                width,
+                ty,
+                16,
+                source,
+                mode,
+                IndexIntervals::default(),
+            )),
+        };
+        assert!(!witness.checks(&edge, &other, 4, &assumptions));
+    }
+    let write = CMemoryDerivation::Store {
+        base: original,
+        pointer: anchor,
+        value: int32(7),
+    };
+    assert!(!witness.checks(&write, &other, 4, &assumptions));
+}
