@@ -85,7 +85,9 @@ fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, Pointee
                     fields: parameter
                         .pointee_struct_layout()
                         .or_else(|| function.structs().get(struct_name))
-                        .map(crate::surface::scalar_field_places)
+                        .map(|layout| {
+                            crate::surface::scalar_field_places(layout, function.structs())
+                        })
                         .unwrap_or_default(),
                 },
             };
@@ -148,13 +150,15 @@ fn describe_read_through_parameter(
     value_type: CType,
     pointee_constant: bool,
 ) -> Option<String> {
-    let (variable, offset_bytes) = match pointer {
-        CExpression::Variable(variable) => (variable, 0),
-        CExpression::PointerOffsetBytes { pointer, bytes } => match pointer.as_ref() {
-            CExpression::Variable(variable) => (variable, *bytes),
-            _ => return None,
-        },
-        _ => return None,
+    // A field of a nested struct is one offset inside another.
+    let mut offset_bytes = 0u32;
+    let mut base = pointer;
+    while let CExpression::PointerOffsetBytes { pointer, bytes } = base {
+        offset_bytes = offset_bytes.checked_add(*bytes)?;
+        base = pointer;
+    }
+    let CExpression::Variable(variable) = base else {
+        return None;
     };
     REFERENCE_CARRIERS.with(|shapes| match shapes.borrow().last()?.get(variable)? {
         PointeeShape::ScalarReferent if offset_bytes == 0 => {
