@@ -959,10 +959,11 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         resource_environment,
     )?;
     let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
-        && function_block
-            .requires()
-            .iter()
-            .any(|requirement| matches!(requirement, Requirement::Resource(_)));
+        && (construction_result_layout(parsed_function).is_some()
+            || function_block
+                .requires()
+                .iter()
+                .any(|requirement| matches!(requirement, Requirement::Resource(_))));
     // A resource-derived function's write footprint is never lowered from
     // source: the kernel projects it from the checked resource transition,
     // and a loop inherits it as validated ranges installed at function
@@ -1894,7 +1895,7 @@ pub(in crate::surface) fn function_contract_summary(
             }));
         }
     }
-    let claims = if function_block.ensures().is_empty()
+    let mut claims = if function_block.ensures().is_empty()
         && function_block.exceptional_ensures().is_empty()
     {
         vec![CFunctionContractClaim::body_safety()]
@@ -1926,6 +1927,20 @@ pub(in crate::surface) fn function_contract_summary(
         }
         claims
     };
+    // The hidden destination owner is returned just like an explicit owned
+    // resource. Certify that transition from the body, even though its clause
+    // is supplied by the frontend rather than written in the sidecar.
+    if super::resource_lowering::construction_result_layout(parsed_function).is_some() {
+        let resource_index = function_block
+            .ensures()
+            .iter()
+            .filter(|clause| matches!(clause.ensure(), Ensure::Resource(_)))
+            .count();
+        claims.push(CFunctionContractClaim::ensure_resource(
+            function_block.ensures().len(),
+            resource_index,
+        ));
+    }
     let recursion_measure = lowerer.function_recursion_measure(function_block, &context)?;
     Ok((
         requires,

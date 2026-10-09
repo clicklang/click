@@ -68,6 +68,18 @@ Keep native result signatures, `result` field projections, and existing
 source parameter or a user-managed resource. Users must not name compiler
 temporaries, allocate return slots, or add tactics to retire those slots.
 
+The shared construction-return mode now lowers to an implicit owned byte range
+for the complete result object at entry and exit. Trusted frontend entry setup
+supplies an arbitrary symbolic destination and its input ownership; the actual
+call still has to supply that ownership. Binding the destination adds no
+freshness, separation or write authority. The returned owner has a generated
+resource claim checked from execution, independently of the written value
+postconditions. Returning ownership does not initialize fields.
+
+Field-address expressions retain the field's pointer type rather than the
+aggregate storage's byte-pointer carrier. This lets the native self-pointer
+contract use `&result.value` without a cast or new syntax.
+
 Before C++ admission, exercise `result.self == &result.value` through ordinary,
 expanded and retained verification. Reuse existing address-expression syntax;
 if aggregate result field addresses need lowering support, add that support

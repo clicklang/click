@@ -106,7 +106,11 @@ lifetime obligations, and staged implementation contract are recorded in
 The shared kernel now supports complete-object destination returns, including
 body execution and body-certified summaries forwarded through two factories.
 The hidden result binding grants no storage or ownership; actual writes must
-initialize the modeled value fields. Existing C/Rust copy returns are unchanged.
+initialize the modeled value fields. Surface contracts now supply and certify the
+implicit result-storage resource while preserving native signatures and field
+addresses. Typed-frontend regressions cover forwarding, expansion, retained
+verification and required initialization; this does not yet admit C++ returned
+construction source. Existing C/Rust copy returns are unchanged.
 Ordinary void constructors now bind an explicit destination parameter and
 complete its initialized fields through body-certified summaries, including
 aligned subobjects without resizing their parent allocation. Constructor proof

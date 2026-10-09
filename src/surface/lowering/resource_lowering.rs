@@ -1,5 +1,37 @@
 use super::*;
-use crate::kernel::{CResourceTerm, ResourceFieldSchema};
+use crate::kernel::{CResourceTerm, ResourceFieldSchema, c_int32_literal, c_variable};
+
+pub(in crate::surface) fn construction_result_layout(
+    parsed: &syntax::C0Function,
+) -> Option<&crate::kernel::CAggregateLayout> {
+    let interface = parsed.prelowered_kernel_function()?.contract_interface();
+    (interface.aggregate_return_mode() == crate::kernel::CAggregateReturnMode::Construction)
+        .then(|| interface.return_aggregate_layout())
+        .flatten()
+}
+
+/// The frontend's result object is an implicit in/out resource. Its authority
+/// originates with the caller's storage, not with the destination binding.
+pub(in crate::surface) fn construction_result_resource(
+    parsed: &syntax::C0Function,
+) -> Result<Option<CResourceSpec>, ClickError> {
+    let Some(layout) = construction_result_layout(parsed) else {
+        return Ok(None);
+    };
+    if layout.size_bytes() > i32::MAX as u32 {
+        return Err(ClickError::new(
+            "construction result exceeds the supported byte-range size",
+        ));
+    }
+    Ok(Some(CResourceSpec::owned_memory(
+        CMemorySegment::new(
+            c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
+            c_int32_literal(0),
+            c_int32_literal(layout.size_bytes()),
+        )
+        .with_element_width(1),
+    )))
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct ConcreteMemoryRangeSeed {
@@ -310,6 +342,39 @@ pub(in crate::surface) fn initial_call_state(
     // entry initialization unable to install its stable typed cells.
     let initial = CState::new().with_population_creation_tracking();
     let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
+    let construction_result = if function.contract_interface().aggregate_return_mode()
+        == crate::kernel::CAggregateReturnMode::Construction
+    {
+        let layout = function
+            .contract_interface()
+            .return_aggregate_layout()
+            .ok_or_else(|| ClickError::new("construction result has no layout"))?
+            .clone();
+        let destination = Pointer::symbolic(input_pointer_variable(scope, parameters.len())?);
+        crate::kernel::register_block_alignment(&destination.block, layout.alignment_bytes());
+        let memory = state
+            .memory()
+            .clone()
+            .with_uninitialized_block(destination.block.clone(), layout.size_bytes());
+        state = state.with_memory(memory);
+        state = state.with_aggregate_return_destination(destination.clone(), layout.clone());
+        // Resource preparation evaluates the implicit contract segment before
+        // the checked function-entry binder installs its aggregate local.
+        state = state.with_local(
+            crate::kernel::C_CONTRACT_RESULT_NAME,
+            CValue::typed_pointer(destination.clone(), function.return_type()),
+        );
+        Some(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(
+                destination,
+                0.into(),
+                layout.size_bytes().into(),
+                1,
+            ),
+        ))
+    } else {
+        None
+    };
     if let Some((index, layout)) = function.contract_interface().construction_parameter() {
         let parameter = parameters
             .get(index)
@@ -373,7 +438,11 @@ pub(in crate::surface) fn initial_call_state(
     let memory =
         materialize_symbolic_access_resource_cells(memory, requires, parameters, &arguments)?;
     let state = state.with_memory(memory);
-    let resources = resource_context_from_requirements(requires, parameters, &arguments, &state)?;
+    let mut resources =
+        resource_context_from_requirements(requires, parameters, &arguments, &state)?;
+    if let Some(storage) = construction_result {
+        resources = resources.unchecked_with_facts([storage]);
+    }
     let mut state =
         crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
     {

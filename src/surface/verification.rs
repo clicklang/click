@@ -7057,10 +7057,11 @@ pub(in crate::surface) fn build_function_environment(
                     resource_environment,
                 )?;
                 let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
-                    && function_block
-                        .requires()
-                        .iter()
-                        .any(|requirement| matches!(requirement, Requirement::Resource(_)));
+                    && (crate::surface::lowering::construction_result_layout(function).is_some()
+                        || function_block
+                            .requires()
+                            .iter()
+                            .any(|requirement| matches!(requirement, Requirement::Resource(_))));
                 let mut function = function
                     .to_kernel_function()
                     .with_resource_summary(resource_requires, resource_ensures)
@@ -7330,6 +7331,15 @@ pub(in crate::surface) fn function_resource_summary(
             ensures.push(spec.with_clause_position(clause_index, clause_count));
         }
         ensure_clause_index += 1;
+    }
+    if let Some(storage) = crate::surface::lowering::construction_result_resource(parsed_function)?
+    {
+        requires.push(storage.clone().with_snapshot(CResourceSnapshot::Entry));
+        ensures.push(
+            storage
+                .with_role(CResourceTransferRole::Produce)
+                .with_snapshot(CResourceSnapshot::Post),
+        );
     }
     if parsed_function.requires_read_only_contract()
         && (!function_block.constructs().is_empty()
@@ -9776,3 +9786,6 @@ mod retained_caller_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod construction_return_tests;
