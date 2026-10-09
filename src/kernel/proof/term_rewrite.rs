@@ -1234,8 +1234,9 @@ pub(crate) struct CSubstitutionScope {
     scope_id: u64,
 }
 
-// Build once from explicitly cited conditions. Each offset query then checks
-// its own full-width index by key, without scanning unrelated premises.
+// Build once, on the first unsigned wide-offset query, from explicitly cited
+// conditions. Later offset queries check their full-width index by key. Scalar
+// normalization never prepares this pointer-only index.
 fn bounded_uint64_indices(
     conditions: &HashMap<ConditionTerm, bool>,
 ) -> std::collections::HashSet<Bitvector32Term> {
@@ -1269,7 +1270,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_exact: Option<(&'a Pointer, &'a Pointer)>,
     pointer_offset_exact: Option<(&'a PointerOffsetTerm, &'a PointerOffsetTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
-    bounded_uint64_indices: std::collections::HashSet<Bitvector32Term>,
+    bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
@@ -1388,7 +1389,7 @@ impl<'a> TermRewrite<'a> {
     fn empty() -> Self {
         Self {
             conditions: None,
-            bounded_uint64_indices: std::collections::HashSet::new(),
+            bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
             algebraic: None,
@@ -1459,7 +1460,7 @@ impl<'a> TermRewrite<'a> {
             .max();
         let mut rewrite = Self {
             conditions: None,
-            bounded_uint64_indices: std::collections::HashSet::new(),
+            bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
             algebraic: None,
@@ -1576,7 +1577,7 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             integer_exact: None,
             conditions: Some(conditions),
-            bounded_uint64_indices: bounded_uint64_indices(conditions),
+            bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
             changed: false,
@@ -1654,7 +1655,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
-            bounded_uint64_indices: std::collections::HashSet::new(),
+            bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
@@ -1738,7 +1739,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
-            bounded_uint64_indices: std::collections::HashSet::new(),
+            bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
@@ -1916,7 +1917,7 @@ impl<'a> TermRewrite<'a> {
             pointer_exact: None,
             pointer_offset_exact: None,
             conditions: None,
-            bounded_uint64_indices: std::collections::HashSet::new(),
+            bounded_uint64_indices: None,
             equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
@@ -3639,7 +3640,13 @@ impl<'a> TermRewrite<'a> {
                 unsigned,
             } => {
                 let value = self.bits(value);
-                if *unsigned && self.bounded_uint64_indices.contains(&value) {
+                let bounded = *unsigned
+                    && self.conditions.is_some_and(|conditions| {
+                        self.bounded_uint64_indices
+                            .get_or_insert_with(|| bounded_uint64_indices(conditions))
+                            .contains(&value)
+                    });
+                if bounded {
                     self.changed = true;
                     PointerOffsetTerm::Int32Scaled {
                         value: Box::new(Bitvector32Term::uint32_from_64(value)),
@@ -7288,7 +7295,11 @@ mod tests {
             let (mut rewrite, prep) = crate::instrumentation::measure_deterministic_work(|| {
                 TermRewrite::for_conditions(&explicit)
             });
-            assert_eq!(prep, size as usize + 1);
+            assert_eq!(prep, 0, "scalar rewrites do not prepare pointer bounds");
+            let (_, pointer_prep) = crate::instrumentation::measure_deterministic_work(|| {
+                assert_ne!(rewrite.offset(&native), native);
+            });
+            assert!(pointer_prep > size as usize);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..64 {
                     assert_ne!(rewrite.offset(&native), native);

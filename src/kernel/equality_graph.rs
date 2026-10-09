@@ -934,6 +934,10 @@ impl EqualityGraph {
                     }
                 }
             }
+            // Keep an explicit additive query in its original coordinates when
+            // neither operand is the supplier base. Reassociating a shifted
+            // range here would hide the source index from its checked bounds.
+            return self.pointer_in_block(pointer, &base.block);
         }
         let state = self.state.lock().expect("equality graph");
         let point = state.canonical(pointer)?;
