@@ -2404,6 +2404,49 @@ fn tagged_form_inner<'a>(
     values.pop().flatten()
 }
 
+/// Reading low tag bits only needs the base aligned to the mask's modulus.
+/// The existing bounded word walker supplies the tag; no ambient reasoning or
+/// memory history is consulted. Addition is modular, so higher tag bits do not
+/// affect this projection.
+fn pointer_tag_read_equal<'a>(
+    left: &'a Bitvector32Term,
+    right: &'a Bitvector32Term,
+    relation: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
+    alignments: &AlignmentIndex<'_>,
+) -> bool {
+    let project = |term: &'a Bitvector32Term| {
+        let (word, mask) = masked_source(term)?;
+        let alignment = mask
+            .checked_add(1)
+            .filter(|value| *value > 1 && value.is_power_of_two())?;
+        let form = tagged_form_inner(word, relation, alignments)?;
+        if !alignments.supports(form.pointer.as_ref(), alignment) {
+            return None;
+        }
+        let tag = match form.tag.as_ref() {
+            TaggedTag::Constant(value) => Arc::new(TaggedTag::Constant(value & mask)),
+            TaggedTag::BitwiseAnd(inner, inner_mask) => {
+                let mask = inner_mask & mask;
+                if mask == 0 {
+                    Arc::new(TaggedTag::Constant(0))
+                } else {
+                    Arc::new(TaggedTag::BitwiseAnd(Arc::clone(inner), mask))
+                }
+            }
+            _ => Arc::new(TaggedTag::BitwiseAnd(form.tag, mask)),
+        };
+        Some(tag)
+    };
+    let source = |term: &'a Bitvector32Term| {
+        term.uint64_as_const().map_or_else(
+            || masked_source_tag(term),
+            |value| Arc::new(TaggedTag::Constant(value)),
+        )
+    };
+    project(left).is_some_and(|tag| tagged_tag_equal(&tag, &source(right)))
+        || project(right).is_some_and(|tag| tagged_tag_equal(&source(left), &tag))
+}
+
 fn pointer_word_equality(
     relation: &Proposition,
     alignment_premises: &[&Proposition],
@@ -2445,6 +2488,11 @@ fn pointer_word_equality(
         || tagged_form(right, (left, right), &alignment_index).is_none()
     {
         return false;
+    }
+    if *expected
+        && pointer_tag_read_equal(goal_left, goal_right, Some((left, right)), &alignment_index)
+    {
+        return true;
     }
     let goal_left_form = tagged_form(goal_left, (left, right), &alignment_index);
     let goal_right_form = tagged_form(goal_right, (left, right), &alignment_index);
@@ -2508,6 +2556,9 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
     let Some(alignment_index) = alignment_index else {
         return false;
     };
+    if *expected && pointer_tag_read_equal(left, right, None, &alignment_index) {
+        return true;
+    }
     let left_form = tagged_form_from_alignment(left, &alignment_index);
     let right_form = tagged_form_from_alignment(right, &alignment_index);
     let Some(left_form) = left_form else {
@@ -3414,6 +3465,81 @@ mod tests {
             .check(&negative, std::slice::from_ref(&aligned_base)),
             Err(SpecialArithmeticCheckError::NodeResultMismatch(0))
         ));
+    }
+
+    // Tag projection needs exactly the selected base alignment, preserves all
+    // selected bits, and pays for the written word rather than a search context.
+    #[test]
+    fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
+        let base = pointer(PointerOffsetTerm::Constant(0));
+        let alignment =
+            Proposition::ConditionIs(ConditionTerm::pointer_aligned(base.clone(), 8), true);
+        let address = Bitvector32Term::PointerAddress(Box::new(base.clone()));
+        let value = Bitvector32Term::Variable(crate::kernel::Variable(71_001));
+        let mask = |term, bits| {
+            Bitvector32Term::uint64_bitwise_and(term, Bitvector32Term::UInt64Constant(bits))
+        };
+        let equality =
+            |left, right| Proposition::ConditionIs(ConditionTerm::uint64_equal(left, right), true);
+        let check = |goal: &Proposition, premises: &[Proposition]| {
+            SpecialArithmeticCertificate {
+                nodes: vec![SpecialArithmeticNode::PointerWordFromAlignment {
+                    alignments: (0..premises.len()).collect(),
+                    result: goal.clone(),
+                }],
+                conclusion: 0,
+            }
+            .check(goal, premises)
+        };
+        let tagged = Bitvector32Term::uint64_bitwise_or(mask(value.clone(), 7), address.clone());
+        let goal = equality(mask(tagged.clone(), 3), mask(value.clone(), 3));
+        assert!(check(&goal, std::slice::from_ref(&alignment)).is_ok());
+        assert!(check(&goal, &[]).is_err());
+        let insufficient =
+            Proposition::ConditionIs(ConditionTerm::pointer_aligned(base.clone(), 2), true);
+        assert!(check(&goal, &[insufficient]).is_err());
+        let other = pointer(PointerOffsetTerm::Constant(1));
+        let foreign = Proposition::ConditionIs(ConditionTerm::pointer_aligned(other, 8), true);
+        assert!(check(&goal, &[foreign]).is_err());
+        let changed_tag = equality(mask(tagged.clone(), 3), mask(value.clone(), 1));
+        assert!(check(&changed_tag, std::slice::from_ref(&alignment)).is_err());
+        let changed_mask = equality(mask(tagged, 7), mask(value.clone(), 3));
+        assert!(check(&changed_mask, std::slice::from_ref(&alignment)).is_err());
+
+        let word = Bitvector32Term::Variable(crate::kernel::Variable(71_002));
+        let relation = equality(
+            word.clone(),
+            Bitvector32Term::uint64_add(address.clone(), mask(value.clone(), 1)),
+        );
+        let read = equality(mask(word, 1), mask(value, 1));
+        SpecialArithmeticCertificate {
+            nodes: vec![SpecialArithmeticNode::PointerWordEquality {
+                relation: 0,
+                alignments: vec![1],
+                result: read.clone(),
+            }],
+            conclusion: 0,
+        }
+        .check(&read, &[relation, alignment.clone()])
+        .unwrap();
+
+        let mut previous = 0;
+        for size in [8, 16, 32, 64] {
+            let mut word = address.clone();
+            for _ in 0..size {
+                word = Bitvector32Term::uint64_add(word, Bitvector32Term::UInt64Constant(2));
+            }
+            let goal = equality(mask(word, 1), Bitvector32Term::UInt64Constant(0));
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                check(&goal, std::slice::from_ref(&alignment))
+            });
+            assert!(result.is_ok(), "size {size}, goal {goal:?}");
+            assert!(work > 0);
+            if previous > 0 {
+                assert!(work <= previous * 3, "{size}: {work} after {previous}");
+            }
+            previous = work;
+        }
     }
 
     #[test]

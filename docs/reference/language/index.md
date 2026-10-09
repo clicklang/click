@@ -2857,6 +2857,12 @@ when their pointers are distinct and both aligned past the bound. A mask
 must clear the whole tag: `& ~1` on a word tagged with 3 is refuted rather
 than producing a word that still carries bit 1.
 
+Explicit `arithmetic() using { aligned(p, 8); }` can also certify reading low
+tag bits: `((address(p) + word) & 7) == (word & 7)`, including unsigned
+wraparound. The read mask must be contiguous low bits, and the selected
+alignment must cover those bits. This also applies to a bounded tag packed
+with `|`, such as `(((word & 7) | address(p)) & 3) == (word & 3)`.
+
 The low-level reads and `byte_offset` are Surface Click escape hatches, not
 Kernel Click syntax. The canonical
 renderer prefers `owner->field` whenever imported layout provenance identifies
