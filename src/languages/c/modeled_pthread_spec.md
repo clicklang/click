@@ -20,9 +20,7 @@ client proof. It does not certify an operating system's pthread implementation.
   Integer representations alone grant no thread authority.
 - `pthread_mutex_init` with null attributes and a selected folded, exclusive
   resource succeeds and deposits that resource in the mutex; initialization
-  is what associates the resource with this mutex. A deprecated `guarded_by`
-  annotation, still accepted until the authority migration removes it, must
-  name the passed mutex address. This model treats the mutex bytes as
+  is what associates the resource with this mutex. This model treats the mutex bytes as
   opaque and creates one exclusive `mutex_live` resource for this initialization.
   Initialization without a selected protected resource creates that owner too.
   Both forms require the complete 40-byte writable storage and 8-byte alignment.

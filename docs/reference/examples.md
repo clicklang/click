@@ -52,9 +52,9 @@ lifetime support with a checked copy helper to verify ordinary
 malloc-copy-install-free growth, including unchanged failure and live-prefix
 preservation on success.
 
-`examples/refcount/` verifies a heap object's resource-population lifecycle
-under authority semantics. `control(obj)` owns the allocation, object memory,
-and `authority(reference(obj))`; its invariant equates the stored count with
+`examples/refcount/` verifies a heap object's resource-population lifecycle.
+`control(obj)` owns the allocation, object memory, and
+`authority(reference(obj))`; its invariant equates the stored count with
 `count(reference(obj))`. The project covers initialization, one and
 symbolic-batch retain/release, final free, and allocation failure across
 opaque calls.
@@ -64,6 +64,12 @@ owner and two user threads. Retain and release run under the object's mutex,
 each worker's checked release applies at its join, and the owner reclaims the
 object after both joins. The control states a cap of three references,
 carried by retain permits, which bounds the plain counter increment.
+
+`examples/bounded-pool/` verifies an object pool's original C with two
+populations, available slots and checked-out objects, under one control whose
+facts conserve capacity. It covers checkout, return, transfer between pools,
+growth and shrink by symbolic quantities, and cleanup that retires both
+authorities.
 
 ## Basic function contracts
 
@@ -364,7 +370,7 @@ sequence:
   normalize to a quantity and are consumed by separate opaque calls one unit
   at a time.
 - `mdtests/counted_resource_rejects_minting.md`: a contract cannot turn one
-  resource unit into two without preserving its population body.
+  resource unit into two.
 - `mdtests/counted_resource_rejects_double_spend.md`: one resource unit cannot
   satisfy two consuming calls.
 - `mdtests/proof_branch_composite_resource_transform.md`: different branch

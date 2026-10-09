@@ -1,8 +1,7 @@
 # Refcount
 
 This project verifies the lifecycle of a heap object whose stored reference
-count agrees with the number of logical `reference(obj)` capabilities. The
-project selects authority resource semantics in `click.project.json`.
+count agrees with the number of logical `reference(obj)` capabilities.
 
 `control(obj)` owns the allocation, object memory, and
 `authority(reference(obj))` once for the whole population. Its fact connects
