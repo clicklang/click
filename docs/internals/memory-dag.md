@@ -228,7 +228,11 @@ unchanged store. In particular:
 
 - a `Store` edge is crossed only with sufficient pointer-distinctness evidence
   checked in the querying proof context: distinct blocks or a decided
-  common-base offset inequality. No assumptions are captured on the edge,
+  common-base offset inequality, or full byte separation after re-expressing
+  the store through the querying context's checked pointer-equality graph.
+  The latter retains the selected address spelling and rechecks both its full
+  pointer equality and the complete store/read widths; different addresses
+  alone do not exclude partial overlap. No assumptions are captured on the edge,
   because first-wins interning lets paths with different assumptions share
   one edge, and one path's `length == 0` must not preserve another path's
   load;

@@ -4219,3 +4219,100 @@ fn stored_field_value_uses_indexed_base_aliases() {
     }
     assert!(samples[2] <= samples[0] * 4 + 32, "{samples:?}");
 }
+
+/// A transitive base alias must frame a different pointer field without an
+/// alias scan. The retained hop must refuse missing aliases and every partial
+/// overlap, including a later check made with a wider read.
+#[test]
+fn aliased_store_byte_frame_checks_width_context_and_scales() {
+    use crate::kernel::resource_tracker::Resource;
+    use crate::kernel::resource_tracker::cell_source::MemoryDagHopJustification;
+    use crate::kernel::resource_tracker::step_effect::{Evidence, Separation, StepEffect, affects};
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = |id| {
+        Pointer::loaded(
+            PointerBlock::ExternalArgument,
+            Bitvector32Term::Variable(Variable(id)),
+            4,
+        )
+    };
+    let left = base(106_001);
+    let right = base(106_002);
+    let bridge = Pointer::symbolic(Variable(106_003));
+    let read = right.offset_by_bytes(16);
+    let value = CValue::typed_pointer(Pointer::symbolic(Variable(106_004)), CType::Int32Pointer);
+    let memory = intern_c_memory(CMemory::new());
+    let classify = |write: Pointer, bytes, context: &PureFactContext| {
+        let step = CMemoryDerivation::Store {
+            base: memory.clone(),
+            pointer: write,
+            value: value.clone(),
+        };
+        let result = affects(
+            &step,
+            &memory,
+            Resource::Cell {
+                pointer: &read,
+                bytes,
+            },
+            &Evidence {
+                assumptions: context,
+                cross_loop_havoc: false,
+            },
+        );
+        (step, result)
+    };
+    let mut samples = Vec::new();
+    for count in [16u64, 64, 256, 1024] {
+        let mut context = PureFactContext::new();
+        for index in 0..count {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(120_000 + index * 2)),
+                    Pointer::symbolic(Variable(120_001 + index * 2)),
+                ),
+                true,
+            );
+        }
+        context = context
+            .assume_condition(
+                ConditionTerm::pointer_equal(left.clone(), bridge.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::pointer_equal(bridge.clone(), right.clone()),
+                true,
+            );
+        let ((step, result), work) = crate::instrumentation::measure_deterministic_work(|| {
+            classify(left.offset_by_bytes(8), 8, &context)
+        });
+        samples.push(work);
+        let StepEffect::Separate(Separation::Cell(
+            hop @ MemoryDagHopJustification::StoreAliasedByteSeparation { .. },
+        )) = result
+        else {
+            panic!("expected checked aliased byte separation: {result:?}");
+        };
+        assert!(hop.checks(&step, &read, 8, &context));
+        assert!(!hop.checks(&step, &read, 8, &PureFactContext::new()));
+        // The same certificate cannot be moved onto a different store or a
+        // read wide enough to reach a store on its other side.
+        for offset in [12, 16, 20] {
+            let (changed, effect) = classify(left.offset_by_bytes(offset), 8, &context);
+            assert!(
+                !matches!(effect, StepEffect::Separate(_)),
+                "overlap at {offset}"
+            );
+            assert!(!hop.checks(&changed, &read, 8, &context));
+        }
+        let (after, effect) = classify(left.offset_by_bytes(24), 8, &context);
+        let StepEffect::Separate(Separation::Cell(after_hop)) = effect else {
+            panic!("the adjacent field is separate");
+        };
+        assert!(after_hop.checks(&after, &read, 8, &context));
+        assert!(!after_hop.checks(&after, &read, 12, &context));
+        let (_, bare_effect) = classify(left.offset_by_bytes(8), 8, &PureFactContext::new());
+        assert!(!matches!(bare_effect, StepEffect::Separate(_)));
+    }
+    assert!(samples[3] <= samples[0] * 4 + 32, "{samples:?}");
+}
