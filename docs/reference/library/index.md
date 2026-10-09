@@ -1314,6 +1314,19 @@ Strict order of the exact Integer observations implies native uint64 strict orde
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint64_equal_of_to_integer`
+
+```click
+theorem uint64_equal_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
+}
+```
+
+Equal exact unsigned observations identify the same native value, over the whole 64-bit range. `arithmetic` uses it to conclude a `uint64` equality it proved as an Integer claim.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_less_equal_to_integer`
 
 ```click
