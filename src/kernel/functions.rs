@@ -16412,19 +16412,32 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
     );
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AggregateReturnRefusal {
+    InvalidValue,
+    UninitializedRead,
+}
+
+// Keep source initialization and materialization in one checked transition.
+// Every body-completion path must use this boundary before retiring the source.
 fn materialize_aggregate_return(
     state: &mut CState,
     function: &CFunction,
     value: CValue,
-) -> Option<CValue> {
-    let layout = function.return_aggregate_layout()?;
+) -> Result<CValue, AggregateReturnRefusal> {
+    let layout = function
+        .return_aggregate_layout()
+        .ok_or(AggregateReturnRefusal::InvalidValue)?;
     let CValue::Pointer(pointer) = value else {
-        return None;
+        return Err(AggregateReturnRefusal::InvalidValue);
     };
     if pointer.is_null() {
-        return None;
+        return Err(AggregateReturnRefusal::InvalidValue);
     }
     let source = pointer.pointer().clone();
+    if aggregate_copy_reads_uninitialized(&state.memory, &source, layout) {
+        return Err(AggregateReturnRefusal::UninitializedRead);
+    }
     let frame = state.next_local_frame;
     let destination = CMemory::frame_local_pointer(frame, "__return");
     state.set_memory(
@@ -16440,7 +16453,7 @@ fn materialize_aggregate_return(
         layout,
     ));
     state.next_local_frame = frame.saturating_add(1);
-    Some(CValue::typed_pointer(destination, function.return_type()))
+    Ok(CValue::typed_pointer(destination, function.return_type()))
 }
 
 /// The undefined behavior of the implicit conversion a `return` performs when
@@ -32446,24 +32459,23 @@ fn function_outcome_from_body_with_resource_transfer(
     // Resource completion over an already completed outcome keeps its result.
     let value = if reestablish_population_invariants && function.return_aggregate_layout().is_some()
     {
-        let layout = function.return_aggregate_layout().expect("checked above");
-        if let CValue::Pointer(pointer) = &value
-            && aggregate_copy_reads_uninitialized(&state.memory, pointer.pointer(), layout)
-        {
-            return Ok((
-                CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
-                obligations,
-                None,
-            ));
+        match materialize_aggregate_return(&mut state, function, value) {
+            Ok(value) => value,
+            Err(AggregateReturnRefusal::UninitializedRead) => {
+                return Ok((
+                    CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+                    obligations,
+                    None,
+                ));
+            }
+            Err(AggregateReturnRefusal::InvalidValue) => {
+                return Ok((
+                    CFunctionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    obligations,
+                    None,
+                ));
+            }
         }
-        let Some(value) = materialize_aggregate_return(&mut state, function, value) else {
-            return Ok((
-                CFunctionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-                obligations,
-                None,
-            ));
-        };
-        value
     } else {
         value
     };
@@ -33497,30 +33509,26 @@ pub(super) fn function_outcome_from_body(
                     obligations,
                 );
             };
-            let value = if let Some(layout) = function.return_aggregate_layout() {
-                // The return materializer copies the callee's aggregate into
-                // a caller-visible slot. Reading an unwritten field there is
-                // an uninitialized read, not a contract violation, so check
-                // the source before materializing.
-                if let CValue::Pointer(pointer) = &value
-                    && !pointer.is_null()
-                    && aggregate_copy_reads_uninitialized(&state.memory, pointer.pointer(), layout)
-                {
-                    return (
-                        CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
-                        obligations,
-                    );
+            let value = if function.return_aggregate_layout().is_some() {
+                match materialize_aggregate_return(&mut state, function, value) {
+                    Ok(value) => value,
+                    Err(AggregateReturnRefusal::UninitializedRead) => {
+                        return (
+                            CFunctionOutcome::UndefinedBehavior(
+                                CUndefinedBehavior::UninitializedRead,
+                            ),
+                            obligations,
+                        );
+                    }
+                    Err(AggregateReturnRefusal::InvalidValue) => {
+                        return (
+                            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                format!("{} returned an invalid struct value", function.name()),
+                            )),
+                            obligations,
+                        );
+                    }
                 }
-                let Some(value) = materialize_aggregate_return(&mut state, function, value) else {
-                    return (
-                        CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
-                            "{} returned an invalid struct value",
-                            function.name()
-                        ))),
-                        obligations,
-                    );
-                };
-                value
             } else {
                 value
             };

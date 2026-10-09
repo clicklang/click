@@ -5,6 +5,13 @@ This is the implementation contract for
 Destination-aware returns are not implemented yet. Existing C aggregate
 returns remain field copies; C++ returned construction remains refused.
 
+The copy-return implementation now checks source initialization inside the
+materialization transition, before allocating or copying a result. Kernel tests
+also exercise an explicit destination through two nested procedure calls,
+including its self-pointer and ownership transfer. These are prerequisites:
+they do not yet admit by-value construction returns or certify a modular
+construction summary.
+
 ## Surface and source boundary
 
 Keep native result signatures, `result` field projections, and existing
