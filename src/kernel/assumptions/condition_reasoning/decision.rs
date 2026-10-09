@@ -343,6 +343,9 @@ impl PureFactContext {
         if let Some(value) = self.decide_small_uint64_index_order(condition) {
             return Some(value);
         }
+        if let Some(value) = self.decide_wide_order_chain(condition) {
+            return Some(value);
+        }
         if let Some(value) = self.decide_indexed_greater_equal(condition) {
             return Some(value);
         }

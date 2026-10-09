@@ -1,6 +1,7 @@
 # An index keeps its type until it is an offset
 
-Status: direction accepted on 2026-10-08, not built. This document states
+Status: direction accepted on 2026-10-08. Stage 1 and the kernel half of
+stage 3 are built. This document states
 the design, what a survey of the kernel found, and the order to build it in.
 The site counts come from one read-only survey of `src/kernel` by text
 search; they size the work and are not an audit.
@@ -144,6 +145,27 @@ The order walk, its memo and the bounds index reach the 64-bit comparisons.
 Stage 1 can land before this, because a contract may still cast where a
 proof needs the 32-bit reasoning. Stage 2 should not: with the bound gone, a
 `usize` proof has only the 64-bit route.
+
+The kernel half was built on 2026-10-08, in
+`src/kernel/assumptions/condition_reasoning/order_paths.rs`:
+
+- `wide_order_chain` walks the unsigned or the signed 64-bit order index
+  from one end of a question to the other. It decides transitivity, a
+  constant bound reached through a chain, `a <= b` with `a != b`, and
+  refutes by the reversed chain. A literal is an end of a chain and never
+  a step, so a question costs work in its own chain and not in the facts
+  that share a constant with it; the scaling test holds both.
+- The rule that lifts a truncated comparison to its 64-bit form reads
+  `(int32)a + c` as the truncation of `a + c`. Truncation commutes with
+  addition, so this is exact, and the range check is made on the sum.
+- A signed 64-bit index is admitted where its value is proved to lie in
+  `0..=INT_MAX` (`int64_index_fits_int32`). It was refused outright.
+
+These make a C operation in range. They do not prove a goal in a proof:
+`simp` and `arithmetic` build a kernel theorem for each step they take, and
+the 64-bit comparisons have no transitivity or linear-arithmetic theorems.
+That is the proof half, and it is what a `size_t` loop invariant needs
+(`i + 2 <= length` from `i + 1 < length`).
 
 ## Risks
 
