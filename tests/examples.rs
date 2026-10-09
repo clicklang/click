@@ -506,6 +506,8 @@ fn erase_source_refuses_replacement(
                 .message()
                 .contains("selected child does not satisfy the proposed parent model")
             || error.message().contains("contract certification")
+            || (error.message().contains("missing resource fact")
+                && error.message().contains("C operation: parent = rb_parent"))
             || error
                 .message()
                 .contains("(close_erase_spine_link precondition)")
@@ -1737,7 +1739,7 @@ fn rbtree_erase_color_uses_the_unchanged_pinned_function() {
 
 fn erase_color_refuses_mutation(sidecar: &str, before: &str, after: &str) {
     // The pinned function repeats each update in its two mirrored arms.
-    // Replacing both preserves statement positions; this sidecar checks left.
+    // Replacing both preserves statement positions and covers either orientation.
     erase_source_refuses_replacement(sidecar, "rb_erase_color.c", before, after, 2);
 }
 
@@ -1798,5 +1800,46 @@ fn rbtree_erase_color_root_left_requires_the_null_parent_cursor() {
         "rbtree_erase_color_root_left.click",
         "parent = rb_parent(node);",
         "parent = node;",
+    );
+}
+
+// These mutations exercise the repeated case-2 proof, including its back edge.
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_cursor_ascent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "parent = rb_parent(node);",
+        "parent = node;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_focus_ascent() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "node = parent;",
+        "node = node;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_parent_blackening() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "rb_set_black(parent);",
+        "parent->__rb_parent_color = parent->__rb_parent_color;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: repeated erase-color propagation verifies a whole sidecar"]
+fn rbtree_erase_color_flips_requires_sibling_recoloring() {
+    erase_color_refuses_mutation(
+        "rbtree_erase_color_flips.click",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
     );
 }

@@ -1205,12 +1205,20 @@ arbitrary outer contexts. The exact whole-root model is balanced and
 parent-consistent and preserves in-order contents; all 31 expansion-audit
 sites pass. `rbtree_erase_color_root_left.click` covers the black-root exit,
 including the null parent cursor, with the same exact-model guarantees and
-20 passing audit sites. The pinned C keeps every case. Propagating deficits
-and rotations remain, with a checked measure on every continuing back edge.
+20 passing audit sites. `rbtree_erase_color_flips.click` now handles
+repeated propagation through black parents, with either orientation at every
+ancestor, arbitrary black sibling children, and both red-parent and root exits.
+It returns the exact balanced,
+parent-consistent whole-root model with unchanged in-order contents. Structural
+context descent checks every continuing back edge. All 39 audit sites and
+four mutation checks pass. The pinned C keeps every case. Left-focus rotations
+remain.
 Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
-mirror of chunk 12; the exit model is red-black; a negative. Depends on 12.
+color-flip propagation proof already covers both orientations, including
+alternating sides. Mirrored rotations and the complete `rb_erase` wrapper
+remain; the exit model is red-black, with mutation checks. Depends on 12.
 
 ### Augmented
 

@@ -1426,6 +1426,11 @@ eight, and every one of them decides the same way from its own premises:
 | `unfold` | the premises standing at the `unfold`, for the instance it opens and for each child it produces |
 | frontier case split | the premises standing at the split, for the instance the split is about |
 
+An exact constructor equality already decides the arm. In that case opening
+its resource uses the indexed constructor evidence directly; it does not
+reevaluate other predicate facts about the model to rediscover exclusions.
+Unknown models still use the refutation rules below.
+
 The order inside one publication is the decision's own: refutation first,
 because a refuted arm is evidence selection reads, then the read authority and
 the arm's facts under the premises refutation just established. That is why a

@@ -28058,8 +28058,8 @@ fn refutation_of_body_fact(proposition: &Proposition) -> Option<Proposition> {
 ///
 /// This is a decision, never a search: each held instance's arms are visited
 /// once, each arm's own clauses are evaluated once, and the refutation is the
-/// exact-fact check. An instance whose model already carries a constructor is
-/// skipped. Nothing outside the instances held and their own arms is visited.
+/// exact-fact check. A constructor carried by the model or selected by an
+/// exact equality needs no further refutation and is skipped. Nothing outside the instances held and their own arms is visited.
 ///
 /// [`publish_instance_arms`] calls this for every instance a frontier's
 /// context holds; the two frontiers that are about one instance — the `unfold`
@@ -28071,6 +28071,11 @@ pub(in crate::kernel) fn instance_arm_model_facts(
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
+    let _timing = crate::instrumentation::OperationTiming::new(
+        instance.name(),
+        "resource rewrite",
+        "instance arm refutations",
+    );
     let Some(definition) = definitions
         .iter()
         .find(|definition| definition.name() == instance.name())
@@ -28085,7 +28090,13 @@ pub(in crate::kernel) fn instance_arm_model_facts(
     };
     // A model that already carries a constructor needs no exclusion, and only
     // a symbolic value has variant evidence at all.
-    if !matches!(model.node, AlgebraicTermNode::Variable(_)) {
+    crate::instrumentation::record_deterministic_work(1);
+    if !matches!(model.node, AlgebraicTermNode::Variable(_))
+        || assumptions.known_algebraic_constructor(model).is_some()
+    {
+        // Exact constructor evidence already decides the arm. Refutation
+        // would only rediscover exclusions by evaluating every predicate
+        // attached to this model, even after an explicit proof match.
         return Vec::new();
     }
     // The positive conclusion needs the arms to be the declared variants

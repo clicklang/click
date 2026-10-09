@@ -108,8 +108,25 @@ pass. `rbtree_erase_color_root_left.click` covers the black-root exit with the
 same empty left child and black leaf sibling. It preserves the black root,
 recolors the sibling, and proves that the parent cursor becomes null before
 leaving the loop. Its exact model has the same balance, parent-consistency,
-and in-order guarantees; all 20 audit sites pass. Propagating deficits,
-rotations, and the mirrored cases remain.
+and in-order guarantees; all 20 audit sites pass.
+
+`rbtree_erase_color_flips.click` covers repeated color flips with either
+orientation at every ancestor, including nonempty focus and sibling subtrees
+on later iterations. Its selector admits black siblings with black children, propagates through black
+parents, and stops at a red parent or the root. Every continuing iteration
+consumes a strict child of the context resource, which proves termination.
+The result function specifies the exact whole-tree model; balance, parent
+consistency, and in-order contents follow across the entire loop. All 39
+expansion-audit sites pass. Mutations reject either missing cursor assignment,
+missing parent blackening, and incorrect sibling recoloring. Rotations remain
+on both sides.
+
+The combined sidecar has 1,091 lines, against the pinned function's 182 lines
+including its remaining rotations. On this development build it profiles at
+about 25 seconds (43 sidecar lines/second), down from 33 seconds after avoiding
+redundant constructor refutations. No simple-step tail exceeds 500 ms; about
+11 seconds remain in loop-control work. This is still below the project's
+verification-speed target.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
@@ -124,8 +141,7 @@ example's supported rbtree types and macros and spells the pinned
 `__rb_parent` mask. This is not yet the complete pinned translation-unit
 integration planned in chunks 21–24. The source is GPL-2.0-or-later.
 
-The full erase project verifies in about 158 seconds and runs in the nightly
-example suite. Run `click verify examples/rbtree-erase` and
+The full erase project runs in the nightly example suite. Run `click verify examples/rbtree-erase` and
 `click verify examples/rbtree-model`. The latter checks the imported pure
 root-deletion and successor-splice theorems independently. Example regressions
 pin the source and reject skipped parent/color writes, root replacement, or
