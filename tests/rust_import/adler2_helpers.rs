@@ -1351,8 +1351,8 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
 fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
     for (before, after) in [
         (
-            "decreases ((int32)(uint32)__rust_mir_62_remaining);",
-            "decreases 4 - ((int32)(uint32)__rust_mir_62_remaining);",
+            "decreases __rust_mir_62_remaining;",
+            "decreases 4 - __rust_mir_62_remaining;",
         ),
         (
             "invariant (int32)(uint32)__rust_mir_62_remaining % 4 == 0;",
