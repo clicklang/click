@@ -2017,3 +2017,27 @@ fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
     // fixed setup, but rejects quadratic expansion/checking growth.
     assert!(samples[2].1 <= samples[0].1 * 6, "{samples:?}");
 }
+
+// Default theorem search is measured and bounded without inventing a written
+// source occurrence; the CLI declaration-location regression covers failures.
+#[test]
+fn implicit_theorem_search_is_timed_without_a_written_tactic_path() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    let source = "theorem implicit(x: int32) { requires x <= 1; ensures x <= 2; }";
+    let (result, events) = collect(|| verify_click_theorems(source));
+    assert_eq!(result.unwrap().len(), 1);
+    let starts: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            VerificationEvent::TacticStarted(tactic) => Some(tactic),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0].class, "smart");
+    assert_eq!(starts[0].tactic_name, "simp");
+    assert_eq!(starts[0].source_tactic_path, None);
+    assert!(events.iter().any(|event| matches!(event,
+        VerificationEvent::ProofClaimFinished { claim, .. } if claim == "implicit.ensures_0"
+    )));
+}

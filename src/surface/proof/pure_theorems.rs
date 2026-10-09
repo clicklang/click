@@ -1826,6 +1826,7 @@ fn verify_theorem_ensure(
     let (proof_kind, certificate, checked_completion) = match ensure_clause.proof() {
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
             let (certificate, completion) = check_direct_pure_goal_with_proof(
+                !matches!(ensure_clause.proof(), SourceProof::Default),
                 claim_label,
                 context,
                 surface_goal,
@@ -2327,6 +2328,7 @@ fn claim_script_sites(
 }
 
 fn check_direct_pure_goal_with_proof(
+    has_written_tactic: bool,
     claim_label: &str,
     context: &PureTheoremContext,
     surface_goal: &ClickProposition,
@@ -2348,8 +2350,21 @@ fn check_direct_pure_goal_with_proof(
     )
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
     let mut search = super::attempt::search_scope("pure theorem simp");
-    let _timing = TacticTiming::pure_source(claim_label, vec![0], &ProofTactic::Simp);
-    let result = match root.at_source_tactic(0).try_simp_closure() {
+    // Default proof search has a budget and timing, but no written tactic
+    // occurrence. Its failure belongs to the declaration, not a fabricated
+    // `simp` site at the ensures clause.
+    let (root, _timing) = if has_written_tactic {
+        (
+            root.at_source_tactic(0),
+            TacticTiming::pure_source(claim_label, vec![0], &ProofTactic::Simp),
+        )
+    } else {
+        (
+            root,
+            TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
+        )
+    };
+    let result = match root.try_simp_closure() {
         Ok(result) => result,
         Err(error) => return Err(error.with_search_failures(search.finish())),
     };
