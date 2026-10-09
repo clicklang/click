@@ -66,11 +66,13 @@ The exact replacement blackens that child and preserves the outer context.
 The contract proves whole-tree balance, parent consistency, in-order contents,
 and null fixup without assuming the erased node's, successor's, or child's color.
 
-`rbtree_erase_spine.click` covers root deletion with a deeper successor that
-is a red leaf or has a nonempty right child. Its terminating descent loop
-retains the exact left-only path. Small opening and closing helper contracts
-expose the splice link. The replacement branches join with one owned subtree
-and its exact model, then share the path rebuild and root reconstruction.
+`rbtree_erase_spine.click` covers deletion at any tree position with a deeper
+successor that is a red leaf or has a nonempty right child. Its terminating
+descent loop retains the exact left-only path. Small opening and closing helper contracts
+expose the splice link. The verified parent-link helper transfers the outer
+context to the successor.
+The replacement branches join with one owned replacement link and its exact
+model, then share the path rebuild and terminating outer-context reconstruction.
 The nonempty child is blackened; a red leaf needs no color repair. Both cases
 return the exact successor transplant with red-black validity, parent
 consistency, preserved in-order contents, detached-node ownership, and null
@@ -92,10 +94,9 @@ by deeper non-root deletion.
 
 These are C increments of chunk 11 in
 [the rbtree issue](../../issues/rbtree-example.md). Zero/one-child deletion and
-all immediate-successor exits now verify at any tree position, as does a deeper
-black-leaf successor. Root deletion also covers every deeper-successor exit.
-Non-root deeper red-leaf and nonempty-child successors remain. The C file
-retains all branches; each sidecar states its coverage.
+all immediate and deeper-successor exits now verify at any tree position.
+This completes chunk 11 across the sidecars; each contract states its coverage,
+and the C file retains all branches. Erase-color repair is next, in chunks 12–13.
 
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is

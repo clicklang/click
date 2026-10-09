@@ -2607,6 +2607,20 @@ theorem pure_arithmetic_producer(n: int32) {
     }
 }
 
+// The join's exported fact must remain writable after proof-local resolution:
+// the old metadata made this valid snapshot rewrite expand to a literal `…`.
+#[test]
+fn branch_interface_model_pointer_snapshot_rewrite_expands_and_rechecks() {
+    let (source, c) = mdtest_sources("mdtests/branch_interface_keeps_model_pointer_names.md");
+    let c = c
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source(&source, &c, "put", CProofClaim::Grouped)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c0_sources(&expanded, &c).unwrap_or_else(|error| panic!("{}", error.message()));
+}
+
 #[test]
 fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
     for name in [

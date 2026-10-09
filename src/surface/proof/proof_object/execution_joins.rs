@@ -545,6 +545,7 @@ impl<'a> Proof<'a> {
         apply_branch_interface_with_proof_facts(
             &target,
             &assertions,
+            &assertions,
             &mut execution,
             context,
             &mut facts,
@@ -898,6 +899,7 @@ impl<'a> Proof<'a> {
                     fact,
                     context.parsed_function,
                     &interface_reference_state,
+                    &parent_execution.core.state,
                     &target,
                     &common_snapshots,
                     context.arguments,
@@ -947,6 +949,7 @@ impl<'a> Proof<'a> {
             apply_branch_interface_with_proof_facts(
                 &target,
                 &assertions,
+                &written_assertions,
                 &mut execution,
                 context,
                 &mut facts,

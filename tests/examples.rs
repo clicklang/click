@@ -1014,7 +1014,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
-        "",
+        "\t\t\tWRITE_ONCE(parent->rb_left, successor);\n",
     );
 }
 
@@ -1034,7 +1034,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\tWRITE_ONCE(successor->rb_right, child);\n",
-        "",
+        "\t\t\tWRITE_ONCE(successor->rb_right, successor->rb_right);\n",
     );
 }
 
@@ -1044,7 +1044,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
         "\t\t\trb_set_parent(child, successor);\n",
-        "",
+        "\t\t\trb_set_parent(child, node);\n",
     );
 }
 
