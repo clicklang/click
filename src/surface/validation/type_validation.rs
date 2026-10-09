@@ -1410,6 +1410,21 @@ fn infer_scoped_range_fold_type(
         context,
         false,
     )?;
+    // A range with a `uint64` endpoint ranges over `uint64` values. The
+    // other endpoint is a `uint64` too, or a literal, which is that number.
+    let uint64_index = {
+        let uint64 = |ty: &SpecValueType| matches!(ty, SpecValueType::Scalar(Some(C0Type::UInt64)));
+        let literal = |expression: &ContractExpression| {
+            matches!(
+                expression,
+                ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                    crate::kernel::Bitvector32Term::Constant(value)
+                ))) if *value <= i32::MAX as u32
+            )
+        };
+        (uint64(&start_type) && (uint64(&end_type) || literal(end)))
+            || (uint64(&end_type) && literal(start))
+    };
     let integer_index = match (&start_type, &end_type) {
         (SpecValueType::Integer, SpecValueType::Integer) => true,
         (SpecValueType::Integer, _) | (_, SpecValueType::Integer) => {
@@ -1418,10 +1433,10 @@ fn infer_scoped_range_fold_type(
             )));
         }
         (SpecValueType::Scalar(Some(start)), SpecValueType::Scalar(Some(end)))
-            if *start != C0Type::Int32 || *end != C0Type::Int32 =>
+            if (*start != C0Type::Int32 || *end != C0Type::Int32) && !uint64_index =>
         {
             return Err(ClickError::new(format!(
-                "range fold bounds must be Int32 in {context}"
+                "range fold bounds must both be int32 or both be uint64 in {context}"
             )));
         }
         _ => false,
@@ -1479,6 +1494,8 @@ fn infer_scoped_range_fold_type(
     }
     if integer_index {
         body_integer_bindings.insert(item.clone());
+    } else if uint64_index {
+        body_variables.insert(item.clone(), C0Type::UInt64);
     } else {
         body_variables.insert(item.clone(), C0Type::Int32);
     }

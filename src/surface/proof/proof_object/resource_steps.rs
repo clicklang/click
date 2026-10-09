@@ -1347,9 +1347,11 @@ impl<'a> Proof<'a> {
             body,
         } = folded.as_ref()
         else {
-            return Err(self.step_error(format!(
-                "`peel({name}(...)) using` requires the body of `{name}` to be a range fold over a symbolic range; this call's range is already reduced"
-            )));
+            // The kernel already reduced this call's range: its endpoints
+            // are constants, so the fold is its initial value or one step.
+            // The defining equation is then the law itself, with no guard
+            // left to discharge.
+            return Ok(equality.clone());
         };
 
         let empty = crate::kernel::prove_integer_range_fold_over_equal_terms(
@@ -1499,7 +1501,7 @@ impl<'a> Proof<'a> {
         crate::kernel::integer_range_fold_predecessor_application(whole.as_ref(), position)
             .ok_or_else(|| {
                 self.step_error(format!(
-                    "`peel({name}(...)) using` requires the call to remain the opaque application `{name}(...)` with an `int32` argument for `{end_parameter}`"
+                    "`peel({name}(...)) using` requires the call to remain the opaque application `{name}(...)` with an `int32` or `uint64` argument for `{end_parameter}`"
                 ))
             })
     }

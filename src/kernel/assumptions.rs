@@ -2555,19 +2555,25 @@ fn collect_integer_node_memory_loads(
             ..
         } => {
             match index {
-                IntegerRangeFoldIndex::Int32 { start, end } => {
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
+                    let endpoint_width = if matches!(index, IntegerRangeFoldIndex::UInt64 { .. }) {
+                        8
+                    } else {
+                        4
+                    };
                     collect_bitvector_memory_loads_with_width(
                         start.value(),
                         current_memory,
                         loads,
-                        Some(4),
+                        Some(endpoint_width),
                         seen_integers,
                     )?;
                     collect_bitvector_memory_loads_with_width(
                         end.value(),
                         current_memory,
                         loads,
-                        Some(4),
+                        Some(endpoint_width),
                         seen_integers,
                     )?;
                 }

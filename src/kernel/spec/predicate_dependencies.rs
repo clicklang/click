@@ -184,7 +184,8 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                 } => {
                     pending.extend([Node::Integer(initial), Node::Integer(body)]);
                     match index {
-                        SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                        SpecIntegerRangeFoldIndex::Int32 { start, end }
+                        | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
                             pending.extend([Node::Expression(start), Node::Expression(end)]);
                         }
                         SpecIntegerRangeFoldIndex::Integer { start, end } => {

@@ -1299,6 +1299,7 @@ enum AlphaIntegerNode {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaIntegerRangeIndex {
     Int32(AlphaBitvectorKey, AlphaBitvectorKey),
+    UInt64(AlphaBitvectorKey, AlphaBitvectorKey),
     Integer(usize, usize),
 }
 
@@ -1557,19 +1558,25 @@ fn alpha_integer_node(
             body,
         } => {
             let alpha_index = match index {
-                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end } => {
-                    AlphaIntegerRangeIndex::Int32(
-                        alpha_bitvector_key_with_bindings::<false>(
-                            start.value(),
-                            bindings,
-                            next_binder,
-                        )?,
-                        alpha_bitvector_key_with_bindings::<false>(
-                            end.value(),
-                            bindings,
-                            next_binder,
-                        )?,
-                    )
+                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end }
+                | crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
+                    let start = alpha_bitvector_key_with_bindings::<false>(
+                        start.value(),
+                        bindings,
+                        next_binder,
+                    )?;
+                    let end = alpha_bitvector_key_with_bindings::<false>(
+                        end.value(),
+                        bindings,
+                        next_binder,
+                    )?;
+                    // The kinds order their endpoints differently, so equal
+                    // endpoint terms do not make equal folds.
+                    if matches!(index, crate::kernel::IntegerRangeFoldIndex::Int32 { .. }) {
+                        AlphaIntegerRangeIndex::Int32(start, end)
+                    } else {
+                        AlphaIntegerRangeIndex::UInt64(start, end)
+                    }
                 }
                 crate::kernel::IntegerRangeFoldIndex::Integer { start, end } => {
                     AlphaIntegerRangeIndex::Integer(
