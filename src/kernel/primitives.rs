@@ -4177,6 +4177,9 @@ pub enum CRuntimeError {
     /// The diagnostic witness's cached fields do not require historical values.
     MissingMutexInvariant {
         resource: Box<CResourceFact>,
+        /// The resource the call map selected instead, when it is owned but
+        /// of another protected type.
+        supplied: Option<Box<CResourceFact>>,
     },
     /// A stable-view call returned a view that no checked input child,
     /// preserved outer binding, owner projection, or read-only block backs.

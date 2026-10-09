@@ -273,7 +273,10 @@ impl AssumedMutexProtocol {
                 .as_ref()
                 .is_some_and(|description| description.matches_instance(current, assumptions))
             {
-                return Err(MutexTransitionError::MissingInvariant(required));
+                return Err(MutexTransitionError::MismatchedInvariant {
+                    required,
+                    supplied: CResourceFact::own(CResource::Instance(current.clone())),
+                });
             }
             if loans.has_active_memory_loans() || state.loan_view_bindings.iter().next().is_some() {
                 return Err("protected mutex release requires returned memory loans".into());

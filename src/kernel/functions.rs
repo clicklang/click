@@ -22337,6 +22337,8 @@ pub enum ResourceRewriteRefusal {
         arm: Option<String>,
         index: usize,
         count: usize,
+        /// The fact as its declaration spells it, when known.
+        spelling: Option<String>,
     },
 }
 
@@ -22345,13 +22347,22 @@ impl ResourceRewriteRefusal {
         match self {
             ResourceRewriteRefusal::Message(message) => (*message).to_string(),
             ResourceRewriteRefusal::OwnedMessage(message) => message.clone(),
-            ResourceRewriteRefusal::BodyFactNotEstablished { arm, index, count } => {
+            ResourceRewriteRefusal::BodyFactNotEstablished {
+                arm,
+                index,
+                count,
+                spelling,
+            } => {
                 let place = match arm {
                     Some(arm) => format!("of arm `{arm}`"),
                     None => "of the resource body".to_string(),
                 };
+                let spelled = spelling
+                    .as_ref()
+                    .map(|fact| format!(": `{fact}`"))
+                    .unwrap_or_default();
                 format!(
-                    "fold requires the instance body facts for the proposed fields: fact {} of {count} {place} is not established",
+                    "fold requires the instance body facts for the proposed fields: fact {} of {count} {place} is not established{spelled}",
                     index + 1
                 )
             }
@@ -22529,6 +22540,7 @@ fn lower_selected_resource_body_clauses(
                 arm: arm.map(str::to_owned),
                 index: ordinal,
                 count: source.len(),
+                spelling: None,
             });
         }
         let record = ResourceBodyClauseRecord {
@@ -22858,6 +22870,42 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     unfold: bool,
     selected_children: Option<&[(String, Variable)]>,
 ) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
+    rewrite_resource_instance_selecting_children_unspelled(
+        state,
+        instance,
+        definition,
+        definitions,
+        assumptions,
+        unfold,
+        selected_children,
+    )
+    .map_err(|refusal| match refusal {
+        // Name the unmatched body's fact as its declaration spells it; arm
+        // facts carry no recorded spelling.
+        ResourceRewriteRefusal::BodyFactNotEstablished {
+            arm: None,
+            index,
+            count,
+            spelling: None,
+        } if count == definition.facts.len() => ResourceRewriteRefusal::BodyFactNotEstablished {
+            arm: None,
+            index,
+            count,
+            spelling: definition.fact_source_spelling(index).map(str::to_owned),
+        },
+        refusal => refusal,
+    })
+}
+
+fn rewrite_resource_instance_selecting_children_unspelled(
+    state: &CState,
+    instance: &ResourceInstance,
+    definition: &CCompositeResourceDefinition,
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+    unfold: bool,
+    selected_children: Option<&[(String, Variable)]>,
+) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || definition.recursive
@@ -23022,14 +23070,40 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
             return Err("selected child is not the resource argument".into());
         }
     }
-    let identities = explicit_children.values().copied().collect::<BTreeSet<_>>();
-    if identities.len() != explicit_children.len()
-        || identities.contains(&instance.identity)
-        || explicit_children.len() != body_children.len()
-        || body_children
-            .iter()
-            .any(|child| !explicit_children.contains_key(child.name.as_str()))
+    // Name the child an author left out or added: the generic sentence
+    // sends them to reread the whole body.
+    if let Some(child) = body_children
+        .iter()
+        .find(|child| !explicit_children.contains_key(child.name.as_str()))
     {
+        return Err(ResourceRewriteRefusal::OwnedMessage(if unfold {
+            format!(
+                "unfold of `{}` must bind its named child `{}`: `let {{ {}: name }} = unfold(...)`",
+                definition.name(),
+                child.name,
+                child.name
+            )
+        } else {
+            format!(
+                "fold of `{}` must supply its named child `{}` in its child map: `{{ {}: name }}`",
+                definition.name(),
+                child.name,
+                child.name
+            )
+        }));
+    }
+    if let Some(extra) = explicit_children.keys().find(|name| {
+        !body_children
+            .iter()
+            .any(|child| child.name.as_str() == **name)
+    }) {
+        return Err(ResourceRewriteRefusal::OwnedMessage(format!(
+            "`{extra}` is not a named child of `{}` here",
+            definition.name()
+        )));
+    }
+    let identities = explicit_children.values().copied().collect::<BTreeSet<_>>();
+    if identities.len() != explicit_children.len() || identities.contains(&instance.identity) {
         return Err("child selection must name every selected arm child exactly once".into());
     }
     let body_specs: &[CResourceSpec] = if active {
@@ -23336,16 +23410,38 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 .ok_or("fold requires an owned, folded child")?;
             if actual.name != child_instance.name
                 || actual.schema != child_instance.schema
-                || actual.arguments.len() != child_instance.arguments.len()
                 || actual.fields.len() != child_instance.fields.len()
+            {
+                return Err(ResourceRewriteRefusal::OwnedMessage(format!(
+                    "child `{}` must be a `{}` instance; the selected one is a `{}`",
+                    child.name, child_instance.name, actual.name
+                )));
+            }
+            if actual.arguments.len() != child_instance.arguments.len()
                 || !actual
                     .arguments
                     .iter()
                     .zip(child_instance.arguments.iter())
-                    .chain(actual.fields.iter().zip(child_instance.fields.iter()))
                     .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
             {
-                return Err("selected child does not satisfy the proposed parent model".into());
+                return Err(ResourceRewriteRefusal::OwnedMessage(format!(
+                    "child `{}` is not proven to have the arguments the parent body gives it",
+                    child.name
+                )));
+            }
+            if let Some(((field, _), _)) = actual
+                .schema
+                .fields()
+                .iter()
+                .zip(actual.fields.iter().zip(child_instance.fields.iter()))
+                .find(|(_, (a, b))| {
+                    !crate::kernel::resource_arguments_proven_equal(a, b, assumptions)
+                })
+            {
+                return Err(ResourceRewriteRefusal::OwnedMessage(format!(
+                    "child `{}` field `{field}` is not proven equal to the value the proposed parent fields give it",
+                    child.name
+                )));
             }
             child_instance = actual.clone();
         }

@@ -161,5 +161,5 @@ void change_child_left(struct rb_node* old_child, struct rb_node* new_child,
 ```
 
 ```expect
-fail: selected child does not satisfy the proposed parent model
+fail: child `sibling` is not proven to have the arguments the parent body gives it
 ```

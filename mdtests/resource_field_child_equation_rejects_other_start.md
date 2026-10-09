@@ -70,5 +70,5 @@ int32 live_count(struct arena* arena) {
 ```
 
 ```expect
-fail: selected child does not satisfy the proposed parent model
+fail: child `free` field `start` is not proven equal to the value the proposed parent fields give it
 ```

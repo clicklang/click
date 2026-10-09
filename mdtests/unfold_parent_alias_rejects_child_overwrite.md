@@ -45,5 +45,5 @@ void probe(struct node *p, struct node *q) {
 ```
 
 ```expect
-fail: selected child does not satisfy
+fail: child `kid` is not proven to have the arguments the parent body gives it
 ```
