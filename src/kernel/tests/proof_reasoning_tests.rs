@@ -8488,6 +8488,7 @@ fn memory_resolution_order_walk_agrees_with_the_full_scan() {
 /// strict and non-strict orders, equalities, and offset equalities at both
 /// widths — asked every pair of pool terms, filed and by full scan.
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn memory_resolution_order_walk_agrees_with_the_full_scan_on_generated_facts() {
     let mut pool = (0..5)
         .map(|id| Bitvector32Term::Variable(Variable(89_500 + id)))
@@ -8557,6 +8558,7 @@ fn memory_resolution_order_walk_agrees_with_the_full_scan_on_generated_facts() {
 /// order, so each question meets a memo filled by different earlier walks,
 /// and each is compared with the full scan, which never reads the memo.
 #[test]
+#[ignore = "nightly: 9s in the parallel gate"]
 fn memory_resolution_order_walk_memo_agrees_with_the_full_scan() {
     let mut pool = (0..8)
         .map(|id| Bitvector32Term::Variable(Variable(89_600 + id)))
@@ -8834,6 +8836,7 @@ fn wide_constant_arithmetic_work_scales_with_selected_expression() {
 /// bit the unsigned order is encoded through, and `UINT_MAX`, where an
 /// increment or a decrement wraps.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
     const BOUNDARIES: [u32; 9] = [
         0,

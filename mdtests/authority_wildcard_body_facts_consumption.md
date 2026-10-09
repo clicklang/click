@@ -4,7 +4,7 @@
 int32 take(int32* pool, int32* p) { return p[0]; }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; fact 0 <= p[0]; }
 verifying "wildcard_body_facts_consumption.c";
 int32 take(int32* pool, int32* p) {

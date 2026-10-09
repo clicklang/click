@@ -8,7 +8,7 @@ void mint_pair(int32* o, int32 n, int32 m) {}
 void run(int32* o, int32 n, int32 m) { mint_pair(o, n, m); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource tok(o: int32*) {}
 verifying "symbolic_birth_composition.c";
 void mint_pair(int32* o, int32 n, int32 m) {

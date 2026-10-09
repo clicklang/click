@@ -24,7 +24,7 @@ int run(struct cell *cell) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 authorized resource reference(cell: struct cell*) {}

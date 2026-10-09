@@ -3,7 +3,7 @@
 Even a quantity of one cannot supply an identified member and its model fields.
 Authority permits counting named members without making them anonymous quantities.
 
-```click resource_semantics=authority
+```click
 resource cell(p: int32*) {
     field model: List<int32>;
     owns p[0..1];

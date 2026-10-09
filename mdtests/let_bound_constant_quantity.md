@@ -14,7 +14,7 @@ void take_two(struct child* obj) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource child_ref(obj: struct child*) {}
 resource control(obj: struct child*) {
     owns allocation(obj, sizeof(struct child));

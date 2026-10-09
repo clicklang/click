@@ -5,7 +5,7 @@ void release(int32* pool, int32* p) { p[0] = 0; }
 void caller(int32* pool, int32* p) { release(pool, p); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_consume_private_body_missing_authority.c";
 void release(int32* pool, int32* p) {

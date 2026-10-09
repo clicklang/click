@@ -18,7 +18,7 @@ void counts_a_total_it_can_state(int32* o) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource tok(o: int32*) {
 }
 

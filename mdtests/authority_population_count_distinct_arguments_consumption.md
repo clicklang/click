@@ -13,7 +13,7 @@ int run(void *p, void *q) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "authority_population_count_distinct_arguments_consumption.c";
 authorized resource ticket(p: void*) {}
 void spend(void* argument) {

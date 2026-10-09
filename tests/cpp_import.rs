@@ -2030,6 +2030,7 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     let project = Project::with_fixture(
         "caller.cpp",
@@ -2414,6 +2415,7 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
     let mdtest = parse_mdtest(
         Path::new("cpp_guard_unwind_before_second.md"),
@@ -4275,6 +4277,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     let project = Project::terminal_destructor();
     let sidecar = project.directory.join("demo.click");
@@ -4425,6 +4428,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn every_return_after_construction_runs_the_checked_destructor() {
     let project = Project::early_return_destructor();
     let sidecar = project.directory.join("demo.click");
@@ -4527,6 +4531,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn modular_caller_observes_captured_result_and_restored_entry_value() {
     assert!(
         RESTORE_CALLER_SOURCE.starts_with(EARLY_RETURN_DESTRUCTOR_SOURCE),
@@ -4611,6 +4616,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     let project = Project::reverse_destructor_order();
     let sidecar = project.directory.join("demo.click");
@@ -4714,6 +4720,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     let project = Project::nested_scope_destructor();
     let sidecar = project.directory.join("demo.click");
@@ -4812,6 +4819,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     let project = Project::sibling_scope_destructors();
     let sidecar = project.directory.join("demo.click");
@@ -4939,6 +4947,7 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
     let growing = Project::sibling_scope_destructors();
     fs::write(
@@ -4980,6 +4989,7 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
     let project = Project::overlapping_scope_destructors();
     let sidecar = project.directory.join("demo.click");
@@ -5113,6 +5123,7 @@ fn overlapping_scope_rejects_shadowing_and_a_second_inner_lifetime() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn conditional_construction_cleans_up_only_the_constructed_arm() {
     let project = Project::conditional_construction();
     let sidecar = project.directory.join("demo.click");
@@ -5389,6 +5400,7 @@ fn cpp_local_aggregate_rejects_partial_default_copy_nested_and_second_objects() 
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn cpp_native_pointer_offsets_preserve_index_width_and_range_authority() {
     for (cpp_type, click_type, index, expression, expected) in [
         ("int", "int32", "1", "data + index", "1"),
@@ -6052,6 +6064,7 @@ fn exporter_path_is_not_needed_by_offline_load() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
     let source = include_str!("fixtures/cpp-verification/value-methods/value_methods.cpp");
     for (selected, sidecar_source) in [
@@ -6265,6 +6278,7 @@ fn signed_scalar_arithmetic_verifies_through_the_shared_kernel_and_modular_calls
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
     let project =
         Project::with_fixture("arithmetic.cpp", "rounded_divide", SIGNED_ARITHMETIC_SOURCE);
@@ -6377,6 +6391,7 @@ fn signed_scalar_arithmetic_rejects_undefined_operations_and_false_claims() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
     for (selector, cpp_source, parameters, preconditions, result_type, expected) in [
         (
@@ -6531,6 +6546,7 @@ const UNSIGNED_ARITHMETIC_SOURCE: &str =
     include_str!("fixtures/cpp-verification/unsigned-arithmetic/arithmetic.cpp");
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn unsigned_scalar_operations_wrap_and_preserve_conversion_semantics() {
     for (name, params, requires, result_type, expected) in [
         ("maximum", "", "", "uint64", "18446744073709551615u64"),
@@ -6737,6 +6753,7 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn unsigned_fee_fast_path_expressions_cover_large_products_and_rounding() {
     // Exact fast-path expressions from EvaluateFee; return the unsigned
     // intermediate; signed-result conversion is covered by signed-conversion fixtures.
@@ -7122,6 +7139,7 @@ fn unsupported_template_arguments_and_dependent_selection_fail_explicitly() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
     for (fee, at_size, size) in [
         (0u64, 1u64, 3u64),
@@ -7178,6 +7196,7 @@ int both(const Box<SizeTag, true>& left, const Box<WeightTag, true>& right) noex
 "#;
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
     let mut alias_identity = None;
     let mut identities = std::collections::BTreeSet::new();
@@ -7560,6 +7579,7 @@ void change(Envelope& state, int next) noexcept { SetHelper(state.right, next); 
 "#;
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
     for (selected, contract) in [
         (
@@ -7594,6 +7614,7 @@ fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
     for (selected, sidecar) in [
         (
@@ -7728,6 +7749,7 @@ const SIGNED_CONVERSION_SOURCE: &str =
     include_str!("fixtures/cpp-verification/signed-conversion/conversion.cpp");
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn cpp20_unsigned_to_signed64_preserves_all_bits_at_boundaries() {
     for value in [
         0u64,
@@ -7818,6 +7840,7 @@ fn cpp20_conversion_keeps_following_signed_overflow_obligations() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
     for (fee, at_size, size) in [
         (0u64, 1u64, 3u64),
@@ -7898,6 +7921,7 @@ int32 relay(int32 value, int32* untouched) {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
     for (selected, helper, value_type) in [
         ("relay64", "echo64", "int64"),
@@ -7947,6 +7971,7 @@ int32 relay(int32 __click_cpp_return_value) { ensures result == __click_cpp_retu
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn direct_return_calls_preserve_fee_method_template_wrappers() {
     for (selected, instance, expected) in [
         (
@@ -8005,16 +8030,19 @@ fn direct_return_calls_reject_unsupported_expression_positions_and_recursive_gra
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn direct_return_calls_capture_typed_results_before_destructors() {
     check_return_cleanup_cases("int32");
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn direct_return_calls_capture_boolean_results_before_destructors() {
     check_return_cleanup_cases("bool");
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn direct_return_calls_capture_wide_results_before_destructors() {
     check_return_cleanup_cases("int64");
 }
@@ -8172,6 +8200,7 @@ int32 relay(bool should_throw) throws int32 { ensures result == 5 by { execute()
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
     let cpp = include_str!("fixtures/cpp-verification/return-call/nested.cpp");
     for (selected, helper, value_type) in [
@@ -8338,6 +8367,7 @@ const MULTIPLE_ARGUMENTS_SOURCE: &str =
     include_str!("fixtures/cpp-verification/return-call/multiple-arguments.cpp");
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts() {
     for (selected, outer, slot) in [
         ("nested_first", "first", "a"),
@@ -8385,6 +8415,7 @@ fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts()
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn nested_calls_with_stable_siblings_preserve_fee_rounding_pattern() {
     for (fee, round_down, expected) in [
         (7, true, 4),
@@ -8573,6 +8604,7 @@ int32 local_sibling(int32* slot, int32 value) { owns slot[0..1]; ensures slot[0]
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers() {
     for (selected, down, fee, expected) in [
         ("fee_down", 1, 7, 4),
@@ -8660,6 +8692,7 @@ int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); si
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn static_helpers_preserve_nested_fee_rounding_template_shape() {
     for (selected, down, fee, expected) in [
         ("static_fee_down", 1, 7, 4),
@@ -8832,6 +8865,7 @@ fn normalized_scalar_calls_agree_across_returns_initializers_and_discarded_resul
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
     for (selected, helper, value_type) in [
         ("initialized64", "echo64", "int64"),
@@ -8852,6 +8886,7 @@ fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn normalized_initializer_calls_capture_before_normal_cleanup() {
     let project = Project::with_fixture(
         "evaluation.cpp",
@@ -8984,6 +9019,7 @@ fn normalized_initializer_and_return_work_scales_with_argument_arity() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
     let cpp =
         include_str!("fixtures/cpp-verification/reverse-destructor-order/construction_prefix.cpp");
@@ -9028,6 +9064,7 @@ fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn lifetime_return_before_any_construction_has_no_cleanup() {
     let cpp =
         include_str!("fixtures/cpp-verification/reverse-destructor-order/construction_prefix.cpp");
@@ -9229,6 +9266,7 @@ fn bounded_constant_forests_scale_without_expanding_dependency_chains() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn record_inventories_and_function_lowering_share_indexes_across_sizes() {
     for size in [2usize, 8, 32, 128] {
         let mut cpp = String::new();
@@ -9382,16 +9420,19 @@ fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
 const GROWING_GUARD_SOURCE: &str = "struct Guard { int value; explicit Guard(int initial) noexcept : value(initial) {} ~Guard() noexcept { value = 0; } };\n";
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn growing_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
     check_growing_lifetime_inventory("top");
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn growing_sibling_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
     check_growing_lifetime_inventory("siblings");
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn growing_block_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
     check_growing_lifetime_inventory("block");
 }
@@ -9692,6 +9733,7 @@ fn compiler_assumptions_preserve_conditional_execution_and_constant_reachability
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
     let cpp = include_str!("fixtures/cpp-verification/return-call/field-siblings.cpp");
     for (selected, outer, slot, claim) in [
@@ -9732,11 +9774,13 @@ fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn field_siblings_preserve_fee_template_rounding_and_static_helper_shape() {
     check_field_sibling_rounding("Down");
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn field_siblings_preserve_upward_fee_template_rounding_and_static_helper_shape() {
     check_field_sibling_rounding("Up");
 }
@@ -9864,6 +9908,7 @@ const WIDE_INTERMEDIATES_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-intermediates/intermediates.cpp");
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn wide_intermediates_preserve_high_bits_casts_and_signed_products() {
     for (name, result_type, params, contract) in [
         (
@@ -10051,6 +10096,7 @@ const WIDE_CONTRACTS_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-contracts/contracts.cpp");
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn wide_contracts_observe_full_width_inputs_and_results_offline() {
     for (name, ty, params, contract) in [
         (
@@ -10271,6 +10317,7 @@ const WIDE_DIVISION_SOURCE: &str =
 const WIDE_SIGNED_DOMAIN: &str = "requires to_integer(b) != 0; requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1;";
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
     for (name, ty, helper, domain) in [
         (
@@ -10470,6 +10517,7 @@ const WIDE_COMPARISONS_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-comparisons/comparisons.cpp");
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
     for (prefix, ty) in [("signed", "int128"), ("unsigned", "uint128")] {
         for (name, op) in [
@@ -10504,6 +10552,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
     for (name, expected) in [
         ("high_equal_zero", false),
@@ -10582,6 +10631,7 @@ fn wide_comparisons_do_not_erase_operand_division_guards() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn wide_comparisons_recognize_complementary_contract_premises() {
     for (name, inverse) in [
         ("equal", "!="),
@@ -10638,6 +10688,7 @@ fn cast_identity_certificate(original: &str, lo: &str, hi: &str) -> String {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn wide_narrowing_preserves_symbolic_values_only_with_checked_destination_bounds() {
     for (name, source, result, lo, hi) in [
         (
@@ -10772,6 +10823,7 @@ const SCALAR_BRACES_SOURCE: &str =
     include_str!("fixtures/cpp-verification/scalar-braces/braces.cpp");
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn scalar_brace_initialization_preserves_resolved_conversions_offline() {
     for (name, ty, params, post) in [
         ("signed32", "int32", "int32 n", "result == n"),
@@ -11990,6 +12042,7 @@ int128 {name}(int128 a, int128 b) {{
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn wide_narrowing_integer_ranges_reflect_into_native_correction_bounds() {
     for (name, ty, suffix) in [
         ("ss32", "int32", ""),
@@ -12187,21 +12240,25 @@ ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_i
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn fee_rounding_pattern_has_checked_native_correction_bounds() {
     check_fee_rounding_pattern("rounded", false);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn fee_rounding_pattern_modular_caller_has_exact_rounding_values() {
     check_fee_rounding_pattern("caller", false);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn fee_rounding_pattern_rejects_false_rounding_and_missing_guards() {
     check_fee_rounding_pattern("rounded", true);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn fee_rounding_pattern_caller_rejects_false_rounding_and_missing_guards() {
     check_fee_rounding_pattern("caller", true);
 }
@@ -12241,6 +12298,7 @@ int32 choose(const struct Box& box) {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn class_records_preserve_private_and_protected_field_layout_and_authority() {
     let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
     for access in ["private:", "protected:", ""] {
@@ -12785,6 +12843,7 @@ fn nested_record_exporter_counts_pending_declarations_in_the_inventory_budget() 
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn nested_source_fields_read_write_and_update_with_exact_authority_offline() {
     for (selected, sidecar) in [
         (
@@ -13016,6 +13075,7 @@ fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn projected_record_calls_and_reference_arguments_verify_offline() {
     for (selected, sidecar, expected) in [
         (
@@ -13268,6 +13328,7 @@ int observe(const State& state) noexcept {
 "#;
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
     let project = Project::with_fixture("condition.cpp", "choose", CONDITION_CALL_SOURCE);
     refresh_import(&project.config()).unwrap();
@@ -13292,6 +13353,7 @@ fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     let project = Project::with_fixture("condition.cpp", "observe", CONDITION_CALL_SOURCE);
     refresh_import(&project.config()).unwrap();
@@ -13591,6 +13653,7 @@ inline bool predicate(const Base& state) noexcept { return state.Empty(); }
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
     let project = header_graph_project("choose");
     refresh_import(&project.config()).unwrap();
@@ -14229,6 +14292,7 @@ int64 relay(int32 value) { ensures result == value; } by { execute(); simp(); }
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
     for (cpp_type, proof_type, result_type, body, requirement, expected) in [
         (
@@ -14353,6 +14417,7 @@ int64 relay(int64 value) { ensures result == value; } by { execute(); simp(); }
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn converted_return_calls_capture_converted_results_before_destructors() {
     let project = Project::with_fixture(
         "relay.cpp",
@@ -14835,10 +14900,12 @@ fn check_converted_wide_call_results(initializer: bool) {
     }
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn converted_wide_return_calls_preserve_values_with_checked_destination_bounds() {
     check_converted_wide_call_results(false);
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn converted_wide_call_initializers_preserve_values_with_checked_destination_bounds() {
     check_converted_wide_call_results(true);
 }

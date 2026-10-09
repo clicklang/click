@@ -16,7 +16,7 @@ unsigned int overconsume(struct counter *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "overconsume.c";
 authorized resource remaining(p: struct counter*) {}
 resource control(p: struct counter*) {

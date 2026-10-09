@@ -36,7 +36,7 @@ unsigned int local_initialize(struct counter *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "counted_resource_contribution_counter.c";
 authorized resource remaining(p: struct counter*) {}
 resource storage(p: struct counter*) {

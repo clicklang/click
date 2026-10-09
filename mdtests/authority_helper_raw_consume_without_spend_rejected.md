@@ -9,7 +9,7 @@ void drop(void *p) {}
 int run(void *p) { drop(p); return 1; }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "authority_helper_raw_consume_without_spend_rejected.c";
 authorized resource ticket(p: void*) {}
 void drop(void* p) {

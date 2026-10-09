@@ -8,7 +8,7 @@ struct object { int32 refs; };
 void keep_control(struct object* first) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource object_ref(obj: struct object*) {}
 resource object_control(obj: struct object*) {
     owns allocation(obj, sizeof(struct object));

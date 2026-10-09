@@ -14,7 +14,7 @@ void wrap_zero(int32 *cell) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 predicate is_zero(cell: int32*) {
     cell[0] == 0
 }

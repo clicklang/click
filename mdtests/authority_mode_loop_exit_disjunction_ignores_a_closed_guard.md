@@ -27,7 +27,7 @@ void paint(struct node* p, int32 flag) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "paint_or_leave.c";
 
 spec enum Color { Red, Black }

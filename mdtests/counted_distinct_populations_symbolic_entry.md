@@ -7,7 +7,7 @@ observe the sum must not assume that adding them cannot overflow.
 int identity(void *p, void *q, int n) { return n; }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "counted_distinct_populations_symbolic_entry.c";
 authorized abstract resource ticket(p: void*);
 int32 identity(void* p, void* q, int32 n) {

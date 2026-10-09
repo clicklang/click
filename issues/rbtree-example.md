@@ -65,6 +65,15 @@ Pointer-valued fields copied between independently returned nodes now also
 retain their full value across a framed call. The checked memory walk recovers
 the stored pointer, including its block, instead of comparing only read offsets.
 The reduced caller and an overwrite negative exercise this non-root splice path.
+Explicit field propositions now also retain the imported ABI slot width.
+Previously `separate(memory(node->tag), ...)` treated an eight-byte tag as
+four bytes, so the frame proof could not clear the helper's complete write.
+A reduced modeled-child caller verifies with the corrected separation; an
+overwrite negative and field-viewability checks cover the boundary.
+Caller-kept ranges now also follow exact aliases of a field's base, including
+aliases introduced by unfolding a modeled node. Typed evidence checks the whole
+access before allowing a framed read. Tests reject overwritten fields, partial
+coverage, and withdrawn aliases, and bound lookup work with unrelated ownership.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node

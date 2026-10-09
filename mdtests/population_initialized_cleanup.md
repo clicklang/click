@@ -26,7 +26,7 @@ int32 cleanup(int32 payload) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource child_ref(obj: struct child*) {}
 
 resource child_storage(obj: struct child*) {

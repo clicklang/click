@@ -102,6 +102,7 @@ fn copy_source_after_call_project() -> Project {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
     let p = copy_source_after_call_project();
     let prepared = load_import(&p.config()).unwrap();
@@ -127,6 +128,7 @@ fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn charon_array_copy_symbolic_source_tools_recheck_expanded_certificates() {
     let p = copy_source_after_call_project();
     for command in ["verify", "profile", "audit"] {
@@ -187,6 +189,7 @@ fn charon_array_reference_assignments_check_values_and_independent_snapshots() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
     let p = project();
     for command in ["verify", "profile", "audit"] {

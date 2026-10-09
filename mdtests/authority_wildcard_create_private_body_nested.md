@@ -19,7 +19,7 @@ int32 lifecycle() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_create_private_body_nested.c";
 void issue(int32* pool, int32* p) {

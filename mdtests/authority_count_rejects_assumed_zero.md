@@ -8,7 +8,7 @@ struct object { int32 refs; };
 void assumed_zero(struct object* obj) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {

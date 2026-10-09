@@ -127,6 +127,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
     for name in ["loops", "sum", "headers"] {
         let p = project(name, true);
@@ -135,10 +136,10 @@ fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
         C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
         for (before, after) in [
             ("ensures result == n;", "ensures result == 0;"),
-            ("ensures result == bytes_len;", "ensures result == 0u64;"),
+            ("ensures result == bytes.len();", "ensures result == 0u64;"),
             (
-                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));",
-                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len)) + 1;",
+                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len()));",
+                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len())) + 1;",
             ),
         ] {
             let invalid = sidecar.replace(before, after);
@@ -267,6 +268,7 @@ fn assignment_frontier_sidecar() -> &'static str {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {
     let p = project("loops", true);
     let sidecar = assignment_frontier_sidecar();

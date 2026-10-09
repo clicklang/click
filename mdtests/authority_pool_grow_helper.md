@@ -23,7 +23,7 @@ void pool_grow(struct pool* pool, int32 amount);
 void forward(struct pool* pool, int32 amount) { pool_grow(pool, amount); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
     owns *pool;

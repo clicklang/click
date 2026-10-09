@@ -2,7 +2,7 @@
 
 The function precedes the resource to check forward declaration resolution.
 
-```click resource_semantics=authority
+```click
 function population(p: int32*) -> List<int32> {
     List<int32>::Cons(count(cell(p)), List<int32>::Nil)
 }

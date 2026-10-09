@@ -13,7 +13,7 @@ void Guard_drop(struct Guard* self) {
     simp();
 }
 
-uint16 increment(uint16 x) {
+fn increment(x: u16) -> u16 {
     requires x < 65535;
     ensures result == x + 1;
 } by {
@@ -21,7 +21,7 @@ uint16 increment(uint16 x) {
     simp();
 }
 
-uint16 guarded_increment(uint16 x, int32* value, bool early) {
+fn guarded_increment(x: u16, value: &mut i32, early: bool) -> u16 {
     requires x < 65535;
     owns value[0..1];
     ensures result == x + 1;

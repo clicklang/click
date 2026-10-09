@@ -9,7 +9,7 @@ struct object { int32 refs; };
 struct object* retain(struct object* obj) { return obj; }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns authority(reference(obj));

@@ -1727,6 +1727,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 2s in the parallel gate"]
     fn charon_loop_array_copy_requires_fresh_initialized_storage() {
         let export = loop_array_copy_export();
         let claim = include_str!("../../../design/charon-trial/loop-array-copy/quad.click");

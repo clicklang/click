@@ -15,7 +15,7 @@ int run(void *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_neutral_observed.c";

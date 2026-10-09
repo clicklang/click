@@ -4,7 +4,7 @@ The scalar logical controls retain their original signatures separately. This
 population companion exercises the same final implication boundary with an
 explicit pointer anchor and arbitrary imported total constrained by the target.
 
-```click resource_semantics=authority
+```click
 authorized resource Permit(pool: int32*) {}
 contract void Raw(int32* pool) {
     owns authority(Permit(pool));

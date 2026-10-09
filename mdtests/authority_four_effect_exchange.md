@@ -22,7 +22,7 @@ int32 lifecycle() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*) {}
 authorized resource item(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "four_effect_exchange.c";

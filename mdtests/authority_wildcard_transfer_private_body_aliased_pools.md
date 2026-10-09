@@ -20,7 +20,7 @@ int32 lifecycle() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_transfer_private_body.c";
 void move(int32* source, int32* destination, int32* p) {

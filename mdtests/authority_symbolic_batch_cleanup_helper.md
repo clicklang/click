@@ -11,7 +11,7 @@ void nested(struct pool* pool) { forward(pool); }
 void empty(struct pool* pool) { cleanup(pool); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: struct pool*) {}
 resource control(pool: struct pool*) {
     owns *pool;

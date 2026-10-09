@@ -35,7 +35,7 @@ int32 select_guarded(int32 key, int32 choose_left) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 abstract resource left_path(key: int32);
 abstract resource right_path(key: int32);
 abstract resource ready_permit(key: int32);

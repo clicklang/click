@@ -12,7 +12,7 @@ int32 lifecycle() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_private_body.c";
 int32 lifecycle() { ensures result == 9; } by {

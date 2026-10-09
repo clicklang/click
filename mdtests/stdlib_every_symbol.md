@@ -134,6 +134,16 @@ theorem use_uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
     ensures left <= right by apply(uint64_less_equal_of_to_integer(left, right));
 }
 
+theorem use_uint64_less_than_to_integer(left: uint64, right: uint64) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right) by apply(uint64_less_than_to_integer(left, right));
+}
+
+theorem use_uint64_less_than_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) < to_integer(right);
+    ensures left < right by apply(uint64_less_than_of_to_integer(left, right));
+}
+
 theorem use_int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
     ensures to_integer(left) < to_integer(right) by apply(int64_less_than_to_integer(left, right));
@@ -695,6 +705,78 @@ theorem docs_use_uint32_le_transitive(first: uint32, middle: uint32, last: uint3
 
     ensures first <= last by {
         apply(uint32_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_lt_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last by {
+        apply(uint64_lt_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_le_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(uint64_le_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_lt_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(uint64_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint64_le_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last by {
+        apply(uint64_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_lt_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last by {
+        apply(int64_lt_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_le_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(int64_le_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_lt_transitive(first: int64, middle: int64, last: int64) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(int64_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_int64_le_transitive(first: int64, middle: int64, last: int64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last by {
+        apply(int64_le_transitive(first, middle, last));
     }
 }
 

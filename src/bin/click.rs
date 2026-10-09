@@ -661,6 +661,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 6s in the parallel gate"]
     fn tautological_ensure_preserves_population_certification() {
         let directory =
             std::env::temp_dir().join(format!("click-certification-trace-{}", std::process::id()));
@@ -671,11 +672,6 @@ mod tests {
         fs::write(
             directory.join("shared_parent.c"),
             include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        fs::write(
-            directory.join("click.project.json"),
-            include_str!("../../design/shared-heap-probes/click.project.json"),
         )
         .unwrap();
         let sidecar = directory.join("shared_parent.click");
@@ -701,6 +697,7 @@ mod tests {
     // Simple claim closers must perform the same checked return exchange as
     // simp, including a consuming contract with no returned resource claim.
     #[test]
+    #[ignore = "nightly: 10s in the parallel gate"]
     fn shared_population_release_expansion_retains_lifetime() {
         let directory = std::env::temp_dir().join(format!(
             "click-population-release-expansion-{}",
@@ -710,11 +707,6 @@ mod tests {
         fs::write(
             directory.join("shared_parent.c"),
             include_str!("../../design/shared-heap-probes/shared_parent.c"),
-        )
-        .unwrap();
-        fs::write(
-            directory.join("click.project.json"),
-            include_str!("../../design/shared-heap-probes/click.project.json"),
         )
         .unwrap();
         let sidecar = directory.join("shared_parent.click");
@@ -835,8 +827,10 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             report.contains("tactic@19: let r = step(child("),
             "{report}"
         );
+        // The call's implication ensure and the resource composition of its
+        // frame, which authority semantics record at the call.
         assert!(
-            report.contains("1 checked fact(s) with no exact Click spelling"),
+            report.contains("2 checked fact(s) with no exact Click spelling"),
             "{report}"
         );
         assert_eq!(

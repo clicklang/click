@@ -208,21 +208,35 @@ fn matched_arm_child_slots(definition: &ResourceDefinition) -> BTreeMap<String, 
     slots
 }
 
-pub(in crate::surface) fn expand_declared_resource_clauses(
-    file: ClickFile,
-) -> Result<ClickFile, ClickError> {
-    expand_declared_resource_clauses_with_semantics(file, ResourceSemanticsMode::Legacy)
+/// The standard library's expansion. The field schemas and family rules need
+/// the library itself, so it applies neither; every verification unit's
+/// expansion below applies both.
+fn expand_declared_resource_clauses(file: ClickFile) -> Result<ClickFile, ClickError> {
+    expand_declared_resource_clauses_with_rules(file, false)
 }
 
-pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
+/// The expansion every verification unit passes through, single-file or
+/// project. It
+/// applies the declared field schemas and refuses a count or quantity of a
+/// family that is not `authorized`.
+pub(in crate::surface) fn expand_declared_resource_clauses_for_project(
+    file: ClickFile,
+) -> Result<ClickFile, ClickError> {
+    expand_declared_resource_clauses_with_rules(file, true)
+}
+
+fn expand_declared_resource_clauses_with_rules(
     mut file: ClickFile,
-    semantics: ResourceSemanticsMode,
+    family_rules: bool,
 ) -> Result<ClickFile, ClickError> {
     // A failure before the first declaration belongs to none of them.
     crate::surface::clear_ambient_proof_source();
     // Legacy standard-library expansion must not re-enter its OnceLock.
     // Authority schemas use the same checked algebraic definitions as lowering.
-    let field_environment = if semantics == ResourceSemanticsMode::Authority
+    if family_rules {
+        super::validate_resource_fields(&file)?;
+    }
+    let field_environment = if family_rules
         && file
             .resource_definitions()
             .iter()
@@ -343,7 +357,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
         },
     );
     let resource_definitions = DeclaredResourceScope {
-        authority_mode: semantics == ResourceSemanticsMode::Authority,
+        authority_mode: family_rules,
         definitions: resource_definitions,
         children: Default::default(),
         instances: Default::default(),

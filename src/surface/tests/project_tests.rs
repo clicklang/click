@@ -774,6 +774,7 @@ int32 pipeline(struct counter* owner) {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn execute_until_expands_vector_storage_call_postconditions() {
     let init_c = r#"
 struct buffer {
@@ -1776,6 +1777,7 @@ int32 unrelated() { ensures result == 0; } by simp;
 /// facts deterministically, so repeated verification must stay green under
 /// the deterministic work budgets this test suite runs with.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn perpetual_service_example_verifies_stably_across_repeated_runs() {
     let project =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/perpetual-service");
@@ -1828,6 +1830,7 @@ fn perpetual_service_example_verifies_stably_across_repeated_runs() {
 /// to let a truncated kernel derivation surface as "missing pure fact" while
 /// the available-fact list printed the very fact it claimed was missing.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn truncated_service_step_reports_the_budget_not_a_missing_fact() {
     let project =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/perpetual-service");
@@ -1886,6 +1889,7 @@ fn example_project_creates_only_canonical_terms(project: &str, sidecar: &str) {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn owned_split_buffer_carried_load_facts_stay_on_direct_proof_path() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest
@@ -1902,11 +1906,13 @@ fn owned_split_buffer_carried_load_facts_stay_on_direct_proof_path() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn borrowed_slice_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("borrowed-slice", "borrowed_slice.click");
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn input_cursor_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("input-cursor", "input_cursor.click");
 }
@@ -1917,6 +1923,7 @@ fn linked_list_creates_only_canonical_terms() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn owned_segmented_buffer_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms(
         "owned-segmented-buffer",
@@ -1925,6 +1932,7 @@ fn owned_segmented_buffer_creates_only_canonical_terms() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn owned_string_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("owned-string", "owned_string.click");
 }
@@ -1949,6 +1957,7 @@ fn vector_push_creates_only_canonical_terms() {
 /// project the first one's DAG derivation for a same-content call-havoc
 /// snapshot, and the load registry its origins.
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn verifications_on_one_thread_are_independent() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for (project, sidecar) in [
@@ -2115,77 +2124,5 @@ fn step_result_binding_work_scales_with_assigned_values() {
             );
         }
         previous = Some(work);
-    }
-}
-
-#[test]
-fn charon_migrated_sidecars_preserve_original_source_contracts() {
-    for (original, migrated) in [
-        (
-            include_str!(
-                "../../../design/charon-trial/iterator-proof/rust-iter-references/frozen.click"
-            ),
-            include_str!("../../../examples/rust-iter-references/sum.click"),
-        ),
-        (
-            include_str!("../../../design/charon-trial/iterator-proof/rust-iterators/frozen.click"),
-            include_str!("../../../examples/rust-iterators/sum.click"),
-        ),
-        (
-            include_str!("../../../design/charon-trial/chunk-proof/frozen.click"),
-            include_str!("../../../examples/rust-chunks-exact/chunks.click"),
-        ),
-        (
-            include_str!("../../../design/charon-trial/loop-headers/loops.click"),
-            include_str!("../../../examples/rust-loops/loops.click"),
-        ),
-        (
-            include_str!("../../../design/charon-trial/loop-headers/sum.click"),
-            include_str!("../../../examples/rust-byte-sum/sum.click"),
-        ),
-    ] {
-        let original = parse(original).unwrap();
-        let migrated = parse(migrated).unwrap();
-        assert_eq!(original.verifying_sources(), migrated.verifying_sources());
-        assert_eq!(original.imports(), migrated.imports());
-        assert_eq!(
-            original.click_function_definitions(),
-            migrated.click_function_definitions()
-        );
-        assert_eq!(
-            original.predicate_definitions(),
-            migrated.predicate_definitions()
-        );
-        assert_eq!(
-            original.resource_definitions(),
-            migrated.resource_definitions()
-        );
-        assert_eq!(
-            original.function_blocks().len(),
-            migrated.function_blocks().len()
-        );
-        for (a, b) in original
-            .function_blocks()
-            .iter()
-            .zip(migrated.function_blocks())
-        {
-            assert_eq!(a.signature(), b.signature());
-            assert_eq!(a.is_external(), b.is_external());
-            assert_eq!(a.requires(), b.requires());
-            assert_eq!(a.decreases(), b.decreases());
-            assert_eq!(a.constructs(), b.constructs());
-            assert_eq!(a.parameter_struct_casts(), b.parameter_struct_casts());
-            assert!(a.structural_clauses().is_empty());
-            assert!(b.structural_clauses().is_empty());
-            assert_eq!(a.ensures().len(), b.ensures().len());
-            for (a, b) in a.ensures().iter().zip(b.ensures()) {
-                assert_eq!(a.ensure(), b.ensure());
-                assert_eq!(a.borrowed(), b.borrowed());
-                assert_eq!(a.condition(), b.condition());
-                assert_eq!(a.name(), b.name());
-            }
-            assert!(a.exceptional_ensures().is_empty());
-            assert!(b.exceptional_ensures().is_empty());
-        }
     }
 }

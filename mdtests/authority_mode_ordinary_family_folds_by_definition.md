@@ -12,7 +12,7 @@ void reset(struct object* obj) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 resource cell(obj: struct object*) {
     owns obj->refs;
 }

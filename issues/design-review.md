@@ -72,19 +72,27 @@ copies under `design/charon-trial`.
 
 Remaining:
 
-- Five examples keep `bytes_len` and `(int32)` casts in their contracts and
-  proofs: `rust-loops`, `rust-iterators`, `rust-iter-references`,
-  `rust-byte-sum` and `rust-chunks-exact`. A test compares each one's
-  contract, as parsed, with its frozen original under `design/charon-trial`
-  (`charon_migrated_sidecars_preserve_original_source_contracts`), and the
-  respelled form parses to a different tree. Respell them once that test
-  compares meaning, not syntax. A cast on an index that is not a lone
-  parameter stays everywhere until typed indices cover it (A5).
-- Then refuse `->` and the C-shaped signature for a Rust source, with the
-  spelling to write.
+- A cast on an index that is not a lone parameter stays in the examples
+  (`(int32)(uint32)i`, `prefix(bytes, (int32)(uint32)bytes.len())`) until
+  typed indices cover it (A5). Every example otherwise writes
+  `bytes.len()` and uncast ranges; the test that compared five of them
+  with their frozen C-shaped originals was retired on 2026-10-08 with
+  Lacker's agreement.
+- Refuse `->` and the C-shaped signature for a Rust source, with the
+  spelling to write. Not ready. The plain functions of the sidecars under
+  `design/charon-trial` take Rust signatures as of 2026-10-08. Still
+  C-shaped: methods written as free functions there (`Guard_drop`,
+  `U32X4_mul_assign_u32`), which need `impl` blocks; functions named by a
+  mangled path (`__rust_q_I6_adler2_..._mul_assign_u32`,
+  `__rust_q_I4_quad_I4_load`), for which the Rust grammar has no spelling;
+  the five frozen originals, which are hash-pinned and stay; and about 90
+  sidecars written inline in the tests (`tests/rust_import.rs`,
+  `src/languages/rust/charon.rs`). Convert those, give the mangled ones a
+  spelling, then refuse.
 - Diagnostics and `click expand` print C-shaped spellings for a Rust
   sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
-  the sidecar writes.
+  the sidecar writes. Decided 2026-10-08: do this after the
+  typed-index work (A5), which removes most of the conversions printed.
 - A 32-bit index is the memory model's limit, so a slice contract states
   `requires bytes.len() <= 2147483647u64`. Dropping it needs range bounds
   wider than 32 bits in the kernel (A5).
@@ -106,12 +114,23 @@ the requirement to state.
 
 Remaining:
 
-- **Stage 3, order reasoning over 64-bit terms.** It is the next thing to
-  do, ahead of stage 2: a C function that reads `bytes[index + 1]` with a
-  `size_t` index cannot be verified today whatever its contract says. The
-  body's read is refused with "missing resource fact
-  `views bytes[(truncate32(index) + 1)]`" under `requires index + 1 <
-  length`. Regression: that function verifying.
+- **Stage 3, order reasoning over 64-bit terms.** Lacker said to build it
+  on 2026-10-08. The kernel half is built: a C read or write is found in
+  range through a chain of 64-bit order facts (`i < n`, `n <= length`), at
+  an index plus a constant (`bytes[index + 1]`), and at a signed `long`
+  index proved to lie in `0..=INT_MAX`
+  (`mdtests/a_64_bit_index_*.md`). In a proof, an order chain is an
+  explicit step: `uint64_lt_transitive` and its seven siblings for
+  `uint64` and `int64` are in the standard library. Two things are left.
+  `simp` does not search for a 64-bit chain as it does for `int32`; that
+  is smart-tactic reach, and the explicit theorems cover the need.
+  `arithmetic` accepts only `int32` and `Integer` goals, so a linear
+  64-bit fact such as `i + 2u64 <= length` from `i + 1u64 < length` has
+  no direct step. It is a lemma through `to_integer` and the
+  `uint64_*_to_integer` bridges, about twenty lines each;
+  `mdtests/a_size_t_loop_stepping_by_two_closes_with_explicit_steps.md`
+  proves a `size_t` loop that way. A 64-bit reading for `arithmetic`
+  would make each lemma one step. Describe it to Lacker before building.
 - **Stage 2, the extent is `isize::MAX`.** Removes `requires n <=
   2147483647`. It cannot be done piece by piece and needs scaling
   regressions. Check with Lacker before starting it.

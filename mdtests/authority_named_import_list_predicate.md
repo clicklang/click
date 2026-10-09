@@ -5,7 +5,7 @@ void preserve(int32* pool) {}
 int32 run() { int32 pool = 0; preserve(&pool); return 0; }
 ```
 
-```click resource_semantics=authority
+```click
 function population(pool: int32*) -> List<int32> {
     List<int32>::Cons(count(ticket(pool)), List<int32>::Nil)
 }

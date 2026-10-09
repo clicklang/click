@@ -31,7 +31,7 @@ unsigned int sequential_early(struct counter *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "early_consumption.c";
 authorized resource remaining(p: struct counter*) {}
 resource storage(p: struct counter*) {

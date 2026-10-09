@@ -44,10 +44,10 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     assert!(!proof.contains("statement("));
     C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for invalid in [
-        proof.replacen("views bytes[0..(int32)(uint32)bytes_len];", "", 1),
+        proof.replacen("views bytes[0..bytes.len()];", "", 1),
         proof.replacen(
-            "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));",
-            "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len)) + 1;",
+            "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len()));",
+            "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes.len())) + 1;",
             1,
         ),
         proof.replace("decreases iter_remaining;", "decreases -iter_remaining;"),
@@ -86,6 +86,7 @@ fn audits_checked_frontiers(fixture: &str) {
 macro_rules! iterator_checks {
     ($fixture:literal, $obligations:ident, $profile:ident, $expand:ident, $audit:ident) => {
         #[test]
+        #[ignore = "nightly: 8s in the parallel gate"]
         fn $obligations() {
             preserves_source_and_checks_obligations($fixture);
         }

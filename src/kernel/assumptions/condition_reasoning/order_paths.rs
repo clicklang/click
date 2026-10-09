@@ -2181,6 +2181,20 @@ impl PureFactContext {
             || self.decide_uint64_constant_order_bounds_inner(&guard, true) == Some(true)
     }
 
+    /// The signed counterpart: the full signed value lies in `0..=INT_MAX`,
+    /// by 64-bit signed order facts on the value itself, so its low word is
+    /// the value.
+    pub(in crate::kernel) fn int64_index_fits_int32(&self, term: &Bitvector32Term) -> bool {
+        self.decide(&ConditionTerm::int64_signed_less_equal(
+            Bitvector32Term::Int64Constant(0),
+            term.clone(),
+        )) == Some(true)
+            && self.decide(&ConditionTerm::int64_signed_less_equal(
+                term.clone(),
+                Bitvector32Term::Int64Constant(i32::MAX as i64),
+            )) == Some(true)
+    }
+
     /// Strengthen a constant bound using only the queried nonconstant endpoint's
     /// index. Never walk a shared constant's incident edges or unrelated facts.
     pub(super) fn decide_uint64_constant_order_bounds(
@@ -2338,6 +2352,130 @@ impl PureFactContext {
         best
     }
 
+    /// Whether held 64-bit order facts chain from `lower` up to `upper`,
+    /// and whether some chain does so strictly: `Some(true)` for a strict
+    /// chain, `Some(false)` for a chain of `<=` only, `None` for no chain.
+    ///
+    /// One walk over the queried kind's order index, from `lower` along
+    /// upper edges, or from `upper` along lower edges when `lower` is a
+    /// literal. Each term is visited at most twice, once reached strictly
+    /// and once not, and only the edges of a visited term are read. A
+    /// literal is an end of a chain and never a step in one: its edges name
+    /// every term bounded by it, related to the question or not. Terms join
+    /// by their canonical spelling; a visited term and the far end that
+    /// both have a constant value join by comparing the values, as the kind
+    /// compares them.
+    fn wide_order_chain(
+        &self,
+        lower: &Bitvector32Term,
+        upper: &Bitvector32Term,
+        unsigned: bool,
+    ) -> Option<bool> {
+        let index = if unsigned {
+            &self.uint64_order_bounds
+        } else {
+            &self.int64_signed_order_bounds
+        };
+        let literal = |term: &Bitvector32Term| {
+            term.uint64_as_const().is_some() || term.int64_as_const().is_some()
+        };
+        let lower = crate::kernel::eval::canonical_term(lower);
+        let upper = crate::kernel::eval::canonical_term(upper);
+        let upward = !literal(&lower);
+        let (start, goal) = if upward {
+            (lower, upper)
+        } else {
+            (upper, lower)
+        };
+        let goal_constant = self.wide_constant_from_equalities(&goal);
+        // How a visited value and the goal's value order along the walk.
+        let toward_goal = |value: u64, goal: u64| {
+            let (below, above) = if upward { (value, goal) } else { (goal, value) };
+            if unsigned {
+                below.cmp(&above)
+            } else {
+                (below as i64).cmp(&(above as i64))
+            }
+        };
+        let mut stack = vec![(start, false)];
+        let mut seen = BTreeSet::new();
+        let mut chained = None;
+        while let Some((term, strict_so_far)) = stack.pop() {
+            if !seen.insert((term.clone(), strict_so_far)) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let joined = if term == goal {
+                Some(strict_so_far)
+            } else {
+                self.wide_constant_from_equalities(&term)
+                    .zip(goal_constant)
+                    .and_then(|(value, goal)| match toward_goal(value, goal) {
+                        std::cmp::Ordering::Less => Some(true),
+                        std::cmp::Ordering::Equal => Some(strict_so_far),
+                        std::cmp::Ordering::Greater => None,
+                    })
+            };
+            match joined {
+                Some(true) => return Some(true),
+                Some(false) => chained = Some(false),
+                None => {}
+            }
+            if literal(&term) {
+                continue;
+            }
+            let Some(edges) = index.get(&term) else {
+                continue;
+            };
+            for (_, other, strict, forward) in edges.keys() {
+                crate::instrumentation::record_deterministic_work(1);
+                if *forward == upward {
+                    stack.push((
+                        crate::kernel::eval::canonical_term(other),
+                        strict_so_far || *strict,
+                    ));
+                }
+            }
+        }
+        chained
+    }
+
+    /// Decide a 64-bit order comparison from a chain of held order facts of
+    /// its own kind, signed or unsigned: transitivity, a constant bound
+    /// reached through a chain, and `a <= b` with `a != b`. The reversed
+    /// chain refutes: `b <= a` refutes `a < b`, and `b < a` refutes `a <= b`.
+    pub(super) fn decide_wide_order_chain(&self, condition: &ConditionTerm) -> Option<bool> {
+        let (lower, upper, strict, unsigned) = match condition_as_uint64_order_fact(condition, true)
+        {
+            Some((lower, upper, strict)) => (lower, upper, strict, true),
+            None => {
+                let (lower, upper, strict) = condition_as_int64_order_fact(condition, true)?;
+                (lower, upper, strict, false)
+            }
+        };
+        match self.wide_order_chain(&lower, &upper, unsigned) {
+            Some(true) => return Some(true),
+            Some(false) if !strict => return Some(true),
+            Some(false) => {
+                let equal = ConditionTerm::int64_equal(lower.clone(), upper.clone());
+                if self.exact_condition_value(&equal) == Some(false)
+                    || self.exact_condition_value(&ConditionTerm::int64_equal(
+                        upper.clone(),
+                        lower.clone(),
+                    )) == Some(false)
+                {
+                    return Some(true);
+                }
+            }
+            None => {}
+        }
+        match self.wide_order_chain(&upper, &lower, unsigned) {
+            Some(true) => Some(false),
+            Some(false) if strict => Some(false),
+            _ => None,
+        }
+    }
+
     /// Within the signed word's nonnegative range, truncation preserves
     /// uint64 order exactly. The range checks are required on both operands.
     pub(super) fn decide_small_uint64_index_order(
@@ -2383,32 +2521,89 @@ impl PureFactContext {
             return Some(true);
         }
         let (left, right, strict) = condition_as_order_fact(condition, true)?;
-        let wide = |term: &Bitvector32Term| match term {
+        let small = |term: &Bitvector32Term| match term {
+            Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => Some(*value as u64),
+            _ => None,
+        };
+        // Truncation commutes with addition modulo 2^32, so a truncated
+        // term plus a constant is the truncation of the 64-bit sum, signed
+        // or unsigned. The range check below is made on that sum.
+        let truncated = |term: &Bitvector32Term, unsigned: bool| match term {
             Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
-            Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => {
-                Some(Bitvector32Term::UInt64Constant(*value as u64))
+            Bitvector32Term::Add(left, right) => {
+                let (value, constant) = match (left.as_ref(), right.as_ref()) {
+                    (Bitvector32Term::UInt32From64(value), constant)
+                    | (constant, Bitvector32Term::UInt32From64(value)) => (value, small(constant)?),
+                    _ => return None,
+                };
+                Some(if unsigned {
+                    Bitvector32Term::uint64_add(
+                        value.as_ref().clone(),
+                        Bitvector32Term::UInt64Constant(constant),
+                    )
+                } else {
+                    Bitvector32Term::int64_add(
+                        value.as_ref().clone(),
+                        Bitvector32Term::Int64Constant(constant as i64),
+                    )
+                })
             }
             _ => None,
         };
-        let a = wide(&left)?;
-        let b = wide(&right)?;
-        if !matches!(left, Bitvector32Term::UInt32From64(_))
-            && !matches!(right, Bitvector32Term::UInt32From64(_))
-        {
+        if truncated(&left, true).is_none() && truncated(&right, true).is_none() {
             return None;
         }
-        if self.uint64_small_upper_bound(&a)? > i32::MAX as u64
-            || self.uint64_small_upper_bound(&b)? > i32::MAX as u64
-        {
-            return None;
+        let wide = |term: &Bitvector32Term, unsigned: bool| {
+            truncated(term, unsigned).or_else(|| {
+                small(term).map(|value| {
+                    if unsigned {
+                        Bitvector32Term::UInt64Constant(value)
+                    } else {
+                        Bitvector32Term::Int64Constant(value as i64)
+                    }
+                })
+            })
+        };
+        // Read as unsigned values: both at most `INT_MAX`.
+        let a = wide(&left, true)?;
+        let b = wide(&right, true)?;
+        let unsigned_small = |term: &Bitvector32Term| {
+            self.uint64_small_upper_bound(term)
+                .is_some_and(|bound| bound <= i32::MAX as u64)
+        };
+        if unsigned_small(&a) && unsigned_small(&b) {
+            if a.uint64_as_const() == Some(0) && !strict {
+                return Some(true);
+            }
+            let comparison = if strict {
+                ConditionTerm::uint64_less_than(a, b)
+            } else {
+                ConditionTerm::uint64_less_equal(a, b)
+            };
+            return self.decide(&comparison);
         }
-        if a.uint64_as_const() == Some(0) && !strict {
-            return Some(true);
+        // Read as signed values: both in `0..=INT_MAX`, where the low word
+        // is the value and the two readings of the order agree.
+        let a = wide(&left, false)?;
+        let b = wide(&right, false)?;
+        let signed_small = |term: &Bitvector32Term| {
+            self.wide_order_chain(&Bitvector32Term::Int64Constant(0), term, false)
+                .is_some()
+                && self
+                    .wide_order_chain(
+                        term,
+                        &Bitvector32Term::Int64Constant(i32::MAX as i64),
+                        false,
+                    )
+                    .is_some()
+        };
+        if !signed_small(&a) || !signed_small(&b) {
+            return None;
         }
         let comparison = if strict {
-            ConditionTerm::uint64_less_than(a, b)
+            ConditionTerm::int64_signed_less_than(a, b)
         } else {
-            ConditionTerm::uint64_less_equal(a, b)
+            ConditionTerm::int64_signed_less_equal(a, b)
         };
         self.decide(&comparison)
     }
@@ -2417,6 +2612,152 @@ impl PureFactContext {
 #[cfg(test)]
 mod slice_index_tests {
     use super::*;
+
+    #[test]
+    fn wide_order_chains_decide_by_kind_and_refute_by_the_reversed_chain() {
+        let v = |n: u64| Bitvector32Term::Variable(Variable(997000 + n));
+        let (a, b, c, d) = (v(0), v(1), v(2), v(3));
+        type Order = fn(Bitvector32Term, Bitvector32Term) -> ConditionTerm;
+        let kinds: [(Order, Order); 2] = [
+            (
+                ConditionTerm::uint64_less_than,
+                ConditionTerm::uint64_less_equal,
+            ),
+            (
+                ConditionTerm::int64_signed_less_than,
+                ConditionTerm::int64_signed_less_equal,
+            ),
+        ];
+        for (index, (lt, le)) in kinds.iter().enumerate() {
+            let facts = PureFactContext::new()
+                .assume_condition(lt(a.clone(), b.clone()), true)
+                .assume_condition(le(b.clone(), c.clone()), true)
+                .assume_condition(le(c.clone(), d.clone()), true);
+            assert_eq!(facts.decide(&lt(a.clone(), d.clone())), Some(true));
+            assert_eq!(facts.decide(&le(a.clone(), d.clone())), Some(true));
+            assert_eq!(facts.decide(&le(b.clone(), d.clone())), Some(true));
+            // `b <= c <= d` has no strict step.
+            assert_eq!(facts.decide(&lt(b.clone(), d.clone())), None);
+            // The reversed chain refutes.
+            assert_eq!(facts.decide(&lt(d.clone(), a.clone())), Some(false));
+            assert_eq!(facts.decide(&le(d.clone(), a.clone())), Some(false));
+            assert_eq!(facts.decide(&lt(d.clone(), b.clone())), Some(false));
+            assert_eq!(facts.decide(&le(d.clone(), b.clone())), None);
+            // A chain of one kind says nothing about the other.
+            let (other_lt, other_le) = kinds[1 - index];
+            assert_eq!(facts.decide(&other_lt(a.clone(), d.clone())), None);
+            assert_eq!(facts.decide(&other_le(a.clone(), d.clone())), None);
+            // `<=` with a held disequality is strict.
+            let distinct = PureFactContext::new()
+                .assume_condition(le(a.clone(), b.clone()), true)
+                .assume_condition(ConditionTerm::int64_equal(a.clone(), b.clone()), false);
+            assert_eq!(distinct.decide(&lt(a.clone(), b.clone())), Some(true));
+            let unrelated = PureFactContext::new()
+                .assume_condition(lt(a.clone(), b.clone()), true)
+                .assume_condition(lt(c.clone(), d.clone()), true);
+            assert_eq!(unrelated.decide(&lt(a.clone(), d.clone())), None);
+        }
+    }
+
+    #[test]
+    fn wide_order_chains_reach_constants_as_their_kind_compares_them() {
+        let a = Bitvector32Term::Variable(Variable(997100));
+        let b = Bitvector32Term::Variable(Variable(997101));
+        let u = Bitvector32Term::UInt64Constant;
+        let unsigned = PureFactContext::new()
+            .assume_condition(ConditionTerm::uint64_less_than(a.clone(), b.clone()), true)
+            .assume_condition(ConditionTerm::uint64_less_equal(b.clone(), u(10)), true)
+            .assume_condition(ConditionTerm::uint64_less_equal(u(5), a.clone()), true);
+        let lt = ConditionTerm::uint64_less_than;
+        let le = ConditionTerm::uint64_less_equal;
+        assert_eq!(unsigned.decide(&lt(a.clone(), u(10))), Some(true));
+        assert_eq!(unsigned.decide(&le(a.clone(), u(9))), None);
+        assert_eq!(unsigned.decide(&lt(a.clone(), u(u64::MAX))), Some(true));
+        assert_eq!(unsigned.decide(&lt(u(5), b.clone())), Some(true));
+        assert_eq!(unsigned.decide(&lt(u(4), a.clone())), Some(true));
+        assert_eq!(unsigned.decide(&lt(u(5), a.clone())), None);
+        assert_eq!(unsigned.decide(&lt(b.clone(), u(5))), Some(false));
+        // An unsigned bound above the signed range is not a signed bound:
+        // `a <=u 2^63` allows `a` to be negative as an int64.
+        let high = 1u64 << 63;
+        let wide = PureFactContext::new()
+            .assume_condition(le(a.clone(), b.clone()), true)
+            .assume_condition(le(b.clone(), u(high)), true);
+        assert_eq!(wide.decide(&le(a.clone(), u(high))), Some(true));
+        assert_eq!(
+            wide.decide(&ConditionTerm::int64_signed_less_equal(a.clone(), u(high))),
+            None
+        );
+        assert_eq!(
+            wide.decide(&ConditionTerm::int64_signed_less_equal(u(0), a.clone())),
+            None
+        );
+        // A signed chain compares its constants as signed values.
+        let minus_one = u(u64::MAX);
+        let signed = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::int64_signed_less_equal(a.clone(), b.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::int64_signed_less_equal(b.clone(), minus_one.clone()),
+                true,
+            );
+        assert_eq!(
+            signed.decide(&ConditionTerm::int64_signed_less_than(a.clone(), u(0))),
+            Some(true)
+        );
+        assert_eq!(signed.decide(&lt(a.clone(), u(0))), Some(false));
+    }
+
+    #[test]
+    fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
+        let v = |n: u64| Bitvector32Term::Variable(Variable(996000 + n));
+        let lt = ConditionTerm::uint64_less_than;
+        let u = Bitvector32Term::UInt64Constant;
+        // A chain of fixed length beside a growing set of unrelated facts,
+        // some sharing a literal endpoint with the question.
+        let mut beside = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut facts = PureFactContext::new();
+            for i in 0..4 {
+                facts = facts.assume_condition(lt(v(i), v(i + 1)), true);
+            }
+            facts = facts.assume_condition(lt(v(4), u(1000)), true);
+            for i in 0..size {
+                facts = facts
+                    .assume_condition(lt(v(10_000 + i), v(20_000 + i)), true)
+                    .assume_condition(lt(u(0), v(30_000 + i)), true)
+                    .assume_condition(lt(v(40_000 + i), u(1000)), true);
+            }
+            let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
+                [
+                    facts.decide(&lt(v(0), v(4))),
+                    facts.decide(&lt(v(0), u(1000))),
+                    facts.decide(&lt(v(4), v(0))),
+                ]
+            });
+            assert_eq!(answers, [Some(true), Some(true), Some(false)]);
+            beside.push(work);
+        }
+        assert!(beside.iter().all(|work| *work == beside[0]), "{beside:?}");
+        // A growing chain costs work linear in its length.
+        let mut along = Vec::new();
+        for size in [8u64, 16, 32, 64] {
+            let mut facts = PureFactContext::new();
+            for i in 0..size {
+                facts = facts.assume_condition(lt(v(i), v(i + 1)), true);
+            }
+            let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.decide(&lt(v(0), v(size)))
+            });
+            assert_eq!(answer, Some(true));
+            along.push(work);
+        }
+        for pair in along.windows(2) {
+            assert!(pair[1] <= 3 * pair[0], "{along:?}");
+        }
+    }
 
     #[test]
     fn uint64_constant_order_strengthening_is_sound_at_full_width_and_scales() {

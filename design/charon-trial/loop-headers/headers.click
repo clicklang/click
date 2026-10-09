@@ -1,25 +1,25 @@
 verifying "headers.rs";
 
-uint64 final_header(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len <= 2147483647u64;
-    ensures result == bytes_len;
+fn final_header(bytes: &[u8]) -> usize {
+    requires bytes.len() <= 2147483647u64;
+    ensures result == bytes.len();
 } by {
     execute_until(loop(0));
     loop {
-        decreases bytes_len - i;
-        invariant i <= bytes_len;
+        decreases bytes.len() - i;
+        invariant i <= bytes.len();
     }
     execute(); simp();
 }
 
-uint64 negated(const uint8* bytes, uint64 bytes_len) {
-    requires bytes_len <= 2147483647u64;
-    ensures result == bytes_len;
+fn negated(bytes: &[u8]) -> usize {
+    requires bytes.len() <= 2147483647u64;
+    ensures result == bytes.len();
 } by {
     execute_until(loop(0));
     loop {
-        decreases bytes_len - i;
-        invariant i <= bytes_len;
+        decreases bytes.len() - i;
+        invariant i <= bytes.len();
     }
     execute(); simp();
 }

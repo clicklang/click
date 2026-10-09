@@ -10,7 +10,7 @@ void forward(struct pool* pool, struct payload* p) { give_back(pool, p); }
 void caller(struct pool* pool, struct payload* p) { forward(pool, p); }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: struct pool*) {}
 authorized resource item(pool: struct pool*, p: struct payload*) { owns *p; }
 resource control(pool: struct pool*) {

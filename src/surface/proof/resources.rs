@@ -421,104 +421,6 @@ fn dynamic_body_fact_dependency(
     Ok(selected)
 }
 
-pub(super) fn materialize_counted_population_bodies(
-    resource_environment: &ResourceEnvironment,
-    _parameters: &[syntax::C0Parameter],
-    _arguments: &[CExpression],
-    mut state: CState,
-    observed_population_families: &BTreeSet<String>,
-    symbolic_population_families: &BTreeSet<String>,
-    _predicate_environment: &PredicateEnvironment,
-    _click_function_environment: &ClickFunctionEnvironment,
-    _claim_label: &str,
-) -> Result<(CState, Vec<Proposition>), ClickError> {
-    let mut populations = Vec::<(String, ResourceArguments, Bitvector32Term)>::new();
-    for fact in state.resources().facts() {
-        let (name, arguments) = match fact.resource() {
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
-                (name, arguments)
-            }
-            CResource::Memory(_)
-            | CResource::Instance(_)
-            | CResource::GuardedPopulation { .. }
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::PopulationAuthority(_)
-            | CResource::Iterated(_) => continue,
-        };
-        if resource_environment.get(name).is_none() {
-            continue;
-        }
-        let quantity = fact
-            .owned_quantity_term()
-            .cloned()
-            .unwrap_or_else(|| Bitvector32Term::Constant(u32::from(fact.is_view())));
-        if quantity == Bitvector32Term::Constant(0) {
-            continue;
-        }
-        if let Some(existing) =
-            populations
-                .iter_mut()
-                .find(|(existing_name, existing_arguments, _)| {
-                    existing_name == name && existing_arguments == arguments
-                })
-        {
-            existing.2 = Bitvector32Term::add(existing.2.clone(), quantity);
-        } else {
-            populations.push((name.clone(), arguments.clone(), quantity));
-        }
-    }
-
-    let mut next_variable = COUNTED_POPULATION_VARIABLE_BASE;
-    let mut facts = Vec::new();
-
-    for (name, resource_arguments, visible_quantity) in populations {
-        let observes_population = observed_population_families.contains(&name);
-        let tracks_population_in_body = resource_environment
-            .get(&name)
-            .and_then(|definition| definition.composite_body())
-            .is_some_and(|body| body.facts().iter().any(proposition_contains_resource_count));
-        // A singleton ordinary resource does not need a persistent ghost
-        // ledger merely so `open`/`unfold` can expose its body. Counts are
-        // materialized when the proof observes them, when the body relates C
-        // state to the population, or when visible multiplicity matters.
-        if !observes_population
-            && !tracks_population_in_body
-            && visible_quantity == Bitvector32Term::Constant(1)
-        {
-            continue;
-        }
-        let count = if observes_population || symbolic_population_families.contains(&name) {
-            let count = Bitvector32Term::Variable(Variable(next_variable));
-            next_variable = next_variable.saturating_add(1);
-            count
-        } else {
-            visible_quantity.clone()
-        };
-        state = state.with_counted_population(&name, resource_arguments.clone(), count.clone());
-        facts.push(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(Bitvector32Term::Constant(0)),
-                Box::new(count.clone()),
-            ),
-            true,
-        ));
-        facts.push(Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedLessEqual(
-                Box::new(visible_quantity),
-                Box::new(count.clone()),
-            ),
-            true,
-        ));
-        // Each population has its own representable count. A wildcard sum
-        // must establish its own overflow condition when observed; it is not
-        // an entry fact merely because two populations share a resource name.
-    }
-
-    Ok((state, facts))
-}
-
 pub(super) fn materialize_folded_composite_resource_cells(
     resource_environment: &ResourceEnvironment,
     parameters: &[syntax::C0Parameter],
@@ -5445,7 +5347,6 @@ void child_release(struct child* obj) {
         .with_c_profile(CProjectProfile {
             target: None,
             runtime: None,
-            resource_semantics: ResourceSemanticsMode::Authority,
         });
         let verified = crate::surface::verify_c0_project(
             &project,

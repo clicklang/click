@@ -5,10 +5,9 @@ of `p`; the other keeps `p`. The two `free` calls after the `if` then release
 one allocation twice, so the function must not verify.
 
 The kernel's memory join keys live allocations by pointer spelling, and could
-hold this allocation live under both spellings. The proof never gets that far.
-A `branch` requires both arms to abstract to the same successor state, and
-arms that hold the allocation under different spellings do not. Past the join,
-`free` also consumes the `allocation` resource, of which there is only one.
+hold this allocation live under both spellings. It does not: the two arms
+abstract to the same successor state, which holds one live allocation, so the
+first `free` releases it and the second finds no live allocation to free.
 
 ```c filename=spelled_twice.c
 int32* same(int32* p) {
@@ -70,5 +69,5 @@ int32 twice(int32* p, int32 flag) {
 ```
 
 ```expect
-fail: `branch ensuring` arms produced different abstract successor states
+fail: cannot free a pointer that is not a live heap allocation
 ```

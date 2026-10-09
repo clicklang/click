@@ -19,7 +19,6 @@ use std::sync::Arc;
 pub struct CProofArtifactIdentity {
     digest: [u8; 32],
     pub resource_semantics_version: u32,
-    pub resource_semantics_mode: ResourceSemanticsMode,
 }
 
 impl CProofArtifactIdentity {
@@ -27,12 +26,7 @@ impl CProofArtifactIdentity {
         &self.digest
     }
 
-    fn for_components(
-        input_digest: [u8; 32],
-        click_digest: [u8; 32],
-        target: &str,
-        resource_semantics_mode: ResourceSemanticsMode,
-    ) -> Self {
+    fn for_components(input_digest: [u8; 32], click_digest: [u8; 32], target: &str) -> Self {
         let version = crate::kernel::RESOURCE_SEMANTICS_VERSION.to_be_bytes();
         let digest = digest_framed_parts([
             b"click-c-proof-artifact-v3".as_slice(),
@@ -40,12 +34,10 @@ impl CProofArtifactIdentity {
             &click_digest,
             target.as_bytes(),
             &version,
-            resource_semantics_mode.name().as_bytes(),
         ]);
         Self {
             digest,
             resource_semantics_version: crate::kernel::RESOURCE_SEMANTICS_VERSION,
-            resource_semantics_mode,
         }
     }
 }
@@ -128,7 +120,6 @@ pub(in crate::surface) struct CSourceContext<'a> {
     prepared_project_identity: Option<String>,
     input_digest: [u8; 32],
     specification_digest: Option<[u8; 32]>,
-    resource_semantics_mode: ResourceSemanticsMode,
     prepared_duplicates: bool,
     parsed_units: RefCell<BTreeMap<String, Arc<syntax::C0TranslationUnit>>>,
     /// Bundle sources extracted from a larger file, from the Click project.
@@ -139,10 +130,6 @@ pub(in crate::surface) struct CSourceContext<'a> {
 }
 
 impl<'a> CSourceContext<'a> {
-    pub(in crate::surface) fn resource_semantics_mode(&self) -> ResourceSemanticsMode {
-        self.resource_semantics_mode
-    }
-
     fn modeled_pthread_binding(
         &self,
     ) -> crate::languages::c::thread_runtime::ModeledPthreadBinding {
@@ -171,7 +158,6 @@ impl<'a> CSourceContext<'a> {
             prepared_project_identity: None,
             input_digest: digest_framed_parts(parts),
             specification_digest: None,
-            resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
             c_source_containers: BTreeMap::new(),
@@ -235,7 +221,6 @@ impl<'a> CSourceContext<'a> {
             prepared_project_identity: Some(project_identity),
             input_digest: digest_framed_parts(identity_parts),
             specification_digest: None,
-            resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: duplicate_logical_source,
             parsed_units: RefCell::new(BTreeMap::new()),
             c_source_containers: BTreeMap::new(),
@@ -264,7 +249,6 @@ impl<'a> CSourceContext<'a> {
             input_digest,
             program_import: Some(program),
             specification_digest: None,
-            resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
             c_source_containers: BTreeMap::new(),
@@ -297,7 +281,6 @@ impl<'a> CSourceContext<'a> {
             self.input_digest,
             self.specification_digest.unwrap_or([0; 32]),
             &profile,
-            self.resource_semantics_mode,
         )
     }
 
@@ -326,16 +309,10 @@ impl<'a> CSourceContext<'a> {
             .identity_suffix()
             .map(|suffix| format!("{}:{suffix}", target.name()))
             .unwrap_or_else(|| target.name().to_string());
-        CProofArtifactIdentity::for_components(
-            self.input_digest,
-            click_digest,
-            &profile,
-            self.resource_semantics_mode,
-        )
+        CProofArtifactIdentity::for_components(self.input_digest, click_digest, &profile)
     }
 
     pub(in crate::surface) fn with_click_project(mut self, project: &ClickProject) -> Self {
-        self.resource_semantics_mode = project.resource_semantics_mode();
         self.c_source_containers = project.c_source_containers().clone();
         let mut modules = project.modules().iter().collect::<Vec<_>>();
         modules.sort_by_key(|module| module.identity());
@@ -343,7 +320,6 @@ impl<'a> CSourceContext<'a> {
         for part in [
             b"click-specification-project-v1".as_slice(),
             project.entry().as_bytes(),
-            project.resource_semantics_mode().name().as_bytes(),
         ] {
             hasher.update((part.len() as u64).to_be_bytes());
             hasher.update(part);
@@ -712,7 +688,6 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         &predicate_environment,
         &click_function_environment,
         &resource_environment,
-        sources.resource_semantics_mode(),
     )?
     .with_byte_order(file.selected_c_target().byte_order());
     let refinement_targets = file
@@ -785,7 +760,6 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
         &predicate_environment,
         &click_function_environment,
         &resource_environment,
-        sources.resource_semantics_mode(),
     )?
     .with_byte_order(file.selected_c_target().byte_order());
     for target in contract_refinement_targets(&file, theorem_name) {
@@ -809,10 +783,9 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             .collect::<Vec<_>>(),
     );
     if theorem.executes.is_some() {
-        let registry = std::sync::Arc::new(
-            FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
-                .with_resource_semantics_mode(sources.resource_semantics_mode()),
-        );
+        let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
+            &external_and_user_function_blocks,
+        )?);
         let dependencies = standard_library_theorem_definitions()?
             .iter()
             .cloned()
@@ -1082,18 +1055,11 @@ pub fn verify_c0_sources(
     })
 }
 
-fn ensure_resource_semantics_supported(sources: &CSourceContext<'_>) -> Result<(), ClickError> {
-    match sources.resource_semantics_mode() {
-        ResourceSemanticsMode::Legacy | ResourceSemanticsMode::Authority => Ok(()),
-    }
-}
-
 pub(in crate::surface) fn resolve_click_project_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
     let _timing = VerificationTimingPhase::new("source resolution");
-    ensure_resource_semantics_supported(sources)?;
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
@@ -2325,7 +2291,6 @@ fn verify_c0_sources_in_context(
     mut expansion_capture: Option<&mut ExpansionCapture>,
     resolved_file: Option<ClickFile>,
 ) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
-    ensure_resource_semantics_supported(c_sources)?;
     check_verification_deadline()?;
     let preselected_runtime = resolved_file
         .as_ref()
@@ -2446,10 +2411,9 @@ fn verify_c0_sources_in_context(
     let selected_target = file.selected_c_target();
     let selected_thread_runtime = file.selected_thread_runtime();
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
-    let function_source_registry = Arc::new(
-        FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
-            .with_resource_semantics_mode(c_sources.resource_semantics_mode()),
-    );
+    let function_source_registry = Arc::new(FunctionSourceRegistry::from_function_blocks(
+        &external_and_user_function_blocks,
+    )?);
     // A sidecar contract names a C function with its ordinary spelling, but a
     // header `static inline` body executes under a translation-unit-qualified
     // name, which is the name its call sites carry and the name the kernel
@@ -2546,7 +2510,6 @@ fn verify_c0_sources_in_context(
             &predicate_environment,
             &click_function_environment,
             &resource_environment,
-            c_sources.resource_semantics_mode(),
         )?;
         let modeled_mutex_definitions: BTreeMap<_, _> = if selected_thread_runtime
             == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
@@ -3095,7 +3058,7 @@ fn verify_c0_sources_in_context(
                         arguments,
                         pure_facts,
                         ..
-                    } = initial_claim_context_with_mode(
+                    } = initial_claim_context_with_caller_owner(
                         &certification_function_block,
                         parsed_function,
                         &resource_environment,
@@ -3103,7 +3066,6 @@ fn verify_c0_sources_in_context(
                         &click_function_environment,
                         &format!("{}.contract certification", function_block.signature.name()),
                         None,
-                        function_source_registry.resource_semantics_mode(),
                     )
                     .map_err(|error| error.at_declaration(function_block.signature.name()))?;
                     (state, arguments, pure_facts)
@@ -5997,7 +5959,6 @@ pub(in crate::surface) fn parse_verified_sources(
             ),
         ),
         specification_digest: None,
-        resource_semantics_mode: ResourceSemanticsMode::Legacy,
         prepared_duplicates: false,
         parsed_units: RefCell::new(BTreeMap::new()),
         c_source_containers: BTreeMap::new(),
@@ -7002,7 +6963,6 @@ pub(in crate::surface) fn build_function_environment(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     resource_environment: &ResourceEnvironment,
-    resource_semantics_mode: ResourceSemanticsMode,
 ) -> Result<CExecutionEnvironment, ClickError> {
     let mut environment = CExecutionEnvironment::new();
     for definition in contract_definitions {
@@ -7010,7 +6970,7 @@ pub(in crate::surface) fn build_function_environment(
         let parsed_function = external_c0_function(function_block);
         let InitialClaimContext {
             state, arguments, ..
-        } = initial_claim_context_with_mode(
+        } = initial_claim_context_with_caller_owner(
             function_block,
             &parsed_function,
             resource_environment,
@@ -7018,7 +6978,6 @@ pub(in crate::surface) fn build_function_environment(
             click_function_environment,
             &format!("{}.named contract", definition.name()),
             None,
-            resource_semantics_mode,
         )
         .map_err(|error| {
             error
@@ -7162,7 +7121,7 @@ pub(in crate::surface) fn build_function_environment(
         let parsed_function = external_c0_function(function_block);
         let InitialClaimContext {
             state, arguments, ..
-        } = initial_claim_context_with_mode(
+        } = initial_claim_context_with_caller_owner(
             function_block,
             &parsed_function,
             resource_environment,
@@ -7170,7 +7129,6 @@ pub(in crate::surface) fn build_function_environment(
             click_function_environment,
             &format!("{}.external contract", function_block.signature().name()),
             None,
-            resource_semantics_mode,
         )?;
         let function = annotated_function(
             function_block,
@@ -8699,6 +8657,7 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn frozen_worker_proof_retains_the_runtime_assumption() {
         let fixture = include_str!("../../mdtests/fork_join_worker_direct_contract.md");
         let click = fixture
@@ -9028,56 +8987,13 @@ int32 answer() {
 
         let c_digest = [1; 32];
         let click_digest = [2; 32];
-        let first_target = CProofArtifactIdentity::for_components(
-            c_digest,
-            click_digest,
-            "x86_64-linux-kernel",
-            ResourceSemanticsMode::Legacy,
-        );
-        let second_target = CProofArtifactIdentity::for_components(
-            c_digest,
-            click_digest,
-            "other-target-profile",
-            ResourceSemanticsMode::Legacy,
-        );
+        let first_target =
+            CProofArtifactIdentity::for_components(c_digest, click_digest, "x86_64-linux-kernel");
+        let second_target =
+            CProofArtifactIdentity::for_components(c_digest, click_digest, "other-target-profile");
         assert_ne!(first_target, second_target);
     }
 
-    #[test]
-    fn authority_mode_has_distinct_environment_and_artifact_identities() {
-        let module = ClickModuleSource::new("answer.click", CLICK, []);
-        let legacy = ClickProject::new("answer.click", [module.clone()]);
-        let authority =
-            ClickProject::new("answer.click", [module]).with_c_profile(CProjectProfile {
-                target: None,
-                runtime: None,
-                resource_semantics: ResourceSemanticsMode::Authority,
-            });
-        let sources = [("answer.c", C_SOURCE)];
-        let legacy_context = CSourceContext::bundle(&sources).with_click_project(&legacy);
-        let authority_context = CSourceContext::bundle(&sources).with_click_project(&authority);
-        assert_eq!(
-            legacy_context.resource_semantics_mode(),
-            ResourceSemanticsMode::Legacy
-        );
-        assert_eq!(
-            authority_context.resource_semantics_mode(),
-            ResourceSemanticsMode::Authority
-        );
-        assert_ne!(
-            legacy_context.environment_identity(CTarget::SUPPORTED),
-            authority_context.environment_identity(CTarget::SUPPORTED)
-        );
-        assert_ne!(
-            legacy_context.artifact_identity(CLICK, CTarget::SUPPORTED),
-            authority_context.artifact_identity(CLICK, CTarget::SUPPORTED)
-        );
-    }
-
-    /// The same C and Click sources verified for different C implementation
-    /// targets are different proof artifacts: their preprocessing, and so
-    /// their meaning, differ. Certificates and incremental caches must never
-    /// reuse one for the other.
     #[test]
     fn artifact_identity_separates_the_selected_c_targets() {
         let context = CSourceContext::bundle(&[("answer.c", C_SOURCE)]);
@@ -9810,6 +9726,7 @@ mod retained_caller_tests {
     use super::*;
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn retained_session_reverifies_unchanged_static_array_caller() {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/static_local_arrays.md");
@@ -9838,6 +9755,7 @@ mod retained_caller_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn resumed_kernel_reverifies_static_array_caller_without_a_cached_environment() {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/static_local_arrays.md");

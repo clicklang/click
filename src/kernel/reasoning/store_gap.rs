@@ -621,6 +621,7 @@ mod tests {
     /// included, after every store whether the constant-gap cells are
     /// skipped or asked.
     #[test]
+    #[ignore = "nightly: 5s in the parallel gate"]
     fn skipping_constant_gap_cells_leaves_every_store_unchanged() {
         let anchors = anchors();
         let contexts = contexts();

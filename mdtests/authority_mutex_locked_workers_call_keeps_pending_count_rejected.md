@@ -45,7 +45,7 @@ int run(void) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "authority_mutex_locked_workers_call_keeps_pending_count_rejected.c";

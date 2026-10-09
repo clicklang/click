@@ -16491,6 +16491,7 @@ mod authority_transfer_wrapper_scaling_tests {
     use crate::kernel::{CResourceAccessMode, CResourceSpec, CType, c_function, int32};
 
     #[test]
+    #[ignore = "nightly: 6s in the parallel gate"]
     fn ordinary_authority_wrapper_checks_only_its_delta() {
         let definition = CCompositeResourceDefinition::new(
             "held",

@@ -23,7 +23,7 @@ int32 lifecycle() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource cell(pool: int32*, p: int32*) { owns p[0..1]; }
 authorized resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
 verifying "wildcard_contained_resource.c";

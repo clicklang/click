@@ -1,8 +1,11 @@
-# A declared mutable contract cannot overwrite reserved mutex bytes
+# An assumed mutable contract over an initialized mutex is refused
 
 This synthetic external call tests the contract boundary without requiring a
-particular implementation. Its declared mutable footprint includes the mutex.
-Preserving `mutex_live` does not authorize that footprint while initialized.
+particular implementation. Its declared mutable footprint includes the mutex,
+and its contract has no verified body, so the call is refused before its
+footprint is considered. A verified helper with the same footprint is refused
+for the mutex storage reservation instead, as
+`authority_mutex_verified_helper_reserved_storage_rejected.md` checks.
 
 ```c filename=mutex_reserved_mutable_contract.c
 #include <pthread.h>
@@ -32,5 +35,5 @@ int32 run(struct holder *holder) {
 ```
 
 ```expect
-fail: Requires separate(
+fail: its assumed contract changes a population or mutex resource
 ```

@@ -52,6 +52,7 @@ fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_g
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn charon_slice_into_iter_tools_agree_on_typed_reads_empty_inputs_and_expansion() {
     let p = project("iteration");
     let prepared = load_import(&p.config()).unwrap();

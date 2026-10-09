@@ -18,7 +18,7 @@ int32 fold_then_call(int32 x) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 abstract resource permit(x: int32);
 
 resource bundle(x: int32) {

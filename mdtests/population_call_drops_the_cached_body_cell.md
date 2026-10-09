@@ -25,7 +25,7 @@ int32 caller(struct object* obj) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource object_ref(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns authority(object_ref(obj));

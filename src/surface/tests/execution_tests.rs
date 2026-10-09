@@ -13,7 +13,6 @@ fn authority_stack_project(click_source: &str) -> ClickProject {
     .with_c_profile(CProjectProfile {
         target: None,
         runtime: None,
-        resource_semantics: ResourceSemanticsMode::Authority,
     })
 }
 
@@ -1261,26 +1260,36 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
         .store(local_i, int32(3))
         .without_local_block(&"local:i".into());
 
-    assert_eq!(
-        verified.specification.state(),
-        &CState::new()
-            .with_memory(initial_memory)
-            .with_resource_context(initial_resources.clone())
+    // Authority semantics give the entry a creation ledger with a fresh
+    // identity; it records nothing here.
+    assert!(
+        verified
+            .specification
+            .state()
+            .equal_up_to_unused_creation_ledgers(
+                &CState::new()
+                    .with_population_creation_tracking()
+                    .with_memory(initial_memory)
+                    .with_resource_context(initial_resources.clone())
+            )
     );
     assert_eq!(
         verified.specification.arguments(),
         &[crate::kernel::c_pointer_value(base.clone())]
     );
-    assert_eq!(
-        verified.specification.outcome(),
-        &CFunctionOutcome::Return {
-            value: int32(2),
-            state: Box::new(
-                CState::new()
-                    .with_memory(final_memory)
-                    .with_resource_context(initial_resources)
-            ),
-        }
+    assert!(
+        verified
+            .specification
+            .outcome()
+            .equal_up_to_unused_creation_ledgers(&CFunctionOutcome::Return {
+                value: int32(2),
+                state: Box::new(
+                    CState::new()
+                        .with_population_creation_tracking()
+                        .with_memory(final_memory)
+                        .with_resource_context(initial_resources)
+                ),
+            })
     );
     assert_eq!(
         implication_body(verified.theorem.proposition()),
@@ -1585,6 +1594,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn explicit_store_step_with_unfolded_resource_facts_verifies() {
     let c_source = r#"
         struct owned_string {
@@ -2051,6 +2061,7 @@ fn execute_walks_a_decided_loop_on_the_proof() {
 /// `Proof`, so a loop that never exits must exhaust a fixed step budget and
 /// name the statement it stands at, rather than run until the work limit.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
     let c_source = r#"
         int32 spin() {
@@ -2092,6 +2103,7 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
 /// `execute_until` shares `execute()`'s search and its step budget, so a
 /// loop that never exits before the target is refused at that budget.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
     let c_source = r#"
         int32 spin_then() {

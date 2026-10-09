@@ -8,7 +8,7 @@ struct object { int32 refs; };
 void wrong_count(struct object* first, struct object* second) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource reference(obj: struct object*) {}
 
 resource control(obj: struct object*) {

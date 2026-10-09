@@ -13,7 +13,7 @@ void lifecycle() {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*, member: int32*, tag: int32) {}
 verifying "wildcard_helper_nested.c";
 void inspect(int32* pool, int32* member, int32 tag) {

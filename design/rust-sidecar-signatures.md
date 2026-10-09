@@ -176,9 +176,9 @@ Each step is a pull request that leaves every example verifying.
 4. Done. `impl` blocks and `self`.
 5. In part. The 16 Rust examples under `examples/` and their mirrored
    copies under `design/charon-trial` take their signatures from the Rust
-   source. Still to do: respell their contracts and proofs (`bytes_len`,
-   `->`, `(int32)index`), then refuse `->` and the C-shaped grammar for Rust
-   sources, and print Rust spellings in diagnostics and `click expand`.
+   source and write `bytes.len()` and uncast ranges. Still to do: refuse
+   `->` and the C-shaped grammar for Rust sources, and print Rust spellings
+   in diagnostics and `click expand`, after the typed-index work.
 
 Steps 1 to 3 are in pull request #435 and documented in `docs/reference/rust.md`, "Signatures in Rust syntax", with
 fixtures under `tests/fixtures/rust-verification`.

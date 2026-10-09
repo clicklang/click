@@ -14,7 +14,7 @@ void bump(struct object *obj) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "authority_mutex_locked_undeclared_birth_rejected.c";

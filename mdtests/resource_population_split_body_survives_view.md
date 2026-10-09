@@ -1,8 +1,11 @@
-# Split population bodies remain canonical across opaque views
+# Split bodies remain canonical across opaque views
 
-An opaque mutation may split an active object body into field ranges. A later
-viewing call must recognize those ranges as the one exposed body of the still
-folded population, rather than trying to compose a duplicate whole object.
+An opaque mutation inside `open(wrapper(pair))` may split the object body into
+field ranges. A later call that views `wrapper(pair)` must recognize those
+ranges as the one body of the folded wrapper, rather than trying to compose a
+duplicate whole object. `wrapper` is an ordinary family, so the pipeline holds
+the folded `wrapper(pair)` that `wrap_pair` produced and unfolds it to return
+the object.
 
 ```c filename=resource_population_split_wrap.c
 struct pair {
@@ -87,6 +90,7 @@ void split_body_pipeline(struct pair* pair) {
     owns *pair;
 } by {
     execute();
+    unfold(wrapper(pair));
     simp();
 }
 ```

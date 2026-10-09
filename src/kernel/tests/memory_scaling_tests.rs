@@ -1238,6 +1238,7 @@ fn a_call_records_kept_members_in_work_linear_in_the_aliasing_members() {
 /// instance's own facts, the premises that relate its fields to its cells: the
 /// work is linear in the instance's body and nothing else.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
     const REGION: u64 = 4_000_000;
     const DATA: u64 = 4_100_000;

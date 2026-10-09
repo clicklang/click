@@ -7698,6 +7698,7 @@ fn memory_resource_fact_permits_write(
 /// candidates instead of finishing every pair past its budget.
 #[cfg(test)]
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn a_many_range_partition_check_stops_at_an_exhausted_run_budget() {
     let ranges = 1_000u32;
     let block = CMemory::global_pointer("pool").block;

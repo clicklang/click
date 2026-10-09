@@ -11,6 +11,9 @@ use super::thread_confinement::confined_resource_name;
 use crate::kernel::ResourceDescription;
 use std::sync::Arc;
 
+#[cfg(test)]
+mod aggregate_return_tests;
+
 fn execute_c_function_body_paths(
     state: &CState,
     function: &CFunction,
@@ -2283,12 +2286,14 @@ fn spec_reaches_population(interface: &CFunctionContractInterface, spec: &CResou
 /// and explicitly preserving assumed interfaces are checked at their own call
 /// boundaries; allocation/free use separate statement forms.
 fn authority_mode_call_refusal(caller_state: &CState) -> Option<CRuntimeError> {
-    caller_state.uses_population_authority_semantics().then(|| {
-        CRuntimeError::FunctionContract(
-            "C calls are not yet supported by authority resource semantics".to_string(),
-        )
-    })
+    caller_state
+        .uses_population_authority_semantics()
+        .then(|| CRuntimeError::FunctionContract(AUTHORITY_MODE_ASSUMED_CALL_REFUSAL.to_string()))
 }
+
+/// Why an unverified call whose contract changes a population or mutex
+/// resource is refused, and the two ways to admit it.
+pub(super) const AUTHORITY_MODE_ASSUMED_CALL_REFUSAL: &str = "the called function is not verified and its assumed contract changes a population or mutex resource; verify the function, or give it a contract that returns those resources unchanged";
 
 fn authority_mode_protected_families(interface: &CFunctionContractInterface) -> BTreeSet<&str> {
     let mut protected_families = BTreeSet::new();
@@ -22964,8 +22969,7 @@ fn apply_counted_population_transitions_with_interface(
             && contract_is_state_independent;
         // `R(q)` is `R(p)` whenever `q == p`. Applying this transfer to the
         // key alone would leave the other entry's count stale and let
-        // `count(R(p))` certify a number that is false in the aliased case
-        // (`mdtests/population_transfer_may_alias_tracked_population_rejected.md`).
+        // `count(R(p))` certify a number that is false in the aliased case.
         // Only the family's own entries are visited.
         let exact_pattern = arguments.iter().cloned().map(Some).collect::<Vec<_>>();
         if let Err(other) =
@@ -33805,7 +33809,7 @@ mod population_creation_frame_tests {
                 [CFunctionPath {
                     outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
                     ..
-                }] if message.contains("C calls are not yet supported")
+                }] if message.contains("assumed contract changes a population or mutex resource")
             )
         };
 

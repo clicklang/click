@@ -27,7 +27,7 @@ int32 inner_addr(int32 flag) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "inner_addr.c";
 
 int32 inner_addr(int32 flag) {

@@ -11,7 +11,7 @@ void user(struct node *p) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 verifying "user_tactic_recursion_converts_a_list.c";
 
 spec enum Links { Nil, Cons(Links) }

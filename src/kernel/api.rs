@@ -1694,6 +1694,21 @@ fn abstract_c_state_for_join_across_with_policy(
     // context through `with_resource_context`. The ledger and participant are
     // untouched: the arms' authority survives the abstraction, only the
     // per-occurrence bookkeeping of the discarded context goes away.
+    // Arms whose creation ledgers diverged hold separately minted names for
+    // the same records, such as the anchors of a local both declare. Every
+    // arm then takes the first sibling's ledger, so the join compares one
+    // ledger, and a ledger that records a different state is kept.
+    if let (Some(own), Some(first)) = (
+        abstract_state.population_effects.creation.as_ref(),
+        sibling_states
+            .first()
+            .and_then(|sibling| sibling.population_effects.creation.as_ref()),
+    ) && own != first
+        && (own.records_same_state_as(first) || own.records_same_state_up_to_fresh_anchors(first))
+    {
+        std::sync::Arc::make_mut(&mut abstract_state.population_effects).creation =
+            Some(first.clone());
+    }
     Ok(CStateJoinAbstraction {
         // Structural empty join shape; live successor resources are supplied
         // separately by the checked interface, not inserted into this placeholder.
@@ -9079,6 +9094,25 @@ pub fn prove_uint64_integer_bridge(
     };
     let a = observe(left.clone());
     let b = observe(right.clone());
+    // Strict order, in both directions: the unsigned observation is
+    // injective and monotone over every 64-bit pattern.
+    if matches!(
+        name,
+        "uint64_less_than_to_integer" | "uint64_less_than_of_to_integer"
+    ) {
+        let native = Proposition::ConditionIs(ConditionTerm::uint64_less_than(left, right), true);
+        let integer =
+            Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a.into(), b.into()), true);
+        let (premise, conclusion) = if name == "uint64_less_than_of_to_integer" {
+            (integer, native)
+        } else {
+            (native, integer)
+        };
+        return Some(Theorem::new(Proposition::Implies(
+            Box::new(premise),
+            Box::new(conclusion),
+        )));
+    }
     let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
     let (machine, exact, guard) = match name {
         "uint64_add_to_integer" => {
@@ -9765,6 +9799,59 @@ pub fn prove_uint32_le_implies_reversed_ge(
         ConditionTerm::unsigned_less_equal(lower.clone(), greater.clone()),
         ConditionTerm::unsigned_greater_equal(greater, lower),
     )
+}
+
+/// Whether `name` is one of the 64-bit order transitivity theorems.
+pub fn is_wide_order_transitivity_name(name: &str) -> bool {
+    matches!(
+        name.split_once('_'),
+        Some((
+            "uint64" | "int64",
+            "lt_le_transitive" | "le_lt_transitive" | "lt_transitive" | "le_transitive"
+        ))
+    )
+}
+
+/// Transitivity of 64-bit order, by the name of its standard theorem:
+/// `{uint64,int64}_{lt_le,le_lt,lt,le}_transitive`. The first premise orders
+/// `first` and `middle`, the second `middle` and `last`, and the conclusion
+/// is strict when either premise is.
+pub fn prove_wide_order_transitive(
+    name: &str,
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Option<Theorem> {
+    let (unsigned, shape) = match name.split_once('_')? {
+        ("uint64", shape) => (true, shape),
+        ("int64", shape) => (false, shape),
+        _ => return None,
+    };
+    let (first_strict, second_strict) = match shape {
+        "lt_le_transitive" => (true, false),
+        "le_lt_transitive" => (false, true),
+        "lt_transitive" => (true, true),
+        "le_transitive" => (false, false),
+        _ => return None,
+    };
+    let order = |lower: Bitvector32Term, upper: Bitvector32Term, strict: bool| {
+        Proposition::ConditionIs(
+            match (unsigned, strict) {
+                (true, true) => ConditionTerm::uint64_less_than(lower, upper),
+                (true, false) => ConditionTerm::uint64_less_equal(lower, upper),
+                (false, true) => ConditionTerm::int64_signed_less_than(lower, upper),
+                (false, false) => ConditionTerm::int64_signed_less_equal(lower, upper),
+            },
+            true,
+        )
+    };
+    Some(Theorem::new(Proposition::Implies(
+        Box::new(order(first.clone(), middle.clone(), first_strict)),
+        Box::new(Proposition::Implies(
+            Box::new(order(middle, last.clone(), second_strict)),
+            Box::new(order(first, last, first_strict || second_strict)),
+        )),
+    )))
 }
 
 /// Signed non-strict order followed by strict order is strict order.

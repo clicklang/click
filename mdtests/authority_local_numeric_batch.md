@@ -4,7 +4,7 @@
 int32 run() { int32 pool = 0; return 0; }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource token(pool: int32*) {}
 verifying "local_batch.c";
 int32 run() { ensures result == 0; } by {

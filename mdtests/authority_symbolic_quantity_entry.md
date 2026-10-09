@@ -9,7 +9,7 @@ again must neither demand a redundant explicit requirement nor crash.
 void inspect(int32* pool, int32 n) {}
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource slot(pool: int32*) {}
 verifying "symbolic_quantity.c";
 void inspect(int32* pool, int32 n) {

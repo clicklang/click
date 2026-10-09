@@ -25,7 +25,7 @@ void object_finish(struct object* obj) {
 }
 ```
 
-```click resource_semantics=authority
+```click
 authorized resource object_ref(obj: struct object*) {}
 
 resource object_control(obj: struct object*) {

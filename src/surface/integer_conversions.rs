@@ -984,6 +984,16 @@ mod tests {
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
             ),
+            (
+                "uint64_less_than_to_integer",
+                "left < right",
+                "to_integer(left) < to_integer(right)",
+            ),
+            (
+                "uint64_less_than_of_to_integer",
+                "to_integer(left) < to_integer(right)",
+                "left < right",
+            ),
         ] {
             let source = format!(
                 "theorem bridge(left: uint64, right: uint64) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"

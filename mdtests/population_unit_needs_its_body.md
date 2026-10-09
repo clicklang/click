@@ -3,7 +3,7 @@
 Authority permits a membership change; it does not provide the member's
 private memory. Producing a reference without `owns o[0..1]` is rejected.
 
-```click resource_semantics=authority
+```click
 authorized resource ref(o: struct s*) {
     owns o->x;
 }

@@ -545,7 +545,10 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
                     .map(|index| Bitvector32Term::Constant(index as u32));
             }
             if !*unsigned {
-                return None;
+                // A signed index in `0..=INT_MAX` is its own low word.
+                return assumptions
+                    .int64_index_fits_int32(value)
+                    .then(|| Bitvector32Term::uint32_from_64(value.as_ref().clone()));
             }
             let bounded =
                 |candidate: &Bitvector32Term| assumptions.uint64_index_fits_int32(candidate);
