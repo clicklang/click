@@ -1423,6 +1423,47 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int64_add_defined_by_integer_bounds`
+
+```click
+theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
+    requires to_integer(left) + to_integer(right) >= -9223372036854775808;
+    requires to_integer(left) + to_integer(right) <= 9223372036854775807;
+    ensures defined(left + right);
+}
+```
+
+Bounds on the exact mathematical sum establish that signed 64-bit addition is defined. Both bounds are required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_subtract_defined_by_integer_bounds`
+
+```click
+theorem int64_subtract_defined_by_integer_bounds(left: int64, right: int64) {
+    requires to_integer(left) - to_integer(right) >= -9223372036854775808;
+    requires to_integer(left) - to_integer(right) <= 9223372036854775807;
+    ensures defined(left - right);
+}
+```
+
+Bounds on the exact mathematical difference establish that signed 64-bit subtraction is defined. Both bounds are required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int64_less_than_of_to_integer`
+
+```click
+theorem int64_less_than_of_to_integer(left: int64, right: int64) {
+    requires to_integer(left) < to_integer(right);
+    ensures left < right;
+}
+```
+
+Strict order of the exact Integer observations implies native signed int64 strict order. The mathematical order premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int64_add_to_integer`
 
 ```click
