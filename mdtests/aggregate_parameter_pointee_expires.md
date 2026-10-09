@@ -1,5 +1,8 @@
 # A logical pointer field does not keep its pointee alive
 
+The descriptor retains its pointer value, but releasing the backing allocation
+prevents carrying the element value from function entry to the outcome.
+
 ```c filename=aggregate_parameter_pointee_expires.c
 struct packet { int32* data; };
 void dispose(struct packet input) { free(input.data); }
@@ -18,5 +21,5 @@ void dispose(struct packet input) {
 ```
 
 ```expect
-fail: owns allocation(input.data, 4)
+fail: an allocation was released in between
 ```
