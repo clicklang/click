@@ -162,6 +162,9 @@ footprint is disjoint from it.
 A scalar seeded run that caches loads from the same producer-maintained read
 identity as its base does not change bytes. When ordinary cell lookup cannot
 prove separation, `SeededLoadsOfBase` carries that local fact across the edge.
+The same witness preserves a read wider than a cached slot: two four-byte
+loads of unchanged bytes do not partially overwrite an eight-byte pointer.
+A real partial store remains a barrier before those cache-only edges.
 Checking compares the source identity, load mode and exact scalar stride; it
 never enumerates the run or assumes a caller's separation facts. Boolean and
 pointer representations remain under their existing rules. Constant runs,

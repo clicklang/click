@@ -3665,12 +3665,19 @@ pub fn c_function_return_resources_definitionally_established(
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
 ) -> bool {
-    function_return_resources_definitionally_established(
-        caller_state,
-        function,
-        arguments,
-        outcome,
-        assumptions,
+    crate::instrumentation::measure_operation(
+        "kernel",
+        "return resources",
+        "return resources: definitional check",
+        || {
+            function_return_resources_definitionally_established(
+                caller_state,
+                function,
+                arguments,
+                outcome,
+                assumptions,
+            )
+        },
     )
 }
 

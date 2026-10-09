@@ -1763,3 +1763,40 @@ fn unfinished_callback_scripts_keep_a_bounded_diagnostic_preview() {
         );
     }
 }
+
+/// A member offset that is not a whole struct stride used to be spelled
+/// through an unrelated int32 pointer, inventing an anchor/p alias repair.
+#[test]
+fn struct_field_frame_failure_names_the_read_and_written_members() {
+    let c_source = r#"
+        struct node { uint64 tag; struct node *right; struct node *left; };
+        struct node *change(struct node *p, int32 j, int32 *anchor) {
+            p[j].left = 0;
+            return p[0].left;
+        }
+    "#;
+    let source = r#"
+        verifying "field.c";
+        struct node* change(struct node* p, int32 j, int32* anchor) {
+            owns p[0..2];
+            owns *anchor;
+            requires 0 <= j;
+            requires j < 2;
+            ensures result == old(p[0].left);
+        } by {
+            step();
+            have p[0].left == old(p[0].left) by { simp(); }
+            execute(); simp();
+        }
+    "#;
+    let error = verify_c0_sources(source, &[("field.c", c_source)])
+        .expect_err("the indexed store may overwrite the first member");
+    let message = error.message();
+    assert!(message.contains("`p->left` may have changed"), "{message}");
+    assert!(
+        message.contains("the store to `p[j].left` may have written `p->left`"),
+        "{message}"
+    );
+    assert!(!message.contains("anchor["), "{message}");
+    assert!(!message.contains("may point into"), "{message}");
+}

@@ -3166,6 +3166,18 @@ fn describe_store_cause(
                 .to_string(),
         };
     };
+    if matches!(cell.index, CellIndex::StructMember)
+        || matches!(store.index, CellIndex::StructMember)
+    {
+        // A field is a cell place, not a pointer base with an unknown array
+        // index. In particular, two members of one struct array must not be
+        // described as unrelated pointer parameters that need separating.
+        return format!(
+            "the store to `{}` may have written `{}`. Establish that the two accesses touch separate bytes.",
+            store.text(),
+            cell.text(),
+        );
+    }
     if cell.object == store.object {
         return describe_same_object_store_cause(cell, store, widths);
     }
@@ -3479,6 +3491,8 @@ enum CellIndex {
     Named(String),
     /// The address is the object itself: a struct field, a declaration.
     Whole,
+    /// A selected field of a struct or struct array.
+    StructMember,
     /// The address is inside the object, at an index only the lowering has a
     /// name for. The reader is shown `a[…]` rather than a kernel variable.
     Unnamed,
@@ -3502,7 +3516,7 @@ impl SourceCell {
     fn text(&self) -> String {
         match &self.index {
             CellIndex::Named(index) => format!("{}[{index}]", self.object),
-            CellIndex::Whole => self.object.clone(),
+            CellIndex::Whole | CellIndex::StructMember => self.object.clone(),
             CellIndex::Unnamed => format!("{}[…]", self.object),
         }
     }
@@ -3510,7 +3524,7 @@ impl SourceCell {
     fn named_index(&self) -> Option<&str> {
         match &self.index {
             CellIndex::Named(index) => Some(index),
-            CellIndex::Whole | CellIndex::Unnamed => None,
+            CellIndex::Whole | CellIndex::StructMember | CellIndex::Unnamed => None,
         }
     }
 
@@ -3570,6 +3584,19 @@ fn describe_source_cell(
             return Some(SourceCell {
                 object: field,
                 index: CellIndex::Whole,
+                element_bytes: None,
+            });
+        }
+        if let Some(member) = describe_parameter_struct_member(
+            pointer,
+            parameter,
+            base.pointer(),
+            parameters,
+            arguments,
+        ) {
+            return Some(SourceCell {
+                object: member,
+                index: CellIndex::StructMember,
                 element_bytes: None,
             });
         }
