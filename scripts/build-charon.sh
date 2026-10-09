@@ -15,24 +15,35 @@ for key in ("extractor_revision", "toolchain", "compiler_commit"):
     print(profile[key])
 PYPROFILE
 )
+check_only=""
 if [[ "${1:-}" == "--install-toolchain" ]]; then
     rustup toolchain install "$toolchain" --profile minimal --component rustc-dev --component rust-src \
         --target x86_64-unknown-linux-gnu
+elif [[ "${1:-}" == "--check" ]]; then
+    # Only check that the pinned compiler is installed, without building.
+    check_only=1
 elif [[ -n "${1:-}" ]]; then
-    echo "usage: scripts/build-charon.sh [--install-toolchain]" >&2
+    echo "usage: scripts/build-charon.sh [--install-toolchain | --check]" >&2
     exit 2
 fi
-if [[ "$(rustc +"$toolchain" -vV | sed -n 's/^commit-hash: //p')" != "$compiler" ]]; then
+if [[ "$(rustc +"$toolchain" -vV 2>/dev/null | sed -n 's/^commit-hash: //p')" != "$compiler" ]]; then
     echo "error: install $toolchain with rustc-dev and rust-src for the Charon trial" >&2
     exit 1
 fi
 source_dir="$PWD/target/charon-source"
+if [[ -n "$check_only" ]]; then
+    exit 0
+fi
 if [[ ! -d "$source_dir" ]]; then
     git clone https://github.com/AeneasVerif/charon.git "$source_dir" >&2
 fi
 if [[ -n "$(git -C "$source_dir" status --porcelain)" ]]; then
     echo "error: Charon dependency checkout has local changes" >&2
     exit 1
+fi
+# A checkout made before the pin moved lacks the pinned revision.
+if ! git -C "$source_dir" cat-file -e "$revision^{commit}" 2>/dev/null; then
+    git -C "$source_dir" fetch origin >&2
 fi
 git -C "$source_dir" checkout --detach "$revision" >&2
 sysroot="$(rustc +"$toolchain" --print sysroot)"
