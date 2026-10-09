@@ -1617,6 +1617,7 @@ mod prepared_output_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn a_relocated_prepared_import_sidecar_refuses_output_and_writes_nothing() {
         let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
         let output_directory = directory.join("out");
@@ -1661,6 +1662,7 @@ mod prepared_output_tests {
     /// Confirms the fixture drives the exact prepared-input path the reject
     /// protects: loading the manifest yields one prepared C import.
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn the_prepared_fixture_selects_the_prepared_input_route() {
         let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
         let click_path = directory.join("main.click");

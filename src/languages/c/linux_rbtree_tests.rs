@@ -397,6 +397,7 @@ fn linux_rbtree_closure_matches_its_provenance() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
     let provenance = provenance();
     let closure = import_layout(&provenance, &["rbtree.click", "rbtree.click.import.json"]);

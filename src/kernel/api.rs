@@ -1694,6 +1694,21 @@ fn abstract_c_state_for_join_across_with_policy(
     // context through `with_resource_context`. The ledger and participant are
     // untouched: the arms' authority survives the abstraction, only the
     // per-occurrence bookkeeping of the discarded context goes away.
+    // Arms whose creation ledgers diverged hold separately minted names for
+    // the same records, such as the anchors of a local both declare. Every
+    // arm then takes the first sibling's ledger, so the join compares one
+    // ledger, and a ledger that records a different state is kept.
+    if let (Some(own), Some(first)) = (
+        abstract_state.population_effects.creation.as_ref(),
+        sibling_states
+            .first()
+            .and_then(|sibling| sibling.population_effects.creation.as_ref()),
+    ) && own != first
+        && (own.records_same_state_as(first) || own.records_same_state_up_to_fresh_anchors(first))
+    {
+        std::sync::Arc::make_mut(&mut abstract_state.population_effects).creation =
+            Some(first.clone());
+    }
     Ok(CStateJoinAbstraction {
         // Structural empty join shape; live successor resources are supplied
         // separately by the checked interface, not inserted into this placeholder.

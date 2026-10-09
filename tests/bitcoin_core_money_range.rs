@@ -982,6 +982,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_fee_frac_mul_reexports_and_verifies() {
     check_upstream_fee_frac(
         "FeeFrac::Mul",
@@ -991,6 +992,7 @@ fn pinned_upstream_fee_frac_mul_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_fee_frac_div_imports_and_retains_native_proof_obligations() {
     check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivImported", "");
 }
@@ -1006,6 +1008,7 @@ fn pinned_upstream_fee_frac_div_refuses_unmodelled_library_assume() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_isempty_reexports_and_verifies() {
     check_upstream_fee_frac(
         "FeeFrac::IsEmpty",
@@ -1015,6 +1018,7 @@ fn pinned_upstream_fee_frac_isempty_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_fee_frac_add_reexports_and_verifies() {
     check_upstream_fee_frac(
         "FeeFrac::operator+=",
@@ -1024,6 +1028,7 @@ fn pinned_upstream_fee_frac_add_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_addself_reexports_and_verifies() {
     check_upstream_fee_frac(
         "FeeFrac::operator+=",
@@ -1033,6 +1038,7 @@ fn pinned_upstream_fee_frac_addself_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_subtract_reexports_and_verifies() {
     check_upstream_fee_frac(
         "FeeFrac::operator-=",
@@ -1042,6 +1048,7 @@ fn pinned_upstream_fee_frac_subtract_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_subtractself_reexports_and_verifies() {
     check_upstream_fee_frac(
         "FeeFrac::operator-=",
@@ -1051,6 +1058,7 @@ fn pinned_upstream_fee_frac_subtractself_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn pinned_std_span_size_preserves_full_width_extent_offline() {
     let (root, import) = pinned_span_fixture(
         "size",
@@ -1168,6 +1176,7 @@ fn pinned_span_fixture(name: &str, harness: &str) -> (PathBuf, PreparedCppImport
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn pinned_std_span_data_preserves_pointer_identity_without_backing_authority_offline() {
     let (root, import) = pinned_span_fixture(
         "data",
@@ -1216,6 +1225,7 @@ int32* probe(struct span__int__value_unsigned_long_18446744073709551615& span) {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn pinned_std_span_trivial_assignment_copies_nested_descriptor_offline() {
     let (root, import) = pinned_span_fixture(
         "copy-assignment",
@@ -1319,6 +1329,7 @@ fn pinned_clang() -> PathBuf {
 }
 
 #[test]
+#[ignore = "nightly: 16s in the parallel gate"]
 fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let manifest: serde_json::Value = serde_json::from_str(PROVENANCE).unwrap();
     assert_eq!(
@@ -1653,6 +1664,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn pinned_upstream_compact_size_1_reexports_and_verifies() {
     check_upstream_cpp(
         "GetSizeOfCompactSize",
@@ -1664,6 +1676,7 @@ fn pinned_upstream_compact_size_1_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_compact_size_3_reexports_and_verifies() {
     check_upstream_cpp(
         "GetSizeOfCompactSize",
@@ -1675,6 +1688,7 @@ fn pinned_upstream_compact_size_3_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_compact_size_5_reexports_and_verifies() {
     check_upstream_cpp(
         "GetSizeOfCompactSize",
@@ -1686,6 +1700,7 @@ fn pinned_upstream_compact_size_5_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_compact_size_9_reexports_and_verifies() {
     check_upstream_cpp(
         "GetSizeOfCompactSize",
@@ -1697,56 +1712,67 @@ fn pinned_upstream_compact_size_9_reexports_and_verifies() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fee_frac_div_bounded_native_correction_is_safe() {
     check_bounded_upstream_rounding(RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fee_frac_div_bounded_full_expansion_reverifies() {
     check_bounded_upstream_rounding(RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fee_frac_div_bounded_rejects_false_rounding_and_missing_guards() {
     check_bounded_upstream_rounding(RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_result_fit_div_down_verifies_native_narrowing_and_correction() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_down_expands_and_reverifies() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_down_rejects_missing_or_inclusive_fit_guards() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_result_fit_div_down_rejects_false_rounding_and_missing_transport() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_result_fit_div_up_verifies_native_narrowing_and_correction() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_up_expands_and_reverifies() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_up_rejects_missing_or_inclusive_fit_guards() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_result_fit_div_up_rejects_false_rounding_and_missing_transport() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::TransportRejections);
 }
@@ -1810,19 +1836,23 @@ int64 FeeFrac_EvaluateFee{mode}(const struct FeeFrac* this, int32 at_size) {{ {c
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fee_evaluation_down_exports_full_graph_and_verifies_fast_case() {
     check_upstream_fee_evaluation_fast("Down", 4, RoundingPhase::Tools);
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fee_evaluation_up_exports_full_graph_and_verifies_fast_case() {
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fee_evaluation_down_rejects_missing_authority_bounds_and_false_results() {
     check_upstream_fee_evaluation_fast("Down", 4, RoundingPhase::Rejections);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results() {
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
 }
@@ -1859,61 +1889,73 @@ fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhas
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_down_verifies_beyond_size() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fast_result_fit_down_expands_and_reverifies() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_missing_fee_and_branch_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_false_rounding() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::NumeratorRejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fast_result_fit_up_verifies_beyond_size() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fast_result_fit_up_expands_and_reverifies() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_missing_fee_and_branch_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_false_rounding() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
 }
@@ -1944,39 +1986,48 @@ fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase)
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_has_exact_floor_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Tools);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_expands_and_reverifies() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_authority_and_amount_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 #[test]
+#[ignore = "nightly: 9s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_fee_bounds_and_false_rounding() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_has_exact_ceiling_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Tools);
 }
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_expands_and_reverifies() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_authority_and_amount_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 #[test]
+#[ignore = "nightly: 9s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_fee_bounds_and_false_rounding() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
 }
@@ -2092,21 +2143,25 @@ fn check_upstream_result_fit_wide_fee_evaluation(mode: &str, positive: bool, pha
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Down", false, RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Down", false, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Down", false, RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation(
         "Down",
@@ -2116,61 +2171,73 @@ fn upstream_wide_result_fit_down_negative_rejects_false_rounding_and_missing_tra
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::TransportRejections);
 }
@@ -2269,86 +2336,103 @@ fn check_upstream_result_fit_unified_fee_evaluation(mode: &str, phase: RoundingP
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_down_verifies_all_fee_branches_beyond_size() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_down_expands_and_reverifies() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_field_authority() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::AuthorityRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_domain_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::FitRejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_fee_bounds_and_branch_transport() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_false_rounding() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::NumeratorRejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_up_verifies_all_fee_branches_beyond_size() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_up_expands_and_reverifies() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_field_authority() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::AuthorityRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_domain_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::FitRejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_fee_bounds_and_branch_transport() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_false_rounding() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_or_forged_adjusted_numerator() {
     check_upstream_result_fit_unified_fee_evaluation(
         "Up",
@@ -2368,34 +2452,42 @@ fn check_upstream_unified_fee_evaluation(mode: &str, phase: RoundingPhase) {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_verifies_all_fee_branches() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::Tools);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_verifies_all_fee_branches() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::Tools);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_expands_and_reverifies() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_expands_and_reverifies() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_rejects_missing_domain_bounds() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_rejects_missing_domain_bounds() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_rejects_false_rounding_and_missing_transport() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_rejects_false_rounding_and_missing_transport() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
@@ -2412,37 +2504,45 @@ fn check_upstream_negative_fee_evaluation(mode: &str, phase: RoundingPhase) {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_has_symbolic_floor_bounds() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_has_symbolic_ceiling_bounds() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_instance_expands_and_reverifies() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_instance_expands_and_reverifies() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
@@ -2459,46 +2559,55 @@ fn check_upstream_positive_wide_fee_evaluation(mode: &str, phase: RoundingPhase)
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_has_symbolic_bounds() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_instance_expands_and_reverifies() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_has_symbolic_bounds() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_instance_expands_and_reverifies() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_rate_getfee_imports_converted_call_graph() {
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFee",
@@ -2542,6 +2651,7 @@ fn check_getfee(name: &str, phase: Option<RoundingPhase>) {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_expands_and_reverifies_offline() {
     check_getfee(
         "CFeeRateGetFeeExpansion",
@@ -2550,11 +2660,13 @@ fn upstream_getfee_expands_and_reverifies_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn upstream_getfee_retains_certificates_offline() {
     check_getfee("CFeeRateGetFeeRetained", Some(RoundingPhase::Tools));
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
     let source = getfee_source();
     let root_contract = source
@@ -2626,6 +2738,7 @@ theorem empty_rate_application() executes CFeeRate_GetFee(const struct CFeeRate*
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_fee_authority() {
     check_getfee(
         "CFeeRateGetFeeMissingFeeAuthority",
@@ -2633,6 +2746,7 @@ fn upstream_getfee_rejects_missing_fee_authority() {
     );
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_size_authority() {
     check_getfee(
         "CFeeRateGetFeeMissingSizeAuthority",
@@ -2640,6 +2754,7 @@ fn upstream_getfee_rejects_missing_size_authority() {
     );
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_amount_guard() {
     check_getfee(
         "CFeeRateGetFeeMissingAmountGuard",
@@ -2647,6 +2762,7 @@ fn upstream_getfee_rejects_missing_amount_guard() {
     );
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_size_guard() {
     check_getfee(
         "CFeeRateGetFeeMissingSizeGuard",
@@ -2654,6 +2770,7 @@ fn upstream_getfee_rejects_missing_size_guard() {
     );
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_rejects_missing_lower_fit() {
     check_getfee(
         "CFeeRateGetFeeMissingLowerFit",
@@ -2661,6 +2778,7 @@ fn upstream_getfee_rejects_missing_lower_fit() {
     );
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_rejects_missing_upper_fit() {
     check_getfee(
         "CFeeRateGetFeeMissingUpperFit",
@@ -2668,6 +2786,7 @@ fn upstream_getfee_rejects_missing_upper_fit() {
     );
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_inclusive_lower_fit() {
     check_getfee(
         "CFeeRateGetFeeInclusiveLowerFit",
@@ -2675,10 +2794,12 @@ fn upstream_getfee_rejects_inclusive_lower_fit() {
     );
 }
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_rejects_false_empty_result() {
     check_getfee("CFeeRateGetFeeFalseEmpty", Some(RoundingPhase::Rejections));
 }
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_getfee_rejects_false_minimum_correction() {
     check_getfee(
         "CFeeRateGetFeeFalseCorrection",
@@ -2686,6 +2807,7 @@ fn upstream_getfee_rejects_false_minimum_correction() {
     );
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_fee_observer_bounds() {
     check_getfee(
         "CFeeRateGetFeeMissingFeeBounds",
@@ -2693,6 +2815,7 @@ fn upstream_getfee_rejects_missing_fee_observer_bounds() {
     );
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_rejects_stale_reachable_header_offline() {
     check_getfee(
         "CFeeRateGetFeeStaleHeader",
@@ -2701,6 +2824,7 @@ fn upstream_getfee_rejects_stale_reachable_header_offline() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_composes_empty_and_nonempty_result_fit_profiles() {
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFee",
@@ -2738,10 +2862,12 @@ fn check_getfee_per_k(name: &str, phase: Option<RoundingPhase>) {
     );
 }
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_getfee_per_k_verifies_unchanged_down_rounding() {
     check_getfee_per_k("CFeeRateGetFeePerK", None);
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_expands_and_reverifies_offline() {
     check_getfee_per_k(
         "CFeeRateGetFeePerKExpansion",
@@ -2749,10 +2875,12 @@ fn upstream_getfee_per_k_expands_and_reverifies_offline() {
     );
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_per_k_retains_certificates_offline() {
     check_getfee_per_k("CFeeRateGetFeePerKRetained", Some(RoundingPhase::Tools));
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_zero_size() {
     check_getfee_per_k(
         "CFeeRateGetFeePerKMissingSizeGuard",
@@ -2760,6 +2888,7 @@ fn upstream_getfee_per_k_rejects_zero_size() {
     );
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_missing_authority() {
     check_getfee_per_k(
         "CFeeRateGetFeePerKMissingFeeAuthority",
@@ -2767,6 +2896,7 @@ fn upstream_getfee_per_k_rejects_missing_authority() {
     );
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_missing_lower_fit() {
     check_getfee_per_k(
         "CFeeRateGetFeePerKMissingLowerFit",
@@ -2774,6 +2904,7 @@ fn upstream_getfee_per_k_rejects_missing_lower_fit() {
     );
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_inclusive_upper_fit() {
     check_getfee_per_k(
         "CFeeRateGetFeePerKInclusiveUpperFit",
@@ -2781,6 +2912,7 @@ fn upstream_getfee_per_k_rejects_inclusive_upper_fit() {
     );
 }
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_false_rounding() {
     check_getfee_per_k(
         "CFeeRateGetFeePerKFalseRounding",
@@ -2789,6 +2921,7 @@ fn upstream_getfee_per_k_rejects_false_rounding() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
     let source = getfee_per_k_source();
     let root_contract = source

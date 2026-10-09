@@ -209,6 +209,7 @@ fn check_dirty_header_attestation(transitive: bool, staged: bool) {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn uncommitted_direct_headers_cannot_attest_false_baselines() {
     check_dirty_header_attestation(false, false);
 }

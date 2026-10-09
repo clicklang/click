@@ -265,6 +265,7 @@ fn integer_resource_match_binding_verifies_and_expands() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn tree_node_init_and_stored_child_links_expand() {
     let (source, c) = tree_node_init_fixture();
     verify_c0_sources(source, &c).unwrap();
@@ -2542,6 +2543,7 @@ fn aggregate_parameter_symbolic_index_expands_and_checks() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn resource_contract_regressions_expand_and_check() {
     for (fixture_name, function_name) in [
         ("aggregate_parameter_pointee_contract", "touch"),

@@ -6713,6 +6713,7 @@ fn fixed_state_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
 }
 
 #[test]
+#[ignore = "nightly: 9s in the parallel gate"]
 fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
     #[derive(Clone, Copy)]
     enum ArithmeticProofShape {
@@ -7275,6 +7276,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn increment_bound_family_retains_two_indexed_theorem_premises() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
@@ -8525,6 +8527,7 @@ fn surface_structural_simp_retains_recursive_child_proofs_and_scales() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn predecessor_simps_retain_indexed_named_rule_premises() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
@@ -12530,6 +12533,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     let click_file = crate::surface::parse(
         r#"

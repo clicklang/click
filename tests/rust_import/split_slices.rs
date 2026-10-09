@@ -73,6 +73,7 @@ fn charon_split_at_original_tools_agree() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_split_at_copy_tools_and_expansion_agree() {
     let p = project("copies");
     for command in ["verify", "profile", "audit"] {

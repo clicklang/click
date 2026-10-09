@@ -91,6 +91,39 @@ impl AuthorityState {
             && self.obligations.shares_root_with(&other.obligations)
     }
 
+    /// Whether the two states differ only in the paired anchors, each pair
+    /// holding equal records on which no population is established. Such an
+    /// anchor is named only by its own record, so renaming it changes no
+    /// registration, population, member or obligation.
+    pub(super) fn same_up_to_unestablished_anchors(
+        &self,
+        other: &Self,
+        renamed: &[(Anchor, Anchor)],
+    ) -> bool {
+        let mut left_anchors = self.anchors.clone();
+        let mut right_anchors = other.anchors.clone();
+        for (left, right) in renamed {
+            let (Some(left_record), Some(right_record)) =
+                (self.anchors.get(left), other.anchors.get(right))
+            else {
+                return false;
+            };
+            if left_record != right_record
+                || left_record.registrations != 0
+                || !left_record.established.is_empty()
+            {
+                return false;
+            }
+            left_anchors.remove(left);
+            right_anchors.remove(right);
+        }
+        left_anchors == right_anchors
+            && self.registrations == other.registrations
+            && self.populations == other.populations
+            && self.members == other.members
+            && self.obligations == other.obligations
+    }
+
     fn change_obligations(&mut self, holder: Holder, remove: u64, add: u64) {
         let prior = self.obligations.get(&holder).copied().unwrap_or(0);
         let next = prior

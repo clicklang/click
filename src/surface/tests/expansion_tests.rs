@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn post_execution_have_expansion_preserves_later_smart_proofs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/bubble_sort3_loop_sorted.md");
@@ -95,6 +96,7 @@ fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/bubble_sort3_loop_permutation.md");
@@ -369,6 +371,7 @@ fn assert_static_array_call_requirement_expands_and_deletion(fixture: &str, have
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn static_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_local_arrays.md",
@@ -377,6 +380,7 @@ fn static_array_call_requirement_expands_and_deletion_rejects() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn parity_scalar_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_array_parity_scalar.md",
@@ -385,6 +389,7 @@ fn parity_scalar_array_call_requirement_expands_and_deletion_rejects() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn parity_multidimensional_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_array_parity_multidimensional.md",
@@ -393,6 +398,7 @@ fn parity_multidimensional_array_call_requirement_expands_and_deletion_rejects()
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn parity_fixed_multidimensional_array_call_requirement_expands_and_deletion_rejects() {
     assert_static_array_call_requirement_expands_and_deletion(
         "mdtests/static_array_parity_fixed_multidimensional.md",
@@ -960,6 +966,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 /// every goal, and checked the bound's arithmetic step against the
 /// `viewable` body.
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
     let anchor = "            }\n            simp();\n        }\n        preserve";
     let quantified = "have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {\n                have";
@@ -1070,6 +1077,7 @@ fn post_execution_closer_continues_the_proof_a_witness_opened() {
 /// loop's store from the earlier cells by their indices alone, and
 /// `snapshot_read_alignment_fact_renders_as_aligned` covers the rendering.
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn entry_alignment_premise_expands_in_source_spelling() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/entry_alignment_premise_expands.md",
@@ -1082,6 +1090,7 @@ fn entry_alignment_premise_expands_in_source_spelling() {
 /// Written else nesting is not recursive driver depth: a failed allocation
 /// returns, so twelve null checks can expand and re-verify just like eleven.
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn expansion_reverifies_terminal_cases_past_the_old_nesting_bound() {
     let (click_source, c_sources) = mdtest_sources("mdtests/expand_sequential_null_checks.md");
     let c_sources = c_sources
@@ -2020,6 +2029,7 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
 /// Whole-claim expansion rebuilds a proof `match` from the paths through its
 /// arms. Each claim here verifies, and its expansion must too.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn whole_claim_expansion_of_proof_matches_rechecks() {
     for (mdtest, claim) in [
         ("proof_match_after_c_step", "read_after_step.contract"),
@@ -2274,6 +2284,7 @@ int32 early(int32 x) {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
     let (click, sources) = mdtest_sources("mdtests/sort3_sorted.md");
     let sources = sources
@@ -2329,6 +2340,7 @@ theorem choose_reflexive_arm() {{
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn deferred_preservation_simp_expands_at_its_original_source_site() {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/owned-vector/vector.click");
@@ -2486,6 +2498,7 @@ fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn branch_interface_service_simp_expands_and_rechecks() {
     let source = include_str!("../../../examples/perpetual-service/perpetual_service.click");
     let sources = [
@@ -2574,6 +2587,7 @@ fn serialized_loop_premises_reject_a_changed_snapshot_or_polarity() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn return_population_proofs_expand_without_effect_clauses() {
     for (fixture_name, functions) in [
         (
@@ -3724,6 +3738,7 @@ fn outcome_arithmetic_normalization_retains_selected_equality_paths() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn outcome_quantified_cells_retain_selected_instantiations() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests")
@@ -10360,6 +10375,7 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn callback_status_proofs_expand_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_contract_executes_status.md");
     let mdtest = crate::cli::parse_mdtest(std::path::Path::new("status.md"), markdown).unwrap();
@@ -10467,6 +10483,7 @@ fn nested_callback_status_cases_verify() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn nested_callback_status_item_zero_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
     let c_sources = c_sources
@@ -10480,6 +10497,7 @@ fn nested_callback_status_item_zero_cases_expand_and_reverify() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn nested_callback_status_item_branch_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
     let c_sources = c_sources
@@ -10493,6 +10511,7 @@ fn nested_callback_status_item_branch_cases_expand_and_reverify() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn nested_callback_status_closer_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
     let c_sources = c_sources
@@ -10506,6 +10525,7 @@ fn nested_callback_status_closer_cases_expand_and_reverify() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn acquired_callback_ownership_expands_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_contract_executes_acquire.md");
     let mdtest = crate::cli::parse_mdtest(std::path::Path::new("acquire.md"), markdown).unwrap();
@@ -11477,6 +11497,7 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn bound_universal_outcome_retains_instantiation_and_transport() {
     let c_source = r#"
         int32 bubble_pass3(int32 p[3]) {
@@ -11618,6 +11639,7 @@ fn bound_universal_bubble_pass3_max_suffix_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn bound_universal_bubble_sort3_two_pass_sorted_has_no_outcome_fallbacks() {
     let (filename, function) = BOUND_UNIVERSAL_FIXTURE_CASES[1];
     assert_bound_universal_fixture_has_no_outcome_fallbacks(filename, function);
@@ -11913,6 +11935,7 @@ fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn linked_list_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[0];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -11924,6 +11947,7 @@ fn linked_list_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn input_cursor_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[1];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -11935,6 +11959,7 @@ fn input_cursor_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 10s in the parallel gate"]
 fn owned_segmented_buffer_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[2];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -11958,6 +11983,7 @@ fn owned_string_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn recursive_zero_list_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[4];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
@@ -11980,6 +12006,7 @@ fn vector_push_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest
@@ -12018,6 +12045,7 @@ fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn negative_outcome_diagnostic_manifests_have_no_fallbacks() {
     let manifests = [
         (
@@ -13786,6 +13814,7 @@ fn outcome_predecessor_bound_simp_expands_to_the_named_rule() {
 /// `data + start` inside the composite buffer's owned range through the
 /// contract bounds without encoding them in the emitted statement step.
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn expanded_step_uses_the_whole_context_for_frame_evidence() {
     let click_source = include_str!("../../../examples/borrowed-slice/borrowed_slice.click");
     let c_sources = [
@@ -14949,6 +14978,7 @@ fn the_iterated_ownership_claim_loop_expands_and_reverifies() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn the_iterated_ownership_release_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_release_loop.md",
@@ -15542,6 +15572,7 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn authority_named_parent_keeps_actual_fields_across_unrelated_owned_call() {
     let source = r#"
 spec enum ParentLink { Empty, Linked(struct child*) }
@@ -15814,6 +15845,7 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
 /// `if`, and inside one arm of a C `if`, every proof shape of every claim
 /// expands to source that re-verifies.
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn throwing_call_forks_expand_and_reverify_in_every_position() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -16486,6 +16518,7 @@ fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
     let (source, sources) =
         mdtest_sources("mdtests/loop_invariant_through_loaded_pointer_field.md");
@@ -16501,6 +16534,7 @@ fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn padded_struct_field_loop_expansion_reverifies() {
     let (source, sources) =
         mdtest_sources("mdtests/loop_invariant_through_padded_pointer_field.md");

@@ -661,6 +661,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 6s in the parallel gate"]
     fn tautological_ensure_preserves_population_certification() {
         let directory =
             std::env::temp_dir().join(format!("click-certification-trace-{}", std::process::id()));
@@ -696,6 +697,7 @@ mod tests {
     // Simple claim closers must perform the same checked return exchange as
     // simp, including a consuming contract with no returned resource claim.
     #[test]
+    #[ignore = "nightly: 10s in the parallel gate"]
     fn shared_population_release_expansion_retains_lifetime() {
         let directory = std::env::temp_dir().join(format!(
             "click-population-release-expansion-{}",

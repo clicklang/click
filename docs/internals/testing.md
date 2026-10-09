@@ -238,14 +238,17 @@ each of those verifies a whole corpus on every core.
 
 ### The gate has a ten-minute budget
 
-`scripts/check.sh` and a CI run each finish in under ten minutes. The script
-prints its elapsed time and warns past the budget. Measured 2026-10-06 on 20
-cores with a warm build: 5 minutes.
+`scripts/check.sh` and a CI run each finish in under ten minutes on an
+ordinary four-core machine. The script prints its elapsed time and warns past
+the budget.
 
 The budget is kept by what the gate leaves out, not by a faster machine:
 
-- A test that takes more than about ten seconds is marked
-  `#[ignore = "nightly: <measurement>"]`.
+- A test that takes more than about two seconds while the gate runs tests in
+  parallel is marked `#[ignore = "nightly: <measurement>"]`. The gate kills a
+  test still running after 30 seconds.
+- A mutation test, which re-verifies a whole example with one C statement
+  changed, is nightly. A family keeps at most one or two in the gate.
 - An example that does is listed in `NIGHTLY` in `tests/examples.rs`.
 - `click audit` re-expands and re-verifies every site of a claim, tens of
   seconds where `verify` takes under one. The import tests run it only under
@@ -265,7 +268,12 @@ fresh checkout cannot load it, and `tests/cpp_import.rs` audits the C++ path.
 When a new test would
 push the gate past ten minutes, put it in the nightly gate; do not raise the
 budget. Before 2026-10-06 the local gate had grown to 41 minutes and CI to 23
-in five days, almost all from tool rechecks in the Rust import tests.
+in five days, almost all from tool rechecks in the Rust import tests. By
+2026-10-09 it had grown again to 30 minutes on four cores. 486 tests of two
+seconds or more held about four fifths of its test time: Bitcoin Core money
+range checks, rbtree erase mutations of a nightly example, Rust and C++
+import checks, and `click audit` tests. They moved to nightly, leaving two
+rbtree erase mutations in the gate.
 
 CI uses these internal modes for code-affecting changes:
 
@@ -378,13 +386,14 @@ cargo nextest run
 ```
 
 `.config/nextest.toml` reports any test slower than 10 seconds as slow and
-kills any test still running after 15 minutes. No test's verdict depends on
-wall clock, so the kill is crash containment for a hung process, set far
-above what a loaded machine produces: a 60-second per-test kill once failed
-the 512-deep command-line boundary tests at random whenever other builds
-loaded the machine. Treat a slow report as a finding: split the test, or fix
-the prover slowdown it is exposing, and pin superlinear work with a
-deterministic scaling regression. The
+kills a gate test still running after 30 seconds. No proof verdict depends on
+wall clock; the kill decides only that a test is too slow for the gate. It
+sits 15 times above the two-second rule because a 60-second per-test kill once
+failed the 512-deep command-line boundary tests at random whenever other
+builds loaded the machine. The nightly profile kills only after two hours, as
+crash containment. Treat a slow report as a finding: split the test, move it
+to nightly, or fix the prover slowdown it is exposing, and pin superlinear
+work with a deterministic scaling regression. The
 mdtest and example-project harnesses are aggregate tests covering many directly
 verified fixtures, so their outer test-process allowance is not a per-project
 verification budget.

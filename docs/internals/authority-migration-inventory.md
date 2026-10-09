@@ -1636,6 +1636,18 @@ fields before it resolves their schemas, so a malformed field still reports its
 own cause. The library test for counting a fielded resource now expects the
 unauthorized-family refusal, or the named-member refusal for a quantity.
 
+A branch join compared the arms' creation ledgers by identity. After the
+switch the arms of the moved-child `match ... ensuring` in
+`examples/rbtree-erase/rbtree_erase_spine.click` each declare the same
+call-result local after their ledgers diverged, so each mints its own anchor
+for it, and the join refused equal states. The shared join abstraction now
+gives every arm the first arm's ledger when the two record the same state:
+under different identities, or with fresh anchors on the same storage that
+carry no established population. The kernel check and the surface join make
+the same choice. `a_branch_whose_arms_spell_one_allocation_differently_does_not_free_it_twice.md`
+had relied on the identity mismatch to refuse at the join; its arms record
+one state, and the second `free` refuses the double free.
+
 Retired fixtures, each covered by the authority replacement named earlier:
 
 - `population_count_alias_consumption_rejected.md`,

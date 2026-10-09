@@ -760,6 +760,7 @@ fn explicit_proof_if_does_not_capture_shared_following_c_if() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn following_c_if_splits_one_symbolic_call_successor() {
     let (replace_source, caller_source, click_source) = result_case_split_sources();
     let sources = &[

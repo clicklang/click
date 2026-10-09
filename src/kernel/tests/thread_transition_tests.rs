@@ -1086,6 +1086,7 @@ fn thread_guarantees_are_withheld_until_join() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
     let (worker, termination) = worker();
     let assumptions = PureFactContext::new();

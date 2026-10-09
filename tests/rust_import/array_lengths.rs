@@ -74,6 +74,7 @@ fn charon_array_lengths_preserve_unchanged_sources_and_reject_false_claims() {
     }
 }
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn charon_array_lengths_proof_tools_recheck_metadata_and_array_certificates() {
     for bounds in [false, true] {
         let p = project(bounds);

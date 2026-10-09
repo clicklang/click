@@ -139,6 +139,7 @@ fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
@@ -189,21 +190,25 @@ fn reject_helper_byte_bounds(lane: usize) {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_0() {
     reject_helper_byte_bounds(0);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_1() {
     reject_helper_byte_bounds(1);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_2() {
     reject_helper_byte_bounds(2);
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_3() {
     reject_helper_byte_bounds(3);
 }
@@ -265,21 +270,25 @@ fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn charon_adler2_helpers_rem_preservation_rejects_false_lane_0() {
     reject_helper_reduction_preservation(0);
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn charon_adler2_helpers_rem_preservation_rejects_false_lane_1() {
     reject_helper_reduction_preservation(1);
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn charon_adler2_helpers_rem_preservation_rejects_false_lane_2() {
     reject_helper_reduction_preservation(2);
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn charon_adler2_helpers_rem_preservation_rejects_false_lane_3() {
     reject_helper_reduction_preservation(3);
 }
@@ -308,6 +317,7 @@ fn reject_helper_reduction_preservation(lane: usize) {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
     reject_helper_contracts(
         2,
@@ -337,26 +347,31 @@ fn reject_helper_reduction_bounds(lane: usize) {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_0() {
     reject_helper_reduction_bounds(0);
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_1() {
     reject_helper_reduction_bounds(1);
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_2() {
     reject_helper_reduction_bounds(2);
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_3() {
     reject_helper_reduction_bounds(3);
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_lanes_and_overflow() {
     reject_helper_contracts(
         3,
@@ -393,21 +408,25 @@ fn reject_helper_product_observations(lane: usize) {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_0() {
     reject_helper_product_observations(0);
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_1() {
     reject_helper_product_observations(1);
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_2() {
     reject_helper_product_observations(2);
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_3() {
     reject_helper_product_observations(3);
 }
@@ -522,6 +541,7 @@ const BOUNDS: &str = include_str!("../../design/charon-trial/adler2/bounds.click
 const RECOMBINATION: &str = include_str!("../../design/charon-trial/adler2/recombination.click");
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_recombination_bounds_verify_with_original_helpers() {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
@@ -648,6 +668,7 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
@@ -755,6 +776,7 @@ fn flat_iterator_bounds() -> String {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
     use click::surface::verify_click_theorems;
     let source = flat_iterator_bounds();
@@ -819,6 +841,7 @@ fn iterator_bounds_project() -> Project {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
     let p = iterator_bounds_project();
     let prepared = load_import(&p.config()).unwrap();
@@ -992,12 +1015,14 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn charon_adler2_single_byte_compute_rejects_missing_length_and_view() {
     reject_single_byte_compute("requires bytes_len == 1u64;", "");
     reject_single_byte_compute("views bytes[0..1];", "");
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_single_byte_compute_rejects_empty_input() {
     reject_single_byte_compute("requires bytes_len == 1u64;", "requires bytes_len == 0u64;");
 }
@@ -1068,6 +1093,7 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_short_tail_compute_rejects_missing_length_and_view() {
     for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
         reject_compute(contract, &format!("requires bytes_len == {bytes}u64;"), "");
@@ -1076,6 +1102,7 @@ fn charon_adler2_short_tail_compute_rejects_missing_length_and_view() {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn charon_adler2_short_tail_compute_rejects_wrong_extent_and_constructor() {
     for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
         reject_compute(
@@ -1154,6 +1181,7 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
         FOUR_BYTE_COMPUTE,
@@ -1168,6 +1196,7 @@ fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() 
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_four_byte_compute_rejects_missing_extent_view_and_constructor() {
     for (before, after) in [
         ("requires bytes_len == 4u64;", ""),

@@ -78,6 +78,7 @@ fn compact_scalar_arrays_copy_uniform_values_without_expanding_storage_or_work()
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() {
     let mut samples = Vec::new();
     for count in [8, 1024, 1_000_000] {

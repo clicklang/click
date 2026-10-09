@@ -768,6 +768,7 @@ fn late_offset_cell_hits_scale_with_affected_entries() {
 }
 
 #[test]
+#[ignore = "nightly: 2s in the parallel gate"]
 fn cell_publication_and_forks_do_not_repeat_input_registration() {
     for size in [16u64, 64, 256, 1024] {
         let at = |id| Pointer {

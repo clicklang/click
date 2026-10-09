@@ -8652,6 +8652,7 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn frozen_worker_proof_retains_the_runtime_assumption() {
         let fixture = include_str!("../../mdtests/fork_join_worker_direct_contract.md");
         let click = fixture
@@ -9720,6 +9721,7 @@ mod retained_caller_tests {
     use super::*;
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn retained_session_reverifies_unchanged_static_array_caller() {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/static_local_arrays.md");
@@ -9748,6 +9750,7 @@ mod retained_caller_tests {
     }
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn resumed_kernel_reverifies_static_array_caller_without_a_cached_environment() {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/static_local_arrays.md");

@@ -604,6 +604,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 2s in the parallel gate"]
     fn metadata_rejects_missing_identities_in_nested_payloads() {
         fn identity_paths(value: &Value, prefix: &str, result: &mut Vec<String>) {
             match value {

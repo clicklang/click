@@ -147,15 +147,20 @@ fail.
 
 ## The gate has a ten-minute budget
 
-`scripts/check.sh` and a CI run each finish in under ten minutes. A test that
-takes more than about ten seconds does not go in the gate: mark it
-`#[ignore = "nightly: <measurement>"]`, or list a slow example in `NIGHTLY`
-in `tests/examples.rs`. `scripts/check.sh --nightly` and the nightly workflow
-run those with no budget. Do not add `click audit` or whole-example tool
-rechecks to gate tests; one `audit` costs tens of seconds where `verify`
-costs under one. The script prints its elapsed time: when your change pushes
-it past ten minutes, move tests to nightly in the same change. See
-`docs/internals/testing.md`.
+`scripts/check.sh` and a CI run each finish in under ten minutes on an
+ordinary four-core machine. The budget is kept per test: a gate test takes
+under about two seconds while the gate runs tests in parallel. A slower test
+is marked `#[ignore = "nightly: <measurement>"]`, and a slow example is
+listed in `NIGHTLY` in `tests/examples.rs`. The gate kills a test still
+running after 30 seconds. `scripts/check.sh --nightly` and the nightly
+workflow run the rest with no budget.
+
+Add a gate test only for a behavior no existing gate test covers, and say in
+its comment what it catches. Mutation tests, `click audit`, and whole-example
+tool rechecks belong in nightly: one `audit` costs tens of seconds where
+`verify` costs under one, and one mutation of a large example re-verifies the
+whole example. Keep at most one or two such tests in the gate for a family.
+See `docs/internals/testing.md`.
 
 ## File bugs freely; create issues only when the user explicitly asks
 

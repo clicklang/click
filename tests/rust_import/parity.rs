@@ -161,6 +161,7 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn charon_canonical_basic_tools_agree() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/basic-rust");
     let p = Project::new("");

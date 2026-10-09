@@ -43,6 +43,7 @@ const QUARANTINED: &[(&str, &str)] = &[(
 const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[];
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn frozen_shared_heap_lifecycles_verify() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("design")
@@ -69,6 +70,7 @@ fn concurrency_mutex_parity_source_is_frozen() {
 }
 
 #[test]
+#[ignore = "nightly: 23s in the parallel gate"]
 fn canonical_charon_examples_verify_locked_inputs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let inventory: Vec<serde_json::Value> =
@@ -413,6 +415,7 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
 /// root's colour bit is black at that `break`, which the C no longer makes
 /// true, and that claim is refused; the files on disk are not changed.
 #[test]
+#[ignore = "nightly: 5s in the parallel gate"]
 fn rbtree_insert_refuses_a_skipped_recolour() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree-insert/rbtree_insert.click");
@@ -513,6 +516,7 @@ fn rbtree_erase_refuses_a_skipped_right_child_parent_color() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
     erase_refuses_mutation(
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
@@ -561,6 +565,7 @@ fn rbtree_erase_successor_explicit_closers_preserve_ownership() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_successor.click",
@@ -570,6 +575,7 @@ fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
 }
 
 #[test]
+#[ignore = "nightly: 3s in the parallel gate"]
 fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_successor.click",
@@ -579,6 +585,7 @@ fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
 }
 
 #[test]
+#[ignore = "nightly: 6s in the parallel gate"]
 fn rbtree_erase_black_successor_requires_the_fixup_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_successor.click",
@@ -588,6 +595,7 @@ fn rbtree_erase_black_successor_requires_the_fixup_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn rbtree_erase_child_successor_requires_blackening() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_child_successor.click",
@@ -597,6 +605,7 @@ fn rbtree_erase_child_successor_requires_blackening() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn rbtree_erase_child_successor_requires_parent_color_write() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_child_successor.click",
@@ -606,6 +615,7 @@ fn rbtree_erase_child_successor_requires_parent_color_write() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn rbtree_erase_black_leaf_requires_left_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_black_leaf.click",
@@ -616,6 +626,7 @@ fn rbtree_erase_black_leaf_requires_left_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn rbtree_erase_black_leaf_requires_right_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_black_leaf.click",
@@ -626,6 +637,7 @@ fn rbtree_erase_black_leaf_requires_right_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 7s in the parallel gate"]
 fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_leaf.click",
@@ -635,6 +647,7 @@ fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn rbtree_erase_red_leaf_requires_left_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_red_leaf.click",
@@ -645,6 +658,7 @@ fn rbtree_erase_red_leaf_requires_left_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 9s in the parallel gate"]
 fn rbtree_erase_red_leaf_requires_right_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_red_leaf.click",
@@ -655,6 +669,7 @@ fn rbtree_erase_red_leaf_requires_right_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 8s in the parallel gate"]
 fn rbtree_erase_red_leaf_requires_no_fixup() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_red_leaf.click",
@@ -664,6 +679,7 @@ fn rbtree_erase_red_leaf_requires_no_fixup() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_right_child_requires_left_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_right_child.click",
@@ -674,6 +690,7 @@ fn rbtree_erase_right_child_requires_left_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn rbtree_erase_right_child_requires_right_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_right_child.click",
@@ -684,6 +701,7 @@ fn rbtree_erase_right_child_requires_right_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn rbtree_erase_right_child_requires_parent_color_write() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_right_child.click",
@@ -693,6 +711,7 @@ fn rbtree_erase_right_child_requires_parent_color_write() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_right_child_requires_blackening() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_right_child.click",
@@ -702,6 +721,7 @@ fn rbtree_erase_right_child_requires_blackening() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn rbtree_erase_left_child_requires_left_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_left_child.click",
@@ -712,6 +732,7 @@ fn rbtree_erase_left_child_requires_left_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn rbtree_erase_left_child_requires_right_parent_link_update() {
     erase_source_refuses_mutation(
         "rbtree_erase_left_child.click",
@@ -722,6 +743,7 @@ fn rbtree_erase_left_child_requires_right_parent_link_update() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_left_child_requires_parent_color_write() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_left_child.click",
@@ -731,6 +753,7 @@ fn rbtree_erase_left_child_requires_parent_color_write() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_left_child_requires_blackening() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_left_child.click",
@@ -740,6 +763,7 @@ fn rbtree_erase_left_child_requires_blackening() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn rbtree_erase_right_child_requires_no_fixup() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_right_child.click",
@@ -749,6 +773,7 @@ fn rbtree_erase_right_child_requires_no_fixup() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn rbtree_erase_left_child_requires_no_fixup() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_left_child.click",
@@ -758,6 +783,7 @@ fn rbtree_erase_left_child_requires_no_fixup() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn rbtree_erase_nonroot_successor_requires_left_parent_link() {
     erase_source_refuses_mutation(
         "rbtree_erase_nonroot_successor.click",
@@ -768,6 +794,7 @@ fn rbtree_erase_nonroot_successor_requires_left_parent_link() {
 }
 
 #[test]
+#[ignore = "nightly: 14s in the parallel gate"]
 fn rbtree_erase_nonroot_successor_requires_right_parent_link() {
     erase_source_refuses_mutation(
         "rbtree_erase_nonroot_successor.click",
@@ -778,6 +805,7 @@ fn rbtree_erase_nonroot_successor_requires_right_parent_link() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn rbtree_erase_nonroot_successor_requires_left_subtree_link() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_successor.click",
@@ -787,6 +815,7 @@ fn rbtree_erase_nonroot_successor_requires_left_subtree_link() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn rbtree_erase_nonroot_successor_requires_left_subtree_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_successor.click",
@@ -796,6 +825,7 @@ fn rbtree_erase_nonroot_successor_requires_left_subtree_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn rbtree_erase_nonroot_successor_requires_successor_parent_color() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_successor.click",
@@ -805,6 +835,7 @@ fn rbtree_erase_nonroot_successor_requires_successor_parent_color() {
 }
 
 #[test]
+#[ignore = "nightly: 14s in the parallel gate"]
 fn rbtree_erase_nonroot_successor_requires_no_fixup() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_successor.click",
@@ -814,6 +845,7 @@ fn rbtree_erase_nonroot_successor_requires_no_fixup() {
 }
 
 #[test]
+#[ignore = "nightly: 22s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_left_parent_link() {
     erase_source_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -824,6 +856,7 @@ fn rbtree_erase_nonroot_child_successor_requires_left_parent_link() {
 }
 
 #[test]
+#[ignore = "nightly: 26s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_right_parent_link() {
     erase_source_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -834,6 +867,7 @@ fn rbtree_erase_nonroot_child_successor_requires_right_parent_link() {
 }
 
 #[test]
+#[ignore = "nightly: 22s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_left_subtree_link() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -843,6 +877,7 @@ fn rbtree_erase_nonroot_child_successor_requires_left_subtree_link() {
 }
 
 #[test]
+#[ignore = "nightly: 22s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_left_subtree_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -852,6 +887,7 @@ fn rbtree_erase_nonroot_child_successor_requires_left_subtree_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 23s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_successor_parent_color() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -861,6 +897,7 @@ fn rbtree_erase_nonroot_child_successor_requires_successor_parent_color() {
 }
 
 #[test]
+#[ignore = "nightly: 23s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_no_fixup() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -870,6 +907,7 @@ fn rbtree_erase_nonroot_child_successor_requires_no_fixup() {
 }
 
 #[test]
+#[ignore = "nightly: 22s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_child_parent_color_write() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -879,6 +917,7 @@ fn rbtree_erase_nonroot_child_successor_requires_child_parent_color_write() {
 }
 
 #[test]
+#[ignore = "nightly: 23s in the parallel gate"]
 fn rbtree_erase_nonroot_child_successor_requires_child_blackening() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_child_successor.click",
@@ -888,6 +927,7 @@ fn rbtree_erase_nonroot_child_successor_requires_child_blackening() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_nonroot_black_successor_requires_left_parent_link() {
     erase_source_refuses_mutation(
         "rbtree_erase_nonroot_black_successor.click",
@@ -898,6 +938,7 @@ fn rbtree_erase_nonroot_black_successor_requires_left_parent_link() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn rbtree_erase_nonroot_black_successor_requires_right_parent_link() {
     erase_source_refuses_mutation(
         "rbtree_erase_nonroot_black_successor.click",
@@ -908,6 +949,7 @@ fn rbtree_erase_nonroot_black_successor_requires_right_parent_link() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_nonroot_black_successor_requires_left_subtree_link() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_black_successor.click",
@@ -917,6 +959,7 @@ fn rbtree_erase_nonroot_black_successor_requires_left_subtree_link() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_nonroot_black_successor_requires_left_subtree_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_black_successor.click",
@@ -926,6 +969,7 @@ fn rbtree_erase_nonroot_black_successor_requires_left_subtree_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_nonroot_black_successor_requires_successor_parent_color() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_black_successor.click",
@@ -935,6 +979,7 @@ fn rbtree_erase_nonroot_black_successor_requires_successor_parent_color() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_nonroot_black_successor_requires_fixup_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_black_successor.click",
@@ -944,6 +989,7 @@ fn rbtree_erase_nonroot_black_successor_requires_fixup_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn rbtree_erase_nonroot_black_successor_requires_successor_as_fixup_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_nonroot_black_successor.click",
@@ -953,6 +999,7 @@ fn rbtree_erase_nonroot_black_successor_requires_successor_as_fixup_parent() {
 }
 
 #[test]
+#[ignore = "nightly: 4s in the parallel gate"]
 fn rbtree_erase_black_successor_requires_root_replacement() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_successor.click",
@@ -962,6 +1009,7 @@ fn rbtree_erase_black_successor_requires_root_replacement() {
 }
 
 #[test]
+#[ignore = "nightly: 10s in the parallel gate"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
@@ -971,6 +1019,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
 }
 
 #[test]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
@@ -990,6 +1039,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
 }
 
 #[test]
+#[ignore = "nightly: 13s in the parallel gate"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",
@@ -999,6 +1049,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
 }
 
 #[test]
+#[ignore = "nightly: 12s in the parallel gate"]
 fn rbtree_erase_deep_successor_refuses_a_red_replacement() {
     erase_sidecar_refuses_mutation(
         "rbtree_erase_spine.click",

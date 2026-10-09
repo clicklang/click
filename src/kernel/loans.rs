@@ -9710,6 +9710,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 3s in the parallel gate"]
     fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
         let assumptions = PureFactContext::new();
         let mut chain_samples = Vec::new();
@@ -9785,6 +9786,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 5s in the parallel gate"]
     fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
         let assumptions = PureFactContext::new();
         let mut samples = Vec::new();
