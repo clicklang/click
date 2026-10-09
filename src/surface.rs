@@ -1197,8 +1197,8 @@ pub struct FunctionBlock {
     /// most one struct; proof synthesis reads memory through the parameter
     /// with that layout, as it does for a declared struct-pointer parameter.
     parameter_struct_casts: BTreeMap<String, String>,
-    /// The scalar fields of each struct parameter's layout, by parameter
-    /// name. Printing only: `click expand` writes a read at a field's
+    /// The scalar fields of each struct parameter's layout, and of each
+    /// local struct pointer's, by name. Printing only: `click expand` writes a read at a field's
     /// offset as the field place.
     parameter_field_places: BTreeMap<String, Vec<FieldPlace>>,
 }

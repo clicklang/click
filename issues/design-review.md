@@ -42,17 +42,17 @@ function's reference parameters, and the printer of a kernel term consults
 them (`describe_read_through_reference` in `src/surface/diagnostics.rs`).
 `click expand` does the same from the sidecar's function block
 (`ParameterPlaceScope`): a read through a scalar reference is `value`, and
-a read at a scalar field of a struct parameter is the field place,
-`c.second` through `struct cell& c` and `p->second` through a C struct
-pointer.
+a read at a scalar field of a struct is the field place, `c.second` through
+`struct cell& c` and `p->second` through a struct pointer, parameter or
+local.
 
-One gap remains. The scope knows the function's parameters only, so an
-expanded condition over a field read through a local struct pointer, or
-through a field that is itself a struct, is still in kernel spelling
-(`load_int32(byte_offset(q, 4))`). It parses back and verifies.
+One gap remains: a field of a struct nested in another (`p->inner.x`) is
+still expanded in kernel spelling, `load_int32(byte_offset(p, 4))`, because
+the printer matches scalar fields of the outer struct only. It parses back
+and verifies.
 
-Regression: `click expand` on a branch over `q->second`, where `q` is a
-local `struct cell*`, writes the condition with the field place.
+Regression: `click expand` on a branch over `p->inner.x` writes the
+condition with the field place.
 
 Done when: no expansion prints `load_...` for a field of a struct.
 

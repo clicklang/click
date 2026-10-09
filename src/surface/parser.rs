@@ -3218,7 +3218,7 @@ impl Parser {
                 .map(Requirement::Proposition),
         );
 
-        let parameter_field_places = signature
+        let mut parameter_field_places: BTreeMap<_, _> = signature
             .parameters()
             .iter()
             .filter_map(|parameter| {
@@ -3229,6 +3229,23 @@ impl Parser {
                 ))
             })
             .collect();
+        // A local of struct-pointer type is printed as a parameter is. The
+        // signature wins a shared spelling.
+        for (name, struct_name) in self
+            .local_struct_pointers_by_function
+            .get(signature.name())
+            .into_iter()
+            .flat_map(|locals| &locals.struct_pointers)
+        {
+            if signature
+                .parameters()
+                .iter()
+                .all(|parameter| parameter.name() != name)
+                && let Some(layout) = self.struct_layouts.get(struct_name)
+            {
+                parameter_field_places.insert(name.clone(), super::scalar_field_places(layout));
+            }
+        }
         Ok(FunctionBlock {
             signature,
             external,

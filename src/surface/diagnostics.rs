@@ -102,30 +102,32 @@ pub(in crate::surface) struct ParameterPlaceScope(());
 
 impl ParameterPlaceScope {
     pub(in crate::surface) fn enter(block: &crate::surface::FunctionBlock) -> Self {
-        let shapes = block
-            .signature()
-            .parameters()
+        let parameters = block.signature().parameters();
+        // The name a parameter or local has in a kernel term: a reference
+        // is carried by a pointer named for its address.
+        let variable = |name: &str| {
+            let reference = parameters
+                .iter()
+                .any(|parameter| parameter.name() == name && parameter.is_reference());
+            if reference && syntax::referent_of_carrier(name).is_none() {
+                syntax::reference_carrier_name(name)
+            } else {
+                name.to_string()
+            }
+        };
+        let mut shapes: BTreeMap<_, _> = parameters
             .iter()
-            .filter_map(|parameter| {
-                let name = parameter.name();
-                let shape = match block.parameter_field_places().get(name) {
-                    Some(fields) => PointeeShape::Struct {
-                        fields: fields.clone(),
-                    },
-                    None if parameter.is_reference() && parameter.struct_name().is_none() => {
-                        PointeeShape::ScalarReferent
-                    }
-                    None => return None,
-                };
-                let variable =
-                    if parameter.is_reference() && syntax::referent_of_carrier(name).is_none() {
-                        syntax::reference_carrier_name(name)
-                    } else {
-                        name.to_string()
-                    };
-                Some((variable, shape))
-            })
+            .filter(|parameter| parameter.is_reference() && parameter.struct_name().is_none())
+            .map(|parameter| (variable(parameter.name()), PointeeShape::ScalarReferent))
             .collect();
+        for (name, fields) in block.parameter_field_places() {
+            shapes.insert(
+                variable(name),
+                PointeeShape::Struct {
+                    fields: fields.clone(),
+                },
+            );
+        }
         REFERENCE_CARRIERS.with(|scopes| scopes.borrow_mut().push(shapes));
         Self(())
     }
