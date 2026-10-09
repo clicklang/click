@@ -1646,6 +1646,12 @@ pub enum SpecIntegerRangeFoldIndex {
         start: Box<SpecExpression>,
         end: Box<SpecExpression>,
     },
+    /// A range of unsigned 64-bit values; see
+    /// [`IntegerRangeFoldIndex::UInt64`].
+    UInt64 {
+        start: Box<SpecExpression>,
+        end: Box<SpecExpression>,
+    },
     Integer {
         start: Box<SpecIntegerExpression>,
         end: Box<SpecIntegerExpression>,

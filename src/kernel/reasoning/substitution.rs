@@ -2021,7 +2021,8 @@ fn collect_integer_bound_variables_seen(
             body,
         } => {
             match index {
-                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end } => {
+                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end }
+                | crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_bitvector_variables(start.value(), variables);
                     collect_bitvector_variables(end.value(), variables);
                 }
@@ -2718,7 +2719,7 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
     accumulator_value: &IntegerTerm,
     item: Variable,
     item_value: &IntegerTerm,
-    c_item: bool,
+    machine_item: Option<MachineIntegerType>,
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
     let replacement_work = |term: &IntegerTerm| match term {
         IntegerTerm::Constant(value) => value.bits() as usize + 1,
@@ -2760,7 +2761,7 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
     // particular, substituting the Integer spelling of an Int32 binder would
     // leave the machine occurrence untouched (and trying both substitutions
     // would rewrite an unrelated Integer variable with the same identity).
-    let with_item = if c_item {
+    let with_item = if machine_item.is_some() {
         substitute_bitvector_variable_in_integer_checked_with_registered_loads(
             &with_temporary,
             item,
@@ -2784,8 +2785,8 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
         &BTreeMap::new(),
         replacement_work(accumulator_value),
     )?;
-    if c_item {
-        let Some(bits) = integer_item_bitvector(item_value) else {
+    if let Some(item_type) = machine_item {
+        let Some(bits) = integer_item_bitvector(item_value, item_type) else {
             return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
         };
         Ok(
@@ -2807,15 +2808,23 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
     }
 }
 
-fn integer_item_bitvector(value: &IntegerTerm) -> Option<Bitvector32Term> {
-    match value {
-        IntegerTerm::Machine(machine) if machine.ty() == MachineIntegerType::Int32 => {
+/// The machine term of type `item_type` an item value denotes: the term a
+/// machine observation observes, or a constant in the type's range.
+fn integer_item_bitvector(
+    value: &IntegerTerm,
+    item_type: MachineIntegerType,
+) -> Option<Bitvector32Term> {
+    match (value, item_type) {
+        (IntegerTerm::Machine(machine), _) if machine.ty() == item_type => {
             Some(machine.value().clone())
         }
-        IntegerTerm::Constant(value) => value
+        (IntegerTerm::Constant(value), MachineIntegerType::Int32) => value
             .to_i64()
             .filter(|value| (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(value))
             .map(|value| Bitvector32Term::Constant(value as i32 as u32)),
+        (IntegerTerm::Constant(value), MachineIntegerType::UInt64) => {
+            value.to_u64().map(Bitvector32Term::UInt64Constant)
+        }
         _ => None,
     }
 }
@@ -7481,6 +7490,16 @@ fn substitute_pointer_variable_in_spec_integer(
                         )),
                     }
                 }
+                SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
+                    SpecIntegerRangeFoldIndex::UInt64 {
+                        start: Box::new(substitute_pointer_variable_in_spec_expression(
+                            start, from, to,
+                        )),
+                        end: Box::new(substitute_pointer_variable_in_spec_expression(
+                            end, from, to,
+                        )),
+                    }
+                }
                 SpecIntegerRangeFoldIndex::Integer { start, end } => {
                     SpecIntegerRangeFoldIndex::Integer {
                         start: Box::new(substitute_pointer_variable_in_spec_integer(
@@ -9459,7 +9478,7 @@ mod integer_range_fold_substitution_tests {
             &IntegerTerm::constant_i64(0),
             item,
             &IntegerTerm::var(Variable(70_052)),
-            true,
+            Some(MachineIntegerType::Int32),
         );
         assert_eq!(
             result,
@@ -9481,7 +9500,7 @@ mod integer_range_fold_substitution_tests {
             &IntegerTerm::constant_i64(0),
             item,
             &malformed,
-            true,
+            Some(MachineIntegerType::Int32),
         );
         assert_eq!(
             result,
@@ -9518,7 +9537,7 @@ mod integer_range_fold_substitution_tests {
             &IntegerTerm::constant_i64(0),
             item,
             &c_item_value(Bitvector32Term::Constant(0)),
-            true,
+            Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
         let IntegerTerm::Machine(machine) = result else {
@@ -9566,7 +9585,7 @@ mod integer_range_fold_substitution_tests {
             &IntegerTerm::constant_i64(0),
             item,
             &c_item_value(Bitvector32Term::Constant(0)),
-            true,
+            Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
         let IntegerTerm::Machine(machine) = result else {

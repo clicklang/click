@@ -7401,6 +7401,9 @@ pub fn prove_integer_range_fold_empty(
         IntegerRangeFoldIndex::Int32 { start, end } => {
             ConditionTerm::signed_less_equal(end.value().clone(), start.value().clone())
         }
+        IntegerRangeFoldIndex::UInt64 { start, end } => {
+            ConditionTerm::uint64_less_equal(end.value().clone(), start.value().clone())
+        }
         IntegerRangeFoldIndex::Integer { start, end } => {
             ConditionTerm::integer_less_equal(end.as_ref().clone(), start.as_ref().clone())
         }
@@ -7452,6 +7455,35 @@ pub fn prove_integer_range_fold_append(
                 item_value,
             )
         }
+        // The unsigned 64-bit carrier, like the signed one, extends the
+        // range only below the type's largest value, where `end + 1` does
+        // not wrap.
+        IntegerRangeFoldIndex::UInt64 { start, end } => {
+            let original_end = end.value().clone();
+            let increment = Bitvector32Term::uint64_add(
+                original_end.clone(),
+                Bitvector32Term::UInt64Constant(1),
+            );
+            let guard =
+                ConditionTerm::uint64_less_equal(start.value().clone(), end.value().clone());
+            let safe = ConditionTerm::uint64_less_than(
+                end.value().clone(),
+                Bitvector32Term::UInt64Constant(u64::MAX),
+            );
+            let extended = IntegerRangeFoldIndex::UInt64 {
+                start: start.clone(),
+                end: SharedIntegerRangeEndpoint::intern(increment),
+            };
+            let item_value = IntegerTerm::from_machine(MachineIntegerType::UInt64, original_end)?;
+            (
+                extended,
+                Proposition::And(
+                    Box::new(Proposition::ConditionIs(guard, true)),
+                    Box::new(Proposition::ConditionIs(safe, true)),
+                ),
+                item_value,
+            )
+        }
         IntegerRangeFoldIndex::Integer { start, end } => {
             let increment = IntegerTerm::add(end.as_ref().clone(), IntegerTerm::constant_i64(1));
             let guard =
@@ -7468,7 +7500,7 @@ pub fn prove_integer_range_fold_append(
         }
     };
     let original_initial = initial.clone();
-    let c_item = matches!(&index, IntegerRangeFoldIndex::Int32 { .. });
+    let c_item = index.machine_item_type();
     let prior = IntegerTerm::range_fold(index, initial, accumulator, item, body.clone());
     let stepped = crate::kernel::reasoning::instantiate_integer_range_fold_step(
         &body,
@@ -7509,6 +7541,19 @@ fn integer_range_fold_predecessor_index(
                     end: SharedIntegerRangeEndpoint::intern(predecessor.clone()),
                 },
                 IntegerTerm::from_machine(MachineIntegerType::Int32, predecessor)?,
+            ))
+        }
+        IntegerRangeFoldIndex::UInt64 { start, end } => {
+            let predecessor = Bitvector32Term::uint64_subtract(
+                end.value().clone(),
+                Bitvector32Term::UInt64Constant(1),
+            );
+            Some((
+                IntegerRangeFoldIndex::UInt64 {
+                    start: start.clone(),
+                    end: SharedIntegerRangeEndpoint::intern(predecessor.clone()),
+                },
+                IntegerTerm::from_machine(MachineIntegerType::UInt64, predecessor)?,
             ))
         }
         IntegerRangeFoldIndex::Integer { start, end } => {
@@ -7669,7 +7714,7 @@ pub fn substitute_integer_term_in_proposition(
     changed.then_some(rewritten)
 }
 
-/// The opaque application `f(args)` with the int32 argument at `position`
+/// The opaque application `f(args)` with the int32 or uint64 argument at `position`
 /// replaced by its predecessor, for restating a range fold one endpoint
 /// lower. The subtraction is wrapping bitvector arithmetic, matching the
 /// endpoint `integer_range_fold_predecessor_index` builds, so the two agree
@@ -7682,13 +7727,21 @@ pub fn integer_range_fold_predecessor_application(
         return None;
     };
     let mut arguments = applied.arguments().to_vec();
-    let PureFunctionArgument::Value(CValue::Int32(endpoint)) = arguments.get(position)? else {
-        return None;
+    arguments[position] = match arguments.get(position)? {
+        PureFunctionArgument::Value(CValue::Int32(endpoint)) => {
+            PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::subtract(
+                endpoint.clone(),
+                Bitvector32Term::Constant(1),
+            )))
+        }
+        PureFunctionArgument::Value(CValue::UInt64(endpoint)) => {
+            PureFunctionArgument::Value(CValue::UInt64(Bitvector32Term::uint64_subtract(
+                endpoint.clone(),
+                Bitvector32Term::UInt64Constant(1),
+            )))
+        }
+        _ => return None,
     };
-    arguments[position] = PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::subtract(
-        endpoint.clone(),
-        Bitvector32Term::Constant(1),
-    )));
     Some(IntegerTerm::PureFunctionApplication(
         SharedPureApplication::intern(applied.name().to_string(), arguments),
     ))
@@ -7756,7 +7809,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
 
     let (predecessor_index, item_value) = integer_range_fold_predecessor_index(&index)
         .ok_or("the fold end endpoint has no Integer predecessor in its own carrier")?;
-    let c_item = matches!(&predecessor_index, IntegerRangeFoldIndex::Int32 { .. });
+    let c_item = predecessor_index.machine_item_type();
     let append = prove_integer_range_fold_append(
         predecessor_index.clone(),
         initial.clone(),
@@ -9056,6 +9109,15 @@ pub fn prove_uint64_integer_bridge(
             name == "uint64_less_equal_of_to_integer",
         ));
     }
+    // The unsigned observation is injective: equal observations are the
+    // same 64-bit pattern.
+    if name == "uint64_equal_of_to_integer" {
+        return Some(prove_integer_equality_bridge(
+            MachineIntegerType::UInt64,
+            left,
+            right,
+        ));
+    }
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt64, value)
             .expect("every uint64 bit pattern has an unsigned Integer interpretation")
@@ -9302,7 +9364,8 @@ fn prove_integer_equality_bridge(
         MachineIntegerType::Int64 => ConditionTerm::int64_equal(left, right),
         // Equality of the 32-bit pattern does not depend on its signedness.
         MachineIntegerType::UInt32 => ConditionTerm::equal(left, right),
-        _ => unreachable!("integer equality bridges admit only int32/int64/uint32"),
+        MachineIntegerType::UInt64 => ConditionTerm::uint64_equal(left, right),
+        _ => unreachable!("integer equality bridges admit only int32/int64/uint32/uint64"),
     };
     Theorem::new(Proposition::Implies(
         Box::new(integer),

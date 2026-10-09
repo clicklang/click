@@ -237,6 +237,12 @@ whose safety condition it can't prove. Positive answers are cached by stable
 snapshot and pointer identities; failed answers can be retried after new
 derivation information becomes available.
 
+Exact-store lookup uses the maintained pointer equality graph, so a known
+base alias also identifies the same field offset. The shared address predicate
+still distinguishes other fields, and the value check still requires the
+store and read to have the same width. It does not scan unrelated facts or
+infer an alias from matching offsets in different blocks.
+
 Explicit `normalize() using { ... }` can recover the value of a recorded
 full-width pointer read. The query follows its exact retained canonical
 projection source, when present, then at most 64 derivation edges in either

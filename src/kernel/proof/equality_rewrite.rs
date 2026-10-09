@@ -1781,7 +1781,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 .into()
             }
             IntegerTerm::RangeFold {
-                index: IntegerRangeFoldIndex::Int32 { start, end },
+                index:
+                    index @ (IntegerRangeFoldIndex::Int32 { start, end }
+                    | IntegerRangeFoldIndex::UInt64 { start, end }),
                 initial,
                 accumulator,
                 item,
@@ -1793,10 +1795,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     return term.clone();
                 }
                 IntegerTerm::RangeFold {
-                    index: IntegerRangeFoldIndex::Int32 {
-                        start: SharedIntegerRangeEndpoint::intern(rewritten_start),
-                        end: SharedIntegerRangeEndpoint::intern(rewritten_end),
-                    },
+                    index: index.with_machine_endpoints(rewritten_start, rewritten_end),
                     initial: initial.clone(),
                     accumulator: *accumulator,
                     item: *item,

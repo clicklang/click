@@ -339,7 +339,8 @@ fn collect_integer_carriers(
             body,
         } => {
             match index {
-                IntegerRangeFoldIndex::Int32 { start, end } => {
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_bitvector_carriers(start.value(), variables);
                     if variables.exhausted() {
                         return;
@@ -370,7 +371,7 @@ fn collect_integer_carriers(
                 IntegerRangeFoldIndex::Integer { .. } => {
                     variables.integer.insert(*item);
                 }
-                IntegerRangeFoldIndex::Int32 { .. } => {
+                IntegerRangeFoldIndex::Int32 { .. } | IntegerRangeFoldIndex::UInt64 { .. } => {
                     variables.c.insert(*item);
                 }
             }
@@ -2764,16 +2765,14 @@ impl<'a> TermRewrite<'a> {
 
         // Fold endpoints and the initial value live outside the body scope.
         let index = match index {
-            IntegerRangeFoldIndex::Int32 { start, end } => {
+            IntegerRangeFoldIndex::Int32 { start, end }
+            | IntegerRangeFoldIndex::UInt64 { start, end } => {
                 let start = self.bits(start.value());
                 if self.checked_work_exhausted() {
                     return IntegerTerm::constant_i64(0);
                 }
                 let end = self.bits(end.value());
-                IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(start),
-                    end: SharedIntegerRangeEndpoint::intern(end),
-                }
+                index.with_machine_endpoints(start, end)
             }
             IntegerRangeFoldIndex::Integer { start, end } => {
                 let start = self.integer_shared(start).into();

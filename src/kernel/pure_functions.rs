@@ -344,7 +344,8 @@ fn collect_integer_body_reads(
             ..
         } => {
             match index {
-                SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                SpecIntegerRangeFoldIndex::Int32 { start, end }
+                | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
                     collect_body_reads(start, bound, reads)?;
                     collect_body_reads(end, bound, reads)?;
                 }

@@ -229,10 +229,47 @@ pub enum IntegerRangeFoldIndex {
         start: SharedIntegerRangeEndpoint,
         end: SharedIntegerRangeEndpoint,
     },
+    /// A range of unsigned 64-bit values, the type of a `size_t` or `usize`
+    /// index. Its order is unsigned 64-bit order and its item is a `uint64`.
+    UInt64 {
+        start: SharedIntegerRangeEndpoint,
+        end: SharedIntegerRangeEndpoint,
+    },
     Integer {
         start: SharedIntegerTerm,
         end: SharedIntegerTerm,
     },
+}
+
+impl IntegerRangeFoldIndex {
+    /// The machine type of the item a body binds, or `None` for a range of
+    /// mathematical integers, whose item is an Integer variable.
+    pub(crate) fn machine_item_type(&self) -> Option<MachineIntegerType> {
+        match self {
+            Self::Int32 { .. } => Some(MachineIntegerType::Int32),
+            Self::UInt64 { .. } => Some(MachineIntegerType::UInt64),
+            Self::Integer { .. } => None,
+        }
+    }
+
+    /// This range's kind over other machine endpoints.
+    ///
+    /// # Panics
+    ///
+    /// On a range of mathematical integers, which has no machine endpoint.
+    pub(crate) fn with_machine_endpoints(
+        &self,
+        start: Bitvector32Term,
+        end: Bitvector32Term,
+    ) -> Self {
+        let start = SharedIntegerRangeEndpoint::intern(start);
+        let end = SharedIntegerRangeEndpoint::intern(end);
+        match self {
+            Self::Int32 { .. } => Self::Int32 { start, end },
+            Self::UInt64 { .. } => Self::UInt64 { start, end },
+            Self::Integer { .. } => panic!("an Integer range has no machine endpoints"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1004,6 +1041,15 @@ impl IntegerTerm {
                     _ => None,
                 },
             ),
+            IntegerRangeFoldIndex::UInt64 { start, end } => {
+                let constant = |endpoint: &SharedIntegerRangeEndpoint| {
+                    endpoint
+                        .value()
+                        .uint64_as_const()
+                        .and_then(|value| i64::try_from(value).ok())
+                };
+                (constant(start), constant(end))
+            }
             IntegerRangeFoldIndex::Integer { start, end } => (
                 start.as_const().and_then(|value| value.to_i64()),
                 end.as_const().and_then(|value| value.to_i64()),
@@ -1023,7 +1069,7 @@ impl IntegerTerm {
                     initial,
                     item,
                     &Self::constant_i64(start),
-                    matches!(index, IntegerRangeFoldIndex::Int32 { .. }),
+                    index.machine_item_type(),
                 )?,
             ));
         }
@@ -1745,6 +1791,9 @@ mod tests {
                             BigInt::from(eval_bits(start.value(), bits)),
                             BigInt::from(eval_bits(end.value(), bits)),
                         ),
+                        IntegerRangeFoldIndex::UInt64 { .. } => {
+                            unreachable!("the range-fold law test evaluator has no uint64 model")
+                        }
                         IntegerRangeFoldIndex::Integer { start, end } => (
                             eval_integer(start, integers, bits),
                             eval_integer(end, integers, bits),

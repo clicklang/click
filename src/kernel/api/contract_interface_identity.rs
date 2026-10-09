@@ -314,7 +314,8 @@ impl Names {
                 ..
             } => {
                 match index {
-                    SpecIntegerRangeFoldIndex::Int32 { start, end } => {
+                    SpecIntegerRangeFoldIndex::Int32 { start, end }
+                    | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
                         self.expression(start);
                         self.expression(end);
                     }

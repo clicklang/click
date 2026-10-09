@@ -2400,6 +2400,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint64_less_equal_of_to_integer"
                 | "uint64_less_than_to_integer"
                 | "uint64_less_than_of_to_integer"
+                | "uint64_equal_of_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
                 | "int32_increment_upper_bound"
@@ -2513,7 +2514,8 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint64_less_equal_to_integer"
         | "uint64_less_equal_of_to_integer"
         | "uint64_less_than_to_integer"
-        | "uint64_less_than_of_to_integer" => (2, 1),
+        | "uint64_less_than_of_to_integer"
+        | "uint64_equal_of_to_integer" => (2, 1),
         "uint64_divide_to_integer" | "uint64_remainder_to_integer" => (2, 2),
         "int32_remainder_to_integer" => (2, 2),
         "int32_increment_upper_bound" | "int32_increment_strictly_increases" => (2, 1),

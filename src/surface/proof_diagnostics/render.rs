@@ -1130,7 +1130,8 @@ impl Renderer<'_> {
             } => {
                 self.push("range-fold(index=");
                 match index {
-                    IntegerRangeFoldIndex::Int32 { start, end } => {
+                    IntegerRangeFoldIndex::Int32 { start, end }
+                    | IntegerRangeFoldIndex::UInt64 { start, end } => {
                         self.bitvector(start.value());
                         self.push("..");
                         self.bitvector(end.value());

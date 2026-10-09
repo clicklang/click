@@ -154,6 +154,11 @@ theorem use_uint64_less_than_of_to_integer(left: uint64, right: uint64) {
     ensures left < right by apply(uint64_less_than_of_to_integer(left, right));
 }
 
+theorem use_uint64_equal_of_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right by apply(uint64_equal_of_to_integer(left, right));
+}
+
 theorem use_int64_add_defined_by_integer_bounds(left: int64, right: int64) {
     requires to_integer(left) + to_integer(right) >= -9223372036854775808;
     requires to_integer(left) + to_integer(right) <= 9223372036854775807;
