@@ -3832,6 +3832,28 @@ fn mint_load_variable_identity(
     })
 }
 
+/// Reuse an exact read name or a materialized pointer cell's retained name.
+/// This lookup never canonicalizes a new read or walks its memory history.
+/// A scalar read of fewer bytes cannot supply a whole pointer's identity.
+pub(in crate::kernel) fn known_pointer_read_variable_for_term(
+    bits: &Bitvector32Term,
+) -> Option<Variable> {
+    crate::instrumentation::record_deterministic_work(1);
+    let Bitvector32Term::MemoryLoad(memory, address, LoadKind::Bits32) = bits else {
+        return None;
+    };
+    let variable = LOAD_VARIABLE_CACHE
+        .with(|cache| cache.borrow().get(bits).map(|(variable, _)| *variable))
+        .or_else(|| match memory.known_value(address) {
+            Some(CValue::Int32(Bitvector32Term::Variable(variable))) => Some(variable),
+            _ => materialized_pointer_cell_load_variable(memory, address),
+        })?;
+    (registered_load_kind_for_variable(&variable) == Some(LoadKind::Bits32)
+        && registered_load_bytes_for_variable(&variable)
+            == Some(crate::kernel::C_POINTER_BYTE_WIDTH))
+    .then_some(variable)
+}
+
 /// Returns the load variable for a load term's provenance-stable form.
 /// The term is first canonicalized without assumptions, resolving cached
 /// cells and snapshot representation differences. The same cell loaded at
@@ -5477,6 +5499,53 @@ mod tests {
             samples.iter().all(|work| *work <= samples[0] + 40),
             "read definition lookup scanned unrelated cells: {samples:?}"
         );
+    }
+
+    #[test]
+    fn known_pointer_read_names_require_a_complete_pointer_cell() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let source = intern_c_memory_ref(&memory);
+        let wide = Pointer::symbolic(Variable(210_100));
+        let narrow = Pointer::symbolic(Variable(210_101));
+        record_load_access_width(&memory, &wide, crate::kernel::C_POINTER_BYTE_WIDTH);
+        record_load_access_width(&memory, &narrow, 4);
+        let term = |address: &Pointer| {
+            Bitvector32Term::MemoryLoad(source.clone(), Box::new(address.clone()), LoadKind::Bits32)
+        };
+        assert!(known_pointer_read_variable_for_term(&term(&wide)).is_none());
+        let (wide_name, _) = load_variable_for_term(&term(&wide)).unwrap();
+        let (narrow_name, _) = load_variable_for_term(&term(&narrow)).unwrap();
+        assert_eq!(
+            known_pointer_read_variable_for_term(&term(&wide)),
+            Some(wide_name)
+        );
+        assert!(known_pointer_read_variable_for_term(&term(&narrow)).is_none());
+        let selected = Pointer::symbolic(Variable(210_102));
+        for (value, expected) in [
+            (
+                CValue::Int32(Bitvector32Term::Variable(wide_name)),
+                Some(wide_name),
+            ),
+            (CValue::Int32(Bitvector32Term::Variable(narrow_name)), None),
+            (
+                CValue::Int32(Bitvector32Term::Variable(Variable(210_103))),
+                None,
+            ),
+            (CValue::UInt64(Bitvector32Term::UInt64Constant(0)), None),
+        ] {
+            let cached = memory
+                .clone()
+                .materialize_named_cell(selected.clone(), value);
+            let read = Bitvector32Term::MemoryLoad(
+                intern_c_memory_ref(&cached),
+                Box::new(selected.clone()),
+                LoadKind::Bits32,
+            );
+            assert_eq!(known_pointer_read_variable_for_term(&read), expected);
+        }
+        let wrong_kind = Bitvector32Term::MemoryLoad(source, Box::new(wide), LoadKind::Bits64);
+        assert!(known_pointer_read_variable_for_term(&wrong_kind).is_none());
     }
 
     /// A selected cached load denotes one pointer even when its cell is

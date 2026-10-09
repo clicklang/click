@@ -413,6 +413,46 @@ fn rewrite_through_load_variable(
     )))
 }
 
+/// A producer-registered pointer read denotes a whole value. Its legacy
+/// storage block is not a base to which an alias displacement can be added.
+/// Rewrite the read's address instead, then name that read at its original
+/// snapshot. A projected snapshot only preserves its original selected cell.
+fn rewrite_through_registered_pointer_read(
+    pointer: &Pointer,
+    rewrite_address: &impl Fn(&Pointer) -> Pointer,
+) -> Option<Pointer> {
+    // Opaque pointer-load blocks already have their own rewrite below.
+    // Only the legacy storage-relative representation needs this distinction.
+    pointer.as_loaded()?;
+    let Bitvector32Term::MemoryLoad(memory, address, _) =
+        crate::kernel::equality_graph::logical_pointer_read_term(pointer)?
+    else {
+        return None;
+    };
+    let (source, address) = crate::kernel::eval::typed_pointer_read_variable(pointer)
+        .and_then(|variable| crate::kernel::registered_load_origin_for_variable(&variable))
+        .unwrap_or_else(|| (memory, *address));
+    let rewritten_address = rewrite_address(&address);
+    if rewritten_address == address {
+        return Some(pointer.clone());
+    }
+    let read = Bitvector32Term::MemoryLoad(
+        source.clone(),
+        Box::new(rewritten_address.clone()),
+        crate::kernel::LoadKind::Bits32,
+    );
+    // An already named read can use its canonical identity. A cold rewrite
+    // keeps the exact snapshot application instead of searching its history.
+    let canonical = crate::kernel::eval::known_pointer_read_variable_for_term(&read)
+        .and_then(|variable| crate::kernel::registered_load_term_for_variable(&variable));
+    Some(match canonical {
+        Some(Bitvector32Term::MemoryLoad(memory, address, _)) => {
+            Pointer::loaded_value(&memory, &address)
+        }
+        _ => Pointer::loaded_value(&source, &rewritten_address),
+    })
+}
+
 /// `rewrite` looks through a loaded pointer the same way: a pointer whose
 /// block is the identity of a load (`Pointer::loaded`) is the value of that
 /// load, so a rewrite of the load's address gives the rewritten load, and
@@ -1190,6 +1230,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         };
         let rewrite_pointer = |pointer: &Pointer| {
+            if pointer == left.as_ref() {
+                return right.as_ref().clone();
+            }
+            if let Some(rewritten) =
+                rewrite_through_registered_pointer_read(pointer, &rewrite_pointer_directly)
+            {
+                return rewritten;
+            }
             let rewritten = rewrite_pointer_directly(pointer);
             if &rewritten != pointer {
                 return rewritten;
@@ -2125,6 +2173,122 @@ mod tests {
 
     fn integer_equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
         Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+    }
+
+    /// Rewriting a field owner changes a typed read's address, not the
+    /// loaded value's legacy storage-relative offset. Exercise cold reads
+    /// with growing unrelated snapshots and premises, plus ordinary indexing.
+    #[test]
+    fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
+        let mut samples = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let owner = Pointer::symbolic(Variable(211_000));
+            let alias = Pointer {
+                block: PointerBlock::Symbolic(Variable(211_001)),
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(211_002)),
+                    4,
+                ),
+            };
+            let address = owner.offset_by_bytes(16);
+            let alias_address = alias.offset_by_bytes(16);
+            let cited = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+                true,
+            );
+            let mut facts = ProofFacts::default().with_fact(cited.clone());
+            let mut memory = CMemory::new();
+            for i in 0..size {
+                memory = memory.store(
+                    Pointer::symbolic(Variable(220_000 + i)),
+                    CValue::Int32(Bitvector32Term::Constant(7)),
+                );
+                facts = facts.with_fact(equality(
+                    Bitvector32Term::Variable(Variable(230_000 + i)),
+                    Bitvector32Term::Constant(i as u32),
+                ));
+            }
+            let context = PureFactContext::new();
+            let read = |memory: &CMemory, address: &Pointer| {
+                let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
+                    memory,
+                    address.clone(),
+                    CType::Int32Pointer,
+                    Default::default(),
+                    Vec::new(),
+                    &context,
+                );
+                let [path] = paths.as_slice() else {
+                    panic!("one logical read");
+                };
+                assert!(path.facts.is_empty() && path.obligations.is_empty());
+                let crate::kernel::CExpressionOutcome::Value(CValue::Pointer(value)) =
+                    &path.outcome
+                else {
+                    panic!("typed pointer read");
+                };
+                value.pointer().clone()
+            };
+            let original = read(&memory, &address);
+            let leaf = Pointer::symbolic(Variable(211_003));
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(original.clone(), leaf.clone()),
+                true,
+            );
+            assert!(
+                ProofFacts::default()
+                    .check_equality_rewrite(&goal, &cited)
+                    .is_err()
+            );
+            let ((rewritten, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    facts.check_equality_rewrite(&goal, &cited).unwrap()
+                })
+            });
+            let Proposition::ConditionIs(ConditionTerm::PointerEqual(actual, rhs), true) =
+                rewritten.proposition()
+            else {
+                panic!("full pointer equality retained");
+            };
+            assert_eq!(rhs.as_ref(), &leaf);
+            assert_eq!(actual.offset, PointerOffsetTerm::Constant(0));
+            let expected = read(&memory, &alias_address);
+            assert!(context.pointers_known_equal(actual, &expected));
+            assert!(!ResourceContext::new().permits_memory_read(&alias_address, 8, &context));
+            let replacement = Pointer::symbolic(Variable(211_004));
+            let later = memory.clone().store(
+                alias_address.clone(),
+                CValue::typed_pointer(replacement.clone(), CType::Int32Pointer),
+            );
+            assert_eq!(read(&later, &alias_address), replacement);
+            assert!(!context.pointers_known_equal(actual, &replacement));
+            // An unregistered scaled integer is still pointer arithmetic.
+            let index = Bitvector32Term::Variable(Variable(211_005));
+            let indexed = Pointer::loaded(owner.block.clone(), index.clone(), 4);
+            let arithmetic_goal =
+                Proposition::ConditionIs(ConditionTerm::pointer_equal(indexed, leaf.clone()), true);
+            let arithmetic = facts
+                .check_equality_rewrite(&arithmetic_goal, &cited)
+                .unwrap();
+            let expected_indexed = alias.offset_by_int32_elements(index);
+            assert_eq!(
+                arithmetic.proposition(),
+                &Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(expected_indexed, leaf),
+                    true,
+                )
+            );
+            samples.push((work, map_work));
+        }
+        assert!(
+            samples.iter().all(|sample| sample.0 <= samples[0].0 + 128),
+            "{samples:?}"
+        );
+        assert!(
+            samples.iter().all(|sample| sample.1 <= samples[0].1 + 1024),
+            "{samples:?}"
+        );
     }
 
     #[test]

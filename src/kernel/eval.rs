@@ -56,6 +56,7 @@ pub(crate) use memory_loads::count_canonical_at_creation_violations;
 pub(in crate::kernel) use memory_loads::declare_load_access_width;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
+pub(super) use memory_loads::known_pointer_read_variable_for_term;
 pub(crate) use memory_loads::load_access_width_at_address_or_widest;
 pub(crate) use memory_loads::load_access_width_or_widest;
 #[cfg(test)]
