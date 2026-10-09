@@ -237,6 +237,19 @@ whose safety condition it can't prove. Positive answers are cached by stable
 snapshot and pointer identities; failed answers can be retried after new
 derivation information becomes available.
 
+Explicit `normalize() using { ... }` can recover the value of a recorded
+full-width pointer read. The query follows its exact retained canonical
+projection source, when present, then at most 64 derivation edges in either
+equality orientation. It uses the cited conditions to justify crossings and
+compare the recovered value. Whole-pointer equality checks the complete stored
+pointer, including its block. Same-block pointer comparisons lower to offset
+equality; that form uses an exact typed-read offset definition, including its
+stride, and proves only the offset equality. Conflicting offset definitions
+remain ambiguous. Equal offsets alone do not establish equality of blocks.
+A narrow read, a scalar cell, or an intervening partial write cannot supply a
+full pointer value. These rules establish only the selected equality and do
+not grant ownership or initialization authority.
+
 The stronger bridging that crosses `BlockDeclared` and `CellsForgotten` is
 scoped to viewability reasoning through `with_extended_dag_bridging`. Enabling
 that reasoning globally can change which surface facts a planner selects and
