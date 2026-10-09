@@ -127,6 +127,22 @@ The precise compiler/ABI evidence is an admission gate for each new C++ return
 shape; the design does not treat a Clang expression category as sufficient
 evidence of copy elision.
 
+## Implementation progress after handoff
+
+The returned-construction increment implements steps 1 and 2 below, plus
+initialization of a new object from a construction-return call. Schema 51 records
+these operations explicitly. Constructor/helper eligibility is recomputed from
+validated bodies and memoized by declaration identity; no serialized flag
+substitutes for that analysis. Checked regressions compare zero, one and several
+trivial result copies, and source fixtures cover nested descriptors, forwarding,
+caller initialization, expansion, retained proofs and unsupported constructors.
+
+Assignment materialization and full-expression retirement in step 3 are next.
+The pinned `first`/`SpanPopBack` acceptance path in steps 4 and 5 is still pending,
+including the singleton-to-empty case. The selected design and bounds below
+remain unchanged; no broader source profile or kernel certification redesign
+is needed for the next step.
+
 ## Implementation handoff: remaining work
 
 This is the selected implementation plan for the next agent. The shared engine
