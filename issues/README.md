@@ -63,7 +63,6 @@ synchronization, and graph coverage remain P2.
 
 Soundness and kernel shape:
 
-- [Authority migration: explicit population authority and removal of guarded_by](authority-migration.md)
 - [Design resource invariants for sequential and concurrent shared heaps](shared-heap-graph-demo.md)
 
 Program import and execution:

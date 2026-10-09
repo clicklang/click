@@ -17,8 +17,7 @@ freedom, or termination of polling.
 
 ## Population semantics
 
-[P1: Authority migration](authority-migration.md) is complete apart from its
-documentation close-out. Populations use explicit `authority(...)`: a control
+The authority migration is complete. Populations use explicit `authority(...)`: a control
 owns the authority, a mutex protects the control, and workers follow the
 [worker authority protocol](../docs/internals/worker-authority-protocol.md).
 `examples/shared-refcount/` is the mutex-protected shared-refcount acceptance
@@ -121,12 +120,11 @@ recovers protected state.
 Do not introduce angle-bracket resource parameters, a `protecting` modifier,
 a `uses` clause, or public acquisition/continuity identifiers. Existing
 algebraic type applications such as `List<int32>` are unrelated to this
-restriction. `authority(...)` is the selected proposed population interface in
-[the authority migration](authority-migration.md); it is not implemented yet.
-The old `count_authority`/`create_count` and sum-specific interfaces remain
-superseded proposals. The migration removes `guarded_by` rather than expanding
-its parser to more mutex-address forms. Preserve initialization association,
-owned-state checks, and stale-initialization rejection during removal.
+restriction. `authority(...)` is the population interface. The old
+`count_authority`/`create_count` and sum-specific interfaces remain superseded
+proposals, and `guarded_by` is retired rather than extended to more
+mutex-address forms. Initialization association, owned-state checks, and
+stale-initialization rejection remain required.
 
 ## Relationship to Iris
 
