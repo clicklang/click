@@ -572,17 +572,49 @@ impl PureFactContext {
         // A materialized cell is loadable without a separate proposition.
         // Including it as a premise-free region lets a store extend an
         // already-loadable prefix in the same kernel rule.
-        regions.extend(memory.cells.iter().filter_map(|(pointer, value)| {
-            let byte_width = value.byte_width();
-            (byte_width > 0 && memory.is_loadable_concretely(pointer, byte_width)).then(|| {
-                (
-                    None,
-                    crate::kernel::api::canonicalize_pointer_loads(pointer),
-                    Bitvector32Term::Constant(byte_width),
-                    true,
-                )
-            })
-        }));
+        regions.extend(
+            memory
+                .cells
+                .concrete()
+                .iter()
+                .filter_map(|(pointer, value)| {
+                    let byte_width = value.byte_width();
+                    (byte_width > 0 && memory.is_loadable_concretely(pointer, byte_width)).then(
+                        || {
+                            (
+                                None,
+                                crate::kernel::api::canonicalize_pointer_loads(pointer),
+                                Bitvector32Term::Constant(byte_width),
+                                true,
+                            )
+                        },
+                    )
+                }),
+        );
+        // A seeded run is a compact sequence of materialized cells. Keep
+        // each live contiguous interval as one byte region instead of naming
+        // every cell just to consider adjacency. Holes never grant liveness.
+        for run in memory.cells.runs() {
+            crate::instrumentation::record_deterministic_work(1);
+            let width = run.value_width();
+            if width > 0 && width == run.element_width() {
+                for (low, high) in run.live_intervals().intervals() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if let Some(bytes) = (high - low).checked_mul(width) {
+                        regions.push((
+                            None,
+                            crate::kernel::api::canonicalize_pointer_loads(&run.slot_pointer(low)),
+                            Bitvector32Term::Constant(bytes),
+                            true,
+                        ));
+                    }
+                }
+            } else if width > 0 && run.live_slot_index(base).is_some() {
+                // A strided run does not cover its gaps. Its actual cell at
+                // the requested address can still join an adjacent region.
+                regions.push((None, base.clone(), Bitvector32Term::Constant(width), true));
+            }
+        }
         regions.extend(
             memory
                 .union_cells
@@ -632,8 +664,22 @@ impl PureFactContext {
                 {
                     continue;
                 }
-                let byte_concatenation = pointer_byte_offset_from_base(suffix_base, &base)
-                    .is_some_and(|suffix_start| equal(&suffix_start, prefix_bytes))
+                let byte_adjacent = if let Some(width) = prefix_bytes.as_const() {
+                    // A concrete byte extent is an unsigned mathematical
+                    // distance, not its signed 32-bit residue. Match the
+                    // actual pointer, including extents above INT32_MAX.
+                    let expected = base.offset_by_bytes(width);
+                    suffix_base == &expected
+                        || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                            suffix_base,
+                            &expected,
+                            self,
+                        )
+                } else {
+                    pointer_byte_offset_from_base(suffix_base, &base)
+                        .is_some_and(|suffix_start| equal(&suffix_start, prefix_bytes))
+                };
+                let byte_concatenation = byte_adjacent
                     && equal(
                         bytes,
                         &Bitvector32Term::add((*prefix_bytes).clone(), (*suffix_bytes).clone()),
@@ -3944,4 +3990,108 @@ fn additive_base_spellings(pointer: &Pointer) -> Vec<Pointer> {
         offset = left;
     }
     spellings
+}
+
+#[cfg(test)]
+mod seeded_interval_adjacency_tests {
+    use super::*;
+    use crate::kernel::primitives::{CellRun, IndexIntervals};
+    use crate::surface::planning::proposition_search::PropositionSearch;
+
+    #[test]
+    fn materialized_run_adjacency_preserves_holes_and_scales() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: "run-adjacency".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let context = PureFactContext::new();
+        let mut costs = Vec::new();
+        for size in [16, 64, 4096, 22208, 1048576] {
+            for missing in [None, Some(3), Some(size - 1)] {
+                let mut holes = IndexIntervals::default();
+                if let Some(index) = missing {
+                    holes.insert(index);
+                }
+                let run = CellRun::new(base.clone(), 1, CType::UInt8, size, source.clone(), holes);
+                let mut memory = CMemory::new();
+                std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
+                let memory = memory.store(
+                    base.offset_by_bytes(size),
+                    CValue::UInt8(Bitvector32Term::Constant(7)),
+                );
+                let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.adjacent_loadable_region_facts(
+                        &memory,
+                        &base,
+                        &Bitvector32Term::Constant(size + 1),
+                    )
+                });
+                assert_eq!(facts.is_some(), missing.is_none());
+                if missing.is_none() {
+                    let goal = Proposition::CMemoryLoadable {
+                        memory,
+                        base: base.clone(),
+                        bytes: Bitvector32Term::Constant(size + 1),
+                    };
+                    let derivation = context.derive_atomic_proposition(&goal).unwrap();
+                    assert!(derivation.check(&context));
+                    assert!(derivation.context_premises().is_empty());
+                }
+                costs.push((size, work));
+            }
+        }
+        assert!(
+            costs.iter().all(|(_, work)| *work <= costs[0].1 + 256),
+            "{costs:?}"
+        );
+    }
+    #[test]
+    fn materialized_run_adjacency_rejects_signed_residue_as_unsigned_distance() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: "wide-run-adjacency".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let run = CellRun::new(
+            base.clone(),
+            1,
+            CType::UInt8,
+            0x8000_0000,
+            source,
+            IndexIntervals::default(),
+        );
+        let mut memory = CMemory::new();
+        std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
+        let wrong = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(-0x8000_0000),
+        };
+        let memory = memory.store(wrong, CValue::UInt8(Bitvector32Term::Constant(7)));
+        let context = PureFactContext::new();
+        assert!(
+            context
+                .adjacent_loadable_region_facts(
+                    &memory,
+                    &base,
+                    &Bitvector32Term::Constant(0x8000_0001)
+                )
+                .is_none()
+        );
+        let memory = memory.store(
+            base.offset_by_bytes(0x8000_0000),
+            CValue::UInt8(Bitvector32Term::Constant(9)),
+        );
+        assert!(
+            context
+                .adjacent_loadable_region_facts(
+                    &memory,
+                    &base,
+                    &Bitvector32Term::Constant(0x8000_0001)
+                )
+                .is_some()
+        );
+    }
 }

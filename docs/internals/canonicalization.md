@@ -247,6 +247,13 @@ refers to one through a snapshot form such as `at(statement(3).entry, x)` or
   `click profile` charges the work to the named operation
   `substitution: snapshot rewrite`.
 
+Deep memory canonicalization preserves numeric seeded and snapshot-copy runs
+whose bases already have canonical form. Each numeric slot is minted as an
+atomic load variable, which this normalization leaves unchanged; the source
+need not be uniform. View adjacency likewise reads live run intervals as
+contiguous byte regions, keeping holes excluded. Both operations depend on
+stored representations rather than the numeric length of the range.
+
 ## Canonical at creation
 
 “Canonical at creation” names a persistent-boundary invariant, not every
