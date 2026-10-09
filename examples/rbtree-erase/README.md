@@ -98,6 +98,14 @@ all immediate and deeper-successor exits now verify at any tree position.
 This completes chunk 11 across the sidecars; each contract states its coverage,
 and the C file retains all branches. Erase-color repair is next, in chunks 12–13.
 
+`rbtree_erase_color_red_left.click` starts chunk 12 on the unchanged pinned
+`____rb_erase_color`. It covers an empty left child below a red parent whose
+right sibling is a black leaf. The two color writes restore balance; the
+contract returns the exact whole-root model, parent consistency, and unchanged
+in-order contents. The proof terminates through the first iteration's `break`
+and a decreasing context-reconstruction helper. Its 31 expansion-audit sites
+pass. Propagating deficits, rotations, and the mirrored cases remain.
+
 The callback contracts describe the non-augmented case: callbacks cannot
 mutate tree fields or require augmentation metadata. The borrowed table is
 separated from fields the C may write. Metadata-carrying callbacks remain

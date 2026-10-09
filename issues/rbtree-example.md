@@ -123,6 +123,10 @@ checks that both arm proofs agree with the kernel join.
 The first erase-color proof also exposed a discarded theorem-premise refusal
 inside model-match arms. Written arm applications now retain that diagnostic
 instead of blaming an unsupported proof shape; a reduced negative pins it.
+The color-flip proof also exposed discarded alias facts in named-fold
+arguments. Folding now evaluates those arguments with the checked facts at the
+current frontier, as branch interfaces already do. A reduced model-pointer
+field read verifies and expands; an unproved model alias remains unreadable.
 The loop-exit bug exposed by the C application is fixed: guard-false, break,
 and return exits retain the final resource binders and restore the withheld
 caller frame. Small regressions also cover stores through reconstructed node
@@ -1196,8 +1200,13 @@ one-black-level deficit and return the correct fixup parent for chunk 12.
 Mutation checks reject incorrect links, parent/color writes, and fixup results.
 Depends on 7 and 10.
 
-**Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
-every continuing back edge. Depends on 11.
+**Chunk 12. `____rb_erase_color`, left-sibling cases: in progress.**
+`rbtree_erase_color_red_left.click` verifies the first-iteration color-flip exit
+for an empty left child, a red parent, and a black leaf right sibling, through
+arbitrary outer contexts. The exact whole-root model is balanced and
+parent-consistent and preserves in-order contents; all 31 expansion-audit
+sites pass. The pinned C keeps every case. Propagating deficits and rotations
+remain, with a checked measure on every continuing back edge. Depends on 11.
 
 **Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
 mirror of chunk 12; the exit model is red-black; a negative. Depends on 12.

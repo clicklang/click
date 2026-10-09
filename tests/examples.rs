@@ -102,7 +102,7 @@ const NIGHTLY: &[(&str, &str)] = &[
     ),
     (
         "rbtree-erase",
-        "13 erase contracts take 176 s; the parent-link helper also runs here (2026-10-08)",
+        "erase sidecars take minutes; the earlier unlink corpus measured 176 s (2026-10-08)",
     ),
 ];
 
@@ -467,6 +467,16 @@ fn erase_sidecar_refuses_mutation(sidecar: &str, before: &str, after: &str) {
 }
 
 fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after: &str) {
+    erase_source_refuses_replacement(sidecar, file, before, after, 1);
+}
+
+fn erase_source_refuses_replacement(
+    sidecar: &str,
+    file: &str,
+    before: &str,
+    after: &str,
+    occurrences: usize,
+) {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree-erase").join(sidecar);
     let source = fs::read_to_string(&path).expect("the erase sidecar exists");
@@ -477,8 +487,8 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
         .expect("the bundle contains the selected erase input");
     assert_eq!(
         c.matches(before).count(),
-        1,
-        "mutation must identify exactly one statement"
+        occurrences,
+        "mutation must identify the expected statements"
     );
     *c = c.replace(before, after);
     let project = read_click_project_at_root(&path, &source, &root.join("examples"))
@@ -1712,4 +1722,54 @@ mod tests {
         assert!(error.contains("source integrity mismatch"), "{error}");
         fs::remove_dir_all(directory).unwrap();
     }
+}
+
+#[test]
+fn rbtree_erase_color_uses_the_unchanged_pinned_function() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let bytes = fs::read(root.join("examples/rbtree-erase/rb_erase_color.c"))
+        .expect("the pinned erase-color C input exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "1964275955333d0c872f193d30283e6de1fbbd2e3315606734321de0d5bc503e"
+    );
+}
+
+fn erase_color_red_left_refuses_mutation(before: &str, after: &str) {
+    // The pinned function repeats each update in its two mirrored arms.
+    // Replacing both preserves statement positions; this sidecar checks left.
+    erase_source_refuses_replacement(
+        "rbtree_erase_color_red_left.click",
+        "rb_erase_color.c",
+        before,
+        after,
+        2,
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 7s"]
+fn rbtree_erase_color_red_left_requires_parent_blackening() {
+    erase_color_red_left_refuses_mutation(
+        "rb_set_black(parent);",
+        "parent->__rb_parent_color = parent->__rb_parent_color;",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 7s"]
+fn rbtree_erase_color_red_left_requires_sibling_recoloring() {
+    erase_color_red_left_refuses_mutation(
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_BLACK);",
+    );
+}
+
+#[test]
+#[ignore = "nightly: erase-color verification takes about 7s"]
+fn rbtree_erase_color_red_left_requires_the_sibling_parent() {
+    erase_color_red_left_refuses_mutation(
+        "rb_set_parent_color(sibling, parent,\n\t\t\t\t\t\t\t    RB_RED);",
+        "rb_set_parent_color(sibling, sibling,\n\t\t\t\t\t\t\t    RB_RED);",
+    );
 }
