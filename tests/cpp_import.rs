@@ -16459,3 +16459,57 @@ int32& probe(struct View& view, int32 n) {
             .is_err()
     );
 }
+
+// Returned constructor arguments use the existing observer effect restriction,
+// rather than selecting an arbitrary order for mutating argument expressions.
+#[test]
+fn returned_constructor_composed_observers_verify_and_reject_writes_offline() {
+    let project = Project::with_fixture(
+        "observe-result.cpp",
+        "probe",
+        "struct Count { unsigned long value; unsigned long size() const noexcept { return value; } }; struct Box { unsigned long value; explicit Box(unsigned long input) noexcept : value(input) {} }; Box probe(const Count& count) noexcept { return Box(count.size() + 1UL); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "observe-result.cpp";
+uint64 Count_size(const struct Count* this) { views this->value; ensures result == this->value; } by { execute(); simp(); }
+void Box_constructor(struct Box* this, uint64 input) { owns this->value; ensures this->value == input; } by { execute(); simp(); }
+struct Box probe(const struct Count& count) { views count.value; ensures result.value == count.value + 1u64; ensures count.value == old(count.value); } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, proof);
+    let owning = proof
+        .replace("views this->value", "owns this->value")
+        .replace("views count.value", "owns count.value");
+    fs::write(project.directory.join("bad.click"), &owning).unwrap();
+    let error = verify_program_prepared_project(
+        &read_click_project(&project.directory.join("bad.click"), &owning).unwrap(),
+        &import,
+    )
+    .unwrap_err();
+    assert!(
+        error.message().contains("requires a read-only contract"),
+        "{}",
+        error.message()
+    );
+    let missing = proof.replace("views count.value;", "");
+    fs::write(project.directory.join("missing.click"), &missing).unwrap();
+    assert!(
+        verify_program_prepared_project(
+            &read_click_project(&project.directory.join("missing.click"), &missing).unwrap(),
+            &import
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn returned_constructor_observers_refuse_mixed_nested_calls_offline() {
+    let project = Project::with_fixture(
+        "mixed-result.cpp",
+        "probe",
+        "struct Count { unsigned long value; unsigned long size() const noexcept { return value; } }; unsigned long echo(unsigned long n) noexcept { return n; } struct Box { unsigned long a; unsigned long b; explicit Box(unsigned long x, unsigned long y) noexcept : a(x), b(y) {} }; Box probe(const Count& count) noexcept { return Box(count.size() + 1UL, echo(2UL)); }",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("value-only arguments"), "{error}");
+}

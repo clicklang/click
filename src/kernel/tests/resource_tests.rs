@@ -8468,6 +8468,137 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
     );
 }
 
+// A suffix uses a non-wrapping, full-width subtraction and the same backing
+// identity. Neither a low-word bound nor an invented endpoint supplies it.
+#[test]
+fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(983_100));
+    let whole = Bitvector32Term::Variable(Variable(983_101));
+    let taken = Bitvector32Term::Variable(Variable(983_102));
+    let available = CMemoryRange::new_wide(
+        base.clone(),
+        Bitvector32Term::UInt64Constant(0),
+        whole.clone(),
+        4,
+    );
+    let required = CMemoryRange::new_wide(
+        base.offset_by_typed_elements(
+            Bitvector32Term::uint64_subtract(whole.clone(), taken.clone()),
+            4,
+            true,
+            true,
+        ),
+        Bitvector32Term::UInt64Constant(0),
+        taken.clone(),
+        4,
+    );
+    let bounded = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_less_equal(
+            whole.clone(),
+            Bitvector32Term::UInt64Constant(i64::MAX as u64 / 4),
+        ),
+        true,
+    );
+    let facts = bounded.clone().assume_condition(
+        ConditionTerm::uint64_less_equal(taken.clone(), whole.clone()),
+        true,
+    );
+    let covers = |a, b, f| crate::kernel::primitives::wide_memory_range_covers(a, b, f);
+    assert!(covers(&available, &required, &facts));
+    assert!(!covers(&available, &required, &bounded));
+    let only_count = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_less_equal(taken.clone(), whole.clone()),
+        true,
+    );
+    assert!(!covers(&available, &required, &only_count));
+    let low_words = bounded.clone().assume_condition(
+        ConditionTerm::signed_less_equal(
+            Bitvector32Term::uint32_from_64(taken.clone()),
+            Bitvector32Term::uint32_from_64(whole),
+        ),
+        true,
+    );
+    assert!(!covers(&available, &required, &low_words));
+    let unrelated = CMemoryRange::new_wide(
+        Pointer::symbolic(Variable(983_103)),
+        Bitvector32Term::UInt64Constant(0),
+        taken.clone(),
+        4,
+    );
+    assert!(!covers(&available, &unrelated, &facts));
+    let wrong_count = CMemoryRange::new_wide(
+        required.base().clone(),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::Variable(Variable(983_104)),
+        4,
+    );
+    assert!(!covers(&available, &wrong_count, &facts));
+    let wrapped = CMemoryRange::new_wide(
+        base.offset_by_typed_elements(Bitvector32Term::UInt64Constant(u64::MAX), 4, true, true),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::UInt64Constant(2),
+        4,
+    );
+    assert!(!covers(&available, &wrapped, &facts));
+    let concrete = CMemoryRange::new_wide(
+        base.clone(),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::UInt64Constant(3),
+        4,
+    );
+    let part = CMemoryRange::new_wide(
+        base.offset_by_typed_elements(Bitvector32Term::UInt64Constant(1), 4, true, true),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::UInt64Constant(2),
+        4,
+    );
+    let empty_facts = PureFactContext::new();
+    assert!(covers(&concrete, &part, &empty_facts));
+    let past = CMemoryRange::new_wide(
+        part.base().clone(),
+        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::UInt64Constant(3),
+        4,
+    );
+    assert!(!covers(&concrete, &past, &empty_facts));
+}
+
+#[test]
+fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer::symbolic(Variable(983_200));
+    let before = CMemory::new().store(
+        pointer.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant(3)),
+    );
+    let old = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(before.clone()),
+        Box::new(pointer.clone()),
+        LoadKind::Bits64,
+    );
+    let observer = Bitvector32Term::Variable(Variable(983_201));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_equal(observer.clone(), old.clone()),
+        true,
+    );
+    assert!(facts.uint64_values_equal_for_range_resolution(&observer, &old));
+    let after = before.store(
+        pointer.clone(),
+        CValue::UInt64(Bitvector32Term::UInt64Constant((1u64 << 32) + 3)),
+    );
+    let changed = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(after),
+        Box::new(pointer),
+        LoadKind::Bits64,
+    );
+    assert!(!facts.uint64_values_equal_for_range_resolution(&observer, &changed));
+    let other = Bitvector32Term::Variable(Variable(983_202));
+    let narrow = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(observer.clone(), other.clone()), true);
+    assert!(!narrow.uint64_values_equal_for_range_resolution(&observer, &other));
+}
+
 /// Two readers that took a range's bounds as signed 32-bit indices met a
 /// range with unsigned 64-bit bounds and stopped the verifier: resource
 /// equality at a loop's back edge, and the byte renormalization a coverage

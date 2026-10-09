@@ -1728,3 +1728,106 @@ fn an_unplaced_store_records_a_local_array_as_one_run() {
         );
     }
 }
+
+#[test]
+fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
+    let mut samples = Vec::new();
+    for size in [0, 64, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(983_300));
+        let n = Bitvector32Term::Variable(Variable(983_301));
+        let count = Bitvector32Term::Variable(Variable(983_302));
+        let available = CMemoryRange::new_wide(
+            base.clone(),
+            Bitvector32Term::UInt64Constant(0),
+            n.clone(),
+            4,
+        );
+        let required = CMemoryRange::new_wide(
+            base.offset_by_typed_elements(
+                Bitvector32Term::uint64_subtract(n.clone(), count.clone()),
+                4,
+                true,
+                true,
+            ),
+            Bitvector32Term::UInt64Constant(0),
+            count.clone(),
+            4,
+        );
+        let mut facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    n.clone(),
+                    Bitvector32Term::UInt64Constant(i64::MAX as u64 / 4),
+                ),
+                true,
+            )
+            .assume_condition(ConditionTerm::uint64_less_equal(count, n.clone()), true);
+        for i in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    Bitvector32Term::Variable(Variable(984_000 + i)),
+                    n.clone(),
+                ),
+                true,
+            );
+        }
+        let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::primitives::wide_memory_range_covers(&available, &required, &facts)
+        });
+        assert!(covered);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "suffix coverage scanned unrelated bounds: {samples:?}"
+    );
+}
+
+// Observer transport must use the exact equality index, even with many
+// unrelated facts and a later snapshot containing an unrelated write.
+#[test]
+fn wide_range_observer_transport_ignores_unrelated_equalities() {
+    let mut samples = Vec::new();
+    for size in [0, 64, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = scaling_cell("global:wide-observer", 0);
+        let memory = CMemory::new().store(
+            pointer.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(3)),
+        );
+        let load = |memory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                LoadKind::Bits64,
+            )
+        };
+        let before = load(memory.clone());
+        let after = load(memory.store(
+            scaling_cell("global:beside-wide-observer", 0),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+        ));
+        let observer = Bitvector32Term::Variable(Variable(985_002));
+        let mut facts = PureFactContext::new()
+            .assume_condition(ConditionTerm::uint64_equal(observer.clone(), before), true);
+        for index in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::uint64_equal(
+                    Bitvector32Term::Variable(Variable(986_000 + index)),
+                    Bitvector32Term::UInt64Constant(index),
+                ),
+                true,
+            );
+        }
+        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.uint64_values_equal_for_range_resolution(&observer, &after)
+        });
+        assert!(equal);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "observer transport scanned unrelated equalities: {samples:?}"
+    );
+}

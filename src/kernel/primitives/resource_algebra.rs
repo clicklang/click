@@ -8182,16 +8182,10 @@ pub(in crate::kernel) fn wide_memory_range_covers(
     holds(available_start, required_start) && holds(required_end, available_end)
 }
 
-/// [`wide_memory_range_covers`] for a window at another base: `required`
-/// is `p[a..b]` with nonnegative constant bounds, where `p` is element `i`
-/// of the wide range `available`, `i` an unsigned 64-bit index. A chunk
-/// handed to a callee, `first4(bytes + i)`, asks for this.
-///
-/// An index offset is the exact product `i * width`, so the window's
-/// elements are those at the integers `i + a` up to `i + b`, and it is
-/// covered when `available.start <= i` and `i + b <= available.end` hold
-/// of those integers. The second is decided without a sum that could wrap,
-/// as `i <= end` with `b <= end - i`, or as `b <= end` with `i <= end - b`.
+/// Coverage of a window at another base, with native uint64 bounds or
+/// nonnegative constant int32 bounds. Translated endpoints use subtraction
+/// guards to avoid wrapping. A suffix `(whole - count)[0..count]` additionally
+/// transports a checked observer value to the available endpoint.
 fn wide_memory_range_covers_window(
     available: &CMemoryRange,
     required: &CMemoryRange,
@@ -8200,34 +8194,65 @@ fn wide_memory_range_covers_window(
     let Some((start, end)) = available.wide_bounds() else {
         return false;
     };
-    if required.wide_bounds().is_some() {
-        return false;
-    }
-    let (Some(first), Some(last)) = (
-        required
-            .signed_constant_start()
-            .and_then(|value| u64::try_from(value).ok()),
-        required
-            .signed_constant_end()
-            .and_then(|value| u64::try_from(value).ok()),
-    ) else {
-        return false;
-    };
-    if last < first {
-        return false;
-    }
-    let Some(index) = assumptions.wide_element_index_of_access(
-        required.base(),
-        available.base(),
-        available.element_width(),
-    ) else {
-        return false;
+    let (first, last) = match required.wide_bounds() {
+        Some((first, last)) => (first.clone(), last.clone()),
+        None => {
+            let (Some(first), Some(last)) = (
+                required
+                    .signed_constant_start()
+                    .and_then(|value| u64::try_from(value).ok()),
+                required
+                    .signed_constant_end()
+                    .and_then(|value| u64::try_from(value).ok()),
+            ) else {
+                return false;
+            };
+            (
+                Bitvector32Term::UInt64Constant(first),
+                Bitvector32Term::UInt64Constant(last),
+            )
+        }
     };
     let holds = |lower: Bitvector32Term, upper: Bitvector32Term| {
         lower == upper
             || assumptions.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
     };
-    let last = Bitvector32Term::UInt64Constant(last);
+    // Native translated windows require a non-wrapping byte extent. Keep
+    // the existing constant-int32 window path unchanged.
+    if required.wide_bounds().is_some()
+        && !holds(
+            end.clone(),
+            Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(available.element_width())),
+        )
+    {
+        return false;
+    }
+    if !holds(first.clone(), last.clone()) {
+        return false;
+    }
+    let aligned = assumptions
+        .pointer_at_known_base(required.base(), available.base())
+        .unwrap_or_else(|| required.base().clone());
+    let Some(index) = assumptions.wide_element_index_of_access(
+        &aligned,
+        available.base(),
+        available.element_width(),
+    ) else {
+        return false;
+    };
+    if let Bitvector32Term::UInt64Subtract(whole, taken) = &index
+        && first.uint64_as_const() == Some(0)
+        && assumptions.decide(&ConditionTerm::uint64_equal(
+            last.clone(),
+            taken.as_ref().clone(),
+        )) == Some(true)
+        && assumptions.uint64_values_equal_for_range_resolution(end, whole)
+        && holds(taken.as_ref().clone(), end.clone())
+    {
+        // Full-width equality and count <= whole establish both subtraction
+        // without underflow and (whole - count) + count == whole as integers.
+        return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
+    }
     (start.uint64_as_const() == Some(0) || holds(start.clone(), index.clone()))
         && ((holds(index.clone(), end.clone())
             && holds(

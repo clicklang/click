@@ -471,6 +471,13 @@ Native result types and contracts are unchanged, and incomplete construction is
 refused. Address-sensitive returned constructors, nontrivial destruction, NRVO
 and mixed copy/construction return branches remain outside this profile.
 
+Returned-constructor arguments also admit composed nonthrowing expression
+observers when every argument is a value expression. The existing observer
+contract check requires read-only effects, and the shared scalar normalizer
+evaluates each call once before construction. Mixing these expressions with
+ordinary nested calls or reference arguments remains refused. Constructor-body
+eligibility still applies independently to the already evaluated arguments.
+
 Assignment from an admitted construction-return call requires Clang-resolved
 trivial copy assignment and an exact nominal RHS temporary lasting for the full
 expression. Click constructs into distinct raw RHS storage, copies into the live

@@ -1061,6 +1061,13 @@ impl LoweringContext<'_> {
                 })?;
                 evaluation = evaluate_then(evaluation, inner.prefix);
                 lowered.push(inner.value);
+            } else if let CppCallArgument::Value { value } = argument
+                && !has_nested
+                && expression_contains_observer(value)
+            {
+                let inner = self.normalize_scalar(ScalarInput::Value(value))?;
+                evaluation = evaluate_then(evaluation, inner.prefix);
+                lowered.push(inner.value);
             } else {
                 // Remaining siblings are stable and total across the call.
                 lowered.push(self.lower_call_argument(argument)?);

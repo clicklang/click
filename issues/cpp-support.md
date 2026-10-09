@@ -331,8 +331,18 @@ original backing frame for symbolic bounded lengths. Modular read/write callers,
 singleton-to-empty and three-element cases pass; missing permissions, bounds and
 separation, empty input, out-of-range `first` and views-only writes are refused.
 The owned write caller preserves every other original backing element.
-Ordinary, expanded and retained checks agree. `last` and `subspan` remain
-unselected targets. Other scalar/import work still needs
+Ordinary, expanded and retained checks agree.
+
+The unchanged pinned runtime `last(K)` now constructs a suffix descriptor for
+`0 <= K <= N <= 1073741823`, with native pointer `p + (N - K)` and extent `K`.
+The caller retains descriptor views and its complete backing view, with a
+quantified unchanged-element frame. Empty, full and empty-input suffixes,
+ordinary verification, method/caller expansion and retained checking are covered;
+missing bounds/views and false pointer/extent claims are refused. Returned
+constructor arguments reuse read-only observer normalization for value-only
+arguments. Shared wide-range coverage checks the non-wrapping suffix displacement
+and full-width observer equality, without granting new backing authority.
+`subspan` remains an unselected target. Other scalar/import work still needs
 an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation
