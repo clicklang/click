@@ -1071,10 +1071,11 @@ fn rbtree_erase_deep_red_leaf_refuses_spurious_fixup() {
 #[test]
 #[ignore = "nightly: 10s in the parallel gate"]
 fn rbtree_erase_deep_black_leaf_refuses_a_skipped_splice() {
+    // Keep the C statement positions stable while leaving the successor linked.
     erase_sidecar_refuses_mutation(
         "rbtree_erase_black_spine.click",
         "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
-        "",
+        "\t\t\tWRITE_ONCE(parent->rb_left, successor);\n",
     );
 }
 
