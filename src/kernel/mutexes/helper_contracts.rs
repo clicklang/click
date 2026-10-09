@@ -456,6 +456,7 @@ pub(in crate::kernel) fn apply_call_effect(
     guard: Option<&CResourceFact>,
     payload: Option<Variable>,
     definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    definitions: &[crate::kernel::CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
@@ -503,25 +504,17 @@ pub(in crate::kernel) fn apply_call_effect(
                 true,
                 assumptions,
                 definition,
+                definitions,
                 payload,
                 budget,
                 Some(source),
             )?;
-        let ranges = if let Some(identity) = payload {
-            let instance = next
-                .owned_resource_instance(identity)
-                .ok_or("acquiring helper did not produce its state")?;
-            crate::kernel::functions::checked_owned_memory_ranges(
-                &CResourceFact::own(CResource::Instance(instance.clone())),
-                std::slice::from_ref(definition.ok_or("missing protected state declaration")?),
-                &next,
-                assumptions,
-            )
-            .ok_or("protected helper state has no checked memory footprint")?
-        } else {
-            Vec::new()
-        };
-        return Ok((next, evidence, ranges));
+        if payload.is_some_and(|identity| next.owned_resource_instance(identity).is_none()) {
+            return Err("acquiring helper did not produce its state".into());
+        }
+        // Acquisition changes no memory: every release already forgot its
+        // protected footprint.
+        return Ok((next, evidence, Vec::new()));
     }
     let mut next = state.clone();
     let mut ranges = Vec::new();
@@ -587,6 +580,7 @@ pub(in crate::kernel) fn apply_call_effect(
                 effect == HelperEffect::Acquire,
                 assumptions,
                 definition,
+                definitions,
                 payload,
                 budget,
                 Some(source),
@@ -788,6 +782,7 @@ mod tests {
             true,
             &assumptions,
             None,
+            &[],
             None,
             &mut ExecutionBudget::new(),
         )
@@ -855,6 +850,7 @@ mod tests {
             false,
             &assumptions,
             None,
+            &[],
             None,
             &mut ExecutionBudget::new(),
         )
@@ -938,6 +934,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    &[],
                     &assumptions,
                     &mut ExecutionBudget::new(),
                 )
@@ -951,6 +948,7 @@ mod tests {
                     Some(&guard),
                     None,
                     None,
+                    &[],
                     &assumptions,
                     &mut ExecutionBudget::new(),
                 )
@@ -967,6 +965,7 @@ mod tests {
                         None,
                         None,
                         None,
+                        &[],
                         &assumptions,
                         &mut ExecutionBudget::new(),
                     )
@@ -981,6 +980,7 @@ mod tests {
                         Some(&guard),
                         None,
                         None,
+                        &[],
                         &assumptions,
                         &mut ExecutionBudget::new(),
                     )

@@ -179,6 +179,7 @@ mod mutex_helper_binding_tests {
             None,
             None,
             None,
+            &[],
             &assumptions,
             &mut crate::kernel::ExecutionBudget::new(),
         )
@@ -197,6 +198,7 @@ mod mutex_helper_binding_tests {
                 Some(&guard),
                 None,
                 None,
+                &[],
                 &assumptions,
                 &mut crate::kernel::ExecutionBudget::new()
             )
@@ -210,6 +212,7 @@ mod mutex_helper_binding_tests {
             Some(&guard),
             None,
             None,
+            &[],
             &assumptions,
             &mut crate::kernel::ExecutionBudget::new(),
         )
@@ -229,6 +232,7 @@ mod mutex_helper_binding_tests {
             None,
             None,
             None,
+            &[],
             &assumptions,
             &mut crate::kernel::ExecutionBudget::new(),
         )
@@ -242,6 +246,7 @@ mod mutex_helper_binding_tests {
                 Some(&guard),
                 None,
                 None,
+                &[],
                 &assumptions,
                 &mut crate::kernel::ExecutionBudget::new()
             )

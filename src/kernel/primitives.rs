@@ -3480,6 +3480,9 @@ pub struct CExecutionEnvironment {
     /// lookup avoids scanning unrelated project definitions at each call.
     pub(super) modeled_mutex_definitions:
         std::sync::Arc<BTreeMap<String, CCompositeResourceDefinition>>,
+    /// The same definitions as one name-sorted slice, for deriving the
+    /// footprint of a protected resource whose body reaches other families.
+    pub(super) modeled_mutex_definition_list: std::sync::Arc<[CCompositeResourceDefinition]>,
     /// The selected target's byte order. It decides whether a one-byte C
     /// access inside a wider integer cell reads or updates that cell's
     /// representation; see `crate::kernel::eval::byte_view`.
