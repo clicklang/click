@@ -3218,6 +3218,17 @@ impl Parser {
                 .map(Requirement::Proposition),
         );
 
+        let parameter_field_places = signature
+            .parameters()
+            .iter()
+            .filter_map(|parameter| {
+                let layout = self.struct_layouts.get(parameter.struct_name()?)?;
+                Some((
+                    parameter.name().to_string(),
+                    super::scalar_field_places(layout),
+                ))
+            })
+            .collect();
         Ok(FunctionBlock {
             signature,
             external,
@@ -3233,6 +3244,7 @@ impl Parser {
             ensure_source_clauses,
             grouped_proof,
             parameter_struct_casts,
+            parameter_field_places,
         })
     }
 

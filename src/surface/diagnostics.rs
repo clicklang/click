@@ -52,44 +52,41 @@ impl Drop for CStatementSiteScope {
     }
 }
 
-/// What a reference parameter's carrying pointer points at, for printing a
-/// read through it as the sidecar writes it.
+/// What a parameter's pointer points at, for printing a read through it as
+/// the sidecar writes it.
 #[derive(Clone, Debug)]
-enum ReferentShape {
+enum PointeeShape {
     /// `int32& value`: a read of the carrier is `value`.
-    Scalar,
-    /// `struct cell& c`: a read at the carrier's own address is the field
-    /// at offset zero, `c.field`.
-    Struct { first_field: Option<String> },
+    ScalarReferent,
+    /// A struct: a read at a scalar field's offset is that field, `c.field`
+    /// through a reference and `p->field` through a pointer.
+    Struct {
+        fields: Vec<crate::surface::FieldPlace>,
+    },
 }
 
 thread_local! {
-    /// The reference parameters of the function whose C statement is being
-    /// stepped, by the name of the pointer that carries each. The printer of
-    /// a kernel term has no parameter list; a step scope supplies this one.
-    static REFERENCE_CARRIERS: std::cell::RefCell<Vec<BTreeMap<String, ReferentShape>>> =
+    /// The parameters whose reads are printed as places, by the name each
+    /// has in a kernel term. The printer of a kernel term has no parameter
+    /// list; a step scope or an expansion scope supplies this one.
+    static REFERENCE_CARRIERS: std::cell::RefCell<Vec<BTreeMap<String, PointeeShape>>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, ReferentShape> {
+fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, PointeeShape> {
     function
         .parameters()
         .iter()
         .filter(|parameter| syntax::referent_of_carrier(parameter.name()).is_some())
         .map(|parameter| {
             let shape = match parameter.struct_name() {
-                None => ReferentShape::Scalar,
-                Some(struct_name) => ReferentShape::Struct {
-                    first_field: parameter
+                None => PointeeShape::ScalarReferent,
+                Some(struct_name) => PointeeShape::Struct {
+                    fields: parameter
                         .pointee_struct_layout()
                         .or_else(|| function.structs().get(struct_name))
-                        .and_then(|layout| {
-                            layout
-                                .fields()
-                                .iter()
-                                .find(|(_, field)| field.offset_bytes() == 0)
-                                .map(|(name, _)| name.clone())
-                        }),
+                        .map(crate::surface::scalar_field_places)
+                        .unwrap_or_default(),
                 },
             };
             (parameter.name().to_string(), shape)
@@ -97,38 +94,44 @@ fn reference_carriers(function: &syntax::C0Function) -> BTreeMap<String, Referen
         .collect()
 }
 
-/// While alive, names the reference parameters of the function whose proof
-/// text is being written, so `click expand` spells a read through one as the
-/// sidecar does. A struct referent's fields need its layout, which a
-/// signature does not carry; those reads keep their kernel spelling.
+/// While alive, names the reference and struct parameters of the function
+/// whose proof text is being written, so `click expand` spells a read
+/// through one as the sidecar does.
 #[must_use]
-pub(in crate::surface) struct ReferenceCarrierScope(());
+pub(in crate::surface) struct ParameterPlaceScope(());
 
-impl ReferenceCarrierScope {
-    pub(in crate::surface) fn enter(signature: &crate::surface::FunctionSignature) -> Self {
-        let carriers = signature
+impl ParameterPlaceScope {
+    pub(in crate::surface) fn enter(block: &crate::surface::FunctionBlock) -> Self {
+        let shapes = block
+            .signature()
             .parameters()
             .iter()
-            .filter(|parameter| parameter.is_reference())
-            .map(|parameter| {
+            .filter_map(|parameter| {
                 let name = parameter.name();
-                let carrier = match syntax::referent_of_carrier(name) {
-                    Some(_) => name.to_string(),
-                    None => syntax::reference_carrier_name(name),
+                let shape = match block.parameter_field_places().get(name) {
+                    Some(fields) => PointeeShape::Struct {
+                        fields: fields.clone(),
+                    },
+                    None if parameter.is_reference() && parameter.struct_name().is_none() => {
+                        PointeeShape::ScalarReferent
+                    }
+                    None => return None,
                 };
-                let shape = match parameter.struct_name() {
-                    None => ReferentShape::Scalar,
-                    Some(_) => ReferentShape::Struct { first_field: None },
-                };
-                (carrier, shape)
+                let variable =
+                    if parameter.is_reference() && syntax::referent_of_carrier(name).is_none() {
+                        syntax::reference_carrier_name(name)
+                    } else {
+                        name.to_string()
+                    };
+                Some((variable, shape))
             })
             .collect();
-        REFERENCE_CARRIERS.with(|scopes| scopes.borrow_mut().push(carriers));
+        REFERENCE_CARRIERS.with(|scopes| scopes.borrow_mut().push(shapes));
         Self(())
     }
 }
 
-impl Drop for ReferenceCarrierScope {
+impl Drop for ParameterPlaceScope {
     fn drop(&mut self) {
         REFERENCE_CARRIERS.with(|scopes| {
             scopes.borrow_mut().pop();
@@ -136,19 +139,34 @@ impl Drop for ReferenceCarrierScope {
     }
 }
 
-/// A typed read through `pointer`, as a sidecar writes it, when `pointer` is
-/// the carrier of a reference parameter of the function being stepped.
-fn describe_read_through_reference(pointer: &CExpression) -> Option<String> {
-    let CExpression::Variable(carrier) = pointer else {
-        return None;
+/// A typed read through `pointer`, as a sidecar writes it, when `pointer`
+/// is a parameter the innermost scope names, or a field's offset from one.
+fn describe_read_through_parameter(
+    pointer: &CExpression,
+    value_type: CType,
+    pointee_constant: bool,
+) -> Option<String> {
+    let (variable, offset_bytes) = match pointer {
+        CExpression::Variable(variable) => (variable, 0),
+        CExpression::PointerOffsetBytes { pointer, bytes } => match pointer.as_ref() {
+            CExpression::Variable(variable) => (variable, *bytes),
+            _ => return None,
+        },
+        _ => return None,
     };
-    let referent = syntax::referent_of_carrier(carrier)?;
-    REFERENCE_CARRIERS.with(|carriers| match carriers.borrow().last()?.get(carrier)? {
-        ReferentShape::Scalar => Some(referent.to_string()),
-        ReferentShape::Struct {
-            first_field: Some(field),
-        } => Some(format!("{referent}.{field}")),
-        ReferentShape::Struct { first_field: None } => None,
+    REFERENCE_CARRIERS.with(|shapes| match shapes.borrow().last()?.get(variable)? {
+        PointeeShape::ScalarReferent if offset_bytes == 0 => {
+            syntax::referent_of_carrier(variable).map(str::to_string)
+        }
+        PointeeShape::ScalarReferent => None,
+        PointeeShape::Struct { fields } => fields
+            .iter()
+            .find(|field| {
+                field.offset_bytes == offset_bytes
+                    && field.value_type == value_type
+                    && field.pointee_constant == pointee_constant
+            })
+            .map(|field| describe_field_place(variable, &field.name)),
     })
 }
 
@@ -4675,10 +4693,15 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::TypedLoad {
             pointer,
             value_type,
+            volatile,
+            pointee_constant,
             ..
         } => {
-            if let Some(referent) = describe_read_through_reference(pointer) {
-                return referent;
+            if !*volatile
+                && let Some(place) =
+                    describe_read_through_parameter(pointer, *value_type, *pointee_constant)
+            {
+                return place;
             }
             let name = match value_type {
                 CType::Int128 => "load_int128",

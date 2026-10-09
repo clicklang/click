@@ -15134,10 +15134,9 @@ fn cpp_expansion_writes_a_branch_over_a_reference_by_its_referent_offline() {
 }
 
 /// `click expand` writes a branch condition over a field of a struct
-/// reference, and the expansion verifies. The field is still written in its
-/// kernel spelling, as a field through a C struct pointer is.
+/// reference as the sidecar writes that field, and the expansion verifies.
 #[test]
-fn cpp_expansion_over_a_struct_reference_field_verifies_offline() {
+fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() {
     let project = Project::with_fixture(
         "local.cpp",
         "pick",
@@ -15168,9 +15167,10 @@ fn cpp_expansion_over_a_struct_reference_field_verifies_offline() {
     )
     .unwrap();
     assert!(
-        expanded.contains("if at(statement(0).entry, "),
+        expanded.contains("if at(statement(0).entry, c.second) > "),
         "{expanded}"
     );
+    assert!(!expanded.contains("load_int32("), "{expanded}");
     verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }

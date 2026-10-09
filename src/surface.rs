@@ -1197,6 +1197,10 @@ pub struct FunctionBlock {
     /// most one struct; proof synthesis reads memory through the parameter
     /// with that layout, as it does for a declared struct-pointer parameter.
     parameter_struct_casts: BTreeMap<String, String>,
+    /// The scalar fields of each struct parameter's layout, by parameter
+    /// name. Printing only: `click expand` writes a read at a field's
+    /// offset as the field place.
+    parameter_field_places: BTreeMap<String, Vec<FieldPlace>>,
 }
 
 /// Turns the source clause of each flattened clause into its position among
@@ -1273,6 +1277,37 @@ pub struct FunctionParameter {
     /// Whether the source declares the parameter as a reference. Its name
     /// then denotes the referent; `click_type` is the pointer that carries it.
     reference: bool,
+}
+
+/// A scalar field of a struct as a typed read finds it: the read of
+/// `value_type` at `offset_bytes` is the field `name`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::surface) struct FieldPlace {
+    name: String,
+    offset_bytes: u32,
+    value_type: CType,
+    pointee_constant: bool,
+}
+
+/// The fields of `layout` a typed read can name: those that are not
+/// themselves a struct, a union or an array.
+pub(in crate::surface) fn scalar_field_places(layout: &syntax::C0StructLayout) -> Vec<FieldPlace> {
+    layout
+        .fields()
+        .iter()
+        .filter(|(_, field)| {
+            field.struct_name().is_none()
+                && field.union_name().is_none()
+                && field.array_element_width().is_none()
+                && !field.is_long_double()
+        })
+        .map(|(name, field)| FieldPlace {
+            name: name.clone(),
+            offset_bytes: field.offset_bytes(),
+            value_type: field.c_type().to_kernel_type(),
+            pointee_constant: field.pointee_is_constant(),
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6828,6 +6863,10 @@ impl FunctionBlock {
         &self.parameter_struct_casts
     }
 
+    pub(in crate::surface) fn parameter_field_places(&self) -> &BTreeMap<String, Vec<FieldPlace>> {
+        &self.parameter_field_places
+    }
+
     pub fn is_external(&self) -> bool {
         self.external
     }
@@ -7587,8 +7626,7 @@ impl VerifiedCTheorem {
         let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
             self.function_block.signature().returns_reference(),
         );
-        let _reference_carriers =
-            diagnostics::ReferenceCarrierScope::enter(self.function_block.signature());
+        let _reference_carriers = diagnostics::ParameterPlaceScope::enter(&self.function_block);
         Ok(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))

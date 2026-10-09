@@ -40,23 +40,21 @@ The "C operation" line of a failure prints a read through a reference as
 the sidecar writes it, `value` or `c.first`: a step records the stepped
 function's reference parameters, and the printer of a kernel term consults
 them (`describe_read_through_reference` in `src/surface/diagnostics.rs`).
-`click expand` does the same for a scalar reference from the sidecar's
-signature (`ReferenceCarrierScope`).
+`click expand` does the same from the sidecar's function block
+(`ParameterPlaceScope`): a read through a scalar reference is `value`, and
+a read at a scalar field of a struct parameter is the field place,
+`c.second` through `struct cell& c` and `p->second` through a C struct
+pointer.
 
-One gap remains, and it is not particular to references. A condition
-`click expand` writes over a struct field is in kernel spelling:
-`load_int32(byte_offset(&c, 4))` for `c.second` through `struct cell& c`,
-and `load_int32(byte_offset(p, 4))` for `p->second` through a C struct
-pointer. Both parse back and verify
-(`cpp_expansion_over_a_struct_reference_field_verifies_offline`). Writing
-the field needs the struct's layout where the proof text is printed, which
-has only the sidecar's signature today.
+One gap remains. The scope knows the function's parameters only, so an
+expanded condition over a field read through a local struct pointer, or
+through a field that is itself a struct, is still in kernel spelling
+(`load_int32(byte_offset(q, 4))`). It parses back and verifies.
 
-Regression: `click expand` on a branch over `c.second` through
-`struct cell& c`, and over `p->second` through `struct cell* p` in C,
-writes the condition with the field place.
+Regression: `click expand` on a branch over `q->second`, where `q` is a
+local `struct cell*`, writes the condition with the field place.
 
-Done when: no expansion prints `load_...` for a field of a struct parameter.
+Done when: no expansion prints `load_...` for a field of a struct.
 
 ### A4. Rust sidecars in Rust syntax: respelling and the refusals
 
