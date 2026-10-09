@@ -22,12 +22,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-#[path = "population_consumption.rs"]
-mod population_consumption;
-
-#[path = "population_initialization.rs"]
-mod population_initialization;
-
 #[cfg(test)]
 thread_local! {
     static MATCH_SCOPE_INDEX_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -699,14 +693,6 @@ fn checks_population_authority_exchange(
         || !before
             .counted_populations
             .shares_storage_with(&after.counted_populations)
-        || !before
-            .population_effects
-            .committed_consumptions
-            .shares_storage_with(&after.population_effects.committed_consumptions)
-        || !before
-            .population_effects
-            .pending_counts
-            .shares_storage_with(&after.population_effects.pending_counts)
         || before.next_local_frame != after.next_local_frame
         || before.next_local_lifetime != after.next_local_lifetime
         || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
@@ -758,10 +744,6 @@ impl CheckedPopulationAuthorityRewrite {
     fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
         if state.memory.diagnostic_identity() != self.before_state.memory.diagnostic_identity()
             || !state.shares_non_memory_storage_with(&self.before_state)
-            || !state
-                .population_effects
-                .committed_consumptions
-                .shares_storage_with(&self.before_state.population_effects.committed_consumptions)
             || facts.introduced_since(&self.before_facts).is_none()
             || !self
                 .after_facts
@@ -924,14 +906,6 @@ fn checks_population_member_exchange(
         || !before
             .counted_populations
             .shares_storage_with(&after.counted_populations)
-        || !before
-            .population_effects
-            .committed_consumptions
-            .shares_storage_with(&after.population_effects.committed_consumptions)
-        || !before
-            .population_effects
-            .pending_counts
-            .shares_storage_with(&after.population_effects.pending_counts)
         || before.next_local_frame != after.next_local_frame
         || before.next_local_lifetime != after.next_local_lifetime
         || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
@@ -1764,14 +1738,6 @@ impl CheckedResourceRewrite {
             || !before_state
                 .counted_populations
                 .shares_storage_with(&after_state.counted_populations)
-            || !before_state
-                .population_effects
-                .committed_consumptions
-                .shares_storage_with(&after_state.population_effects.committed_consumptions)
-            || !before_state
-                .population_effects
-                .pending_counts
-                .shares_storage_with(&after_state.population_effects.pending_counts)
             || before_state.next_local_frame != after_state.next_local_frame
             || before_state.next_local_lifetime != after_state.next_local_lifetime
             || before_state.enclosing_frame_holds_locals != after_state.enclosing_frame_holds_locals
@@ -2160,14 +2126,6 @@ impl CheckedResourceRewrite {
                     || !before_state
                         .counted_populations
                         .shares_storage_with(&after_state.counted_populations)
-                    || !before_state
-                        .population_effects
-                        .committed_consumptions
-                        .shares_storage_with(&after_state.population_effects.committed_consumptions)
-                    || !before_state
-                        .population_effects
-                        .pending_counts
-                        .shares_storage_with(&after_state.population_effects.pending_counts)
                     || before_state.next_local_frame != after_state.next_local_frame
                     || before_state.next_local_lifetime != after_state.next_local_lifetime
                     || before_state.enclosing_frame_holds_locals
@@ -2353,27 +2311,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         let crate::kernel::CResource::Composite { arguments, .. } = selected.resource() else {
             unreachable!()
         };
-        if let Some(checked) = population_initialization::check(
-            &definition,
-            before_state,
-            before_facts,
-            selected,
-            after_state,
-            after_facts,
-        )? {
-            return Ok(Self {
-                before_state: before_state.clone(),
-                after_state: after_state.clone(),
-                before_facts: before_facts.clone(),
-                after_facts: after_facts.clone(),
-                definition,
-                consumption_contract: None,
-                instance: None,
-                selected_children: None,
-                load_equalities: load_equality_capture.finish(),
-                delta_proofs: Arc::new(checked),
-            });
-        }
         if definition.is_counted_population()
             && selected.is_own()
             && !selected.has_proven_positive_quantity(assumptions)
@@ -9900,75 +9837,6 @@ impl ExecutionProofCore {
             trace.push(CheckedExecutionEvent::ResourceObservation(
                 observation.clone(),
             ));
-        }
-        Ok(())
-    }
-
-    /// A candidate only: publication still requires a checked close event.
-    pub(crate) fn prepare_consuming_resource_close(
-        &self,
-        selected: &CResourceFact,
-        facts: &ProofFacts,
-    ) -> Result<CState, String> {
-        if self.frontier.in_loop_body {
-            return Err("consuming close inside a loop requires loop effect accounting".into());
-        }
-        let entry = self
-            .function_entry
-            .as_ref()
-            .ok_or("consuming close requires the checked function entry")?;
-        population_consumption::prepare(
-            &entry.function,
-            &entry.entry_state,
-            self.reached_state(),
-            selected,
-            facts,
-        )
-    }
-
-    pub(crate) fn record_consuming_resource_close(
-        &mut self,
-        function: &CFunction,
-        before_facts: &ProofFacts,
-        selected: &CResourceFact,
-        after_state: &CState,
-        after_facts: &ProofFacts,
-    ) -> Result<(), String> {
-        if self.evidence_completed || self.frontier.is_at_function_entry() {
-            return Err("consuming close requires an active function body".into());
-        }
-        let candidate = self.prepare_consuming_resource_close(selected, before_facts)?;
-        let CResource::Composite {
-            name,
-            arguments: resource_arguments,
-        } = selected.resource()
-        else {
-            return Err("consuming close requires a population".into());
-        };
-        if after_state.population_body_is_open(name, resource_arguments, before_facts.assumptions())
-        {
-            return Err("consuming close must restore and close the population body".into());
-        }
-        let mut rewrite = CheckedResourceRewrite::check_with_children(
-            function,
-            &candidate,
-            before_facts,
-            selected,
-            after_state,
-            after_facts,
-            &self.checked_call_events,
-            None,
-        )?;
-        // Both transitions have been checked: spend the declared unit, then
-        // restore its body. Retain the original input for trace validation and
-        // bind the effect to the enclosing contract, not merely its definition.
-        rewrite.before_state = self.reached_state().clone();
-        rewrite.consumption_contract = self.function_entry.clone();
-        if self.evidence_state.is_some() {
-            self.evidence_state = Some(rewrite.after_state.clone());
-        }
-        for trace in self.execution_evidence.iter_mut() {
-            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
         }
         Ok(())
     }

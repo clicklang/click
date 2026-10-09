@@ -6109,10 +6109,6 @@ impl CState {
                 .counted_populations
                 .shares_storage_with(&other.counted_populations)
                 || (self.counted_populations.is_empty() && other.counted_populations.is_empty()))
-            && self
-                .population_effects
-                .pending_counts
-                .shares_storage_with(&other.population_effects.pending_counts)
             && self.next_local_frame == other.next_local_frame
             && self.next_local_lifetime == other.next_local_lifetime
             && self.enclosing_frame_holds_locals == other.enclosing_frame_holds_locals
@@ -7972,86 +7968,6 @@ impl CState {
         })
     }
 
-    pub(crate) fn has_counted_population_unary_pointer_alias(
-        &self,
-        name: &str,
-        arguments: &[AlgebraicValue],
-        assumptions: &PureFactContext,
-    ) -> Result<bool, &'static str> {
-        self.counted_populations
-            .has_unary_pointer_alias(name, arguments, assumptions)
-    }
-
-    /// The populations of `name`'s family that a count pattern names, or the
-    /// first one it may or may not name; see
-    /// [`CountedPopulations::pattern_matches`].
-    pub(crate) fn counted_population_pattern_matches(
-        &self,
-        name: &str,
-        arguments: &[Option<AlgebraicValue>],
-        assumptions: &PureFactContext,
-    ) -> Result<Vec<&CCountedPopulation>, &CCountedPopulation> {
-        self.counted_populations
-            .pattern_matches(name, arguments, assumptions)
-    }
-
-    /// Count sees the selected create outcome even before the next C step.
-    /// This changes only observation restrictions, never memory or join rights.
-    pub(in crate::kernel) fn count_observation_state(
-        &self,
-        assumptions: &PureFactContext,
-    ) -> std::borrow::Cow<'_, Self> {
-        let Some(pending) = &self.pending_thread_create else {
-            return std::borrow::Cow::Borrowed(self);
-        };
-        let reservations = pending.count_authority(assumptions);
-        let mut state = self.clone();
-        Arc::make_mut(&mut state.population_effects).pending_counts = reservations.clone();
-        state.pending_thread_create = None;
-        std::borrow::Cow::Owned(state)
-    }
-
-    /// The total of every ledger entry this pattern names, or `None` where
-    /// that total is not a count.
-    ///
-    /// The entries are populations and their counts are natural numbers, so
-    /// the fold goes through `population_quantity_sum` rather than the
-    /// modular add: two entries of `2000000000` are four billion units, and
-    /// the wrapped `-294967296` would be a smaller number than either of
-    /// them. `crate::kernel::spec`'s own pattern sum asks the same question
-    /// with an obligation list to put the no-overflow condition on; this one
-    /// has none, so it answers that the sum is not established.
-    pub fn counted_population_sum(
-        &self,
-        name: &str,
-        arguments: &[Option<AlgebraicValue>],
-        assumptions: &PureFactContext,
-    ) -> Option<Bitvector32Term> {
-        let state = self.count_observation_state(assumptions);
-        // An entry the pattern may or may not name leaves the total
-        // undetermined, exactly as a pending worker does.
-        let matching = state
-            .counted_population_pattern_matches(name, arguments, assumptions)
-            .ok()?;
-        matching
-            .into_iter()
-            .try_fold(Bitvector32Term::Constant(0), |total, population| {
-                if state
-                    .population_effects
-                    .pending_counts
-                    .get(&population.name, &population.arguments, false)
-                    .is_some()
-                {
-                    return None;
-                }
-                crate::kernel::primitives::resource_algebra::population_quantity_sum(
-                    &total,
-                    &population.count,
-                    assumptions,
-                )
-            })
-    }
-
     pub fn without_counted_population(mut self, name: &str, arguments: &[AlgebraicValue]) -> Self {
         self.counted_populations.remove(name, arguments);
         self
@@ -8101,7 +8017,6 @@ impl CState {
                         }),
                 ),
                 creation: self.population_effects.creation.clone(),
-                ..PopulationEffects::default()
             }),
             ..Self::new()
         }
