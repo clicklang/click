@@ -530,6 +530,24 @@ fn expand_source<'a>(
                         );
                         defined_macros.insert("NULL".into());
                     }
+                    (super::target::CTarget::X86_64LinuxUserspace, "stdatomic.h") => {
+                        expand_source(
+                            "<stdatomic.h>",
+                            include_str!("modeled_stdatomic.h"),
+                            sources,
+                            target,
+                            stack,
+                            dependencies,
+                            expanded_once,
+                            macros,
+                            defined_macros,
+                            Some((source_path, line_number)),
+                            true,
+                            expanded,
+                            line_map,
+                            origin_names,
+                        )?;
+                    }
                     (super::target::CTarget::X86_64LinuxUserspace, "pthread.h") => {
                         expand_source(
                             "<pthread.h>",
@@ -714,7 +732,8 @@ fn collect_local_include_paths(
                         );
                         defined_macros.insert("NULL".into());
                     }
-                    (super::target::CTarget::X86_64LinuxUserspace, "pthread.h") => {}
+                    (super::target::CTarget::X86_64LinuxUserspace, "pthread.h" | "stdatomic.h") => {
+                    }
                     _ => {
                         return Err(unsupported_system_header(
                             source_path,
@@ -1243,7 +1262,12 @@ fn parse_directive(
                 let header = &rest[1..end];
                 if matches!(
                     header,
-                    "stdint.h" | "inttypes.h" | "stdbool.h" | "stddef.h" | "pthread.h"
+                    "stdint.h"
+                        | "inttypes.h"
+                        | "stdbool.h"
+                        | "stddef.h"
+                        | "pthread.h"
+                        | "stdatomic.h"
                 ) && trailing_comments_only(&rest[end + 1..])
                 {
                     return Ok(Some(SourceDirective::SystemInclude(header.to_string())));

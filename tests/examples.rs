@@ -77,6 +77,18 @@ fn concurrency_mutex_composition_source_is_frozen() {
 }
 
 #[test]
+fn concurrency_publication_source_is_frozen() {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("design/concurrency-publication/publication.c");
+    let bytes = fs::read(&source).expect("the frozen publication C source exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "0b267dcc090dfbf990b915691c40b8b1c0016a811775db619022000b9d5e004c",
+        "the publication proof must use the selected C source unchanged"
+    );
+}
+
+#[test]
 fn concurrency_mutex_parity_source_is_frozen() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("design/concurrency-probes/mutex_held_parity.c");

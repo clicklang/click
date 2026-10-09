@@ -4129,6 +4129,14 @@ fn verification_required_functions_with_blocks(
             {
                 continue;
             }
+            if matches!(
+                name.as_str(),
+                "atomic_init" | "atomic_store_explicit" | "atomic_load_explicit"
+            ) {
+                return Err(ClickError::new(format!(
+                    "`{name}` is declared by Click's `<stdatomic.h>` projection, but no runtime models C11 atomic operations yet"
+                )));
+            }
             return Err(ClickError::new(format!("no C source defines `{name}`")));
         };
         pending.extend(c0_statement_calls(parsed).into_iter().flatten());
