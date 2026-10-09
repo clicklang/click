@@ -548,9 +548,9 @@ supply ownership.
 
 On acquisition, shared protected memory is interpreted at a fresh state
 satisfying its assertion. Old observations retain their old snapshots. No
-particular scheduler order is assumed. Counted contributions may constrain the
-fresh state through checked invariant updates; possession of one contribution
-does not independently expose the population total or payload.
+particular scheduler order is assumed. A member may constrain the fresh state
+only through the control's checked invariant; possession of one member does not
+expose the population total or payload.
 
 Declarations should supply reusable, checked resource summaries so ordinary
 calls and diagnostics visit the relevant inputs and effects, not every mutex,

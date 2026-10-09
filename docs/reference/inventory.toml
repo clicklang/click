@@ -3433,3 +3433,23 @@ path = "reference/library/index.md#int64_greater_equal_to_integer"
 [[item]]
 id = "stdlib.theorem.int32_remainder_to_integer"
 path = "reference/library/index.md#int32_remainder_to_integer"
+
+[[item]]
+id = "glossary.authorized-resource"
+path = "reference/glossary.md#authorized-resource"
+
+[[item]]
+id = "glossary.control"
+path = "reference/glossary.md#control"
+
+[[item]]
+id = "glossary.count"
+path = "reference/glossary.md#count"
+
+[[item]]
+id = "glossary.member"
+path = "reference/glossary.md#member"
+
+[[item]]
+id = "glossary.protected-resource"
+path = "reference/glossary.md#protected-resource"

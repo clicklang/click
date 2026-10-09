@@ -82,7 +82,16 @@ A whole-workflow check that discovers smart proof sites, expands them, verifies
 Checked evidence that permits a proof or state transition. A kernel derivation
 is proof authority; a viewed or owned resource can grant memory-access
 authority; `allocation(base, bytes)` grants lifetime authority for one heap
-allocation.
+allocation. `authority(R(..))` is the exclusive resource that governs one
+[population](#population): only its owner creates or destroys
+[members](#member) or observes `count(R(..))`.
+
+### Authorized resource
+
+A declared resource family that takes part in population accounting, written
+`authorized resource R(..) {}` or `authorized abstract resource R(..);`. Only
+such a family may be named by `authority(...)` or `count(...)`; its units are
+[members](#member) of a [population](#population).
 
 ### Availability
 
@@ -217,8 +226,9 @@ The ability of a proof procedure to find every true result in a stated
 ### Composite resource
 
 A named logical resource with a body of facts and contained resources that
-Click can expose with `unfold` and rebuild with `fold`. Contrast with
-[abstract resource](#abstract-resource).
+Click can expose with `unfold` and rebuild with `fold`. Fields, when declared,
+make each folded instance a separately named member rather than one unit of a
+quantity. Contrast with [abstract resource](#abstract-resource).
 
 ### Condition fact
 
@@ -260,12 +270,27 @@ Evidence that the current assumptions cannot all hold, such as exact facts `P`
 and `not P`. From a contradiction, any proposition follows; the
 `contradiction` tactic records the conflicting evidence explicitly.
 
+### Control
+
+An ordinary resource whose body owns a population's `authority(R(..))`,
+usually with the C state that records the population, and states facts
+relating that state to [`count(R(..))`](#count). A mutex that protects a
+population protects its control. A control is confined to its creating
+thread.
+
 ### Control tactic
 
 A tactic that owns nested proof structure, such as `have`, `open`, `if`,
 `cases`, `branch`, or `loop`. A control tactic may create scopes, split proof
 branches, or join C branch arms; it is not necessarily C control flow. See
 [Tactics](tactics/index.md).
+
+### Count
+
+The `int32` expression `count(R(..))`, the size of a
+[population](#population). It requires the population's authority, owned
+directly or through an owned [control](#control); a `_` argument sums every
+matching population.
 
 ## D
 
@@ -382,8 +407,10 @@ frontier.
 
 To replace an exposed composite-resource body with its named form. Folding
 checks the required pure body facts, consumes the contained resource facts, and
-produces the composite resource fact. The pure facts remain available.
-Predicates can be unfolded but don't have a corresponding surface `fold`
+produces the composite resource fact. The pure facts remain available. Folding
+an [authorized resource](#authorized-resource) creates one member under its
+owned authority, and `fold(authority(R(..)))` establishes an empty
+population. Predicates can be unfolded but don't have a corresponding surface `fold`
 operation.
 
 ### Footprint
@@ -563,6 +590,13 @@ locals and the memory it reads, a lexicographic tuple of such expressions, or
 one of the loop's resource binders. A function-level measure ranks recursive
 calls. See [ranking obligation](#ranking-obligation).
 
+### Member
+
+One unit of an [authorized resource](#authorized-resource) family. A field-free
+member is one unit of a quantity; a member with fields is a separately named
+instance. Members carry no shared body and grant no access to the population's
+[control](#control).
+
 ### Memory block
 
 A storage-identity component of a kernel pointer. Two pointers in different
@@ -658,7 +692,8 @@ exposes it.
 To expose one composite-resource body inside a nested proof scope and require
 that body to be foldable again when the scope closes. `open` provides scoped
 access; unlike `unfold`, it does not leave the body exposed after the nested
-proof completes.
+proof completes. Opening a member or a [control](#control) preserves the
+population's membership and count.
 
 ### Outcome
 
@@ -697,9 +732,10 @@ is the meaning of those memory resources, not a separate proof-state store.
 
 ### Population
 
-The exact number of equal owned units of one declared resource. The
-`count(resource(arguments))` form observes this quantity, and resource
-contracts can transfer units one at a time.
+The members of one [authorized resource](#authorized-resource) family at given
+arguments, governed by its exclusive `authority(R(..))`. Members are created by
+`fold` and destroyed by `unfold` under that authority, and
+[`count(R(..))`](#count) observes how many exist.
 
 ### Postcondition
 
@@ -813,6 +849,12 @@ A selectable claim-sized unit verified and reported independently, such as a
 
 A statement that can be true or false and can therefore be assumed or proved.
 
+### Protected resource
+
+The resource a mutex holds while unlocked. A checked `pthread_mutex_init` step
+deposits it, and locking hands it to the acquiring path. The retired
+`guarded_by` annotation is refused.
+
 ### Proved equality
 
 An equality established by a fact or kernel derivation rather than by
@@ -879,7 +921,9 @@ transferred according to its resource definition.
 
 A group of related resources governed by one algebra for validity, entailment,
 composition, splitting, lending, and consumption. Memory resources are the
-main built-in family; declared resources use exact-match family rules.
+main built-in family; declared resources use exact-match family rules. Only
+[authorized](#authorized-resource) declared families take part in population
+accounting; every other family keeps its ordinary definition law.
 
 ### Resource projection
 
@@ -1011,7 +1055,7 @@ connected by the memory derivation DAG.
 ### Symbolic state
 
 The modeled C state on one execution path: local values, memory, resource
-facts, and counted resource populations. `CState` is the kernel representation;
+facts, and the population authority ledger. `CState` is the kernel representation;
 logical proposition facts and execution-control data live alongside it.
 
 ### Symbolic value
@@ -1073,7 +1117,10 @@ A C operation for which the modeled language assigns no valid program
 To expose one definition layer of a named predicate, a pure-function
 application, or a composite resource. Unfolding a resource consumes the
 composite resource fact and exposes its immediate pure facts and contained
-resources; it doesn't recursively expose every nested layer.
+resources; it doesn't recursively expose every nested layer. Unfolding a member
+of an [authorized resource](#authorized-resource) destroys it under the owned
+authority, and `unfold(authority(R(..)))` retires a population whose count is
+zero.
 
 ## V
 

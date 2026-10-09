@@ -14,7 +14,7 @@ proof fails with two terms that spell alike.
 
 - **resource** — a piece of mutable state, or part of one. Today: a memory
   cell, a memory block as a pure function reads it through an array argument,
-  one model field of a resource instance, and one counted population. A byte
+  and one model field of a resource instance. A byte
   range, a struct extent and a local are the kinds that come next.
 - **program point** — a point on the current proof path (`entry`, a `mark`ed
   label, "here"), identified by the memory snapshot the kernel had reached
@@ -58,18 +58,16 @@ A memory resource's version **is** a point: the snapshot the cell was last
 written at. That is what makes `last_same_point` a naming path — a load
 variable's name can embed the point, and equal names then mean equal terms.
 
-A model field's version is the **value stored in the instance**, and a counted
-population's is the `count` term the state holds. Neither is a point on the
-memory history: a `fold` changes resources and not memory, and a call that
+A model field's version is the **value stored in the instance**. It is not a
+point on the memory history: a `fold` changes resources and not memory, and a call that
 returns ownership keeps the instance's identity while replacing its field
-vector. So their points are whole saved states — `StatePoint`, a *handle* to a
+vector. So its points are whole saved states — `StatePoint`, a *handle* to a
 state the kernel already keeps (`entry`, a `mark` out of `RecordedSnapshots`, a
 loop's iteration state, the live one), never a copy.
 
 ```rust
 same_at_states(resource, left: StatePoint, right: StatePoint) -> Sameness
 explain_at_states(resource, here, there) -> Explanation
-sole_population_of_family(state, family) -> Option<OwnedResource>
 ```
 
 Three decisions are worth writing down.
@@ -84,7 +82,7 @@ Three decisions are worth writing down.
   replaced". The *step* is still named, but it is read from the mint rather than
   from a walk — see below.
 - **It fails closed.** `Same` needs both lookups to succeed and the two values
-  to be syntactically equal. A missing instance, a missing population, a
+  to be syntactically equal. A missing instance, a
   parent-qualified path this lookup does not resolve, and two different
   spellings of one value all answer `Unknown`. A tracker that answered `Same`
   for a field a contract did not promise would verify a false theorem.
@@ -135,18 +133,12 @@ per-step history of resource-context changes and no walk of
 is measured:
 `a_saved_state_version_costs_one_lookup_per_point`
 (`src/kernel/resource_tracker/tests.rs`) grows both states by unrelated
-instances and unrelated populations over 8, 16, 32 and 64 and asserts two units
+instances over 8, 16, 32 and 64 and asserts two units
 at every size, with the answer checked each time. Deterministic work for a
 passing proof is unchanged to the unit: the named-operation totals of
 `augment_rotate_callback_child_read`,
 `contract_owns_composite_argument_across_forms` and
 `rb_replace_node_with_children` are identical with and without this chunk.
-
-`sole_population_of_family` is the one place that walks a state's population
-list, and it walks it to turn the family the reader wrote into the key the state
-indexes by. That list holds one entry per family the contract's clauses brought
-into scope, so it is sized by the selected source; where a family has two live
-instantiations it answers nothing rather than the wrong one.
 
 `last_same_point` is the only form on the hot path. It is what a term that
 reads memory is named by: a load variable embeds the oldest point its cell is
@@ -363,7 +355,6 @@ the case that actually applies:
 | a model field across a call | ``` `c.rank` may have changed since function entry: the call to `bump` returned ownership of `c` with a new model, and `bump` promises nothing about this field. If it keeps the field, state `ensures c.rank == old(c.rank)` on `bump`.``` |
 | a model field across a loop | ``` … the loop owns `c`, and a loop head is an arbitrary visit, so it gives `c` a fresh model. If the body keeps the field, carry it through as `invariant c.rank == old(c.rank);`.``` |
 | a model field the state no longer holds | ``` `c.rank` names no model here: `c` was consumed since function entry, so this state holds no field to read. Name the value it had there, `old(c.rank)`.``` |
-| a counted population | ``` `count(object_ref(obj))` changed since function entry: a `produces` or `consumes` transition in between moved it. The transition relates the two counts, so state that relation, as `ensures count(object_ref(obj)) == old(count(object_ref(obj))) + 1`.``` |
 
 Every clause it proposes is one that verifies the situation it is printed for;
 where none does, it says what is missing instead of naming a repair that would
@@ -373,15 +364,14 @@ reader to write a `separate(..)` the walk will never consult. A model field
 neither point holds is the other: `old(c.rank)` would name nothing either, so
 the text says that rather than printing it.
 
-The four model-field and population rows are pinned as refusals with their
+The three model-field rows are pinned as refusals with their
 verified repairs beside them:
 `mdtests/model_field_across_a_call_that_promises_nothing.md` /
 `model_field_kept_by_a_call.md`,
 `model_field_across_a_loop_without_an_invariant.md` /
 `model_field_kept_by_a_loop.md`,
-`fold_field_names_a_consumed_model.md` / `fold_field_names_the_entry_model.md`,
-and `population_count_across_a_produces_transition.md` /
-`population_count_states_its_transition.md`.
+and `fold_field_names_a_consumed_model.md` /
+`fold_field_names_the_entry_model.md`.
 
 The two cases that can spell both ranges offer two clauses, because two say the
 same thing: a stated `separate(..)`, and — since a contract's transferred and

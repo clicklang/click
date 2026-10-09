@@ -425,41 +425,11 @@ suspended-worker protocol transfer or stateful population confinement.
 `mdtests/mutex_guard_frames_ordinary_call.md` exercise ordinary helper framing.
 
 
-## Local counted-population payloads
-
-This section describes the legacy rule. Authority semantics replaced it,
-and milestone 7 of `issues/authority-migration.md` deletes its unreachable
-kernel code. Under legacy semantics a
-field-bearing payload may contain a positive quantity of one unconditional
-counted resource whose memory body states its own count. Initialization must
-own the complete population. While unlocked, retained units carry membership
-without body access, and release requires every unit accounted for. The
-kernel represents that guarded membership separately, bound to the
-initialization identity, and a second mutex cannot take custody of the same
-population.
-
-No fixture depends on this rule any more. The seven `population_mutex_*`
-fixtures, the two `population_conservation_local_mutex*` fixtures, and the
-four `mutex_population_body_*` fixtures use authority semantics. Their
-protected payload is an authority-bearing control, described in the next
-section. Each legacy refusal becomes an ordinary ownership refusal:
-
-- **Unheld helper access and unheld direct reads.** The control owns the
-  counter and the authority, and it is in the mutex. Without an acquisition,
-  a helper that borrows them cannot be called, and the C read has no
-  ownership.
-- **Cleanup while the mutex is live.** Spending members needs the authority,
-  which destruction returns.
-- **Hidden units at publication or release.** A member moved into another
-  wrapper is still counted, so a smaller total cannot be claimed.
-- **A second custodian.** The control is exclusive. Depositing it in a second
-  mutex removes it from the first critical section.
-
 ## Authority-bearing controls
 
-Under authority resource semantics, a mutex protects an ordinary control that
-owns population authority. No mutex rule refers to counted populations, and
-initialization takes no counted-population custody. The control declares a
+A mutex protecting a population protects an ordinary control that owns the
+population's authority; no mutex rule refers to populations. The control
+declares a
 proof field so that it is a named instance, which the initialization `state`
 binder requires:
 
@@ -494,13 +464,10 @@ The regressions are `authority_mutex_control_deposit.md`,
 `authority_mutex_member_alone_rejected.md`,
 `authority_mutex_control_wrong_mutex_rejected.md`,
 `authority_mutex_control_stale_initialization_rejected.md`, and
-`authority_control_instance_duplicate_authority_rejected.md`. The kernel test
-`authority_mode_publication_takes_no_population_custody` checks that
-publication, acquisition, release, and destruction create no custody.
+`authority_control_instance_duplicate_authority_rejected.md`.
 
 The acquiring and releasing helpers described earlier on this page also carry
-an authority-bearing control. Authority mode admits exactly that contract
-shape: one preserved typed `mutex_use`, one produced or consumed guard, and
+an authority-bearing control. Click admits exactly that contract shape: one preserved typed `mutex_use`, one produced or consumed guard, and
 the matching protected state, with no other clause. The caller applies the
 checked runtime exchange, so the control moves between the mutex and the
 caller without any population change. Each acquisition returns a fresh

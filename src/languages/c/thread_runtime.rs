@@ -259,7 +259,7 @@ impl ModeledPthreadBinding {
     pub fn builtin() -> Self {
         Self {
             target: super::target::CTarget::X86_64LinuxUserspace,
-            specification_version: 9,
+            specification_version: 10,
             header_digest: Sha256::digest(include_str!("modeled_pthread.h").as_bytes()).into(),
             specification_digest: Sha256::digest(
                 include_str!("modeled_pthread_spec.md").as_bytes(),

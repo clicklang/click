@@ -1,10 +1,11 @@
 # Exact-two counter using ordinary counted resources
 
-Status: implemented sequential controls and local counted-body mutex custody.
-Worker transfer and shared-population observations remain proposed. The
-investigation below recommends testing those rules before adding another
-algebra interface. [Explicit fractional authority](explicit-authority.md)
-remains an unimplemented alternative, not the selected plan.
+Status: superseded. Population authority replaced the counted-body model this
+investigation explored: `authorized` families have bodyless members, a control
+owns `authority(...)`, a mutex protects that control, and workers follow the
+[worker authority protocol](../../docs/internals/worker-authority-protocol.md).
+The counted-body mutex custody described below was deleted. The record is kept
+for its reasoning.
 
 A sequential control verifies exact value two with existing resource
 declarations, `count`, `owns`/`consumes`/`produces`, `fold`, `open`, and `unfold`.

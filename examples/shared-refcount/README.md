@@ -8,8 +8,8 @@ its reference under the mutex. After both users have been joined, the owner
 releases its own reference, destroys the mutex, and frees the object.
 `run` joins the users in creation order and `run_reverse_join` in the other
 order; both cover a failed first or second `pthread_create`. The project uses
-the `x86_64-linux-userspace` target, the explicit `modeled-pthread` runtime,
-and authority resource semantics.
+the `x86_64-linux-userspace` target and the explicit `modeled-pthread`
+runtime.
 
 ## Proof shape
 

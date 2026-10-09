@@ -664,8 +664,7 @@ and a contract discharges it there.
 
 `None` from that reader is not a smaller count. Each caller says what an
 unformed total costs, and none of them substitutes one: a merge declines to
-merge and leaves both facts in the state, a contract's counted-population
-transition refuses and names the population, a published `count >= visible`
+merge and leaves both facts in the state, a published `count >= visible`
 relation is left unpublished, and the wildcard pattern's ledger fold answers
 that it has no sum.
 

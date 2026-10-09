@@ -2,7 +2,7 @@
 
 This project verifies the original pool C with explicit population authorities.
 The C stores capacity and checkout count; individual objects retain their own
-private memory. No C source was changed for the authority migration.
+private memory. The C source is verified unchanged.
 
 `pool_storage(pool)` packages ordinary pool memory and the empty authorities
 for `pool_slot(pool)` and `pool_object(pool, _)`. The caller establishes those
@@ -44,5 +44,4 @@ and control openings establish the memory separation needed across calls.
 
 Run `click verify examples/bounded-pool` from the repository root. The sidecar
 contains 16 checked claims: five arithmetic lemmas and all eleven original C
-functions. The former migration companion has been consolidated into this
-project so there is one authoritative pool proof.
+functions.

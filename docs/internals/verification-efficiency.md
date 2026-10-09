@@ -772,7 +772,7 @@ zero-source execution events. Each event names its exact input state,
 registered composite definition, and output resource/fact delta, so final
 completion follows the event without interpreting the C body again. At contract
 entry, a non-recursive representation may still be rebased only after checking
-that locals, memory, and counted populations are exact and that the bounded
+that locals, memory, and population observations are exact and that the bounded
 resource-equality relation proves the two ghost contexts definitionally equal.
 Recursive resource representations do not enter that relation as a cache
 probe: until they have stable shallow identities they fall back immediately to

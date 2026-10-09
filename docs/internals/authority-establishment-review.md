@@ -1,12 +1,8 @@
 # Object-anchored population authority
 
-This records the selected lifetime protocol for the authority migration.
-See `issues/authority-migration.md` for rollout order and the
-[consumer inventory](authority-migration-inventory.md) for existing clients.
-Authority semantics are now the only resource semantics. During the
-migration a project selected them with a temporary `resource_semantics`
-setting, which is now refused. The restricted source slice admits an exact unary population established in the storage
-creator's execution proof. A field-free resource with a private owned-memory
+This records the implemented lifetime protocol for population authority, the
+only population semantics. Its base case is an exact unary population
+established in the storage creator's execution proof. A field-free resource with a private owned-memory
 body can be folded to create one member and unfolded to consume it while
 matching authority is owned. Opening an existing member temporarily exposes
 its body without changing membership. Current `count(R(p))` reads the checked
@@ -70,12 +66,8 @@ Folding an ordinary named memory resource retains the pure body facts checked
 at that snapshot, including facts transported across a disjoint helper call.
 It does not retain the body's exclusive memory ownership as a separate resource.
 
-Legacy body-only proof endpoints also retain checked early-consumption evidence.
-Otherwise a later contract application could replace an actual two-unit
-consumption with the declared one-unit consumption. Modular calls retain the
-caller's consumption evidence; they do not import a callee's local marker.
-The unchanged nested-overconsumption fixture checks that the final missing
-ownership is still rejected.
+The nested-overconsumption fixture checks that a consumption beyond the
+declared one is rejected as missing ownership.
 
 The supported contract shape uses only ordinary resource clauses:
 
@@ -224,16 +216,7 @@ Ordinary `fold(control(p))`, `open(control(p))`, and `unfold(control(p))` now us
 the checked resource-body exchange for the restricted shape above; folding
 cannot establish or duplicate authority.
 
-The additive kernel model exercises ownership, registration, membership,
-transfer, retirement, and cleanup with concrete totals. It does not yet admit
-C bindings, symbolic totals, wildcard scopes, views, or loans. Those must be
-implemented explicitly, including nonoverlap checks for population scopes;
-independent authorities must never count overlapping sets of members.
-
-Legacy proofs remain unchanged. The temporary migration boundary covers a
-complete verification unit and is included in proof/cache identity. New proofs
-must not fall back to legacy counting. Existing examples migrate in the order
-recorded in the issue before legacy semantics and `guarded_by` are removed.
+Independent authorities must never count overlapping sets of members.
 
 ## C creation events and explicit helper contracts
 
@@ -316,7 +299,7 @@ project mode and proof artifacts carry the semantics choice. Checked source
 owned-memory body. The exchange requires matching owned authority and is
 rechecked by the certificate checker. `open(R(p))` exposes that body while
 preserving membership, and its close restores the body. Current exact
-`count(R(p))` reads the ledger, never the legacy population state. A verified
+`count(R(p))` reads the ledger. A verified
 ordinary helper can borrow and return the same authority and member through
 the checked resource contract and creation ledger. Raw authority imports only
 the declared custody; it supplies no arbitrary exact entry total. A checked
@@ -331,7 +314,7 @@ imported authority when the opposite contract side transfers its entire body
 using ordinary `consumes` or `produces` clauses. The same population update is
 applied to the caller's concrete authority at a verified call. The sequential
 refcount project exercises initialization, individual and symbolic-batch
-updates, allocation failures, and final reclamation under authority semantics.
-Shared-parent, field-bearing/wildcard, pool, mutex, and worker support have
-separate migration gates; their status is recorded in the migration issue and
-consumer inventory.
+updates, allocation failures, and final reclamation. Shared parents,
+field-bearing and wildcard populations, the bounded pool, mutex-held controls
+and workers build on the same rules
+([worker authority protocol](worker-authority-protocol.md)).
