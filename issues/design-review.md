@@ -82,13 +82,16 @@ Remaining:
   spelling to write. Not ready. The plain functions of the sidecars under
   `design/charon-trial` take Rust signatures as of 2026-10-08, and their
   methods are `impl` blocks, operator traits included
-  (`impl MulAssign<u32> for U32X4`). Still C-shaped: functions named by a
-  mangled path (`__rust_q_I6_adler2_..._mul_assign_u32`,
-  `__rust_q_I4_quad_I4_load`), for which the Rust grammar has no spelling;
-  the five frozen originals, which are hash-pinned and stay; and about 90
-  sidecars written inline in the tests (`tests/rust_import.rs`,
-  `src/languages/rust/charon.rs`). Convert those, give the mangled ones a
-  spelling, then refuse.
+  (`impl MulAssign<u32> for U32X4`). An item in a module is named by its
+  path, `fn quad::walk(...)` and `quad::Quad` (decided 2026-10-08), and the
+  four small crate sidecars use it. Still C-shaped: the Adler sidecars,
+  whose tests cut `helpers.click` apart by its text and have to change
+  with it; one inherent method whose `impl` block is in another module
+  than its type (`Adler32::compute`), which has no spelling; the five
+  frozen originals, which are hash-pinned and stay; and about 90 sidecars
+  written inline in the tests. A claim label and a diagnostic still print
+  the importer's name (`__rust_q_I4_quad_I4_walk.contract`). Convert
+  those, then refuse.
 - Diagnostics and `click expand` print C-shaped spellings for a Rust
   sidecar (`bytes[0..(int32)bytes_len]`). They parse back; they are not what
   the sidecar writes. Decided 2026-10-08: do this after the

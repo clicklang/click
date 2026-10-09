@@ -218,6 +218,42 @@ fn is_builtin_tactic_spelling(name: &str) -> bool {
         })
 }
 
+/// The name the Rust importer gives the item at a path of two or more
+/// segments, `quad::walk` or `adler2::algo::U32X4`: `__rust_q` and each
+/// segment with its length, `__rust_q_I4_quad_I4_walk`
+/// (`qualified_record_name` in `src/languages/rust/charon.rs`). A single
+/// segment is the name itself.
+pub(in crate::surface) fn rust_path_name(segments: &[&str]) -> String {
+    match segments {
+        [name] => (*name).to_string(),
+        _ => segments
+            .iter()
+            .fold("__rust_q".to_string(), |encoded, segment| {
+                format!("{encoded}_I{}_{segment}", segment.len())
+            }),
+    }
+}
+
+/// The name of an inherent method of the type named `impl_type`, whose
+/// `impl` block is in the type's own module. A type named by a path has
+/// the importer's qualified method name, its module, then `_T` and the
+/// type, then the method (`qualified_function_name`); any other is
+/// `Type_method`.
+pub(in crate::surface) fn rust_inherent_method_name(
+    impl_module: Option<&str>,
+    impl_type: &str,
+    method: &str,
+) -> String {
+    match impl_module {
+        Some(module) => format!(
+            "{module}_T{}_{impl_type}_I{}_{method}",
+            impl_type.len(),
+            method.len()
+        ),
+        None => format!("{impl_type}_{method}"),
+    }
+}
+
 /// The C0 type a Rust scalar type name denotes.
 fn rust_scalar_type(name: &str) -> Option<C0Type> {
     Some(match name {
@@ -490,6 +526,9 @@ struct Parser {
     /// The suffix a trait's type argument gives its methods' names, inside
     /// `impl Trait<Arg> for Type`: `MulAssign<u32>` names `Type_mul_assign_u32`.
     rust_impl_method_suffix: Option<String>,
+    /// The module of the `impl` block being read, as the importer names
+    /// it, when the block is an inherent one for a type named by a path.
+    rust_impl_module: Option<String>,
     match_nesting: usize,
     proposition_nesting: usize,
     proof_nesting: usize,
@@ -808,6 +847,7 @@ impl Parser {
             wide_index_params: BTreeSet::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
+            rust_impl_module: None,
             tokens,
             positions,
             matching_parentheses,
@@ -3462,7 +3502,16 @@ impl Parser {
             ));
         }
         self.expect_ident_spelling("fn")?;
-        let name = self.expect_ident("function name")?;
+        let path = self.expect_rust_path("function name")?;
+        let name = if self.rust_impl_type.is_some() {
+            // A method's own name; an item inside it, `compute::LIMIT`,
+            // follows as the importer writes path segments.
+            path[1..].iter().fold(path[0].clone(), |name, segment| {
+                format!("{name}_I{}_{segment}", segment.len())
+            })
+        } else {
+            rust_path_name(&path.iter().map(String::as_str).collect::<Vec<_>>())
+        };
         self.expect(Token::LParen)?;
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
@@ -3482,7 +3531,11 @@ impl Parser {
                 }
                 match &self.rust_impl_method_suffix {
                     Some(suffix) => format!("{impl_type}_{name}_{suffix}"),
-                    None => format!("{impl_type}_{name}"),
+                    None => rust_inherent_method_name(
+                        self.rust_impl_module.as_deref(),
+                        &impl_type,
+                        &name,
+                    ),
                 }
             }
             None => name,
@@ -3583,15 +3636,27 @@ impl Parser {
         function_blocks: &mut Vec<FunctionBlock>,
     ) -> Result<(), ClickError> {
         self.expect_ident_spelling("impl")?;
-        let mut impl_type = self.expect_ident("type name")?;
+        let mut impl_path = self.expect_rust_path("type name")?;
         let suffix = self.parse_rust_trait_argument()?;
+        let mut inherent = true;
         if self.peek_ident() == Some("for") {
             self.position += 1;
-            impl_type = self.expect_ident("type name")?;
+            impl_path = self.expect_rust_path("type name")?;
+            inherent = false;
         } else if suffix.is_some() {
             return Err(self.error("a trait with a type argument is implemented `for` a type"));
         }
         self.expect(Token::LBrace)?;
+        let segments: Vec<&str> = impl_path.iter().map(String::as_str).collect();
+        let impl_type = rust_path_name(&segments);
+        // An inherent block is taken to be in its type's module.
+        let impl_module = (inherent && segments.len() > 1).then(|| {
+            segments[..segments.len() - 1]
+                .iter()
+                .fold("__rust_q".to_string(), |encoded, segment| {
+                    format!("{encoded}_I{}_{segment}", segment.len())
+                })
+        });
         let suffix = suffix.map(|(reference, mutable, name)| {
             let name = if name == "Self" {
                 impl_type.clone()
@@ -3610,6 +3675,7 @@ impl Parser {
         });
         let previous = self.rust_impl_type.replace(impl_type);
         let previous_suffix = std::mem::replace(&mut self.rust_impl_method_suffix, suffix);
+        let previous_module = std::mem::replace(&mut self.rust_impl_module, impl_module);
         let mut result = Ok(());
         while self.peek() != Some(&Token::RBrace) {
             if self.peek_ident() != Some("fn") {
@@ -3626,9 +3692,30 @@ impl Parser {
         }
         self.rust_impl_type = previous;
         self.rust_impl_method_suffix = previous_suffix;
+        self.rust_impl_module = previous_module;
         result?;
         self.expect(Token::RBrace)?;
         Ok(())
+    }
+
+    /// A Rust path, `name` or `crate_name::module::name`, as its segments.
+    #[inline(never)]
+    fn expect_rust_path(&mut self, what: &str) -> Result<Vec<String>, ClickError> {
+        let mut segments = vec![self.expect_ident(what)?];
+        while self.peek() == Some(&Token::ColonColon) {
+            self.position += 1;
+            segments.push(self.expect_ident(what)?);
+        }
+        Ok(segments)
+    }
+
+    /// A Rust path as the name the importer gives the item it names.
+    #[inline(never)]
+    fn expect_rust_path_name(&mut self, what: &str) -> Result<String, ClickError> {
+        let path = self.expect_rust_path(what)?;
+        Ok(rust_path_name(
+            &path.iter().map(String::as_str).collect::<Vec<_>>(),
+        ))
     }
 
     /// The type argument of an operator trait, `<u32>`, `<&Lanes>` or
@@ -3653,7 +3740,7 @@ impl Parser {
         if mutable {
             self.position += 1;
         }
-        let name = self.expect_ident("type name")?;
+        let name = self.expect_rust_path_name("type name")?;
         self.expect(Token::GreaterThan)?;
         Ok(Some((reference, mutable, name)))
     }
@@ -3809,7 +3896,7 @@ impl Parser {
         if array {
             self.position += 1;
         }
-        let spelling = self.expect_ident("type")?;
+        let spelling = self.expect_rust_path_name("type")?;
         if array {
             self.expect(Token::Semicolon)?;
             // The length is a constant expression; the importer checks it.
@@ -3874,7 +3961,7 @@ impl Parser {
                 "an array or slice in a `fn` signature is not supported yet; write this function's contract in the C-shaped spelling",
             ));
         }
-        let spelling = self.expect_ident("type")?;
+        let spelling = self.expect_rust_path_name("type")?;
         Ok(match rust_scalar_type(&spelling) {
             Some(c_type) => scalar(c_type),
             None => ParsedType {
