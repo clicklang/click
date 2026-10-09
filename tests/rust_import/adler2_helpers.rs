@@ -1510,3 +1510,60 @@ fn charon_adler2_scalar_tail_bounds_verify() {
 fn charon_adler2_small_partition_verifies() {
     click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
 }
+
+const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32-spec.click");
+
+// Checks the common mathematical target independently of an imported body:
+// weighted byte order, canonical residues, empty seeds and packed bounds.
+#[test]
+fn adler_common_spec_recurrences_and_bounds_verify() {
+    click::surface::verify_c0_sources(COMMON_ADLER_SPEC, &[]).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: common checksum specification expansion and mutation checks"]
+fn adler_common_spec_expands_and_rejects_false_results() {
+    for claim in [
+        "adler_weight_shift.ensures_0",
+        "adler_weighted_prefix_step.ensures_0",
+        "adler_sum_nonnegative.ensures_0",
+        "adler_weighted_nonnegative.ensures_0",
+        "adler_residue_unique.ensures_0",
+        "adler_residue_add.ensures_0",
+        "adler_spec_a_canonical.ensures_0",
+        "adler_spec_b_canonical.ensures_0",
+        "adler_spec_packing_bounds.ensures_0",
+        "adler_spec_empty.ensures_0",
+        "adler_spec_empty.ensures_1",
+    ] {
+        let expanded =
+            click::surface::expand_c0_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+        click::surface::verify_c0_sources(&expanded, &[]).unwrap();
+    }
+    for (before, after) in [
+        (
+            "adler_weighted_sum(bytes, n - 1, n - 1) + adler_byte_sum(bytes, n) by",
+            "adler_weighted_sum(bytes, n - 1, n - 1) + 2 * adler_byte_sum(bytes, n) by",
+        ),
+        ("<= 4293984240 by", "<= 4293984239 by"),
+        (
+            "adler_spec_a(bytes, 0, a0) == a0 by",
+            "adler_spec_a(bytes, 0, a0) == a0 + 1 by",
+        ),
+        (
+            "adler_spec_b(bytes, 0, a0, b0) == b0 by",
+            "adler_spec_b(bytes, 0, a0, b0) == a0 by",
+        ),
+    ] {
+        let invalid = COMMON_ADLER_SPEC.replacen(before, after, 1);
+        assert_ne!(invalid, COMMON_ADLER_SPEC, "missing mutation: {before}");
+        let error = click::surface::verify_c0_sources(&invalid, &[])
+            .expect_err("false checksum specification lemma accepted");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
