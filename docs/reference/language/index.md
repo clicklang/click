@@ -1334,6 +1334,12 @@ length. The range itself carries the object-size limit,
 any object. A range with a nonzero start, or a signed 64-bit bound, is still
 read through 32-bit indices and needs its bound shown to fit.
 
+A callee's constant range at a pointer into such a range, the `chunk[0..4]`
+of `first_of_four(bytes + index)`, is covered by it when `index <= length`
+and `4 <= length - index`
+(`mdtests/a_callee_takes_a_window_of_a_64_bit_range.md`). This holds for
+`views`; an owned window is not yet split out of an owned 64-bit range.
+
 A cast written in a place keeps its meaning: `bytes[(int32)index]` is the
 element at the truncated index, which is not the element the code reads at
 `bytes[index]` (`mdtests/a_cast_in_a_place_reads_the_truncated_index.md`).

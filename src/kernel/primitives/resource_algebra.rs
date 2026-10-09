@@ -7986,15 +7986,17 @@ pub(in crate::kernel) fn wide_memory_range_covers(
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    if available.element_width() != required.element_width()
-        || !(available.base() == required.base()
-            || pointers_proven_equal_for_memory_resolution(
-                available.base(),
-                required.base(),
-                assumptions,
-            ))
-    {
+    if available.element_width() != required.element_width() {
         return false;
+    }
+    if !(available.base() == required.base()
+        || pointers_proven_equal_for_memory_resolution(
+            available.base(),
+            required.base(),
+            assumptions,
+        ))
+    {
+        return wide_memory_range_covers_window(available, required, assumptions);
     }
     let bounds = |range: &CMemoryRange| match range.wide_bounds() {
         Some((start, end)) => Some((start.clone(), end.clone())),
@@ -8017,6 +8019,62 @@ pub(in crate::kernel) fn wide_memory_range_covers(
             || assumptions.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
     };
     holds(available_start, required_start) && holds(required_end, available_end)
+}
+
+/// [`wide_memory_range_covers`] for a window at another base: `required`
+/// is `p[a..b]` with nonnegative constant bounds, where `p` is element `i`
+/// of the wide range `available`, `i` an unsigned 64-bit index. A chunk
+/// handed to a callee, `first4(bytes + i)`, asks for this.
+///
+/// An index offset is the exact product `i * width`, so the window's
+/// elements are those at the integers `i + a` up to `i + b`, and it is
+/// covered when `available.start <= i` and `i + b <= available.end` hold
+/// of those integers. The second is decided without a sum that could wrap,
+/// as `i <= end` with `b <= end - i`, or as `b <= end` with `i <= end - b`.
+fn wide_memory_range_covers_window(
+    available: &CMemoryRange,
+    required: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    let Some((start, end)) = available.wide_bounds() else {
+        return false;
+    };
+    if required.wide_bounds().is_some() {
+        return false;
+    }
+    let (Some(first), Some(last)) = (
+        required
+            .signed_constant_start()
+            .and_then(|value| u64::try_from(value).ok()),
+        required
+            .signed_constant_end()
+            .and_then(|value| u64::try_from(value).ok()),
+    ) else {
+        return false;
+    };
+    if last < first {
+        return false;
+    }
+    let Some(index) = assumptions.wide_element_index_of_access(
+        required.base(),
+        available.base(),
+        available.element_width(),
+    ) else {
+        return false;
+    };
+    let holds = |lower: Bitvector32Term, upper: Bitvector32Term| {
+        lower == upper
+            || assumptions.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
+    };
+    let last = Bitvector32Term::UInt64Constant(last);
+    (start.uint64_as_const() == Some(0) || holds(start.clone(), index.clone()))
+        && ((holds(index.clone(), end.clone())
+            && holds(
+                last.clone(),
+                Bitvector32Term::uint64_subtract(end.clone(), index.clone()),
+            ))
+            || (holds(last.clone(), end.clone())
+                && holds(index, Bitvector32Term::uint64_subtract(end.clone(), last))))
 }
 
 /// Whether two ranges, at least one of them wide, are proven to share an

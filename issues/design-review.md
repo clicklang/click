@@ -140,6 +140,10 @@ Remaining:
   underneath combines two. A `long` loop
   is ranked by an `int64` measure
   (`mdtests/a_long_loop_is_ranked_by_an_int64_measure.md`).
+- **Stage 2, windows.** A callee's constant `views` range at a 64-bit
+  offset into a 64-bit range is covered
+  (`mdtests/a_callee_takes_a_window_of_a_64_bit_range.md`). An owned window
+  is refused: splitting an owned 64-bit range is plan step 6.
 - **Stage 2, what is left.** A range with a nonzero start
   (`bytes[a..b]`) and a range with a signed 64-bit bound still go through
   the 32-bit conversion and need their bound shown to fit; plan steps 5 and
