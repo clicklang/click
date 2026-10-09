@@ -2071,7 +2071,7 @@ fn validate_algebraic_expression_node(
                 definitions,
                 context,
             )?;
-            validate_algebraic_expression(
+            let then_type = validate_algebraic_expression(
                 then_branch,
                 variables,
                 click_functions,
@@ -2079,7 +2079,7 @@ fn validate_algebraic_expression_node(
                 definitions,
                 context,
             )?;
-            validate_algebraic_expression(
+            let else_type = validate_algebraic_expression(
                 else_branch,
                 variables,
                 click_functions,
@@ -2087,6 +2087,11 @@ fn validate_algebraic_expression_node(
                 definitions,
                 context,
             )?;
+            if then_type.is_some() || else_type.is_some() {
+                return Err(ClickError::new(format!(
+                    "algebraic-valued `if` expressions are not supported in {context}; use an exhaustive `match` on an algebraic discriminator"
+                )));
+            }
             Ok(None)
         }
         ContractExpression::RangeFold {
