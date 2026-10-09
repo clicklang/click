@@ -575,7 +575,15 @@ impl MemoryAccessCandidates {
                 .are_equal(&self.query, &start)
                 .then_some(start)
         } else {
-            self.index.graph.pointer_at_base(&self.query, range.base())
+            let spelling = if matches!(self.query.offset, PointerOffsetTerm::Add(_, _)) {
+                self.query.clone()
+            } else {
+                self.index
+                    .graph
+                    .additive_address(&self.query)
+                    .unwrap_or_else(|| self.query.clone())
+            };
+            self.index.graph.pointer_at_base(&spelling, range.base())
         }
     }
 }
@@ -1560,6 +1568,13 @@ impl ResourceContext {
         owned: bool,
     ) -> Option<MemoryAccessCandidates> {
         let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
+        // A reference result may capture an interior address without an
+        // additive syntax tree. Its checked class retains a producer spelling
+        // with that base; use it for indexed supplier selection only.
+        let spelling = (!matches!(pointer.offset, PointerOffsetTerm::Add(_, _)))
+            .then(|| index.graph.additive_address(pointer))
+            .flatten();
+        let selected_pointer = spelling.as_ref().unwrap_or(pointer);
         let entries = if let Some(entries) =
             Self::indexed_access_entries(&index, pointer, bytes, owned)
                 .or_else(|| Self::partial_start_entries(&index, pointer, bytes, owned))
@@ -1569,11 +1584,12 @@ impl ResourceContext {
             if !index.points_initialized {
                 return None;
             }
-            let entry = if let Some(entry) = Self::sole_access_supplier(&index, pointer, owned) {
-                entry
-            } else {
-                Self::sole_affine_supplier(&index, pointer, owned)?
-            };
+            let entry =
+                if let Some(entry) = Self::sole_access_supplier(&index, selected_pointer, owned) {
+                    entry
+                } else {
+                    Self::sole_affine_supplier(&index, selected_pointer, owned)?
+                };
             MemoryAccessEntries::SingleSupplier(Some(entry))
         };
         Some(MemoryAccessCandidates {

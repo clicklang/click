@@ -127,6 +127,10 @@ pub(super) struct TermClasses {
     // Retained concrete address evidence follows typed class merges. This
     // disambiguates parameters sharing the external address-space block.
     storage_addresses: PersistentMap<u64, Option<Pointer>>,
+    // One producer-registered additive spelling per address class. Retain
+    // its explicit base for captured interior addresses without enumerating
+    // class members or searching the caller's resource frame.
+    additive_addresses: PersistentMap<u64, (bool, Arc<Pointer>)>,
     alignment_witnesses: PersistentMap<u64, (u64, Pointer)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
@@ -269,6 +273,58 @@ impl TermClasses {
             self.storage_addresses.insert(kept, merged);
         }
         self.storage_addresses.remove(&moved);
+    }
+
+    pub(super) fn retain_additive_address(&mut self, id: u64, pointer: &Pointer) {
+        if !matches!(pointer.offset, PointerOffsetTerm::Add(_, _)) {
+            return;
+        }
+        // Prefer an already checked int32-index spelling when both widths
+        // denote this address: range resources retain those signed endpoints.
+        // This preference changes lookup coordinates, not the bounds oracle.
+        let mut pending = vec![&pointer.offset];
+        let mut wide = false;
+        while let Some(offset) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match offset {
+                PointerOffsetTerm::Add(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                PointerOffsetTerm::Int64Scaled { .. } => {
+                    wide = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let root = self.root(id);
+        if self
+            .additive_addresses
+            .get(&root)
+            .is_none_or(|(prior_wide, _)| *prior_wide && !wide)
+        {
+            self.additive_addresses
+                .insert(root, (wide, Arc::new(pointer.clone())));
+        }
+    }
+
+    pub(super) fn additive_address(&self, id: u64) -> Option<Pointer> {
+        self.additive_addresses
+            .get(&self.root(id))
+            .map(|(_, pointer)| (**pointer).clone())
+    }
+
+    fn merge_additive_addresses(&mut self, moved: u64, kept: u64) {
+        if let Some((wide, pointer)) = self.additive_addresses.get(&moved).cloned()
+            && self
+                .additive_addresses
+                .get(&kept)
+                .is_none_or(|(prior_wide, _)| *prior_wide && !wide)
+        {
+            self.additive_addresses.insert(kept, (wide, pointer));
+        }
+        self.additive_addresses.remove(&moved);
     }
 
     pub(super) fn retain_alignment(&mut self, id: u64, alignment: u64, pointer: &Pointer) {
@@ -834,6 +890,7 @@ impl TermClasses {
             let weight = self.weight(kept) + self.weight(moved);
             self.merge_address_offsets(moved, kept, &mut pending);
             self.merge_storage_addresses(moved, kept);
+            self.merge_additive_addresses(moved, kept);
             self.merge_alignment_witnesses(moved, kept);
             self.parents.insert(moved, kept);
             self.history = Some(Arc::new(MergeHistory {

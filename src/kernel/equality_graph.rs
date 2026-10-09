@@ -791,6 +791,17 @@ impl EqualityGraph {
         Some(state.terms.class_root(id))
     }
 
+    /// An explicit additive address already registered in this address's
+    /// checked class. It selects a base, never bounds or access authority.
+    pub(in crate::kernel) fn additive_address(&self, pointer: &Pointer) -> Option<Pointer> {
+        let id = self.address_class(pointer)?;
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .additive_address(id)
+    }
+
     /// A typed pair of byte endpoints used only to select retained resource
     /// occurrences. Congruence follows late endpoint equalities. Equal
     /// footprints do not establish authority, bounds, or initialization.
@@ -952,6 +963,15 @@ impl EqualityGraph {
         pointer: &Pointer,
         base: &Pointer,
     ) -> Option<Pointer> {
+        self.pointer_at_base_with_spelling(pointer, base, true)
+    }
+
+    fn pointer_at_base_with_spelling(
+        &self,
+        pointer: &Pointer,
+        base: &Pointer,
+        allow_spelling: bool,
+    ) -> Option<Pointer> {
         if self.are_equal(pointer, base) {
             return Some(base.clone());
         }
@@ -961,7 +981,9 @@ impl EqualityGraph {
                     block: pointer.block.clone(),
                     offset: part.as_ref().clone(),
                 };
-                if let Some(aligned) = self.pointer_at_base(&part, base) {
+                if let Some(aligned) =
+                    self.pointer_at_base_with_spelling(&part, base, allow_spelling)
+                {
                     // Only a graph-checked base replacement or block relation
                     // changes coordinates. Adding the original rest preserves
                     // the exact byte displacement and its no-wrap obligations.
@@ -977,6 +999,17 @@ impl EqualityGraph {
             // neither operand is the supplier base. Reassociating a shifted
             // range here would hide the source index from its checked bounds.
             return self.pointer_in_block(pointer, &base.block);
+        }
+        // A captured interior pointer has no additive spine of its own.
+        // Its class's retained producer expression carries that spine without
+        // recovering aliases from ambient premises or flattening read tokens.
+        // Expand at most one retained spelling per path: a zero displacement
+        // may equate an additive expression with its own base.
+        if allow_spelling
+            && let Some(spelling) = self.additive_address(pointer)
+            && let Some(aligned) = self.pointer_at_base_with_spelling(&spelling, base, false)
+        {
+            return Some(aligned);
         }
         let state = self.state.lock().expect("equality graph");
         let point = state.canonical(pointer)?;
@@ -1514,6 +1547,7 @@ impl EqualityGraphState {
         if Self::is_storage_block(&pointer.block) {
             self.terms.retain_storage_address(raw, pointer);
         }
+        self.terms.retain_additive_address(raw, pointer);
         if new {
             self.weights
                 .insert(representative.clone(), self.weight(&representative) + 1);
@@ -1672,6 +1706,19 @@ mod tests {
 
     fn index(id: u64) -> Bitvector32Term {
         Bitvector32Term::Variable(Variable(id))
+    }
+
+    // Retained zero-displacement spellings may share their base's class.
+    // Alignment against an unrelated supplier must not expand that cycle.
+    #[test]
+    fn additive_spelling_alignment_is_bounded_when_its_base_is_equal() {
+        let mut graph = EqualityGraph::default();
+        let base = Pointer::symbolic(Variable(999_101));
+        let index = Bitvector32Term::Variable(Variable(999_102));
+        let address = base.offset_by_elements(index, 4);
+        assert!(graph.add_equality(&base, &address));
+        let unrelated = Pointer::symbolic(Variable(999_103));
+        assert!(graph.pointer_at_base(&base, &unrelated).is_none());
     }
 
     #[test]

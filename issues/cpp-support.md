@@ -20,8 +20,9 @@ These were the selected implementation steps that required no new design.
 
 The independent bounded span observers, reference writes, sibling frames and
 backing-lifetime prerequisites are also delivered under the accepted profile
-below. The selected `SpanPopBack` target still requires destination-aware
-construction and temporary retirement from the shared construction work.
+below. The selected unchanged `SpanPopBack<int>` target and read/write callers
+are now verified through shared destination construction, trivial assignment
+and full-expression retirement.
 
 The remaining work needs a concrete source/contract selection or a semantic
 profile decision before implementation:
@@ -58,7 +59,7 @@ profile decision before implementation:
   verification, full exception semantics, concurrency, and cross-target coverage
   remain deferred until a selected proof needs them.
 
-## Selected target: SpanPopBack
+## Verified target: SpanPopBack
 
 Select the unchanged `SpanPopBack<int>` in Bitcoin v31.1
 `src/span.h:75`, commit `9be056a8a72b624dae9623b2f7bded92c2a21c91`.
@@ -68,7 +69,8 @@ This release uses `std::span`, not a Bitcoin-owned span class. The selected
 instance is a mutable, dynamic-extent `std::span<int>` on the existing LP64
 C++20 target. A fixture translation unit may instantiate the original header
 template; it must identify that harness separately from Bitcoin source and
-retain the pinned compiler profile. No proof is delivered for this target yet.
+retain the pinned compiler profile. Offline ordinary, expanded and retained
+proofs now cover the helper and modular read/write callers.
 
 ### Implemented prerequisites
 
@@ -95,7 +97,7 @@ preserves identity without granting new storage authority. Other pointer types,
 C++ reference returns and aggregate results remain outside this increment.
 
 The full-width scalar regression does not claim that a backing allocation of
-that size can be constructed. `SpanPopBack` itself remains unverified.
+that size can be constructed. The complete helper uses the bounded profile below.
 
 The user accepted an int32-bounded first backing-range proof, preserving native
 `size_t` storage and arithmetic. Implementation exposed a further bound:
@@ -115,7 +117,7 @@ positions, singleton and three-element last loads, frame preservation and
 missing authority. Empty, one-past dereferences and full-width invalid offsets
 fail under trivial postconditions. These are explicitly synthetic arithmetic
 prerequisites, not a source proof of `SpanPopBack` or its symbolic length.
-The symbolic native-index/range-endpoint bridge still needs checked evidence.
+The complete helper now supplies checked native-index/range-endpoint evidence.
 
 Read-only wide-index refusals now distinguish compact recorded cell ranges from
 individual source stores in the shared resource tracker. C0 and offline C++
@@ -124,9 +126,10 @@ repairs. They request the unresolved address relation or preservation instead;
 relevant explicit equality rewrites still give ordinary, expanded and retained
 proofs. Actual individual-store alias/frame diagnostics remain covered.
 
-### Intended contract
+### Verified contract
 
-This is a semantic draft, not accepted Click syntax. Let the incoming
+This is a semantic summary; executable native sidecars are in
+[bitcoin_core_money_range.rs](../tests/bitcoin_core_money_range.rs). Let the incoming
 descriptor denote pointer `p` and mathematical length `N`:
 
 ```text
@@ -205,9 +208,8 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    record assignment and self-assignment are covered; missing read/write
    authority, user-defined copy bodies, move assignment, const destination and
    hostile artifact paths are refused. Ordinary, expanded and retained proofs
-   agree. Shared aggregate results, construction and copy initialization remain
-   implementation work;
-   `SpanPopBack` has not been verified. The unchanged pinned `back()` now
+   agree. Bounded returned construction and initialization are implemented as
+   described below. The unchanged pinned `back()` now
    verifies for both a one-element backing range and the accepted symbolic
    domain `1 <= N <= 1,073,741,823`, through its actual constexpr assertion and
    nested observer calls. Explicit shared Integer/conversion certificates prove
@@ -217,8 +219,8 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    expanded and retained offline proofs establish native alias identity and old
    referent value. Missing bounds, descriptor/backing views, empty size, false
    aliases/values and invalid byte extents are refused. Deterministic scaling
-   checks cover unrelated facts. Aggregate results, construction and copy
-   initialization are next.
+   checks cover unrelated facts. The full `SpanPopBack` proof combines these
+   reference contracts with returned construction and temporary retirement.
    **Expression observers (accepted).** Admit nested calls in unsequenced
    operands only when verified read-only observer contracts establish operand
    independence. General interfering calls remain deferred. For example,
@@ -249,31 +251,29 @@ the contract; do not promise a recoverable error or rely on debug assertions.
    lvalues now use shared aggregate values and checked nominal layouts, including
    nested descriptor fields. The source must use Clang's resolved trivial copy
    constructor; whole automatic objects eligible for named copy elision, moves,
-   user-defined copies, prvalue construction and nontrivial destruction remain refused. Every copied leaf needs initialized read authority;
+   user-defined copies and nontrivial destruction remain refused in that copy
+   slice; bounded prvalue construction is supported by the separate profile below.
+   Every copied leaf needs initialized read authority;
    copying a pointer field grants no pointee authority. Offline ordinary, expanded,
    retained and forged-metadata checks cover this slice (artifact schema 46).
-   Construction and copy initialization are the next implementation work;
+   Bounded construction and initialization are implemented below;
    interfering expressions remain
    refused until their execution orders can be represented and checked.
 3. **Initial bounds profile (accepted).**
    The user chose the explicit single-range limit above for the first proof. Keep
    native unsigned arithmetic and prove the cross-width range/index bridge,
    nonempty subtraction and pointer formation from the actual backing range.
-4. **Shared construction destination design (dependency).**
-   The accepted direction, kernel/interface design work, identity regressions and
-   cross-language compatibility criteria now live in
-   [aggregate-construction-design.md](aggregate-construction-design.md).
-   C++ returned construction, destination forwarding and temporary retirement
-   depend on that work. The int32 field-address and constructor/copy identity
-   prerequisites are implemented; artifact schema 52 requires refreshing earlier
-   locks. Retain the unchanged pinned `SpanPopBack` source and intended contract
-   above as the concrete C++ acceptance target.
-   A bounded returned-construction slice now validates argument-value-only
-   constructor/helper bodies, forwards result destinations and initializes new
-   objects through native contracts. It accounts for permitted trivial copies
-   by field-value equivalence; address-sensitive returned constructors remain
-   refused. Returned-aggregate assignment, expression retirement and the pinned
-   `first`/`SpanPopBack` proof are still pending.
+4. **Shared construction destinations (implemented).**
+   The accepted interface, source admission and cross-language compatibility
+   contract lives in [aggregate construction](../design/aggregate-construction.md).
+   Artifact schema 52 distinguishes construction returns, forwarding, new-object
+   initialization and assignment through a distinct RHS temporary. The importer
+   validates argument-value-only constructor/helper bodies and permitted trivial
+   copies by field-value equivalence. Address-sensitive returned constructors,
+   NRVO, moves, user-defined copies and nontrivial cleanup remain refused.
+   Native signatures and `result` field contracts need no user-managed return
+   slots or new Surface construction clause. Runtime `first` and the complete
+   unchanged `SpanPopBack` path now verify with expression retirement.
 
 ### Work independent of returned construction
 
@@ -326,8 +326,13 @@ outside this profile. Artifact schema 52 requires refreshing earlier locks.
 The unchanged pinned runtime `first(K)` now verifies through checked returned
 construction for `0 <= K <= N <= 1073741823`, preserving the data pointer and
 receiver fields. Ordinary, expanded and retained proofs pass; a zero-count caller
-needs no backing authority. `last`, `subspan` and the complete `SpanPopBack`
-target remain pending. Other scalar/import work still needs
+needs no backing authority. The complete `SpanPopBack` helper preserves the
+original backing frame for symbolic bounded lengths. Modular read/write callers,
+singleton-to-empty and three-element cases pass; missing permissions, bounds and
+separation, empty input, out-of-range `first` and views-only writes are refused.
+The owned write caller preserves every other original backing element.
+Ordinary, expanded and retained checks agree. `last` and `subspan` remain
+unselected targets. Other scalar/import work still needs
 an exact source and contract selection under the profile boundaries above.
 
 Existing typed pointers, array/range authority, stable views, allocation
@@ -346,15 +351,16 @@ verified offline through ordinary contracts for both `to_address` helpers,
 `__extent_storage`, and `span`. Successful concrete compile-time assertions
 produce no runtime operation. The caller retains its backing-range view under
 the accepted native uint64 count bound; ordinary, expanded and retained checks
-pass, and omitting the backing view is rejected. This is local construction,
-not returned construction or the completed `SpanPopBack` target.
+pass, and omitting the backing view is rejected. Returned construction and the
+complete `SpanPopBack` target have separate end-to-end coverage above.
 
-Acceptance should include the unchanged helper, a modular caller that reads
-the returned last element, and a caller that mutates it under existing write
-authority. Cover singleton spans, preserved siblings and a reference used after
-descriptor destruction while its backing buffer is still live. Reject missing
-nonempty/bounds/read/write authority, invalid backing lifetime and false pointer,
-length or content claims. Ordinary, expanded and retained checks must agree.
+The delivered helper and caller coverage retains the original headers, archive
+hashes, LP64 C++20 / Clang 19.1.7 profile and uint64 extent. Backing authority
+survives the assignment temporary's retirement. Separate descriptor-destruction
+fixtures cover references into independently live backing and refusal of expired
+local referents. Direct conversion of a whole reference-return call to a scalar
+return remains outside the importer profile; read/write harnesses bind the
+returned native reference before using it.
 
 No endian or typed-from-bytes rule is needed here. `ser_readdata32` is a later
 candidate: it reads into a local integer through `std::as_writable_bytes` and
